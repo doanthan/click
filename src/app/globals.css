@@ -46,15 +46,25 @@ html {
 
 .brand-gradient {
   background:
-    radial-gradient(circle at 18% 10%, rgba(177, 237, 232, 0.22), transparent 24%),
-    radial-gradient(circle at 80% 22%, rgba(255, 105, 120, 0.2), transparent 28%),
-    linear-gradient(135deg, #6D435A 0%, #340068 64%, #B1EDE8 165%);
+    linear-gradient(90deg, rgba(255, 252, 249, 0.08) 1px, transparent 1px),
+    linear-gradient(rgba(255, 252, 249, 0.08) 1px, transparent 1px),
+    linear-gradient(135deg, #6D435A 0%, #4f2574 48%, #340068 72%, #244f61 145%);
+  background-size: 42px 42px, 42px 42px, auto;
 }
 
 .brand-gradient-soft {
   background:
-    radial-gradient(circle at 15% 20%, rgba(177, 237, 232, 0.24), transparent 26%),
-    linear-gradient(135deg, #6D435A 0%, #340068 82%);
+    linear-gradient(90deg, rgba(177, 237, 232, 0.1) 1px, transparent 1px),
+    linear-gradient(rgba(177, 237, 232, 0.08) 1px, transparent 1px),
+    linear-gradient(135deg, #6D435A 0%, #4f2574 52%, #340068 100%);
+  background-size: 36px 36px, 36px 36px, auto;
+}
+
+.paper-grid {
+  background-image:
+    linear-gradient(rgba(255, 252, 249, 0.15) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 252, 249, 0.15) 1px, transparent 1px);
+  background-size: 42px 42px;
 }
 
 @media (max-width: 640px) {
@@ -103,11 +113,9 @@ input:focus-visible {
 
 .click-grain {
   background-image:
-    radial-gradient(circle at 20% 20%, rgba(255, 105, 120, 0.18), transparent 28%),
-    radial-gradient(circle at 82% 10%, rgba(177, 237, 232, 0.42), transparent 24%),
     linear-gradient(rgba(52, 0, 104, 0.055) 1px, transparent 1px),
     linear-gradient(90deg, rgba(52, 0, 104, 0.055) 1px, transparent 1px);
-  background-size: auto, auto, 42px 42px, 42px 42px;
+  background-size: 42px 42px, 42px 42px;
   pointer-events: none;
 }
 
