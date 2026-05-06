@@ -8,7 +8,12 @@ export type EventItem = {
   category: string;
   date: string;
   time: string;
+  startsAt: string;
   location: string;
+  suburb: string;
+  distanceKm: number;
+  lat: number;
+  lng: number;
   price: string;
   attendees: number;
   capacity: number;
@@ -78,7 +83,12 @@ export const clickEvents: EventItem[] = [
     category: "Social",
     date: "Fri, May 8",
     time: "6:30 PM",
+    startsAt: "2026-05-08T18:30:00+10:00",
     location: "Barangaroo Reserve, Sydney",
+    suburb: "Barangaroo",
+    distanceKm: 1.4,
+    lat: -33.857,
+    lng: 151.201,
     price: "Free",
     attendees: 47,
     capacity: 60,
@@ -101,7 +111,12 @@ export const clickEvents: EventItem[] = [
     category: "Fitness",
     date: "Sat, May 9",
     time: "8:00 AM",
+    startsAt: "2026-05-09T08:00:00+10:00",
     location: "Marrickville Training Yard",
+    suburb: "Marrickville",
+    distanceKm: 7.8,
+    lat: -33.913,
+    lng: 151.155,
     price: "$12",
     attendees: 24,
     capacity: 32,
@@ -124,7 +139,12 @@ export const clickEvents: EventItem[] = [
     category: "Relationships",
     date: "Thu, May 14",
     time: "7:00 PM",
+    startsAt: "2026-05-14T19:00:00+10:00",
     location: "Surry Hills",
+    suburb: "Surry Hills",
+    distanceKm: 2.5,
+    lat: -33.884,
+    lng: 151.212,
     price: "$29",
     attendees: 40,
     capacity: 42,
@@ -147,7 +167,12 @@ export const clickEvents: EventItem[] = [
     category: "Creative",
     date: "Sun, May 17",
     time: "10:30 AM",
+    startsAt: "2026-05-17T10:30:00+10:00",
     location: "Newtown Community Hall",
+    suburb: "Newtown",
+    distanceKm: 4.7,
+    lat: -33.897,
+    lng: 151.179,
     price: "$18",
     attendees: 53,
     capacity: 70,
@@ -170,7 +195,12 @@ export const clickEvents: EventItem[] = [
     category: "Career",
     date: "Wed, May 20",
     time: "6:00 PM",
+    startsAt: "2026-05-20T18:00:00+10:00",
     location: "Circular Quay to The Rocks",
+    suburb: "The Rocks",
+    distanceKm: 0.9,
+    lat: -33.859,
+    lng: 151.209,
     price: "Free",
     attendees: 31,
     capacity: 45,
@@ -193,7 +223,12 @@ export const clickEvents: EventItem[] = [
     category: "Community",
     date: "Sat, May 23",
     time: "9:00 AM",
+    startsAt: "2026-05-23T09:00:00+10:00",
     location: "Camperdown Memorial Rest Park",
+    suburb: "Camperdown",
+    distanceKm: 4.2,
+    lat: -33.888,
+    lng: 151.176,
     price: "Free",
     attendees: 18,
     capacity: 36,
@@ -222,7 +257,7 @@ export const peopleCards: PeopleRecommendation[] = [
     tags: ["friends", "sydney", "new to town", "weekend", "low pressure"],
     matchReason: "Good first match for relaxed social plans and recurring friendship groups.",
     nextEventId: "new-friends-barangaroo",
-    accent: "bg-[#B1EDE8]",
+    accent: "bg-[#7edbd3]",
   },
   {
     id: "theo",
@@ -235,7 +270,7 @@ export const peopleCards: PeopleRecommendation[] = [
     tags: ["crossfit", "fitness", "training", "coffee", "accountability"],
     matchReason: "Best match for getting better at CrossFit without joining a clique.",
     nextEventId: "crossfit-coffee",
-    accent: "bg-[#B1EDE8]",
+    accent: "bg-[#7edbd3]",
   },
   {
     id: "amelia",
@@ -248,7 +283,7 @@ export const peopleCards: PeopleRecommendation[] = [
     tags: ["dating", "relationships", "dinner", "surry hills", "low pressure"],
     matchReason: "Strong fit for relationship events with structure and no awkward pressure.",
     nextEventId: "slow-dating-six",
-    accent: "bg-[#FF6978]",
+    accent: "bg-[#f65858]",
   },
   {
     id: "noah",
@@ -261,7 +296,7 @@ export const peopleCards: PeopleRecommendation[] = [
     tags: ["creative", "brunch", "newtown", "friends", "community"],
     matchReason: "Useful match for hobbies, making things, and becoming familiar through repetition.",
     nextEventId: "ordinary-creatives",
-    accent: "bg-[#B1EDE8]",
+    accent: "bg-[#7edbd3]",
   },
   {
     id: "priya",
@@ -274,7 +309,7 @@ export const peopleCards: PeopleRecommendation[] = [
     tags: ["career", "confidence", "walk", "networking", "support"],
     matchReason: "Right fit for career-change support and walking conversations.",
     nextEventId: "career-walk",
-    accent: "bg-[#6D435A]",
+    accent: "bg-[#5f6f52]",
   },
 ];
 
@@ -432,9 +467,9 @@ export const adminModules = [
 ];
 
 export const architectureLayers = [
-  ["Frontend", "Next.js React app with TypeScript, Tailwind, route-level pages, and client islands for matching UI."],
-  ["Application layer", "Supabase Auth, Edge Functions, PostgreSQL, RLS, and matching jobs."],
-  ["Integrations", "Stripe Connect, Resend, Mapbox, and future Firebase push notifications."],
+  ["Hosted starts", "Every event needs a named host, a clear start time, and a simple reason for strangers to talk."],
+  ["Familiar paths", "Recurring groups, shared rituals, and nearby suggestions make it easier to show up a second time."],
+  ["Private sparks", "Clicks stay private until mutual, then point people toward a real event instead of an empty chat thread."],
 ];
 
 export const notificationRows = [

@@ -118,24 +118,26 @@ export function AIMatchPanel({
 
   return (
     <div className="w-full">
-      <section className="mx-auto w-full max-w-[calc(100vw-2rem)] overflow-hidden rounded-[1.45rem] border-4 border-white bg-[#FFFCF9] text-left text-[#340068] shadow-[14px_14px_0_#B1EDE8] sm:max-w-6xl">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b-4 border-[#340068] px-4 py-3">
+      <section className="relative mx-auto w-full max-w-[calc(100vw-2rem)] overflow-hidden rounded-3xl border-2 border-[color:var(--ink)] bg-[color:var(--champagne)] text-left text-[color:var(--ink)] hard-shadow sm:max-w-5xl">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-[color:var(--ink)] bg-[color:var(--cream)] px-4 py-3">
           <div className="flex items-center gap-2">
-            <span className="size-3 rounded-full bg-[#FF6978]" />
-            <span className="size-3 rounded-full bg-[#FFD166]" />
-            <span className="size-3 rounded-full bg-[#B1EDE8]" />
+            <span className="size-3 rounded-full border-2 border-[color:var(--ink)] bg-[color:var(--rose)]" />
+            <span className="size-3 rounded-full border-2 border-[color:var(--ink)] bg-[color:var(--punch)]" />
+            <span className="size-3 rounded-full border-2 border-[color:var(--ink)] bg-[color:var(--peach)]" />
           </div>
-          <span className="hidden text-xs font-black uppercase tracking-[0.18em] text-[#340068]/45 sm:block">
-            {title}
-          </span>
+          {title ? (
+            <span className="font-mono hidden text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)] sm:block">
+              ✷ {title}
+            </span>
+          ) : null}
         </div>
 
-        <form onSubmit={handleSubmit} className="p-4">
-          <label htmlFor="click-ai-search" className="sr-only">
-            Tell Click what people you want to meet
+        <form onSubmit={handleSubmit} className="p-4 sm:p-5">
+          <label htmlFor="click-search" className="sr-only">
+            Find local people and events
           </label>
           <textarea
-            id="click-ai-search"
+            id="click-search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={(event) => {
@@ -144,17 +146,19 @@ export function AIMatchPanel({
                 submitPrompt();
               }
             }}
-            className="min-h-44 w-full resize-none rounded-2xl border-2 border-[#340068] bg-white px-5 py-4 text-base font-bold leading-7 outline-none placeholder:text-[#340068]/35 focus:border-[#FF6978] sm:min-h-52 sm:text-lg sm:leading-8"
+            className="font-display min-h-40 w-full resize-none rounded-2xl border-2 border-[color:var(--ink)] bg-[color:var(--champagne)] px-5 py-4 text-2xl font-light italic leading-tight text-[color:var(--ink)] outline-none placeholder:text-[color:var(--mauve)]/55 focus:bg-[color:var(--cream)] sm:min-h-48 sm:text-3xl"
             placeholder={animatedPlaceholder ? `${animatedPlaceholder}|` : ""}
           />
-          <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex max-w-full flex-wrap gap-2 overflow-hidden pb-1 lg:pb-0">
-              {starterPrompts.map((prompt) => (
+              {starterPrompts.map((prompt, index) => (
                 <button
                   type="button"
                   key={prompt}
                   onClick={() => submitPrompt(prompt)}
-                  className="max-w-full rounded-full border-2 border-[#340068] bg-white px-4 py-2 text-left text-xs font-black text-[#340068]/68 hover:bg-[#B1EDE8]"
+                  className={`max-w-full rounded-full border-2 border-[color:var(--ink)] px-4 py-2 text-left text-xs font-bold text-[color:var(--ink)] hard-shadow-sm hover:-translate-x-[1px] hover:-translate-y-[1px] ${
+                    index % 2 === 0 ? "bg-[color:var(--peach)]" : "bg-[color:var(--cream)]"
+                  }`}
                 >
                   {prompt}
                 </button>
@@ -162,68 +166,91 @@ export function AIMatchPanel({
             </div>
             <button
               type="submit"
-              className="min-h-12 shrink-0 rounded-full bg-[#FF6978] px-6 text-sm font-black text-[#340068] shadow-[4px_4px_0_#340068]"
+              className="group/cta inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-full border-2 border-[color:var(--ink)] bg-[color:var(--rose)] px-6 text-sm font-bold uppercase tracking-wide text-[color:var(--champagne)] hard-shadow hover:bg-[color:var(--ink)]"
             >
-              Match me
+              Find my people
+              <span aria-hidden className="inline-block transition-transform duration-300 group-hover/cta:translate-x-1">→</span>
             </button>
           </div>
         </form>
       </section>
 
-      <div className="mx-auto mt-8 max-w-7xl">
-        <div className="flex flex-wrap items-center justify-between gap-3 text-white">
-          <div>
-            <p className="text-xs font-black uppercase tracking-[0.18em] text-[#B1EDE8]">
-              AI recommendations
-            </p>
-            <h2 className="mt-2 font-display text-4xl font-black leading-none">
-              People cards worth meeting.
-            </h2>
+      {showEvents ? (
+        <div className="mx-auto mt-12 max-w-7xl">
+          <div className="flex flex-wrap items-end justify-between gap-3 text-[color:var(--ink)]">
+            <div>
+              <p className="eyebrow">Events near you</p>
+              <h2 className="font-display mt-2 text-4xl font-light leading-tight">
+                Plans that make the first hello easier.
+              </h2>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Pill tone="peach">Mode: {detectedCategory === "All" ? "Friendship" : detectedCategory}</Pill>
+              <Pill tone="cream">Query: {submittedQuery}</Pill>
+            </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Pill tone="aqua">Mode: {detectedCategory === "All" ? "Friendship" : detectedCategory}</Pill>
-            <Pill>Query: {submittedQuery}</Pill>
+
+          <div className="mt-6 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+            {rankedEvents.slice(0, 4).map((event) => (
+              <EventCard key={event.id} event={event} compact />
+            ))}
           </div>
         </div>
+      ) : null}
 
-        <div className="mt-5 grid gap-5 lg:grid-cols-3">
-          {recommendedPeople.map((person) => {
+      <div className="mx-auto mt-12 max-w-7xl">
+        <div className="flex flex-wrap items-center justify-between gap-3 text-[color:var(--ink)]">
+          <div>
+            <p className="eyebrow">People recommendations</p>
+            <h2 className="font-display mt-2 text-4xl font-light leading-tight">
+              People with a <em className="text-[color:var(--rose)]">shared reason</em> to show up.
+            </h2>
+          </div>
+          {!showEvents ? (
+            <div className="flex flex-wrap gap-2">
+              <Pill tone="peach">Mode: {detectedCategory === "All" ? "Friendship" : detectedCategory}</Pill>
+              <Pill tone="cream">Query: {submittedQuery}</Pill>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="mt-6 grid gap-5 lg:grid-cols-3">
+          {recommendedPeople.map((person, idx) => {
             const event = events.find((item) => item.id === person.nextEventId);
             const connected = connectedPeople.includes(person.id);
             const joined = event ? joinedEvents.includes(event.id) : false;
+            const accentBg = idx % 3 === 0 ? "bg-[color:var(--peach)]" : idx % 3 === 1 ? "bg-[color:var(--rose)] text-[color:var(--champagne)]" : "bg-[color:var(--cream)]";
 
             return (
               <article
                 key={person.id}
-                className="rounded-lg border-4 border-white bg-[#FFFCF9] p-5 text-[#340068] shadow-[8px_8px_0_#6D435A]"
+                className="group relative rounded-2xl border-2 border-[color:var(--ink)] bg-[color:var(--champagne)] p-5 text-[color:var(--ink)] hard-shadow-sm transition-transform duration-300 hover:-translate-y-1 hover:rotate-[-0.5deg] hover:[box-shadow:8px_8px_0_0_var(--ink)]"
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-center gap-3">
                     <span
-                      className={`grid size-14 place-items-center rounded-full border-4 border-[#340068] ${person.accent} font-black shadow-[4px_4px_0_#340068]`}
+                      className={`grid size-14 place-items-center rounded-full border-2 border-[color:var(--ink)] ${accentBg} font-display text-2xl font-light italic`}
                     >
                       {person.initials}
                     </span>
                     <div>
-                      <h3 className="font-display text-3xl font-black leading-none">
-                        {person.name}
-                      </h3>
-                      <p className="mt-1 text-sm font-black text-[#340068]/52">
-                        {person.neighborhood} - {person.intent}
+                      <h3 className="font-display text-3xl font-light leading-tight">{person.name}</h3>
+                      <p className="mt-0.5 text-xs font-bold uppercase tracking-wider text-[color:var(--mauve)]">
+                        {person.neighborhood} · {person.intent}
                       </p>
                     </div>
                   </div>
-                  <span className="rounded-full border-2 border-[#340068] bg-white px-3 py-1 text-xs font-black">
-                    AI pick
+                  <span className="rounded-full border-2 border-[color:var(--ink)] bg-[color:var(--peach)] px-3 py-1 text-[0.65rem] font-bold uppercase tracking-wider">
+                    Good fit
                   </span>
                 </div>
-                <p className="mt-4 text-sm font-bold leading-6 text-[#340068]/68">
+                <p className="mt-4 text-sm font-medium leading-6 text-[color:var(--mauve)]">
                   {person.bio}
                 </p>
-                <p className="mt-3 rounded-lg border-2 border-[#340068] bg-white p-3 text-sm font-black leading-6">
-                  {person.matchReason}
+                <p className="mt-3 rounded-xl border-2 border-dashed border-[color:var(--ink)] bg-[color:var(--cream)] p-3 text-sm font-bold leading-6">
+                  ✷ {person.matchReason}
                 </p>
-                <div className="mt-4 flex flex-wrap gap-2">
+                <div className="mt-4 flex flex-wrap gap-1.5">
                   {person.tags.slice(0, 4).map((tag) => (
                     <Pill key={tag}>{tag}</Pill>
                   ))}
@@ -232,22 +259,22 @@ export function AIMatchPanel({
                   <button
                     type="button"
                     onClick={() => connectWithPerson(person.id)}
-                    className="rounded-full bg-[#FF6978] px-4 py-3 text-sm font-black text-[#340068] shadow-[4px_4px_0_#340068]"
+                    className="rounded-full border-2 border-[color:var(--ink)] bg-[color:var(--rose)] px-4 py-3 text-sm font-bold text-[color:var(--champagne)] hard-shadow-sm hover:bg-[color:var(--ink)]"
                   >
-                    {connected ? "Clicked privately" : "Click with them"}
+                    {connected ? "Clicked privately ✓" : "Click with them"}
                   </button>
                   {event ? (
                     <button
                       type="button"
                       onClick={() => joinEvent(event.id)}
-                      className="rounded-full border-2 border-[#340068] bg-white px-4 py-3 text-sm font-black"
+                      className="rounded-full border-2 border-[color:var(--ink)] bg-[color:var(--champagne)] px-4 py-3 text-sm font-bold text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
                     >
-                      {joined ? "Event joined" : "Join event"}
+                      {joined ? "Event joined ✓" : "Join event"}
                     </button>
                   ) : null}
                 </div>
                 {event ? (
-                  <p className="mt-3 text-xs font-black uppercase tracking-[0.12em] text-[#340068]/45">
+                  <p className="font-mono mt-3 text-[0.65rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
                     Suggested event: {event.title}
                   </p>
                 ) : null}
@@ -255,14 +282,6 @@ export function AIMatchPanel({
             );
           })}
         </div>
-
-        {showEvents ? (
-          <div className="mt-8 grid gap-5 lg:grid-cols-2">
-            {rankedEvents.slice(0, 2).map((event) => (
-              <EventCard key={event.id} event={event} compact />
-            ))}
-          </div>
-        ) : null}
       </div>
     </div>
   );

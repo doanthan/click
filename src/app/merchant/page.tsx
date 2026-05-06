@@ -1,4 +1,5 @@
-import { InfoCard, LinkButton, MetricCard, PageHero, Pill, SectionIntro } from "@/components/click-ui";
+import { InfoCard, MetricCard, PageHero, Pill, SectionIntro } from "@/components/click-ui";
+import { CreateEventForm } from "@/components/create-event-form";
 import { EventCard } from "@/components/event-card";
 import { clickEvents, merchantModules } from "@/lib/click-data";
 
@@ -13,7 +14,7 @@ export default function MerchantPage() {
   );
 
   return (
-    <main className="min-h-screen bg-[#FFFCF9] text-[#340068]">
+    <main className="min-h-screen bg-[#fffdf7] text-[#1f1f1f]">
       <PageHero
         eyebrow="Merchant portal"
         title="Hosts get autonomy, Click keeps the marketplace trustworthy."
@@ -27,7 +28,7 @@ export default function MerchantPage() {
         </div>
       </PageHero>
 
-      <section className="bg-[#FFFCF9] py-16">
+      <section className="bg-[#fffdf7] py-16">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           <SectionIntro
             eyebrow="Merchant workflow"
@@ -48,7 +49,7 @@ export default function MerchantPage() {
         </div>
       </section>
 
-      <section className="bg-[#B1EDE8] py-16">
+      <section className="bg-[#d8f3ef] py-16">
         <div className="mx-auto grid max-w-7xl gap-8 px-4 sm:px-6 lg:grid-cols-[0.74fr_1.26fr]">
           <div>
             <SectionIntro
@@ -63,59 +64,11 @@ export default function MerchantPage() {
             </div>
           </div>
 
-          <form className="grid gap-4 rounded-lg border-2 border-[#340068] bg-[#FFFCF9] p-5 shadow-[8px_8px_0_#340068]">
-            <div className="grid gap-4 md:grid-cols-2">
-              <label className="grid gap-2 text-sm font-black">
-                Event title
-                <input
-                  className="rounded-lg border-2 border-[#340068] bg-white px-4 py-3 font-bold outline-none focus:border-[#FF6978]"
-                  defaultValue="Pottery and Shared Plates"
-                />
-              </label>
-              <label className="grid gap-2 text-sm font-black">
-                Booking model
-                <select className="rounded-lg border-2 border-[#340068] bg-white px-4 py-3 font-bold outline-none focus:border-[#FF6978]">
-                  <option>Click-managed booking</option>
-                  <option>External booking</option>
-                </select>
-              </label>
-            </div>
-            <div className="grid gap-4 md:grid-cols-3">
-              <label className="grid gap-2 text-sm font-black">
-                Price
-                <input
-                  className="rounded-lg border-2 border-[#340068] bg-white px-4 py-3 font-bold outline-none focus:border-[#FF6978]"
-                  defaultValue="$24"
-                />
-              </label>
-              <label className="grid gap-2 text-sm font-black">
-                Capacity
-                <input
-                  className="rounded-lg border-2 border-[#340068] bg-white px-4 py-3 font-bold outline-none focus:border-[#FF6978]"
-                  defaultValue="32"
-                />
-              </label>
-              <label className="grid gap-2 text-sm font-black">
-                Tags
-                <input
-                  className="rounded-lg border-2 border-[#340068] bg-white px-4 py-3 font-bold outline-none focus:border-[#FF6978]"
-                  defaultValue="Creative, Food"
-                />
-              </label>
-            </div>
-            <label className="grid gap-2 text-sm font-black">
-              Audience note
-              <textarea
-                className="min-h-28 rounded-lg border-2 border-[#340068] bg-white px-4 py-3 font-bold outline-none focus:border-[#FF6978]"
-                defaultValue="For people who want a relaxed table and something to do with their hands."
-              />
-            </label>
-            <LinkButton href="/admin">Submit for admin review</LinkButton>
-          </form>
+          <CreateEventForm />
         </div>
       </section>
 
-      <section className="bg-[#FFFCF9] py-16">
+      <section className="bg-[#fffdf7] py-16">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           <SectionIntro
             eyebrow="Merchant events"

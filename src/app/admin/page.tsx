@@ -1,36 +1,37 @@
+import { AdminEventQueue } from "@/components/admin-event-queue";
 import { InfoCard, MetricCard, PageHero, Pill, SectionIntro } from "@/components/click-ui";
 import {
   adminModules,
-  clickEvents,
   interestTagCategories,
   securityRows,
 } from "@/lib/click-data";
+import { getAdminEvents } from "@/lib/event-repository";
 
 export const metadata = {
   title: "Admin Portal | Click",
   description: "Click admin portal for moderation, tag governance, security, and analytics.",
 };
 
-export default function AdminPage() {
-  const pendingEvents = clickEvents.filter((event) => event.status === "Pending");
-  const eventsForReview = pendingEvents.length > 0 ? pendingEvents : clickEvents.slice(2, 5);
+export default async function AdminPage() {
+  const eventsForReview = await getAdminEvents();
+  const pendingCount = eventsForReview.filter((event) => event.status === "Pending").length;
 
   return (
-    <main className="min-h-screen bg-[#FFFCF9] text-[#340068]">
+    <main className="min-h-screen bg-[#fffdf7] text-[#1f1f1f]">
       <PageHero
         eyebrow="Admin portal"
         title="Keep the room worth entering."
         body="The admin surface is operational: merchant approval, event moderation, user oversight, tag governance, audit logs, and payment review."
       >
-        <div className="grid grid-cols-2 gap-3">
-          <MetricCard label="Users" value="42k" tone="white" />
-          <MetricCard label="Merchants" value="318" tone="aqua" />
-          <MetricCard label="Events" value="1.2k" tone="pink" />
-          <MetricCard label="Flags" value="26" tone="white" />
-        </div>
-      </PageHero>
+          <div className="grid grid-cols-2 gap-3">
+            <MetricCard label="Users" value="42k" tone="white" />
+            <MetricCard label="Merchants" value="318" tone="aqua" />
+            <MetricCard label="Events" value={eventsForReview.length.toString()} tone="pink" />
+            <MetricCard label="Pending" value={pendingCount.toString()} tone="white" />
+          </div>
+        </PageHero>
 
-      <section className="bg-[#FFFCF9] py-16">
+      <section className="bg-[#fffdf7] py-16">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           <SectionIntro
             eyebrow="Operations"
@@ -51,7 +52,7 @@ export default function AdminPage() {
         </div>
       </section>
 
-      <section className="bg-[#B1EDE8] py-16">
+      <section className="bg-[#d8f3ef] py-16">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           <SectionIntro
             eyebrow="Moderation queue"
@@ -59,36 +60,11 @@ export default function AdminPage() {
             body="Admins verify tags, photos, duplicates, capacity, booking model, and location claims before an event goes live."
           />
 
-          <div className="mt-10 overflow-hidden rounded-lg border-2 border-[#340068] bg-[#FFFCF9] shadow-[8px_8px_0_#340068]">
-            <div className="hidden grid-cols-[1.35fr_0.75fr_0.75fr_0.8fr_0.8fr] gap-4 bg-[#340068] px-4 py-3 text-xs font-black uppercase tracking-[0.14em] text-white md:grid">
-              <span>Event</span>
-              <span>Category</span>
-              <span>Status</span>
-              <span>Booking</span>
-              <span>Action</span>
-            </div>
-            {eventsForReview.map((event) => (
-              <div
-                key={event.id}
-                className="grid gap-3 border-b-2 border-[#340068] px-4 py-4 text-sm font-bold text-[#340068]/68 last:border-0 md:grid-cols-[1.35fr_0.75fr_0.75fr_0.8fr_0.8fr] md:items-center"
-              >
-                <span className="font-black text-[#340068]">{event.title}</span>
-                <span>{event.category}</span>
-                <span>{event.status}</span>
-                <span>{event.booking}</span>
-                <button
-                  type="button"
-                  className="w-fit rounded-full bg-[#340068] px-4 py-2 text-xs font-black text-white"
-                >
-                  Inspect
-                </button>
-              </div>
-            ))}
-          </div>
+          <AdminEventQueue events={eventsForReview} />
         </div>
       </section>
 
-      <section className="bg-[#FFFCF9] py-16">
+      <section className="bg-[#fffdf7] py-16">
         <div className="mx-auto grid max-w-7xl gap-8 px-4 sm:px-6 lg:grid-cols-[0.72fr_1.28fr]">
           <div>
             <SectionIntro
@@ -101,15 +77,15 @@ export default function AdminPage() {
             {interestTagCategories.slice(0, 6).map(([category, ...tags]) => (
               <article
                 key={category}
-                className="rounded-lg border-2 border-[#340068] bg-white p-5 shadow-[6px_6px_0_#340068]"
+                className="rounded-lg border border-black/10 bg-white p-5 shadow-sm"
               >
                 <div className="flex items-center justify-between gap-3">
-                  <h2 className="font-display text-3xl font-black leading-none">
+                  <h2 className="text-3xl font-black leading-none">
                     {category}
                   </h2>
                   <Pill tone="aqua">{tags.length} tags</Pill>
                 </div>
-                <p className="mt-3 text-sm font-bold leading-6 text-[#340068]/62">
+                <p className="mt-3 text-sm font-bold leading-6 text-[#1f1f1f]/62">
                   Merge duplicates, archive stale labels, and cascade updates to linked
                   users, merchants, and events.
                 </p>

@@ -1,35 +1,49 @@
-import { EventCard } from "@/components/event-card";
-import { InfoCard, PageHero, Pill, SectionIntro } from "@/components/click-ui";
-import { categories, clickEvents } from "@/lib/click-data";
+import { EventExplorer } from "@/components/event-explorer";
+import { InfoCard, Pill, SectionIntro } from "@/components/click-ui";
+import { categories } from "@/lib/click-data";
+import { getEventsForExplore } from "@/lib/event-repository";
 
 export const metadata = {
   title: "Events | Click",
-  description: "Click events, RSVP states, FOMO cards, and discovery filters.",
+  description: "Click events, RSVP states, hosted cards, and discovery filters.",
 };
 
-export default function EventsPage() {
-  return (
-    <main className="min-h-screen bg-[#FFFCF9] text-[#340068]">
-      <PageHero
-        eyebrow="Events"
-        title="The event is the relationship container."
-        body="Every event page is state-aware: locked before RSVP, waitlisted when capacity is full, and unlocked once attendance is confirmed."
-      >
-        <div className="grid gap-4 rounded-lg border-2 border-white bg-[#FFFCF9] p-5 text-[#340068] shadow-[8px_8px_0_#B1EDE8]">
-          {[
-            ["Locked", "Approximate distance, FOMO signals, RSVP to unlock full details."],
-            ["Waitlist", "Join without payment, then confirm fast when a spot opens."],
-            ["Unlocked", "Full location, attendee context, and cancellation options."],
-          ].map(([state, body]) => (
-            <div key={state} className="border-b border-[#340068]/15 pb-3 last:border-0 last:pb-0">
-              <p className="font-display text-3xl font-black leading-none">{state}</p>
-              <p className="mt-1 text-sm font-bold leading-5 text-[#340068]/62">{body}</p>
-            </div>
-          ))}
-        </div>
-      </PageHero>
+export default async function EventsPage() {
+  const events = await getEventsForExplore();
 
-      <section className="border-y-4 border-[#340068] bg-[#B1EDE8]">
+  return (
+    <main className="min-h-screen bg-[#fffdf7] text-[#1f1f1f]">
+      <section className="brand-gradient relative overflow-hidden px-4 py-10 text-[#1f1f1f] sm:px-6">
+        <div className="paper-grid absolute inset-0 opacity-70" />
+        <div className="relative z-10 mx-auto grid max-w-7xl gap-7 lg:grid-cols-[0.8fr_1.2fr] lg:items-end">
+          <div>
+            <p className="text-sm font-black uppercase tracking-[0.18em] text-[#008294]">
+              Events
+            </p>
+            <h1 className="mt-3 text-5xl font-black leading-none sm:text-7xl">
+              Find events around you.
+            </h1>
+            <p className="mt-5 max-w-xl text-base font-bold leading-7 text-[#1f1f1f]/66">
+              Share location, search a suburb, or use the quick windows for the
+              next 7 and 30 days.
+            </p>
+          </div>
+          <div className="grid gap-3 rounded-xl border border-black/10 bg-white p-5 text-[#1f1f1f] shadow-sm md:grid-cols-3">
+            {[
+              ["Locked", "RSVP to unlock details."],
+              ["Waitlist", "Confirm when a spot opens."],
+              ["Unlocked", "Full location after RSVP."],
+            ].map(([state, body]) => (
+              <div key={state} className="rounded-lg border border-black/10 bg-white p-4">
+                <p className="text-3xl font-black leading-none">{state}</p>
+                <p className="mt-1 text-sm font-bold leading-5 text-[#1f1f1f]/62">{body}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="border-y border-black/10 bg-[#d8f3ef]">
         <div className="mx-auto flex max-w-7xl gap-2 overflow-x-auto px-4 py-5 sm:px-6">
           {categories.map((category, index) => (
             <Pill key={category} tone={index % 4 === 0 ? "pink" : "white"}>
@@ -39,19 +53,9 @@ export default function EventsPage() {
         </div>
       </section>
 
-      <section className="bg-[#FFFCF9] py-16">
+      <section className="bg-[#fffdf7] py-10">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
-          <SectionIntro
-            eyebrow="Explore"
-            title="Filters are useful. Signals make them feel alive."
-            body="Event cards expose category, booking model, capacity, tags, life signals, and privacy-safe FOMO copy."
-          />
-
-          <div className="mt-10 grid gap-6 lg:grid-cols-3">
-            {clickEvents.map((event) => (
-              <EventCard key={event.id} event={event} />
-            ))}
-          </div>
+          <EventExplorer events={events} />
         </div>
       </section>
 
