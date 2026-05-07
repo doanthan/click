@@ -66,19 +66,19 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
 
           <ul className="mt-8 grid gap-3 text-sm font-semibold text-[color:var(--mauve)]">
             <li className="flex items-start gap-3">
-              <span className="mt-1 grid size-6 shrink-0 place-items-center rounded-full border-2 border-[color:var(--ink)] bg-[color:var(--peach)] text-xs font-bold">
+              <span className="mt-1 grid size-6 shrink-0 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] text-xs font-bold text-[color:var(--surface-deep)]">
                 ✓
               </span>
               Private Clicks stay private until there is mutual interest.
             </li>
             <li className="flex items-start gap-3">
-              <span className="mt-1 grid size-6 shrink-0 place-items-center rounded-full border-2 border-[color:var(--ink)] bg-[color:var(--peach)] text-xs font-bold">
+              <span className="mt-1 grid size-6 shrink-0 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] text-xs font-bold text-[color:var(--surface-deep)]">
                 ✓
               </span>
               Social login uses OAuth. Email uses the Click password flow.
             </li>
             <li className="flex items-start gap-3">
-              <span className="mt-1 grid size-6 shrink-0 place-items-center rounded-full border-2 border-[color:var(--ink)] bg-[color:var(--peach)] text-xs font-bold">
+              <span className="mt-1 grid size-6 shrink-0 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] text-xs font-bold text-[color:var(--surface-deep)]">
                 ✓
               </span>
               30 seconds to RSVP your next plan.
@@ -91,13 +91,13 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
         </div>
 
         {/* ---------- RIGHT: Auth card ---------- */}
-        <div className="relative rounded-3xl border-2 border-[color:var(--ink)] bg-[color:var(--champagne)] hard-shadow">
+        <div className="relative rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow">
           {/* window chrome */}
-          <div className="flex items-center justify-between gap-3 border-b-2 border-[color:var(--ink)] bg-[color:var(--cream)] px-5 py-3">
+          <div className="flex items-center justify-between gap-3 border-b-2 border-[color:var(--line)] bg-[color:var(--cream)] px-5 py-3">
             <div className="flex items-center gap-2">
-              <span className="size-3 rounded-full border-2 border-[color:var(--ink)] bg-[color:var(--rose)]" />
-              <span className="size-3 rounded-full border-2 border-[color:var(--ink)] bg-[color:var(--punch)]" />
-              <span className="size-3 rounded-full border-2 border-[color:var(--ink)] bg-[color:var(--peach)]" />
+              <span className="size-3 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)]" />
+              <span className="size-3 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--punch)]" />
+              <span className="size-3 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)]" />
             </div>
             <span className="font-mono hidden text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)] sm:block">
               ✷ secure sign-in
@@ -113,7 +113,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
                   type="submit"
                   disabled={!googleConfigured}
                   aria-label="Continue with Google"
-                  className="group/btn flex min-h-[58px] w-full items-center justify-center gap-3 rounded-full border-2 border-[color:var(--ink)] bg-[color:var(--champagne)] px-5 text-base font-bold text-[color:var(--ink)] hard-shadow-sm hover:-translate-x-[2px] hover:-translate-y-[2px] hover:[box-shadow:5px_5px_0_0_var(--ink)] hover:bg-[color:var(--cream)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-x-0 disabled:hover:translate-y-0"
+                  className="group/btn flex min-h-[58px] w-full items-center justify-center gap-3 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-5 text-base font-bold text-[color:var(--ink)] hard-shadow-sm hover:-translate-x-[2px] hover:-translate-y-[2px] hover:[box-shadow:5px_5px_0_0_var(--shadow-ink)] hover:bg-[color:var(--cream)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-x-0 disabled:hover:translate-y-0"
                 >
                   <GoogleMark className="size-6 shrink-0" />
                   <span>{googleConfigured ? "Continue with Google" : "Google · setup required"}</span>
@@ -126,7 +126,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
                   type="submit"
                   disabled={!metaConfigured}
                   aria-label="Continue with Facebook"
-                  className="group/btn flex min-h-[58px] w-full items-center justify-center gap-3 rounded-full border-2 border-[color:var(--ink)] bg-[#1877F2] px-5 text-base font-bold text-white hard-shadow-sm hover:-translate-x-[2px] hover:-translate-y-[2px] hover:[box-shadow:5px_5px_0_0_var(--ink)] hover:bg-[#1566d6] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-x-0 disabled:hover:translate-y-0"
+                  className="group/btn flex min-h-[58px] w-full items-center justify-center gap-3 rounded-full border-2 border-[color:var(--line)] bg-[#1877F2] px-5 text-base font-bold text-white hard-shadow-sm hover:-translate-x-[2px] hover:-translate-y-[2px] hover:[box-shadow:5px_5px_0_0_var(--shadow-ink)] hover:bg-[#1566d6] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-x-0 disabled:hover:translate-y-0"
                 >
                   <FacebookMark className="size-6 shrink-0" />
                   <span>{metaConfigured ? "Continue with Facebook" : "Facebook · setup required"}</span>
@@ -136,11 +136,11 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
 
             {/* Divider */}
             <div className="my-7 flex items-center gap-3">
-              <span className="h-[2px] flex-1 bg-[color:var(--ink)]/20" />
+              <span className="h-[2px] flex-1 bg-[color:var(--line-soft)]" />
               <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
                 or with email
               </span>
-              <span className="h-[2px] flex-1 bg-[color:var(--ink)]/20" />
+              <span className="h-[2px] flex-1 bg-[color:var(--line-soft)]" />
             </div>
 
             {/* Email form */}
@@ -156,7 +156,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
                   type="email"
                   required
                   autoComplete="email"
-                  className="rounded-xl border-2 border-[color:var(--ink)] bg-[color:var(--champagne)] px-4 py-3 text-base font-semibold text-[color:var(--ink)] placeholder:text-[color:var(--mauve)]/55 outline-none focus:bg-[color:var(--cream)]"
+                  className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 text-base font-semibold text-[color:var(--ink)] placeholder:text-[color:var(--mauve)]/55 outline-none focus:bg-[color:var(--cream)]"
                   placeholder="you@example.com"
                 />
               </label>
@@ -170,7 +170,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
                   type="password"
                   required
                   autoComplete="current-password"
-                  className="rounded-xl border-2 border-[color:var(--ink)] bg-[color:var(--champagne)] px-4 py-3 text-base font-semibold text-[color:var(--ink)] placeholder:text-[color:var(--mauve)]/55 outline-none focus:bg-[color:var(--cream)]"
+                  className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 text-base font-semibold text-[color:var(--ink)] placeholder:text-[color:var(--mauve)]/55 outline-none focus:bg-[color:var(--cream)]"
                   placeholder="Enter your password"
                 />
               </label>
@@ -178,7 +178,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
               {errorMessage ? (
                 <p
                   role="alert"
-                  className="rounded-xl border-2 border-[color:var(--ink)] bg-[color:var(--rose)] px-4 py-3 text-sm font-bold text-[color:var(--champagne)]"
+                  className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-4 py-3 text-sm font-bold text-[color:var(--surface-deep)]"
                 >
                   {errorMessage}
                 </p>
@@ -186,7 +186,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
 
               <button
                 type="submit"
-                className="group/cta inline-flex min-h-[52px] items-center justify-center gap-2 rounded-full border-2 border-[color:var(--ink)] bg-[color:var(--rose)] px-6 text-sm font-bold uppercase tracking-wide text-[color:var(--champagne)] hard-shadow-sm hover:-translate-x-[2px] hover:-translate-y-[2px] hover:[box-shadow:5px_5px_0_0_var(--ink)] hover:bg-[color:var(--ink)]"
+                className="group/cta inline-flex min-h-[52px] items-center justify-center gap-2 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-6 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:-translate-x-[2px] hover:-translate-y-[2px] hover:[box-shadow:5px_5px_0_0_var(--shadow-ink)] hover:bg-[color:var(--ink)]"
               >
                 Continue with Email
                 <span aria-hidden className="transition-transform group-hover/cta:translate-x-1">→</span>
@@ -194,7 +194,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             </form>
 
             {showDemoCredentials ? (
-              <p className="mt-5 rounded-xl border-2 border-dashed border-[color:var(--ink)] bg-[color:var(--cream)] px-4 py-3 text-sm font-medium text-[color:var(--ink)]">
+              <p className="mt-5 rounded-xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-3 text-sm font-medium text-[color:var(--ink)]">
                 <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
                   ✷ Local demo
                 </span>

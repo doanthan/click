@@ -2,10 +2,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { AIMatchPanel } from "@/components/ai-match-panel";
 import { LinkButton, SectionIntro } from "@/components/click-ui";
-import { EventCard } from "@/components/event-card";
 import {
   architectureLayers,
-  clickEvents,
   groups,
   personaCards,
   roleCards,
@@ -29,8 +27,8 @@ const floatingChips = [
 ];
 
 const chipPalette: Record<string, string> = {
-  peach: "bg-[color:var(--peach)] text-[color:var(--ink)]",
-  rose: "bg-[color:var(--rose)] text-[color:var(--champagne)]",
+  peach: "bg-[color:var(--peach)] text-[color:var(--surface-deep)]",
+  rose: "bg-[color:var(--rose)] text-[color:var(--surface-deep)]",
   ink: "bg-[color:var(--ink)] text-[color:var(--champagne)]",
   cream: "bg-[color:var(--cream)] text-[color:var(--ink)]",
 };
@@ -41,7 +39,7 @@ export default function Home() {
       {/* ============================ MARQUEE STRIP ============================ */}
       <section
         aria-hidden
-        className="border-b-2 border-[color:var(--ink)] bg-[color:var(--ink)] text-[color:var(--peach)]"
+        className="border-b-2 border-[color:var(--surface-deep)] bg-[color:var(--surface-deep)] text-[color:var(--peach)]"
       >
         <div className="marquee py-3">
           {[0, 1, 2].map((dup) => (
@@ -66,14 +64,21 @@ export default function Home() {
         <div className="confetti-field absolute inset-0 opacity-30" aria-hidden />
 
         {/* Floating sticker chips, only on lg+ */}
-        <div className="pointer-events-none absolute inset-0 z-0 hidden lg:block" aria-hidden>
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-0 hidden h-[36rem] lg:block" aria-hidden>
           {floatingChips.map((chip, idx) => (
             <span
               key={chip.label}
-              style={{ animationDelay: `${200 + idx * 110}ms` }}
-              className={`pop-in absolute ${chip.left} ${chip.top} ${chip.rotate} float-slow inline-flex items-center gap-1 rounded-full border-2 border-[color:var(--ink)] px-4 py-2 text-xs font-bold uppercase tracking-wider hard-shadow-sm ${chipPalette[chip.tone]}`}
+              style={{
+                animationDelay: `${200 + idx * 110}ms, ${idx * 600}ms`,
+                animationDuration: `600ms, ${4200 + idx * 350}ms`,
+              }}
+              className={`chip-bob absolute ${chip.left} ${chip.top} inline-block`}
             >
-              ✷ {chip.label}
+              <span
+                className={`${chip.rotate} inline-flex items-center gap-1 rounded-full border-2 border-[color:var(--line)] px-4 py-2 text-xs font-bold uppercase tracking-wider hard-shadow-sm ${chipPalette[chip.tone]}`}
+              >
+                ✷ {chip.label}
+              </span>
             </span>
           ))}
         </div>
@@ -114,7 +119,23 @@ export default function Home() {
 
           {/* AI search panel */}
           <div className="rise rise-d4 mt-10">
-            <AIMatchPanel showEvents={false} title="" />
+            <AIMatchPanel
+              showEvents
+              title=""
+              eventsEyebrow="Events near Sydney"
+              eventsTitle={
+                <>
+                  A few good reasons to{" "}
+                  <span className="italic text-[color:var(--rose)]">leave the house.</span>
+                </>
+              }
+              peopleEyebrow="People recommendations"
+              peopleTitle={
+                <>
+                  People with a <em className="text-[color:var(--rose)]">shared reason</em> to show up.
+                </>
+              }
+            />
           </div>
 
           <div className="rise rise-d5 mt-9 flex flex-wrap items-center justify-center gap-3">
@@ -136,7 +157,7 @@ export default function Home() {
             ].map(([num, label]) => (
               <div
                 key={label as string}
-                className="rounded-2xl border-2 border-[color:var(--ink)] bg-[color:var(--champagne)] px-3 py-4 hard-shadow-sm"
+                className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-4 hard-shadow-sm"
               >
                 <p className="font-display text-3xl font-light italic leading-none text-[color:var(--rose)] sm:text-4xl">
                   {num}
@@ -151,7 +172,7 @@ export default function Home() {
       </section>
 
       {/* ============================ STICKY CATEGORY BAR ============================ */}
-      <section className="border-y-2 border-[color:var(--ink)] bg-[color:var(--cream)]">
+      <section className="border-y-2 border-[color:var(--line)] bg-[color:var(--cream)]">
         <div className="mx-auto flex max-w-7xl items-center gap-3 overflow-x-auto px-4 py-4 sm:px-6">
           <span className="font-mono shrink-0 text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
             Browse →
@@ -169,7 +190,7 @@ export default function Home() {
             <Link
               key={category.label}
               href="/discover"
-              className={`shrink-0 rounded-full border-2 border-[color:var(--ink)] px-4 py-1.5 text-sm font-bold uppercase tracking-wide hard-shadow-sm hover:-translate-x-[1px] hover:-translate-y-[1px] ${
+              className={`shrink-0 rounded-full border-2 border-[color:var(--line)] px-4 py-1.5 text-sm font-bold uppercase tracking-wide hard-shadow-sm hover:-translate-x-[1px] hover:-translate-y-[1px] ${
                 idx % 3 === 0 ? "tilt-l-2" : idx % 3 === 1 ? "tilt-r-2" : ""
               } ${chipPalette[category.tone]}`}
             >
@@ -200,18 +221,18 @@ export default function Home() {
               const accentClass = accents[index];
               const numberBg =
                 accentClass === "rose"
-                  ? "bg-[color:var(--rose)] text-[color:var(--champagne)]"
+                  ? "bg-[color:var(--rose)] text-[color:var(--surface-deep)]"
                   : accentClass === "ink"
                     ? "bg-[color:var(--ink)] text-[color:var(--champagne)]"
-                    : "bg-[color:var(--peach)] text-[color:var(--ink)]";
+                    : "bg-[color:var(--peach)] text-[color:var(--surface-deep)]";
 
               return (
                 <article
                   key={role.title}
-                  className="group relative rounded-3xl border-2 border-[color:var(--ink)] bg-[color:var(--champagne)] p-7 hard-shadow-sm transition-transform duration-300 hover:-translate-y-2 hover:rotate-[-0.7deg] hover:[box-shadow:10px_10px_0_0_var(--ink)]"
+                  className="group relative rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-7 hard-shadow-sm transition-transform duration-300 hover:-translate-y-2 hover:rotate-[-0.7deg] hover:[box-shadow:10px_10px_0_0_var(--shadow-ink)]"
                 >
                   <div
-                    className={`absolute -right-4 -top-5 grid size-16 place-items-center rounded-full border-2 border-[color:var(--ink)] ${numberBg} font-display text-3xl font-light italic hard-shadow-sm`}
+                    className={`absolute -right-4 -top-5 grid size-16 place-items-center rounded-full border-2 border-[color:var(--line)] ${numberBg} font-display text-3xl font-light italic hard-shadow-sm`}
                   >
                     {String(index + 1).padStart(2, "0")}
                   </div>
@@ -244,27 +265,34 @@ export default function Home() {
       </section>
 
       {/* ============================ PERSONAS ============================ */}
-      <section className="relative overflow-hidden border-y-2 border-[color:var(--ink)] bg-[color:var(--peach)] py-20 text-[color:var(--ink)]">
+      <section className="relative overflow-hidden border-y-2 border-[color:var(--surface-deep)] bg-[color:var(--peach)] py-20 text-[color:var(--surface-deep)]">
         <div className="absolute inset-0 stamp-grid opacity-30" aria-hidden />
 
         <div className="relative mx-auto max-w-7xl px-4 sm:px-6">
-          <SectionIntro
-            eyebrow="Local rhythm"
-            title={
-              <>
+          {/* Inline intro — peach band stays peach in both modes, so use
+              constant dark text instead of the flipping --ink token. */}
+          <div className="grid gap-6 lg:grid-cols-[0.78fr_1.22fr] lg:items-end">
+            <div>
+              <p className="font-mono text-[0.72rem] font-bold uppercase tracking-[0.22em] text-[color:var(--surface-deep)]/70">
+                Local rhythm
+              </p>
+              <h2 className="font-display mt-3 text-5xl font-light leading-[0.95] tracking-tight text-[color:var(--surface-deep)] sm:text-6xl">
                 Small rituals beat
                 <br className="hidden md:block" />
                 <em>perfect</em> matches.
-              </>
-            }
-            body="A familiar group, a friendly host, and a reason to show up again are what turn strangers into people you know."
-          />
+              </h2>
+            </div>
+            <p className="text-base font-medium leading-7 text-[color:var(--surface-deep)]/75 lg:max-w-xl lg:justify-self-end">
+              A familiar group, a friendly host, and a reason to show up again
+              are what turn strangers into people you know.
+            </p>
+          </div>
 
           <div className="mt-12 grid gap-5 md:grid-cols-2 lg:grid-cols-4">
             {personaCards.map((persona, idx) => (
               <article
                 key={persona.title}
-                className="group relative rounded-2xl border-2 border-[color:var(--ink)] bg-[color:var(--champagne)] p-6 hard-shadow-sm transition-transform duration-300 hover:-translate-y-1.5 hover:rotate-[-1deg] hover:[box-shadow:8px_8px_0_0_var(--ink)]"
+                className="group relative rounded-2xl border-2 border-[color:var(--surface-deep)] bg-[color:var(--champagne)] p-6 [box-shadow:3px_3px_0_0_var(--surface-deep)] transition-transform duration-300 hover:-translate-y-1.5 hover:rotate-[-1deg] hover:[box-shadow:8px_8px_0_0_var(--surface-deep)]"
                 style={{ transform: idx % 2 === 0 ? "rotate(-0.6deg)" : "rotate(0.5deg)" }}
               >
                 <span className="font-display absolute -top-5 left-5 text-7xl font-light italic leading-none text-[color:var(--rose)]">
@@ -288,40 +316,8 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ============================ EVENTS ============================ */}
-      <section className="relative bg-[color:var(--champagne)] py-20">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6">
-          <div className="flex flex-wrap items-end justify-between gap-6">
-            <div className="max-w-2xl">
-              <p className="eyebrow">Events near Sydney</p>
-              <h2 className="font-display mt-3 text-5xl font-light leading-[0.95] tracking-tight sm:text-6xl">
-                A few good reasons to{" "}
-                <span className="italic text-[color:var(--rose)]">leave the house.</span>
-              </h2>
-              <p className="mt-4 text-base font-medium leading-7 text-[color:var(--mauve)] sm:text-lg">
-                The best events feel specific, hosted, and easy to join. Date,
-                host, who&apos;s going, and why the room works.
-              </p>
-            </div>
-            <Link
-              href="/events"
-              className="group inline-flex items-center gap-2 rounded-full border-2 border-[color:var(--ink)] bg-[color:var(--ink)] px-5 py-3 text-sm font-bold uppercase tracking-wide text-[color:var(--champagne)] hard-shadow-sm hover:bg-[color:var(--rose)]"
-            >
-              All events
-              <span className="transition-transform group-hover:translate-x-1">→</span>
-            </Link>
-          </div>
-
-          <div className="mt-10 grid gap-6 lg:grid-cols-3">
-            {clickEvents.slice(0, 3).map((event) => (
-              <EventCard key={event.id} event={event} compact />
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* ============================ GROUPS — JOIN ONCE ============================ */}
-      <section className="relative overflow-hidden border-t-2 border-[color:var(--ink)] bg-[color:var(--ink)] py-20 text-[color:var(--champagne)]">
+      <section className="relative overflow-hidden border-t-2 border-[color:var(--surface-deep)] bg-[color:var(--surface-deep)] py-20 text-[color:var(--on-deep)]">
         <div className="absolute inset-0 confetti-field opacity-20" aria-hidden />
         <SunRays className="absolute -left-12 top-12 spin-slow text-[color:var(--peach)]/40" size={220} />
         <SunRays className="absolute -right-16 bottom-12 spin-slow text-[color:var(--rose)]/40" size={180} />
@@ -329,13 +325,13 @@ export default function Home() {
         <div className="relative mx-auto grid max-w-7xl gap-12 px-4 sm:px-6 lg:grid-cols-[0.85fr_1.15fr] lg:items-center">
           <div>
             <p className="eyebrow !text-[color:var(--peach)]">Groups for common people</p>
-            <h2 className="font-display mt-4 text-5xl font-light leading-[0.95] tracking-tight text-[color:var(--champagne)] sm:text-6xl lg:text-7xl">
+            <h2 className="font-display mt-4 text-5xl font-light leading-[0.95] tracking-tight text-[color:var(--on-deep)] sm:text-6xl lg:text-7xl">
               Join <span className="italic text-[color:var(--peach)]">once.</span>{" "}
               Show up{" "}
               <span className="italic text-[color:var(--rose)]">twice.</span>{" "}
               Become <span className="font-script text-[1.1em] text-[color:var(--peach)]">familiar.</span>
             </h2>
-            <p className="mt-6 text-base font-medium leading-7 text-[color:var(--champagne)]/72 sm:text-lg">
+            <p className="mt-6 text-base font-medium leading-7 text-[color:var(--on-deep)]/72 sm:text-lg">
               Click favors recurring groups because relationships rarely start in
               a single perfect moment. They start when ordinary people keep
               crossing paths.
@@ -351,19 +347,19 @@ export default function Home() {
             {groups.map((group, idx) => (
               <article
                 key={group.name}
-                className="group relative rounded-2xl border-2 border-[color:var(--peach)] bg-[color:var(--ink-deep)] p-6 transition-transform duration-300 hover:-translate-y-1 hover:rotate-[-0.5deg]"
+                className="group relative rounded-2xl border-2 border-[color:var(--peach)] bg-[color:var(--surface-deep-2)] p-6 transition-transform duration-300 hover:-translate-y-1 hover:rotate-[-0.5deg]"
                 style={{ transform: idx % 2 === 0 ? "translateY(0)" : "translateY(18px)" }}
               >
                 <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--peach)]">
                   {group.cadence}
                 </p>
-                <h3 className="font-display mt-3 text-3xl font-light leading-tight text-[color:var(--champagne)]">
+                <h3 className="font-display mt-3 text-3xl font-light leading-tight text-[color:var(--on-deep)]">
                   {group.name}
                 </h3>
                 <p className="mt-2 text-sm font-bold text-[color:var(--peach)]">
                   {group.members} members · {group.category}
                 </p>
-                <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--champagne)]/72">
+                <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--on-deep)]/72">
                   {group.focus}
                 </p>
                 <div className="mt-5 inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[color:var(--peach)] transition group-hover:gap-3">
@@ -380,7 +376,7 @@ export default function Home() {
         <div className="mx-auto grid max-w-7xl gap-12 px-4 sm:px-6 lg:grid-cols-[0.95fr_1.05fr] lg:items-center">
           {/* polaroid */}
           <div className="relative">
-            <div className="tilt-l-3 relative rounded-md border-2 border-[color:var(--ink)] bg-[color:var(--champagne)] p-3 hard-shadow-lg">
+            <div className="tilt-l-3 relative rounded-md border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-3 hard-shadow-lg">
               <div className="relative h-[420px] overflow-hidden rounded-sm">
                 <Image
                   src="/media/networking.jpg"
@@ -426,9 +422,9 @@ export default function Home() {
               {architectureLayers.map(([layer, body], idx) => (
                 <article
                   key={layer}
-                  className="group flex gap-5 rounded-2xl border-2 border-[color:var(--ink)] bg-[color:var(--champagne)] p-5 hard-shadow-sm transition-transform duration-300 hover:-translate-x-1 hover:-translate-y-1"
+                  className="group flex gap-5 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-5 hard-shadow-sm transition-transform duration-300 hover:-translate-x-1 hover:-translate-y-1"
                 >
-                  <span className="font-display grid size-14 shrink-0 place-items-center rounded-full border-2 border-[color:var(--ink)] bg-[color:var(--peach)] text-2xl font-light italic">
+                  <span className="font-display grid size-14 shrink-0 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] text-2xl font-light italic text-[color:var(--surface-deep)]">
                     {idx + 1}
                   </span>
                   <div>
@@ -447,7 +443,7 @@ export default function Home() {
       </section>
 
       {/* ============================ BIG CTA ============================ */}
-      <section className="relative overflow-hidden border-t-2 border-[color:var(--ink)] bg-[color:var(--rose)] py-20 text-[color:var(--champagne)]">
+      <section className="relative overflow-hidden border-t-2 border-[color:var(--line)] bg-[color:var(--rose)] py-20 text-[color:var(--surface-deep)]">
         <div className="confetti-field absolute inset-0 opacity-25" aria-hidden />
         <div className="relative mx-auto max-w-5xl px-4 text-center sm:px-6">
           <p className="font-mono text-[0.75rem] font-bold uppercase tracking-[0.22em] text-[color:var(--peach)]">

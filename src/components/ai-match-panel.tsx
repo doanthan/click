@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   animatedPrompts,
+  avatarFor,
   clickEvents,
   peopleCards,
   starterPrompts,
@@ -16,12 +17,20 @@ type AIMatchPanelProps = {
   defaultPrompt?: string;
   showEvents?: boolean;
   title?: string;
+  eventsEyebrow?: string;
+  eventsTitle?: React.ReactNode;
+  peopleEyebrow?: string;
+  peopleTitle?: React.ReactNode;
 };
 
 export function AIMatchPanel({
   defaultPrompt = starterPrompts[0],
   showEvents = true,
   title = "Click conversation",
+  eventsEyebrow = "Events near you",
+  eventsTitle = "Plans that make the first hello easier.",
+  peopleEyebrow = "People recommendations",
+  peopleTitle,
 }: AIMatchPanelProps) {
   const [events, setEvents] = useState<EventItem[]>(clickEvents);
   const [query, setQuery] = useState("");
@@ -118,12 +127,12 @@ export function AIMatchPanel({
 
   return (
     <div className="w-full">
-      <section className="relative mx-auto w-full max-w-[calc(100vw-2rem)] overflow-hidden rounded-3xl border-2 border-[color:var(--ink)] bg-[color:var(--champagne)] text-left text-[color:var(--ink)] hard-shadow sm:max-w-5xl">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-[color:var(--ink)] bg-[color:var(--cream)] px-4 py-3">
+      <section className="relative mx-auto w-full max-w-[calc(100vw-2rem)] overflow-hidden rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] text-left text-[color:var(--ink)] hard-shadow sm:max-w-5xl">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-3">
           <div className="flex items-center gap-2">
-            <span className="size-3 rounded-full border-2 border-[color:var(--ink)] bg-[color:var(--rose)]" />
-            <span className="size-3 rounded-full border-2 border-[color:var(--ink)] bg-[color:var(--punch)]" />
-            <span className="size-3 rounded-full border-2 border-[color:var(--ink)] bg-[color:var(--peach)]" />
+            <span className="size-3 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)]" />
+            <span className="size-3 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--punch)]" />
+            <span className="size-3 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)]" />
           </div>
           {title ? (
             <span className="font-mono hidden text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)] sm:block">
@@ -146,7 +155,7 @@ export function AIMatchPanel({
                 submitPrompt();
               }
             }}
-            className="font-display min-h-40 w-full resize-none rounded-2xl border-2 border-[color:var(--ink)] bg-[color:var(--champagne)] px-5 py-4 text-2xl font-light italic leading-tight text-[color:var(--ink)] outline-none placeholder:text-[color:var(--mauve)]/55 focus:bg-[color:var(--cream)] sm:min-h-48 sm:text-3xl"
+            className="font-display min-h-40 w-full resize-none rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-4 text-2xl font-light italic leading-tight text-[color:var(--ink)] outline-none placeholder:text-[color:var(--mauve)]/55 focus:bg-[color:var(--cream)] sm:min-h-48 sm:text-3xl"
             placeholder={animatedPlaceholder ? `${animatedPlaceholder}|` : ""}
           />
           <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -156,8 +165,10 @@ export function AIMatchPanel({
                   type="button"
                   key={prompt}
                   onClick={() => submitPrompt(prompt)}
-                  className={`max-w-full rounded-full border-2 border-[color:var(--ink)] px-4 py-2 text-left text-xs font-bold text-[color:var(--ink)] hard-shadow-sm hover:-translate-x-[1px] hover:-translate-y-[1px] ${
-                    index % 2 === 0 ? "bg-[color:var(--peach)]" : "bg-[color:var(--cream)]"
+                  className={`max-w-full rounded-full border-2 border-[color:var(--line)] px-4 py-2 text-left text-xs font-bold hard-shadow-sm hover:-translate-x-[1px] hover:-translate-y-[1px] ${
+                    index % 2 === 0
+                      ? "bg-[color:var(--peach)] text-[color:var(--surface-deep)]"
+                      : "bg-[color:var(--cream)] text-[color:var(--ink)]"
                   }`}
                 >
                   {prompt}
@@ -166,7 +177,7 @@ export function AIMatchPanel({
             </div>
             <button
               type="submit"
-              className="group/cta inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-full border-2 border-[color:var(--ink)] bg-[color:var(--rose)] px-6 text-sm font-bold uppercase tracking-wide text-[color:var(--champagne)] hard-shadow hover:bg-[color:var(--ink)]"
+              className="group/cta inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-6 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow hover:bg-[color:var(--ink)]"
             >
               Find my people
               <span aria-hidden className="inline-block transition-transform duration-300 group-hover/cta:translate-x-1">→</span>
@@ -179,9 +190,9 @@ export function AIMatchPanel({
         <div className="mx-auto mt-12 max-w-7xl">
           <div className="flex flex-wrap items-end justify-between gap-3 text-[color:var(--ink)]">
             <div>
-              <p className="eyebrow">Events near you</p>
-              <h2 className="font-display mt-2 text-4xl font-light leading-tight">
-                Plans that make the first hello easier.
+              <p className="eyebrow">{eventsEyebrow}</p>
+              <h2 className="font-display mt-2 text-4xl font-light leading-tight sm:text-5xl">
+                {eventsTitle}
               </h2>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -201,9 +212,13 @@ export function AIMatchPanel({
       <div className="mx-auto mt-12 max-w-7xl">
         <div className="flex flex-wrap items-center justify-between gap-3 text-[color:var(--ink)]">
           <div>
-            <p className="eyebrow">People recommendations</p>
-            <h2 className="font-display mt-2 text-4xl font-light leading-tight">
-              People with a <em className="text-[color:var(--rose)]">shared reason</em> to show up.
+            <p className="eyebrow">{peopleEyebrow}</p>
+            <h2 className="font-display mt-2 text-4xl font-light leading-tight sm:text-5xl">
+              {peopleTitle ?? (
+                <>
+                  People with a <em className="text-[color:var(--rose)]">shared reason</em> to show up.
+                </>
+              )}
             </h2>
           </div>
           {!showEvents ? (
@@ -219,19 +234,27 @@ export function AIMatchPanel({
             const event = events.find((item) => item.id === person.nextEventId);
             const connected = connectedPeople.includes(person.id);
             const joined = event ? joinedEvents.includes(event.id) : false;
-            const accentBg = idx % 3 === 0 ? "bg-[color:var(--peach)]" : idx % 3 === 1 ? "bg-[color:var(--rose)] text-[color:var(--champagne)]" : "bg-[color:var(--cream)]";
+            const accentBg = idx % 3 === 0 ? "bg-[color:var(--peach)]" : idx % 3 === 1 ? "bg-[color:var(--rose)] text-[color:var(--surface-deep)]" : "bg-[color:var(--cream)]";
 
             return (
               <article
                 key={person.id}
-                className="group relative rounded-2xl border-2 border-[color:var(--ink)] bg-[color:var(--champagne)] p-5 text-[color:var(--ink)] hard-shadow-sm transition-transform duration-300 hover:-translate-y-1 hover:rotate-[-0.5deg] hover:[box-shadow:8px_8px_0_0_var(--ink)]"
+                className="group relative rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-5 text-[color:var(--ink)] hard-shadow-sm transition-transform duration-300 hover:-translate-y-1 hover:rotate-[-0.5deg] hover:[box-shadow:8px_8px_0_0_var(--shadow-ink)]"
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-center gap-3">
                     <span
-                      className={`grid size-14 place-items-center rounded-full border-2 border-[color:var(--ink)] ${accentBg} font-display text-2xl font-light italic`}
+                      className={`relative grid size-14 shrink-0 place-items-center overflow-hidden rounded-full border-2 border-[color:var(--line)] ${accentBg} font-display text-2xl font-light italic`}
                     >
-                      {person.initials}
+                      <span aria-hidden className="absolute inset-0 grid place-items-center">
+                        {person.initials}
+                      </span>
+                      <img
+                        src={avatarFor(person)}
+                        alt={`${person.name} portrait`}
+                        loading="lazy"
+                        className="relative z-10 h-full w-full object-cover"
+                      />
                     </span>
                     <div>
                       <h3 className="font-display text-3xl font-light leading-tight">{person.name}</h3>
@@ -240,14 +263,14 @@ export function AIMatchPanel({
                       </p>
                     </div>
                   </div>
-                  <span className="rounded-full border-2 border-[color:var(--ink)] bg-[color:var(--peach)] px-3 py-1 text-[0.65rem] font-bold uppercase tracking-wider">
+                  <span className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-3 py-1 text-[0.65rem] font-bold uppercase tracking-wider text-[color:var(--surface-deep)]">
                     Good fit
                   </span>
                 </div>
                 <p className="mt-4 text-sm font-medium leading-6 text-[color:var(--mauve)]">
                   {person.bio}
                 </p>
-                <p className="mt-3 rounded-xl border-2 border-dashed border-[color:var(--ink)] bg-[color:var(--cream)] p-3 text-sm font-bold leading-6">
+                <p className="mt-3 rounded-xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-3 text-sm font-bold leading-6">
                   ✷ {person.matchReason}
                 </p>
                 <div className="mt-4 flex flex-wrap gap-1.5">
@@ -259,7 +282,7 @@ export function AIMatchPanel({
                   <button
                     type="button"
                     onClick={() => connectWithPerson(person.id)}
-                    className="rounded-full border-2 border-[color:var(--ink)] bg-[color:var(--rose)] px-4 py-3 text-sm font-bold text-[color:var(--champagne)] hard-shadow-sm hover:bg-[color:var(--ink)]"
+                    className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-4 py-3 text-sm font-bold text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)]"
                   >
                     {connected ? "Clicked privately ✓" : "Click with them"}
                   </button>
@@ -267,7 +290,7 @@ export function AIMatchPanel({
                     <button
                       type="button"
                       onClick={() => joinEvent(event.id)}
-                      className="rounded-full border-2 border-[color:var(--ink)] bg-[color:var(--champagne)] px-4 py-3 text-sm font-bold text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+                      className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 text-sm font-bold text-[color:var(--ink)] hover:bg-[color:var(--peach)] hover:text-[color:var(--surface-deep)]"
                     >
                       {joined ? "Event joined ✓" : "Join event"}
                     </button>

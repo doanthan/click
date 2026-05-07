@@ -1,0 +1,40 @@
+<svg width="100%" viewBox="0 0 680 280" xmlns="http://www.w3.org/2000/svg" role="img" style="">
+<title style="fill:rgb(0, 0, 0);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto">Click. logo with warm pink blob mascot</title>
+<desc style="fill:rgb(0, 0, 0);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto">A friendly rounded blob mascot in Warm Rose pink with a small curl on top, paired with the Click. wordmark in Indigo Ink ending in a Soft Peach period.</desc>
+
+<!-- BLOB MASCOT (left side) -->
+<!-- Little curl/sprout on top -->
+<path d="M 138 60 C 132 56, 128 62, 132 66 C 136 70, 142 66, 140 62" fill="none" stroke="#340068" stroke-width="3.5" stroke-linecap="round" style="fill:none;stroke:rgb(52, 0, 104);color:rgb(255, 255, 255);stroke-width:3.5px;stroke-linecap:round;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+
+<!-- Main blob body in Warm Rose -->
+<path d="M 130 95 C 80 95, 50 130, 50 170 C 50 220, 95 245, 150 245 C 215 245, 260 230, 260 175 C 260 135, 235 110, 195 100 C 175 95, 155 92, 130 95 Z" fill="#E8736A" stroke="#340068" stroke-width="3.5" stroke-linejoin="round" style="fill:rgb(232, 115, 106);stroke:rgb(52, 0, 104);color:rgb(255, 255, 255);stroke-width:3.5px;stroke-linecap:butt;stroke-linejoin:round;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+
+<!-- Soft Peach blush cheeks -->
+<ellipse cx="95" cy="190" rx="14" ry="8" fill="#FBBF9A" opacity="0.7" style="fill:rgb(251, 191, 154);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:0.7;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+<ellipse cx="225" cy="190" rx="14" ry="8" fill="#FBBF9A" opacity="0.7" style="fill:rgb(251, 191, 154);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:0.7;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+
+<!-- Eyes -->
+<ellipse cx="125" cy="170" rx="7" ry="9" fill="#340068" style="fill:rgb(52, 0, 104);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto">
+  <animate attributeName="ry" values="9;9;0.5;9" keyTimes="0;0.96;0.98;1" dur="6s" repeatCount="indefinite"/>
+</ellipse>
+<ellipse cx="195" cy="170" rx="7" ry="9" fill="#340068" style="fill:rgb(52, 0, 104);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto">
+  <animate attributeName="ry" values="9;9;0.5;9" keyTimes="0;0.96;0.98;1" dur="6s" repeatCount="indefinite"/>
+</ellipse>
+
+<!-- Eye highlights -->
+<circle cx="127" cy="167" r="2" fill="#FFF8EE" style="fill:rgb(255, 248, 238);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto">
+  <animate attributeName="opacity" values="1;1;0;1" keyTimes="0;0.96;0.98;1" dur="6s" repeatCount="indefinite"/>
+</circle>
+<circle cx="197" cy="167" r="2" fill="#FFF8EE" style="fill:rgb(255, 248, 238);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto">
+  <animate attributeName="opacity" values="1;1;0;1" keyTimes="0;0.96;0.98;1" dur="6s" repeatCount="indefinite"/>
+</circle>
+
+<!-- Smile -->
+<path d="M 148 198 Q 155 212, 162 202 Q 165 198, 168 202 Q 175 212, 182 198" fill="none" stroke="#340068" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="fill:none;stroke:rgb(52, 0, 104);color:rgb(255, 255, 255);stroke-width:3px;stroke-linecap:round;stroke-linejoin:round;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+
+<!-- WORDMARK -->
+<text x="295" y="200" font-family="var(--font-sans)" font-size="120" font-weight="500" fill="#340068" letter-spacing="-4" style="fill:rgb(52, 0, 104);stroke:none;color:rgb(255, 255, 255);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, sans-serif;font-size:120px;font-weight:500;text-anchor:start;dominant-baseline:auto">Click</text>
+
+<!-- Period in Soft Peach -->
+<circle cx="595" cy="195" r="11" fill="#FBBF9A" stroke="#340068" stroke-width="2.5" style="fill:rgb(251, 191, 154);stroke:rgb(52, 0, 104);color:rgb(255, 255, 255);stroke-width:2.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+</svg>

@@ -21,11 +21,12 @@ export default async function EventsPage() {
               Events
             </p>
             <h1 className="mt-3 text-5xl font-black leading-none sm:text-7xl">
-              Find events around you.
+              Find the easiest plan near you.
             </h1>
             <p className="mt-5 max-w-xl text-base font-bold leading-7 text-[#1f1f1f]/66">
-              Share location, search a suburb, or use the quick windows for the
-              next 7 and 30 days.
+              Search by vibe, suburb, food, date, or price. Quick picks surface
+              restaurant meetups, free plans, and small groups without making
+              people wrestle with filters.
             </p>
           </div>
           <div className="grid gap-3 rounded-xl border border-black/10 bg-white p-5 text-[#1f1f1f] shadow-sm md:grid-cols-3">

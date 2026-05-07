@@ -9,14 +9,14 @@ export function EventCard({ event, compact = false }: { event: EventItem; compac
   const fullness = Math.min((event.attendees / event.capacity) * 100, 100);
   const statusTone =
     event.status === "Waitlist"
-      ? "bg-[color:var(--rose)] text-[color:var(--champagne)]"
+      ? "bg-[color:var(--rose)] text-[color:var(--surface-deep)]"
       : event.status === "Locked"
         ? "bg-[color:var(--ink)] text-[color:var(--champagne)]"
-        : "bg-[color:var(--peach)] text-[color:var(--ink)]";
+        : "bg-[color:var(--peach)] text-[color:var(--surface-deep)]";
 
   return (
-    <article className="group relative overflow-hidden rounded-2xl border-2 border-[color:var(--ink)] bg-[color:var(--champagne)] transition-transform duration-300 hover:-translate-y-1 hover:rotate-[-0.4deg] hard-shadow-sm hover:[box-shadow:8px_8px_0_0_var(--ink)]">
-      <div className={`relative overflow-hidden border-b-2 border-[color:var(--ink)] ${compact ? "h-44" : "h-60"}`}>
+    <article className="group relative overflow-hidden rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] transition-transform duration-300 hover:-translate-y-1 hover:rotate-[-0.4deg] hard-shadow-sm hover:[box-shadow:8px_8px_0_0_var(--shadow-ink)]">
+      <div className={`relative overflow-hidden border-b-2 border-[color:var(--line)] ${compact ? "h-44" : "h-60"}`}>
         <Image
           src={event.image}
           alt={event.imageAlt}
@@ -26,16 +26,16 @@ export function EventCard({ event, compact = false }: { event: EventItem; compac
         />
         <div className="absolute inset-0 bg-gradient-to-t from-[color:var(--ink)]/30 via-transparent to-transparent" />
         <span
-          className={`absolute left-3 top-3 rounded-full border-2 border-[color:var(--ink)] ${statusTone} px-3 py-1.5 text-[0.7rem] font-bold uppercase tracking-wider hard-shadow-sm`}
+          className={`absolute left-3 top-3 rounded-full border-2 border-[color:var(--line)] ${statusTone} px-3 py-1.5 text-[0.7rem] font-bold uppercase tracking-wider hard-shadow-sm`}
         >
           {event.status}
         </span>
-        <span className="absolute bottom-3 right-3 rounded-full border-2 border-[color:var(--ink)] bg-[color:var(--champagne)] px-3 py-1.5 text-[0.7rem] font-bold uppercase tracking-wider text-[color:var(--ink)] hard-shadow-sm">
+        <span className="absolute bottom-3 right-3 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-1.5 text-[0.7rem] font-bold uppercase tracking-wider text-[color:var(--ink)] hard-shadow-sm">
           {event.booking}
         </span>
       </div>
       <div className="p-5">
-        <p className="font-mono text-xs font-bold uppercase tracking-[0.16em] text-[color:var(--rose)]">
+        <p className="font-mono text-xs font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
           {event.date} · {event.time}
         </p>
         <h3 className="font-display mt-2 text-[1.65rem] font-light leading-[1.04] text-[color:var(--ink)]">
@@ -54,7 +54,7 @@ export function EventCard({ event, compact = false }: { event: EventItem; compac
           ))}
         </div>
 
-        <div className="mt-5 rounded-xl border-2 border-dashed border-[color:var(--ink)] bg-[color:var(--cream)] p-3">
+        <div className="mt-5 rounded-xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-3">
           <p className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
             why it feels easy ✷
           </p>
@@ -66,7 +66,7 @@ export function EventCard({ event, compact = false }: { event: EventItem; compac
             <span>{event.location}</span>
             <span>{formatCapacity(event)}</span>
           </div>
-          <div className="mt-2 h-2 overflow-hidden rounded-full border border-[color:var(--ink)] bg-[color:var(--champagne)]">
+          <div className="mt-2 h-2 overflow-hidden rounded-full border border-[color:var(--line)] bg-[color:var(--champagne)]">
             <div className="h-full rounded-full bg-[color:var(--rose)]" style={{ width: `${fullness}%` }} />
           </div>
         </div>
@@ -75,7 +75,7 @@ export function EventCard({ event, compact = false }: { event: EventItem; compac
           <EventRegistrationButton eventId={event.id} />
           <Link
             href="/dashboard"
-            className="rounded-full border-2 border-[color:var(--ink)] bg-[color:var(--champagne)] px-4 py-3 text-center text-sm font-bold text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 text-center text-sm font-bold text-[color:var(--ink)] hover:bg-[color:var(--peach)] hover:text-[color:var(--surface-deep)]"
           >
             Save
           </Link>

@@ -1,4 +1,6 @@
 import type { Session } from "next-auth";
+import { mkdir, readFile, writeFile } from "fs/promises";
+import path from "path";
 import { clickEvents, type EventItem, type EventStatus } from "./click-data";
 import { getPostgresPool } from "./postgres";
 
@@ -32,6 +34,11 @@ type ProfileRow = {
   role: "attendee" | "merchant" | "admin";
   email: string;
   display_name: string;
+};
+
+type LocalEventStore = {
+  events: EventItem[];
+  registrations: Record<string, Record<string, "confirmed" | "waitlisted">>;
 };
 
 export type CreateEventInput = {
@@ -76,6 +83,9 @@ const sydneyReference = {
   lat: -33.8688,
   lng: 151.2093,
 };
+
+const localStorePath = path.join(process.cwd(), ".data", "click-events.json");
+const emptyLocalStore: LocalEventStore = { events: [], registrations: {} };
 
 function distanceKmFromSydney(lat: number, lng: number) {
   const radiusKm = 6371;
@@ -181,9 +191,10 @@ function parsePriceCents(price: string) {
 }
 
 function imageForCategory(category: string) {
+  if (category === "Food") return "/media/networking.jpg";
   if (category === "Fitness") return "/media/yoga.jpg";
   if (category === "Relationships" || category === "Career") return "/media/networking.jpg";
-  if (category === "Creative" || category === "Food") return "/media/concert.jpg";
+  if (category === "Creative") return "/media/concert.jpg";
   return "/media/open-yoga.jpg";
 }
 
@@ -199,12 +210,177 @@ function databaseUnavailableError() {
   return error;
 }
 
+function isDatabaseConnectivityError(error: unknown) {
+  if (!(error instanceof Error)) return false;
+
+  const code = (error as { code?: string }).code;
+
+  return (
+    error.name === "AggregateError" ||
+    error.name === "DatabaseUnavailableError" ||
+    code === "ECONNREFUSED" ||
+    code === "ENOTFOUND" ||
+    code === "EHOSTUNREACH" ||
+    code === "ETIMEDOUT" ||
+    code === "SELF_SIGNED_CERT_IN_CHAIN"
+  );
+}
+
 function getSessionEmail(session: Session | null) {
   return session?.user?.email?.trim().toLowerCase() ?? "";
 }
 
 function getSessionName(session: Session | null) {
   return session?.user?.name?.trim() || getSessionEmail(session) || "Click member";
+}
+
+async function readLocalStore(): Promise<LocalEventStore> {
+  try {
+    const rawStore = await readFile(localStorePath, "utf8");
+    const parsed = JSON.parse(rawStore) as Partial<LocalEventStore>;
+
+    return {
+      events: Array.isArray(parsed.events) ? parsed.events : [],
+      registrations:
+        parsed.registrations && typeof parsed.registrations === "object"
+          ? parsed.registrations
+          : {},
+    };
+  } catch {
+    return emptyLocalStore;
+  }
+}
+
+async function writeLocalStore(store: LocalEventStore) {
+  await mkdir(path.dirname(localStorePath), { recursive: true });
+  await writeFile(localStorePath, `${JSON.stringify(store, null, 2)}\n`, "utf8");
+}
+
+async function getFallbackEvents({ includePending = false } = {}) {
+  const store = await readLocalStore();
+  const knownIds = new Set(clickEvents.map((event) => event.id));
+  const localEvents = store.events.filter(
+    (event) => !knownIds.has(event.id) && (includePending || event.status !== "Pending"),
+  );
+
+  return [...clickEvents, ...localEvents];
+}
+
+function requireLocalSession(session: Session | null) {
+  const email = getSessionEmail(session);
+  if (!email) throw authError();
+
+  return {
+    email,
+    displayName: getSessionName(session),
+  };
+}
+
+function eventItemFromInput(input: CreateEventInput, session: Session | null): EventItem {
+  const localProfile = requireLocalSession(session);
+  const title = input.title.trim();
+  const description = input.description.trim();
+  const startsAt = new Date(input.startsAt);
+  const category = input.category.trim() || "Social";
+  const capacity = Math.max(input.capacity, 1);
+
+  if (!title || !description || Number.isNaN(startsAt.getTime())) {
+    const error = new Error("Title, description, and valid start date are required.");
+    error.name = "ValidationError";
+    throw error;
+  }
+
+  const slug = `${slugFromTitle(title)}-${Date.now().toString(36)}`;
+  const priceCents = parsePriceCents(input.price);
+  const tags = input.tags
+    .split(",")
+    .map((tag) => tag.trim().toLowerCase())
+    .filter(Boolean)
+    .slice(0, 8);
+
+  return {
+    id: slug,
+    title,
+    group: input.groupName.trim() || `${localProfile.displayName}'s Group`,
+    host: localProfile.displayName,
+    category,
+    date: formatDate(startsAt),
+    time: formatTime(startsAt),
+    startsAt: startsAt.toISOString(),
+    location: input.locationName.trim() || "Sydney NSW",
+    suburb: input.suburb.trim() || "Sydney",
+    distanceKm: distanceKmFromSydney(sydneyReference.lat, sydneyReference.lng),
+    lat: sydneyReference.lat,
+    lng: sydneyReference.lng,
+    price: formatPrice(priceCents),
+    attendees: 0,
+    capacity,
+    image: imageForCategory(category),
+    imageAlt: "Community event listing",
+    description,
+    tags,
+    lifeSignals: ["Host submitted", "Pending review"],
+    fomo: "Submitted through the easy host form for admin review.",
+    status: "Pending",
+    booking: "Click-managed",
+    relationshipGoal:
+      input.relationshipGoal.trim() || "Help people meet through a shared plan.",
+  };
+}
+
+async function createLocalEventForMerchant(input: CreateEventInput, session: Session | null) {
+  const event = eventItemFromInput(input, session);
+  const store = await readLocalStore();
+
+  await writeLocalStore({
+    ...store,
+    events: [event, ...store.events.filter((item) => item.id !== event.id)],
+  });
+
+  return {
+    slug: event.id,
+    title: event.title,
+  };
+}
+
+async function registerLocallyForEvent(eventId: string, session: Session | null) {
+  const localProfile = requireLocalSession(session);
+  const store = await readLocalStore();
+  const event = (await getFallbackEvents({ includePending: true })).find(
+    (item) => item.id === eventId,
+  );
+
+  if (!event) {
+    const error = new Error("Event not found.");
+    error.name = "NotFoundError";
+    throw error;
+  }
+
+  const eventRegistrations = store.registrations[eventId] ?? {};
+  const confirmedLocalCount = Object.values(eventRegistrations).filter(
+    (status) => status === "confirmed",
+  ).length;
+  const status =
+    event.status === "Waitlist" ||
+    event.attendees + confirmedLocalCount >= event.capacity
+      ? "waitlisted"
+      : "confirmed";
+
+  await writeLocalStore({
+    ...store,
+    registrations: {
+      ...store.registrations,
+      [eventId]: {
+        ...eventRegistrations,
+        [localProfile.email]: status,
+      },
+    },
+  });
+
+  return {
+    eventTitle: event.title,
+    status,
+  };
 }
 
 async function ensureProfileForSession(
@@ -257,7 +433,7 @@ async function requireAdminProfile(session: Session | null) {
 export async function getEventsForExplore() {
   const pool = getPostgresPool();
 
-  if (!pool) return clickEvents;
+  if (!pool) return getFallbackEvents();
 
   try {
     const result = await pool.query<EventRow>(`
@@ -307,213 +483,229 @@ export async function getEventsForExplore() {
       console.warn("Falling back to static Click events because Postgres is unavailable.", error);
     }
 
-    return clickEvents;
+    return getFallbackEvents();
   }
 }
 
 export async function registerForEvent(eventId: string, session: Session | null) {
   const pool = getPostgresPool();
-  const profile = await ensureProfileForSession(session, "attendee");
 
-  if (!pool) throw databaseUnavailableError();
-
-  const client = await pool.connect();
+  if (!pool) return registerLocallyForEvent(eventId, session);
 
   try {
-    await client.query("begin");
+    const profile = await ensureProfileForSession(session, "attendee");
+    const client = await pool.connect();
 
-    const eventResult = await client.query<{
-      id: string;
-      title: string;
-      capacity: number;
-      status: string;
-      confirmed_attendees: string;
-    }>(
-      `
-        select
-          event.id::text,
-          event.title,
-          event.capacity,
-          event.status::text,
-          count(attendee.id) filter (where attendee.status = 'confirmed') as confirmed_attendees
-        from events event
-        left join event_attendees attendee on attendee.event_id = event.id
-        where event.slug = $1
-        group by event.id
-        for update of event
-      `,
-      [eventId],
-    );
+    try {
+      await client.query("begin");
 
-    const event = eventResult.rows[0];
-    if (!event) {
-      const error = new Error("Event not found.");
-      error.name = "NotFoundError";
+      const eventResult = await client.query<{
+        id: string;
+        title: string;
+        capacity: number;
+        status: string;
+        confirmed_attendees: string;
+      }>(
+        `
+          select
+            event.id::text,
+            event.title,
+            event.capacity,
+            event.status::text,
+            count(attendee.id) filter (where attendee.status = 'confirmed') as confirmed_attendees
+          from events event
+          left join event_attendees attendee on attendee.event_id = event.id
+          where event.slug = $1
+          group by event.id
+          for update of event
+        `,
+        [eventId],
+      );
+
+      const event = eventResult.rows[0];
+      if (!event) {
+        const error = new Error("Event not found.");
+        error.name = "NotFoundError";
+        throw error;
+      }
+
+      const confirmedCount = Number(event.confirmed_attendees);
+      const status =
+        event.status === "waitlist" || confirmedCount >= event.capacity
+          ? "waitlisted"
+          : "confirmed";
+
+      await client.query(
+        `
+          insert into event_attendees (event_id, profile_id, status)
+          values ($1::uuid, $2::uuid, $3::rsvp_status)
+          on conflict (event_id, profile_id) do update
+          set status = excluded.status, updated_at = now()
+        `,
+        [event.id, profile.id, status],
+      );
+
+      await client.query(
+        `
+          insert into notifications (profile_id, title, body, action_url)
+          values ($1::uuid, $2, $3, $4)
+        `,
+        [
+          profile.id,
+          status === "confirmed" ? "RSVP confirmed" : "Waitlist joined",
+          `${event.title} is now ${status} for ${profile.display_name}.`,
+          "/dashboard",
+        ],
+      );
+
+      await client.query("commit");
+
+      return {
+        eventTitle: event.title,
+        status,
+      };
+    } catch (error) {
+      await client.query("rollback");
       throw error;
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    if (isDatabaseConnectivityError(error)) {
+      return registerLocallyForEvent(eventId, session);
     }
 
-    const confirmedCount = Number(event.confirmed_attendees);
-    const status =
-      event.status === "waitlist" || confirmedCount >= event.capacity
-        ? "waitlisted"
-        : "confirmed";
-
-    await client.query(
-      `
-        insert into event_attendees (event_id, profile_id, status)
-        values ($1::uuid, $2::uuid, $3::rsvp_status)
-        on conflict (event_id, profile_id) do update
-        set status = excluded.status, updated_at = now()
-      `,
-      [event.id, profile.id, status],
-    );
-
-    await client.query(
-      `
-        insert into notifications (profile_id, title, body, action_url)
-        values ($1::uuid, $2, $3, $4)
-      `,
-      [
-        profile.id,
-        status === "confirmed" ? "RSVP confirmed" : "Waitlist joined",
-        `${event.title} is now ${status} for ${profile.display_name}.`,
-        "/dashboard",
-      ],
-    );
-
-    await client.query("commit");
-
-    return {
-      eventTitle: event.title,
-      status,
-    };
-  } catch (error) {
-    await client.query("rollback");
     throw error;
-  } finally {
-    client.release();
   }
 }
 
 export async function createEventForMerchant(input: CreateEventInput, session: Session | null) {
   const pool = getPostgresPool();
-  const profile = await ensureProfileForSession(session, "merchant");
 
-  if (!pool) throw databaseUnavailableError();
+  if (!pool) return createLocalEventForMerchant(input, session);
 
-  const title = input.title.trim();
-  const description = input.description.trim();
-  const startsAt = new Date(input.startsAt);
-  const capacity = Math.max(input.capacity, 1);
+  try {
+    const profile = await ensureProfileForSession(session, "merchant");
+    const title = input.title.trim();
+    const description = input.description.trim();
+    const startsAt = new Date(input.startsAt);
+    const capacity = Math.max(input.capacity, 1);
 
-  if (!title || !description || Number.isNaN(startsAt.getTime())) {
-    const error = new Error("Title, description, and valid start date are required.");
-    error.name = "ValidationError";
-    throw error;
-  }
+    if (!title || !description || Number.isNaN(startsAt.getTime())) {
+      const error = new Error("Title, description, and valid start date are required.");
+      error.name = "ValidationError";
+      throw error;
+    }
 
-  const slug = `${slugFromTitle(title)}-${Date.now().toString(36)}`;
-  const endsAt = new Date(startsAt.getTime() + 2 * 60 * 60 * 1000);
-  const category = input.category.trim() || "Social";
-  const relationshipGoal =
-    input.relationshipGoal.trim() || "Help people meet through a shared plan.";
+    const slug = `${slugFromTitle(title)}-${Date.now().toString(36)}`;
+    const endsAt = new Date(startsAt.getTime() + 2 * 60 * 60 * 1000);
+    const category = input.category.trim() || "Social";
+    const relationshipGoal =
+      input.relationshipGoal.trim() || "Help people meet through a shared plan.";
 
-  const result = await pool.query<{ slug: string; title: string }>(
-    `
-      insert into events (
+    const result = await pool.query<{ slug: string; title: string }>(
+      `
+        insert into events (
+          slug,
+          title,
+          description,
+          host_profile_id,
+          group_name,
+          host_name,
+          category,
+          status,
+          booking_model,
+          starts_at,
+          ends_at,
+          location_name,
+          suburb,
+          price_cents,
+          capacity,
+          image_url,
+          image_alt,
+          relationship_goal,
+          fomo
+        )
+        values (
+          $1,
+          $2,
+          $3,
+          $4::uuid,
+          $5,
+          $6,
+          $7,
+          'pending',
+          'click_managed',
+          $8,
+          $9,
+          $10,
+          $11,
+          $12,
+          $13,
+          $14,
+          $15,
+          $16,
+          $17
+        )
+        returning slug, title
+      `,
+      [
         slug,
         title,
         description,
-        host_profile_id,
-        group_name,
-        host_name,
+        profile.id,
+        input.groupName.trim() || `${profile.display_name}'s Group`,
+        profile.display_name,
         category,
-        status,
-        booking_model,
-        starts_at,
-        ends_at,
-        location_name,
-        suburb,
-        price_cents,
+        startsAt,
+        endsAt,
+        input.locationName.trim() || "Sydney NSW",
+        input.suburb.trim() || "Sydney",
+        parsePriceCents(input.price),
         capacity,
-        image_url,
-        image_alt,
-        relationship_goal,
-        fomo
-      )
-      values (
-        $1,
-        $2,
-        $3,
-        $4::uuid,
-        $5,
-        $6,
-        $7,
-        'pending',
-        'click_managed',
-        $8,
-        $9,
-        $10,
-        $11,
-        $12,
-        $13,
-        $14,
-        $15,
-        $16,
-        $17
-      )
-      returning slug, title
-    `,
-    [
-      slug,
-      title,
-      description,
-      profile.id,
-      input.groupName.trim() || `${profile.display_name}'s Group`,
-      profile.display_name,
-      category,
-      startsAt,
-      endsAt,
-      input.locationName.trim() || "Sydney NSW",
-      input.suburb.trim() || "Sydney",
-      parsePriceCents(input.price),
-      capacity,
-      imageForCategory(category),
-      "Community event listing",
-      relationshipGoal,
-      "Pending admin review before being promoted to members.",
-    ],
-  );
-
-  const rawTags = input.tags
-    .split(",")
-    .map((tag) => tag.trim().toLowerCase())
-    .filter(Boolean)
-    .slice(0, 8);
-
-  if (rawTags.length > 0) {
-    await pool.query(
-      `
-        with target_event as (
-          select id from events where slug = $1
-        ),
-        inserted_tags as (
-          insert into tags (label, slug, tag_type, admin_managed)
-          select initcap(tag), regexp_replace(tag, '[^a-z0-9]+', '-', 'g'), 'interest', false
-          from unnest($2::text[]) as tag
-          on conflict (slug) do update set label = excluded.label
-          returning id
-        )
-        insert into event_tags (event_id, tag_id)
-        select target_event.id, inserted_tags.id
-        from target_event, inserted_tags
-        on conflict do nothing
-      `,
-      [slug, rawTags],
+        imageForCategory(category),
+        "Community event listing",
+        relationshipGoal,
+        "Pending admin review before being promoted to members.",
+      ],
     );
-  }
 
-  return result.rows[0];
+    const rawTags = input.tags
+      .split(",")
+      .map((tag) => tag.trim().toLowerCase())
+      .filter(Boolean)
+      .slice(0, 8);
+
+    if (rawTags.length > 0) {
+      await pool.query(
+        `
+          with target_event as (
+            select id from events where slug = $1
+          ),
+          inserted_tags as (
+            insert into tags (label, slug, tag_type, admin_managed)
+            select initcap(tag), regexp_replace(tag, '[^a-z0-9]+', '-', 'g'), 'interest', false
+            from unnest($2::text[]) as tag
+            on conflict (slug) do update set label = excluded.label
+            returning id
+          )
+          insert into event_tags (event_id, tag_id)
+          select target_event.id, inserted_tags.id
+          from target_event, inserted_tags
+          on conflict do nothing
+        `,
+        [slug, rawTags],
+      );
+    }
+
+    return result.rows[0];
+  } catch (error) {
+    if (isDatabaseConnectivityError(error)) {
+      return createLocalEventForMerchant(input, session);
+    }
+
+    throw error;
+  }
 }
 
 export async function approveEventForAdmin(eventId: string, session: Session | null) {

@@ -1,0 +1,25 @@
+<svg viewBox="0 0 280 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Click mascot">
+  <!-- Little curl/sprout on top -->
+  <path d="M 138 60 C 132 56, 128 62, 132 66 C 136 70, 142 66, 140 62" fill="none" stroke="#340068" stroke-width="3.5" stroke-linecap="round"/>
+  <!-- Main blob body in Warm Rose -->
+  <path d="M 130 95 C 80 95, 50 130, 50 170 C 50 220, 95 245, 150 245 C 215 245, 260 230, 260 175 C 260 135, 235 110, 195 100 C 175 95, 155 92, 130 95 Z" fill="#E8736A" stroke="#340068" stroke-width="3.5" stroke-linejoin="round"/>
+  <!-- Soft Peach blush cheeks -->
+  <ellipse cx="95" cy="190" rx="14" ry="8" fill="#FBBF9A" opacity="0.7"/>
+  <ellipse cx="225" cy="190" rx="14" ry="8" fill="#FBBF9A" opacity="0.7"/>
+  <!-- Eyes -->
+  <ellipse cx="125" cy="170" rx="7" ry="9" fill="#340068">
+    <animate attributeName="ry" values="9;9;0.5;9" keyTimes="0;0.96;0.98;1" dur="6s" repeatCount="indefinite"/>
+  </ellipse>
+  <ellipse cx="195" cy="170" rx="7" ry="9" fill="#340068">
+    <animate attributeName="ry" values="9;9;0.5;9" keyTimes="0;0.96;0.98;1" dur="6s" repeatCount="indefinite"/>
+  </ellipse>
+  <!-- Eye highlights -->
+  <circle cx="127" cy="167" r="2" fill="#FFF8EE">
+    <animate attributeName="opacity" values="1;1;0;1" keyTimes="0;0.96;0.98;1" dur="6s" repeatCount="indefinite"/>
+  </circle>
+  <circle cx="197" cy="167" r="2" fill="#FFF8EE">
+    <animate attributeName="opacity" values="1;1;0;1" keyTimes="0;0.96;0.98;1" dur="6s" repeatCount="indefinite"/>
+  </circle>
+  <!-- Smile -->
+  <path d="M 148 198 Q 155 212, 162 202 Q 165 198, 168 202 Q 175 212, 182 198" fill="none" stroke="#340068" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

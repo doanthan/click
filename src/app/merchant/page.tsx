@@ -10,7 +10,11 @@ export const metadata = {
 
 export default function MerchantPage() {
   const merchantEvents = clickEvents.filter((event) =>
-    ["crossfit-coffee", "ordinary-creatives", "dog-park-cleanup"].includes(event.id),
+    [
+      "restaurant-table-eight",
+      "crossfit-coffee",
+      "ordinary-creatives",
+    ].includes(event.id),
   );
 
   return (
@@ -52,11 +56,11 @@ export default function MerchantPage() {
       <section className="bg-[#d8f3ef] py-16">
         <div className="mx-auto grid max-w-7xl gap-8 px-4 sm:px-6 lg:grid-cols-[0.74fr_1.26fr]">
           <div>
-            <SectionIntro
-              eyebrow="Create event"
-              title="The form should prevent bad inventory before review."
-              body="Interest Tags are required, price and capacity define checkout behavior, and overlapping live events are blocked for the same merchant."
-            />
+          <SectionIntro
+            eyebrow="Create event"
+            title="Start with the restaurant meetup, then adjust the details."
+            body="Templates keep the form short: venue, date, seats, price, tags, and the reason people should come. The restaurant example is ready to submit or edit."
+          />
             <div className="mt-8 flex flex-wrap gap-2">
               <Pill tone="pink">Stripe Connect</Pill>
               <Pill>External booking</Pill>

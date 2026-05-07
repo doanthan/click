@@ -1,21 +1,82 @@
 @import "tailwindcss";
 
 :root {
-  /* Click — Burst of Energy palette */
-  --ink: #340068;          /* Indigo Ink — brand anchor, headings */
+  /* Click — Burst of Energy palette (light) */
+  --ink: #340068;          /* Indigo Ink — brand anchor, headings, borders */
   --ink-deep: #240048;     /* Deeper variant for hover/contrast */
   --rose: #E8736A;         /* Warm Rose — CTA, primary actions */
   --rose-soft: #f3a8a1;    /* Lighter rose for hovers */
-  --champagne: #FFF8EE;    /* Background — warmer than porcelain */
+  --champagne: #FFF8EE;    /* Page background */
   --champagne-deep: #f6ecd8;
   --peach: #FBBF9A;        /* Soft Peach — tags, accents, highlights */
   --peach-soft: #fdd8bf;
   --mauve: #6D435A;        /* Mauve Shadow — secondary text, overlays */
-  --cream: #fff3df;
-  --punch: #ffd166;        /* sparing accent for sparkle moments */
+  --cream: #fff3df;        /* Subtle elevated surface */
+  --punch: #ffd166;        /* Sparkle accent */
+
+  /* Tokens that retain their meaning across modes */
+  --noise-dot-a: rgba(52, 0, 104, 0.08);
+  --noise-dot-b: rgba(232, 115, 106, 0.05);
+  --grid-line: rgba(52, 0, 104, 0.06);
+  --hairline: rgba(52, 0, 104, 0.20);
+
+  /* "Anchor dark" — sections that always read as dramatic dark
+     bands (marquee strip, "Join once", footer). */
+  --surface-deep: #340068;     /* Indigo Ink in light, deeper in dark */
+  --surface-deep-2: #240048;   /* elevated card on deep surface */
+  --on-deep: #FFF8EE;          /* foreground on deep surface */
+  --on-deep-soft: rgba(255, 248, 238, 0.72);
+
+  /* Border + shadow tokens that flip to softer values in dark mode
+     (in light mode they ARE --ink). */
+  --line: var(--ink);          /* default 2px borders */
+  --line-soft: rgba(52, 0, 104, 0.18);
+  --shadow-ink: var(--ink);    /* hard offset shadow color */
 
   --background: var(--champagne);
   --foreground: var(--ink);
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Softer dark — page lifted to a warmer, less-saturated plum,
+       foreground muted from near-white to a calm cream. */
+    --ink: #E8D2B0;          /* foreground / text — warm muted cream (was #FBE9CF) */
+    --ink-deep: #F4E2C2;     /* deeper hover */
+    --rose: #E07A6E;         /* slightly muted to reduce dark-mode glare */
+    --rose-soft: #ee988e;
+    --champagne: #1F1235;    /* page bg — warmer plum, less saturated than #160030 */
+    --champagne-deep: #150A26;
+    --peach: #F2B58F;        /* gently muted from #FBBF9A */
+    --peach-soft: #f8caa9;
+    --mauve: #BC95A8;        /* lifted secondary text */
+    --cream: #2C1A45;        /* warmer elevated card surface */
+    --punch: #ECC162;        /* gently muted from #FFD166 */
+
+    --noise-dot-a: rgba(232, 210, 176, 0.08);
+    --noise-dot-b: rgba(232, 115, 106, 0.08);
+    --grid-line: rgba(232, 210, 176, 0.06);
+    --hairline: rgba(232, 210, 176, 0.20);
+
+    /* Anchor dark — slightly lifted from pure black so it doesn't read
+       as a hole, but still distinguishable from the page. */
+    --surface-deep: #160930;
+    --surface-deep-2: #1F1340;
+    --on-deep: #E8D2B0;
+    --on-deep-soft: rgba(232, 210, 176, 0.68);
+
+    /* Soften the line/shadow language in dark mode:
+       borders become a low-opacity cream (suggestion, not stencil).
+       Hard offset shadows sit BEHIND cards (deep purple-black) — depth
+       instead of glare, while preserving the brand offset language. */
+    --line: rgba(232, 210, 176, 0.22);
+    --line-soft: rgba(232, 210, 176, 0.12);
+    --shadow-ink: rgba(8, 0, 26, 0.85);
+
+    color-scheme: dark;
+  }
 }
 
 @theme inline {
@@ -32,10 +93,16 @@
   --color-mauve: var(--mauve);
   --color-cream: var(--cream);
   --color-punch: var(--punch);
+  --color-surface-deep: var(--surface-deep);
+  --color-surface-deep-2: var(--surface-deep-2);
+  --color-on-deep: var(--on-deep);
+  --color-line: var(--line);
+  --color-line-soft: var(--line-soft);
   --font-sans: var(--font-click-body);
   --font-mono: var(--font-click-mono);
   --font-display: var(--font-click-display);
   --font-script: var(--font-click-script);
+  --font-brand: var(--font-click-brand);
 }
 
 html {
@@ -64,6 +131,27 @@ body {
 .font-display { font-family: var(--font-click-display), serif; }
 .font-script  { font-family: var(--font-click-script), cursive; }
 .font-mono    { font-family: var(--font-click-mono), monospace; }
+.font-brand   { font-family: var(--font-click-brand), "Fraunces", serif; font-weight: 400; }
+
+.click-wordmark {
+  font-family: var(--font-click-brand), "Fraunces", serif;
+  font-weight: 400;
+  letter-spacing: -0.025em;
+  line-height: 0.9;
+  display: inline-flex;
+  align-items: baseline;
+}
+.click-wordmark__period {
+  display: inline-block;
+  width: 0.34em;
+  height: 0.34em;
+  margin-left: 0.06em;
+  border-radius: 999px;
+  background: var(--peach);
+  border: 2px solid var(--line);
+  align-self: flex-end;
+  margin-bottom: 0.18em;
+}
 
 .eyebrow {
   font-family: var(--font-click-mono), monospace;
@@ -74,10 +162,27 @@ body {
   color: var(--mauve);
 }
 
-/* ---------- Highlight & marker ---------- */
+/* ---------- Highlight & marker ----------
+   Highlight bg colors don't flip across modes (peach stays peach), so the
+   text on top must always be a constant dark — using --surface-deep keeps
+   contrast ~10:1 against peach in both modes.
+   In dark mode the page bg is also dark, so a partial-height marker band
+   leaves the upper portion of letters as dark-on-dark. Cover the full
+   letter height in dark mode so the dark text always sits on peach. */
 .peach-highlight {
   background: linear-gradient(180deg, transparent 58%, var(--peach) 58%, var(--peach) 92%, transparent 92%);
+  color: var(--surface-deep);
   padding: 0 0.12em;
+}
+
+@media (prefers-color-scheme: dark) {
+  .peach-highlight {
+    background: var(--peach);
+    padding: 0.04em 0.18em;
+    border-radius: 0.18em;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+  }
 }
 
 .rose-highlight {
@@ -97,16 +202,16 @@ body {
 .paper-noise {
   background-color: var(--champagne);
   background-image:
-    radial-gradient(circle at 1px 1px, rgba(52, 0, 104, 0.08) 1px, transparent 0),
-    radial-gradient(circle at 11px 11px, rgba(232, 115, 106, 0.05) 1px, transparent 0);
+    radial-gradient(circle at 1px 1px, var(--noise-dot-a) 1px, transparent 0),
+    radial-gradient(circle at 11px 11px, var(--noise-dot-b) 1px, transparent 0);
   background-size: 22px 22px, 22px 22px;
   background-position: 0 0, 11px 11px;
 }
 
 .stamp-grid {
   background-image:
-    linear-gradient(rgba(52, 0, 104, 0.06) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(52, 0, 104, 0.06) 1px, transparent 1px);
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
   background-size: 36px 36px;
 }
 
@@ -130,9 +235,12 @@ body {
   );
 }
 
-/* ---------- Shadows ---------- */
+/* ---------- Shadows ----------
+   Light: solid offset in --ink (the editorial-zine signature).
+   Dark : same offset shape but cast as a deep purple-black behind the
+          card — gives depth instead of glare. */
 .hard-shadow {
-  box-shadow: 6px 6px 0 0 var(--ink);
+  box-shadow: 6px 6px 0 0 var(--shadow-ink);
 }
 .hard-shadow-rose {
   box-shadow: 6px 6px 0 0 var(--rose);
@@ -141,10 +249,16 @@ body {
   box-shadow: 6px 6px 0 0 var(--peach);
 }
 .hard-shadow-sm {
-  box-shadow: 3px 3px 0 0 var(--ink);
+  box-shadow: 3px 3px 0 0 var(--shadow-ink);
 }
 .hard-shadow-lg {
-  box-shadow: 10px 10px 0 0 var(--ink);
+  box-shadow: 10px 10px 0 0 var(--shadow-ink);
+}
+.hard-shadow-deep {
+  box-shadow: 6px 6px 0 0 var(--surface-deep-2);
+}
+.hard-shadow-deep-sm {
+  box-shadow: 3px 3px 0 0 var(--surface-deep-2);
 }
 
 /* ---------- Sticker / pill ---------- */
@@ -154,18 +268,22 @@ body {
   gap: 0.4rem;
   padding: 0.45rem 0.95rem;
   border-radius: 999px;
-  border: 2px solid var(--ink);
+  border: 2px solid var(--line);
   background: var(--champagne);
   font-weight: 800;
   font-size: 0.78rem;
   letter-spacing: 0.02em;
   color: var(--ink);
-  box-shadow: 3px 3px 0 0 var(--ink);
+  box-shadow: 3px 3px 0 0 var(--shadow-ink);
   transition: transform 200ms cubic-bezier(.34,1.56,.64,1), box-shadow 200ms ease;
 }
-.sticker:hover { transform: translate(-2px, -2px) rotate(-2deg); box-shadow: 5px 5px 0 0 var(--ink); }
+.sticker:hover { transform: translate(-2px, -2px) rotate(-2deg); box-shadow: 5px 5px 0 0 var(--shadow-ink); }
 .sticker--rose { background: var(--rose); color: var(--champagne); }
-.sticker--peach { background: var(--peach); }
+/* --peach stays a light-orange in BOTH modes, so the sticker text must be
+   a fixed dark. --surface-deep is #340068 in light and #160930 in dark —
+   both give ≥10:1 against peach. (--cream flips to a dark plum in dark
+   mode, so cream stickers correctly inherit --ink which also flips.) */
+.sticker--peach { background: var(--peach); color: var(--surface-deep); }
 .sticker--ink { background: var(--ink); color: var(--champagne); }
 .sticker--cream { background: var(--cream); }
 
@@ -188,6 +306,12 @@ body {
   50% { transform: translateY(-8px); }
 }
 .float-slow { animation: float 4s ease-in-out infinite; }
+
+@keyframes chip-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+.chip-bob { animation: pop-in 600ms cubic-bezier(.2,.9,.3,1.4) both, chip-bob 4.6s ease-in-out infinite; }
 
 @keyframes pulse-ring {
   0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--rose) 60%, transparent); }

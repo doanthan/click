@@ -47,7 +47,7 @@ export function EventRegistrationButton({ eventId }: { eventId: string }) {
         type="button"
         onClick={register}
         disabled={state === "submitting" || state === "registered" || state === "waitlisted"}
-        className="rounded-full border-2 border-[color:var(--ink)] bg-[color:var(--rose)] px-4 py-3 text-center text-sm font-bold text-[color:var(--champagne)] hard-shadow-sm hover:bg-[color:var(--ink)] disabled:cursor-not-allowed disabled:opacity-70"
+        className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-4 py-3 text-center text-sm font-bold text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] disabled:cursor-not-allowed disabled:opacity-70"
       >
         {state === "submitting"
           ? "Registering..."

@@ -7,22 +7,11 @@ import { Pill } from "./click-ui";
 
 type DateWindow = "7" | "30" | "all";
 type LocationStatus = "idle" | "requesting" | "shared" | "denied" | "unsupported";
+type SortMode = "recommended" | "soonest" | "nearest" | "popular";
 
-const suburbs = [
-  "All Sydney",
-  "Barangaroo",
-  "Surry Hills",
-  "Newtown",
-  "Marrickville",
-  "Camperdown",
-  "The Rocks",
-];
-
-const referenceDate = new Date("2026-05-06T00:00:00+10:00");
-
-function daysUntil(startsAt: string) {
+function daysUntil(startsAt: string, referenceTime: number) {
   const eventDate = new Date(startsAt);
-  const milliseconds = eventDate.getTime() - referenceDate.getTime();
+  const milliseconds = eventDate.getTime() - referenceTime;
   return Math.ceil(milliseconds / 86_400_000);
 }
 
@@ -30,6 +19,11 @@ function dateWindowLabel(dateWindow: DateWindow) {
   if (dateWindow === "7") return "next 7 days";
   if (dateWindow === "30") return "next 30 days";
   return "any upcoming date";
+}
+
+function eventCountHeading(count: number, dateWindow: DateWindow) {
+  if (dateWindow === "all") return `${count} upcoming events.`;
+  return `${count} events in the ${dateWindowLabel(dateWindow)}.`;
 }
 
 function mapQuery(locationQuery: string, suburb: string) {
@@ -41,15 +35,29 @@ function mapQuery(locationQuery: string, suburb: string) {
 export function EventExplorer({ events }: { events: EventItem[] }) {
   const [locationStatus, setLocationStatus] = useState<LocationStatus>("idle");
   const [locationQuery, setLocationQuery] = useState("Sydney CBD");
+  const [searchQuery, setSearchQuery] = useState("");
   const [selectedSuburb, setSelectedSuburb] = useState("All Sydney");
   const [selectedCategory, setSelectedCategory] = useState("All");
-  const [dateWindow, setDateWindow] = useState<DateWindow>("7");
-  const [distanceKm, setDistanceKm] = useState(10);
+  const [dateWindow, setDateWindow] = useState<DateWindow>("all");
+  const [distanceKm, setDistanceKm] = useState(25);
+  const [sortMode, setSortMode] = useState<SortMode>("recommended");
+
+  const todayTime = useMemo(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  }, []);
+
+  const suburbs = useMemo(
+    () => ["All Sydney", ...Array.from(new Set(events.map((event) => event.suburb))).sort()],
+    [events],
+  );
 
   const filteredEvents = useMemo(() => {
+    const normalizedSearch = searchQuery.trim().toLowerCase();
+
     return events
       .filter((event) => {
-        const eventDays = daysUntil(event.startsAt);
+        const eventDays = daysUntil(event.startsAt, todayTime);
         const matchesDate =
           dateWindow === "all" ||
           (dateWindow === "7" && eventDays >= 0 && eventDays <= 7) ||
@@ -59,15 +67,54 @@ export function EventExplorer({ events }: { events: EventItem[] }) {
         const matchesSuburb =
           selectedSuburb === "All Sydney" || event.suburb === selectedSuburb;
         const matchesDistance = event.distanceKm <= distanceKm;
+        const searchableText = [
+          event.title,
+          event.group,
+          event.host,
+          event.category,
+          event.location,
+          event.suburb,
+          event.price,
+          event.description,
+          event.relationshipGoal,
+          event.tags.join(" "),
+          event.lifeSignals.join(" "),
+        ]
+          .join(" ")
+          .toLowerCase();
+        const matchesSearch =
+          !normalizedSearch || searchableText.includes(normalizedSearch);
 
-        return matchesDate && matchesCategory && matchesSuburb && matchesDistance;
+        return (
+          matchesDate &&
+          matchesCategory &&
+          matchesSuburb &&
+          matchesDistance &&
+          matchesSearch
+        );
       })
       .sort((left, right) => {
         const leftDate = new Date(left.startsAt).getTime();
         const rightDate = new Date(right.startsAt).getTime();
+
+        if (sortMode === "soonest") return leftDate - rightDate;
+        if (sortMode === "nearest") return left.distanceKm - right.distanceKm;
+        if (sortMode === "popular") {
+          return right.attendees / right.capacity - left.attendees / left.capacity;
+        }
+
         return left.distanceKm - right.distanceKm || leftDate - rightDate;
       });
-  }, [dateWindow, distanceKm, events, selectedCategory, selectedSuburb]);
+  }, [
+    dateWindow,
+    distanceKm,
+    events,
+    searchQuery,
+    selectedCategory,
+    selectedSuburb,
+    sortMode,
+    todayTime,
+  ]);
 
   const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
     mapQuery(locationQuery, selectedSuburb),
@@ -93,6 +140,15 @@ export function EventExplorer({ events }: { events: EventItem[] }) {
     );
   }
 
+  function resetFilters() {
+    setSearchQuery("");
+    setSelectedSuburb("All Sydney");
+    setSelectedCategory("All");
+    setDateWindow("all");
+    setDistanceKm(25);
+    setSortMode("recommended");
+  }
+
   return (
     <div className="mt-10 grid gap-8 lg:grid-cols-[0.86fr_1.14fr]">
       <aside className="h-fit rounded-lg border border-black/10 bg-white p-5 shadow-sm lg:sticky lg:top-28">
@@ -102,11 +158,11 @@ export function EventExplorer({ events }: { events: EventItem[] }) {
               Find events around me
             </p>
             <h3 className="mt-2 text-4xl font-black leading-none">
-              Share location or search a suburb.
+              Search once, then refine fast.
             </h3>
             <p className="mt-3 text-sm font-bold leading-6 text-[#1f1f1f]/65">
-              Click can use your browser location to rank nearby events. This demo
-              falls back to Sydney sample distances.
+              Try a plan, suburb, vibe, or food type. The list updates instantly
+              and stays focused on nearby events.
             </p>
           </div>
           <button
@@ -132,6 +188,64 @@ export function EventExplorer({ events }: { events: EventItem[] }) {
 
         <div className="mt-5 grid gap-4">
           <label className="grid gap-2 text-sm font-black">
+            What do you feel like doing?
+            <input
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              className="rounded-lg border border-black/10 bg-white px-4 py-3 font-bold outline-none focus:border-[#008294]"
+              placeholder="restaurant, dinner, free, friends, fitness"
+            />
+          </label>
+
+          <div>
+            <p className="text-sm font-black">Quick picks</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {[
+                {
+                  label: "Restaurant meetup",
+                  action: () => {
+                    setSearchQuery("restaurant");
+                    setSelectedCategory("Food");
+                    setDateWindow("30");
+                    setDistanceKm(10);
+                  },
+                },
+                {
+                  label: "Free nearby",
+                  action: () => {
+                    setSearchQuery("free");
+                    setSelectedCategory("All");
+                    setDateWindow("30");
+                    setDistanceKm(10);
+                  },
+                },
+                {
+                  label: "Small groups",
+                  action: () => {
+                    setSearchQuery("low pressure");
+                    setSelectedCategory("All");
+                    setDateWindow("30");
+                    setDistanceKm(25);
+                  },
+                },
+                {
+                  label: "Reset",
+                  action: resetFilters,
+                },
+              ].map((chip) => (
+                <button
+                  key={chip.label}
+                  type="button"
+                  onClick={chip.action}
+                  className="rounded-full border border-black/10 bg-[#d8f3ef] px-4 py-2 text-sm font-black"
+                >
+                  {chip.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <label className="grid gap-2 text-sm font-black">
             Search location
             <input
               value={locationQuery}
@@ -140,6 +254,26 @@ export function EventExplorer({ events }: { events: EventItem[] }) {
               placeholder="Bondi, Parramatta, Sydney CBD"
             />
           </label>
+
+          <div>
+            <p className="text-sm font-black">Category</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {categories.map((category) => (
+                <button
+                  key={category}
+                  type="button"
+                  onClick={() => setSelectedCategory(category)}
+                  className={`rounded-full border border-black/10 px-4 py-2 text-sm font-black ${
+                    selectedCategory === category
+                      ? "bg-[#1f1f1f] text-white"
+                      : "bg-white text-[#1f1f1f]"
+                  }`}
+                >
+                  {category}
+                </button>
+              ))}
+            </div>
+          </div>
 
           <label className="grid gap-2 text-sm font-black">
             Filter by suburb
@@ -150,19 +284,6 @@ export function EventExplorer({ events }: { events: EventItem[] }) {
             >
               {suburbs.map((suburb) => (
                 <option key={suburb}>{suburb}</option>
-              ))}
-            </select>
-          </label>
-
-          <label className="grid gap-2 text-sm font-black">
-            Category
-            <select
-              value={selectedCategory}
-              onChange={(event) => setSelectedCategory(event.target.value)}
-              className="rounded-lg border border-black/10 bg-white px-4 py-3 font-bold outline-none focus:border-[#008294]"
-            >
-              {categories.map((category) => (
-                <option key={category}>{category}</option>
               ))}
             </select>
           </label>
@@ -201,6 +322,20 @@ export function EventExplorer({ events }: { events: EventItem[] }) {
               className="accent-[#f65858]"
             />
           </label>
+
+          <label className="grid gap-2 text-sm font-black">
+            Sort
+            <select
+              value={sortMode}
+              onChange={(event) => setSortMode(event.target.value as SortMode)}
+              className="rounded-lg border border-black/10 bg-white px-4 py-3 font-bold outline-none focus:border-[#008294]"
+            >
+              <option value="recommended">Recommended</option>
+              <option value="soonest">Soonest first</option>
+              <option value="nearest">Nearest first</option>
+              <option value="popular">Almost full</option>
+            </select>
+          </label>
         </div>
 
         <div className="mt-5 overflow-hidden rounded-lg border border-black/10 bg-[#fffdf7] shadow-sm">
@@ -209,7 +344,7 @@ export function EventExplorer({ events }: { events: EventItem[] }) {
               Sample Google map
             </span>
             <span className="rounded-full bg-[#d8f3ef] px-3 py-1 text-xs font-black">
-              Sydney
+              {filteredEvents.length} matches
             </span>
           </div>
           <div
@@ -259,7 +394,8 @@ export function EventExplorer({ events }: { events: EventItem[] }) {
                 Map preview
               </p>
               <p className="mt-1 text-sm font-black text-[#1f1f1f]">
-                {filteredEvents.length} filtered events around {selectedSuburb}.
+                {filteredEvents.length} filtered events around {selectedSuburb}
+                {searchQuery ? ` for "${searchQuery}"` : ""}.
               </p>
             </div>
           </div>
@@ -273,8 +409,19 @@ export function EventExplorer({ events }: { events: EventItem[] }) {
               Events around me
             </p>
             <h2 className="mt-2 text-5xl font-black leading-none">
-              {filteredEvents.length} events in the {dateWindowLabel(dateWindow)}.
+              {eventCountHeading(filteredEvents.length, dateWindow)}
             </h2>
+            <p className="mt-3 max-w-2xl text-sm font-bold leading-6 text-[#1f1f1f]/62">
+              Showing {selectedCategory === "All" ? "all categories" : selectedCategory}
+              {searchQuery ? ` matching "${searchQuery}"` : ""}, sorted by{" "}
+              {sortMode === "recommended"
+                ? "recommended fit"
+                : sortMode === "soonest"
+                  ? "soonest date"
+                  : sortMode === "nearest"
+                    ? "distance"
+                    : "nearly full tables"}.
+            </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Pill tone="aqua">{distanceKm} km radius</Pill>
@@ -290,6 +437,8 @@ export function EventExplorer({ events }: { events: EventItem[] }) {
               setDateWindow("7");
               setDistanceKm(10);
               setSelectedSuburb("All Sydney");
+              setSelectedCategory("All");
+              setSearchQuery("");
             }}
             className="rounded-full border border-black/10 bg-[#d8f3ef] px-4 py-2 text-sm font-black"
           >
@@ -301,6 +450,8 @@ export function EventExplorer({ events }: { events: EventItem[] }) {
               setDateWindow("30");
               setDistanceKm(25);
               setSelectedSuburb("All Sydney");
+              setSelectedCategory("All");
+              setSearchQuery("");
             }}
             className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-black"
           >
@@ -311,6 +462,7 @@ export function EventExplorer({ events }: { events: EventItem[] }) {
             onClick={() => {
               setSelectedCategory("Relationships");
               setDateWindow("30");
+              setSearchQuery("dinner");
             }}
             className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-black"
           >
@@ -332,6 +484,13 @@ export function EventExplorer({ events }: { events: EventItem[] }) {
             <p className="mt-3 text-sm font-bold leading-6 text-[#1f1f1f]/65">
               Try a wider distance, all Sydney, or the next 30 days.
             </p>
+            <button
+              type="button"
+              onClick={resetFilters}
+              className="mt-5 rounded-full bg-[#1f1f1f] px-5 py-3 text-sm font-black text-white"
+            >
+              Reset filters
+            </button>
           </div>
         )}
       </section>

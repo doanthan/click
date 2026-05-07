@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { auth, signOut } from "@/auth";
 import { navItems } from "@/lib/click-data";
 
@@ -7,14 +8,24 @@ export async function SiteHeader() {
   const userLabel = session?.user?.name ?? session?.user?.email ?? "Account";
 
   return (
-    <header className="sticky top-0 z-50 border-b-2 border-[color:var(--ink)] bg-[color:var(--champagne)]/95 backdrop-blur-xl">
+    <header className="sticky top-0 z-50 border-b-2 border-[color:var(--line)] bg-[color:var(--champagne)]/95 backdrop-blur-xl">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
-        <Link href="/" className="group flex items-center gap-3" aria-label="Click home">
-          <span className="burst grid size-11 place-items-center rounded-full border-2 border-[color:var(--ink)] bg-[color:var(--rose)] text-lg font-black text-[color:var(--champagne)] transition-transform duration-300 group-hover:rotate-[-12deg]">
-            C
-          </span>
-          <span className="font-display text-3xl font-light italic leading-none tracking-tight text-[color:var(--ink)]">
-            Click<span className="text-[color:var(--rose)]">.</span>
+        <Link
+          href="/"
+          className="group flex items-center gap-2 transition-transform duration-300 hover:-rotate-2"
+          aria-label="Click home"
+        >
+          <Image
+            src="/click_blob_mascot.svg"
+            alt=""
+            width={48}
+            height={48}
+            aria-hidden
+            className="h-11 w-11 shrink-0 transition-transform duration-300 group-hover:rotate-[8deg] sm:h-12 sm:w-12"
+          />
+          <span className="click-wordmark text-3xl text-[color:var(--ink)] sm:text-[2.1rem]">
+            Click
+            <span className="click-wordmark__period" aria-hidden />
           </span>
         </Link>
 
@@ -36,7 +47,7 @@ export async function SiteHeader() {
             <>
               <Link
                 href="/dashboard"
-                className="hidden max-w-44 truncate rounded-full border-2 border-[color:var(--ink)] bg-[color:var(--cream)] px-4 py-2 text-sm font-bold text-[color:var(--ink)] hard-shadow-sm sm:block"
+                className="hidden max-w-44 truncate rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-2 text-sm font-bold text-[color:var(--ink)] hard-shadow-sm sm:block"
               >
                 {userLabel}
               </Link>
@@ -48,7 +59,7 @@ export async function SiteHeader() {
               >
                 <button
                   type="submit"
-                  className="rounded-full border-2 border-[color:var(--ink)] bg-[color:var(--ink)] px-4 py-2 text-sm font-bold text-[color:var(--champagne)] hard-shadow-sm hover:bg-[color:var(--ink-deep)]"
+                  className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--ink)] px-4 py-2 text-sm font-bold text-[color:var(--champagne)] hard-shadow-sm hover:bg-[color:var(--ink-deep)]"
                 >
                   Sign out
                 </button>
@@ -58,13 +69,13 @@ export async function SiteHeader() {
             <>
               <Link
                 href="/login"
-                className="hidden rounded-full border-2 border-[color:var(--ink)] bg-[color:var(--champagne)] px-4 py-2 text-sm font-bold text-[color:var(--ink)] hard-shadow-sm sm:block"
+                className="hidden rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-2 text-sm font-bold text-[color:var(--ink)] hard-shadow-sm sm:block"
               >
                 Log in
               </Link>
               <Link
                 href="/discover"
-                className="rounded-full border-2 border-[color:var(--ink)] bg-[color:var(--rose)] px-4 py-2 text-sm font-bold text-[color:var(--champagne)] hard-shadow-sm hover:bg-[color:var(--ink)]"
+                className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-4 py-2 text-sm font-bold text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)]"
               >
                 Explore →
               </Link>
@@ -84,14 +95,19 @@ export function SiteFooter() {
   ];
 
   return (
-    <footer className="relative overflow-hidden border-t-2 border-[color:var(--ink)] bg-[color:var(--ink)] text-[color:var(--champagne)]">
+    <footer className="relative overflow-hidden border-t-2 border-[color:var(--surface-deep)] bg-[color:var(--surface-deep)] text-[color:var(--on-deep)]">
       <div className="diagonal-stripes h-3 w-full" />
       <div className="mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:px-6 md:grid-cols-[1.4fr_0.8fr_0.8fr_0.8fr]">
         <div>
-          <p className="font-display text-5xl font-light italic leading-none tracking-tight text-[color:var(--peach)]">
-            Click<span className="text-[color:var(--rose)]">.</span>
-          </p>
-          <p className="mt-4 max-w-sm text-sm font-medium leading-6 text-[color:var(--champagne)]/72">
+          <span className="click-wordmark text-6xl text-[color:var(--peach)]">
+            Click
+            <span
+              className="click-wordmark__period"
+              aria-hidden
+              style={{ background: "var(--rose)", borderColor: "var(--peach)" }}
+            />
+          </span>
+          <p className="mt-4 max-w-sm text-sm font-medium leading-6 text-[color:var(--on-deep)]/72">
             An event-first people platform for friendship, dating, local groups,
             and shared-interest discovery in Sydney.
           </p>
@@ -102,7 +118,7 @@ export function SiteFooter() {
         {footerGroups.map(([title, ...items]) => (
           <div key={title}>
             <p className="eyebrow !text-[color:var(--peach)]">{title}</p>
-            <div className="mt-3 grid gap-2 text-sm font-semibold text-[color:var(--champagne)]/72">
+            <div className="mt-3 grid gap-2 text-sm font-semibold text-[color:var(--on-deep)]/72">
               {items.map((item) => (
                 <Link
                   href={linkForFooterItem(item)}
@@ -116,8 +132,8 @@ export function SiteFooter() {
           </div>
         ))}
       </div>
-      <div className="border-t border-[color:var(--champagne)]/15">
-        <div className="mx-auto flex max-w-7xl flex-col items-start justify-between gap-2 px-4 py-5 text-xs font-mono uppercase tracking-[0.2em] text-[color:var(--champagne)]/60 sm:flex-row sm:items-center sm:px-6">
+      <div className="border-t border-[color:var(--on-deep)]/15">
+        <div className="mx-auto flex max-w-7xl flex-col items-start justify-between gap-2 px-4 py-5 text-xs font-mono uppercase tracking-[0.2em] text-[color:var(--on-deep)]/60 sm:flex-row sm:items-center sm:px-6">
           <span>Made in Sydney · Click {new Date().getFullYear()}</span>
           <span>People → Events → Familiar Faces</span>
         </div>
