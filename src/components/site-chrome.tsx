@@ -1,11 +1,30 @@
 import Link from "next/link";
 import Image from "next/image";
-import { auth, signOut } from "@/auth";
-import { navItems } from "@/lib/click-data";
+import { auth, isAdminEmail, signOut } from "@/auth";
+import { getProfileStatus } from "@/lib/event-repository";
 
 export async function SiteHeader() {
   const session = await auth();
   const userLabel = session?.user?.name ?? session?.user?.email ?? "Account";
+  const isAdmin = !!session?.user && isAdminEmail(session.user.email);
+  const hasMerchantProfile = session?.user
+    ? !!(await getProfileStatus(session)).merchantProfile
+    : false;
+
+  const navItems: Array<{ label: string; href: string }> = [
+    { label: "Discover", href: "/discover" },
+    { label: "Events", href: "/events" },
+  ];
+  if (session?.user) {
+    navItems.push({ label: "Dashboard", href: "/dashboard" });
+    navItems.push({
+      label: hasMerchantProfile ? "Host" : "Host events",
+      href: hasMerchantProfile ? "/merchant" : "/merchant/signup",
+    });
+  }
+  if (isAdmin) {
+    navItems.push({ label: "Admin", href: "/admin" });
+  }
 
   return (
     <header className="sticky top-0 z-50 border-b-2 border-[color:var(--line)] bg-[color:var(--champagne)]/95 backdrop-blur-xl">
@@ -87,10 +106,15 @@ export async function SiteHeader() {
   );
 }
 
-export function SiteFooter() {
-  const footerGroups = [
+export async function SiteFooter() {
+  const session = await auth();
+  const isAdmin = !!session?.user && isAdminEmail(session.user.email);
+
+  const footerGroups: Array<[string, ...string[]]> = [
     ["Product", "Discover", "Events", "Dashboard", "Onboarding"],
-    ["Platform", "Merchant", "Admin", "Privacy", "Matching"],
+    isAdmin
+      ? ["Platform", "Host events", "Admin", "Privacy", "Matching"]
+      : ["Platform", "Host events", "Privacy", "Matching"],
     ["Modes", "Friendship", "Dating", "Networking", "Exploring"],
   ];
 
@@ -149,7 +173,7 @@ function linkForFooterItem(item: string) {
   if (normalized === "events") return "/events";
   if (normalized === "dashboard") return "/dashboard";
   if (normalized === "onboarding") return "/onboarding";
-  if (normalized === "merchant") return "/merchant";
+  if (normalized === "host events" || normalized === "merchant") return "/merchant";
   if (normalized === "admin") return "/admin";
   return "/";
 }
