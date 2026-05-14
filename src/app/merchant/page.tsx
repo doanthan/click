@@ -1,14 +1,27 @@
+import { redirect } from "next/navigation";
+import { auth } from "@/auth";
 import { InfoCard, MetricCard, PageHero, Pill, SectionIntro } from "@/components/click-ui";
 import { CreateEventForm } from "@/components/create-event-form";
 import { EventCard } from "@/components/event-card";
 import { clickEvents, merchantModules } from "@/lib/click-data";
+import { getProfileStatus } from "@/lib/event-repository";
 
 export const metadata = {
   title: "Merchant Portal | Click",
   description: "Click merchant portal for event hosts, booking models, payments, and analytics.",
 };
 
-export default function MerchantPage() {
+export default async function MerchantPage() {
+  const session = await auth();
+  if (!session?.user) {
+    redirect("/login?callbackUrl=/merchant");
+  }
+
+  const status = await getProfileStatus(session);
+  if (!status.merchantProfile) {
+    redirect("/merchant/signup");
+  }
+
   const merchantEvents = clickEvents.filter((event) =>
     [
       "restaurant-table-eight",
@@ -18,7 +31,7 @@ export default function MerchantPage() {
   );
 
   return (
-    <main className="min-h-screen bg-[#fffdf7] text-[#1f1f1f]">
+    <main className="min-h-screen bg-[color:var(--champagne)] text-[color:var(--ink)]">
       <PageHero
         eyebrow="Merchant portal"
         title="Hosts get autonomy, Click keeps the marketplace trustworthy."
@@ -32,7 +45,7 @@ export default function MerchantPage() {
         </div>
       </PageHero>
 
-      <section className="bg-[#fffdf7] py-16">
+      <section className="bg-[color:var(--champagne)] py-16">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           <SectionIntro
             eyebrow="Merchant workflow"
@@ -53,7 +66,7 @@ export default function MerchantPage() {
         </div>
       </section>
 
-      <section className="bg-[#d8f3ef] py-16">
+      <section className="bg-[color:var(--peach)] py-16">
         <div className="mx-auto grid max-w-7xl gap-8 px-4 sm:px-6 lg:grid-cols-[0.74fr_1.26fr]">
           <div>
           <SectionIntro
@@ -72,7 +85,7 @@ export default function MerchantPage() {
         </div>
       </section>
 
-      <section className="bg-[#fffdf7] py-16">
+      <section className="bg-[color:var(--champagne)] py-16">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           <SectionIntro
             eyebrow="Merchant events"
@@ -88,7 +101,7 @@ export default function MerchantPage() {
         </div>
       </section>
 
-      <section className="brand-gradient-soft py-16 text-white">
+      <section className="bg-[color:var(--surface-deep)] py-16 text-[color:var(--on-deep)]">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           <SectionIntro
             eyebrow="Analytics"

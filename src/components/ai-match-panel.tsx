@@ -17,9 +17,9 @@ type AIMatchPanelProps = {
   defaultPrompt?: string;
   showEvents?: boolean;
   title?: string;
-  eventsEyebrow?: string;
+  eventsEyebrow?: React.ReactNode;
   eventsTitle?: React.ReactNode;
-  peopleEyebrow?: string;
+  peopleEyebrow?: React.ReactNode;
   peopleTitle?: React.ReactNode;
 };
 

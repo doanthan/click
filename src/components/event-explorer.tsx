@@ -32,7 +32,17 @@ function mapQuery(locationQuery: string, suburb: string) {
   return "Sydney NSW events";
 }
 
-export function EventExplorer({ events }: { events: EventItem[] }) {
+export function EventExplorer({
+  events,
+  bookmarkedEventIds = [],
+  registeredEventIds = [],
+}: {
+  events: EventItem[];
+  bookmarkedEventIds?: string[];
+  registeredEventIds?: string[];
+}) {
+  const bookmarkedSet = useMemo(() => new Set(bookmarkedEventIds), [bookmarkedEventIds]);
+  const registeredSet = useMemo(() => new Set(registeredEventIds), [registeredEventIds]);
   const [locationStatus, setLocationStatus] = useState<LocationStatus>("idle");
   const [locationQuery, setLocationQuery] = useState("Sydney CBD");
   const [searchQuery, setSearchQuery] = useState("");
@@ -151,16 +161,16 @@ export function EventExplorer({ events }: { events: EventItem[] }) {
 
   return (
     <div className="mt-10 grid gap-8 lg:grid-cols-[0.86fr_1.14fr]">
-      <aside className="h-fit rounded-lg border border-black/10 bg-white p-5 shadow-sm lg:sticky lg:top-28">
+      <aside className="h-fit rounded-lg border border-[color:var(--line)] bg-[color:var(--champagne)] p-5 shadow-sm lg:sticky lg:top-28">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between lg:flex-col">
           <div>
-            <p className="text-xs font-black uppercase tracking-[0.16em] text-[#f65858]">
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-[color:var(--rose)]">
               Find events around me
             </p>
             <h3 className="mt-2 text-4xl font-black leading-none">
               Search once, then refine fast.
             </h3>
-            <p className="mt-3 text-sm font-bold leading-6 text-[#1f1f1f]/65">
+            <p className="mt-3 text-sm font-bold leading-6 text-[color:var(--mauve)]">
               Try a plan, suburb, vibe, or food type. The list updates instantly
               and stays focused on nearby events.
             </p>
@@ -168,13 +178,13 @@ export function EventExplorer({ events }: { events: EventItem[] }) {
           <button
             type="button"
             onClick={requestLocation}
-            className="min-h-12 shrink-0 rounded-full bg-[#f65858] px-5 text-sm font-black text-white shadow-sm"
+            className="min-h-12 shrink-0 rounded-full bg-[color:var(--rose)] px-5 text-sm font-black text-[color:var(--on-deep)] shadow-sm"
           >
             {locationStatus === "requesting" ? "Requesting..." : "Share my location"}
           </button>
         </div>
 
-        <div className="mt-5 rounded-lg border border-black/10 bg-[#fffdf7] p-4">
+        <div className="mt-5 rounded-lg border border-[color:var(--line)] bg-[color:var(--champagne)] p-4">
           <p className="text-sm font-black">
             {locationStatus === "shared"
               ? "Location shared. Showing events around you."
@@ -192,7 +202,7 @@ export function EventExplorer({ events }: { events: EventItem[] }) {
             <input
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
-              className="rounded-lg border border-black/10 bg-white px-4 py-3 font-bold outline-none focus:border-[#008294]"
+              className="rounded-lg border border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 font-bold outline-none focus:border-[color:var(--rose)]"
               placeholder="restaurant, dinner, free, friends, fitness"
             />
           </label>
@@ -237,7 +247,7 @@ export function EventExplorer({ events }: { events: EventItem[] }) {
                   key={chip.label}
                   type="button"
                   onClick={chip.action}
-                  className="rounded-full border border-black/10 bg-[#d8f3ef] px-4 py-2 text-sm font-black"
+                  className="rounded-full border border-[color:var(--line)] bg-[color:var(--peach)] px-4 py-2 text-sm font-black"
                 >
                   {chip.label}
                 </button>
@@ -250,7 +260,7 @@ export function EventExplorer({ events }: { events: EventItem[] }) {
             <input
               value={locationQuery}
               onChange={(event) => setLocationQuery(event.target.value)}
-              className="rounded-lg border border-black/10 bg-white px-4 py-3 font-bold outline-none focus:border-[#008294]"
+              className="rounded-lg border border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 font-bold outline-none focus:border-[color:var(--rose)]"
               placeholder="Bondi, Parramatta, Sydney CBD"
             />
           </label>
@@ -263,10 +273,10 @@ export function EventExplorer({ events }: { events: EventItem[] }) {
                   key={category}
                   type="button"
                   onClick={() => setSelectedCategory(category)}
-                  className={`rounded-full border border-black/10 px-4 py-2 text-sm font-black ${
+                  className={`rounded-full border border-[color:var(--line)] px-4 py-2 text-sm font-black ${
                     selectedCategory === category
-                      ? "bg-[#1f1f1f] text-white"
-                      : "bg-white text-[#1f1f1f]"
+                      ? "bg-[color:var(--surface-deep)] text-[color:var(--on-deep)]"
+                      : "bg-white text-[color:var(--ink)]"
                   }`}
                 >
                   {category}
@@ -280,7 +290,7 @@ export function EventExplorer({ events }: { events: EventItem[] }) {
             <select
               value={selectedSuburb}
               onChange={(event) => setSelectedSuburb(event.target.value)}
-              className="rounded-lg border border-black/10 bg-white px-4 py-3 font-bold outline-none focus:border-[#008294]"
+              className="rounded-lg border border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 font-bold outline-none focus:border-[color:var(--rose)]"
             >
               {suburbs.map((suburb) => (
                 <option key={suburb}>{suburb}</option>
@@ -300,8 +310,8 @@ export function EventExplorer({ events }: { events: EventItem[] }) {
                   key={value}
                   type="button"
                   onClick={() => setDateWindow(value as DateWindow)}
-                  className={`rounded-full border border-black/10 px-4 py-2 text-sm font-black ${
-                    dateWindow === value ? "bg-[#1f1f1f] text-white" : "bg-white text-[#1f1f1f]"
+                  className={`rounded-full border border-[color:var(--line)] px-4 py-2 text-sm font-black ${
+                    dateWindow === value ? "bg-[color:var(--surface-deep)] text-[color:var(--on-deep)]" : "bg-white text-[color:var(--ink)]"
                   }`}
                 >
                   {label}
@@ -319,7 +329,7 @@ export function EventExplorer({ events }: { events: EventItem[] }) {
               step="1"
               value={distanceKm}
               onChange={(event) => setDistanceKm(Number(event.target.value))}
-              className="accent-[#f65858]"
+              className="accent-[color:var(--rose)]"
             />
           </label>
 
@@ -328,7 +338,7 @@ export function EventExplorer({ events }: { events: EventItem[] }) {
             <select
               value={sortMode}
               onChange={(event) => setSortMode(event.target.value as SortMode)}
-              className="rounded-lg border border-black/10 bg-white px-4 py-3 font-bold outline-none focus:border-[#008294]"
+              className="rounded-lg border border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 font-bold outline-none focus:border-[color:var(--rose)]"
             >
               <option value="recommended">Recommended</option>
               <option value="soonest">Soonest first</option>
@@ -338,12 +348,12 @@ export function EventExplorer({ events }: { events: EventItem[] }) {
           </label>
         </div>
 
-        <div className="mt-5 overflow-hidden rounded-lg border border-black/10 bg-[#fffdf7] shadow-sm">
-          <div className="flex items-center justify-between gap-3 border-b border-black/10 px-4 py-3">
+        <div className="mt-5 overflow-hidden rounded-lg border border-[color:var(--line)] bg-[color:var(--champagne)] shadow-sm">
+          <div className="flex items-center justify-between gap-3 border-b border-[color:var(--line)] px-4 py-3">
             <span className="text-xs font-black uppercase tracking-[0.16em]">
               Sample Google map
             </span>
-            <span className="rounded-full bg-[#d8f3ef] px-3 py-1 text-xs font-black">
+            <span className="rounded-full bg-[color:var(--peach)] px-3 py-1 text-xs font-black">
               {filteredEvents.length} matches
             </span>
           </div>
@@ -352,18 +362,18 @@ export function EventExplorer({ events }: { events: EventItem[] }) {
             className="relative h-72 overflow-hidden bg-[#E8F2EA]"
           >
             <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(0,130,148,0.1)_1px,transparent_1px),linear-gradient(rgba(0,130,148,0.1)_1px,transparent_1px)] bg-[size:44px_44px]" />
-            <div className="absolute left-[-8%] top-[24%] h-8 w-[118%] rotate-[-11deg] rounded-full bg-white shadow-sm" />
-            <div className="absolute left-[12%] top-[-10%] h-[125%] w-8 rotate-[18deg] rounded-full bg-white shadow-sm" />
-            <div className="absolute left-[44%] top-[-8%] h-[120%] w-7 rotate-[-4deg] rounded-full bg-white shadow-sm" />
-            <div className="absolute bottom-[22%] left-[-12%] h-7 w-[124%] rotate-[8deg] rounded-full bg-white shadow-sm" />
-            <div className="absolute right-4 top-4 rounded-lg border border-[#1f1f1f]/20 bg-white px-3 py-2 text-xs font-black text-[#1f1f1f] shadow">
+            <div className="absolute left-[-8%] top-[24%] h-8 w-[118%] rotate-[-11deg] rounded-full bg-[color:var(--champagne)] shadow-sm" />
+            <div className="absolute left-[12%] top-[-10%] h-[125%] w-8 rotate-[18deg] rounded-full bg-[color:var(--champagne)] shadow-sm" />
+            <div className="absolute left-[44%] top-[-8%] h-[120%] w-7 rotate-[-4deg] rounded-full bg-[color:var(--champagne)] shadow-sm" />
+            <div className="absolute bottom-[22%] left-[-12%] h-7 w-[124%] rotate-[8deg] rounded-full bg-[color:var(--champagne)] shadow-sm" />
+            <div className="absolute right-4 top-4 rounded-lg border border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-2 text-xs font-black text-[color:var(--ink)] shadow">
               + / -
             </div>
             <a
               href={mapsUrl}
               target="_blank"
               rel="noreferrer"
-              className="absolute left-4 top-4 rounded-lg border border-[#1f1f1f]/20 bg-white px-3 py-2 text-xs font-black text-[#1A73E8] shadow"
+              className="absolute left-4 top-4 rounded-lg border border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-2 text-xs font-black text-[#1A73E8] shadow"
             >
               Open in Maps
             </a>
@@ -382,18 +392,18 @@ export function EventExplorer({ events }: { events: EventItem[] }) {
                   className="absolute"
                   style={{ left, top, transform: "translate(-50%, -100%)" }}
                 >
-                  <div className="rounded-full border border-black/10 bg-[#f65858] px-3 py-1 text-xs font-black text-white shadow-sm">
+                  <div className="rounded-full border border-[color:var(--line)] bg-[color:var(--rose)] px-3 py-1 text-xs font-black text-[color:var(--on-deep)] shadow-sm">
                     {index + 1}
                   </div>
-                  <div className="mx-auto h-3 w-3 rotate-45 border-b border-r border-black/10 bg-[#f65858]" />
+                  <div className="mx-auto h-3 w-3 rotate-45 border-b border-r border-[color:var(--line)] bg-[color:var(--rose)]" />
                 </div>
               );
             })}
-            <div className="absolute bottom-4 left-4 right-4 rounded-lg border border-[#1f1f1f]/15 bg-white/92 p-3">
-              <p className="text-xs font-black uppercase tracking-[0.14em] text-[#1f1f1f]/45">
+            <div className="absolute bottom-4 left-4 right-4 rounded-lg border border-[color:var(--line)] bg-[color:var(--champagne)]/92 p-3">
+              <p className="text-xs font-black uppercase tracking-[0.14em] text-[color:var(--mauve)]">
                 Map preview
               </p>
-              <p className="mt-1 text-sm font-black text-[#1f1f1f]">
+              <p className="mt-1 text-sm font-black text-[color:var(--ink)]">
                 {filteredEvents.length} filtered events around {selectedSuburb}
                 {searchQuery ? ` for "${searchQuery}"` : ""}.
               </p>
@@ -405,13 +415,13 @@ export function EventExplorer({ events }: { events: EventItem[] }) {
       <section>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-sm font-black uppercase tracking-[0.16em] text-[#f65858]">
+            <p className="text-sm font-black uppercase tracking-[0.16em] text-[color:var(--rose)]">
               Events around me
             </p>
             <h2 className="mt-2 text-5xl font-black leading-none">
               {eventCountHeading(filteredEvents.length, dateWindow)}
             </h2>
-            <p className="mt-3 max-w-2xl text-sm font-bold leading-6 text-[#1f1f1f]/62">
+            <p className="mt-3 max-w-2xl text-sm font-bold leading-6 text-[color:var(--mauve)]">
               Showing {selectedCategory === "All" ? "all categories" : selectedCategory}
               {searchQuery ? ` matching "${searchQuery}"` : ""}, sorted by{" "}
               {sortMode === "recommended"
@@ -440,7 +450,7 @@ export function EventExplorer({ events }: { events: EventItem[] }) {
               setSelectedCategory("All");
               setSearchQuery("");
             }}
-            className="rounded-full border border-black/10 bg-[#d8f3ef] px-4 py-2 text-sm font-black"
+            className="rounded-full border border-[color:var(--line)] bg-[color:var(--peach)] px-4 py-2 text-sm font-black"
           >
             Events around me in the next 7 days
           </button>
@@ -453,7 +463,7 @@ export function EventExplorer({ events }: { events: EventItem[] }) {
               setSelectedCategory("All");
               setSearchQuery("");
             }}
-            className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-black"
+            className="rounded-full border border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-2 text-sm font-black"
           >
             Events around me in the next 30 days
           </button>
@@ -464,7 +474,7 @@ export function EventExplorer({ events }: { events: EventItem[] }) {
               setDateWindow("30");
               setSearchQuery("dinner");
             }}
-            className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-black"
+            className="rounded-full border border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-2 text-sm font-black"
           >
             Relationship events nearby
           </button>
@@ -473,21 +483,26 @@ export function EventExplorer({ events }: { events: EventItem[] }) {
         {filteredEvents.length > 0 ? (
           <div className="mt-8 grid gap-6 xl:grid-cols-2">
             {filteredEvents.map((event) => (
-              <EventCard key={event.id} event={event} />
+              <EventCard
+                key={event.id}
+                event={event}
+                bookmarked={bookmarkedSet.has(event.id)}
+                registered={registeredSet.has(event.id)}
+              />
             ))}
           </div>
         ) : (
-          <div className="mt-8 rounded-lg border border-black/10 bg-white p-8 shadow-sm">
+          <div className="mt-8 rounded-lg border border-[color:var(--line)] bg-[color:var(--champagne)] p-8 shadow-sm">
             <p className="text-4xl font-black leading-none">
               No events match those filters.
             </p>
-            <p className="mt-3 text-sm font-bold leading-6 text-[#1f1f1f]/65">
+            <p className="mt-3 text-sm font-bold leading-6 text-[color:var(--mauve)]">
               Try a wider distance, all Sydney, or the next 30 days.
             </p>
             <button
               type="button"
               onClick={resetFilters}
-              className="mt-5 rounded-full bg-[#1f1f1f] px-5 py-3 text-sm font-black text-white"
+              className="mt-5 rounded-full bg-[color:var(--surface-deep)] px-5 py-3 text-sm font-black text-[color:var(--on-deep)]"
             >
               Reset filters
             </button>

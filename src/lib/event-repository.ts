@@ -36,6 +36,38 @@ type ProfileRow = {
   display_name: string;
 };
 
+export type OnboardingInput = {
+  displayName: string;
+  suburb: string;
+  age: string;
+  bio: string;
+  intents: string[];
+  tags: string[];
+};
+
+export type MerchantSignupInput = {
+  businessName: string;
+  contactEmail: string;
+  websiteUrl: string;
+  abn: string;
+};
+
+export type MerchantProfileRow = {
+  id: string;
+  business_name: string;
+  contact_email: string;
+  verification_status: string;
+};
+
+export type ProfileStatus = {
+  exists: boolean;
+  role: "attendee" | "merchant" | "admin";
+  onboardingComplete: boolean;
+  merchantProfile: MerchantProfileRow | null;
+  bookmarkedEventIds: string[];
+  registeredEventIds: string[];
+};
+
 type LocalEventStore = {
   events: EventItem[];
   registrations: Record<string, Record<string, "confirmed" | "waitlisted">>;
@@ -234,6 +266,14 @@ function getSessionName(session: Session | null) {
   return session?.user?.name?.trim() || getSessionEmail(session) || "Click member";
 }
 
+function isConfiguredAdminEmail(email: string) {
+  return (process.env.ADMIN_EMAILS ?? "admin@click.local")
+    .split(",")
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean)
+    .includes(email);
+}
+
 async function readLocalStore(): Promise<LocalEventStore> {
   try {
     const rawStore = await readFile(localStorePath, "utf8");
@@ -274,6 +314,18 @@ function requireLocalSession(session: Session | null) {
     email,
     displayName: getSessionName(session),
   };
+}
+
+function requireLocalAdminSession(session: Session | null) {
+  const localProfile = requireLocalSession(session);
+
+  if (!isConfiguredAdminEmail(localProfile.email)) {
+    const error = new Error("Admin access is required.");
+    error.name = "ForbiddenError";
+    throw error;
+  }
+
+  return localProfile;
 }
 
 function eventItemFromInput(input: CreateEventInput, session: Session | null): EventItem {
@@ -343,6 +395,52 @@ async function createLocalEventForMerchant(input: CreateEventInput, session: Ses
   };
 }
 
+async function approveLocalEventForAdmin(eventId: string, session: Session | null) {
+  requireLocalAdminSession(session);
+
+  const store = await readLocalStore();
+  const target = store.events.find((event) => event.id === eventId);
+
+  if (!target) {
+    const error = new Error("Pending event not found.");
+    error.name = "NotFoundError";
+    throw error;
+  }
+
+  const nextEvent: EventItem = {
+    ...target,
+    status: "Live",
+    lifeSignals: target.lifeSignals.filter((signal) => signal !== "Pending review"),
+    fomo: "Approved by admin and ready for members to RSVP.",
+  };
+
+  await writeLocalStore({
+    ...store,
+    events: store.events.map((event) => (event.id === eventId ? nextEvent : event)),
+  });
+
+  return {
+    slug: nextEvent.id,
+    title: nextEvent.title,
+  };
+}
+
+async function getFallbackAdminEvents() {
+  const events = await getFallbackEvents({ includePending: true });
+
+  return events.map((event) => ({
+    id: event.id,
+    title: event.title,
+    category: event.category,
+    status: event.status,
+    booking: event.booking,
+    host: event.host,
+    attendees: event.attendees,
+    capacity: event.capacity,
+    startsAt: event.startsAt,
+  }));
+}
+
 async function registerLocallyForEvent(eventId: string, session: Session | null) {
   const localProfile = requireLocalSession(session);
   const store = await readLocalStore();
@@ -383,10 +481,7 @@ async function registerLocallyForEvent(eventId: string, session: Session | null)
   };
 }
 
-async function ensureProfileForSession(
-  session: Session | null,
-  role: ProfileRow["role"] = "attendee",
-) {
+async function ensureProfileForSession(session: Session | null) {
   const pool = getPostgresPool();
   const email = getSessionEmail(session);
 
@@ -394,7 +489,7 @@ async function ensureProfileForSession(
   if (!pool) throw databaseUnavailableError();
 
   const displayName = getSessionName(session);
-  const desiredRole: ProfileRow["role"] = email === "admin@click.local" ? "admin" : role;
+  const initialRole: ProfileRow["role"] = isConfiguredAdminEmail(email) ? "admin" : "attendee";
 
   const result = await pool.query<ProfileRow>(
     `
@@ -402,24 +497,40 @@ async function ensureProfileForSession(
       values ($1, $2::user_role, $3, $4, now())
       on conflict (email) do update
       set
-        display_name = excluded.display_name,
+        display_name = case
+          when profiles.display_name = profiles.email then excluded.display_name
+          else profiles.display_name
+        end,
         role = case
           when profiles.role = 'admin' then profiles.role
           when excluded.role = 'admin' then excluded.role
-          when excluded.role = 'merchant' then excluded.role
           else profiles.role
         end,
         updated_at = now()
       returning id::text, role::text as role, email::text, display_name
     `,
-    [`auth:${email}`, desiredRole, email, displayName],
+    [`auth:${email}`, initialRole, email, displayName],
   );
 
   return result.rows[0];
 }
 
+async function getMerchantProfile(pool: ReturnType<typeof getPostgresPool>, profileId: string) {
+  if (!pool) return null;
+  const result = await pool.query<MerchantProfileRow>(
+    `
+      select id::text, business_name, contact_email::text, verification_status
+      from merchant_profiles
+      where profile_id = $1::uuid
+      limit 1
+    `,
+    [profileId],
+  );
+  return result.rows[0] ?? null;
+}
+
 async function requireAdminProfile(session: Session | null) {
-  const profile = await ensureProfileForSession(session, "attendee");
+  const profile = await ensureProfileForSession(session);
 
   if (profile.role !== "admin") {
     const error = new Error("Admin access is required.");
@@ -493,7 +604,7 @@ export async function registerForEvent(eventId: string, session: Session | null)
   if (!pool) return registerLocallyForEvent(eventId, session);
 
   try {
-    const profile = await ensureProfileForSession(session, "attendee");
+    const profile = await ensureProfileForSession(session);
     const client = await pool.connect();
 
     try {
@@ -585,7 +696,13 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
   if (!pool) return createLocalEventForMerchant(input, session);
 
   try {
-    const profile = await ensureProfileForSession(session, "merchant");
+    const profile = await ensureProfileForSession(session);
+    const merchantProfile = await getMerchantProfile(pool, profile.id);
+    if (!merchantProfile) {
+      const error = new Error("Complete merchant signup before creating events.");
+      error.name = "MerchantSignupRequiredError";
+      throw error;
+    }
     const title = input.title.trim();
     const description = input.description.trim();
     const startsAt = new Date(input.startsAt);
@@ -610,6 +727,7 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
           title,
           description,
           host_profile_id,
+          merchant_profile_id,
           group_name,
           host_name,
           category,
@@ -631,12 +749,12 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
           $2,
           $3,
           $4::uuid,
-          $5,
+          $5::uuid,
           $6,
           $7,
+          $8,
           'pending',
           'click_managed',
-          $8,
           $9,
           $10,
           $11,
@@ -645,7 +763,8 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
           $14,
           $15,
           $16,
-          $17
+          $17,
+          $18
         )
         returning slug, title
       `,
@@ -654,7 +773,8 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
         title,
         description,
         profile.id,
-        input.groupName.trim() || `${profile.display_name}'s Group`,
+        merchantProfile.id,
+        input.groupName.trim() || merchantProfile.business_name,
         profile.display_name,
         category,
         startsAt,
@@ -710,53 +830,52 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
 
 export async function approveEventForAdmin(eventId: string, session: Session | null) {
   const pool = getPostgresPool();
-  const profile = await requireAdminProfile(session);
 
-  if (!pool) throw databaseUnavailableError();
+  if (!pool) return approveLocalEventForAdmin(eventId, session);
 
-  const result = await pool.query<{ slug: string; title: string }>(
-    `
-      update events
-      set status = 'live', updated_at = now()
-      where slug = $1 and status = 'pending'
-      returning slug, title
-    `,
-    [eventId],
-  );
+  try {
+    const profile = await requireAdminProfile(session);
 
-  const event = result.rows[0];
-  if (!event) {
-    const error = new Error("Pending event not found.");
-    error.name = "NotFoundError";
+    const result = await pool.query<{ slug: string; title: string }>(
+      `
+        update events
+        set status = 'live', updated_at = now()
+        where slug = $1 and status = 'pending'
+        returning slug, title
+      `,
+      [eventId],
+    );
+
+    const event = result.rows[0];
+    if (!event) {
+      const error = new Error("Pending event not found.");
+      error.name = "NotFoundError";
+      throw error;
+    }
+
+    await pool.query(
+      `
+        insert into audit_logs (actor_profile_id, action, entity_table, metadata)
+        values ($1::uuid, 'approve_event', 'events', $2::jsonb)
+      `,
+      [profile.id, JSON.stringify({ slug: event.slug, title: event.title })],
+    );
+
+    return event;
+  } catch (error) {
+    if (isDatabaseConnectivityError(error)) {
+      return approveLocalEventForAdmin(eventId, session);
+    }
+
     throw error;
   }
-
-  await pool.query(
-    `
-      insert into audit_logs (actor_profile_id, action, entity_table, metadata)
-      values ($1::uuid, 'approve_event', 'events', $2::jsonb)
-    `,
-    [profile.id, JSON.stringify({ slug: event.slug, title: event.title })],
-  );
-
-  return event;
 }
 
 export async function getAdminEvents() {
   const pool = getPostgresPool();
 
   if (!pool) {
-    return clickEvents.map((event) => ({
-      id: event.id,
-      title: event.title,
-      category: event.category,
-      status: event.status,
-      booking: event.booking,
-      host: event.host,
-      attendees: event.attendees,
-      capacity: event.capacity,
-      startsAt: event.startsAt,
-    }));
+    return getFallbackAdminEvents();
   }
 
   try {
@@ -804,19 +923,42 @@ export async function getAdminEvents() {
       console.warn("Falling back to static admin events.", error);
     }
 
-    return clickEvents.map((event) => ({
-      id: event.id,
-      title: event.title,
-      category: event.category,
-      status: event.status,
-      booking: event.booking,
-      host: event.host,
-      attendees: event.attendees,
-      capacity: event.capacity,
-      startsAt: event.startsAt,
-    }));
+    return getFallbackAdminEvents();
   }
 }
+
+const eventSelectColumns = `
+        event.slug,
+        event.title,
+        event.group_name,
+        event.host_name,
+        event.category,
+        event.status::text,
+        event.booking_model::text,
+        event.starts_at,
+        event.location_name,
+        event.suburb,
+        event.latitude::text,
+        event.longitude::text,
+        event.price_cents,
+        event.capacity,
+        event.image_url,
+        event.image_alt,
+        event.description,
+        event.relationship_goal,
+        event.fomo,
+        count(distinct attendee_count.id) filter (where attendee_count.status = 'confirmed') as confirmed_attendees,
+        coalesce(
+          array_agg(distinct tag.slug)
+            filter (where tag.tag_type in ('interest', 'vibe', 'music')),
+          '{}'
+        ) as tags,
+        coalesce(
+          array_agg(distinct tag.label)
+            filter (where tag.tag_type = 'life'),
+          '{}'
+        ) as life_signals
+`;
 
 export async function getDashboardData(session: Session | null): Promise<DashboardData> {
   const pool = getPostgresPool();
@@ -832,72 +974,61 @@ export async function getDashboardData(session: Session | null): Promise<Dashboa
       savedEvents: clickEvents.slice(2, 4),
       stats: {
         upcoming: upcomingEvents.length,
-        saved: 8,
-        clicks: 14,
-        radar: "Live",
+        saved: upcomingEvents.length,
+        clicks: 0,
+        radar: "Offline",
       },
     };
   }
 
   try {
-    const profile = await ensureProfileForSession(session, "attendee");
-    const result = await pool.query<EventRow>(
-      `
-        select
-          event.slug,
-          event.title,
-          event.group_name,
-          event.host_name,
-          event.category,
-          event.status::text,
-          event.booking_model::text,
-          event.starts_at,
-          event.location_name,
-          event.suburb,
-          event.latitude::text,
-          event.longitude::text,
-          event.price_cents,
-          event.capacity,
-          event.image_url,
-          event.image_alt,
-          event.description,
-          event.relationship_goal,
-          event.fomo,
-          count(distinct attendee_count.id) filter (where attendee_count.status = 'confirmed') as confirmed_attendees,
-          coalesce(
-            array_agg(distinct tag.slug)
-              filter (where tag.tag_type in ('interest', 'vibe', 'music')),
-            '{}'
-          ) as tags,
-          coalesce(
-            array_agg(distinct tag.label)
-              filter (where tag.tag_type = 'life'),
-            '{}'
-          ) as life_signals
-        from event_attendees own_attendee
-        join events event on event.id = own_attendee.event_id
-        left join event_attendees attendee_count on attendee_count.event_id = event.id
-        left join event_tags event_tag on event_tag.event_id = event.id
-        left join tags tag on tag.id = event_tag.tag_id
-        where own_attendee.profile_id = $1::uuid
-          and own_attendee.status in ('confirmed', 'waitlisted')
-        group by event.id
-        order by event.starts_at asc
-      `,
-      [profile.id],
-    );
+    const profile = await ensureProfileForSession(session);
 
-    const upcomingEvents = result.rows.map(eventFromRow);
+    const [upcomingResult, savedResult] = await Promise.all([
+      pool.query<EventRow>(
+        `
+          select ${eventSelectColumns}
+          from event_attendees own_attendee
+          join events event on event.id = own_attendee.event_id
+          left join event_attendees attendee_count on attendee_count.event_id = event.id
+          left join event_tags event_tag on event_tag.event_id = event.id
+          left join tags tag on tag.id = event_tag.tag_id
+          where own_attendee.profile_id = $1::uuid
+            and own_attendee.status in ('confirmed', 'waitlisted')
+          group by event.id
+          order by event.starts_at asc
+        `,
+        [profile.id],
+      ),
+      pool.query<EventRow>(
+        `
+          select ${eventSelectColumns}
+          from bookmarks bookmark
+          join events event on event.id = bookmark.event_id
+          left join event_attendees attendee_count on attendee_count.event_id = event.id
+          left join event_tags event_tag on event_tag.event_id = event.id
+          left join tags tag on tag.id = event_tag.tag_id
+          where bookmark.profile_id = $1::uuid
+          group by event.id, bookmark.created_at
+          order by bookmark.created_at desc
+          limit 12
+        `,
+        [profile.id],
+      ),
+    ]);
+
+    const upcomingEvents = upcomingResult.rows.map(eventFromRow);
+    const savedEvents = savedResult.rows.map(eventFromRow);
 
     return {
       userName: profile.display_name,
       upcomingEvents,
-      savedEvents: clickEvents.slice(2, 4),
+      savedEvents,
       stats: {
         upcoming: upcomingEvents.length,
-        saved: 8,
-        clicks: 14,
-        radar: "Live",
+        saved: savedEvents.length,
+        clicks: 0,
+        radar: upcomingEvents.length > 0 ? "Live" : "Quiet",
       },
     };
   } catch (error) {
@@ -913,10 +1044,266 @@ export async function getDashboardData(session: Session | null): Promise<Dashboa
       savedEvents: clickEvents.slice(2, 4),
       stats: {
         upcoming: upcomingEvents.length,
-        saved: 8,
-        clicks: 14,
-        radar: "Live",
+        saved: upcomingEvents.length,
+        clicks: 0,
+        radar: "Offline",
       },
     };
   }
+}
+
+export async function getProfileStatus(session: Session | null): Promise<ProfileStatus> {
+  const pool = getPostgresPool();
+  const email = getSessionEmail(session);
+
+  if (!pool || !email) {
+    return {
+      exists: false,
+      role: "attendee",
+      onboardingComplete: false,
+      merchantProfile: null,
+      bookmarkedEventIds: [],
+      registeredEventIds: [],
+    };
+  }
+
+  try {
+    const profile = await ensureProfileForSession(session);
+    const [statusResult, bookmarksResult, registrationsResult, merchant] = await Promise.all([
+      pool.query<{ suburb: string | null; bio: string | null }>(
+        `select suburb, bio from profiles where id = $1::uuid`,
+        [profile.id],
+      ),
+      pool.query<{ slug: string }>(
+        `
+          select event.slug
+          from bookmarks bookmark
+          join events event on event.id = bookmark.event_id
+          where bookmark.profile_id = $1::uuid
+        `,
+        [profile.id],
+      ),
+      pool.query<{ slug: string }>(
+        `
+          select event.slug
+          from event_attendees attendee
+          join events event on event.id = attendee.event_id
+          where attendee.profile_id = $1::uuid
+            and attendee.status in ('confirmed', 'waitlisted')
+        `,
+        [profile.id],
+      ),
+      getMerchantProfile(pool, profile.id),
+    ]);
+
+    const row = statusResult.rows[0];
+    const onboardingComplete = !!(row?.suburb && row?.bio);
+
+    return {
+      exists: true,
+      role: profile.role,
+      onboardingComplete,
+      merchantProfile: merchant,
+      bookmarkedEventIds: bookmarksResult.rows.map((entry) => entry.slug),
+      registeredEventIds: registrationsResult.rows.map((entry) => entry.slug),
+    };
+  } catch {
+    return {
+      exists: !!email,
+      role: "attendee",
+      onboardingComplete: false,
+      merchantProfile: null,
+      bookmarkedEventIds: [],
+      registeredEventIds: [],
+    };
+  }
+}
+
+export async function saveOnboarding(input: OnboardingInput, session: Session | null) {
+  const pool = getPostgresPool();
+  const email = getSessionEmail(session);
+
+  if (!email) throw authError();
+  if (!pool) throw databaseUnavailableError();
+
+  const displayName = input.displayName.trim();
+  const suburb = input.suburb.trim();
+  const bio = input.bio.trim();
+
+  if (!displayName || !suburb || !bio) {
+    const error = new Error("Name, suburb, and a short bio are required.");
+    error.name = "ValidationError";
+    throw error;
+  }
+
+  const ageValue = input.age.trim() ? Number.parseInt(input.age.trim(), 10) : null;
+  if (ageValue !== null && (!Number.isFinite(ageValue) || ageValue < 18 || ageValue > 120)) {
+    const error = new Error("Age must be 18 or older.");
+    error.name = "ValidationError";
+    throw error;
+  }
+
+  const allowedIntents = ["dating", "friendship", "networking", "exploring"];
+  const intents = (input.intents.length ? input.intents : ["friendship"])
+    .map((intent) => intent.toLowerCase())
+    .filter((intent) => allowedIntents.includes(intent));
+
+  const profile = await ensureProfileForSession(session);
+
+  await pool.query(
+    `
+      update profiles
+      set
+        display_name = $2,
+        suburb = $3,
+        age = $4,
+        bio = $5,
+        connection_intents = $6::connection_intent[],
+        updated_at = now()
+      where id = $1::uuid
+    `,
+    [profile.id, displayName, suburb, ageValue, bio, intents.length ? intents : ["friendship"]],
+  );
+
+  const rawTags = input.tags
+    .map((tag) => tag.trim().toLowerCase())
+    .filter(Boolean)
+    .slice(0, 24);
+
+  if (rawTags.length > 0) {
+    await pool.query(
+      `
+        with picked_tags as (
+          insert into tags (label, slug, tag_type, admin_managed)
+          select initcap(tag), regexp_replace(tag, '[^a-z0-9]+', '-', 'g'), 'interest', false
+          from unnest($2::text[]) as tag
+          on conflict (slug) do update set label = excluded.label
+          returning id
+        )
+        insert into user_tags (profile_id, tag_id, source)
+        select $1::uuid, picked_tags.id, 'user'
+        from picked_tags
+        on conflict do nothing
+      `,
+      [profile.id, rawTags],
+    );
+  }
+
+  return { ok: true, profileId: profile.id };
+}
+
+export async function registerMerchantProfile(input: MerchantSignupInput, session: Session | null) {
+  const pool = getPostgresPool();
+  const email = getSessionEmail(session);
+
+  if (!email) throw authError();
+  if (!pool) throw databaseUnavailableError();
+
+  const businessName = input.businessName.trim();
+  const contactEmail = input.contactEmail.trim().toLowerCase();
+
+  if (!businessName || !contactEmail) {
+    const error = new Error("Business name and contact email are required.");
+    error.name = "ValidationError";
+    throw error;
+  }
+
+  const profile = await ensureProfileForSession(session);
+
+  const result = await pool.query<MerchantProfileRow>(
+    `
+      insert into merchant_profiles (profile_id, business_name, contact_email, website_url, abn)
+      values ($1::uuid, $2, $3, nullif($4, ''), nullif($5, ''))
+      on conflict (profile_id) do update
+      set
+        business_name = excluded.business_name,
+        contact_email = excluded.contact_email,
+        website_url = excluded.website_url,
+        abn = excluded.abn,
+        updated_at = now()
+      returning id::text, business_name, contact_email::text, verification_status
+    `,
+    [profile.id, businessName, contactEmail, input.websiteUrl.trim(), input.abn.trim()],
+  );
+
+  if (profile.role === "attendee") {
+    await pool.query(
+      `update profiles set role = 'merchant', updated_at = now() where id = $1::uuid`,
+      [profile.id],
+    );
+  }
+
+  return result.rows[0];
+}
+
+export async function toggleBookmark(eventId: string, session: Session | null, save: boolean) {
+  const pool = getPostgresPool();
+  const email = getSessionEmail(session);
+
+  if (!email) throw authError();
+  if (!pool) throw databaseUnavailableError();
+
+  const profile = await ensureProfileForSession(session);
+  const eventRow = await pool.query<{ id: string }>(
+    `select id::text from events where slug = $1`,
+    [eventId],
+  );
+
+  if (eventRow.rows.length === 0) {
+    const error = new Error("Event not found.");
+    error.name = "NotFoundError";
+    throw error;
+  }
+
+  const eventUuid = eventRow.rows[0].id;
+
+  if (save) {
+    await pool.query(
+      `
+        insert into bookmarks (event_id, profile_id)
+        values ($1::uuid, $2::uuid)
+        on conflict do nothing
+      `,
+      [eventUuid, profile.id],
+    );
+  } else {
+    await pool.query(
+      `delete from bookmarks where event_id = $1::uuid and profile_id = $2::uuid`,
+      [eventUuid, profile.id],
+    );
+  }
+
+  return { saved: save };
+}
+
+export async function cancelRegistration(eventId: string, session: Session | null) {
+  const pool = getPostgresPool();
+  const email = getSessionEmail(session);
+
+  if (!email) throw authError();
+  if (!pool) throw databaseUnavailableError();
+
+  const profile = await ensureProfileForSession(session);
+
+  const result = await pool.query<{ event_id: string; title: string }>(
+    `
+      update event_attendees
+      set status = 'cancelled', updated_at = now()
+      from events event
+      where event_attendees.event_id = event.id
+        and event.slug = $1
+        and event_attendees.profile_id = $2::uuid
+        and event_attendees.status in ('confirmed', 'waitlisted')
+      returning event_attendees.event_id::text, event.title
+    `,
+    [eventId, profile.id],
+  );
+
+  if (result.rows.length === 0) {
+    const error = new Error("You are not currently registered for that event.");
+    error.name = "NotFoundError";
+    throw error;
+  }
+
+  return { eventTitle: result.rows[0].title };
 }

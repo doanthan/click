@@ -17,7 +17,7 @@ export default async function AdminPage() {
   const pendingCount = eventsForReview.filter((event) => event.status === "Pending").length;
 
   return (
-    <main className="min-h-screen bg-[#fffdf7] text-[#1f1f1f]">
+    <main className="min-h-screen bg-[color:var(--champagne)] text-[color:var(--ink)]">
       <PageHero
         eyebrow="Admin portal"
         title="Keep the room worth entering."
@@ -31,7 +31,7 @@ export default async function AdminPage() {
           </div>
         </PageHero>
 
-      <section className="bg-[#fffdf7] py-16">
+      <section className="bg-[color:var(--champagne)] py-16">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           <SectionIntro
             eyebrow="Operations"
@@ -52,7 +52,7 @@ export default async function AdminPage() {
         </div>
       </section>
 
-      <section className="bg-[#d8f3ef] py-16">
+      <section className="bg-[color:var(--peach)] py-16">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           <SectionIntro
             eyebrow="Moderation queue"
@@ -64,7 +64,7 @@ export default async function AdminPage() {
         </div>
       </section>
 
-      <section className="bg-[#fffdf7] py-16">
+      <section className="bg-[color:var(--champagne)] py-16">
         <div className="mx-auto grid max-w-7xl gap-8 px-4 sm:px-6 lg:grid-cols-[0.72fr_1.28fr]">
           <div>
             <SectionIntro
@@ -77,7 +77,7 @@ export default async function AdminPage() {
             {interestTagCategories.slice(0, 6).map(([category, ...tags]) => (
               <article
                 key={category}
-                className="rounded-lg border border-black/10 bg-white p-5 shadow-sm"
+                className="rounded-lg border border-[color:var(--line)] bg-[color:var(--champagne)] p-5 shadow-sm"
               >
                 <div className="flex items-center justify-between gap-3">
                   <h2 className="text-3xl font-black leading-none">
@@ -85,7 +85,7 @@ export default async function AdminPage() {
                   </h2>
                   <Pill tone="aqua">{tags.length} tags</Pill>
                 </div>
-                <p className="mt-3 text-sm font-bold leading-6 text-[#1f1f1f]/62">
+                <p className="mt-3 text-sm font-bold leading-6 text-[color:var(--mauve)]">
                   Merge duplicates, archive stale labels, and cascade updates to linked
                   users, merchants, and events.
                 </p>
@@ -95,7 +95,7 @@ export default async function AdminPage() {
         </div>
       </section>
 
-      <section className="brand-gradient-soft py-16 text-white">
+      <section className="bg-[color:var(--surface-deep)] py-16 text-[color:var(--on-deep)]">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           <SectionIntro
             eyebrow="Security and privacy"

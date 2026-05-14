@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { AIMatchPanel } from "@/components/ai-match-panel";
 import { LinkButton, SectionIntro } from "@/components/click-ui";
+import { LocationLabel } from "@/components/location-label";
 import {
   architectureLayers,
   groups,
@@ -93,7 +94,7 @@ export default function Home() {
           <div className="rise rise-d1 flex justify-center">
             <span className="sticker sticker--peach tilt-l-2">
               <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
-              Now in Sydney · low pressure, high yes
+              Now in <LocationLabel /> · low pressure, high yes
             </span>
           </div>
 
@@ -114,7 +115,7 @@ export default function Home() {
 
           <p className="rise rise-d3 mx-auto mt-7 max-w-2xl text-center text-lg font-medium leading-8 text-[color:var(--mauve)] sm:text-xl">
             Find local events, recurring groups, and low-pressure ways to meet
-            people around Sydney. Show up twice. Become familiar.
+            people around <LocationLabel />. Show up twice. Become familiar.
           </p>
 
           {/* AI search panel */}
@@ -122,7 +123,7 @@ export default function Home() {
             <AIMatchPanel
               showEvents
               title=""
-              eventsEyebrow="Events near Sydney"
+              eventsEyebrow={<>Events near <LocationLabel /></>}
               eventsTitle={
                 <>
                   A few good reasons to{" "}

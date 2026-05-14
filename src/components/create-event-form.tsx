@@ -146,16 +146,16 @@ export function CreateEventForm() {
   return (
     <form
       action={submitEvent}
-      className="grid gap-6 rounded-lg border border-black/10 bg-[#fffdf7] p-5 shadow-sm"
+      className="grid gap-6 rounded-lg border border-[color:var(--line)] bg-[color:var(--champagne)] p-5 shadow-sm"
     >
       <div>
-        <p className="text-xs font-black uppercase tracking-[0.16em] text-[#f65858]">
+        <p className="text-xs font-black uppercase tracking-[0.16em] text-[color:var(--rose)]">
           Start with an example
         </p>
         <h3 className="mt-2 text-4xl font-black leading-none">
           Most hosts only need the basics.
         </h3>
-        <p className="mt-3 text-sm font-bold leading-6 text-[#1f1f1f]/65">
+        <p className="mt-3 text-sm font-bold leading-6 text-[color:var(--mauve)]">
           Choose a template, adjust the venue and time, then submit. The
           restaurant meetup is ready as the default example.
         </p>
@@ -170,14 +170,14 @@ export function CreateEventForm() {
                 setState("idle");
                 setMessage("");
               }}
-              className={`rounded-lg border border-black/10 p-4 text-left ${
+              className={`rounded-lg border border-[color:var(--line)] p-4 text-left ${
                 values.title === template.values.title
-                  ? "bg-[#d8f3ef]"
-                  : "bg-white hover:bg-[#f7f3ea]"
+                  ? "bg-[color:var(--peach)]"
+                  : "bg-white hover:bg-[color:var(--cream)]"
               }`}
             >
               <span className="block text-sm font-black">{template.label}</span>
-              <span className="mt-1 block text-xs font-bold leading-5 text-[#1f1f1f]/58">
+              <span className="mt-1 block text-xs font-bold leading-5 text-[color:var(--mauve)]">
                 {template.hint}
               </span>
             </button>
@@ -193,7 +193,7 @@ export function CreateEventForm() {
             required
             value={values.title}
             onChange={(event) => updateField("title", event.target.value)}
-            className="rounded-lg border border-black/10 bg-white px-4 py-3 font-bold outline-none focus:border-[#008294]"
+            className="rounded-lg border border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 font-bold outline-none focus:border-[color:var(--rose)]"
           />
         </label>
         <label className="grid gap-2 text-sm font-black">
@@ -203,7 +203,7 @@ export function CreateEventForm() {
             required
             value={values.groupName}
             onChange={(event) => updateField("groupName", event.target.value)}
-            className="rounded-lg border border-black/10 bg-white px-4 py-3 font-bold outline-none focus:border-[#008294]"
+            className="rounded-lg border border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 font-bold outline-none focus:border-[color:var(--rose)]"
           />
         </label>
       </div>
@@ -216,7 +216,7 @@ export function CreateEventForm() {
             required
             value={values.locationName}
             onChange={(event) => updateField("locationName", event.target.value)}
-            className="rounded-lg border border-black/10 bg-white px-4 py-3 font-bold outline-none focus:border-[#008294]"
+            className="rounded-lg border border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 font-bold outline-none focus:border-[color:var(--rose)]"
           />
         </label>
         <label className="grid gap-2 text-sm font-black">
@@ -226,7 +226,7 @@ export function CreateEventForm() {
             required
             value={values.suburb}
             onChange={(event) => updateField("suburb", event.target.value)}
-            className="rounded-lg border border-black/10 bg-white px-4 py-3 font-bold outline-none focus:border-[#008294]"
+            className="rounded-lg border border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 font-bold outline-none focus:border-[color:var(--rose)]"
           />
         </label>
         <label className="grid gap-2 text-sm font-black">
@@ -237,7 +237,7 @@ export function CreateEventForm() {
             inputMode="numeric"
             value={values.capacity}
             onChange={(event) => updateField("capacity", event.target.value)}
-            className="rounded-lg border border-black/10 bg-white px-4 py-3 font-bold outline-none focus:border-[#008294]"
+            className="rounded-lg border border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 font-bold outline-none focus:border-[color:var(--rose)]"
           />
         </label>
       </div>
@@ -249,7 +249,7 @@ export function CreateEventForm() {
             name="category"
             value={values.category}
             onChange={(event) => updateField("category", event.target.value)}
-            className="rounded-lg border border-black/10 bg-white px-4 py-3 font-bold outline-none focus:border-[#008294]"
+            className="rounded-lg border border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 font-bold outline-none focus:border-[color:var(--rose)]"
           >
             {categories
               .filter((category) => category !== "All")
@@ -266,7 +266,7 @@ export function CreateEventForm() {
             type="datetime-local"
             value={values.startsAt}
             onChange={(event) => updateField("startsAt", event.target.value)}
-            className="rounded-lg border border-black/10 bg-white px-4 py-3 font-bold outline-none focus:border-[#008294]"
+            className="rounded-lg border border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 font-bold outline-none focus:border-[color:var(--rose)]"
           />
         </label>
         <label className="grid gap-2 text-sm font-black">
@@ -275,7 +275,7 @@ export function CreateEventForm() {
             name="price"
             value={values.price}
             onChange={(event) => updateField("price", event.target.value)}
-            className="rounded-lg border border-black/10 bg-white px-4 py-3 font-bold outline-none focus:border-[#008294]"
+            className="rounded-lg border border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 font-bold outline-none focus:border-[color:var(--rose)]"
           />
         </label>
         <label className="grid gap-2 text-sm font-black">
@@ -284,7 +284,7 @@ export function CreateEventForm() {
             name="tags"
             value={values.tags}
             onChange={(event) => updateField("tags", event.target.value)}
-            className="rounded-lg border border-black/10 bg-white px-4 py-3 font-bold outline-none focus:border-[#008294]"
+            className="rounded-lg border border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 font-bold outline-none focus:border-[color:var(--rose)]"
           />
         </label>
       </div>
@@ -295,7 +295,7 @@ export function CreateEventForm() {
           name="relationshipGoal"
           value={values.relationshipGoal}
           onChange={(event) => updateField("relationshipGoal", event.target.value)}
-          className="rounded-lg border border-black/10 bg-white px-4 py-3 font-bold outline-none focus:border-[#008294]"
+          className="rounded-lg border border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 font-bold outline-none focus:border-[color:var(--rose)]"
         />
       </label>
 
@@ -306,32 +306,32 @@ export function CreateEventForm() {
           required
           value={values.description}
           onChange={(event) => updateField("description", event.target.value)}
-          className="min-h-28 rounded-lg border border-black/10 bg-white px-4 py-3 font-bold outline-none focus:border-[#008294]"
+          className="min-h-28 rounded-lg border border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 font-bold outline-none focus:border-[color:var(--rose)]"
         />
       </label>
 
-      <div className="rounded-lg border border-black/10 bg-white p-4">
-        <p className="text-xs font-black uppercase tracking-[0.16em] text-[#008294]">
+      <div className="rounded-lg border border-[color:var(--line)] bg-[color:var(--champagne)] p-4">
+        <p className="text-xs font-black uppercase tracking-[0.16em] text-[color:var(--mauve)]">
           Listing preview
         </p>
         <div className="mt-3 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
             <h4 className="text-3xl font-black leading-none">{values.title}</h4>
-            <p className="mt-2 text-sm font-bold text-[#1f1f1f]/62">
+            <p className="mt-2 text-sm font-bold text-[color:var(--mauve)]">
               {formatDateTime(values.startsAt)} at {values.locationName}
             </p>
-            <p className="mt-2 text-sm font-bold leading-6 text-[#1f1f1f]/65">
+            <p className="mt-2 text-sm font-bold leading-6 text-[color:var(--mauve)]">
               {values.description}
             </p>
           </div>
           <div className="flex shrink-0 flex-wrap gap-2 md:max-w-48 md:justify-end">
-            <span className="rounded-full bg-[#d8f3ef] px-3 py-1 text-xs font-black">
+            <span className="rounded-full bg-[color:var(--peach)] px-3 py-1 text-xs font-black">
               {values.category}
             </span>
-            <span className="rounded-full bg-[#f7f3ea] px-3 py-1 text-xs font-black">
+            <span className="rounded-full bg-[color:var(--cream)] px-3 py-1 text-xs font-black">
               {values.capacity} seats
             </span>
-            <span className="rounded-full bg-[#f65858] px-3 py-1 text-xs font-black text-white">
+            <span className="rounded-full bg-[color:var(--rose)] px-3 py-1 text-xs font-black text-[color:var(--on-deep)]">
               {values.price || "Free"}
             </span>
           </div>
@@ -341,7 +341,7 @@ export function CreateEventForm() {
             {selectedTags.map((tag) => (
               <span
                 key={tag}
-                className="rounded-full border border-black/10 bg-[#fffdf7] px-3 py-1 text-xs font-black"
+                className="rounded-full border border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-1 text-xs font-black"
               >
                 {tag}
               </span>
@@ -352,8 +352,8 @@ export function CreateEventForm() {
 
       {message ? (
         <p
-          className={`rounded-lg border border-black/10 p-3 text-sm font-black ${
-            state === "error" ? "bg-[#f65858] text-white" : "bg-[#d8f3ef]"
+          className={`rounded-lg border border-[color:var(--line)] p-3 text-sm font-black ${
+            state === "error" ? "bg-[color:var(--rose)] text-[color:var(--on-deep)]" : "bg-[color:var(--peach)]"
           }`}
         >
           {message}
@@ -363,7 +363,7 @@ export function CreateEventForm() {
       <button
         type="submit"
         disabled={state === "submitting"}
-        className="w-fit rounded-full bg-[#1f1f1f] px-6 py-3 text-sm font-black text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-70"
+        className="w-fit rounded-full bg-[color:var(--surface-deep)] px-6 py-3 text-sm font-black text-[color:var(--on-deep)] shadow-sm disabled:cursor-not-allowed disabled:opacity-70"
       >
         {state === "submitting" ? "Submitting..." : "Submit restaurant meetup"}
       </button>

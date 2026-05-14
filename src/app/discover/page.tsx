@@ -9,23 +9,33 @@ export const metadata = {
 
 export default function DiscoverPage() {
   return (
-    <main className="min-h-screen overflow-hidden bg-[#fffdf7] text-[#1f1f1f]">
-      <section className="brand-gradient-soft relative px-4 py-10 text-white sm:px-6 lg:py-14">
-        <div className="paper-grid absolute inset-0 opacity-20" />
-        <div className="relative z-10 mx-auto max-w-7xl">
-          <div className="mx-auto mb-7 max-w-3xl text-center">
-            <p className="text-sm font-black uppercase tracking-[0.18em] text-[#7edbd3]">
-              Discover
-            </p>
-            <h1 className="mt-3 text-4xl font-black leading-none sm:text-6xl">
-              Find a plan with a reason to talk.
-            </h1>
-          </div>
+    <main className="min-h-screen overflow-hidden bg-[color:var(--champagne)] text-[color:var(--ink)]">
+      <section className="relative overflow-hidden bg-[color:var(--surface-deep)] px-4 py-12 text-[color:var(--on-deep)] sm:px-6 lg:py-16">
+        <div className="confetti-field absolute inset-0 opacity-20" aria-hidden />
+        <div className="relative z-10 mx-auto max-w-3xl text-center">
+          <span className="sticker sticker--peach tilt-l-2">
+            <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
+            Click discovery
+          </span>
+          <h1 className="font-display mt-5 text-5xl font-light leading-[0.95] tracking-tight sm:text-6xl lg:text-7xl">
+            Find a plan with a{" "}
+            <span className="italic text-[color:var(--peach)]">reason to talk.</span>
+          </h1>
+          <p className="mx-auto mt-5 max-w-xl text-base font-medium leading-7 text-[color:var(--on-deep)]/72 sm:text-lg">
+            Tell Click what you want — friendship, a slow date, a fitness mate,
+            a creative crew. We surface events and people that fit how you
+            actually like to show up.
+          </p>
+        </div>
+      </section>
+
+      <section className="bg-[color:var(--champagne)] px-4 py-12 sm:px-6">
+        <div className="mx-auto max-w-7xl">
           <AIMatchPanel defaultPrompt="I want to make new friends around Sydney" />
         </div>
       </section>
 
-      <section className="bg-[#d8f3ef] py-10">
+      <section className="bg-[color:var(--peach)] py-10">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           <div className="flex flex-wrap gap-2">
             {categories.map((category, index) => (
@@ -37,7 +47,7 @@ export default function DiscoverPage() {
         </div>
       </section>
 
-      <section className="brand-gradient-soft py-16 text-white">
+      <section className="bg-[color:var(--surface-deep)] py-16 text-[color:var(--on-deep)]">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           <SectionIntro
             eyebrow="Why this fits"

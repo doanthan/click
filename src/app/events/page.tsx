@@ -1,7 +1,8 @@
+import { auth } from "@/auth";
 import { EventExplorer } from "@/components/event-explorer";
 import { InfoCard, Pill, SectionIntro } from "@/components/click-ui";
 import { categories } from "@/lib/click-data";
-import { getEventsForExplore } from "@/lib/event-repository";
+import { getEventsForExplore, getProfileStatus } from "@/lib/event-repository";
 
 export const metadata = {
   title: "Events | Click",
@@ -9,42 +10,46 @@ export const metadata = {
 };
 
 export default async function EventsPage() {
-  const events = await getEventsForExplore();
+  const session = await auth();
+  const [events, profileStatus] = await Promise.all([
+    getEventsForExplore(),
+    session?.user ? getProfileStatus(session) : null,
+  ]);
 
   return (
-    <main className="min-h-screen bg-[#fffdf7] text-[#1f1f1f]">
-      <section className="brand-gradient relative overflow-hidden px-4 py-10 text-[#1f1f1f] sm:px-6">
-        <div className="paper-grid absolute inset-0 opacity-70" />
+    <main className="min-h-screen bg-[color:var(--champagne)] text-[color:var(--ink)]">
+      <section className="paper-noise relative overflow-hidden px-4 py-10 text-[color:var(--ink)] sm:px-6">
+        <div className="confetti-field absolute inset-0 opacity-70" />
         <div className="relative z-10 mx-auto grid max-w-7xl gap-7 lg:grid-cols-[0.8fr_1.2fr] lg:items-end">
           <div>
-            <p className="text-sm font-black uppercase tracking-[0.18em] text-[#008294]">
+            <p className="text-sm font-black uppercase tracking-[0.18em] text-[color:var(--mauve)]">
               Events
             </p>
             <h1 className="mt-3 text-5xl font-black leading-none sm:text-7xl">
               Find the easiest plan near you.
             </h1>
-            <p className="mt-5 max-w-xl text-base font-bold leading-7 text-[#1f1f1f]/66">
+            <p className="mt-5 max-w-xl text-base font-bold leading-7 text-[color:var(--mauve)]">
               Search by vibe, suburb, food, date, or price. Quick picks surface
               restaurant meetups, free plans, and small groups without making
               people wrestle with filters.
             </p>
           </div>
-          <div className="grid gap-3 rounded-xl border border-black/10 bg-white p-5 text-[#1f1f1f] shadow-sm md:grid-cols-3">
+          <div className="grid gap-3 rounded-xl border border-[color:var(--line)] bg-[color:var(--champagne)] p-5 text-[color:var(--ink)] shadow-sm md:grid-cols-3">
             {[
               ["Locked", "RSVP to unlock details."],
               ["Waitlist", "Confirm when a spot opens."],
               ["Unlocked", "Full location after RSVP."],
             ].map(([state, body]) => (
-              <div key={state} className="rounded-lg border border-black/10 bg-white p-4">
+              <div key={state} className="rounded-lg border border-[color:var(--line)] bg-[color:var(--champagne)] p-4">
                 <p className="text-3xl font-black leading-none">{state}</p>
-                <p className="mt-1 text-sm font-bold leading-5 text-[#1f1f1f]/62">{body}</p>
+                <p className="mt-1 text-sm font-bold leading-5 text-[color:var(--mauve)]">{body}</p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      <section className="border-y border-black/10 bg-[#d8f3ef]">
+      <section className="border-y border-[color:var(--line)] bg-[color:var(--peach)]">
         <div className="mx-auto flex max-w-7xl gap-2 overflow-x-auto px-4 py-5 sm:px-6">
           {categories.map((category, index) => (
             <Pill key={category} tone={index % 4 === 0 ? "pink" : "white"}>
@@ -54,13 +59,17 @@ export default async function EventsPage() {
         </div>
       </section>
 
-      <section className="bg-[#fffdf7] py-10">
+      <section className="bg-[color:var(--champagne)] py-10">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
-          <EventExplorer events={events} />
+          <EventExplorer
+            events={events}
+            bookmarkedEventIds={profileStatus?.bookmarkedEventIds ?? []}
+            registeredEventIds={profileStatus?.registeredEventIds ?? []}
+          />
         </div>
       </section>
 
-      <section className="brand-gradient-soft py-16 text-white">
+      <section className="bg-[color:var(--surface-deep)] py-16 text-[color:var(--on-deep)]">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           <SectionIntro
             eyebrow="Booking and payments"

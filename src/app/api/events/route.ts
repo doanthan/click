@@ -31,6 +31,13 @@ function responseForError(error: unknown) {
     return NextResponse.json({ error: error.message }, { status: 503 });
   }
 
+  if (error.name === "MerchantSignupRequiredError") {
+    return NextResponse.json(
+      { error: error.message, redirect: "/merchant/signup" },
+      { status: 403 },
+    );
+  }
+
   return NextResponse.json({ error: error.message || "Event creation failed." }, { status: 500 });
 }
 

@@ -30,8 +30,8 @@ export function AdminEventQueue({ events }: { events: AdminEventRow[] }) {
   }
 
   return (
-    <div className="mt-10 overflow-hidden rounded-lg border border-black/10 bg-[#fffdf7] shadow-sm">
-      <div className="hidden grid-cols-[1.35fr_0.7fr_0.7fr_0.7fr_0.8fr_0.8fr] gap-4 bg-[#1f1f1f] px-4 py-3 text-xs font-black uppercase tracking-[0.14em] text-white md:grid">
+    <div className="mt-10 overflow-hidden rounded-lg border border-[color:var(--line)] bg-[color:var(--champagne)] shadow-sm">
+      <div className="hidden grid-cols-[1.35fr_0.7fr_0.7fr_0.7fr_0.8fr_0.8fr] gap-4 bg-[color:var(--surface-deep)] px-4 py-3 text-xs font-black uppercase tracking-[0.14em] text-[color:var(--on-deep)] md:grid">
         <span>Event</span>
         <span>Category</span>
         <span>Status</span>
@@ -40,16 +40,16 @@ export function AdminEventQueue({ events }: { events: AdminEventRow[] }) {
         <span>Action</span>
       </div>
       {message ? (
-        <p className="border-b border-black/10 bg-[#d8f3ef] px-4 py-3 text-sm font-black">
+        <p className="border-b border-[color:var(--line)] bg-[color:var(--peach)] px-4 py-3 text-sm font-black">
           {message}
         </p>
       ) : null}
       {rows.map((event) => (
         <div
           key={event.id}
-          className="grid gap-3 border-b border-black/10 px-4 py-4 text-sm font-bold text-[#1f1f1f]/68 last:border-0 md:grid-cols-[1.35fr_0.7fr_0.7fr_0.7fr_0.8fr_0.8fr] md:items-center"
+          className="grid gap-3 border-b border-[color:var(--line)] px-4 py-4 text-sm font-bold text-[color:var(--mauve)] last:border-0 md:grid-cols-[1.35fr_0.7fr_0.7fr_0.7fr_0.8fr_0.8fr] md:items-center"
         >
-          <span className="font-black text-[#1f1f1f]">{event.title}</span>
+          <span className="font-black text-[color:var(--ink)]">{event.title}</span>
           <span>{event.category}</span>
           <span>{event.status}</span>
           <span>{event.booking}</span>
@@ -60,12 +60,12 @@ export function AdminEventQueue({ events }: { events: AdminEventRow[] }) {
             <button
               type="button"
               onClick={() => approve(event.id)}
-              className="w-fit rounded-full bg-[#1f1f1f] px-4 py-2 text-xs font-black text-white"
+              className="w-fit rounded-full bg-[color:var(--surface-deep)] px-4 py-2 text-xs font-black text-[color:var(--on-deep)]"
             >
               Approve
             </button>
           ) : (
-            <span className="w-fit rounded-full border border-black/10 px-4 py-2 text-xs font-black">
+            <span className="w-fit rounded-full border border-[color:var(--line)] px-4 py-2 text-xs font-black">
               Inspect
             </span>
           )}

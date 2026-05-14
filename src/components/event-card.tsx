@@ -1,11 +1,21 @@
 import Image from "next/image";
-import Link from "next/link";
 import type { EventItem } from "@/lib/click-data";
 import { formatCapacity } from "@/lib/click-matching";
 import { Pill } from "./click-ui";
+import { EventBookmarkButton } from "./event-bookmark-button";
 import { EventRegistrationButton } from "./event-registration-button";
 
-export function EventCard({ event, compact = false }: { event: EventItem; compact?: boolean }) {
+export function EventCard({
+  event,
+  compact = false,
+  bookmarked = false,
+  registered = false,
+}: {
+  event: EventItem;
+  compact?: boolean;
+  bookmarked?: boolean;
+  registered?: boolean;
+}) {
   const fullness = Math.min((event.attendees / event.capacity) * 100, 100);
   const statusTone =
     event.status === "Waitlist"
@@ -72,13 +82,8 @@ export function EventCard({ event, compact = false }: { event: EventItem; compac
         </div>
 
         <div className="mt-5 grid grid-cols-2 gap-2">
-          <EventRegistrationButton eventId={event.id} />
-          <Link
-            href="/dashboard"
-            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 text-center text-sm font-bold text-[color:var(--ink)] hover:bg-[color:var(--peach)] hover:text-[color:var(--surface-deep)]"
-          >
-            Save
-          </Link>
+          <EventRegistrationButton eventId={event.id} initiallyRegistered={registered} />
+          <EventBookmarkButton eventId={event.id} initiallySaved={bookmarked} />
         </div>
       </div>
     </article>
