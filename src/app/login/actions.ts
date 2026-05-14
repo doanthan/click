@@ -41,7 +41,6 @@ export async function signInWithEmail(formData: FormData) {
   try {
     await signIn("email-login", {
       email: getFormValue(formData, "email"),
-      password: getFormValue(formData, "password"),
       redirectTo: callbackUrl,
     });
   } catch (error) {
@@ -55,4 +54,31 @@ export async function signInWithEmail(formData: FormData) {
 
 export async function signOutOfClick() {
   await signOut({ redirectTo: "/" });
+}
+
+export type EmailLoginFormState = { error: string | null };
+
+const errorCopyByType: Record<string, string> = {
+  CredentialsSignin: "Enter a valid email address to continue.",
+  Configuration: "Authentication is missing provider or secret configuration.",
+};
+
+export async function signInWithEmailFromModal(
+  _prev: EmailLoginFormState,
+  formData: FormData,
+): Promise<EmailLoginFormState> {
+  const callbackUrl = safeCallbackUrl(getFormValue(formData, "callbackUrl"));
+
+  try {
+    await signIn("email-login", {
+      email: getFormValue(formData, "email"),
+      redirectTo: callbackUrl,
+    });
+    return { error: null };
+  } catch (error) {
+    if (error instanceof AuthError) {
+      return { error: errorCopyByType[error.type] ?? "Login failed." };
+    }
+    throw error;
+  }
 }

@@ -54,17 +54,11 @@ providers.push(
         type: "email",
         placeholder: "you@example.com",
       },
-      password: {
-        label: "Password",
-        type: "password",
-      },
     },
     async authorize(credentials) {
       const email = getStringCredential(credentials?.email).toLowerCase();
-      const password = getStringCredential(credentials?.password);
-      const magicPassword = process.env.AUTH_EMAIL_PASSWORD ?? process.env.AUTH_MAGIC_PASSWORD;
 
-      if (!email || !magicPassword || password !== magicPassword) {
+      if (!email || !email.includes("@")) {
         return null;
       }
 

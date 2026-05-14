@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   animatedPrompts,
   avatarFor,
@@ -21,6 +22,7 @@ type AIMatchPanelProps = {
   eventsTitle?: React.ReactNode;
   peopleEyebrow?: React.ReactNode;
   peopleTitle?: React.ReactNode;
+  submitNavigateTo?: string;
 };
 
 export function AIMatchPanel({
@@ -31,7 +33,9 @@ export function AIMatchPanel({
   eventsTitle = "Plans that make the first hello easier.",
   peopleEyebrow = "People recommendations",
   peopleTitle,
+  submitNavigateTo,
 }: AIMatchPanelProps) {
+  const router = useRouter();
   const [events, setEvents] = useState<EventItem[]>(clickEvents);
   const [query, setQuery] = useState("");
   const [submittedQuery, setSubmittedQuery] = useState(defaultPrompt);
@@ -98,6 +102,13 @@ export function AIMatchPanel({
 
   function submitPrompt(nextQuery = query) {
     const cleanQuery = nextQuery.trim() || starterPrompts[0];
+
+    if (submitNavigateTo) {
+      const target = `${submitNavigateTo}?q=${encodeURIComponent(cleanQuery)}`;
+      router.push(target);
+      return;
+    }
+
     setSubmittedQuery(cleanQuery);
     setQuery(cleanQuery);
   }

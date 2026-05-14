@@ -2,6 +2,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { auth, isAdminEmail, signOut } from "@/auth";
 import { getProfileStatus } from "@/lib/event-repository";
+import { LoginTrigger } from "./login-trigger";
 
 export async function SiteHeader() {
   const session = await auth();
@@ -86,12 +87,7 @@ export async function SiteHeader() {
             </>
           ) : (
             <>
-              <Link
-                href="/login"
-                className="hidden rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-2 text-sm font-bold text-[color:var(--ink)] hard-shadow-sm sm:block"
-              >
-                Log in
-              </Link>
+              <LoginTrigger className="hidden rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-2 text-sm font-bold text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)] sm:block" />
               <Link
                 href="/discover"
                 className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-4 py-2 text-sm font-bold text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)]"

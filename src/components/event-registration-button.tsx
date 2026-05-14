@@ -1,6 +1,8 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { useState } from "react";
+import { openLoginModal } from "./login-modal-host";
 
 type RegistrationState =
   | "idle"
@@ -22,6 +24,7 @@ export function EventRegistrationButton({
     initiallyRegistered ? "registered" : "idle",
   );
   const [message, setMessage] = useState("");
+  const pathname = usePathname();
 
   async function register() {
     setState("submitting");
@@ -32,7 +35,8 @@ export function EventRegistrationButton({
     });
 
     if (response.status === 401) {
-      window.location.href = `/login?callbackUrl=${encodeURIComponent("/events")}`;
+      setState("idle");
+      openLoginModal({ callbackUrl: pathname || "/events" });
       return;
     }
 
@@ -63,7 +67,8 @@ export function EventRegistrationButton({
     });
 
     if (response.status === 401) {
-      window.location.href = "/login?callbackUrl=/events";
+      setState("registered");
+      openLoginModal({ callbackUrl: pathname || "/events" });
       return;
     }
 

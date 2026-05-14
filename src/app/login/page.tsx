@@ -18,8 +18,7 @@ type LoginPageProps = {
 };
 
 const errorCopy: Record<string, string> = {
-  CredentialsSignin:
-    "That email and password did not match. Check the password and try again.",
+  CredentialsSignin: "Enter a valid email address to continue.",
   OAuthSignin: "The social login could not start. Check the provider configuration.",
   OAuthCallback: "The social login callback failed. Check the provider callback URL.",
   Configuration: "Authentication is missing provider or secret configuration.",
@@ -36,8 +35,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const errorMessage = params?.error ? errorCopy[params.error] ?? "Login failed." : "";
   const googleConfigured = !!(process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET);
   const metaConfigured = !!(process.env.AUTH_FACEBOOK_ID && process.env.AUTH_FACEBOOK_SECRET);
-  const showDemoCredentials =
-    process.env.NODE_ENV !== "production" && !!process.env.AUTH_EMAIL_PASSWORD;
+  const showDemoCredentials = process.env.NODE_ENV !== "production";
 
   return (
     <main className="paper-noise relative min-h-screen overflow-hidden px-4 py-12 text-[color:var(--ink)] sm:px-6">
@@ -161,20 +159,6 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
                 />
               </label>
 
-              <label className="grid gap-2 text-sm font-bold text-[color:var(--ink)]">
-                <span className="font-mono text-[0.7rem] uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-                  Password
-                </span>
-                <input
-                  name="password"
-                  type="password"
-                  required
-                  autoComplete="current-password"
-                  className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 text-base font-semibold text-[color:var(--ink)] placeholder:text-[color:var(--mauve)]/55 outline-none focus:bg-[color:var(--cream)]"
-                  placeholder="Enter your password"
-                />
-              </label>
-
               {errorMessage ? (
                 <p
                   role="alert"
@@ -194,16 +178,32 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             </form>
 
             {showDemoCredentials ? (
-              <p className="mt-5 rounded-xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-3 text-sm font-medium text-[color:var(--ink)]">
-                <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-                  ✷ Local demo
-                </span>
-                <br />
-                Use any email with password{" "}
-                <span className="font-mono font-bold">click-demo</span>. Use{" "}
-                <span className="font-mono font-bold">admin@click.local</span>{" "}
-                for admin access.
-              </p>
+              <div className="mt-5 rounded-xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-3 text-sm font-medium text-[color:var(--ink)]">
+                <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+                  ✷ MVP preview · no password yet
+                </p>
+                <ul className="mt-3 grid gap-2">
+                  <li>
+                    <span className="font-bold">Attendee</span> — sign in with
+                    any email (e.g.{" "}
+                    <span className="font-mono">jane@example.com</span>) to
+                    browse and RSVP.
+                  </li>
+                  <li>
+                    <span className="font-bold">Event organiser</span> — sign
+                    in with any email, then click{" "}
+                    <span className="font-mono">Become a host</span> on your
+                    dashboard to create events.
+                  </li>
+                  <li>
+                    <span className="font-bold">Admin</span> — sign in as{" "}
+                    <span className="font-mono font-bold">
+                      admin@click.local
+                    </span>{" "}
+                    to approve pending events.
+                  </li>
+                </ul>
+              </div>
             ) : null}
 
             <p className="mt-6 text-sm font-medium text-[color:var(--mauve)]">

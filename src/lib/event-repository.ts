@@ -99,6 +99,53 @@ export type AdminEventRow = {
   startsAt: string;
 };
 
+export type AdminMemberRow = {
+  id: string;
+  displayName: string;
+  email: string;
+  role: "attendee" | "merchant" | "admin";
+  suburb: string | null;
+  intents: string[];
+  bookmarks: number;
+  registrations: number;
+  emailVerified: boolean;
+  photoVerified: boolean;
+  joinedAt: string;
+};
+
+export type AdminMerchantRow = {
+  id: string;
+  businessName: string;
+  contactEmail: string;
+  verificationStatus: "pending" | "approved" | "rejected" | string;
+  websiteUrl: string | null;
+  abn: string | null;
+  ownerName: string;
+  ownerEmail: string;
+  eventsHosted: number;
+  createdAt: string;
+};
+
+export type AdminAuditRow = {
+  id: string;
+  action: string;
+  entityTable: string;
+  actorName: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+};
+
+export type AdminMetrics = {
+  totalMembers: number;
+  newMembersThisWeek: number;
+  totalMerchants: number;
+  pendingMerchants: number;
+  totalEvents: number;
+  pendingEvents: number;
+  confirmedRsvps: number;
+  mutualClicks: number;
+};
+
 export type DashboardData = {
   userName: string;
   upcomingEvents: EventItem[];
@@ -924,6 +971,352 @@ export async function getAdminEvents() {
     }
 
     return getFallbackAdminEvents();
+  }
+}
+
+const fallbackAdminMembers: AdminMemberRow[] = [
+  {
+    id: "seed-maya",
+    displayName: "Maya Chen",
+    email: "maya@click.local",
+    role: "attendee",
+    suburb: "Barangaroo",
+    intents: ["friendship", "exploring"],
+    bookmarks: 4,
+    registrations: 2,
+    emailVerified: true,
+    photoVerified: true,
+    joinedAt: "2025-08-12T03:18:00.000Z",
+  },
+  {
+    id: "seed-leo",
+    displayName: "Leo Park",
+    email: "leo@click.local",
+    role: "attendee",
+    suburb: "Surry Hills",
+    intents: ["dating", "friendship"],
+    bookmarks: 7,
+    registrations: 3,
+    emailVerified: true,
+    photoVerified: false,
+    joinedAt: "2025-09-04T12:02:00.000Z",
+  },
+  {
+    id: "seed-anika",
+    displayName: "Anika Bose",
+    email: "anika@click.local",
+    role: "attendee",
+    suburb: "Newtown",
+    intents: ["friendship", "networking"],
+    bookmarks: 5,
+    registrations: 4,
+    emailVerified: true,
+    photoVerified: true,
+    joinedAt: "2025-09-19T22:45:00.000Z",
+  },
+  {
+    id: "seed-host-zara",
+    displayName: "Zara Diallo",
+    email: "zara@kindredkitchens.com",
+    role: "merchant",
+    suburb: "Redfern",
+    intents: ["networking"],
+    bookmarks: 1,
+    registrations: 0,
+    emailVerified: true,
+    photoVerified: true,
+    joinedAt: "2025-07-30T01:10:00.000Z",
+  },
+  {
+    id: "seed-admin",
+    displayName: "Click Admin",
+    email: "admin@click.local",
+    role: "admin",
+    suburb: "CBD",
+    intents: ["networking"],
+    bookmarks: 0,
+    registrations: 0,
+    emailVerified: true,
+    photoVerified: true,
+    joinedAt: "2025-06-01T00:00:00.000Z",
+  },
+];
+
+const fallbackAdminMerchants: AdminMerchantRow[] = [
+  {
+    id: "seed-kindred",
+    businessName: "Kindred Kitchens",
+    contactEmail: "zara@kindredkitchens.com",
+    verificationStatus: "approved",
+    websiteUrl: "https://kindredkitchens.com",
+    abn: "88 211 339 220",
+    ownerName: "Zara Diallo",
+    ownerEmail: "zara@kindredkitchens.com",
+    eventsHosted: 3,
+    createdAt: "2025-07-30T01:10:00.000Z",
+  },
+  {
+    id: "seed-yoga",
+    businessName: "Open Air Yoga Co.",
+    contactEmail: "hello@openairyoga.co",
+    verificationStatus: "pending",
+    websiteUrl: "https://openairyoga.co",
+    abn: null,
+    ownerName: "Priya Shah",
+    ownerEmail: "priya@openairyoga.co",
+    eventsHosted: 1,
+    createdAt: "2026-04-22T00:00:00.000Z",
+  },
+];
+
+const fallbackAdminAudit: AdminAuditRow[] = [
+  {
+    id: "log-1",
+    action: "approve_event",
+    entityTable: "events",
+    actorName: "Click Admin",
+    metadata: { title: "Sunset rooftop sketch jam", slug: "sunset-rooftop" },
+    createdAt: "2026-05-12T08:14:00.000Z",
+  },
+  {
+    id: "log-2",
+    action: "verify_merchant",
+    entityTable: "merchant_profiles",
+    actorName: "Click Admin",
+    metadata: { business: "Kindred Kitchens" },
+    createdAt: "2026-05-09T01:42:00.000Z",
+  },
+  {
+    id: "log-3",
+    action: "archive_tag",
+    entityTable: "tags",
+    actorName: "Click Admin",
+    metadata: { slug: "running-club-old" },
+    createdAt: "2026-05-04T22:11:00.000Z",
+  },
+];
+
+function fallbackAdminMetrics(eventCount: number, pendingCount: number): AdminMetrics {
+  return {
+    totalMembers: fallbackAdminMembers.length,
+    newMembersThisWeek: 1,
+    totalMerchants: fallbackAdminMerchants.length,
+    pendingMerchants: fallbackAdminMerchants.filter((m) => m.verificationStatus === "pending").length,
+    totalEvents: eventCount,
+    pendingEvents: pendingCount,
+    confirmedRsvps: fallbackAdminMembers.reduce((sum, m) => sum + m.registrations, 0),
+    mutualClicks: 12,
+  };
+}
+
+export async function getAdminMembers(): Promise<AdminMemberRow[]> {
+  const pool = getPostgresPool();
+  if (!pool) return fallbackAdminMembers;
+
+  try {
+    const result = await pool.query<{
+      id: string;
+      display_name: string;
+      email: string;
+      role: string;
+      suburb: string | null;
+      intents: string[] | null;
+      bookmarks: string;
+      registrations: string;
+      email_verified_at: Date | null;
+      photo_verified_at: Date | null;
+      created_at: Date;
+    }>(`
+      select
+        profile.id::text,
+        profile.display_name,
+        profile.email::text,
+        profile.role::text,
+        profile.suburb,
+        profile.connection_intents::text[] as intents,
+        coalesce(count(distinct bookmark.event_id), 0) as bookmarks,
+        coalesce(count(distinct attendee.id) filter (where attendee.status in ('confirmed', 'waitlisted')), 0) as registrations,
+        profile.email_verified_at,
+        profile.photo_verified_at,
+        profile.created_at
+      from profiles profile
+      left join bookmarks bookmark on bookmark.profile_id = profile.id
+      left join event_attendees attendee on attendee.profile_id = profile.id
+      group by profile.id
+      order by profile.created_at desc
+      limit 100
+    `);
+
+    return result.rows.map((row): AdminMemberRow => ({
+      id: row.id,
+      displayName: row.display_name,
+      email: row.email,
+      role: (row.role as AdminMemberRow["role"]) ?? "attendee",
+      suburb: row.suburb,
+      intents: row.intents ?? [],
+      bookmarks: Number(row.bookmarks),
+      registrations: Number(row.registrations),
+      emailVerified: !!row.email_verified_at,
+      photoVerified: !!row.photo_verified_at,
+      joinedAt: row.created_at.toISOString(),
+    }));
+  } catch (error) {
+    if (process.env.CLICK_DB_DEBUG === "true") {
+      console.warn("Falling back to static admin members.", error);
+    }
+    return fallbackAdminMembers;
+  }
+}
+
+export async function getAdminMerchants(): Promise<AdminMerchantRow[]> {
+  const pool = getPostgresPool();
+  if (!pool) return fallbackAdminMerchants;
+
+  try {
+    const result = await pool.query<{
+      id: string;
+      business_name: string;
+      contact_email: string;
+      verification_status: string;
+      website_url: string | null;
+      abn: string | null;
+      owner_name: string;
+      owner_email: string;
+      events_hosted: string;
+      created_at: Date;
+    }>(`
+      select
+        merchant.id::text,
+        merchant.business_name,
+        merchant.contact_email::text,
+        merchant.verification_status,
+        merchant.website_url,
+        merchant.abn,
+        owner.display_name as owner_name,
+        owner.email::text as owner_email,
+        coalesce(count(distinct event.id), 0) as events_hosted,
+        merchant.created_at
+      from merchant_profiles merchant
+      join profiles owner on owner.id = merchant.profile_id
+      left join events event on event.merchant_profile_id = merchant.id
+      group by merchant.id, owner.id
+      order by merchant.created_at desc
+      limit 60
+    `);
+
+    return result.rows.map((row): AdminMerchantRow => ({
+      id: row.id,
+      businessName: row.business_name,
+      contactEmail: row.contact_email,
+      verificationStatus: row.verification_status,
+      websiteUrl: row.website_url,
+      abn: row.abn,
+      ownerName: row.owner_name,
+      ownerEmail: row.owner_email,
+      eventsHosted: Number(row.events_hosted),
+      createdAt: row.created_at.toISOString(),
+    }));
+  } catch (error) {
+    if (process.env.CLICK_DB_DEBUG === "true") {
+      console.warn("Falling back to static admin merchants.", error);
+    }
+    return fallbackAdminMerchants;
+  }
+}
+
+export async function getAdminAuditLog(): Promise<AdminAuditRow[]> {
+  const pool = getPostgresPool();
+  if (!pool) return fallbackAdminAudit;
+
+  try {
+    const result = await pool.query<{
+      id: string;
+      action: string;
+      entity_table: string;
+      actor_name: string | null;
+      metadata: unknown;
+      created_at: Date;
+    }>(`
+      select
+        log.id::text,
+        log.action,
+        log.entity_table,
+        actor.display_name as actor_name,
+        log.metadata,
+        log.created_at
+      from audit_logs log
+      left join profiles actor on actor.id = log.actor_profile_id
+      order by log.created_at desc
+      limit 40
+    `);
+
+    return result.rows.map((row): AdminAuditRow => ({
+      id: row.id,
+      action: row.action,
+      entityTable: row.entity_table,
+      actorName: row.actor_name,
+      metadata: (row.metadata && typeof row.metadata === "object" ? (row.metadata as Record<string, unknown>) : {}),
+      createdAt: row.created_at.toISOString(),
+    }));
+  } catch (error) {
+    if (process.env.CLICK_DB_DEBUG === "true") {
+      console.warn("Falling back to static audit log.", error);
+    }
+    return fallbackAdminAudit;
+  }
+}
+
+export async function getAdminMetrics(events: AdminEventRow[]): Promise<AdminMetrics> {
+  const pool = getPostgresPool();
+  const pendingCount = events.filter((event) => event.status === "Pending").length;
+
+  if (!pool) return fallbackAdminMetrics(events.length, pendingCount);
+
+  try {
+    const [profilesResult, merchantsResult, eventsResult, rsvpResult, mutualResult] = await Promise.all([
+      pool.query<{ total: string; recent: string }>(`
+        select
+          count(*) as total,
+          count(*) filter (where created_at > now() - interval '7 days') as recent
+        from profiles
+      `),
+      pool.query<{ total: string; pending: string }>(`
+        select
+          count(*) as total,
+          count(*) filter (where verification_status = 'pending') as pending
+        from merchant_profiles
+      `),
+      pool.query<{ total: string; pending: string }>(`
+        select
+          count(*) as total,
+          count(*) filter (where status = 'pending') as pending
+        from events
+      `),
+      pool.query<{ confirmed: string }>(`
+        select count(*) as confirmed
+        from event_attendees
+        where status = 'confirmed'
+      `),
+      pool.query<{ mutual: string }>(`
+        select count(*) as mutual from mutual_clicks
+      `),
+    ]);
+
+    return {
+      totalMembers: Number(profilesResult.rows[0]?.total ?? 0),
+      newMembersThisWeek: Number(profilesResult.rows[0]?.recent ?? 0),
+      totalMerchants: Number(merchantsResult.rows[0]?.total ?? 0),
+      pendingMerchants: Number(merchantsResult.rows[0]?.pending ?? 0),
+      totalEvents: Number(eventsResult.rows[0]?.total ?? 0),
+      pendingEvents: Number(eventsResult.rows[0]?.pending ?? 0),
+      confirmedRsvps: Number(rsvpResult.rows[0]?.confirmed ?? 0),
+      mutualClicks: Number(mutualResult.rows[0]?.mutual ?? 0),
+    };
+  } catch (error) {
+    if (process.env.CLICK_DB_DEBUG === "true") {
+      console.warn("Falling back to static admin metrics.", error);
+    }
+    return fallbackAdminMetrics(events.length, pendingCount);
   }
 }
 

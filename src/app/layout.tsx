@@ -6,6 +6,7 @@ import {
   Manrope,
   Shrikhand,
 } from "next/font/google";
+import { LoginModalHost } from "@/components/login-modal-host";
 import { SiteFooter, SiteHeader } from "@/components/site-chrome";
 import "./globals.css";
 
@@ -54,6 +55,10 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const googleConfigured = !!(process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET);
+  const metaConfigured = !!(process.env.AUTH_FACEBOOK_ID && process.env.AUTH_FACEBOOK_SECRET);
+  const showDemoCredentials = process.env.NODE_ENV !== "production";
+
   return (
     <html
       lang="en"
@@ -64,6 +69,11 @@ export default function RootLayout({
         <SiteHeader />
         {children}
         <SiteFooter />
+        <LoginModalHost
+          googleConfigured={googleConfigured}
+          metaConfigured={metaConfigured}
+          showDemoCredentials={showDemoCredentials}
+        />
       </body>
     </html>
   );

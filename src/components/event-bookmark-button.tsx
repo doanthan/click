@@ -1,6 +1,8 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { useState } from "react";
+import { openLoginModal } from "./login-modal-host";
 
 type State = "idle" | "submitting" | "error";
 
@@ -14,6 +16,7 @@ export function EventBookmarkButton({
   const [saved, setSaved] = useState(initiallySaved);
   const [state, setState] = useState<State>("idle");
   const [message, setMessage] = useState("");
+  const pathname = usePathname();
 
   async function toggle() {
     setState("submitting");
@@ -26,7 +29,8 @@ export function EventBookmarkButton({
     );
 
     if (response.status === 401) {
-      window.location.href = "/login?callbackUrl=/events";
+      setState("idle");
+      openLoginModal({ callbackUrl: pathname || "/events" });
       return;
     }
 

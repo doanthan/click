@@ -122,6 +122,7 @@ export default function Home() {
           <div className="rise rise-d4 mt-10">
             <AIMatchPanel
               showEvents
+              submitNavigateTo="/events"
               title=""
               eventsEyebrow={<>Events near <LocationLabel /></>}
               eventsTitle={
