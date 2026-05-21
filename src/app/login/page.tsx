@@ -35,7 +35,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const errorMessage = params?.error ? errorCopy[params.error] ?? "Login failed." : "";
   const googleConfigured = !!(process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET);
   const metaConfigured = !!(process.env.AUTH_FACEBOOK_ID && process.env.AUTH_FACEBOOK_SECRET);
-  const showDemoCredentials = process.env.NODE_ENV !== "production";
+  const showDemoCredentials = true;
 
   return (
     <main className="paper-noise relative min-h-screen overflow-hidden px-4 py-12 text-[color:var(--ink)] sm:px-6">
@@ -73,7 +73,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
               <span className="mt-1 grid size-6 shrink-0 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] text-xs font-bold text-[color:var(--surface-deep)]">
                 ✓
               </span>
-              Social login uses OAuth. Email uses the Click password flow.
+              Social login uses OAuth. Email uses Click’s secure email access flow.
             </li>
             <li className="flex items-start gap-3">
               <span className="mt-1 grid size-6 shrink-0 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] text-xs font-bold text-[color:var(--surface-deep)]">
@@ -175,6 +175,12 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
                 Continue with Email
                 <span aria-hidden className="transition-transform group-hover/cta:translate-x-1">→</span>
               </button>
+              <Link
+                href="/forgot-password"
+                className="text-sm font-bold text-[color:var(--ink)] underline decoration-2 underline-offset-4 hover:text-[color:var(--rose)]"
+              >
+                Forgot password or need a fresh access email?
+              </Link>
             </form>
 
             {showDemoCredentials ? (

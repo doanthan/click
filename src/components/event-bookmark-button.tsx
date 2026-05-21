@@ -9,9 +9,11 @@ type State = "idle" | "submitting" | "error";
 export function EventBookmarkButton({
   eventId,
   initiallySaved,
+  compact = false,
 }: {
   eventId: string;
   initiallySaved: boolean;
+  compact?: boolean;
 }) {
   const [saved, setSaved] = useState(initiallySaved);
   const [state, setState] = useState<State>("idle");
@@ -53,7 +55,9 @@ export function EventBookmarkButton({
         onClick={toggle}
         disabled={state === "submitting"}
         aria-pressed={saved}
-        className={`rounded-full border-2 border-[color:var(--line)] px-4 py-3 text-center text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+        className={`rounded-full border-2 border-[color:var(--line)] text-center font-bold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+          compact ? "px-3 py-1.5 text-[0.68rem] uppercase tracking-wider hard-shadow-sm" : "px-4 py-3 text-sm"
+        } ${
           saved
             ? "bg-[color:var(--peach)] text-[color:var(--surface-deep)] hover:bg-[color:var(--rose)]"
             : "bg-[color:var(--champagne)] text-[color:var(--ink)] hover:bg-[color:var(--peach)] hover:text-[color:var(--surface-deep)]"
@@ -61,7 +65,7 @@ export function EventBookmarkButton({
       >
         {state === "submitting" ? "Saving..." : saved ? "Saved" : "Save"}
       </button>
-      {message ? (
+      {message && !compact ? (
         <p className="text-xs font-bold text-[color:var(--rose)]">{message}</p>
       ) : null}
     </div>

@@ -1,6 +1,8 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import Image from "next/image";
+import { useEffect, useMemo, useState } from "react";
+import type { FormEvent, ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
   animatedPrompts,
@@ -18,10 +20,11 @@ type AIMatchPanelProps = {
   defaultPrompt?: string;
   showEvents?: boolean;
   title?: string;
-  eventsEyebrow?: React.ReactNode;
-  eventsTitle?: React.ReactNode;
-  peopleEyebrow?: React.ReactNode;
-  peopleTitle?: React.ReactNode;
+  eventsEyebrow?: ReactNode;
+  eventsTitle?: ReactNode;
+  eventLimit?: number;
+  peopleEyebrow?: ReactNode;
+  peopleTitle?: ReactNode;
   submitNavigateTo?: string;
 };
 
@@ -30,7 +33,8 @@ export function AIMatchPanel({
   showEvents = true,
   title = "Click conversation",
   eventsEyebrow = "Events near you",
-  eventsTitle = "Plans that make the first hello easier.",
+  eventsTitle,
+  eventLimit = 6,
   peopleEyebrow = "People recommendations",
   peopleTitle,
   submitNavigateTo,
@@ -137,8 +141,8 @@ export function AIMatchPanel({
   }
 
   return (
-    <div className="w-full">
-      <section className="relative mx-auto w-full max-w-[calc(100vw-2rem)] overflow-hidden rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] text-left text-[color:var(--ink)] hard-shadow sm:max-w-5xl">
+    <div className="w-full min-w-0">
+      <section className="relative mx-auto w-full max-w-full overflow-hidden rounded-lg border-2 border-[color:var(--line)] bg-[color:var(--champagne)] text-left text-[color:var(--ink)] hard-shadow-sm sm:max-w-4xl sm:hard-shadow">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-3">
           <div className="flex items-center gap-2">
             <span className="size-3 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)]" />
@@ -147,36 +151,45 @@ export function AIMatchPanel({
           </div>
           {title ? (
             <span className="font-mono hidden text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)] sm:block">
-              ✷ {title}
+              {title}
             </span>
           ) : null}
+          <span className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-3 py-1 text-[0.68rem] font-black uppercase tracking-wider text-[color:var(--surface-deep)]">
+            AI concierge
+          </span>
         </div>
 
         <form onSubmit={handleSubmit} className="p-4 sm:p-5">
           <label htmlFor="click-search" className="sr-only">
             Find local people and events
           </label>
-          <textarea
-            id="click-search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                submitPrompt();
-              }
-            }}
-            className="font-display min-h-40 w-full resize-none rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-4 text-2xl font-light italic leading-tight text-[color:var(--ink)] outline-none placeholder:text-[color:var(--mauve)]/55 focus:bg-[color:var(--cream)] sm:min-h-48 sm:text-3xl"
-            placeholder={animatedPlaceholder ? `${animatedPlaceholder}|` : ""}
-          />
+          <div className="grid gap-3 lg:grid-cols-[1fr_auto]">
+            <input
+              id="click-search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              className="font-display min-h-16 w-full min-w-0 rounded-lg border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-4 text-lg font-light italic leading-tight text-[color:var(--ink)] outline-none placeholder:text-[color:var(--mauve)]/55 focus:bg-[color:var(--cream)] sm:text-2xl"
+              placeholder={animatedPlaceholder ? `${animatedPlaceholder}|` : ""}
+            />
+            <button
+              type="submit"
+              className="group/cta inline-flex min-h-16 shrink-0 items-center justify-center gap-2 rounded-lg border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-7 text-sm font-black uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)]"
+            >
+              Match me
+              <span aria-hidden className="inline-block transition-transform duration-300 group-hover/cta:translate-x-1">→</span>
+            </button>
+          </div>
           <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <p className="font-mono shrink-0 text-[0.68rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+              Try
+            </p>
             <div className="flex max-w-full flex-wrap gap-2 overflow-hidden pb-1 lg:pb-0">
               {starterPrompts.map((prompt, index) => (
                 <button
                   type="button"
                   key={prompt}
                   onClick={() => submitPrompt(prompt)}
-                  className={`max-w-full rounded-full border-2 border-[color:var(--line)] px-4 py-2 text-left text-xs font-bold hard-shadow-sm hover:-translate-x-[1px] hover:-translate-y-[1px] ${
+                  className={`max-w-full min-w-0 break-words rounded-full border-2 border-[color:var(--line)] px-4 py-2 text-left text-xs font-bold hard-shadow-sm hover:-translate-x-[1px] hover:-translate-y-[1px] ${
                     index % 2 === 0
                       ? "bg-[color:var(--peach)] text-[color:var(--surface-deep)]"
                       : "bg-[color:var(--cream)] text-[color:var(--ink)]"
@@ -186,51 +199,44 @@ export function AIMatchPanel({
                 </button>
               ))}
             </div>
-            <button
-              type="submit"
-              className="group/cta inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-6 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow hover:bg-[color:var(--ink)]"
-            >
-              Find my people
-              <span aria-hidden className="inline-block transition-transform duration-300 group-hover/cta:translate-x-1">→</span>
-            </button>
           </div>
         </form>
       </section>
 
       {showEvents ? (
-        <div className="mx-auto mt-12 max-w-7xl">
-          <div className="flex flex-wrap items-end justify-between gap-3 text-[color:var(--ink)]">
-            <div>
+        <div className="mx-auto mt-10 w-full max-w-full min-w-0">
+          <div className="flex flex-wrap items-end justify-between gap-4 text-[color:var(--ink)]">
+            <div className="min-w-0">
               <p className="eyebrow">{eventsEyebrow}</p>
-              <h2 className="font-display mt-2 text-4xl font-light leading-tight sm:text-5xl">
-                {eventsTitle}
-              </h2>
+              {eventsTitle ? (
+                <h2 className="font-display mt-2 text-[2.2rem] font-light leading-tight sm:text-5xl">
+                  {eventsTitle}
+                </h2>
+              ) : null}
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex min-w-0 flex-wrap gap-2">
               <Pill tone="peach">Mode: {detectedCategory === "All" ? "Friendship" : detectedCategory}</Pill>
               <Pill tone="cream">Query: {submittedQuery}</Pill>
             </div>
           </div>
 
-          <div className="mt-6 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
-            {rankedEvents.slice(0, 4).map((event) => (
+          <div className="mt-6 grid min-w-0 gap-5 md:grid-cols-2 xl:grid-cols-3">
+            {rankedEvents.slice(0, eventLimit).map((event) => (
               <EventCard key={event.id} event={event} compact />
             ))}
           </div>
         </div>
       ) : null}
 
-      <div className="mx-auto mt-12 max-w-7xl">
+      <div className="mx-auto mt-14 w-full max-w-full min-w-0 border-t-2 border-[color:var(--line)] pt-10">
         <div className="flex flex-wrap items-center justify-between gap-3 text-[color:var(--ink)]">
-          <div>
+          <div className="min-w-0">
             <p className="eyebrow">{peopleEyebrow}</p>
-            <h2 className="font-display mt-2 text-4xl font-light leading-tight sm:text-5xl">
-              {peopleTitle ?? (
-                <>
-                  People with a <em className="text-[color:var(--rose)]">shared reason</em> to show up.
-                </>
-              )}
-            </h2>
+            {peopleTitle ? (
+              <h2 className="font-display mt-2 text-[2.2rem] font-light leading-tight sm:text-5xl">
+                {peopleTitle}
+              </h2>
+            ) : null}
           </div>
           {!showEvents ? (
             <div className="flex flex-wrap gap-2">
@@ -240,7 +246,7 @@ export function AIMatchPanel({
           ) : null}
         </div>
 
-        <div className="mt-6 grid gap-5 lg:grid-cols-3">
+        <div className="mt-6 grid min-w-0 gap-5 lg:grid-cols-3">
           {recommendedPeople.map((person, idx) => {
             const event = events.find((item) => item.id === person.nextEventId);
             const connected = connectedPeople.includes(person.id);
@@ -250,7 +256,7 @@ export function AIMatchPanel({
             return (
               <article
                 key={person.id}
-                className="group relative rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-5 text-[color:var(--ink)] hard-shadow-sm transition-transform duration-300 hover:-translate-y-1 hover:rotate-[-0.5deg] hover:[box-shadow:8px_8px_0_0_var(--shadow-ink)]"
+                className="group relative min-w-0 rounded-lg border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-5 text-[color:var(--ink)] hard-shadow-sm transition-transform duration-300 hover:-translate-y-1 hover:[box-shadow:8px_8px_0_0_var(--shadow-ink)]"
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-center gap-3">
@@ -260,9 +266,11 @@ export function AIMatchPanel({
                       <span aria-hidden className="absolute inset-0 grid place-items-center">
                         {person.initials}
                       </span>
-                      <img
+                      <Image
                         src={avatarFor(person)}
                         alt={`${person.name} portrait`}
+                        width={56}
+                        height={56}
                         loading="lazy"
                         className="relative z-10 h-full w-full object-cover"
                       />
@@ -281,8 +289,8 @@ export function AIMatchPanel({
                 <p className="mt-4 text-sm font-medium leading-6 text-[color:var(--mauve)]">
                   {person.bio}
                 </p>
-                <p className="mt-3 rounded-xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-3 text-sm font-bold leading-6">
-                  ✷ {person.matchReason}
+                <p className="mt-3 rounded-lg border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-3 text-sm font-bold leading-6">
+                  {person.matchReason}
                 </p>
                 <div className="mt-4 flex flex-wrap gap-1.5">
                   {person.tags.slice(0, 4).map((tag) => (
@@ -309,7 +317,7 @@ export function AIMatchPanel({
                 </div>
                 {event ? (
                   <p className="font-mono mt-3 text-[0.65rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
-                    Suggested event: {event.title}
+                    Event overlap: {event.title}
                   </p>
                 ) : null}
               </article>

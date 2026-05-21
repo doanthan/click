@@ -10,16 +10,6 @@ import {
   roleCards,
 } from "@/lib/click-data";
 
-const marqueeWords = [
-  "✶ MAKE FRIENDS",
-  "✷ DATE SLOWER",
-  "✦ MOVE TOGETHER",
-  "✧ SHOW UP TWICE",
-  "✶ EAT WITH STRANGERS",
-  "✷ JOIN A RITUAL",
-  "✦ FIND YOUR LOCALS",
-];
-
 const floatingChips = [
   { label: "Make friends", tone: "peach", rotate: "-rotate-3", left: "left-[6%]", top: "top-[12%]" },
   { label: "Slow dates", tone: "rose", rotate: "rotate-2", left: "left-[14%]", top: "top-[42%]" },
@@ -37,28 +27,6 @@ const chipPalette: Record<string, string> = {
 export default function Home() {
   return (
     <main className="paper-noise min-h-screen max-w-full overflow-hidden text-[color:var(--ink)]">
-      {/* ============================ MARQUEE STRIP ============================ */}
-      <section
-        aria-hidden
-        className="border-b-2 border-[color:var(--surface-deep)] bg-[color:var(--surface-deep)] text-[color:var(--peach)]"
-      >
-        <div className="marquee py-3">
-          {[0, 1, 2].map((dup) => (
-            <div
-              key={dup}
-              className="marquee__track font-display text-2xl italic font-light tracking-tight whitespace-nowrap"
-            >
-              {marqueeWords.map((word) => (
-                <span key={`${dup}-${word}`} className="inline-flex items-center gap-3">
-                  {word}
-                  <span className="text-[color:var(--rose)]">●</span>
-                </span>
-              ))}
-            </div>
-          ))}
-        </div>
-      </section>
-
       {/* ============================ HERO ============================ */}
       <section className="relative overflow-hidden bg-[color:var(--champagne)] px-4 pb-16 pt-12 sm:px-6 lg:pt-20">
         {/* Decorative confetti dots */}
@@ -114,8 +82,7 @@ export default function Home() {
           </h1>
 
           <p className="rise rise-d3 mx-auto mt-7 max-w-2xl text-center text-lg font-medium leading-8 text-[color:var(--mauve)] sm:text-xl">
-            Find local events, recurring groups, and low-pressure ways to meet
-            people around <LocationLabel />. Show up twice. Become familiar.
+            Show up twice. Become familiar.
           </p>
 
           {/* AI search panel */}
@@ -125,18 +92,7 @@ export default function Home() {
               submitNavigateTo="/events"
               title=""
               eventsEyebrow={<>Events near <LocationLabel /></>}
-              eventsTitle={
-                <>
-                  A few good reasons to{" "}
-                  <span className="italic text-[color:var(--rose)]">leave the house.</span>
-                </>
-              }
-              peopleEyebrow="People recommendations"
-              peopleTitle={
-                <>
-                  People with a <em className="text-[color:var(--rose)]">shared reason</em> to show up.
-                </>
-              }
+              peopleEyebrow="People near you"
             />
           </div>
 

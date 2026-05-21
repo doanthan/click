@@ -1,22 +1,22 @@
 @import "tailwindcss";
 
 :root {
-  /* Click — Burst of Energy palette (light) */
+  /* Click — Event-first palette from design.md */
   --ink: #340068;          /* Indigo Ink — brand anchor, headings, borders */
   --ink-deep: #240048;     /* Deeper variant for hover/contrast */
-  --rose: #E8736A;         /* Warm Rose — CTA, primary actions */
-  --rose-soft: #f3a8a1;    /* Lighter rose for hovers */
-  --champagne: #FFF8EE;    /* Page background */
-  --champagne-deep: #f6ecd8;
-  --peach: #FBBF9A;        /* Soft Peach — tags, accents, highlights */
-  --peach-soft: #fdd8bf;
+  --rose: #FF6978;         /* Bubblegum Pink — CTA, primary actions */
+  --rose-soft: #ff9aa4;    /* Lighter bubblegum for hovers */
+  --champagne: #FFFCF9;    /* Porcelain — page background */
+  --champagne-deep: #f5edf4;
+  --peach: #B1EDE8;        /* Icy Aqua — legacy accent token */
+  --peach-soft: #d8f7f4;
   --mauve: #6D435A;        /* Mauve Shadow — secondary text, overlays */
-  --cream: #fff3df;        /* Subtle elevated surface */
-  --punch: #ffd166;        /* Sparkle accent */
+  --cream: #fff6f7;        /* Subtle elevated surface */
+  --punch: #ffd84d;        /* Ticket-stub accent */
 
   /* Tokens that retain their meaning across modes */
   --noise-dot-a: rgba(52, 0, 104, 0.08);
-  --noise-dot-b: rgba(232, 115, 106, 0.05);
+  --noise-dot-b: rgba(255, 105, 120, 0.05);
   --grid-line: rgba(52, 0, 104, 0.06);
   --hairline: rgba(52, 0, 104, 0.20);
 
@@ -41,41 +41,34 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    /* Softer dark — page lifted to a warmer, less-saturated plum,
-       foreground muted from near-white to a calm cream. */
-    --ink: #E8D2B0;          /* foreground / text — warm muted cream (was #FBE9CF) */
-    --ink-deep: #F4E2C2;     /* deeper hover */
-    --rose: #E07A6E;         /* slightly muted to reduce dark-mode glare */
-    --rose-soft: #ee988e;
-    --champagne: #1F1235;    /* page bg — warmer plum, less saturated than #160030 */
-    --champagne-deep: #150A26;
-    --peach: #F2B58F;        /* gently muted from #FBBF9A */
-    --peach-soft: #f8caa9;
-    --mauve: #BC95A8;        /* lifted secondary text */
-    --cream: #2C1A45;        /* warmer elevated card surface */
-    --punch: #ECC162;        /* gently muted from #FFD166 */
+    /* Keep the event marketplace light even for users in system dark mode. */
+    --ink: #340068;
+    --ink-deep: #240048;
+    --rose: #FF6978;
+    --rose-soft: #ff9aa4;
+    --champagne: #FFFCF9;
+    --champagne-deep: #f5edf4;
+    --peach: #B1EDE8;
+    --peach-soft: #d8f7f4;
+    --mauve: #6D435A;
+    --cream: #fff6f7;
+    --punch: #ffd84d;
 
-    --noise-dot-a: rgba(232, 210, 176, 0.08);
-    --noise-dot-b: rgba(232, 115, 106, 0.08);
-    --grid-line: rgba(232, 210, 176, 0.06);
-    --hairline: rgba(232, 210, 176, 0.20);
+    --noise-dot-a: rgba(52, 0, 104, 0.08);
+    --noise-dot-b: rgba(255, 105, 120, 0.05);
+    --grid-line: rgba(52, 0, 104, 0.06);
+    --hairline: rgba(52, 0, 104, 0.20);
 
-    /* Anchor dark — slightly lifted from pure black so it doesn't read
-       as a hole, but still distinguishable from the page. */
-    --surface-deep: #160930;
-    --surface-deep-2: #1F1340;
-    --on-deep: #E8D2B0;
-    --on-deep-soft: rgba(232, 210, 176, 0.68);
+    --surface-deep: #340068;
+    --surface-deep-2: #240048;
+    --on-deep: #FFFCF9;
+    --on-deep-soft: rgba(255, 252, 249, 0.72);
 
-    /* Soften the line/shadow language in dark mode:
-       borders become a low-opacity cream (suggestion, not stencil).
-       Hard offset shadows sit BEHIND cards (deep purple-black) — depth
-       instead of glare, while preserving the brand offset language. */
-    --line: rgba(232, 210, 176, 0.22);
-    --line-soft: rgba(232, 210, 176, 0.12);
-    --shadow-ink: rgba(8, 0, 26, 0.85);
+    --line: var(--ink);
+    --line-soft: rgba(52, 0, 104, 0.18);
+    --shadow-ink: var(--ink);
 
-    color-scheme: dark;
+    color-scheme: light;
   }
 }
 
@@ -407,7 +400,7 @@ button:focus-visible, a:focus-visible, select:focus-visible, textarea:focus-visi
 
 /* ---------- Squiggle underline (decorative) ---------- */
 .squiggle {
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='80' height='10' viewBox='0 0 80 10'><path d='M0 5 Q 10 0 20 5 T 40 5 T 60 5 T 80 5' stroke='%23E8736A' stroke-width='2.4' fill='none' stroke-linecap='round'/></svg>");
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='80' height='10' viewBox='0 0 80 10'><path d='M0 5 Q 10 0 20 5 T 40 5 T 60 5 T 80 5' stroke='%23FF6978' stroke-width='2.4' fill='none' stroke-linecap='round'/></svg>");
   background-repeat: repeat-x;
   background-position: 0 100%;
   background-size: 80px 10px;

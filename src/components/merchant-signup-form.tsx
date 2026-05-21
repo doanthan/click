@@ -5,6 +5,32 @@ import { useState } from "react";
 
 type SubmitState = "idle" | "submitting" | "error";
 
+const defaultWebsiteUrl = "https://www.google.com";
+
+function normalizeHttpsWebsiteUrl(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return { url: "" };
+
+  const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+
+  try {
+    const parsed = new URL(withProtocol);
+
+    if (parsed.protocol !== "https:") {
+      return { error: "Website must start with https://." };
+    }
+
+    if (!parsed.hostname.includes(".")) {
+      return { error: "Enter a valid website domain, like https://www.google.com." };
+    }
+
+    const path = parsed.pathname === "/" ? "" : parsed.pathname;
+    return { url: `${parsed.protocol}//${parsed.host}${path}${parsed.search}${parsed.hash}` };
+  } catch {
+    return { error: "Enter a valid website URL, like https://www.google.com." };
+  }
+}
+
 export function MerchantSignupForm({
   defaultContactEmail,
   defaultBusinessName,
@@ -15,20 +41,35 @@ export function MerchantSignupForm({
   const router = useRouter();
   const [businessName, setBusinessName] = useState(defaultBusinessName);
   const [contactEmail, setContactEmail] = useState(defaultContactEmail);
-  const [websiteUrl, setWebsiteUrl] = useState("");
+  const [websiteUrl, setWebsiteUrl] = useState(defaultWebsiteUrl);
   const [abn, setAbn] = useState("");
   const [state, setState] = useState<SubmitState>("idle");
   const [message, setMessage] = useState("");
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setState("submitting");
     setMessage("");
+
+    const normalizedWebsite = normalizeHttpsWebsiteUrl(websiteUrl);
+    if (normalizedWebsite.error) {
+      setState("error");
+      setMessage(normalizedWebsite.error);
+      return;
+    }
+
+    const normalizedWebsiteUrl = normalizedWebsite.url ?? "";
+    setWebsiteUrl(normalizedWebsiteUrl);
+    setState("submitting");
 
     const response = await fetch("/api/merchant", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ businessName, contactEmail, websiteUrl, abn }),
+      body: JSON.stringify({
+        businessName,
+        contactEmail,
+        websiteUrl: normalizedWebsiteUrl,
+        abn,
+      }),
     });
 
     if (response.status === 401) {
@@ -78,11 +119,16 @@ export function MerchantSignupForm({
       <label className="grid gap-2 text-sm font-bold">
         Website (optional)
         <input
-          type="url"
+          type="text"
+          inputMode="url"
           value={websiteUrl}
           onChange={(event) => setWebsiteUrl(event.target.value)}
+          onBlur={() => {
+            const normalizedWebsite = normalizeHttpsWebsiteUrl(websiteUrl);
+            if (normalizedWebsite.url) setWebsiteUrl(normalizedWebsite.url);
+          }}
           className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-3 font-semibold outline-none focus:border-[color:var(--rose)]"
-          placeholder="https://your-venue.com"
+          placeholder="https://www.google.com"
         />
       </label>
 

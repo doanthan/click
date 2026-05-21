@@ -1,0 +1,156 @@
+"use client";
+
+import { useMemo, useState, type FormEvent } from "react";
+import type { AdminTagRow } from "@/lib/event-repository";
+
+const tagTypeOptions = ["interest", "music", "vibe"] as const;
+
+export function AdminTagManager({ tags }: { tags: AdminTagRow[] }) {
+  const [rows, setRows] = useState(tags);
+  const [label, setLabel] = useState("");
+  const [categoryName, setCategoryName] = useState("");
+  const [tagType, setTagType] = useState<(typeof tagTypeOptions)[number]>("interest");
+  const [message, setMessage] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const categories = useMemo(
+    () =>
+      Array.from(new Set(rows.map((tag) => tag.categoryName).filter(Boolean) as string[]))
+        .sort((a, b) => a.localeCompare(b))
+        .slice(0, 20),
+    [rows],
+  );
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSubmitting(true);
+    setMessage("");
+
+    const response = await fetch("/api/admin/tags", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ label, categoryName, tagType }),
+    });
+    const payload = (await response.json()) as {
+      error?: string;
+      tag?: AdminTagRow;
+    };
+
+    if (!response.ok || !payload.tag) {
+      setSubmitting(false);
+      setMessage(payload.error ?? "Tag could not be saved.");
+      return;
+    }
+
+    setRows((current) => {
+      const withoutExisting = current.filter((tag) => tag.id !== payload.tag?.id);
+      return [payload.tag as AdminTagRow, ...withoutExisting];
+    });
+    setLabel("");
+    setMessage("Tag saved and audit logged.");
+    setSubmitting(false);
+  }
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-[0.85fr_1.15fr]">
+      <form
+        onSubmit={submit}
+        className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-5 hard-shadow-sm"
+      >
+        <h3 className="font-display text-3xl font-light leading-none text-[color:var(--ink)]">
+          Add or update tag
+        </h3>
+        <div className="mt-5 grid gap-4">
+          <label className="grid gap-2 text-sm font-bold text-[color:var(--ink)]">
+            <span className="font-mono text-[0.7rem] uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+              Label
+            </span>
+            <input
+              value={label}
+              onChange={(event) => setLabel(event.target.value)}
+              required
+              placeholder="Trail Running"
+              className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-3 text-sm font-semibold outline-none"
+            />
+          </label>
+
+          <label className="grid gap-2 text-sm font-bold text-[color:var(--ink)]">
+            <span className="font-mono text-[0.7rem] uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+              Category
+            </span>
+            <input
+              value={categoryName}
+              onChange={(event) => setCategoryName(event.target.value)}
+              required
+              placeholder="Fitness"
+              list="admin-tag-categories"
+              className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-3 text-sm font-semibold outline-none"
+            />
+            <datalist id="admin-tag-categories">
+              {categories.map((category) => (
+                <option key={category} value={category} />
+              ))}
+            </datalist>
+          </label>
+
+          <label className="grid gap-2 text-sm font-bold text-[color:var(--ink)]">
+            <span className="font-mono text-[0.7rem] uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+              Type
+            </span>
+            <select
+              value={tagType}
+              onChange={(event) => setTagType(event.target.value as typeof tagType)}
+              className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-3 text-sm font-semibold outline-none"
+            >
+              {tagTypeOptions.map((type) => (
+                <option key={type} value={type}>
+                  {type}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <button
+            type="submit"
+            disabled={submitting}
+            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-5 py-3 text-sm font-black uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {submitting ? "Saving..." : "Save tag"}
+          </button>
+          {message ? (
+            <p className="text-xs font-bold text-[color:var(--mauve)]">{message}</p>
+          ) : null}
+        </div>
+      </form>
+
+      <div className="overflow-hidden rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow-sm">
+        <div className="grid grid-cols-[1.1fr_0.8fr_0.6fr_0.5fr] gap-3 bg-[color:var(--surface-deep)] px-5 py-3 text-xs font-black uppercase tracking-[0.14em] text-[color:var(--on-deep)] max-sm:hidden">
+          <span>Tag</span>
+          <span>Category</span>
+          <span>Type</span>
+          <span>Usage</span>
+        </div>
+        {rows.slice(0, 80).map((tag) => (
+          <div
+            key={tag.id}
+            className="grid gap-2 border-b border-[color:var(--line)] px-5 py-4 text-sm font-medium text-[color:var(--mauve)] last:border-0 sm:grid-cols-[1.1fr_0.8fr_0.6fr_0.5fr] sm:items-center"
+          >
+            <div>
+              <p className="font-black text-[color:var(--ink)]">{tag.label}</p>
+              <p className="font-mono text-[0.65rem] uppercase tracking-wider">
+                {tag.slug}
+              </p>
+            </div>
+            <span className="font-bold text-[color:var(--ink)]">
+              {tag.categoryName ?? "Uncategorised"}
+            </span>
+            <span className="rounded-full border border-[color:var(--line)] bg-[color:var(--cream)] px-2.5 py-1 text-[0.65rem] font-black uppercase tracking-wider text-[color:var(--ink)]">
+              {tag.tagType}
+            </span>
+            <span className="font-black text-[color:var(--ink)]">{tag.usageCount}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}

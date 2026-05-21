@@ -38,6 +38,10 @@ function responseForError(error: unknown) {
     );
   }
 
+  if (error.name === "MerchantApprovalRequiredError") {
+    return NextResponse.json({ error: error.message }, { status: 403 });
+  }
+
   return NextResponse.json({ error: error.message || "Event creation failed." }, { status: 500 });
 }
 

@@ -106,6 +106,36 @@ export function LoginModal({
             One account for RSVPs, saved events, and private Clicks.
           </p>
 
+          {showDemoCredentials ? (
+            <div className="mt-5 rounded-xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--peach)]/30 px-4 py-3 text-xs font-medium text-[color:var(--ink)]">
+              <p className="font-mono font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
+                ✷ MVP preview · no password
+              </p>
+              <ul className="mt-2 grid gap-1.5 text-[color:var(--ink)]">
+                <li>
+                  <span className="font-bold">Attendee:</span> any email works
+                  (e.g.{" "}
+                  <span className="font-mono font-bold">
+                    jane@example.com
+                  </span>
+                  )
+                </li>
+                <li>
+                  <span className="font-bold">Event organiser:</span> any
+                  email, then{" "}
+                  <span className="font-mono font-bold">Become a host</span>{" "}
+                  on your dashboard
+                </li>
+                <li>
+                  <span className="font-bold">Admin:</span>{" "}
+                  <span className="font-mono font-bold">
+                    admin@click.local
+                  </span>
+                </li>
+              </ul>
+            </div>
+          ) : null}
+
           <div className="mt-6 grid gap-3">
             <form action={signInWithGoogle}>
               <input type="hidden" name="callbackUrl" value={callbackUrl} />
@@ -181,29 +211,6 @@ export function LoginModal({
             </button>
           </form>
 
-          {showDemoCredentials ? (
-            <div className="mt-4 rounded-xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-3 text-xs font-medium text-[color:var(--ink)]">
-              <p className="font-mono font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-                ✷ MVP preview · no password yet
-              </p>
-              <ul className="mt-2 grid gap-1.5">
-                <li>
-                  <span className="font-bold">Attendee</span> — any email (e.g.{" "}
-                  <span className="font-mono">jane@example.com</span>)
-                </li>
-                <li>
-                  <span className="font-bold">Event organiser</span> — sign in
-                  with any email, then{" "}
-                  <span className="font-mono">Become a host</span> on your
-                  dashboard
-                </li>
-                <li>
-                  <span className="font-bold">Admin</span> —{" "}
-                  <span className="font-mono">admin@click.local</span>
-                </li>
-              </ul>
-            </div>
-          ) : null}
         </div>
       </div>
     </div>

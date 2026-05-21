@@ -124,7 +124,15 @@ export default async function DashboardPage() {
               {upcoming.length > 0 ? "Plans on your calendar." : "No RSVPs yet."}
             </h2>
           </div>
-          <Pill tone="aqua">{upcoming.length}</Pill>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/dashboard/calendar"
+              className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-4 py-2 text-xs font-bold text-[color:var(--surface-deep)] hover:bg-[color:var(--rose)]"
+            >
+              View calendar
+            </Link>
+            <Pill tone="aqua">{upcoming.length}</Pill>
+          </div>
         </div>
 
         {upcoming.length > 0 ? (

@@ -141,7 +141,7 @@ export function Pill({
 
   return (
     <span
-      className={`inline-flex items-center rounded-full border-2 border-[color:var(--line)] ${palette} px-3 py-1 text-[0.7rem] font-bold uppercase tracking-wider`}
+      className={`inline-flex max-w-full min-w-0 items-center whitespace-normal break-words rounded-full border-2 border-[color:var(--line)] ${palette} px-3 py-1 text-left text-[0.7rem] font-bold uppercase tracking-wider`}
     >
       {children}
     </span>

@@ -57,7 +57,7 @@ export default function RootLayout({
 }>) {
   const googleConfigured = !!(process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET);
   const metaConfigured = !!(process.env.AUTH_FACEBOOK_ID && process.env.AUTH_FACEBOOK_SECRET);
-  const showDemoCredentials = process.env.NODE_ENV !== "production";
+  const showDemoCredentials = true;
 
   return (
     <html

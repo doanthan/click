@@ -1,4 +1,10 @@
-export type EventStatus = "Featured" | "Live" | "Waitlist" | "Locked" | "Pending";
+export type EventStatus =
+  | "Featured"
+  | "Live"
+  | "Waitlist"
+  | "Locked"
+  | "Pending"
+  | "Cancelled";
 
 export type EventItem = {
   id: string;

@@ -20,6 +20,30 @@ function errorResponse(error: unknown) {
   return NextResponse.json({ error: error.message || "Merchant signup failed." }, { status: 500 });
 }
 
+function normalizeHttpsWebsiteUrl(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return { url: "" };
+
+  const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+
+  try {
+    const parsed = new URL(withProtocol);
+
+    if (parsed.protocol !== "https:") {
+      return { error: "Website must start with https://." };
+    }
+
+    if (!parsed.hostname.includes(".")) {
+      return { error: "Enter a valid website domain, like https://www.google.com." };
+    }
+
+    const path = parsed.pathname === "/" ? "" : parsed.pathname;
+    return { url: `${parsed.protocol}//${parsed.host}${path}${parsed.search}${parsed.hash}` };
+  } catch {
+    return { error: "Enter a valid website URL, like https://www.google.com." };
+  }
+}
+
 export async function POST(request: Request) {
   const session = await auth();
 
@@ -36,12 +60,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
   }
 
+  const normalizedWebsite = normalizeHttpsWebsiteUrl(payload.websiteUrl ?? "");
+  if (normalizedWebsite.error) {
+    return NextResponse.json({ error: normalizedWebsite.error }, { status: 400 });
+  }
+  const normalizedWebsiteUrl = normalizedWebsite.url ?? "";
+
   try {
     const merchant = await registerMerchantProfile(
       {
         businessName: payload.businessName ?? "",
         contactEmail: payload.contactEmail ?? "",
-        websiteUrl: payload.websiteUrl ?? "",
+        websiteUrl: normalizedWebsiteUrl,
         abn: payload.abn ?? "",
       },
       session,

@@ -25,6 +25,17 @@ function responseForError(error: unknown) {
     return NextResponse.json({ error: error.message }, { status: 401 });
   }
 
+  if (error.name === "PaymentRequiredError") {
+    const slug = (error as Error & { eventSlug?: string }).eventSlug;
+    return NextResponse.json(
+      {
+        error: error.message,
+        redirectTo: slug ? `/events/${slug}` : undefined,
+      },
+      { status: 402 },
+    );
+  }
+
   if (error.name === "NotFoundError") {
     return NextResponse.json({ error: error.message }, { status: 404 });
   }

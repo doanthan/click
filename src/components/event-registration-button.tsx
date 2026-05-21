@@ -16,9 +16,11 @@ type RegistrationState =
 export function EventRegistrationButton({
   eventId,
   initiallyRegistered = false,
+  isWaitlist = false,
 }: {
   eventId: string;
   initiallyRegistered?: boolean;
+  isWaitlist?: boolean;
 }) {
   const [state, setState] = useState<RegistrationState>(
     initiallyRegistered ? "registered" : "idle",
@@ -43,7 +45,13 @@ export function EventRegistrationButton({
     const payload = (await response.json()) as {
       registration?: { status?: string; eventTitle?: string };
       error?: string;
+      redirectTo?: string;
     };
+
+    if (response.status === 402 && payload.redirectTo) {
+      window.location.href = payload.redirectTo;
+      return;
+    }
 
     if (!response.ok) {
       setState("error");
@@ -106,13 +114,23 @@ export function EventRegistrationButton({
           type="button"
           onClick={register}
           disabled={state === "submitting"}
-          className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-4 py-3 text-center text-sm font-bold text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)] disabled:cursor-not-allowed disabled:opacity-70"
+          className={`rounded-full border-2 border-[color:var(--line)] px-4 py-3 text-center text-sm font-bold hard-shadow-sm disabled:cursor-not-allowed disabled:opacity-70 ${
+            isWaitlist
+              ? "bg-[color:var(--peach)] text-[color:var(--surface-deep)] hover:bg-[color:var(--rose)]"
+              : "bg-[color:var(--rose)] text-[color:var(--surface-deep)] hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)]"
+          }`}
         >
           {state === "submitting"
-            ? "Registering..."
+            ? isWaitlist
+              ? "Joining waitlist..."
+              : "RSVPing..."
             : state === "cancelled"
-              ? "Register again"
-              : "Register"}
+              ? isWaitlist
+                ? "Rejoin waitlist"
+                : "RSVP again"
+              : isWaitlist
+                ? "Join waitlist"
+                : "RSVP"}
         </button>
       )}
       {message ? (
