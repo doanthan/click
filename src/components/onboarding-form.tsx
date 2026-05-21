@@ -1,8 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { interestTagCategories } from "@/lib/click-data";
+import { REGISTER_PREFILL_KEY, type RegisterPrefill } from "@/components/register-form";
 
 type Intent = "dating" | "friendship" | "networking" | "exploring";
 
@@ -39,6 +40,24 @@ export function OnboardingForm({
   const [tags, setTags] = useState<Set<string>>(new Set());
   const [state, setState] = useState<SubmitState>("idle");
   const [message, setMessage] = useState("");
+  const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.sessionStorage.getItem(REGISTER_PREFILL_KEY);
+      if (!raw) return;
+      const prefill = JSON.parse(raw) as RegisterPrefill;
+      if (prefill.displayName) setDisplayName(prefill.displayName);
+      if (prefill.intent) setIntents(new Set([prefill.intent]));
+      if (typeof prefill.latitude === "number" && typeof prefill.longitude === "number") {
+        setCoords({ latitude: prefill.latitude, longitude: prefill.longitude });
+      }
+      window.sessionStorage.removeItem(REGISTER_PREFILL_KEY);
+    } catch {
+      // sessionStorage / parse can fail in private mode — ignore.
+    }
+  }, []);
 
   function toggleIntent(intent: Intent) {
     setIntents((current) => {
@@ -138,6 +157,15 @@ export function OnboardingForm({
             placeholder="28"
           />
         </label>
+        {coords ? (
+          <div className="md:col-span-2 rounded-xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-3 text-sm font-semibold text-[color:var(--mauve)]">
+            <span className="font-mono mr-2 text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
+              Location ✓
+            </span>
+            Using {coords.latitude.toFixed(3)}, {coords.longitude.toFixed(3)} to
+            sort events near you.
+          </div>
+        ) : null}
         <label className="grid gap-2 text-sm font-bold md:col-span-2">
           Tell us about what you want
           <textarea

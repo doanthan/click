@@ -213,6 +213,16 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             ) : null}
 
             <p className="mt-6 text-sm font-medium text-[color:var(--mauve)]">
+              New to Click?{" "}
+              <Link
+                href="/register"
+                className="font-bold text-[color:var(--ink)] underline decoration-2 underline-offset-4 hover:text-[color:var(--rose)]"
+              >
+                Create your account
+              </Link>
+              .
+            </p>
+            <p className="mt-3 text-sm font-medium text-[color:var(--mauve)]">
               Need to browse first?{" "}
               <Link
                 href="/discover"
