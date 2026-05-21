@@ -163,19 +163,12 @@ body {
    leaves the upper portion of letters as dark-on-dark. Cover the full
    letter height in dark mode so the dark text always sits on peach. */
 .peach-highlight {
-  background: linear-gradient(180deg, transparent 58%, var(--peach) 58%, var(--peach) 92%, transparent 92%);
-  color: var(--surface-deep);
+  background-image: linear-gradient(180deg, transparent 32%, var(--peach) 32%, var(--peach) 92%, transparent 92%);
+  background-repeat: no-repeat;
+  color: var(--ink);
   padding: 0 0.12em;
-}
-
-@media (prefers-color-scheme: dark) {
-  .peach-highlight {
-    background: var(--peach);
-    padding: 0.04em 0.18em;
-    border-radius: 0.18em;
-    box-decoration-break: clone;
-    -webkit-box-decoration-break: clone;
-  }
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
 }
 
 .rose-highlight {

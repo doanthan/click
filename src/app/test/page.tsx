@@ -1,36 +1,12 @@
-import Link from "next/link";
 import { getEventsForExplore } from "@/lib/event-repository";
+import TestPageClient, {
+  type RouteGroup,
+} from "./TestPageClient";
 
 export const metadata = {
   title: "Test routes | Click",
   description: "Index of every page in the app for manual QA.",
 };
-
-type Check = {
-  label: string;
-  description: string;
-};
-
-type RouteSpec = {
-  href: string;
-  label: string;
-  notes: string;
-  checks: Check[];
-  auth?: "none" | "user" | "merchant" | "admin";
-};
-
-function authBadge(auth: RouteSpec["auth"]) {
-  if (!auth || auth === "none") {
-    return { label: "Public", className: "bg-[color:var(--peach)] text-[color:var(--surface-deep)]" };
-  }
-  if (auth === "user") {
-    return { label: "Logged in", className: "bg-[color:var(--rose)] text-[color:var(--surface-deep)]" };
-  }
-  if (auth === "merchant") {
-    return { label: "Merchant", className: "bg-[color:var(--cream)] text-[color:var(--ink)]" };
-  }
-  return { label: "Admin", className: "bg-[color:var(--ink)] text-[color:var(--champagne)]" };
-}
 
 export default async function TestPage() {
   const events = await getEventsForExplore();
@@ -42,7 +18,7 @@ export default async function TestPage() {
   const waitlistEvent = events.find((event) => event.status === "Waitlist");
   const waitlistSlug = waitlistEvent?.id ?? sampleSlug;
 
-  const groups: { heading: string; routes: RouteSpec[] }[] = [
+  const groups: RouteGroup[] = [
     {
       heading: "Public",
       routes: [
@@ -140,7 +116,7 @@ export default async function TestPage() {
                 "Right rail price card displays the dollar value (e.g. A$22), not 'Free'.",
             },
             {
-              label: 'Pay button when Stripe is configured',
+              label: "Pay button when Stripe is configured",
               description:
                 "If STRIPE_SECRET_KEY is set, the CTA is rose 'Reserve & pay A$N'. Different colour and copy from the free RSVP button.",
             },
@@ -410,7 +386,7 @@ export default async function TestPage() {
                 "Each booked event appears as a peach/ink chip on its date. Chip is a link to /events/[slug].",
             },
             {
-              label: 'Toast appears after paying',
+              label: "Toast appears after paying",
               description:
                 "After a successful Stripe purchase you land on ?booked=<slug> and see a peach 'You\\'re in for ...' banner at the top of the calendar.",
             },
@@ -591,109 +567,5 @@ export default async function TestPage() {
     },
   ];
 
-  return (
-    <main className="min-h-screen bg-[color:var(--champagne)] px-4 py-12 text-[color:var(--ink)] sm:px-6">
-      <section className="mx-auto max-w-4xl">
-        <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-          QA index
-        </p>
-        <h1 className="font-display mt-4 text-5xl font-light leading-[0.96] tracking-tight sm:text-6xl">
-          Test <span className="italic text-[color:var(--rose)]">every page</span>.
-        </h1>
-        <p className="mt-4 max-w-2xl text-base font-medium leading-7 text-[color:var(--mauve)]">
-          One card per route, with the specific things to verify when you open
-          it. Tick through top-to-bottom for a full smoke pass.
-        </p>
-
-        <div className="mt-10 grid gap-8">
-          {groups.map((group) => (
-            <section key={group.heading}>
-              <h2 className="font-display text-3xl font-light leading-tight">
-                {group.heading}
-              </h2>
-              <ul className="mt-4 grid gap-3">
-                {group.routes.map((route) => {
-                  const badge = authBadge(route.auth);
-                  return (
-                    <li
-                      key={`${group.heading}-${route.href}-${route.label}`}
-                      className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-5 hard-shadow-sm"
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <Link
-                          href={route.href}
-                          className="font-display text-2xl font-light leading-tight text-[color:var(--ink)] hover:underline"
-                        >
-                          {route.label}
-                        </Link>
-                        <span
-                          className={`rounded-full border-2 border-[color:var(--line)] px-3 py-1 text-[0.65rem] font-bold uppercase tracking-[0.16em] ${badge.className}`}
-                        >
-                          {badge.label}
-                        </span>
-                      </div>
-                      <p className="mt-1 font-mono text-[0.7rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
-                        {route.href}
-                      </p>
-                      <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--mauve)]">
-                        {route.notes}
-                      </p>
-                      <div className="mt-4 rounded-xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-4">
-                        <p className="font-mono text-[0.62rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
-                          Verify
-                        </p>
-                        <ul className="mt-3 grid gap-3">
-                          {route.checks.map((check, idx) => (
-                            <li
-                              key={`${route.href}-check-${idx}`}
-                              className="grid gap-1"
-                            >
-                              <div className="flex gap-2">
-                                <span aria-hidden className="mt-0.5 text-[color:var(--rose)]">
-                                  ◇
-                                </span>
-                                <span className="font-bold text-[color:var(--ink)]">
-                                  {check.label}
-                                </span>
-                              </div>
-                              <p className="ml-6 text-xs font-medium leading-5 text-[color:var(--mauve)]">
-                                {check.description}
-                              </p>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            </section>
-          ))}
-
-          <section>
-            <h2 className="font-display text-3xl font-light leading-tight">
-              API routes
-            </h2>
-            <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
-              Server-only — no page to open. Probe with curl if needed.
-            </p>
-            <ul className="mt-4 grid gap-2 font-mono text-xs font-bold text-[color:var(--ink)]">
-              <li>POST /api/events/[eventId]/register → 401 when logged out</li>
-              <li>DELETE /api/events/[eventId]/register → cancels RSVP</li>
-              <li>POST /api/events/[eventId]/bookmark → toggles save</li>
-              <li>
-                POST /api/events/[eventId]/checkout → 503 when Stripe unset, else returns
-                checkout URL
-              </li>
-              <li>POST /api/webhooks/stripe → 400/503 without valid signature</li>
-              <li>POST /api/merchant → merchant signup</li>
-              <li>POST /api/onboarding → save attendee profile</li>
-              <li>POST /api/admin/events/[eventId]/approve → admin only</li>
-              <li>* /api/auth/[...nextauth]</li>
-            </ul>
-          </section>
-        </div>
-      </section>
-    </main>
-  );
+  return <TestPageClient groups={groups} />;
 }
