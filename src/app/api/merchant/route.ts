@@ -34,13 +34,13 @@ function normalizeHttpsWebsiteUrl(value: string) {
     }
 
     if (!parsed.hostname.includes(".")) {
-      return { error: "Enter a valid website domain, like https://www.google.com." };
+      return { error: "Enter a valid website domain, like https://yourbusiness.com.au." };
     }
 
     const path = parsed.pathname === "/" ? "" : parsed.pathname;
     return { url: `${parsed.protocol}//${parsed.host}${path}${parsed.search}${parsed.hash}` };
   } catch {
-    return { error: "Enter a valid website URL, like https://www.google.com." };
+    return { error: "Enter a valid website URL, like https://yourbusiness.com.au." };
   }
 }
 

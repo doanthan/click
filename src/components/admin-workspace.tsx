@@ -2,7 +2,14 @@
 
 import { useState, type ReactNode } from "react";
 
-export type AdminTabKey = "overview" | "members" | "events" | "merchants" | "tags" | "audit";
+export type AdminTabKey =
+  | "overview"
+  | "analytics"
+  | "members"
+  | "events"
+  | "merchants"
+  | "tags"
+  | "audit";
 
 type AdminTab = {
   key: AdminTabKey;
@@ -12,6 +19,7 @@ type AdminTab = {
 
 const tabOrder: AdminTab[] = [
   { key: "overview", label: "Overview" },
+  { key: "analytics", label: "Analytics" },
   { key: "members", label: "Members" },
   { key: "events", label: "Events" },
   { key: "merchants", label: "Merchants" },

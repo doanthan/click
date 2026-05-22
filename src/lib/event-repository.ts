@@ -645,6 +645,7 @@ export type MerchantAttendeeRow = {
   email: string;
   status: "confirmed" | "waitlisted" | "cancelled" | "refunded";
   rsvpAt: string;
+  checkedInAt: string | null;
 };
 
 export type MerchantEventDetail = MerchantEventSummary & {
@@ -778,6 +779,7 @@ export async function getMerchantEventDetail(
     email: string;
     status: string;
     created_at: Date;
+    checked_in_at: Date | null;
   }>(
     `
       select
@@ -785,7 +787,8 @@ export async function getMerchantEventDetail(
         attendee_profile.display_name,
         attendee_profile.email::text as email,
         attendee.status::text,
-        attendee.created_at
+        attendee.created_at,
+        attendee.checked_in_at
       from event_attendees attendee
       join profiles attendee_profile on attendee_profile.id = attendee.profile_id
       where attendee.event_id = $1::uuid
@@ -817,7 +820,52 @@ export async function getMerchantEventDetail(
       email: entry.email,
       status: entry.status as MerchantAttendeeRow["status"],
       rsvpAt: entry.created_at.toISOString(),
+      checkedInAt: entry.checked_in_at ? entry.checked_in_at.toISOString() : null,
     })),
+  };
+}
+
+export async function toggleAttendeeCheckIn(
+  attendeeId: string,
+  checkedIn: boolean,
+  session: Session | null,
+) {
+  const pool = getPostgresPool();
+  const email = getSessionEmail(session);
+  if (!email) throw authError();
+  if (!pool) throw databaseUnavailableError();
+
+  const profile = await ensureProfileForSession(session);
+  const merchant = await getMerchantProfile(pool, profile.id);
+  if (!merchant) {
+    const error = new Error("Merchant profile is required to check in attendees.");
+    error.name = "MerchantSignupRequiredError";
+    throw error;
+  }
+
+  const result = await pool.query<{ checked_in_at: Date | null }>(
+    `
+      update event_attendees attendee
+      set checked_in_at = $3,
+          updated_at = now()
+      from events event
+      where attendee.id = $1::uuid
+        and event.id = attendee.event_id
+        and event.merchant_profile_id = $2::uuid
+      returning attendee.checked_in_at
+    `,
+    [attendeeId, merchant.id, checkedIn ? new Date() : null],
+  );
+
+  if (result.rowCount === 0) {
+    const error = new Error("Attendee not found or not part of your event.");
+    error.name = "NotFoundError";
+    throw error;
+  }
+
+  return {
+    attendeeId,
+    checkedInAt: result.rows[0]?.checked_in_at?.toISOString() ?? null,
   };
 }
 
@@ -1933,6 +1981,138 @@ export async function getAdminAuditLog(): Promise<AdminAuditRow[]> {
   }
 }
 
+export type AdminAnalyticsPoint = {
+  bucket: string; // ISO date (yyyy-mm-dd)
+  members: number;
+  rsvps: number;
+  revenueCents: number;
+  events: number;
+};
+
+export type AdminAnalytics = {
+  series: AdminAnalyticsPoint[];
+  totals: {
+    revenueCents: number;
+    rsvps: number;
+    newMembers: number;
+    events: number;
+  };
+  topCategories: Array<{ category: string; count: number }>;
+};
+
+export async function getAdminAnalytics(): Promise<AdminAnalytics> {
+  const pool = getPostgresPool();
+  if (!pool) {
+    return {
+      series: [],
+      totals: { revenueCents: 0, rsvps: 0, newMembers: 0, events: 0 },
+      topCategories: [],
+    };
+  }
+
+  try {
+    const [memberSeries, rsvpSeries, revenueSeries, eventSeries, categoryResult] = await Promise.all([
+      pool.query<{ bucket: string; total: string }>(
+        `
+          select to_char(date_trunc('day', created_at), 'YYYY-MM-DD') as bucket,
+                 count(*)::text as total
+          from profiles
+          where created_at >= now() - interval '30 days'
+          group by 1
+          order by 1
+        `,
+      ),
+      pool.query<{ bucket: string; total: string }>(
+        `
+          select to_char(date_trunc('day', created_at), 'YYYY-MM-DD') as bucket,
+                 count(*)::text as total
+          from event_attendees
+          where created_at >= now() - interval '30 days'
+            and status in ('confirmed', 'waitlisted')
+          group by 1
+          order by 1
+        `,
+      ),
+      pool.query<{ bucket: string; total: string }>(
+        `
+          select to_char(date_trunc('day', created_at), 'YYYY-MM-DD') as bucket,
+                 coalesce(sum(amount_cents), 0)::text as total
+          from payment_transactions
+          where created_at >= now() - interval '30 days'
+            and status = 'paid'
+          group by 1
+          order by 1
+        `,
+      ),
+      pool.query<{ bucket: string; total: string }>(
+        `
+          select to_char(date_trunc('day', created_at), 'YYYY-MM-DD') as bucket,
+                 count(*)::text as total
+          from events
+          where created_at >= now() - interval '30 days'
+          group by 1
+          order by 1
+        `,
+      ),
+      pool.query<{ category: string; total: string }>(
+        `
+          select category, count(*)::text as total
+          from events
+          group by category
+          order by count(*) desc
+          limit 6
+        `,
+      ),
+    ]);
+
+    const days: string[] = [];
+    const today = new Date();
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(today);
+      d.setUTCDate(d.getUTCDate() - i);
+      days.push(d.toISOString().slice(0, 10));
+    }
+
+    const memberMap = new Map(memberSeries.rows.map((row) => [row.bucket, Number(row.total)]));
+    const rsvpMap = new Map(rsvpSeries.rows.map((row) => [row.bucket, Number(row.total)]));
+    const revenueMap = new Map(revenueSeries.rows.map((row) => [row.bucket, Number(row.total)]));
+    const eventMap = new Map(eventSeries.rows.map((row) => [row.bucket, Number(row.total)]));
+
+    const series: AdminAnalyticsPoint[] = days.map((bucket) => ({
+      bucket,
+      members: memberMap.get(bucket) ?? 0,
+      rsvps: rsvpMap.get(bucket) ?? 0,
+      revenueCents: revenueMap.get(bucket) ?? 0,
+      events: eventMap.get(bucket) ?? 0,
+    }));
+
+    const totals = series.reduce(
+      (acc, point) => ({
+        revenueCents: acc.revenueCents + point.revenueCents,
+        rsvps: acc.rsvps + point.rsvps,
+        newMembers: acc.newMembers + point.members,
+        events: acc.events + point.events,
+      }),
+      { revenueCents: 0, rsvps: 0, newMembers: 0, events: 0 },
+    );
+
+    return {
+      series,
+      totals,
+      topCategories: categoryResult.rows.map((row) => ({
+        category: row.category,
+        count: Number(row.total),
+      })),
+    };
+  } catch {
+    return {
+      series: [],
+      totals: { revenueCents: 0, rsvps: 0, newMembers: 0, events: 0 },
+      topCategories: [],
+    };
+  }
+}
+
 export async function getAdminMetrics(events: AdminEventRow[]): Promise<AdminMetrics> {
   const pool = getPostgresPool();
   const pendingCount = events.filter((event) => event.status === "Pending").length;
@@ -2184,6 +2364,354 @@ export async function getProfileStatus(session: Session | null): Promise<Profile
       bookmarkedEventIds: [],
       registeredEventIds: [],
     };
+  }
+}
+
+export type PeopleSuggestion = {
+  profileId: string;
+  displayName: string;
+  suburb: string | null;
+  bio: string | null;
+  intents: string[];
+  sharedTags: string[];
+  sharedEventIds: string[];
+  hasClicked: boolean;
+  isMutual: boolean;
+};
+
+export async function getPeopleSuggestions(
+  session: Session | null,
+): Promise<PeopleSuggestion[]> {
+  const pool = getPostgresPool();
+  const email = getSessionEmail(session);
+  if (!pool || !email) return [];
+
+  try {
+    const profile = await ensureProfileForSession(session);
+
+    const result = await pool.query<{
+      id: string;
+      display_name: string;
+      suburb: string | null;
+      bio: string | null;
+      connection_intents: string[] | null;
+      shared_tags: string[] | null;
+      shared_events: string[] | null;
+      already_clicked: boolean;
+      is_mutual: boolean;
+    }>(
+      `
+        with my_tags as (
+          select tag_id from user_tags where profile_id = $1::uuid
+        ),
+        my_events as (
+          select event_id from event_attendees
+          where profile_id = $1::uuid and status in ('confirmed', 'waitlisted')
+        )
+        select
+          other.id::text,
+          other.display_name,
+          other.suburb,
+          other.bio,
+          other.connection_intents::text[] as connection_intents,
+          coalesce(array_agg(distinct shared_tag.label) filter (where shared_tag.id is not null), '{}') as shared_tags,
+          coalesce(array_agg(distinct shared_event.slug) filter (where shared_event.id is not null), '{}') as shared_events,
+          exists (
+            select 1 from user_clicks
+            where clicker_profile_id = $1::uuid
+              and clicked_profile_id = other.id
+          ) as already_clicked,
+          exists (
+            select 1 from mutual_clicks
+            where (profile_a_id = least($1::uuid, other.id) and profile_b_id = greatest($1::uuid, other.id))
+          ) as is_mutual
+        from profiles other
+        left join user_tags other_tag on other_tag.profile_id = other.id
+          and other_tag.tag_id in (select tag_id from my_tags)
+        left join tags shared_tag on shared_tag.id = other_tag.tag_id
+        left join event_attendees other_attendee on other_attendee.profile_id = other.id
+          and other_attendee.status in ('confirmed', 'waitlisted')
+          and other_attendee.event_id in (select event_id from my_events)
+        left join events shared_event on shared_event.id = other_attendee.event_id
+        where other.id <> $1::uuid
+          and other.role <> 'admin'
+        group by other.id
+        having count(distinct other_tag.tag_id) > 0
+            or count(distinct other_attendee.event_id) > 0
+        order by
+          count(distinct other_attendee.event_id) desc,
+          count(distinct other_tag.tag_id) desc,
+          other.display_name asc
+        limit 24
+      `,
+      [profile.id],
+    );
+
+    return result.rows.map((row) => ({
+      profileId: row.id,
+      displayName: row.display_name,
+      suburb: row.suburb,
+      bio: row.bio,
+      intents: row.connection_intents ?? [],
+      sharedTags: row.shared_tags ?? [],
+      sharedEventIds: row.shared_events ?? [],
+      hasClicked: row.already_clicked,
+      isMutual: row.is_mutual,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export type NotificationRow = {
+  id: string;
+  title: string;
+  body: string;
+  actionUrl: string | null;
+  channel: "in_app" | "email";
+  read: boolean;
+  createdAt: string;
+};
+
+export async function getNotifications(
+  session: Session | null,
+): Promise<NotificationRow[]> {
+  const pool = getPostgresPool();
+  const email = getSessionEmail(session);
+  if (!pool || !email) return [];
+
+  try {
+    const profile = await ensureProfileForSession(session);
+    const result = await pool.query<{
+      id: string;
+      title: string;
+      body: string;
+      action_url: string | null;
+      channel: "in_app" | "email";
+      read_at: Date | null;
+      created_at: Date;
+    }>(
+      `
+        select id::text, title, body, action_url, channel::text as channel, read_at, created_at
+        from notifications
+        where profile_id = $1::uuid
+        order by created_at desc
+        limit 50
+      `,
+      [profile.id],
+    );
+
+    return result.rows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      body: row.body,
+      actionUrl: row.action_url,
+      channel: row.channel,
+      read: row.read_at !== null,
+      createdAt: row.created_at.toISOString(),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function markNotificationsRead(
+  ids: string[],
+  session: Session | null,
+) {
+  const pool = getPostgresPool();
+  const email = getSessionEmail(session);
+
+  if (!email) throw authError();
+  if (!pool) throw databaseUnavailableError();
+  if (ids.length === 0) return { updated: 0 };
+
+  const profile = await ensureProfileForSession(session);
+  const result = await pool.query<{ id: string }>(
+    `
+      update notifications
+      set read_at = now()
+      where profile_id = $1::uuid
+        and id = any($2::uuid[])
+        and read_at is null
+      returning id::text
+    `,
+    [profile.id, ids],
+  );
+
+  return { updated: result.rowCount ?? 0, ids: result.rows.map((row) => row.id) };
+}
+
+export type PublicProfile = {
+  id: string;
+  displayName: string;
+  suburb: string | null;
+  bio: string | null;
+  city: string;
+  intents: string[];
+  tags: string[];
+  attendedEvents: EventItem[];
+  isOwn: boolean;
+};
+
+export async function getPublicProfile(
+  identifier: string,
+  session: Session | null,
+): Promise<PublicProfile | null> {
+  const pool = getPostgresPool();
+  if (!pool) return null;
+
+  const idLooksLikeUuid = /^[0-9a-f-]{36}$/i.test(identifier);
+  const idLooksLikeEmail = identifier.includes("@");
+
+  let viewerProfileId: string | null = null;
+  if (session?.user) {
+    try {
+      const viewer = await ensureProfileForSession(session);
+      viewerProfileId = viewer.id;
+    } catch {
+      viewerProfileId = null;
+    }
+  }
+
+  try {
+    const profileResult = await pool.query<{
+      id: string;
+      display_name: string;
+      suburb: string | null;
+      bio: string | null;
+      city: string;
+      connection_intents: string[] | null;
+    }>(
+      `
+        select
+          id::text,
+          display_name,
+          suburb,
+          bio,
+          city,
+          connection_intents
+        from profiles
+        where ${
+          idLooksLikeUuid
+            ? "id = $1::uuid"
+            : idLooksLikeEmail
+              ? "email = $1::citext"
+              : "lower(replace(display_name, ' ', '-')) = lower($1)"
+        }
+        limit 1
+      `,
+      [identifier],
+    );
+
+    const row = profileResult.rows[0];
+    if (!row) return null;
+
+    const [tagResult, attendedResult] = await Promise.all([
+      pool.query<{ label: string }>(
+        `
+          select tag.label
+          from user_tags user_tag
+          join tags tag on tag.id = user_tag.tag_id
+          where user_tag.profile_id = $1::uuid
+          order by tag.label
+        `,
+        [row.id],
+      ),
+      pool.query<EventRow>(
+        `
+          select ${eventSelectColumns}
+          from event_attendees own_attendee
+          join events event on event.id = own_attendee.event_id
+          left join event_attendees attendee_count on attendee_count.event_id = event.id
+          left join event_tags event_tag on event_tag.event_id = event.id
+          left join tags tag on tag.id = event_tag.tag_id
+          where own_attendee.profile_id = $1::uuid
+            and own_attendee.status = 'confirmed'
+          group by event.id
+          order by event.starts_at desc
+          limit 8
+        `,
+        [row.id],
+      ),
+    ]);
+
+    return {
+      id: row.id,
+      displayName: row.display_name,
+      suburb: row.suburb,
+      bio: row.bio,
+      city: row.city,
+      intents: row.connection_intents ?? [],
+      tags: tagResult.rows.map((entry) => entry.label),
+      attendedEvents: attendedResult.rows.map(eventFromRow),
+      isOwn: viewerProfileId === row.id,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export type ProfileSettingsRow = {
+  displayName: string;
+  email: string;
+  suburb: string;
+  bio: string;
+  age: string;
+  intents: Array<"dating" | "friendship" | "networking" | "exploring">;
+  tags: string[];
+};
+
+export async function getProfileForSettings(
+  session: Session | null,
+): Promise<ProfileSettingsRow | null> {
+  const pool = getPostgresPool();
+  const email = getSessionEmail(session);
+  if (!pool || !email) return null;
+
+  try {
+    const profile = await ensureProfileForSession(session);
+    const [profileResult, tagResult] = await Promise.all([
+      pool.query<{
+        display_name: string;
+        email: string;
+        suburb: string | null;
+        bio: string | null;
+        age: number | null;
+        connection_intents: string[] | null;
+      }>(
+        `
+          select display_name, email::text, suburb, bio, age, connection_intents
+          from profiles
+          where id = $1::uuid
+        `,
+        [profile.id],
+      ),
+      pool.query<{ slug: string }>(
+        `
+          select tag.slug
+          from user_tags user_tag
+          join tags tag on tag.id = user_tag.tag_id
+          where user_tag.profile_id = $1::uuid
+        `,
+        [profile.id],
+      ),
+    ]);
+
+    const row = profileResult.rows[0];
+    if (!row) return null;
+
+    return {
+      displayName: row.display_name ?? "",
+      email: row.email,
+      suburb: row.suburb ?? "",
+      bio: row.bio ?? "",
+      age: row.age == null ? "" : String(row.age),
+      intents: (row.connection_intents ?? []) as ProfileSettingsRow["intents"],
+      tags: tagResult.rows.map((entry) => entry.slug),
+    };
+  } catch {
+    return null;
   }
 }
 

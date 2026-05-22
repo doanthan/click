@@ -563,6 +563,576 @@ export default async function TestPage() {
           ],
           auth: "admin",
         },
+        {
+          href: "/admin?tab=analytics",
+          label: "Admin → Analytics tab",
+          notes:
+            "30-day trend charts: new members, RSVPs, events created, paid revenue. Pure SVG (no Recharts dep).",
+          checks: [
+            {
+              label: "Analytics tab is visible in the workspace pill bar",
+              description:
+                "Pill labelled 'Analytics' between 'Overview' and 'Members'. Click to switch panel.",
+            },
+            {
+              label: "Four trend charts render with axes",
+              description:
+                "New members / RSVPs / Events created / Revenue. Each shows a polyline over the last 30 days plus the latest value.",
+            },
+            {
+              label: "Totals match the chart sums",
+              description:
+                "Metric cards above the charts show summed totals over the same 30-day window. Eyeball the chart and the card should agree.",
+            },
+            {
+              label: "Top categories bar chart renders",
+              description:
+                "Horizontal bars below the line charts, longest = most-used category. Empty state if no events yet.",
+            },
+            {
+              label: "Empty database = empty state",
+              description:
+                "Fresh DB (no profiles/events) → charts show 'no data yet' or 30-day series of zeros without crashing.",
+            },
+          ],
+          auth: "admin",
+        },
+      ],
+    },
+    {
+      heading: "New: public pages",
+      routes: [
+        {
+          href: "/how-it-works",
+          label: "How it works",
+          notes:
+            "Dedicated explainer page: 3-step flow, benefits, testimonials, ink CTA at the bottom.",
+          checks: [
+            {
+              label: "PageHero renders with primary + secondary CTA",
+              description:
+                "Logged-out: 'Sign in to start' + 'Or just explore'. Logged-in: 'Browse events' instead.",
+            },
+            {
+              label: "Three numbered step cards",
+              description:
+                "Step 1 (Pick), Step 2 (RSVP), Step 3 (Show up) — each in an InfoCard with its accent bar.",
+            },
+            {
+              label: "Benefits grid renders",
+              description:
+                "Two-column on desktop, four cards with bold titles and short bodies. Cream background section.",
+            },
+            {
+              label: "Testimonials section",
+              description:
+                "Three figure blocks with quotes, names, and suburb pills. Don't link anywhere — purely social proof.",
+            },
+            {
+              label: "Bottom CTA on ink background",
+              description:
+                "Dark section at the bottom with a single LinkButton matching the hero CTA. No layout shift.",
+            },
+          ],
+        },
+        {
+          href: "/this-route-does-not-exist",
+          label: "404 page",
+          notes:
+            "Global not-found.tsx renders for any unmatched route. Should look on-brand.",
+          checks: [
+            {
+              label: "Custom 404 instead of Next default",
+              description:
+                "Paper-noise background, peach sticker reading '404', display headline. NOT the bare Next.js 'This page could not be found' text.",
+            },
+            {
+              label: "Two CTAs work",
+              description:
+                "'Back home' → /, 'Browse events' → /events. Both styled as pill buttons.",
+            },
+          ],
+        },
+      ],
+    },
+    {
+      heading: "New: user pages",
+      routes: [
+        {
+          href: "/bookmarks",
+          label: "Saved events (bookmarks)",
+          notes:
+            "Dedicated list of bookmarked events. /saved-events is an alias that redirects here.",
+          checks: [
+            {
+              label: "All bookmarked events render as cards",
+              description:
+                "Two-column grid on desktop. Bookmark icon already shows as filled because they're saved.",
+            },
+            {
+              label: "Category pills appear when bookmarks exist",
+              description:
+                "Above the grid: a row of category pills derived from your saved events. Quick visual summary.",
+            },
+            {
+              label: "Empty state with CTA",
+              description:
+                "Brand new account → 'Nothing saved yet' card + 'Browse events →' button. Not a crash.",
+            },
+            {
+              label: "/saved-events redirects here",
+              description:
+                "Type /saved-events in the URL bar — you land on /bookmarks. Confirms the alias.",
+            },
+          ],
+          auth: "user",
+        },
+        {
+          href: "/confirmed-events",
+          label: "Confirmed events (Upcoming tab)",
+          notes: "Events you've RSVP'd to, split into Upcoming / Past tabs.",
+          checks: [
+            {
+              label: "Two tab pills with counts",
+              description:
+                "Upcoming and Past, each with a small badge showing the count. Active tab is ink-coloured.",
+            },
+            {
+              label: "Upcoming shows only events with starts_at >= now",
+              description:
+                "If you RSVP'd to an event yesterday, it should NOT appear here — it should be on the Past tab instead.",
+            },
+            {
+              label: "registered badge on cards",
+              description:
+                "EventCard shows the 'Confirmed' / RSVP'd visual state since you're registered.",
+            },
+            {
+              label: "Empty state copy switches by tab",
+              description:
+                "Past tab empty: 'Nothing in the rear-view.' Upcoming empty: 'No plans on the calendar.'",
+            },
+          ],
+          auth: "user",
+        },
+        {
+          href: "/confirmed-events?tab=past",
+          label: "Confirmed events (Past tab)",
+          notes: "Same page, ?tab=past selected. Should deep-link cleanly.",
+          checks: [
+            {
+              label: "Past tab is active on direct load",
+              description:
+                "Visiting /confirmed-events?tab=past lands with Past selected. URL drives state, not just clicks.",
+            },
+            {
+              label: "Only past events listed",
+              description:
+                "Each card here has starts_at < now. If you see a future event, the split logic is off.",
+            },
+          ],
+          auth: "user",
+        },
+        {
+          href: "/events?category=Food&date=7&sort=soonest",
+          label: "Events filters — URL sync",
+          notes:
+            "EventExplorer filters now persist in the URL (?search, ?category, ?suburb, ?date, ?distance, ?sort).",
+          checks: [
+            {
+              label: "Filters apply on page load",
+              description:
+                "Loading this URL pre-selects category=Food, date window=7 days, sort=soonest. List is filtered without clicking.",
+            },
+            {
+              label: "Changing a filter updates the URL",
+              description:
+                "Pick a different category in the sidebar → ?category=... in the URL updates without reload. router.replace, not router.push.",
+            },
+            {
+              label: "Resetting filters clears the URL",
+              description:
+                "Click 'Reset Filters' → URL drops back to /events with no query string. All defaults restored.",
+            },
+            {
+              label: "Bookmarking the URL preserves filters",
+              description:
+                "Open /events?category=Food in a fresh tab — the filter is applied. Confirms the round-trip.",
+            },
+          ],
+        },
+        {
+          href: "/account-settings",
+          label: "Account settings — Account tab",
+          notes:
+            "5 tabs total: Account / Notifications / Privacy / Payments / Security. Account is the default tab.",
+          checks: [
+            {
+              label: "Tabs render as pill row, active is ink-coloured",
+              description:
+                "Pill nav with five items. The active tab is dark; others are cream and hover to peach.",
+            },
+            {
+              label: "Form prefills from your profile",
+              description:
+                "Display name, suburb, age, bio come from the DB. Intent chips reflect connection_intents.",
+            },
+            {
+              label: "Save updates the DB",
+              description:
+                "Change suburb → 'Save changes' → toast 'Account updated.' Reload — value persists.",
+            },
+            {
+              label: "Toast on save",
+              description:
+                "Sonner toast top-right with the success message. Errors show as red toasts.",
+            },
+          ],
+          auth: "user",
+        },
+        {
+          href: "/account-settings?tab=notifications",
+          label: "Account settings — Notifications",
+          notes:
+            "Toggles for event reminders, mutual clicks, weekly picks, host announcements. Stored in localStorage for now.",
+          checks: [
+            {
+              label: "Four toggles render",
+              description:
+                "Each in its own card with a label, body, and switch. Initial states match the defaultValue per option.",
+            },
+            {
+              label: "Toggle persists across reload",
+              description:
+                "Flip one off, reload — it stays off. Stored under 'click:notification-prefs' in localStorage.",
+            },
+            {
+              label: "Toast fires on every toggle",
+              description:
+                "Each click shows 'Preference saved.' — confirms the save path is wired.",
+            },
+          ],
+          auth: "user",
+        },
+        {
+          href: "/account-settings?tab=privacy",
+          label: "Account settings — Privacy",
+          notes:
+            "Toggles for dating visibility, flexible discovery, public-attended events, public suburb. localStorage-backed.",
+          checks: [
+            {
+              label: "Four privacy toggles render",
+              description:
+                "Same toggle component as Notifications, different copy. Storage key: 'click:privacy-prefs'.",
+            },
+            {
+              label: "Defaults are sensible",
+              description:
+                "Dating visibility OFF by default. Suburb visible ON. Attended events visible ON.",
+            },
+          ],
+          auth: "user",
+        },
+        {
+          href: "/account-settings?tab=payments",
+          label: "Account settings — Payments",
+          notes:
+            "Placeholder section: cards are added during checkout via Stripe; no card vault here.",
+          checks: [
+            {
+              label: "Empty-state copy renders",
+              description:
+                "'No payment methods yet.' card with a Stripe pill and 'PayPal soon' pill.",
+            },
+            {
+              label: "No fake card list",
+              description:
+                "Confirm we're NOT showing seed/fake credit cards — only the empty state copy.",
+            },
+          ],
+          auth: "user",
+        },
+        {
+          href: "/account-settings?tab=security",
+          label: "Account settings — Security",
+          notes:
+            "Read-only rows (email, sign-in method, 2FA) plus a 'Sign out everywhere' server action.",
+          checks: [
+            {
+              label: "Email row shows your address",
+              description:
+                "Pulled from the profile, not the session token. If you changed email in another session, it should still show the DB value.",
+            },
+            {
+              label: "Sign out works",
+              description:
+                "'Sign out everywhere' button → session ends, redirected to '/'. Header should now show 'Login'.",
+            },
+          ],
+          auth: "user",
+        },
+        {
+          href: "/profile",
+          label: "Profile — your own",
+          notes:
+            "Self profile lookup by your session email. Shows display name, suburb, intents, interest tags, recent attended events.",
+          checks: [
+            {
+              label: "Edit profile button appears",
+              description:
+                "Top-right of the profile header. Links to /account-settings?tab=account. Only visible on your own profile.",
+            },
+            {
+              label: "Intent + interest pills render",
+              description:
+                "Two cards mid-page. Intents from connection_intents, interests from your user_tags. Empty states are graceful.",
+            },
+            {
+              label: "Recent events grid below",
+              description:
+                "Up to 8 confirmed events ordered by start date desc. Empty state if you've never attended one.",
+            },
+            {
+              label: "/profile/edit redirects to settings",
+              description:
+                "Direct nav to /profile/edit → /account-settings?tab=account. Same target as the Edit button.",
+            },
+          ],
+          auth: "user",
+        },
+        {
+          href: "/notifications",
+          label: "Notifications",
+          notes:
+            "Notifications feed from the notifications table. Auto-marks visible items as read after a delay.",
+          checks: [
+            {
+              label: "Eyebrow shows unread count",
+              description:
+                "If unread > 0, eyebrow reads e.g. '3 unread'. If zero, eyebrow reads 'All caught up'.",
+            },
+            {
+              label: "Unread items have a rose dot + peach background",
+              description:
+                "Visual difference between unread (peach card, rose dot) and read (cream card, light dot).",
+            },
+            {
+              label: "Auto-mark read after ~1.5s",
+              description:
+                "Open the page → unread items flip to read state without clicking. Backed by POST /api/notifications.",
+            },
+            {
+              label: "Mark all read button",
+              description:
+                "Top-right button. Click → toast 'All marked as read.' All cards flip to read state.",
+            },
+            {
+              label: "Empty state copy",
+              description:
+                "If you have no notifications: 'Inbox zero.' headline with explanation copy.",
+            },
+          ],
+          auth: "user",
+        },
+        {
+          href: "/people",
+          label: "People — Click Radar",
+          notes:
+            "Other members ranked by shared events first, shared interest tags second. Anonymous Clicks; mutual Clicks unlock event suggestions.",
+          checks: [
+            {
+              label: "Suggested people grid renders",
+              description:
+                "Two-column grid on desktop. Each card shows name, suburb, bio snippet, intent pills, and a Click button.",
+            },
+            {
+              label: "Click button sends an anonymous Click",
+              description:
+                "Click on a person → POST /api/clicks → button flips to 'Click sent'. They are NOT told who clicked them.",
+            },
+            {
+              label: "Mutual Click banner appears",
+              description:
+                "If two members Click each other within 30 days, an ink banner at the top shows the count of mutual matches.",
+            },
+            {
+              label: "Cannot Click yourself / cannot re-Click",
+              description:
+                "Your own profile isn't in the list. After clicking, the button is disabled — no spam.",
+            },
+            {
+              label: "Empty radar copy",
+              description:
+                "If you share no events / tags with anyone: 'Your radar is quiet.' Not a crash.",
+            },
+          ],
+          auth: "user",
+        },
+      ],
+    },
+    {
+      heading: "New: merchant wizards + check-in",
+      routes: [
+        {
+          href: "/merchant/signup",
+          label: "Merchant signup — 4-step wizard",
+          notes:
+            "Now a wizard: Business → Web presence → ABN/ACN → Review. Per-step validation and ABN checksum.",
+          checks: [
+            {
+              label: "Stepper shows 4 pills",
+              description:
+                "Across the top: 1. Business / 2. Web presence / 3. ABN-ACN / 4. Review. Current step is ink, completed steps are peach.",
+            },
+            {
+              label: "Step 1 validates business name + email",
+              description:
+                "Try clicking Continue with blank fields → error message under the form. Invalid email format also rejected.",
+            },
+            {
+              label: "Step 2 — website is optional and blank by default",
+              description:
+                "No prefilled 'google.com'. Empty field is allowed. Typing 'example' (no domain) shows a domain-format error.",
+            },
+            {
+              label: "Step 3 — ABN checksum validation",
+              description:
+                "Enter '12 345 678 901' (random 11 digits) → 'ABN failed the checksum' message. Use a known-valid ABN to pass.",
+            },
+            {
+              label: "Step 3 — ACN checksum validation",
+              description:
+                "9-digit input is treated as ACN. Valid ACN passes; random 9 digits fail the checksum with a clear reason.",
+            },
+            {
+              label: "Step 4 — Review shows all values",
+              description:
+                "Business, Contact, Website (or 'Not provided'), ABN/ACN. Submit creates a merchant_profile row.",
+            },
+            {
+              label: "Success → /merchant + toast",
+              description:
+                "Sonner toast 'Merchant profile created. Verification is pending.' Then redirected to /merchant.",
+            },
+          ],
+          auth: "user",
+        },
+        {
+          href: "/merchant",
+          label: "Create-event — 5-step wizard",
+          notes:
+            "CreateEventForm is now a 5-step wizard: Basics → Schedule → Location → Story → Review.",
+          checks: [
+            {
+              label: "Stepper shows 5 pills",
+              description:
+                "Basics / Schedule / Location / Story / Review across the top.",
+            },
+            {
+              label: "Template selector prefills all steps",
+              description:
+                "Restaurant meetup / Coffee walk / Workshop table — picking one populates fields across every step (verify by clicking Continue all the way to Review).",
+            },
+            {
+              label: "Template dates are upcoming, not in the past",
+              description:
+                "Templates now compute startsAt relative to today (21-27 days out). If you see 2026-05-15 in the date field, the dynamic helper failed.",
+            },
+            {
+              label: "Per-step validation blocks Continue",
+              description:
+                "Clear the title on step 1 → Continue fails with 'Give your event a title.' Same for each required field.",
+            },
+            {
+              label: "Description must be 30+ chars",
+              description:
+                "Short description ('Hello') is rejected on step 4 with a clear message. Real prose passes.",
+            },
+            {
+              label: "Review preview matches submitted event",
+              description:
+                "Step 5 shows the listing as it'll appear publicly. Submit → event lands in /events with status='pending'.",
+            },
+            {
+              label: "Toast on submit",
+              description:
+                "Sonner success toast 'Event submitted for review.'",
+            },
+          ],
+          auth: "merchant",
+        },
+        {
+          href: `/merchant/events/${sampleSlug}`,
+          label: "Merchant event detail — check-in + CSV export",
+          notes:
+            "Attendee list now has per-row check-in toggle and an Export CSV button.",
+          checks: [
+            {
+              label: "Check-in / x out of N progress",
+              description:
+                "Above the attendee table: '0 / N checked in' counter that updates as you toggle.",
+            },
+            {
+              label: "Check-in toggle is per row",
+              description:
+                "Each confirmed attendee has a 'Check in' button. Click → flips to 'Checked ✓' (ink colour). Toggling again clears it.",
+            },
+            {
+              label: "Waitlisted attendees can't check in",
+              description:
+                "Their toggle is disabled. Confirms check-in is gated on confirmed status.",
+            },
+            {
+              label: "checked_in_at is persisted",
+              description:
+                "DB check: select checked_in_at from event_attendees where id=<attendee_id> — should be a timestamp after toggling, NULL after clearing.",
+            },
+            {
+              label: "Export CSV downloads a file",
+              description:
+                "'Export CSV' button → browser download '<slug>-attendees.csv'. Open it: header row + one row per attendee with name, email, status, RSVP at, checked-in at.",
+            },
+            {
+              label: "CSV escapes commas + quotes",
+              description:
+                "If an attendee has a comma in their display name, the CSV cell is double-quoted. Imports cleanly into Sheets/Excel.",
+            },
+          ],
+          auth: "merchant",
+        },
+      ],
+    },
+    {
+      heading: "New: global UI",
+      routes: [
+        {
+          href: "/",
+          label: "Global toaster (sonner)",
+          notes:
+            "Sonner is mounted in app/layout.tsx — toasts appear top-right with rich colours and a close button.",
+          checks: [
+            {
+              label: "Toasts appear top-right on every page",
+              description:
+                "Trigger any action that calls toast.success / toast.error (e.g. bookmark, mark notifications read). The toast should slide in top-right.",
+            },
+            {
+              label: "Rich colours: success green, error red",
+              description:
+                "Success toasts are green-tinted; errors are red-tinted. Confirms richColors prop on Toaster.",
+            },
+            {
+              label: "Close button works",
+              description:
+                "Hover a toast → 'x' button appears. Click → toast dismisses early.",
+            },
+            {
+              label: "Multiple toasts stack",
+              description:
+                "Fire two toasts quickly → they stack vertically, oldest on top. None get dropped.",
+            },
+          ],
+        },
       ],
     },
   ];

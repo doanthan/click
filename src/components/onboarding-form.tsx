@@ -44,19 +44,21 @@ export function OnboardingForm({
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    try {
-      const raw = window.sessionStorage.getItem(REGISTER_PREFILL_KEY);
-      if (!raw) return;
-      const prefill = JSON.parse(raw) as RegisterPrefill;
-      if (prefill.displayName) setDisplayName(prefill.displayName);
-      if (prefill.intent) setIntents(new Set([prefill.intent]));
-      if (typeof prefill.latitude === "number" && typeof prefill.longitude === "number") {
-        setCoords({ latitude: prefill.latitude, longitude: prefill.longitude });
+    queueMicrotask(() => {
+      try {
+        const raw = window.sessionStorage.getItem(REGISTER_PREFILL_KEY);
+        if (!raw) return;
+        const prefill = JSON.parse(raw) as RegisterPrefill;
+        if (prefill.displayName) setDisplayName(prefill.displayName);
+        if (prefill.intent) setIntents(new Set([prefill.intent]));
+        if (typeof prefill.latitude === "number" && typeof prefill.longitude === "number") {
+          setCoords({ latitude: prefill.latitude, longitude: prefill.longitude });
+        }
+        window.sessionStorage.removeItem(REGISTER_PREFILL_KEY);
+      } catch {
+        // sessionStorage / parse can fail in private mode — ignore.
       }
-      window.sessionStorage.removeItem(REGISTER_PREFILL_KEY);
-    } catch {
-      // sessionStorage / parse can fail in private mode — ignore.
-    }
+    });
   }, []);
 
   function toggleIntent(intent: Intent) {

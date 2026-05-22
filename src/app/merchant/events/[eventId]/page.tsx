@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { LinkButton, MetricCard, Pill } from "@/components/click-ui";
+import { MerchantAttendees } from "@/components/merchant-attendees";
 import { MerchantEventCancelButton } from "@/components/merchant-event-cancel-button";
 import {
   getMerchantEventDetail,
@@ -154,14 +155,11 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
             <Pill tone="peach">{confirmedAttendees.length}</Pill>
           </div>
 
-          {confirmedAttendees.length > 0 ? (
-            <AttendeeTable rows={confirmedAttendees} />
-          ) : (
-            <p className="mt-4 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-5 text-sm font-semibold text-[color:var(--mauve)]">
-              When attendees RSVP they appear here with name and contact email
-              so you can prep the room.
-            </p>
-          )}
+          <MerchantAttendees
+            eventSlug={event.slug}
+            eventTitle={event.title}
+            attendees={confirmedAttendees}
+          />
         </section>
 
         {waitlistedAttendees.length > 0 ? (

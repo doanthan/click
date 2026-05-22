@@ -83,13 +83,15 @@ export default function SupabaseLogDrawer() {
   const [hideTicked, setHideTicked] = useState(false);
 
   useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(TICKS_KEY);
-      if (raw) setTicked(JSON.parse(raw));
-    } catch {
-      // ignore
-    }
-    setHydrated(true);
+    queueMicrotask(() => {
+      try {
+        const raw = window.localStorage.getItem(TICKS_KEY);
+        if (raw) setTicked(JSON.parse(raw));
+      } catch {
+        // ignore
+      }
+      setHydrated(true);
+    });
   }, []);
 
   useEffect(() => {
@@ -116,7 +118,7 @@ export default function SupabaseLogDrawer() {
 
   useEffect(() => {
     if (open && !data && !loading) {
-      void fetchLog();
+      queueMicrotask(() => void fetchLog());
     }
   }, [open, data, loading, fetchLog]);
 

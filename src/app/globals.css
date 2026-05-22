@@ -1,31 +1,31 @@
 @import "tailwindcss";
 
 :root {
-  /* Click — Event-first palette from design.md */
-  --ink: #340068;          /* Indigo Ink — brand anchor, headings, borders */
-  --ink-deep: #240048;     /* Deeper variant for hover/contrast */
-  --rose: #FF6978;         /* Bubblegum Pink — CTA, primary actions */
-  --rose-soft: #ff9aa4;    /* Lighter bubblegum for hovers */
-  --champagne: #FFFCF9;    /* Porcelain — page background */
-  --champagne-deep: #f5edf4;
-  --peach: #B1EDE8;        /* Icy Aqua — legacy accent token */
-  --peach-soft: #d8f7f4;
-  --mauve: #6D435A;        /* Mauve Shadow — secondary text, overlays */
-  --cream: #fff6f7;        /* Subtle elevated surface */
-  --punch: #ffd84d;        /* Ticket-stub accent */
+  /* Bible Study Connect — soft blue, cream, and amber */
+  --ink: #17324d;
+  --ink-deep: #0d2238;
+  --rose: #d99a36;
+  --rose-soft: #efc171;
+  --champagne: #fbf7ef;
+  --champagne-deep: #eef4f6;
+  --peach: #b9d8df;
+  --peach-soft: #dcebef;
+  --mauve: #587083;
+  --cream: #fffdf8;
+  --punch: #e7b84f;
 
   /* Tokens that retain their meaning across modes */
-  --noise-dot-a: rgba(52, 0, 104, 0.08);
-  --noise-dot-b: rgba(255, 105, 120, 0.05);
-  --grid-line: rgba(52, 0, 104, 0.06);
-  --hairline: rgba(52, 0, 104, 0.20);
+  --noise-dot-a: rgba(23, 50, 77, 0.07);
+  --noise-dot-b: rgba(217, 154, 54, 0.06);
+  --grid-line: rgba(23, 50, 77, 0.06);
+  --hairline: rgba(23, 50, 77, 0.18);
 
   /* "Anchor dark" — sections that always read as dramatic dark
      bands (marquee strip, "Join once", footer). */
-  --surface-deep: #340068;     /* Indigo Ink in light, deeper in dark */
-  --surface-deep-2: #240048;   /* elevated card on deep surface */
-  --on-deep: #FFF8EE;          /* foreground on deep surface */
-  --on-deep-soft: rgba(255, 248, 238, 0.72);
+  --surface-deep: #17324d;
+  --surface-deep-2: #0d2238;
+  --on-deep: #fffdf8;
+  --on-deep-soft: rgba(255, 253, 248, 0.72);
 
   /* Border + shadow tokens that flip to softer values in dark mode
      (in light mode they ARE --ink). */
@@ -42,27 +42,27 @@
 @media (prefers-color-scheme: dark) {
   :root {
     /* Keep the event marketplace light even for users in system dark mode. */
-    --ink: #340068;
-    --ink-deep: #240048;
-    --rose: #FF6978;
-    --rose-soft: #ff9aa4;
-    --champagne: #FFFCF9;
-    --champagne-deep: #f5edf4;
-    --peach: #B1EDE8;
-    --peach-soft: #d8f7f4;
-    --mauve: #6D435A;
-    --cream: #fff6f7;
-    --punch: #ffd84d;
+    --ink: #17324d;
+    --ink-deep: #0d2238;
+    --rose: #d99a36;
+    --rose-soft: #efc171;
+    --champagne: #fbf7ef;
+    --champagne-deep: #eef4f6;
+    --peach: #b9d8df;
+    --peach-soft: #dcebef;
+    --mauve: #587083;
+    --cream: #fffdf8;
+    --punch: #e7b84f;
 
-    --noise-dot-a: rgba(52, 0, 104, 0.08);
-    --noise-dot-b: rgba(255, 105, 120, 0.05);
-    --grid-line: rgba(52, 0, 104, 0.06);
-    --hairline: rgba(52, 0, 104, 0.20);
+    --noise-dot-a: rgba(23, 50, 77, 0.07);
+    --noise-dot-b: rgba(217, 154, 54, 0.06);
+    --grid-line: rgba(23, 50, 77, 0.06);
+    --hairline: rgba(23, 50, 77, 0.18);
 
-    --surface-deep: #340068;
-    --surface-deep-2: #240048;
-    --on-deep: #FFFCF9;
-    --on-deep-soft: rgba(255, 252, 249, 0.72);
+    --surface-deep: #17324d;
+    --surface-deep-2: #0d2238;
+    --on-deep: #fffdf8;
+    --on-deep-soft: rgba(255, 253, 248, 0.72);
 
     --line: var(--ink);
     --line-soft: rgba(52, 0, 104, 0.18);

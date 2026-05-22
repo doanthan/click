@@ -90,15 +90,17 @@ export default function TestPageClient({ groups }: { groups: RouteGroup[] }) {
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
-    try {
-      const rawStatus = window.localStorage.getItem(STATUS_KEY);
-      if (rawStatus) setStatuses(JSON.parse(rawStatus));
-      const rawNotes = window.localStorage.getItem(NOTES_KEY);
-      if (rawNotes) setNotes(JSON.parse(rawNotes));
-    } catch {
-      // ignore parse errors — start fresh
-    }
-    setHydrated(true);
+    queueMicrotask(() => {
+      try {
+        const rawStatus = window.localStorage.getItem(STATUS_KEY);
+        if (rawStatus) setStatuses(JSON.parse(rawStatus));
+        const rawNotes = window.localStorage.getItem(NOTES_KEY);
+        if (rawNotes) setNotes(JSON.parse(rawNotes));
+      } catch {
+        // ignore parse errors — start fresh
+      }
+      setHydrated(true);
+    });
   }, []);
 
   useEffect(() => {

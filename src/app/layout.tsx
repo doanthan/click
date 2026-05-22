@@ -6,6 +6,8 @@ import {
   Manrope,
   Shrikhand,
 } from "next/font/google";
+import { Toaster } from "sonner";
+import { AppAuthProvider } from "@/components/auth-provider";
 import { LoginModalHost } from "@/components/login-modal-host";
 import { SiteFooter, SiteHeader } from "@/components/site-chrome";
 import "./globals.css";
@@ -45,9 +47,9 @@ const shrikhand = Shrikhand({
 });
 
 export const metadata: Metadata = {
-  title: "Click — A burst of YES",
+  title: "Bible Study Connect",
   description:
-    "Click helps ordinary people find local groups, dating, friendship and Sydney events with a reason to talk.",
+    "Find Bible study groups, prayer support, testimonies, events, and Christian community near you.",
 };
 
 export default function RootLayout({
@@ -66,14 +68,17 @@ export default function RootLayout({
       className={`${manrope.variable} ${fraunces.variable} ${plexMono.variable} ${caveat.variable} ${shrikhand.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <SiteHeader />
-        {children}
-        <SiteFooter />
-        <LoginModalHost
-          googleConfigured={googleConfigured}
-          metaConfigured={metaConfigured}
-          showDemoCredentials={showDemoCredentials}
-        />
+        <AppAuthProvider>
+          <SiteHeader />
+          {children}
+          <SiteFooter />
+          <LoginModalHost
+            googleConfigured={googleConfigured}
+            metaConfigured={metaConfigured}
+            showDemoCredentials={showDemoCredentials}
+          />
+          <Toaster position="top-right" richColors closeButton />
+        </AppAuthProvider>
       </body>
     </html>
   );

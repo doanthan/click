@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { categories, type EventItem } from "@/lib/click-data";
 import { EventCard } from "./event-card";
 import { Pill } from "./click-ui";
@@ -8,6 +9,23 @@ import { Pill } from "./click-ui";
 type DateWindow = "7" | "30" | "all";
 type LocationStatus = "idle" | "requesting" | "shared" | "denied" | "unsupported";
 type SortMode = "recommended" | "soonest" | "nearest" | "popular";
+
+const DATE_WINDOWS: ReadonlyArray<DateWindow> = ["7", "30", "all"];
+const SORT_MODES: ReadonlyArray<SortMode> = ["recommended", "soonest", "nearest", "popular"];
+
+function parseDateWindow(value: string | null): DateWindow {
+  return DATE_WINDOWS.includes(value as DateWindow) ? (value as DateWindow) : "all";
+}
+
+function parseSortMode(value: string | null): SortMode {
+  return SORT_MODES.includes(value as SortMode) ? (value as SortMode) : "recommended";
+}
+
+function parseDistance(value: string | null) {
+  const parsed = Number.parseInt(value ?? "", 10);
+  if (!Number.isFinite(parsed) || parsed < 1 || parsed > 200) return 25;
+  return parsed;
+}
 
 function daysUntil(startsAt: string, referenceTime: number) {
   const eventDate = new Date(startsAt);
@@ -43,14 +61,57 @@ export function EventExplorer({
 }) {
   const bookmarkedSet = useMemo(() => new Set(bookmarkedEventIds), [bookmarkedEventIds]);
   const registeredSet = useMemo(() => new Set(registeredEventIds), [registeredEventIds]);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
   const [locationStatus, setLocationStatus] = useState<LocationStatus>("idle");
   const [locationQuery, setLocationQuery] = useState("Sydney CBD");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedSuburb, setSelectedSuburb] = useState("All Sydney");
-  const [selectedCategory, setSelectedCategory] = useState("All");
-  const [dateWindow, setDateWindow] = useState<DateWindow>("all");
-  const [distanceKm, setDistanceKm] = useState(25);
-  const [sortMode, setSortMode] = useState<SortMode>("recommended");
+  const [searchQuery, setSearchQuery] = useState(() => searchParams.get("search") ?? "");
+  const [selectedSuburb, setSelectedSuburb] = useState(
+    () => searchParams.get("suburb") ?? "All Sydney",
+  );
+  const [selectedCategory, setSelectedCategory] = useState(
+    () => searchParams.get("category") ?? "All",
+  );
+  const [dateWindow, setDateWindow] = useState<DateWindow>(() =>
+    parseDateWindow(searchParams.get("date")),
+  );
+  const [distanceKm, setDistanceKm] = useState(() =>
+    parseDistance(searchParams.get("distance")),
+  );
+  const [sortMode, setSortMode] = useState<SortMode>(() =>
+    parseSortMode(searchParams.get("sort")),
+  );
+
+  useEffect(() => {
+    const next = new URLSearchParams();
+    if (searchQuery.trim()) next.set("search", searchQuery.trim());
+    if (selectedCategory !== "All") next.set("category", selectedCategory);
+    if (selectedSuburb !== "All Sydney") next.set("suburb", selectedSuburb);
+    if (dateWindow !== "all") next.set("date", dateWindow);
+    if (distanceKm !== 25) next.set("distance", String(distanceKm));
+    if (sortMode !== "recommended") next.set("sort", sortMode);
+
+    const query = next.toString();
+    const target = query ? `${pathname}?${query}` : pathname;
+    if (
+      target !==
+      (searchParams.toString() ? `${pathname}?${searchParams.toString()}` : pathname)
+    ) {
+      router.replace(target, { scroll: false });
+    }
+  }, [
+    dateWindow,
+    distanceKm,
+    pathname,
+    router,
+    searchParams,
+    searchQuery,
+    selectedCategory,
+    selectedSuburb,
+    sortMode,
+  ]);
 
   const todayTime = useMemo(() => {
     const now = new Date();
