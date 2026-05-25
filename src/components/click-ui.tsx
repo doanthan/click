@@ -164,7 +164,7 @@ export function LinkButton({
         ? "border-2 border-[color:var(--line)] bg-[color:var(--peach)] text-[color:var(--surface-deep)] hover:bg-[color:var(--peach-soft)]"
         : variant === "ink"
           ? "border-2 border-[color:var(--line)] bg-[color:var(--ink)] text-[color:var(--champagne)] hover:bg-[color:var(--ink-deep)]"
-          : "border-2 border-[color:var(--line)] bg-[color:var(--rose)] text-[color:var(--surface-deep)] hover:bg-[color:var(--ink)]";
+          : "border-2 border-[color:var(--line)] bg-[color:var(--rose)] text-[color:var(--surface-deep)] hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)]";
 
   return (
     <Link

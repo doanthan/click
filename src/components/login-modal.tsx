@@ -1,12 +1,13 @@
 "use client";
 
-import { useActionState, useEffect, useRef } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import {
   signInWithEmailFromModal,
   signInWithGoogle,
   signInWithMeta,
   type EmailLoginFormState,
 } from "@/app/login/actions";
+import { REGISTER_PREFILL_KEY, type RegisterPrefill } from "@/components/register-form";
 
 type LoginModalProps = {
   open: boolean;
@@ -17,7 +18,13 @@ type LoginModalProps = {
   showDemoCredentials: boolean;
 };
 
+type Mode = "login" | "signup";
+
 const initialEmailState: EmailLoginFormState = { error: null };
+
+// New accounts route through /post-login, which sends anyone with an
+// incomplete profile to /onboarding (where the prefill below is read).
+const SIGNUP_CALLBACK_URL = "/post-login";
 
 export function LoginModal({
   open,
@@ -31,7 +38,12 @@ export function LoginModal({
     signInWithEmailFromModal,
     initialEmailState,
   );
-  const emailInputRef = useRef<HTMLInputElement>(null);
+  const [mode, setMode] = useState<Mode>("login");
+  const [name, setName] = useState("");
+  const firstFieldRef = useRef<HTMLInputElement>(null);
+
+  const isSignup = mode === "signup";
+  const formCallbackUrl = isSignup ? SIGNUP_CALLBACK_URL : callbackUrl;
 
   useEffect(() => {
     if (!open) return;
@@ -42,7 +54,7 @@ export function LoginModal({
 
     document.body.style.overflow = "hidden";
     document.addEventListener("keydown", handleKey);
-    const timeout = window.setTimeout(() => emailInputRef.current?.focus(), 100);
+    const timeout = window.setTimeout(() => firstFieldRef.current?.focus(), 100);
 
     return () => {
       document.body.style.overflow = "";
@@ -50,6 +62,24 @@ export function LoginModal({
       window.clearTimeout(timeout);
     };
   }, [open, onClose]);
+
+  // For sign-ups, hand the typed name to /onboarding via the same
+  // sessionStorage prefill that the full /register flow uses.
+  function stashSignupPrefill() {
+    if (!isSignup || typeof window === "undefined") return;
+    const prefill: RegisterPrefill = {
+      displayName: name.trim(),
+      intent: "friendship",
+      latitude: null,
+      longitude: null,
+      capturedAt: new Date().toISOString(),
+    };
+    try {
+      window.sessionStorage.setItem(REGISTER_PREFILL_KEY, JSON.stringify(prefill));
+    } catch {
+      // sessionStorage can be unavailable in private mode — ignore.
+    }
+  }
 
   if (!open) return null;
 
@@ -67,7 +97,7 @@ export function LoginModal({
         className="absolute inset-0 cursor-default bg-[color:var(--ink)]/55 backdrop-blur-sm"
       />
 
-      <div className="relative z-10 w-full max-w-md overflow-hidden rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow">
+      <div className="relative z-10 max-h-[92vh] w-full max-w-md overflow-y-auto rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow">
         <div className="flex items-center justify-between gap-3 border-b-2 border-[color:var(--line)] bg-[color:var(--cream)] px-5 py-3">
           <div className="flex items-center gap-2">
             <span className="size-3 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)]" />
@@ -88,22 +118,62 @@ export function LoginModal({
         </div>
 
         <div className="p-6 sm:p-7">
-          <span className="sticker sticker--peach tilt-l-2 inline-flex">
+          <div
+            role="tablist"
+            aria-label="Log in or sign up"
+            className="grid grid-cols-2 gap-1 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-1"
+          >
+            {(["login", "signup"] as const).map((value) => {
+              const active = mode === value;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setMode(value)}
+                  className={`rounded-full px-4 py-2 text-sm font-bold uppercase tracking-wide transition ${
+                    active
+                      ? "border-2 border-[color:var(--line)] bg-[color:var(--rose)] text-[color:var(--surface-deep)] hard-shadow-sm"
+                      : "border-2 border-transparent text-[color:var(--mauve)] hover:text-[color:var(--ink)]"
+                  }`}
+                >
+                  {value === "login" ? "Log in" : "Sign up"}
+                </button>
+              );
+            })}
+          </div>
+
+          <span className="sticker sticker--peach tilt-l-2 mt-5 inline-flex">
             <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
-            Welcome back
+            {isSignup ? "New here" : "Welcome back"}
           </span>
           <h2
             id="login-modal-title"
             className="font-display mt-4 text-3xl font-light leading-[1] tracking-tight text-[color:var(--ink)] sm:text-4xl"
           >
-            Get into your{" "}
-            <span className="italic">
-              <span className="peach-highlight">real-world</span>
-            </span>{" "}
-            plans.
+            {isSignup ? (
+              <>
+                Make your{" "}
+                <span className="italic">
+                  <span className="peach-highlight">first Click</span>
+                </span>
+                .
+              </>
+            ) : (
+              <>
+                Get into your{" "}
+                <span className="italic">
+                  <span className="peach-highlight">real-world</span>
+                </span>{" "}
+                plans.
+              </>
+            )}
           </h2>
           <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--mauve)]">
-            One account for RSVPs, saved events, and private Clicks.
+            {isSignup
+              ? "Create an account to RSVP, save events, and start private Clicks."
+              : "One account for RSVPs, saved events, and private Clicks."}
           </p>
 
           {showDemoCredentials ? (
@@ -137,8 +207,8 @@ export function LoginModal({
           ) : null}
 
           <div className="mt-6 grid gap-3">
-            <form action={signInWithGoogle}>
-              <input type="hidden" name="callbackUrl" value={callbackUrl} />
+            <form action={signInWithGoogle} onSubmit={stashSignupPrefill}>
+              <input type="hidden" name="callbackUrl" value={formCallbackUrl} />
               <button
                 type="submit"
                 disabled={!googleConfigured}
@@ -146,13 +216,17 @@ export function LoginModal({
               >
                 <GoogleMark className="size-5 shrink-0" />
                 <span>
-                  {googleConfigured ? "Continue with Google" : "Google · setup required"}
+                  {googleConfigured
+                    ? isSignup
+                      ? "Sign up with Google"
+                      : "Continue with Google"
+                    : "Google · setup required"}
                 </span>
               </button>
             </form>
 
-            <form action={signInWithMeta}>
-              <input type="hidden" name="callbackUrl" value={callbackUrl} />
+            <form action={signInWithMeta} onSubmit={stashSignupPrefill}>
+              <input type="hidden" name="callbackUrl" value={formCallbackUrl} />
               <button
                 type="submit"
                 disabled={!metaConfigured}
@@ -160,7 +234,11 @@ export function LoginModal({
               >
                 <FacebookMark className="size-5 shrink-0" />
                 <span>
-                  {metaConfigured ? "Continue with Facebook" : "Facebook · setup required"}
+                  {metaConfigured
+                    ? isSignup
+                      ? "Sign up with Facebook"
+                      : "Continue with Facebook"
+                    : "Facebook · setup required"}
                 </span>
               </button>
             </form>
@@ -174,15 +252,33 @@ export function LoginModal({
             <span className="h-[2px] flex-1 bg-[color:var(--line-soft)]" />
           </div>
 
-          <form action={emailAction} className="grid gap-3">
-            <input type="hidden" name="callbackUrl" value={callbackUrl} />
+          <form action={emailAction} onSubmit={stashSignupPrefill} className="grid gap-3">
+            <input type="hidden" name="callbackUrl" value={formCallbackUrl} />
+
+            {isSignup ? (
+              <label className="grid gap-1.5 text-sm font-bold text-[color:var(--ink)]">
+                <span className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+                  Your name
+                </span>
+                <input
+                  ref={firstFieldRef}
+                  name="displayName"
+                  type="text"
+                  autoComplete="name"
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-3 text-base font-semibold text-[color:var(--ink)] placeholder:text-[color:var(--mauve)]/55 outline-none focus:bg-[color:var(--champagne)] focus:border-[color:var(--rose)]"
+                  placeholder="Jordan Lee"
+                />
+              </label>
+            ) : null}
 
             <label className="grid gap-1.5 text-sm font-bold text-[color:var(--ink)]">
               <span className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-[color:var(--mauve)]">
                 Email
               </span>
               <input
-                ref={emailInputRef}
+                ref={isSignup ? undefined : firstFieldRef}
                 name="email"
                 type="email"
                 required
@@ -206,11 +302,27 @@ export function LoginModal({
               disabled={emailPending}
               className="mt-1 inline-flex min-h-[48px] items-center justify-center gap-2 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-6 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:-translate-x-[2px] hover:-translate-y-[2px] hover:[box-shadow:5px_5px_0_0_var(--shadow-ink)] hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-x-0 disabled:hover:translate-y-0"
             >
-              {emailPending ? "Signing in..." : "Continue with email"}
+              {emailPending
+                ? isSignup
+                  ? "Creating account..."
+                  : "Signing in..."
+                : isSignup
+                  ? "Create account"
+                  : "Continue with email"}
               <span aria-hidden>→</span>
             </button>
           </form>
 
+          <p className="mt-5 text-center text-sm font-medium text-[color:var(--mauve)]">
+            {isSignup ? "Already have an account?" : "New to Click?"}{" "}
+            <button
+              type="button"
+              onClick={() => setMode(isSignup ? "login" : "signup")}
+              className="font-bold text-[color:var(--ink)] underline decoration-2 underline-offset-4 hover:text-[color:var(--rose)]"
+            >
+              {isSignup ? "Log in" : "Sign up"}
+            </button>
+          </p>
         </div>
       </div>
     </div>
