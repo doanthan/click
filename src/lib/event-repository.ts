@@ -5,6 +5,7 @@ import path from "path";
 import { clickEvents, type EventItem, type EventStatus } from "./click-data";
 import { sendTransactionalEmail } from "./email";
 import { getPostgresPool } from "./postgres";
+import { writeAuditLog } from "@/utils/admin/audit-logger";
 
 type EventRow = {
   slug: string;
@@ -45,6 +46,9 @@ export type OnboardingInput = {
   bio: string;
   intents: string[];
   tags: string[];
+  birthDate?: string;
+  datingVisible?: boolean;
+  flexibleDiscovery?: boolean;
 };
 
 export type MerchantSignupInput = {
@@ -87,6 +91,8 @@ export type CreateEventInput = {
   description: string;
   relationshipGoal: string;
   tags: string;
+  imageUrl?: string;
+  imageAlt?: string;
 };
 
 export type AdminEventRow = {
@@ -113,6 +119,8 @@ export type AdminMemberRow = {
   emailVerified: boolean;
   photoVerified: boolean;
   joinedAt: string;
+  suspendedAt: string | null;
+  suspendedReason: string | null;
 };
 
 export type AdminMerchantRow = {
@@ -1235,8 +1243,8 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
         input.suburb.trim() || "Sydney",
         parsePriceCents(input.price),
         capacity,
-        imageForCategory(category),
-        "Community event listing",
+        input.imageUrl?.trim() || imageForCategory(category),
+        input.imageAlt?.trim() || "Community event listing",
         relationshipGoal,
         "Pending admin review before being promoted to members.",
       ],
@@ -1488,6 +1496,8 @@ const fallbackAdminMembers: AdminMemberRow[] = [
     emailVerified: true,
     photoVerified: true,
     joinedAt: "2025-08-12T03:18:00.000Z",
+    suspendedAt: null,
+    suspendedReason: null,
   },
   {
     id: "seed-leo",
@@ -1501,6 +1511,8 @@ const fallbackAdminMembers: AdminMemberRow[] = [
     emailVerified: true,
     photoVerified: false,
     joinedAt: "2025-09-04T12:02:00.000Z",
+    suspendedAt: null,
+    suspendedReason: null,
   },
   {
     id: "seed-anika",
@@ -1514,6 +1526,8 @@ const fallbackAdminMembers: AdminMemberRow[] = [
     emailVerified: true,
     photoVerified: true,
     joinedAt: "2025-09-19T22:45:00.000Z",
+    suspendedAt: null,
+    suspendedReason: null,
   },
   {
     id: "seed-host-zara",
@@ -1527,6 +1541,8 @@ const fallbackAdminMembers: AdminMemberRow[] = [
     emailVerified: true,
     photoVerified: true,
     joinedAt: "2025-07-30T01:10:00.000Z",
+    suspendedAt: null,
+    suspendedReason: null,
   },
   {
     id: "seed-admin",
@@ -1540,6 +1556,8 @@ const fallbackAdminMembers: AdminMemberRow[] = [
     emailVerified: true,
     photoVerified: true,
     joinedAt: "2025-06-01T00:00:00.000Z",
+    suspendedAt: null,
+    suspendedReason: null,
   },
 ];
 
@@ -1647,6 +1665,8 @@ export async function getAdminMembers(): Promise<AdminMemberRow[]> {
       email_verified_at: Date | null;
       photo_verified_at: Date | null;
       created_at: Date;
+      suspended_at: Date | null;
+      suspended_reason: string | null;
     }>(`
       select
         profile.id::text,
@@ -1659,7 +1679,9 @@ export async function getAdminMembers(): Promise<AdminMemberRow[]> {
         coalesce(count(distinct attendee.id) filter (where attendee.status in ('confirmed', 'waitlisted')), 0) as registrations,
         profile.email_verified_at,
         profile.photo_verified_at,
-        profile.created_at
+        profile.created_at,
+        profile.suspended_at,
+        profile.suspended_reason
       from profiles profile
       left join bookmarks bookmark on bookmark.profile_id = profile.id
       left join event_attendees attendee on attendee.profile_id = profile.id
@@ -1680,6 +1702,8 @@ export async function getAdminMembers(): Promise<AdminMemberRow[]> {
       emailVerified: !!row.email_verified_at,
       photoVerified: !!row.photo_verified_at,
       joinedAt: row.created_at.toISOString(),
+      suspendedAt: row.suspended_at ? row.suspended_at.toISOString() : null,
+      suspendedReason: row.suspended_reason,
     }));
   } catch (error) {
     if (process.env.CLICK_DB_DEBUG === "true") {
@@ -2211,6 +2235,30 @@ export async function saveOnboarding(input: OnboardingInput, session: Session | 
     throw error;
   }
 
+  let birthDateValue: string | null = null;
+  let derivedAge = ageValue;
+  if (input.birthDate && input.birthDate.trim()) {
+    const parsed = new Date(input.birthDate.trim());
+    if (Number.isNaN(parsed.getTime())) {
+      const error = new Error("Birth date must be a valid date.");
+      error.name = "ValidationError";
+      throw error;
+    }
+    const today = new Date();
+    let computedAge = today.getFullYear() - parsed.getFullYear();
+    const hasHadBirthday =
+      today.getMonth() > parsed.getMonth() ||
+      (today.getMonth() === parsed.getMonth() && today.getDate() >= parsed.getDate());
+    if (!hasHadBirthday) computedAge -= 1;
+    if (computedAge < 18) {
+      const error = new Error("You must be 18 or older to use Click.");
+      error.name = "ValidationError";
+      throw error;
+    }
+    birthDateValue = parsed.toISOString().slice(0, 10);
+    derivedAge = derivedAge ?? computedAge;
+  }
+
   const allowedIntents = ["dating", "friendship", "networking", "exploring"];
   const intents = (input.intents.length ? input.intents : ["friendship"])
     .map((intent) => intent.toLowerCase())
@@ -2227,10 +2275,23 @@ export async function saveOnboarding(input: OnboardingInput, session: Session | 
         age = $4,
         bio = $5,
         connection_intents = $6::connection_intent[],
+        birth_date = $7::date,
+        dating_visible = coalesce($8::boolean, dating_visible),
+        flexible_discovery = coalesce($9::boolean, flexible_discovery),
         updated_at = now()
       where id = $1::uuid
     `,
-    [profile.id, displayName, suburb, ageValue, bio, intents.length ? intents : ["friendship"]],
+    [
+      profile.id,
+      displayName,
+      suburb,
+      derivedAge,
+      bio,
+      intents.length ? intents : ["friendship"],
+      birthDateValue,
+      input.datingVisible ?? null,
+      input.flexibleDiscovery ?? null,
+    ],
   );
 
   const rawTags = input.tags
@@ -3075,6 +3136,1359 @@ export async function markPaymentSucceeded(paymentTransactionId: string) {
     throw error;
   } finally {
     client.release();
+  }
+}
+
+export type ConfirmedEvents = {
+  upcoming: EventItem[];
+  past: EventItem[];
+};
+
+export async function getBookmarkedEvents(session: Session | null): Promise<EventItem[]> {
+  const pool = getPostgresPool();
+  const email = getSessionEmail(session);
+
+  if (!pool || !email) return [];
+
+  try {
+    const profile = await ensureProfileForSession(session);
+    const result = await pool.query<EventRow>(
+      `
+        select ${eventSelectColumns}
+        from bookmarks bookmark
+        join events event on event.id = bookmark.event_id
+        left join event_attendees attendee_count on attendee_count.event_id = event.id
+        left join event_tags event_tag on event_tag.event_id = event.id
+        left join tags tag on tag.id = event_tag.tag_id
+        where bookmark.profile_id = $1::uuid
+        group by event.id, bookmark.created_at
+        order by bookmark.created_at desc
+      `,
+      [profile.id],
+    );
+    return result.rows.map(eventFromRow);
+  } catch (error) {
+    if (process.env.CLICK_DB_DEBUG === "true") {
+      console.warn("getBookmarkedEvents fallback", error);
+    }
+    return [];
+  }
+}
+
+export async function getConfirmedEvents(session: Session | null): Promise<ConfirmedEvents> {
+  const pool = getPostgresPool();
+  const email = getSessionEmail(session);
+
+  if (!pool || !email) return { upcoming: [], past: [] };
+
+  try {
+    const profile = await ensureProfileForSession(session);
+    const [upcomingResult, pastResult] = await Promise.all([
+      pool.query<EventRow>(
+        `
+          select ${eventSelectColumns}
+          from event_attendees own_attendee
+          join events event on event.id = own_attendee.event_id
+          left join event_attendees attendee_count on attendee_count.event_id = event.id
+          left join event_tags event_tag on event_tag.event_id = event.id
+          left join tags tag on tag.id = event_tag.tag_id
+          where own_attendee.profile_id = $1::uuid
+            and own_attendee.status in ('confirmed', 'waitlisted')
+            and event.starts_at >= now()
+          group by event.id
+          order by event.starts_at asc
+        `,
+        [profile.id],
+      ),
+      pool.query<EventRow>(
+        `
+          select ${eventSelectColumns}
+          from event_attendees own_attendee
+          join events event on event.id = own_attendee.event_id
+          left join event_attendees attendee_count on attendee_count.event_id = event.id
+          left join event_tags event_tag on event_tag.event_id = event.id
+          left join tags tag on tag.id = event_tag.tag_id
+          where own_attendee.profile_id = $1::uuid
+            and own_attendee.status in ('confirmed', 'waitlisted')
+            and event.starts_at < now()
+          group by event.id
+          order by event.starts_at desc
+          limit 50
+        `,
+        [profile.id],
+      ),
+    ]);
+
+    return {
+      upcoming: upcomingResult.rows.map(eventFromRow),
+      past: pastResult.rows.map(eventFromRow),
+    };
+  } catch (error) {
+    if (process.env.CLICK_DB_DEBUG === "true") {
+      console.warn("getConfirmedEvents fallback", error);
+    }
+    return { upcoming: [], past: [] };
+  }
+}
+
+export type PublicProfile = {
+  id: string;
+  displayName: string;
+  city: string;
+  suburb: string | null;
+  bio: string | null;
+  photoUrl: string | null;
+  age: number | null;
+  intents: string[];
+  interests: { slug: string; label: string }[];
+  attendedCount: number;
+};
+
+export type OwnProfile = PublicProfile & {
+  email: string;
+  role: string;
+};
+
+export async function getOwnProfile(session: Session | null): Promise<OwnProfile | null> {
+  const pool = getPostgresPool();
+  const email = getSessionEmail(session);
+
+  if (!pool || !email) return null;
+
+  try {
+    const profile = await ensureProfileForSession(session);
+    const [profileResult, tagsResult, attendedResult] = await Promise.all([
+      pool.query<{
+        id: string;
+        display_name: string;
+        email: string;
+        role: string;
+        city: string;
+        suburb: string | null;
+        bio: string | null;
+        photo_url: string | null;
+        age: number | null;
+        connection_intents: string[];
+      }>(
+        `
+          select id::text, display_name, email::text, role::text, city, suburb, bio, photo_url, age,
+                 connection_intents::text[] as connection_intents
+          from profiles
+          where id = $1::uuid
+        `,
+        [profile.id],
+      ),
+      pool.query<{ slug: string; label: string }>(
+        `
+          select tag.slug, tag.label
+          from user_tags ut
+          join tags tag on tag.id = ut.tag_id
+          where ut.profile_id = $1::uuid
+          order by tag.label asc
+        `,
+        [profile.id],
+      ),
+      pool.query<{ count: string }>(
+        `
+          select count(*)::text as count
+          from event_attendees
+          where profile_id = $1::uuid and status = 'confirmed'
+        `,
+        [profile.id],
+      ),
+    ]);
+
+    const row = profileResult.rows[0];
+    if (!row) return null;
+
+    return {
+      id: row.id,
+      displayName: row.display_name,
+      email: row.email,
+      role: row.role,
+      city: row.city,
+      suburb: row.suburb,
+      bio: row.bio,
+      photoUrl: row.photo_url,
+      age: row.age,
+      intents: row.connection_intents ?? [],
+      interests: tagsResult.rows.map((t) => ({ slug: t.slug, label: t.label })),
+      attendedCount: Number(attendedResult.rows[0]?.count ?? 0),
+    };
+  } catch (error) {
+    if (process.env.CLICK_DB_DEBUG === "true") {
+      console.warn("getOwnProfile fallback", error);
+    }
+    return null;
+  }
+}
+
+export async function getPublicProfileById(profileId: string): Promise<PublicProfile | null> {
+  const pool = getPostgresPool();
+  if (!pool) return null;
+
+  try {
+    const [profileResult, tagsResult, attendedResult] = await Promise.all([
+      pool.query<{
+        id: string;
+        display_name: string;
+        city: string;
+        suburb: string | null;
+        bio: string | null;
+        photo_url: string | null;
+        age: number | null;
+        connection_intents: string[];
+      }>(
+        `
+          select id::text, display_name, city, suburb, bio, photo_url, age,
+                 connection_intents::text[] as connection_intents
+          from profiles
+          where id = $1::uuid
+        `,
+        [profileId],
+      ),
+      pool.query<{ slug: string; label: string }>(
+        `
+          select tag.slug, tag.label
+          from user_tags ut
+          join tags tag on tag.id = ut.tag_id
+          where ut.profile_id = $1::uuid
+          order by tag.label asc
+        `,
+        [profileId],
+      ),
+      pool.query<{ count: string }>(
+        `
+          select count(*)::text as count
+          from event_attendees
+          where profile_id = $1::uuid and status = 'confirmed'
+        `,
+        [profileId],
+      ),
+    ]);
+
+    const row = profileResult.rows[0];
+    if (!row) return null;
+
+    return {
+      id: row.id,
+      displayName: row.display_name,
+      city: row.city,
+      suburb: row.suburb,
+      bio: row.bio,
+      photoUrl: row.photo_url,
+      age: row.age,
+      intents: row.connection_intents ?? [],
+      interests: tagsResult.rows.map((t) => ({ slug: t.slug, label: t.label })),
+      attendedCount: Number(attendedResult.rows[0]?.count ?? 0),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export type ProfileUpdateInput = {
+  displayName?: string;
+  suburb?: string;
+  bio?: string;
+  photoUrl?: string;
+  age?: number | null;
+  intents?: string[];
+};
+
+export async function updateOwnProfile(
+  session: Session | null,
+  input: ProfileUpdateInput,
+) {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+  const email = getSessionEmail(session);
+  if (!email) throw authError();
+
+  const profile = await ensureProfileForSession(session);
+
+  const updates: string[] = [];
+  const params: unknown[] = [profile.id];
+  let i = 2;
+
+  if (input.displayName !== undefined && input.displayName.trim()) {
+    updates.push(`display_name = $${i++}`);
+    params.push(input.displayName.trim());
+  }
+  if (input.suburb !== undefined) {
+    updates.push(`suburb = $${i++}`);
+    params.push(input.suburb.trim() || null);
+  }
+  if (input.bio !== undefined) {
+    updates.push(`bio = $${i++}`);
+    params.push(input.bio.trim() || null);
+  }
+  if (input.photoUrl !== undefined) {
+    updates.push(`photo_url = $${i++}`);
+    params.push(input.photoUrl.trim() || null);
+  }
+  if (input.age !== undefined) {
+    updates.push(`age = $${i++}`);
+    params.push(input.age);
+  }
+  if (input.intents !== undefined && input.intents.length > 0) {
+    updates.push(`connection_intents = $${i++}::connection_intent[]`);
+    params.push(input.intents);
+  }
+
+  if (updates.length === 0) return;
+
+  await pool.query(
+    `update profiles set ${updates.join(", ")}, updated_at = now() where id = $1::uuid`,
+    params,
+  );
+}
+
+export type NotificationRow = {
+  id: string;
+  title: string;
+  body: string;
+  actionUrl: string | null;
+  channel: string;
+  readAt: string | null;
+  createdAt: string;
+};
+
+export async function getNotificationsForSession(session: Session | null): Promise<NotificationRow[]> {
+  const pool = getPostgresPool();
+  const email = getSessionEmail(session);
+
+  if (!pool || !email) return [];
+
+  try {
+    const profile = await ensureProfileForSession(session);
+    const result = await pool.query<{
+      id: string;
+      title: string;
+      body: string;
+      action_url: string | null;
+      channel: string;
+      read_at: Date | null;
+      created_at: Date;
+    }>(
+      `
+        select id::text, title, body, action_url, channel::text,
+               read_at, created_at
+        from notifications
+        where profile_id = $1::uuid
+        order by read_at is not null, created_at desc
+        limit 50
+      `,
+      [profile.id],
+    );
+
+    return result.rows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      body: row.body,
+      actionUrl: row.action_url,
+      channel: row.channel,
+      readAt: row.read_at ? row.read_at.toISOString() : null,
+      createdAt: row.created_at.toISOString(),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function getUnreadNotificationCount(session: Session | null): Promise<number> {
+  const pool = getPostgresPool();
+  const email = getSessionEmail(session);
+
+  if (!pool || !email) return 0;
+
+  try {
+    const profile = await ensureProfileForSession(session);
+    const result = await pool.query<{ count: string }>(
+      `select count(*)::text as count from notifications
+       where profile_id = $1::uuid and read_at is null`,
+      [profile.id],
+    );
+    return Number(result.rows[0]?.count ?? 0);
+  } catch {
+    return 0;
+  }
+}
+
+export async function markNotificationRead(
+  session: Session | null,
+  notificationId: string,
+) {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+  const email = getSessionEmail(session);
+  if (!email) throw authError();
+
+  const profile = await ensureProfileForSession(session);
+  await pool.query(
+    `
+      update notifications
+      set read_at = now()
+      where id = $1::uuid and profile_id = $2::uuid and read_at is null
+    `,
+    [notificationId, profile.id],
+  );
+}
+
+export async function markAllNotificationsRead(session: Session | null) {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+  const email = getSessionEmail(session);
+  if (!email) throw authError();
+
+  const profile = await ensureProfileForSession(session);
+  await pool.query(
+    `update notifications set read_at = now() where profile_id = $1::uuid and read_at is null`,
+    [profile.id],
+  );
+}
+
+export type SuggestedPerson = {
+  id: string;
+  displayName: string;
+  suburb: string | null;
+  photoUrl: string | null;
+  age: number | null;
+  sharedInterests: string[];
+  intents: string[];
+};
+
+export async function getSuggestedPeople(session: Session | null): Promise<SuggestedPerson[]> {
+  const pool = getPostgresPool();
+  const email = getSessionEmail(session);
+
+  if (!pool || !email) return [];
+
+  try {
+    const profile = await ensureProfileForSession(session);
+    const result = await pool.query<{
+      id: string;
+      display_name: string;
+      suburb: string | null;
+      photo_url: string | null;
+      age: number | null;
+      shared: string[];
+      intents: string[];
+    }>(
+      `
+        select p.id::text, p.display_name, p.suburb, p.photo_url, p.age,
+               coalesce(
+                 array_agg(distinct shared_tag.label)
+                   filter (where shared_tag.label is not null),
+                 '{}'
+               ) as shared,
+               p.connection_intents::text[] as intents
+        from profiles p
+        left join user_tags shared_user_tag on shared_user_tag.profile_id = p.id
+        left join tags shared_tag on shared_tag.id = shared_user_tag.tag_id
+          and shared_tag.id in (
+            select tag_id from user_tags where profile_id = $1::uuid
+          )
+        where p.id <> $1::uuid
+          and p.role = 'attendee'
+        group by p.id
+        order by array_length(
+          coalesce(
+            array_agg(distinct shared_tag.label) filter (where shared_tag.label is not null),
+            '{}'
+          ), 1
+        ) desc nulls last
+        limit 24
+      `,
+      [profile.id],
+    );
+
+    return result.rows.map((row) => ({
+      id: row.id,
+      displayName: row.display_name,
+      suburb: row.suburb,
+      photoUrl: row.photo_url,
+      age: row.age,
+      sharedInterests: row.shared ?? [],
+      intents: row.intents ?? [],
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export type MutualClickEntry = {
+  otherProfileId: string;
+  otherDisplayName: string;
+  otherPhotoUrl: string | null;
+  suggestedEventSlug: string | null;
+  suggestedEventTitle: string | null;
+  createdAt: string;
+};
+
+export async function getMutualClicksForSession(session: Session | null): Promise<MutualClickEntry[]> {
+  const pool = getPostgresPool();
+  const email = getSessionEmail(session);
+  if (!pool || !email) return [];
+
+  try {
+    const profile = await ensureProfileForSession(session);
+    const result = await pool.query<{
+      other_id: string;
+      other_name: string;
+      other_photo: string | null;
+      event_slug: string | null;
+      event_title: string | null;
+      created_at: Date;
+    }>(
+      `
+        select
+          case when m.profile_a_id = $1::uuid then m.profile_b_id::text else m.profile_a_id::text end as other_id,
+          other.display_name as other_name,
+          other.photo_url as other_photo,
+          event.slug as event_slug,
+          event.title as event_title,
+          m.created_at
+        from mutual_clicks m
+        join profiles other on other.id = (
+          case when m.profile_a_id = $1::uuid then m.profile_b_id else m.profile_a_id end
+        )
+        left join events event on event.id = m.suggested_event_id
+        where m.profile_a_id = $1::uuid or m.profile_b_id = $1::uuid
+        order by m.created_at desc
+        limit 12
+      `,
+      [profile.id],
+    );
+
+    return result.rows.map((row) => ({
+      otherProfileId: row.other_id,
+      otherDisplayName: row.other_name,
+      otherPhotoUrl: row.other_photo,
+      suggestedEventSlug: row.event_slug,
+      suggestedEventTitle: row.event_title,
+      createdAt: row.created_at.toISOString(),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export type ConversationListEntry = {
+  id: string;
+  otherProfileId: string;
+  otherDisplayName: string;
+  otherPhotoUrl: string | null;
+  lastMessageAt: string | null;
+  preview: string | null;
+  unread: boolean;
+};
+
+export async function getConversationsForSession(
+  session: Session | null,
+): Promise<ConversationListEntry[]> {
+  const pool = getPostgresPool();
+  const email = getSessionEmail(session);
+  if (!pool || !email) return [];
+
+  try {
+    const profile = await ensureProfileForSession(session);
+    const result = await pool.query<{
+      id: string;
+      other_id: string;
+      other_name: string;
+      other_photo: string | null;
+      last_message_at: Date | null;
+      preview: string | null;
+      unread_count: string;
+    }>(
+      `
+        with mine as (
+          select c.*,
+            (case when c.profile_a_id = $1::uuid then c.profile_b_id else c.profile_a_id end) as other_id
+          from conversations c
+          where c.profile_a_id = $1::uuid or c.profile_b_id = $1::uuid
+        )
+        select
+          mine.id::text,
+          mine.other_id::text,
+          other.display_name as other_name,
+          other.photo_url as other_photo,
+          mine.last_message_at,
+          (
+            select substring(m.body for 120)
+            from messages m
+            where m.conversation_id = mine.id
+            order by m.created_at desc
+            limit 1
+          ) as preview,
+          (
+            select count(*)::text
+            from messages m
+            where m.conversation_id = mine.id
+              and m.sender_profile_id <> $1::uuid
+              and m.read_at is null
+          ) as unread_count
+        from mine
+        join profiles other on other.id = mine.other_id
+        order by mine.last_message_at desc nulls last
+        limit 50
+      `,
+      [profile.id],
+    );
+
+    return result.rows.map((row) => ({
+      id: row.id,
+      otherProfileId: row.other_id,
+      otherDisplayName: row.other_name,
+      otherPhotoUrl: row.other_photo,
+      lastMessageAt: row.last_message_at ? row.last_message_at.toISOString() : null,
+      preview: row.preview,
+      unread: Number(row.unread_count) > 0,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export type ConversationMessage = {
+  id: string;
+  senderProfileId: string;
+  isMine: boolean;
+  body: string;
+  createdAt: string;
+};
+
+export type ConversationDetail = {
+  id: string;
+  otherProfileId: string;
+  otherDisplayName: string;
+  otherPhotoUrl: string | null;
+  messages: ConversationMessage[];
+};
+
+export async function getConversationDetail(
+  session: Session | null,
+  conversationId: string,
+): Promise<ConversationDetail | null> {
+  const pool = getPostgresPool();
+  const email = getSessionEmail(session);
+  if (!pool || !email) return null;
+
+  try {
+    const profile = await ensureProfileForSession(session);
+
+    const convResult = await pool.query<{
+      id: string;
+      profile_a_id: string;
+      profile_b_id: string;
+      other_name: string;
+      other_photo: string | null;
+    }>(
+      `
+        select c.id::text, c.profile_a_id::text, c.profile_b_id::text,
+               other.display_name as other_name, other.photo_url as other_photo
+        from conversations c
+        join profiles other on other.id = (
+          case when c.profile_a_id = $1::uuid then c.profile_b_id else c.profile_a_id end
+        )
+        where c.id = $2::uuid
+          and (c.profile_a_id = $1::uuid or c.profile_b_id = $1::uuid)
+        limit 1
+      `,
+      [profile.id, conversationId],
+    );
+
+    const conv = convResult.rows[0];
+    if (!conv) return null;
+
+    const otherId =
+      conv.profile_a_id === profile.id ? conv.profile_b_id : conv.profile_a_id;
+
+    const messagesResult = await pool.query<{
+      id: string;
+      sender_profile_id: string;
+      body: string;
+      created_at: Date;
+    }>(
+      `
+        select id::text, sender_profile_id::text, body, created_at
+        from messages
+        where conversation_id = $1::uuid
+        order by created_at asc
+        limit 200
+      `,
+      [conv.id],
+    );
+
+    await pool.query(
+      `
+        update messages
+        set read_at = now()
+        where conversation_id = $1::uuid
+          and sender_profile_id <> $2::uuid
+          and read_at is null
+      `,
+      [conv.id, profile.id],
+    );
+
+    return {
+      id: conv.id,
+      otherProfileId: otherId,
+      otherDisplayName: conv.other_name,
+      otherPhotoUrl: conv.other_photo,
+      messages: messagesResult.rows.map((m) => ({
+        id: m.id,
+        senderProfileId: m.sender_profile_id,
+        isMine: m.sender_profile_id === profile.id,
+        body: m.body,
+        createdAt: m.created_at.toISOString(),
+      })),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function sendMessage(
+  session: Session | null,
+  conversationId: string,
+  body: string,
+) {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+  const email = getSessionEmail(session);
+  if (!email) throw authError();
+
+  const trimmed = body.trim();
+  if (!trimmed) return;
+  if (trimmed.length > 2000) {
+    throw new Error("Message too long.");
+  }
+
+  const profile = await ensureProfileForSession(session);
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+
+    const conv = await client.query<{ id: string }>(
+      `
+        select id::text from conversations
+        where id = $1::uuid
+          and (profile_a_id = $2::uuid or profile_b_id = $2::uuid)
+        for update
+      `,
+      [conversationId, profile.id],
+    );
+    if (!conv.rows[0]) {
+      await client.query("rollback");
+      throw new Error("Conversation not found.");
+    }
+
+    await client.query(
+      `insert into messages (conversation_id, sender_profile_id, body)
+       values ($1::uuid, $2::uuid, $3)`,
+      [conversationId, profile.id, trimmed],
+    );
+    await client.query(
+      `update conversations set last_message_at = now() where id = $1::uuid`,
+      [conversationId],
+    );
+
+    await client.query("commit");
+  } catch (e) {
+    await client.query("rollback");
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+export async function getOrCreateConversation(
+  session: Session | null,
+  otherProfileId: string,
+): Promise<string | null> {
+  const pool = getPostgresPool();
+  if (!pool) return null;
+  const email = getSessionEmail(session);
+  if (!email) return null;
+
+  try {
+    const profile = await ensureProfileForSession(session);
+    if (profile.id === otherProfileId) return null;
+
+    const [a, b] = [profile.id, otherProfileId].sort();
+    const result = await pool.query<{ id: string }>(
+      `
+        insert into conversations (profile_a_id, profile_b_id)
+        values ($1::uuid, $2::uuid)
+        on conflict (profile_a_id, profile_b_id) do update
+          set profile_a_id = excluded.profile_a_id
+        returning id::text
+      `,
+      [a, b],
+    );
+    return result.rows[0]?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export type PersonalityQuizInput = {
+  personaName: string;
+  socialEnergy: "introvert" | "ambivert" | "extrovert";
+  pace: "relaxed" | "balanced" | "fast_moving";
+  openness: "cautious" | "curious" | "ready";
+  engagementFrequency: "occasional" | "active" | "enthusiastic";
+  intentMix: Record<string, number>;
+};
+
+export async function savePersonalityQuiz(
+  session: Session | null,
+  input: PersonalityQuizInput,
+) {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+  const email = getSessionEmail(session);
+  if (!email) throw authError();
+
+  const profile = await ensureProfileForSession(session);
+  await pool.query(
+    `
+      insert into click_personas
+        (profile_id, persona_name, social_energy, pace, openness, engagement_frequency, intent_mix)
+      values ($1::uuid, $2, $3, $4, $5, $6, $7::jsonb)
+    `,
+    [
+      profile.id,
+      input.personaName,
+      input.socialEnergy,
+      input.pace,
+      input.openness,
+      input.engagementFrequency,
+      JSON.stringify(input.intentMix),
+    ],
+  );
+}
+
+export async function getLatestPersonaForSession(
+  session: Session | null,
+): Promise<{
+  personaName: string;
+  socialEnergy: string;
+  pace: string;
+  openness: string;
+  engagementFrequency: string;
+  generatedAt: string;
+} | null> {
+  const pool = getPostgresPool();
+  const email = getSessionEmail(session);
+  if (!pool || !email) return null;
+
+  try {
+    const profile = await ensureProfileForSession(session);
+    const result = await pool.query<{
+      persona_name: string;
+      social_energy: string;
+      pace: string;
+      openness: string;
+      engagement_frequency: string;
+      generated_at: Date;
+    }>(
+      `
+        select persona_name, social_energy, pace, openness, engagement_frequency, generated_at
+        from click_personas
+        where profile_id = $1::uuid
+        order by generated_at desc
+        limit 1
+      `,
+      [profile.id],
+    );
+    const row = result.rows[0];
+    if (!row) return null;
+    return {
+      personaName: row.persona_name,
+      socialEnergy: row.social_energy,
+      pace: row.pace,
+      openness: row.openness,
+      engagementFrequency: row.engagement_frequency,
+      generatedAt: row.generated_at.toISOString(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function saveLifeQuizTags(
+  session: Session | null,
+  tagSlugs: string[],
+) {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+  const email = getSessionEmail(session);
+  if (!email) throw authError();
+  if (tagSlugs.length === 0) return;
+
+  const profile = await ensureProfileForSession(session);
+  await pool.query(
+    `
+      insert into user_tags (profile_id, tag_id, source)
+      select $1::uuid, t.id, 'quiz'
+      from tags t
+      where t.slug = any($2::text[])
+      on conflict (profile_id, tag_id) do update set source = 'quiz'
+    `,
+    [profile.id, tagSlugs],
+  );
+}
+
+export type MerchantAllAttendeesRow = {
+  attendeeId: string;
+  eventSlug: string;
+  eventTitle: string;
+  eventStartsAt: string;
+  displayName: string;
+  email: string;
+  status: string;
+  rsvpAt: string;
+  checkedInAt: string | null;
+};
+
+export async function getMerchantAllAttendees(
+  session: Session | null,
+): Promise<MerchantAllAttendeesRow[]> {
+  const pool = getPostgresPool();
+  const email = getSessionEmail(session);
+  if (!pool || !email) return [];
+
+  try {
+    const profile = await ensureProfileForSession(session);
+    const merchant = await getMerchantProfile(pool, profile.id);
+    if (!merchant) return [];
+
+    const result = await pool.query<{
+      attendee_id: string;
+      event_slug: string;
+      event_title: string;
+      event_starts_at: Date;
+      display_name: string;
+      email: string;
+      status: string;
+      rsvp_at: Date;
+      checked_in_at: Date | null;
+    }>(
+      `
+        select
+          attendee.id::text as attendee_id,
+          event.slug as event_slug,
+          event.title as event_title,
+          event.starts_at as event_starts_at,
+          guest.display_name,
+          guest.email::text as email,
+          attendee.status::text,
+          attendee.created_at as rsvp_at,
+          attendee.checked_in_at
+        from event_attendees attendee
+        join events event on event.id = attendee.event_id
+        join profiles guest on guest.id = attendee.profile_id
+        where event.merchant_profile_id = $1::uuid
+        order by event.starts_at desc, attendee.created_at desc
+        limit 500
+      `,
+      [merchant.id],
+    );
+
+    return result.rows.map((row) => ({
+      attendeeId: row.attendee_id,
+      eventSlug: row.event_slug,
+      eventTitle: row.event_title,
+      eventStartsAt: row.event_starts_at.toISOString(),
+      displayName: row.display_name,
+      email: row.email,
+      status: row.status,
+      rsvpAt: row.rsvp_at.toISOString(),
+      checkedInAt: row.checked_in_at ? row.checked_in_at.toISOString() : null,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function toggleAttendeeCheckIn(
+  session: Session | null,
+  attendeeId: string,
+  checkIn: boolean,
+) {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+  const email = getSessionEmail(session);
+  if (!email) throw authError();
+
+  const profile = await ensureProfileForSession(session);
+  const merchant = await getMerchantProfile(pool, profile.id);
+  if (!merchant) throw authError("Only merchants can check in attendees.");
+
+  await pool.query(
+    `
+      update event_attendees attendee
+      set checked_in_at = case when $3::boolean then now() else null end,
+          updated_at = now()
+      from events event
+      where attendee.event_id = event.id
+        and event.merchant_profile_id = $1::uuid
+        and attendee.id = $2::uuid
+    `,
+    [merchant.id, attendeeId, checkIn],
+  );
+}
+
+export type MerchantFinancesSummary = {
+  totalRevenueCents: number;
+  paidRevenueCents: number;
+  pendingRevenueCents: number;
+  refundedRevenueCents: number;
+  recentTransactions: {
+    id: string;
+    eventTitle: string;
+    amountCents: number;
+    status: string;
+    createdAt: string;
+  }[];
+};
+
+export async function getMerchantFinancesSummary(
+  session: Session | null,
+): Promise<MerchantFinancesSummary> {
+  const empty: MerchantFinancesSummary = {
+    totalRevenueCents: 0,
+    paidRevenueCents: 0,
+    pendingRevenueCents: 0,
+    refundedRevenueCents: 0,
+    recentTransactions: [],
+  };
+
+  const pool = getPostgresPool();
+  const email = getSessionEmail(session);
+  if (!pool || !email) return empty;
+
+  try {
+    const profile = await ensureProfileForSession(session);
+    const merchant = await getMerchantProfile(pool, profile.id);
+    if (!merchant) return empty;
+
+    const [aggResult, recentResult] = await Promise.all([
+      pool.query<{
+        total: string;
+        paid: string;
+        pending: string;
+        refunded: string;
+      }>(
+        `
+          select
+            coalesce(sum(amount_cents), 0)::text as total,
+            coalesce(sum(amount_cents) filter (where status = 'paid'), 0)::text as paid,
+            coalesce(sum(amount_cents) filter (where status = 'pending'), 0)::text as pending,
+            coalesce(sum(amount_cents) filter (where status = 'refunded'), 0)::text as refunded
+          from payment_transactions
+          where merchant_profile_id = $1::uuid
+        `,
+        [merchant.id],
+      ),
+      pool.query<{
+        id: string;
+        title: string;
+        amount_cents: number;
+        status: string;
+        created_at: Date;
+      }>(
+        `
+          select pt.id::text, event.title, pt.amount_cents, pt.status::text, pt.created_at
+          from payment_transactions pt
+          join events event on event.id = pt.event_id
+          where pt.merchant_profile_id = $1::uuid
+          order by pt.created_at desc
+          limit 20
+        `,
+        [merchant.id],
+      ),
+    ]);
+
+    const row = aggResult.rows[0];
+    return {
+      totalRevenueCents: Number(row?.total ?? 0),
+      paidRevenueCents: Number(row?.paid ?? 0),
+      pendingRevenueCents: Number(row?.pending ?? 0),
+      refundedRevenueCents: Number(row?.refunded ?? 0),
+      recentTransactions: recentResult.rows.map((r) => ({
+        id: r.id,
+        eventTitle: r.title,
+        amountCents: r.amount_cents,
+        status: r.status,
+        createdAt: r.created_at.toISOString(),
+      })),
+    };
+  } catch {
+    return empty;
+  }
+}
+
+export type AdminTrendBucket = {
+  week: string;
+  members: number;
+  events: number;
+  rsvps: number;
+  revenueCents: number;
+};
+
+export async function getAdminWeeklyTrend(): Promise<AdminTrendBucket[]> {
+  const pool = getPostgresPool();
+  if (!pool) return [];
+
+  try {
+    const result = await pool.query<{
+      week: Date;
+      members: string;
+      events: string;
+      rsvps: string;
+      revenue_cents: string;
+    }>(
+      `
+        with weeks as (
+          select generate_series(
+            date_trunc('week', now()) - interval '7 weeks',
+            date_trunc('week', now()),
+            interval '1 week'
+          ) as week
+        )
+        select
+          weeks.week,
+          (
+            select count(*)::text from profiles
+            where created_at >= weeks.week and created_at < weeks.week + interval '1 week'
+          ) as members,
+          (
+            select count(*)::text from events
+            where created_at >= weeks.week and created_at < weeks.week + interval '1 week'
+          ) as events,
+          (
+            select count(*)::text from event_attendees
+            where created_at >= weeks.week and created_at < weeks.week + interval '1 week'
+              and status = 'confirmed'
+          ) as rsvps,
+          (
+            select coalesce(sum(amount_cents), 0)::text from payment_transactions
+            where created_at >= weeks.week and created_at < weeks.week + interval '1 week'
+              and status = 'paid'
+          ) as revenue_cents
+        from weeks
+        order by weeks.week asc
+      `,
+    );
+
+    return result.rows.map((row) => ({
+      week: row.week.toISOString().slice(0, 10),
+      members: Number(row.members),
+      events: Number(row.events),
+      rsvps: Number(row.rsvps),
+      revenueCents: Number(row.revenue_cents),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function suspendMemberAsAdmin(
+  session: Session | null,
+  targetProfileId: string,
+  reason: string,
+) {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+  const actor = await requireAdminProfile(session);
+
+  await pool.query(
+    `
+      update profiles
+      set suspended_at = now(), suspended_reason = $2
+      where id = $1::uuid
+    `,
+    [targetProfileId, reason.trim() || null],
+  );
+
+  await writeAuditLog({
+    actorProfileId: actor.id,
+    action: "suspend_member",
+    entityTable: "profiles",
+    entityId: targetProfileId,
+    metadata: { reason },
+  });
+}
+
+export async function unsuspendMemberAsAdmin(
+  session: Session | null,
+  targetProfileId: string,
+) {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+  const actor = await requireAdminProfile(session);
+
+  await pool.query(
+    `
+      update profiles
+      set suspended_at = null, suspended_reason = null
+      where id = $1::uuid
+    `,
+    [targetProfileId],
+  );
+
+  await writeAuditLog({
+    actorProfileId: actor.id,
+    action: "unsuspend_member",
+    entityTable: "profiles",
+    entityId: targetProfileId,
+  });
+}
+
+export type SystemSettings = {
+  maintenanceMode: boolean;
+  commissionRateBps: number;
+  marketingBanner: string;
+};
+
+export async function getSystemSettings(): Promise<SystemSettings> {
+  const fallback: SystemSettings = {
+    maintenanceMode: false,
+    commissionRateBps: 290,
+    marketingBanner: "",
+  };
+
+  const pool = getPostgresPool();
+  if (!pool) return fallback;
+
+  try {
+    const result = await pool.query<{ key: string; value: unknown }>(
+      `select key, value from system_settings`,
+    );
+    const map = new Map(result.rows.map((row) => [row.key, row.value]));
+    return {
+      maintenanceMode: Boolean(map.get("maintenance_mode")),
+      commissionRateBps: Number(map.get("commission_rate_bps") ?? 290),
+      marketingBanner: String(map.get("marketing_banner") ?? "").trim(),
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+export async function updateSystemSettingsAsAdmin(
+  session: Session | null,
+  input: Partial<SystemSettings>,
+) {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+  const actor = await requireAdminProfile(session);
+
+  const writes: { key: string; value: string }[] = [];
+  if (typeof input.maintenanceMode === "boolean") {
+    writes.push({ key: "maintenance_mode", value: JSON.stringify(input.maintenanceMode) });
+  }
+  if (typeof input.commissionRateBps === "number" && Number.isFinite(input.commissionRateBps)) {
+    writes.push({
+      key: "commission_rate_bps",
+      value: JSON.stringify(Math.max(0, Math.min(5000, Math.round(input.commissionRateBps)))),
+    });
+  }
+  if (typeof input.marketingBanner === "string") {
+    writes.push({
+      key: "marketing_banner",
+      value: JSON.stringify(input.marketingBanner.slice(0, 200)),
+    });
+  }
+
+  if (writes.length === 0) return;
+
+  for (const w of writes) {
+    await pool.query(
+      `
+        insert into system_settings (key, value, updated_at, updated_by_profile_id)
+        values ($1, $2::jsonb, now(), $3::uuid)
+        on conflict (key) do update set
+          value = excluded.value,
+          updated_at = now(),
+          updated_by_profile_id = excluded.updated_by_profile_id
+      `,
+      [w.key, w.value, actor.id],
+    );
+  }
+
+  await writeAuditLog({
+    actorProfileId: actor.id,
+    action: "update_system_settings",
+    entityTable: "system_settings",
+    entityId: null,
+    metadata: input as Record<string, unknown>,
+  });
+}
+
+export type EventAttendeePreviewRow = {
+  profileId: string;
+  displayName: string;
+  photoUrl: string | null;
+  suburb: string | null;
+};
+
+export async function getEventAttendeePreview(
+  eventSlug: string,
+  limit = 8,
+): Promise<{ items: EventAttendeePreviewRow[]; totalConfirmed: number }> {
+  const pool = getPostgresPool();
+  if (!pool) return { items: [], totalConfirmed: 0 };
+
+  try {
+    const [previewResult, countResult] = await Promise.all([
+      pool.query<{
+        profile_id: string;
+        display_name: string;
+        photo_url: string | null;
+        suburb: string | null;
+      }>(
+        `
+          select profile.id::text as profile_id,
+                 profile.display_name,
+                 profile.photo_url,
+                 profile.suburb
+          from event_attendees attendee
+          join events event on event.id = attendee.event_id
+          join profiles profile on profile.id = attendee.profile_id
+          where event.slug = $1
+            and attendee.status = 'confirmed'
+          order by attendee.created_at asc
+          limit $2
+        `,
+        [eventSlug, limit],
+      ),
+      pool.query<{ count: string }>(
+        `
+          select count(*)::text as count
+          from event_attendees attendee
+          join events event on event.id = attendee.event_id
+          where event.slug = $1 and attendee.status = 'confirmed'
+        `,
+        [eventSlug],
+      ),
+    ]);
+
+    return {
+      items: previewResult.rows.map((row) => ({
+        profileId: row.profile_id,
+        displayName: row.display_name,
+        photoUrl: row.photo_url,
+        suburb: row.suburb,
+      })),
+      totalConfirmed: Number(countResult.rows[0]?.count ?? 0),
+    };
+  } catch {
+    return { items: [], totalConfirmed: 0 };
   }
 }
 

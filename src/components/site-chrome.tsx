@@ -1,16 +1,26 @@
 import Link from "next/link";
 import Image from "next/image";
 import { auth, isAdminEmail, signOut } from "@/auth";
-import { getProfileStatus } from "@/lib/event-repository";
+import {
+  getProfileStatus,
+  getUnreadNotificationCount,
+} from "@/lib/event-repository";
+import { HeaderNotificationsBell } from "./header-notifications-bell";
+import { HeaderRoleSwitcher, type PortalRole } from "./header-role-switcher";
 import { LoginTrigger } from "./login-trigger";
 
 export async function SiteHeader() {
   const session = await auth();
   const userLabel = session?.user?.name ?? session?.user?.email ?? "Account";
   const isAdmin = !!session?.user && isAdminEmail(session.user.email);
-  const hasMerchantProfile = session?.user
-    ? !!(await getProfileStatus(session)).merchantProfile
-    : false;
+  const profileStatus = session?.user ? await getProfileStatus(session) : null;
+  const hasMerchantProfile = !!profileStatus?.merchantProfile;
+  const unreadCount = session?.user ? await getUnreadNotificationCount(session) : 0;
+
+  const portalRoles: PortalRole[] = [];
+  if (session?.user) portalRoles.push("user");
+  if (hasMerchantProfile) portalRoles.push("merchant");
+  if (isAdmin) portalRoles.push("admin");
 
   const navItems: Array<{ label: string; href: string }> = [
     { label: "Discover", href: "/discover" },
@@ -18,11 +28,13 @@ export async function SiteHeader() {
   ];
   if (session?.user) {
     navItems.push({ label: "Dashboard", href: "/dashboard" });
-    navItems.push({
-      label: hasMerchantProfile ? "Host" : "Host events",
-      href: hasMerchantProfile ? "/merchant" : "/merchant/signup",
-    });
   }
+  // Host entry is always visible — logged-out visitors land on /merchant/signup,
+  // which routes through login and brings them back to register as a host.
+  navItems.push({
+    label: hasMerchantProfile ? "Host" : "Host an event",
+    href: hasMerchantProfile ? "/merchant" : "/merchant/signup",
+  });
   if (isAdmin) {
     navItems.push({ label: "Admin", href: "/admin" });
   }
@@ -65,12 +77,8 @@ export async function SiteHeader() {
         <div className="flex items-center gap-2">
           {session?.user ? (
             <>
-              <Link
-                href="/dashboard"
-                className="hidden max-w-44 truncate rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-2 text-sm font-bold text-[color:var(--ink)] hard-shadow-sm sm:block"
-              >
-                {userLabel}
-              </Link>
+              <HeaderNotificationsBell unreadCount={unreadCount} />
+              <HeaderRoleSwitcher roles={portalRoles} userLabel={userLabel} />
               <form
                 action={async () => {
                   "use server";

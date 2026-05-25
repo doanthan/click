@@ -22,7 +22,7 @@ type LoginModalHostProps = {
 
 export function LoginModalHost(props: LoginModalHostProps) {
   const [open, setOpen] = useState(false);
-  const [callbackUrl, setCallbackUrl] = useState("/dashboard");
+  const [callbackUrl, setCallbackUrl] = useState("/post-login");
 
   const close = useCallback(() => setOpen(false), []);
 
@@ -31,7 +31,7 @@ export function LoginModalHost(props: LoginModalHostProps) {
       const detail = (event as CustomEvent<OpenLoginDetail>).detail ?? {};
       const candidate = typeof detail.callbackUrl === "string" ? detail.callbackUrl : "";
       const safe =
-        candidate.startsWith("/") && !candidate.startsWith("//") ? candidate : "/dashboard";
+        candidate.startsWith("/") && !candidate.startsWith("//") ? candidate : "/post-login";
       setCallbackUrl(safe);
       setOpen(true);
     }

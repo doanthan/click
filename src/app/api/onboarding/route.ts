@@ -30,6 +30,9 @@ export async function POST(request: Request) {
     bio?: string;
     intents?: string[];
     tags?: string[];
+    birthDate?: string;
+    datingVisible?: boolean;
+    flexibleDiscovery?: boolean;
   };
 
   try {
@@ -47,6 +50,11 @@ export async function POST(request: Request) {
         bio: payload.bio ?? "",
         intents: Array.isArray(payload.intents) ? payload.intents : [],
         tags: Array.isArray(payload.tags) ? payload.tags : [],
+        birthDate: payload.birthDate,
+        datingVisible:
+          typeof payload.datingVisible === "boolean" ? payload.datingVisible : undefined,
+        flexibleDiscovery:
+          typeof payload.flexibleDiscovery === "boolean" ? payload.flexibleDiscovery : undefined,
       },
       session,
     );

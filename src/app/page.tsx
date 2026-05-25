@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import { AIMatchPanel } from "@/components/ai-match-panel";
+import { EventCard } from "@/components/event-card";
 import { LinkButton, SectionIntro } from "@/components/click-ui";
 import { LocationLabel } from "@/components/location-label";
 import {
@@ -9,6 +9,7 @@ import {
   personaCards,
   roleCards,
 } from "@/lib/click-data";
+import { getEventsForExplore } from "@/lib/event-repository";
 
 const floatingChips = [
   { label: "Make friends", tone: "peach", rotate: "-rotate-3", left: "left-[6%]", top: "top-[12%]" },
@@ -24,7 +25,10 @@ const chipPalette: Record<string, string> = {
   cream: "bg-[color:var(--cream)] text-[color:var(--ink)]",
 };
 
-export default function Home() {
+export default async function Home() {
+  const events = await getEventsForExplore();
+  const upcomingEvents = events.slice(0, 6);
+
   return (
     <main className="paper-noise min-h-screen max-w-full overflow-hidden text-[color:var(--ink)]">
       {/* ============================ HERO ============================ */}
@@ -85,21 +89,43 @@ export default function Home() {
             Show up twice. Become familiar.
           </p>
 
-          {/* AI search panel */}
-          <div className="rise rise-d4 mt-10">
-            <AIMatchPanel
-              showEvents
-              submitNavigateTo="/events"
-              title=""
-              eventsEyebrow={<>Events near <LocationLabel /></>}
-              peopleEyebrow="People near you"
-            />
+          {/* Upcoming events near you */}
+          <div className="rise rise-d4 mt-12 text-left">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div className="min-w-0">
+                <p className="eyebrow">Happening near <LocationLabel /></p>
+                <h2 className="font-display mt-2 text-3xl font-light leading-tight text-[color:var(--ink)] sm:text-4xl">
+                  Browse what&apos;s on near you.
+                </h2>
+              </div>
+              <Link
+                href="/events"
+                className="font-mono shrink-0 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-2 text-[0.7rem] font-bold uppercase tracking-[0.16em] text-[color:var(--ink)] hard-shadow-sm hover:-translate-x-[1px] hover:-translate-y-[1px] hover:bg-[color:var(--peach)] hover:text-[color:var(--surface-deep)]"
+              >
+                See all events →
+              </Link>
+            </div>
+            {upcomingEvents.length > 0 ? (
+              <div className="mt-6 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+                {upcomingEvents.map((event) => (
+                  <EventCard key={event.id} event={event} compact />
+                ))}
+              </div>
+            ) : (
+              <p className="mt-6 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-6 text-sm font-bold text-[color:var(--mauve)]">
+                No upcoming events just yet — check back soon, or{" "}
+                <Link href="/events" className="underline">browse the full calendar</Link>.
+              </p>
+            )}
           </div>
 
           <div className="rise rise-d5 mt-9 flex flex-wrap items-center justify-center gap-3">
             <LinkButton href="/discover">Start exploring</LinkButton>
             <LinkButton href="/events" variant="secondary">
               Browse events
+            </LinkButton>
+            <LinkButton href="/merchant/signup" variant="ink">
+              Host an event
             </LinkButton>
             <span className="font-script ml-2 hidden text-2xl text-[color:var(--mauve)] sm:inline-flex sm:items-center sm:gap-2">
               <ArrowSquiggle className="text-[color:var(--rose)]" /> takes 30 seconds
@@ -155,6 +181,146 @@ export default function Home() {
               {category.label}
             </Link>
           ))}
+        </div>
+      </section>
+
+      {/* ============================ EXPERIENCE-TYPE BROWSER ============================ */}
+      <section className="border-b-2 border-[color:var(--line)] bg-[color:var(--champagne)] py-16">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6">
+          <SectionIntro
+            eyebrow="Pick a vibe"
+            title={
+              <>
+                Browse by{" "}
+                <span className="rose-highlight italic">experience type</span>,
+                not category.
+              </>
+            }
+            body="What kind of room are you in the mood for? Click events are organised by feel, not by topic."
+          />
+          <div className="mt-12 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {[
+              {
+                tone: "peach",
+                eyebrow: "Slow tables",
+                title: "Slow dating + small dinners",
+                body: "10 people, one long table, a host who actually hosts. No swiping required.",
+                href: "/events?category=Dating",
+              },
+              {
+                tone: "rose",
+                eyebrow: "Move + meet",
+                title: "Walk, run, climb, swim",
+                body: "Active rooms where the conversation is a side effect of the activity.",
+                href: "/events?category=Fitness",
+              },
+              {
+                tone: "cream",
+                eyebrow: "Hands on",
+                title: "Classes + workshops",
+                body: "Pottery, cooking, life-drawing — common output, common excuse to chat.",
+                href: "/events?category=Arts",
+              },
+              {
+                tone: "ink",
+                eyebrow: "Group rituals",
+                title: "Recurring meetups",
+                body: "Weekly run clubs, monthly book nights, regular brunch crews. Familiar by week 3.",
+                href: "/discover",
+              },
+              {
+                tone: "peach",
+                eyebrow: "Career rooms",
+                title: "Networking + peer support",
+                body: "Career pivots, founders, freelancers. Quiet enough to actually talk.",
+                href: "/events?category=Career",
+              },
+              {
+                tone: "rose",
+                eyebrow: "Quiet + curious",
+                title: "Talks + screenings",
+                body: "Low-pressure rooms where you don’t need to be on. Listen first, mingle second.",
+                href: "/events?category=Community",
+              },
+            ].map((tile, idx) => (
+              <Link
+                key={tile.title}
+                href={tile.href}
+                className={`group flex flex-col rounded-3xl border-2 border-[color:var(--line)] p-6 hard-shadow-sm transition-transform duration-300 hover:-translate-y-1.5 hover:[box-shadow:10px_10px_0_0_var(--shadow-ink)] ${chipPalette[tile.tone]}`}
+                style={{ transform: idx % 2 === 0 ? "rotate(-0.4deg)" : "rotate(0.3deg)" }}
+              >
+                <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] opacity-80">
+                  ✷ {tile.eyebrow}
+                </span>
+                <h3 className="font-display mt-3 text-3xl font-light leading-tight">
+                  {tile.title}
+                </h3>
+                <p className="mt-3 text-sm font-medium leading-6 opacity-90">
+                  {tile.body}
+                </p>
+                <span className="font-script mt-6 inline-flex items-center gap-2 text-2xl">
+                  see this room
+                  <span className="transition-transform group-hover:translate-x-1" aria-hidden>→</span>
+                </span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ============================ DICTIONARY HERO ============================ */}
+      <section className="relative overflow-hidden border-y-2 border-[color:var(--line)] bg-[color:var(--cream)] py-20">
+        <div className="confetti-field absolute inset-0 opacity-20" aria-hidden />
+        <div className="relative mx-auto max-w-4xl px-4 sm:px-6">
+          <article className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-8 hard-shadow-lg sm:p-12">
+            <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.22em] text-[color:var(--rose)]">
+              ✷ Dictionary entry · ed. 01
+            </p>
+            <h2 className="font-display mt-3 text-6xl font-light leading-[0.95] tracking-tight text-[color:var(--ink)] sm:text-7xl">
+              click
+              <span className="ml-3 font-script text-3xl text-[color:var(--mauve)] sm:text-4xl">
+                /klɪk/
+              </span>
+              <span className="ml-3 font-mono text-base font-medium uppercase tracking-wide text-[color:var(--mauve)]">
+                noun · verb
+              </span>
+            </h2>
+            <ol className="mt-8 space-y-5 border-l-4 border-dashed border-[color:var(--rose)] pl-6">
+              <li>
+                <p className="font-display text-2xl font-light leading-snug text-[color:var(--ink)]">
+                  1. <span className="italic">A burst of</span>{" "}
+                  <span className="peach-highlight">YES</span> between two people
+                  in the same room.
+                </p>
+                <p className="mt-1 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+                  e.g. <span className="font-script">“we clicked over the bread course.”</span>
+                </p>
+              </li>
+              <li>
+                <p className="font-display text-2xl font-light leading-snug text-[color:var(--ink)]">
+                  2. The reason a stranger becomes{" "}
+                  <span className="italic">a friend</span>.
+                </p>
+                <p className="mt-1 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+                  see also: <span className="font-mono">low pressure</span>,{" "}
+                  <span className="font-mono">familiar by week 3</span>,{" "}
+                  <span className="font-mono">slow dating</span>.
+                </p>
+              </li>
+              <li>
+                <p className="font-display text-2xl font-light leading-snug text-[color:var(--ink)]">
+                  3. <span className="italic">verb.</span> To privately tap a
+                  person you’d like to see again.
+                </p>
+                <p className="mt-1 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+                  Mutual = an unlocked second event. No mutual = nobody knows.
+                </p>
+              </li>
+            </ol>
+            <p className="font-script mt-10 text-3xl text-[color:var(--rose)]">
+              clicks happen in person ✷
+            </p>
+          </article>
         </div>
       </section>
 
@@ -397,6 +563,87 @@ export default function Home() {
               ))}
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* ============================ PARTNER / HOST CTA ============================ */}
+      <section className="relative overflow-hidden border-t-2 border-[color:var(--line)] bg-[color:var(--peach)] py-20 text-[color:var(--surface-deep)]">
+        <div className="absolute inset-0 stamp-grid opacity-30" aria-hidden />
+        <div className="relative mx-auto grid max-w-7xl gap-10 px-4 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
+          <div>
+            <p className="font-mono text-[0.72rem] font-bold uppercase tracking-[0.22em] text-[color:var(--surface-deep)]/70">
+              For hosts + venues
+            </p>
+            <h2 className="font-display mt-4 text-5xl font-light leading-[0.95] tracking-tight text-[color:var(--surface-deep)] sm:text-6xl">
+              You run the room.{" "}
+              <span className="italic">We bring the right people.</span>
+            </h2>
+            <p className="mt-6 max-w-2xl text-base font-medium leading-7 text-[color:var(--surface-deep)]/80 sm:text-lg">
+              List your event in minutes. Click matches it with users who already
+              care — by interest tag, suburb, life stage, and intent. Free events
+              are free to list. Paid events get Click-managed booking + secure
+              payouts via Stripe.
+            </p>
+            <ul className="mt-6 grid gap-2 text-sm font-bold text-[color:var(--surface-deep)] sm:grid-cols-2">
+              {[
+                "Vetted attendee profiles",
+                "Capacity + waitlist on autopilot",
+                "Free events stay free",
+                "ABN verification once, list forever",
+              ].map((item) => (
+                <li key={item} className="flex items-start gap-2">
+                  <span className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full border-2 border-[color:var(--surface-deep)] bg-[color:var(--champagne)] text-[10px] font-bold">
+                    ✓
+                  </span>
+                  {item}
+                </li>
+              ))}
+            </ul>
+            <div className="mt-8 flex flex-wrap items-center gap-3">
+              <Link
+                href="/merchant/signup"
+                className="rounded-full border-2 border-[color:var(--surface-deep)] bg-[color:var(--rose)] px-6 py-3 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] [box-shadow:4px_4px_0_0_var(--surface-deep)] hover:-translate-x-[2px] hover:-translate-y-[2px] hover:[box-shadow:6px_6px_0_0_var(--surface-deep)]"
+              >
+                Become a host
+              </Link>
+              <Link
+                href="/merchant"
+                className="rounded-full border-2 border-[color:var(--surface-deep)] bg-[color:var(--champagne)] px-6 py-3 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hover:bg-[color:var(--cream)]"
+              >
+                Tour the host portal
+              </Link>
+            </div>
+          </div>
+          <aside className="relative">
+            <div className="rounded-3xl border-2 border-[color:var(--surface-deep)] bg-[color:var(--champagne)] p-6 [box-shadow:6px_6px_0_0_var(--surface-deep)] sm:p-8">
+              <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
+                Quick numbers
+              </p>
+              <dl className="mt-5 grid gap-4 sm:grid-cols-2">
+                {[
+                  ["7 days", "Avg. time to first booking"],
+                  ["94%", "Show-up rate"],
+                  ["Free", "Listing fee for free events"],
+                  ["2.9% + 30¢", "Click managed fee per paid ticket"],
+                ].map(([num, label]) => (
+                  <div
+                    key={label}
+                    className="rounded-2xl border-2 border-[color:var(--surface-deep)] bg-[color:var(--cream)] p-4"
+                  >
+                    <dt className="font-display text-3xl font-light italic leading-none text-[color:var(--rose)]">
+                      {num}
+                    </dt>
+                    <dd className="font-mono mt-2 text-[0.65rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+                      {label}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+              <p className="font-script mt-6 text-2xl text-[color:var(--rose)]">
+                hosts who care, win ✷
+              </p>
+            </div>
+          </aside>
         </div>
       </section>
 

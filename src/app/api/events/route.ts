@@ -61,6 +61,8 @@ export async function POST(request: Request) {
     description: getString(formData.get("description")),
     relationshipGoal: getString(formData.get("relationshipGoal")),
     tags: getString(formData.get("tags")),
+    imageUrl: getString(formData.get("imageUrl")) || undefined,
+    imageAlt: getString(formData.get("imageAlt")) || undefined,
   };
 
   try {

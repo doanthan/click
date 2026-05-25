@@ -11,7 +11,7 @@ function getFormValue(formData: FormData, key: string) {
 
 function safeCallbackUrl(value: string) {
   if (value.startsWith("/") && !value.startsWith("//")) return value;
-  return "/dashboard";
+  return "/post-login";
 }
 
 function redirectWithAuthError(error: AuthError, callbackUrl: string) {

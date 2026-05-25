@@ -1,0 +1,55 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { auth } from "@/auth";
+import {
+  suspendMemberAsAdmin,
+  unsuspendMemberAsAdmin,
+  updateSystemSettingsAsAdmin,
+} from "@/lib/event-repository";
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export async function suspendMemberAction(formData: FormData) {
+  const session = await auth();
+  if (!session?.user) redirect("/login?callbackUrl=/admin");
+
+  const id = formData.get("profile_id");
+  const reason = formData.get("reason");
+  if (typeof id !== "string" || !UUID_RE.test(id)) return;
+
+  await suspendMemberAsAdmin(session, id, typeof reason === "string" ? reason : "");
+  revalidatePath("/admin");
+}
+
+export async function unsuspendMemberAction(formData: FormData) {
+  const session = await auth();
+  if (!session?.user) redirect("/login?callbackUrl=/admin");
+
+  const id = formData.get("profile_id");
+  if (typeof id !== "string" || !UUID_RE.test(id)) return;
+
+  await unsuspendMemberAsAdmin(session, id);
+  revalidatePath("/admin");
+}
+
+export async function updateSystemSettingsAction(formData: FormData) {
+  const session = await auth();
+  if (!session?.user) redirect("/login?callbackUrl=/admin");
+
+  const maintenance = formData.get("maintenance_mode");
+  const commission = formData.get("commission_rate_bps");
+  const banner = formData.get("marketing_banner");
+
+  await updateSystemSettingsAsAdmin(session, {
+    maintenanceMode: maintenance === "on",
+    commissionRateBps:
+      typeof commission === "string" && commission.trim() !== ""
+        ? Number(commission)
+        : undefined,
+    marketingBanner: typeof banner === "string" ? banner : undefined,
+  });
+
+  revalidatePath("/admin");
+}

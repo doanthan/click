@@ -30,9 +30,18 @@ export function OnboardingForm({
   initialIntents,
 }: OnboardingFormProps) {
   const router = useRouter();
+  // Computed once per mount: max DOB that still satisfies the 18+ floor.
+  const [maxBirthDate] = useState(() =>
+    new Date(Date.now() - 18 * 365.25 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10),
+  );
   const [displayName, setDisplayName] = useState(initialName);
   const [suburb, setSuburb] = useState(initialSuburb || "Sydney");
   const [age, setAge] = useState("");
+  const [birthDate, setBirthDate] = useState("");
+  const [datingVisible, setDatingVisible] = useState(true);
+  const [flexibleDiscovery, setFlexibleDiscovery] = useState(true);
   const [bio, setBio] = useState(initialBio);
   const [intents, setIntents] = useState<Set<Intent>>(
     new Set(initialIntents.length ? initialIntents : ["friendship"]),
@@ -94,6 +103,9 @@ export function OnboardingForm({
         bio,
         intents: Array.from(intents),
         tags: Array.from(tags),
+        birthDate: birthDate || undefined,
+        datingVisible,
+        flexibleDiscovery,
       }),
     });
 
@@ -146,7 +158,20 @@ export function OnboardingForm({
           />
         </label>
         <label className="grid gap-2 text-sm font-bold">
-          Age (optional)
+          Birth date
+          <input
+            type="date"
+            value={birthDate}
+            onChange={(event) => setBirthDate(event.target.value)}
+            max={maxBirthDate}
+            className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-3 font-semibold outline-none focus:border-[color:var(--rose)]"
+          />
+          <span className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+            18+ only. We compute age from this and never show your full DOB.
+          </span>
+        </label>
+        <label className="grid gap-2 text-sm font-bold">
+          Age (optional override)
           <input
             type="number"
             min={18}
@@ -180,7 +205,46 @@ export function OnboardingForm({
 
       <div>
         <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
-          Step 2 · Why are you here
+          Step 2 · Discovery preferences
+        </p>
+        <h3 className="font-display mt-2 text-2xl font-light leading-tight">
+          Who can see you, what we surface.
+        </h3>
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-3 text-sm font-bold text-[color:var(--ink)]">
+            <span>
+              Dating visibility
+              <span className="mt-1 block text-xs font-medium leading-5 text-[color:var(--mauve)]">
+                Allow dating-intent users to see you on profiles and Click Radar.
+              </span>
+            </span>
+            <input
+              type="checkbox"
+              checked={datingVisible}
+              onChange={(e) => setDatingVisible(e.target.checked)}
+              className="size-5 accent-[color:var(--rose)]"
+            />
+          </label>
+          <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-3 text-sm font-bold text-[color:var(--ink)]">
+            <span>
+              Flexible discovery
+              <span className="mt-1 block text-xs font-medium leading-5 text-[color:var(--mauve)]">
+                Show me cross-intent events (e.g. friendship-tagged events even if my main intent is dating).
+              </span>
+            </span>
+            <input
+              type="checkbox"
+              checked={flexibleDiscovery}
+              onChange={(e) => setFlexibleDiscovery(e.target.checked)}
+              className="size-5 accent-[color:var(--rose)]"
+            />
+          </label>
+        </div>
+      </div>
+
+      <div>
+        <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
+          Step 3 · Why are you here
         </p>
         <h3 className="font-display mt-2 text-2xl font-light leading-tight">
           Pick one or more.
@@ -211,7 +275,7 @@ export function OnboardingForm({
 
       <div>
         <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
-          Step 3 · Pick interest tags
+          Step 4 · Pick interest tags
         </p>
         <h3 className="font-display mt-2 text-2xl font-light leading-tight">
           Pick anything that fits. Skip what doesn&apos;t.

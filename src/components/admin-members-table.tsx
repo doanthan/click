@@ -1,6 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
+import { toast } from "sonner";
+import {
+  suspendMemberAction,
+  unsuspendMemberAction,
+} from "@/app/admin/actions";
 import type { AdminMemberRow } from "@/lib/event-repository";
 
 type RoleFilter = "all" | "attendee" | "merchant" | "admin";
@@ -15,6 +20,124 @@ function roleTone(role: AdminMemberRow["role"]) {
   if (role === "admin") return "bg-[color:var(--ink)] text-[color:var(--champagne)]";
   if (role === "merchant") return "bg-[color:var(--rose)] text-[color:var(--surface-deep)]";
   return "bg-[color:var(--peach)] text-[color:var(--surface-deep)]";
+}
+
+function MemberRow({ member }: { member: AdminMemberRow }) {
+  const [isPending, startTransition] = useTransition();
+  const [reason, setReason] = useState("");
+  const suspended = !!member.suspendedAt;
+  const isSeed = !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    member.id,
+  );
+
+  function suspend() {
+    const form = new FormData();
+    form.set("profile_id", member.id);
+    form.set("reason", reason);
+    startTransition(async () => {
+      try {
+        await suspendMemberAction(form);
+        toast.success(`Suspended ${member.displayName}.`);
+      } catch {
+        toast.error("Could not suspend. Try again.");
+      }
+    });
+  }
+
+  function unsuspend() {
+    const form = new FormData();
+    form.set("profile_id", member.id);
+    startTransition(async () => {
+      try {
+        await unsuspendMemberAction(form);
+        toast.success(`Restored ${member.displayName}.`);
+      } catch {
+        toast.error("Could not restore. Try again.");
+      }
+    });
+  }
+
+  return (
+    <div
+      className={`grid gap-3 border-b border-[color:var(--line)] px-5 py-4 text-sm font-medium text-[color:var(--mauve)] last:border-0 md:grid-cols-[1.4fr_0.6fr_0.8fr_0.8fr_0.7fr_0.6fr_0.7fr] md:items-center ${
+        suspended ? "bg-[color:var(--rose)]/10" : ""
+      }`}
+    >
+      <div>
+        <p className="font-black text-[color:var(--ink)]">{member.displayName}</p>
+        <p className="text-xs font-medium text-[color:var(--mauve)]">{member.email}</p>
+        {member.intents.length > 0 ? (
+          <p className="mt-1 text-[0.7rem] font-bold uppercase tracking-wider text-[color:var(--mauve)]/80">
+            {member.intents.join(" · ")}
+          </p>
+        ) : null}
+        {suspended && member.suspendedReason ? (
+          <p className="mt-1 text-xs font-bold text-[color:var(--rose)]">
+            Suspended: {member.suspendedReason}
+          </p>
+        ) : null}
+      </div>
+      <div>
+        <span
+          className={`inline-flex rounded-full border-2 border-[color:var(--line)] px-2.5 py-0.5 text-[0.65rem] font-black uppercase tracking-wider ${roleTone(member.role)}`}
+        >
+          {member.role}
+        </span>
+      </div>
+      <span>{member.suburb ?? "—"}</span>
+      <span className="font-bold text-[color:var(--ink)]">
+        {member.registrations} RSVP · {member.bookmarks} saved
+      </span>
+      <span className="text-xs font-bold uppercase tracking-wide">
+        <span className={member.emailVerified ? "text-[color:var(--ink)]" : "text-[color:var(--mauve)]/70"}>
+          Email{member.emailVerified ? " ✓" : " —"}
+        </span>
+        <span className="mx-1 opacity-30">·</span>
+        <span className={member.photoVerified ? "text-[color:var(--ink)]" : "text-[color:var(--mauve)]/70"}>
+          Photo{member.photoVerified ? " ✓" : " —"}
+        </span>
+      </span>
+      <span>{dateFormatter.format(new Date(member.joinedAt))}</span>
+      <div className="flex flex-col gap-2">
+        {isSeed ? (
+          <span className="font-mono text-[0.6rem] uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+            seed data
+          </span>
+        ) : suspended ? (
+          <button
+            type="button"
+            onClick={unsuspend}
+            disabled={isPending}
+            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-3 py-1 text-[0.65rem] font-bold uppercase tracking-wider text-[color:var(--surface-deep)] hard-shadow-sm disabled:opacity-60"
+          >
+            Unsuspend
+          </button>
+        ) : (
+          <details className="text-[0.65rem]">
+            <summary className="cursor-pointer rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-3 py-1 text-center font-bold uppercase tracking-wider text-[color:var(--surface-deep)] hard-shadow-sm">
+              Suspend
+            </summary>
+            <div className="mt-2 grid gap-2">
+              <input
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="Reason (shown in audit log)"
+                className="rounded-md border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-2 py-1 text-xs"
+              />
+              <button
+                type="button"
+                onClick={suspend}
+                disabled={isPending}
+                className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--ink)] px-3 py-1 font-bold uppercase tracking-wider text-[color:var(--on-deep)] hard-shadow-sm disabled:opacity-60"
+              >
+                Confirm suspend
+              </button>
+            </div>
+          </details>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export function AdminMembersTable({ members }: { members: AdminMemberRow[] }) {
@@ -70,13 +193,14 @@ export function AdminMembersTable({ members }: { members: AdminMemberRow[] }) {
       </div>
 
       <div className="mt-6 overflow-hidden rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow-sm">
-        <div className="hidden grid-cols-[1.4fr_0.7fr_0.9fr_0.9fr_0.8fr_0.7fr] gap-4 bg-[color:var(--surface-deep)] px-5 py-3 text-xs font-black uppercase tracking-[0.14em] text-[color:var(--on-deep)] md:grid">
+        <div className="hidden grid-cols-[1.4fr_0.6fr_0.8fr_0.8fr_0.7fr_0.6fr_0.7fr] gap-4 bg-[color:var(--surface-deep)] px-5 py-3 text-xs font-black uppercase tracking-[0.14em] text-[color:var(--on-deep)] md:grid">
           <span>Member</span>
           <span>Role</span>
           <span>Suburb</span>
           <span>Activity</span>
           <span>Verification</span>
           <span>Joined</span>
+          <span>Moderation</span>
         </div>
         {filtered.length === 0 ? (
           <p className="px-5 py-8 text-center text-sm font-bold text-[color:var(--mauve)]">
@@ -84,41 +208,7 @@ export function AdminMembersTable({ members }: { members: AdminMemberRow[] }) {
           </p>
         ) : (
           filtered.map((member) => (
-            <div
-              key={member.id}
-              className="grid gap-3 border-b border-[color:var(--line)] px-5 py-4 text-sm font-medium text-[color:var(--mauve)] last:border-0 md:grid-cols-[1.4fr_0.7fr_0.9fr_0.9fr_0.8fr_0.7fr] md:items-center"
-            >
-              <div>
-                <p className="font-black text-[color:var(--ink)]">{member.displayName}</p>
-                <p className="text-xs font-medium text-[color:var(--mauve)]">{member.email}</p>
-                {member.intents.length > 0 ? (
-                  <p className="mt-1 text-[0.7rem] font-bold uppercase tracking-wider text-[color:var(--mauve)]/80">
-                    {member.intents.join(" · ")}
-                  </p>
-                ) : null}
-              </div>
-              <div>
-                <span
-                  className={`inline-flex rounded-full border-2 border-[color:var(--line)] px-2.5 py-0.5 text-[0.65rem] font-black uppercase tracking-wider ${roleTone(member.role)}`}
-                >
-                  {member.role}
-                </span>
-              </div>
-              <span>{member.suburb ?? "—"}</span>
-              <span className="font-bold text-[color:var(--ink)]">
-                {member.registrations} RSVP · {member.bookmarks} saved
-              </span>
-              <span className="text-xs font-bold uppercase tracking-wide">
-                <span className={member.emailVerified ? "text-[color:var(--ink)]" : "text-[color:var(--mauve)]/70"}>
-                  Email{member.emailVerified ? " ✓" : " —"}
-                </span>
-                <span className="mx-1 opacity-30">·</span>
-                <span className={member.photoVerified ? "text-[color:var(--ink)]" : "text-[color:var(--mauve)]/70"}>
-                  Photo{member.photoVerified ? " ✓" : " —"}
-                </span>
-              </span>
-              <span>{dateFormatter.format(new Date(member.joinedAt))}</span>
-            </div>
+            <MemberRow key={member.id} member={member} />
           ))
         )}
       </div>

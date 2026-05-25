@@ -1,9 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { categories, type EventItem } from "@/lib/click-data";
 import { EventCard } from "./event-card";
 import { Pill } from "./click-ui";
+
+const PAGE_SIZE = 12;
 
 type DateWindow = "7" | "30" | "all";
 type LocationStatus = "idle" | "requesting" | "shared" | "denied" | "unsupported";
@@ -43,14 +46,27 @@ export function EventExplorer({
 }) {
   const bookmarkedSet = useMemo(() => new Set(bookmarkedEventIds), [bookmarkedEventIds]);
   const registeredSet = useMemo(() => new Set(registeredEventIds), [registeredEventIds]);
+  const router = useRouter();
+  const pathname = usePathname();
+  const urlParams = useSearchParams();
+  const initialCategory = urlParams?.get("category") ?? "All";
+  const initialSearch = urlParams?.get("search") ?? "";
+  const initialTag = urlParams?.get("tag") ?? "";
+  const initialPage = Math.max(1, Number.parseInt(urlParams?.get("page") ?? "1", 10) || 1);
+
   const [locationStatus, setLocationStatus] = useState<LocationStatus>("idle");
   const [locationQuery, setLocationQuery] = useState("Sydney CBD");
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState(
+    initialSearch || (initialTag ? `#${initialTag}` : ""),
+  );
   const [selectedSuburb, setSelectedSuburb] = useState("All Sydney");
-  const [selectedCategory, setSelectedCategory] = useState("All");
+  const [selectedCategory, setSelectedCategory] = useState(initialCategory);
   const [dateWindow, setDateWindow] = useState<DateWindow>("all");
   const [distanceKm, setDistanceKm] = useState(25);
   const [sortMode, setSortMode] = useState<SortMode>("recommended");
+  const [tagFilter, setTagFilter] = useState(initialTag);
+  const [page, setPage] = useState(initialPage);
+  const skipFirstSync = useRef(true);
 
   const todayTime = useMemo(() => {
     const now = new Date();
@@ -64,6 +80,7 @@ export function EventExplorer({
 
   const filteredEvents = useMemo(() => {
     const normalizedSearch = searchQuery.trim().toLowerCase();
+    const normalizedTag = tagFilter.trim().toLowerCase();
 
     return events
       .filter((event) => {
@@ -77,6 +94,9 @@ export function EventExplorer({
         const matchesSuburb =
           selectedSuburb === "All Sydney" || event.suburb === selectedSuburb;
         const matchesDistance = event.distanceKm <= distanceKm;
+        const matchesTag =
+          !normalizedTag ||
+          event.tags.some((t) => t.toLowerCase() === normalizedTag);
         const searchableText = [
           event.title,
           event.group,
@@ -100,7 +120,8 @@ export function EventExplorer({
           matchesCategory &&
           matchesSuburb &&
           matchesDistance &&
-          matchesSearch
+          matchesSearch &&
+          matchesTag
         );
       })
       .sort((left, right) => {
@@ -123,8 +144,40 @@ export function EventExplorer({
     selectedCategory,
     selectedSuburb,
     sortMode,
+    tagFilter,
     todayTime,
   ]);
+
+  // Sync filters to URL (category, search, tag, page).
+  useEffect(() => {
+    if (skipFirstSync.current) {
+      skipFirstSync.current = false;
+      return;
+    }
+    const next = new URLSearchParams();
+    if (selectedCategory && selectedCategory !== "All") next.set("category", selectedCategory);
+    if (searchQuery.trim()) next.set("search", searchQuery.trim());
+    if (tagFilter.trim()) next.set("tag", tagFilter.trim());
+    if (page > 1) next.set("page", String(page));
+    const queryString = next.toString();
+    router.replace(queryString ? `${pathname}?${queryString}` : pathname, { scroll: false });
+  }, [selectedCategory, searchQuery, tagFilter, page, router, pathname]);
+
+  // Reset to page 1 whenever filters change. React docs pattern: track the
+  // previous filter snapshot in state and adjust during render.
+  const filterFingerprint = `${selectedCategory}|${searchQuery}|${tagFilter}|${selectedSuburb}|${dateWindow}|${distanceKm}|${sortMode}`;
+  const [prevFingerprint, setPrevFingerprint] = useState(filterFingerprint);
+  if (prevFingerprint !== filterFingerprint) {
+    setPrevFingerprint(filterFingerprint);
+    if (page !== 1) setPage(1);
+  }
+
+  const totalPages = Math.max(1, Math.ceil(filteredEvents.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pagedEvents = filteredEvents.slice(
+    (safePage - 1) * PAGE_SIZE,
+    safePage * PAGE_SIZE,
+  );
 
   const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
     mapQuery(locationQuery, selectedSuburb),
@@ -157,6 +210,8 @@ export function EventExplorer({
     setDateWindow("all");
     setDistanceKm(25);
     setSortMode("recommended");
+    setTagFilter("");
+    setPage(1);
   }
 
   return (
@@ -480,17 +535,65 @@ export function EventExplorer({
           </button>
         </div>
 
-        {filteredEvents.length > 0 ? (
-          <div className="mt-8 grid gap-6 xl:grid-cols-2">
-            {filteredEvents.map((event) => (
-              <EventCard
-                key={event.id}
-                event={event}
-                bookmarked={bookmarkedSet.has(event.id)}
-                registered={registeredSet.has(event.id)}
-              />
-            ))}
+        {tagFilter ? (
+          <div className="mt-4 flex flex-wrap items-center gap-2 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-2 text-sm font-bold text-[color:var(--ink)]">
+            <span className="font-mono text-[0.7rem] uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+              Tag filter
+            </span>
+            <span>#{tagFilter}</span>
+            <button
+              type="button"
+              onClick={() => setTagFilter("")}
+              className="ml-auto rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-0.5 text-xs font-bold uppercase tracking-wide text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+            >
+              Clear
+            </button>
           </div>
+        ) : null}
+
+        {filteredEvents.length > 0 ? (
+          <>
+            <div className="mt-8 grid gap-6 xl:grid-cols-2">
+              {pagedEvents.map((event) => (
+                <EventCard
+                  key={event.id}
+                  event={event}
+                  bookmarked={bookmarkedSet.has(event.id)}
+                  registered={registeredSet.has(event.id)}
+                />
+              ))}
+            </div>
+
+            {totalPages > 1 ? (
+              <nav className="mt-8 flex items-center justify-between gap-3" aria-label="Pagination">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPage((p) => Math.max(1, p - 1));
+                    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+                  }}
+                  disabled={safePage <= 1}
+                  className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)] disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  ← Prev
+                </button>
+                <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+                  Page {safePage} of {totalPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPage((p) => Math.min(totalPages, p + 1));
+                    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+                  }}
+                  disabled={safePage >= totalPages}
+                  className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)] disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Next →
+                </button>
+              </nav>
+            ) : null}
+          </>
         ) : (
           <div className="mt-8 rounded-lg border border-[color:var(--line)] bg-[color:var(--champagne)] p-8 shadow-sm">
             <p className="text-4xl font-black leading-none">

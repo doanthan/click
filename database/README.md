@@ -12,6 +12,9 @@ Run the SQL files in this directory against your Supabase project in order:
 1. `001_schema.sql`
 2. `002_seed.sql` (optional sample data)
 3. `003_stripe_hold.sql` (adds `pending_payment` RSVP status used while a Stripe Checkout session is in progress)
+4. `004_messages.sql` (1-to-1 conversations + messages tables for the `/messages` route)
+5. `005_profile_extras.sql` (adds `birth_date`, `dating_visible`, `flexible_discovery` to profiles)
+6. `006_admin_extras.sql` (adds `suspended_at` / `suspended_reason` to profiles + creates `system_settings` KV)
 
 You can paste them into the Supabase SQL editor, or pipe them through `psql`
 using the connection string from Project Settings -> Database.

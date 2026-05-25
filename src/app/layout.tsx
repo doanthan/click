@@ -6,6 +6,7 @@ import {
   Manrope,
   Shrikhand,
 } from "next/font/google";
+import { Toaster } from "sonner";
 import { LoginModalHost } from "@/components/login-modal-host";
 import { SiteFooter, SiteHeader } from "@/components/site-chrome";
 import "./globals.css";
@@ -74,6 +75,7 @@ export default function RootLayout({
           metaConfigured={metaConfigured}
           showDemoCredentials={showDemoCredentials}
         />
+        <Toaster position="top-right" richColors closeButton />
       </body>
     </html>
   );

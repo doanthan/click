@@ -82,16 +82,22 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   callbacks: {
     authorized({ auth: session, request }) {
       const pathname = request.nextUrl.pathname;
-      const protectedRoutes = ["/dashboard", "/merchant", "/admin", "/onboarding"];
+      const protectedRoutes = [
+        "/dashboard",
+        "/merchant",
+        "/admin",
+        "/onboarding",
+        "/post-login",
+      ];
       const isProtectedRoute = protectedRoutes.some((route) =>
         pathname.startsWith(route),
       );
 
       if (!isProtectedRoute) return true;
       if (!session?.user) return false;
-      if (pathname.startsWith("/admin")) {
-        return isAdminEmail(session.user.email);
-      }
+      // Admin-page access denial is rendered inline by the page itself so the
+      // user gets an explicit "no admin access" message instead of bouncing
+      // back to /login in a loop while already signed in.
       return true;
     },
   },

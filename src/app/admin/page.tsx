@@ -1,7 +1,12 @@
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import { auth, isAdminEmail } from "@/auth";
 import { AdminEventQueue } from "@/components/admin-event-queue";
 import { AdminMembersTable } from "@/components/admin-members-table";
 import { AdminMerchantsTable } from "@/components/admin-merchants-table";
+import { AdminSystemSettings } from "@/components/admin-system-settings";
 import { AdminTagManager } from "@/components/admin-tag-manager";
+import { AdminTrendChart } from "@/components/admin-trend-chart";
 import { AdminWorkspace } from "@/components/admin-workspace";
 import { InfoCard, MetricCard, PageHero, SectionIntro } from "@/components/click-ui";
 import { adminModules, securityRows } from "@/lib/click-data";
@@ -12,6 +17,8 @@ import {
   getAdminMembers,
   getAdminMerchants,
   getAdminMetrics,
+  getAdminWeeklyTrend,
+  getSystemSettings,
 } from "@/lib/event-repository";
 
 export const metadata = {
@@ -39,12 +46,60 @@ function formatMetadata(metadata: Record<string, unknown>) {
 }
 
 export default async function AdminPage() {
-  const [events, members, merchants, tags, audit] = await Promise.all([
+  const session = await auth();
+
+  if (!session?.user) {
+    redirect("/login?callbackUrl=/admin");
+  }
+
+  if (!isAdminEmail(session.user.email)) {
+    return (
+      <main className="paper-noise relative min-h-screen overflow-hidden px-4 py-20 text-[color:var(--ink)] sm:px-6">
+        <div className="confetti-field absolute inset-0 opacity-20" aria-hidden />
+        <section className="relative z-10 mx-auto max-w-2xl rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-10 hard-shadow">
+          <span className="sticker sticker--rose tilt-r-2 inline-flex">
+            <span className="size-2 rounded-full bg-[color:var(--surface-deep)]" />
+            Access denied
+          </span>
+          <h1 className="font-display mt-6 text-4xl font-light leading-tight tracking-tight sm:text-5xl">
+            This account doesn’t have admin access.
+          </h1>
+          <p className="mt-5 text-base font-medium leading-7 text-[color:var(--mauve)]">
+            You’re signed in as{" "}
+            <span className="font-mono font-bold text-[color:var(--ink)]">
+              {session.user.email}
+            </span>
+            . The admin portal is restricted to accounts configured in
+            <span className="font-mono"> ADMIN_EMAILS</span>. If you need access,
+            ask an existing admin to add your address.
+          </p>
+          <div className="mt-8 flex flex-wrap gap-3">
+            <Link
+              href="/dashboard"
+              className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
+            >
+              Back to dashboard
+            </Link>
+            <Link
+              href="/login?callbackUrl=/admin"
+              className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)]"
+            >
+              Sign in as a different account
+            </Link>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
+  const [events, members, merchants, tags, audit, trend, systemSettings] = await Promise.all([
     getAdminEvents(),
     getAdminMembers(),
     getAdminMerchants(),
     getAdminTags(),
     getAdminAuditLog(),
+    getAdminWeeklyTrend(),
+    getSystemSettings(),
   ]);
   const metrics = await getAdminMetrics(events);
   const pendingCount = events.filter((event) => event.status === "Pending").length;
@@ -66,6 +121,18 @@ export default async function AdminPage() {
         <MetricCard label="Confirmed RSVPs" value={metrics.confirmedRsvps.toLocaleString()} tone="cream" />
         <MetricCard label="Merchants" value={metrics.totalMerchants.toLocaleString()} tone="rose" />
         <MetricCard label="Mutual Clicks" value={metrics.mutualClicks.toLocaleString()} tone="ink" />
+      </div>
+
+      <div>
+        <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
+          Last 8 weeks
+        </p>
+        <h3 className="font-display mt-2 text-3xl font-light leading-tight">
+          Growth + engagement at a glance.
+        </h3>
+        <div className="mt-6">
+          <AdminTrendChart buckets={trend} />
+        </div>
       </div>
 
       <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
@@ -206,6 +273,16 @@ export default async function AdminPage() {
             merchants: merchantsPanel,
             tags: tagsPanel,
             audit: auditPanel,
+            system: (
+              <div className="space-y-8 py-10">
+                <SectionIntro
+                  eyebrow="System"
+                  title="Runtime knobs."
+                  body="Maintenance mode, commission rate, and the site-wide marketing banner. All changes are audit-logged."
+                />
+                <AdminSystemSettings initial={systemSettings} />
+              </div>
+            ),
           }}
         />
       </section>

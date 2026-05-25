@@ -22,7 +22,7 @@ const errorCopy: Record<string, string> = {
 
 function safeCallbackUrl(value: string | undefined) {
   if (value?.startsWith("/") && !value.startsWith("//")) return value;
-  return "/onboarding";
+  return "/post-login";
 }
 
 export default async function RegisterPage({ searchParams }: RegisterPageProps) {

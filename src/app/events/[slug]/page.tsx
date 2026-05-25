@@ -3,10 +3,16 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { auth } from "@/auth";
 import { Pill } from "@/components/click-ui";
+import { EventAttendeePreview } from "@/components/event-attendee-preview";
+import { EventBookingDialog } from "@/components/event-booking-dialog";
 import { EventPaymentButton } from "@/components/event-payment-button";
 import { EventRegistrationButton } from "@/components/event-registration-button";
 import { EventBookmarkButton } from "@/components/event-bookmark-button";
-import { getEventBySlug, getProfileStatus } from "@/lib/event-repository";
+import {
+  getEventAttendeePreview,
+  getEventBySlug,
+  getProfileStatus,
+} from "@/lib/event-repository";
 
 type PageProps = {
   params: Promise<{ slug: string }>;
@@ -48,12 +54,23 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
   const search = searchParams ? await searchParams : undefined;
   const session = await auth();
 
-  const [event, profileStatus] = await Promise.all([
+  const [event, profileStatus, attendeePreview] = await Promise.all([
     getEventBySlug(slug, session),
     session?.user ? getProfileStatus(session) : null,
+    getEventAttendeePreview(slug, 8),
   ]);
 
   if (!event) notFound();
+
+  const startsAtMs = new Date(event.startsAt).getTime();
+  // eslint-disable-next-line react-hooks/purity -- async server component, evaluated once per request
+  const daysUntilStart = Math.ceil((startsAtMs - Date.now()) / 86_400_000);
+  const countdownLabel =
+    daysUntilStart <= 0
+      ? "Starting soon"
+      : daysUntilStart === 1
+        ? "Tomorrow"
+        : `${daysUntilStart} days to go`;
 
   const isRegistered = event.viewerRsvpStatus === "confirmed";
   const isWaitlisted = event.viewerRsvpStatus === "waitlisted";
@@ -140,11 +157,22 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                   </h2>
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {event.tags.map((tag) => (
-                      <Pill key={tag}>{tag}</Pill>
+                      <Link
+                        key={tag}
+                        href={`/events?tag=${encodeURIComponent(tag)}`}
+                        className="inline-flex items-center"
+                      >
+                        <Pill>#{tag}</Pill>
+                      </Link>
                     ))}
                   </div>
                 </section>
               ) : null}
+
+              <EventAttendeePreview
+                items={attendeePreview.items}
+                totalConfirmed={attendeePreview.totalConfirmed}
+              />
             </div>
 
             <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">
@@ -204,24 +232,74 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                     </p>
                   ) : null}
 
-                  {isPaid && !isWaitlistMode && !isRegistered ? (
+                  {isRegistered || isWaitlisted ? (
+                    <EventRegistrationButton
+                      eventId={event.id}
+                      initiallyRegistered
+                      isWaitlist={isWaitlisted}
+                    />
+                  ) : isWaitlistMode ? (
+                    <EventBookingDialog
+                      triggerLabel="Join the waitlist"
+                      triggerTone="ink"
+                      title="Join the waitlist?"
+                      body={
+                        <>
+                          This event is currently full. Joining the waitlist holds
+                          your spot in queue. If someone cancels, the host will
+                          reach out via email and you can confirm before the seat
+                          is reopened.
+                        </>
+                      }
+                    >
+                      <EventRegistrationButton
+                        eventId={event.id}
+                        initiallyRegistered={false}
+                        isWaitlist
+                      />
+                    </EventBookingDialog>
+                  ) : isPaid ? (
                     showStripeUnavailableHint ? (
                       <p className="rounded-xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--rose)]/30 p-3 text-xs font-bold">
                         Stripe isn&apos;t configured on this server — set
                         STRIPE_SECRET_KEY in .env.local to enable paid bookings.
                       </p>
                     ) : (
-                      <EventPaymentButton
-                        eventId={event.id}
-                        priceLabel={formatPrice(event.priceCents, "AUD")}
-                      />
+                      <EventBookingDialog
+                        triggerLabel={`Reserve · ${formatPrice(event.priceCents, "AUD")}`}
+                        title={`Reserve a seat for ${formatPrice(event.priceCents, "AUD")}?`}
+                        body={
+                          <>
+                            We&apos;ll hold your seat through Stripe checkout. If you
+                            don&apos;t complete payment, the hold is released and the
+                            seat returns to the pool. Cancel anytime before the
+                            event.
+                          </>
+                        }
+                      >
+                        <EventPaymentButton
+                          eventId={event.id}
+                          priceLabel={formatPrice(event.priceCents, "AUD")}
+                        />
+                      </EventBookingDialog>
                     )
                   ) : (
-                    <EventRegistrationButton
-                      eventId={event.id}
-                      initiallyRegistered={isRegistered || isWaitlisted}
-                      isWaitlist={isWaitlistMode}
-                    />
+                    <EventBookingDialog
+                      triggerLabel="Reserve free seat"
+                      title="RSVP to this event?"
+                      body={
+                        <>
+                          Reserve your seat. You can cancel any time before the
+                          event — the host gets a waitlist replacement automatically.
+                        </>
+                      }
+                    >
+                      <EventRegistrationButton
+                        eventId={event.id}
+                        initiallyRegistered={false}
+                        isWaitlist={false}
+                      />
+                    </EventBookingDialog>
                   )}
 
                   <EventBookmarkButton
@@ -229,6 +307,18 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                     initiallySaved={bookmarked}
                   />
                 </div>
+              </div>
+
+              <div className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--ink)] p-4 text-[color:var(--on-deep)] hard-shadow-sm">
+                <p className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--peach)]">
+                  Countdown
+                </p>
+                <p className="font-display mt-1 text-2xl font-light leading-tight">
+                  {countdownLabel}
+                </p>
+                <p className="mt-2 text-xs font-bold uppercase tracking-wider text-[color:var(--peach)]">
+                  {attendeePreview.totalConfirmed} of {event.capacity} seats taken
+                </p>
               </div>
 
               {event.fomo ? (
