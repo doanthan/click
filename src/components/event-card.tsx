@@ -4,6 +4,7 @@ import type { EventItem } from "@/lib/click-data";
 import { formatCapacity } from "@/lib/click-matching";
 import { Pill } from "./click-ui";
 import { EventBookmarkButton } from "./event-bookmark-button";
+import { EventDetailModal } from "./event-detail-modal";
 import { EventRegistrationButton } from "./event-registration-button";
 
 export function EventCard({
@@ -129,12 +130,11 @@ export function EventCard({
             initiallyRegistered={registered}
             isWaitlist={isWaitlistEvent}
           />
-          <Link
-            href={`/events/${event.id}`}
-            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 text-center text-sm font-bold text-[color:var(--ink)] hover:bg-[color:var(--peach)] hover:text-[color:var(--surface-deep)]"
-          >
-            Details
-          </Link>
+          <EventDetailModal
+            event={event}
+            bookmarked={bookmarked}
+            registered={registered}
+          />
         </div>
       </div>
     </article>

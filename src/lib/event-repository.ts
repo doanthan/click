@@ -961,7 +961,22 @@ export async function getEventBySlug(
     );
 
     const row = result.rows[0];
-    if (!row) return null;
+    if (!row) {
+      // Slug connected fine but has no row — e.g. a static seed event that was
+      // never inserted into Supabase. Fall back to bundled Click data so shared
+      // links and the event modal still resolve instead of 404ing.
+      const fallback = (await getFallbackEvents({ includePending: true })).find(
+        (event) => event.id === slug,
+      );
+      if (!fallback) return null;
+      return {
+        ...fallback,
+        priceCents: parsePriceCents(fallback.price),
+        address: null,
+        endsAt: null,
+        viewerRsvpStatus: null,
+      };
+    }
 
     const base = eventFromRow(row);
     let viewerRsvpStatus: EventDetail["viewerRsvpStatus"] = null;
