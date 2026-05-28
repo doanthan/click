@@ -8,11 +8,19 @@ export const metadata = {
   description: "Jump into the key journeys for each kind of Click user.",
 };
 
-type Step = { href: string; label: string };
+type Step = {
+  href: string;
+  label: string;
+  // True when this step exercises a route or feature described in the
+  // journey spec that isn't built in the app yet. Rendered dimmed + dashed.
+  gap?: boolean;
+};
 
 type Story = {
   title: string;
   description: string;
+  // Optional spec reference shown as a small caption (e.g. "spec §3.1").
+  spec?: string;
   steps: Step[];
 };
 
@@ -40,9 +48,28 @@ export default async function TestPage() {
           description:
             "Create an account, finish the attendee profile, and land on the dashboard.",
           steps: [
-            { href: "/register", label: "Register" },
+            { href: "/auth", label: "Sign up" },
             { href: "/onboarding", label: "Onboarding" },
             { href: "/dashboard", label: "Dashboard" },
+          ],
+        },
+        {
+          title: "Sign in & role routing",
+          description:
+            "Existing user signs in — admin lands on /admin, merchant on /merchant, attendee on /dashboard (or /onboarding if incomplete).",
+          steps: [
+            { href: "/auth", label: "Sign in" },
+            { href: "/post-login", label: "Post-login routing" },
+            { href: "/dashboard", label: "Dashboard" },
+          ],
+        },
+        {
+          title: "Email verification gate",
+          description:
+            "Unverified users can browse /events in a locked state but RSVP / Click actions 403 with a verification nudge.",
+          steps: [
+            { href: "/events", label: "Events (locked browse)" },
+            { href: `/events/${sampleSlug}`, label: "Try to RSVP → nudge" },
           ],
         },
         {
@@ -71,6 +98,24 @@ export default async function TestPage() {
           steps: [
             { href: "/events", label: "Events grid" },
             { href: `/events/${sampleSlug}`, label: `Detail — ${sampleTitle}` },
+          ],
+        },
+        {
+          title: "Discover near you",
+          description:
+            "Map-driven discovery with radius-from-user (Mapbox). Entry point for new attendees who don't know what they want yet.",
+          steps: [
+            { href: "/discover", label: "Discover" },
+            { href: `/events/${sampleSlug}`, label: "Open from map" },
+          ],
+        },
+        {
+          title: "Browse categories",
+          description:
+            "Category-led entry into events — the alternative to search + filters.",
+          steps: [
+            { href: "/categories", label: "Categories" },
+            { href: "/events", label: "Filtered events" },
           ],
         },
         {
@@ -111,10 +156,44 @@ export default async function TestPage() {
           ],
         },
         {
+          title: "Legacy /saved-events redirect",
+          description:
+            "Old links land on /saved-events; the route is a permanent redirect to /bookmarks so external bookmarks don't 404.",
+          steps: [
+            { href: "/saved-events", label: "/saved-events" },
+            { href: "/bookmarks", label: "→ /bookmarks" },
+          ],
+        },
+        {
           title: "Click with someone",
           description:
-            "See suggested people, Click privately, watch for a mutual match — both sides get a shared event suggestion (no chat by design).",
+            "See suggested people, Click privately, watch for a mutual match — clicks are anonymous to the target until both sides Click.",
           steps: [{ href: "/people", label: "People" }],
+        },
+        {
+          title: "Mutual click → snapshot → proposal",
+          description:
+            "On a mutual Click, both users see a read-only profile snapshot, then the Proposal UI suggests a shared event. No chat — pick from Click's catalogue, max 3 proposals.",
+          steps: [
+            { href: "/notifications", label: "Mutual Click notif" },
+            { href: "/people", label: "Snapshot modal" },
+            { href: "/dashboard", label: "Proposal → shared event" },
+          ],
+        },
+        {
+          title: "Post-event: did you Click?",
+          description:
+            "12h after the event ends, dashboard shows 'You went to X' with attendee picker. Selections feed mutual-click detection and the activity feed.",
+          steps: [
+            { href: "/dashboard", label: "Post-event prompt" },
+            { href: "/profile", label: "Your Click Story" },
+          ],
+        },
+        {
+          title: "Switch intent mode",
+          description:
+            "Dating / Friends / Networking toggle in the dashboard header — writes profiles.active_intent and re-tones the feed.",
+          steps: [{ href: "/dashboard", label: "Intent toggle" }],
         },
         {
           title: "Notifications",
@@ -129,25 +208,173 @@ export default async function TestPage() {
     },
     {
       name: "Merchant",
-      tagline: "Become a host, list events, and fill seats.",
+      tagline:
+        "Register → wait for approval → list events → fill seats. Mirrors context/02_MERCHANT_JOURNEY.md.",
       accent: "bg-[color:var(--peach)] text-[color:var(--surface-deep)]",
       stories: [
         {
-          title: "Sign up process",
+          title: "Registration wizard (4 steps)",
+          spec: "§1",
           description:
-            "Submit the merchant profile to get promoted from attendee to host.",
+            "Inline Step 0 sign-in/up → business details + ABN (checksum validated server-side) → contact & address → document uploads (ABN cert, insurance, liquor if alcohol) → review & submit. Single merchants INSERT on final submit — no partial rows.",
           steps: [
-            { href: "/merchant/signup", label: "Merchant signup" },
-            { href: "/merchant", label: "Merchant dashboard" },
+            { href: "/merchant/signup", label: "Start signup" },
+            { href: "/merchant", label: "Portal (gated until approved)" },
           ],
         },
         {
-          title: "Create & manage events",
+          title: "Merchant login (separate from customer)",
+          spec: "§1 entry",
           description:
-            "Create an event (starts Pending) and review its attendee list.",
+            "Dedicated host login surface — same NextAuth backend as /login, different branding + default callback of /merchant. Footer link sends new hosts to /merchant/signup.",
+          steps: [
+            { href: "/merchant/login", label: "Host login" },
+            { href: "/merchant", label: "Portal" },
+          ],
+        },
+        {
+          title: "Pending application holding page",
+          spec: "§1 post-submit",
+          description:
+            "After submit, merchant lands on a holding page with the first-event prep checklist and ETA messaging. /merchant redirects here while verification_status !== 'approved'.",
+          steps: [
+            { href: "/merchant-pending", label: "Pending page" },
+          ],
+        },
+        {
+          title: "First-event onboarding checklist",
+          spec: "§4",
+          description:
+            "On first approved login, show the 5-step checklist (profile → Stripe → first event → preview → submit) instead of an empty dashboard. Persists in merchant_onboarding_checklist until complete.",
+          steps: [
+            { href: "/merchant?tab=dashboard", label: "Dashboard", gap: true },
+            { href: "/merchant/events/create", label: "Create first event" },
+          ],
+        },
+        {
+          title: "Dashboard overview",
+          spec: "§3",
+          description:
+            "Active events, confirmed attendees, revenue + commission this month, upcoming events with capacity bars, recent bookings, under-attended alert.",
+          steps: [
+            { href: "/merchant?tab=dashboard", label: "Dashboard" },
+            { href: "/merchant?tab=events", label: "Events tab" },
+          ],
+        },
+        {
+          title: "Event creation wizard (5 steps)",
+          spec: "§5",
+          description:
+            "Basics + tags + booking type → when & where (schedule conflict check) → capacity & price (Stripe Connect gate for paid) → media → review. Trusted merchants auto-publish via DB trigger; new merchants go to pending_review.",
           steps: [
             { href: "/merchant/events/create", label: "Create event" },
-            { href: "/merchant", label: "Your events" },
+            { href: "/merchant?tab=events", label: "Status badge" },
+          ],
+        },
+        {
+          title: "Edit a published event",
+          spec: "§6 lifecycle",
+          description:
+            "Description, banner, external URL → editable in place. Title/date/capacity/price → flips status back to pending_review for re-approval (trusted merchants: auto-approve applies to edits too).",
+          steps: [
+            { href: "/merchant?tab=events", label: "Events" },
+            { href: `/merchant/events/${sampleSlug}`, label: "Edit event" },
+          ],
+        },
+        {
+          title: "Cancel an event (refund cascade)",
+          spec: "§6 cancellation",
+          description:
+            "CancelEventDialog requires reason ≥20 chars → 100% Stripe refund to every confirmed booking, waitlists + pending offers cancelled, all parties emailed. Failures logged to payment_transactions.",
+          steps: [
+            { href: `/merchant/events/${sampleSlug}`, label: "Open event" },
+            { href: `/merchant/events/${sampleSlug}`, label: "Cancel dialog", gap: true },
+          ],
+        },
+        {
+          title: "Under-attended alert (T-72h)",
+          spec: "§3.1",
+          description:
+            "When confirmed < capacity × 0.3 and start_time < now + 72h, dashboard shows alert with three remediations: Boost visibility (admin_featured 48h), Lower price, or Set a minimum.",
+          steps: [
+            { href: "/merchant?tab=dashboard", label: "Alert card", gap: true },
+          ],
+        },
+        {
+          title: "Minimum viable attendees decision",
+          spec: "§3.2",
+          description:
+            "Hourly cron: if confirmed < minimum and start_time < now + minimum_decision_hours, merchant gets 'run anyway' vs 'cancel with full refunds' notification.",
+          steps: [
+            { href: "/merchant/events/create", label: "Set minimum (Step 1)" },
+            { href: "/merchant?tab=events", label: "Decision notif", gap: true },
+          ],
+        },
+        {
+          title: "Attendees + check-in",
+          spec: "§7",
+          description:
+            "Attendees tab: bookings JOIN profiles for this merchant's events. Filters by event/status. Check-in flips checked_in + checked_in_at (RLS-scoped to merchant's events).",
+          steps: [
+            { href: "/merchant?tab=attendees", label: "Attendees" },
+            { href: "/merchant?tab=bookings", label: "Bookings" },
+          ],
+        },
+        {
+          title: "CSV export (attendee list)",
+          spec: "§7",
+          description:
+            "Export first_name, email, booking_date, payment_status, checked_in, checked_in_at. Excludes full address / DOB / private profile data.",
+          steps: [
+            { href: "/merchant?tab=attendees", label: "Export CSV", gap: true },
+          ],
+        },
+        {
+          title: "Venues & discount codes",
+          spec: "§3 portal",
+          description:
+            "Reusable venue records (venues table) and merchant-scoped discount codes — both feed event creation and analytics.",
+          steps: [
+            { href: "/merchant?tab=venues", label: "Venues" },
+            { href: "/merchant?tab=discounts", label: "Discounts" },
+          ],
+        },
+        {
+          title: "Analytics",
+          spec: "§8",
+          description:
+            "Revenue over time, bookings per event, capacity utilisation, views → bookings, top tags, source attribution. Timeframe via ?timeframe= (7 / 30 / 90 / all).",
+          steps: [
+            { href: "/merchant?tab=analytics", label: "Analytics" },
+            { href: "/merchant?tab=analytics&timeframe=90", label: "90-day" },
+          ],
+        },
+        {
+          title: "Finances + Stripe Connect",
+          spec: "§9",
+          description:
+            "Founding partner: 0% until founding_deal_expiry. Standard: 10% commission. Weekly merchant-payout cron transfers net to Stripe. Connect onboarding is gated at event Step 3 for paid events.",
+          steps: [
+            { href: "/merchant?tab=finances", label: "Finances" },
+            { href: "/merchant?tab=finances", label: "Connect Stripe", gap: true },
+          ],
+        },
+        {
+          title: "Support tickets",
+          spec: "§3 portal",
+          description:
+            "Merchant raises and tracks support tickets — useSupportTickets / support_tickets table.",
+          steps: [
+            { href: "/merchant?tab=support", label: "Support" },
+          ],
+        },
+        {
+          title: "Settings (profile, 2FA, payout, danger zone)",
+          spec: "§10",
+          description:
+            "Business profile edits, notification preferences (bookings/cancellations/capacity/under-attended), security + 2FA, Stripe Connect management, account deletion request.",
+          steps: [
+            { href: "/merchant?tab=settings", label: "Settings" },
           ],
         },
         {
@@ -218,9 +445,16 @@ export default async function TestPage() {
                     key={story.title}
                     className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-4"
                   >
-                    <h3 className="font-bold text-[color:var(--ink)]">
-                      {story.title}
-                    </h3>
+                    <div className="flex flex-wrap items-baseline justify-between gap-2">
+                      <h3 className="font-bold text-[color:var(--ink)]">
+                        {story.title}
+                      </h3>
+                      {story.spec ? (
+                        <span className="font-mono text-[0.6rem] font-bold uppercase tracking-[0.14em] text-[color:var(--mauve)]/70">
+                          spec {story.spec}
+                        </span>
+                      ) : null}
+                    </div>
                     <p className="mt-1 text-xs font-medium leading-5 text-[color:var(--mauve)]">
                       {story.description}
                     </p>
@@ -236,9 +470,18 @@ export default async function TestPage() {
                             href={step.href}
                             target="_blank"
                             rel="noreferrer"
-                            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-1 text-[0.7rem] font-bold uppercase tracking-[0.12em] text-[color:var(--ink)] transition hover:border-[color:var(--ink)] hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)]"
+                            title={
+                              step.gap
+                                ? "Spec-only — route or feature not built yet"
+                                : undefined
+                            }
+                            className={
+                              step.gap
+                                ? "rounded-full border-2 border-dashed border-[color:var(--mauve)]/50 bg-[color:var(--champagne)]/50 px-3 py-1 text-[0.7rem] font-bold uppercase tracking-[0.12em] text-[color:var(--mauve)] transition hover:border-[color:var(--mauve)] hover:text-[color:var(--ink)]"
+                                : "rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-1 text-[0.7rem] font-bold uppercase tracking-[0.12em] text-[color:var(--ink)] transition hover:border-[color:var(--ink)] hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)]"
+                            }
                           >
-                            {step.label} ↗
+                            {step.label} {step.gap ? "⚠" : "↗"}
                           </Link>
                         </li>
                       ))}

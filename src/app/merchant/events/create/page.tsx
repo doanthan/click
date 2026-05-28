@@ -11,7 +11,7 @@ export const metadata = {
 export default async function CreateEventWizardPage() {
   const session = await auth();
   if (!session?.user) {
-    redirect("/login?callbackUrl=/merchant/events/create");
+    redirect("/merchant/login?callbackUrl=/merchant/events/create");
   }
 
   const status = await getProfileStatus(session);

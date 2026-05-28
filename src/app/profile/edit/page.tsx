@@ -9,10 +9,14 @@ export const metadata = {
 };
 
 const intentOptions: { value: string; label: string; body: string }[] = [
-  { value: "friendship", label: "Friendship", body: "Low-pressure plans to make new friends." },
-  { value: "dating", label: "Dating", body: "Slow dating tables and relationship-minded events." },
-  { value: "networking", label: "Networking", body: "Career switchers, founders, peer support." },
-  { value: "exploring", label: "Exploring", body: "Just curious — show me a bit of everything." },
+  { value: "friendship",  label: "Friendship",  body: "Low-pressure plans to make new friends." },
+  { value: "dating",      label: "Dating",      body: "Slow dating tables and relationship-minded events." },
+  { value: "networking",  label: "Networking",  body: "Career switchers, founders, peer support." },
+  { value: "hobbies",     label: "Hobbies",     body: "Find people who share your craft — creative, sport, gaming, books." },
+  { value: "wellness",    label: "Wellness",    body: "Slow mornings, mindful movement, sober-friendly nights." },
+  { value: "community",   label: "Community",   body: "Local meetups, volunteering, neighbourhood vibes." },
+  { value: "new_in_town", label: "New in town", body: "Just relocated — looking to plug into Sydney fast." },
+  { value: "exploring",   label: "Exploring",   body: "Just curious — show me a bit of everything." },
 ];
 
 export default async function EditProfilePage() {

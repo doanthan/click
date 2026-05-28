@@ -3,14 +3,26 @@
 import { useState } from "react";
 import { signInWithEmail, signInWithGoogle, signInWithMeta } from "@/app/login/actions";
 
-type Intent = "dating" | "friendship" | "networking" | "exploring";
+type Intent =
+  | "dating"
+  | "friendship"
+  | "networking"
+  | "exploring"
+  | "hobbies"
+  | "wellness"
+  | "community"
+  | "new_in_town";
 type LocationStatus = "idle" | "requesting" | "shared" | "denied" | "unsupported";
 
 const intentOptions: Array<{ value: Intent; label: string; body: string }> = [
-  { value: "friendship", label: "Friendship", body: "Low-pressure plans to make new friends." },
-  { value: "dating", label: "Dating", body: "Slow dating tables and relationship-minded events." },
-  { value: "networking", label: "Networking", body: "Career switchers, founders, and peer support." },
-  { value: "exploring", label: "Exploring", body: "Just curious — show me a bit of everything." },
+  { value: "friendship",  label: "Friendship",  body: "Low-pressure plans to make new friends." },
+  { value: "dating",      label: "Dating",      body: "Slow dating tables and relationship-minded events." },
+  { value: "networking",  label: "Networking",  body: "Career switchers, founders, and peer support." },
+  { value: "hobbies",     label: "Hobbies",     body: "Find people who share your craft — creative, sport, gaming, books." },
+  { value: "wellness",    label: "Wellness",    body: "Slow mornings, mindful movement, sober-friendly nights." },
+  { value: "community",   label: "Community",   body: "Local meetups, volunteering, neighbourhood vibes." },
+  { value: "new_in_town", label: "New in town", body: "Just relocated — looking to plug into Sydney fast." },
+  { value: "exploring",   label: "Exploring",   body: "Just curious — show me a bit of everything." },
 ];
 
 export const REGISTER_PREFILL_KEY = "click:register-prefill";

@@ -2,7 +2,13 @@ import type { Session } from "next-auth";
 import { mkdir, readFile, writeFile } from "fs/promises";
 import os from "os";
 import path from "path";
-import { normalizeAbn, validateOptionalAbn } from "./abn";
+import {
+  normalizeAbn,
+  normalizeAcn,
+  validateOptionalAbn,
+  validateOptionalAcn,
+  validateRequiredAbn,
+} from "./abn";
 import { clickEvents, type EventItem, type EventStatus } from "./click-data";
 import { buildEventMediaGallery, type MediaItem } from "./event-media";
 import { sendTransactionalEmail } from "./email";
@@ -59,6 +65,26 @@ export type MerchantSignupInput = {
   contactEmail: string;
   websiteUrl: string;
   abn: string;
+};
+
+// Full payload from the 4-step wizard. The minimal MerchantSignupInput above
+// stays for the legacy short form; this superset is what /api/merchant accepts
+// once the wizard ships. Document uploads land separately via
+// /api/merchant/documents (matched by profile_id) before this submit.
+export type MerchantWizardInput = {
+  businessName: string;
+  tradingName: string;
+  abn: string;
+  acn: string;
+  businessType: "sole_trader" | "company" | "partnership" | "trust";
+  eventCategoryIds: string[];
+  contactEmail: string;
+  phone: string;
+  websiteUrl: string;
+  addressStreet: string;
+  addressSuburb: string;
+  addressState: "NSW" | "VIC" | "QLD" | "WA" | "SA" | "TAS" | "ACT" | "NT";
+  addressPostcode: string;
 };
 
 export type MerchantProfileRow = {
@@ -1680,7 +1706,7 @@ export async function getAdminEvents() {
       left join event_attendees attendee on attendee.event_id = event.id
       group by event.id
       order by event.created_at desc
-      limit 40
+      limit 200
     `);
 
     return result.rows.map((event): AdminEventRow => {
@@ -1720,6 +1746,10 @@ const fallbackAdminMembers: AdminMemberRow[] = [
     intents: ["friendship", "exploring"],
     bookmarks: 4,
     registrations: 2,
+    events: [
+      { slug: "sunset-rooftop", title: "Sunset rooftop sketch jam" },
+      { slug: "harbour-pottery", title: "Harbourside pottery hour" },
+    ],
     emailVerified: true,
     photoVerified: true,
     joinedAt: "2025-08-12T03:18:00.000Z",
@@ -1735,6 +1765,9 @@ const fallbackAdminMembers: AdminMemberRow[] = [
     intents: ["dating", "friendship"],
     bookmarks: 7,
     registrations: 3,
+    events: [
+      { slug: "sunset-rooftop", title: "Sunset rooftop sketch jam" },
+    ],
     emailVerified: true,
     photoVerified: false,
     joinedAt: "2025-09-04T12:02:00.000Z",
@@ -1750,6 +1783,9 @@ const fallbackAdminMembers: AdminMemberRow[] = [
     intents: ["friendship", "networking"],
     bookmarks: 5,
     registrations: 4,
+    events: [
+      { slug: "harbour-pottery", title: "Harbourside pottery hour" },
+    ],
     emailVerified: true,
     photoVerified: true,
     joinedAt: "2025-09-19T22:45:00.000Z",
@@ -1765,6 +1801,7 @@ const fallbackAdminMembers: AdminMemberRow[] = [
     intents: ["networking"],
     bookmarks: 1,
     registrations: 0,
+    events: [],
     emailVerified: true,
     photoVerified: true,
     joinedAt: "2025-07-30T01:10:00.000Z",
@@ -1780,6 +1817,7 @@ const fallbackAdminMembers: AdminMemberRow[] = [
     intents: ["networking"],
     bookmarks: 0,
     registrations: 0,
+    events: [],
     emailVerified: true,
     photoVerified: true,
     joinedAt: "2025-06-01T00:00:00.000Z",
@@ -1933,6 +1971,9 @@ export async function getAdminMembers(): Promise<AdminMemberRow[]> {
       intents: row.intents ?? [],
       bookmarks: Number(row.bookmarks),
       registrations: Number(row.registrations),
+      events: (row.events ?? []).filter(
+        (event): event is AdminMemberEventRef => !!event && !!event.slug && !!event.title,
+      ),
       emailVerified: !!row.email_verified_at,
       photoVerified: !!row.photo_verified_at,
       joinedAt: row.created_at.toISOString(),
@@ -2552,7 +2593,17 @@ export async function saveOnboarding(input: OnboardingInput, session: Session | 
     derivedAge = derivedAge ?? computedAge;
   }
 
-  const allowedIntents = ["dating", "friendship", "networking", "exploring"];
+  // Mirrors the connection_intent enum in database/001_schema.sql + 008_intent_extras.sql.
+  const allowedIntents = [
+    "dating",
+    "friendship",
+    "networking",
+    "exploring",
+    "hobbies",
+    "wellness",
+    "community",
+    "new_in_town",
+  ];
   const intents = (input.intents.length ? input.intents : ["friendship"])
     .map((intent) => intent.toLowerCase())
     .filter((intent) => allowedIntents.includes(intent));
@@ -2664,6 +2715,306 @@ export async function registerMerchantProfile(input: MerchantSignupInput, sessio
   }
 
   return result.rows[0];
+}
+
+const AU_STATES = ["NSW", "VIC", "QLD", "WA", "SA", "TAS", "ACT", "NT"] as const;
+const BUSINESS_TYPES = ["sole_trader", "company", "partnership", "trust"] as const;
+const AU_POSTCODE_RE = /^[0-9]{4}$/;
+// Accepts +61412345678, 0412345678, or with spacing — we strip to digits before checking.
+const AU_PHONE_RE = /^(?:\+?61|0)\d{9}$/;
+
+function validationError(message: string): Error {
+  const error = new Error(message);
+  error.name = "ValidationError";
+  return error;
+}
+
+/**
+ * Full merchant signup wizard submit — spec §1 Step 4.
+ *
+ * Validates every required field server-side (UI validation is not enough —
+ * never trust the wizard), then commits everything in one transaction:
+ *   1. upsert merchant_profiles with all wizard fields + submitted_at
+ *   2. replace merchant_event_categories rows for this profile
+ *   3. back-fill merchant_documents.merchant_profile_id (docs were uploaded
+ *      during Step 3 and keyed off profile_id while the merchant row didn't
+ *      yet exist)
+ *   4. bump profiles.role from 'attendee' to 'merchant' if needed
+ *
+ * Returns the merchant profile row.
+ */
+export type MerchantCategoryOption = { id: string; name: string; slug: string };
+
+/**
+ * Lightweight category list for the merchant signup wizard Step 1. Returns
+ * id + name so the wizard can submit FK references. Falls back to an empty
+ * list if the DB isn't reachable — the wizard surfaces that as a load error.
+ */
+export async function getMerchantCategoryOptions(): Promise<MerchantCategoryOption[]> {
+  const pool = getPostgresPool();
+  if (!pool) return [];
+  const result = await pool.query<{ id: string; name: string; slug: string }>(
+    `select id::text, name, slug from tag_categories order by name asc`,
+  );
+  return result.rows;
+}
+
+export type MerchantDocumentType =
+  | "abn_certificate"
+  | "public_liability_insurance"
+  | "liquor_licence";
+
+export type MerchantDocumentRow = {
+  id: string;
+  document_type: MerchantDocumentType;
+  file_path: string;
+  file_name: string;
+  uploaded_at: string;
+};
+
+/**
+ * Record a merchant document upload. Called by /api/merchant/documents AFTER
+ * the file has been pushed to Supabase Storage — this function only writes
+ * the metadata row. The unique (profile_id, document_type) constraint means
+ * re-uploading a doc replaces the previous row.
+ */
+export async function recordMerchantDocument(
+  input: {
+    documentType: MerchantDocumentType;
+    filePath: string;
+    fileName: string;
+    mimeType: string;
+    sizeBytes: number;
+  },
+  session: Session | null,
+): Promise<MerchantDocumentRow> {
+  const pool = getPostgresPool();
+  const email = getSessionEmail(session);
+
+  if (!email) throw authError();
+  if (!pool) throw databaseUnavailableError();
+
+  const profile = await ensureProfileForSession(session);
+  const merchant = await getMerchantProfile(pool, profile.id);
+
+  const result = await pool.query<MerchantDocumentRow>(
+    `
+      insert into merchant_documents (
+        merchant_profile_id, profile_id, document_type,
+        file_path, file_name, mime_type, size_bytes
+      )
+      values ($1::uuid, $2::uuid, $3::merchant_document_type, $4, $5, $6, $7)
+      on conflict (profile_id, document_type) do update set
+        merchant_profile_id = excluded.merchant_profile_id,
+        file_path = excluded.file_path,
+        file_name = excluded.file_name,
+        mime_type = excluded.mime_type,
+        size_bytes = excluded.size_bytes,
+        uploaded_at = now()
+      returning id::text, document_type, file_path, file_name, uploaded_at::text
+    `,
+    [
+      merchant?.id ?? null,
+      profile.id,
+      input.documentType,
+      input.filePath,
+      input.fileName,
+      input.mimeType,
+      input.sizeBytes,
+    ],
+  );
+
+  return result.rows[0];
+}
+
+export async function listMerchantDocuments(
+  session: Session | null,
+): Promise<MerchantDocumentRow[]> {
+  const pool = getPostgresPool();
+  const email = getSessionEmail(session);
+  if (!email) throw authError();
+  if (!pool) throw databaseUnavailableError();
+
+  const profile = await ensureProfileForSession(session);
+  const result = await pool.query<MerchantDocumentRow>(
+    `
+      select id::text, document_type, file_path, file_name, uploaded_at::text
+      from merchant_documents
+      where profile_id = $1::uuid
+      order by uploaded_at desc
+    `,
+    [profile.id],
+  );
+  return result.rows;
+}
+
+export async function registerMerchantWizardSubmit(
+  input: MerchantWizardInput,
+  session: Session | null,
+): Promise<MerchantProfileRow> {
+  const pool = getPostgresPool();
+  const email = getSessionEmail(session);
+
+  if (!email) throw authError();
+  if (!pool) throw databaseUnavailableError();
+
+  const businessName = input.businessName.trim();
+  if (businessName.length < 2 || businessName.length > 100) {
+    throw validationError("Business name must be 2–100 characters.");
+  }
+
+  const tradingName = input.tradingName.trim();
+  const contactEmail = input.contactEmail.trim().toLowerCase();
+  if (!contactEmail || !contactEmail.includes("@")) {
+    throw validationError("A valid contact email is required.");
+  }
+
+  const abnError = validateRequiredAbn(input.abn);
+  if (abnError) throw validationError(abnError);
+  const abn = normalizeAbn(input.abn);
+
+  const acnError = validateOptionalAcn(input.acn);
+  if (acnError) throw validationError(acnError);
+  const acn = normalizeAcn(input.acn);
+
+  if (!BUSINESS_TYPES.includes(input.businessType)) {
+    throw validationError("Pick a business type.");
+  }
+
+  if (!AU_STATES.includes(input.addressState)) {
+    throw validationError("Pick an Australian state.");
+  }
+
+  const postcode = input.addressPostcode.trim();
+  if (!AU_POSTCODE_RE.test(postcode)) {
+    throw validationError("Postcode must be 4 digits.");
+  }
+
+  const phoneDigits = input.phone.replace(/\s+/g, "");
+  if (!AU_PHONE_RE.test(phoneDigits)) {
+    throw validationError("Enter a valid Australian phone number.");
+  }
+
+  const street = input.addressStreet.trim();
+  const suburb = input.addressSuburb.trim();
+  if (!street || !suburb) {
+    throw validationError("Street address and suburb are required.");
+  }
+
+  const categoryIds = Array.from(new Set(input.eventCategoryIds.filter(Boolean)));
+  if (categoryIds.length === 0) {
+    throw validationError("Pick at least one event category.");
+  }
+
+  const profile = await ensureProfileForSession(session);
+
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+
+    const upsert = await client.query<MerchantProfileRow>(
+      `
+        insert into merchant_profiles (
+          profile_id, business_name, trading_name, abn, acn, business_type,
+          phone, contact_email, website_url,
+          address_street, address_suburb, address_state, address_postcode,
+          submitted_at
+        )
+        values (
+          $1::uuid, $2, nullif($3, ''), $4, nullif($5, ''), $6,
+          $7, $8, nullif($9, ''),
+          $10, $11, $12, $13,
+          now()
+        )
+        on conflict (profile_id) do update set
+          business_name = excluded.business_name,
+          trading_name = excluded.trading_name,
+          abn = excluded.abn,
+          acn = excluded.acn,
+          business_type = excluded.business_type,
+          phone = excluded.phone,
+          contact_email = excluded.contact_email,
+          website_url = excluded.website_url,
+          address_street = excluded.address_street,
+          address_suburb = excluded.address_suburb,
+          address_state = excluded.address_state,
+          address_postcode = excluded.address_postcode,
+          submitted_at = coalesce(merchant_profiles.submitted_at, now()),
+          updated_at = now()
+        returning id::text, business_name, contact_email::text, verification_status
+      `,
+      [
+        profile.id,
+        businessName,
+        tradingName,
+        abn,
+        acn,
+        input.businessType,
+        phoneDigits,
+        contactEmail,
+        input.websiteUrl.trim(),
+        street,
+        suburb,
+        input.addressState,
+        postcode,
+      ],
+    );
+
+    const merchantId = upsert.rows[0].id;
+
+    // Replace categories — small set, simpler than diffing.
+    await client.query(
+      `delete from merchant_event_categories where merchant_profile_id = $1::uuid`,
+      [merchantId],
+    );
+    await client.query(
+      `
+        insert into merchant_event_categories (merchant_profile_id, tag_category_id)
+        select $1::uuid, cat_id::uuid
+        from unnest($2::text[]) as cat_id
+        on conflict do nothing
+      `,
+      [merchantId, categoryIds],
+    );
+
+    // Verify required docs uploaded — ABN cert + insurance per spec §1 Step 3.
+    const docCheck = await client.query<{ document_type: string }>(
+      `select document_type from merchant_documents where profile_id = $1::uuid`,
+      [profile.id],
+    );
+    const docTypes = new Set(docCheck.rows.map((r) => r.document_type));
+    if (!docTypes.has("abn_certificate")) {
+      throw validationError("Upload your ABN certificate before submitting.");
+    }
+    if (!docTypes.has("public_liability_insurance")) {
+      throw validationError("Upload your public liability insurance before submitting.");
+    }
+
+    // Back-fill merchant_profile_id on any docs uploaded before this commit.
+    await client.query(
+      `
+        update merchant_documents
+        set merchant_profile_id = $1::uuid
+        where profile_id = $2::uuid and merchant_profile_id is null
+      `,
+      [merchantId, profile.id],
+    );
+
+    if (profile.role === "attendee") {
+      await client.query(
+        `update profiles set role = 'merchant', updated_at = now() where id = $1::uuid`,
+        [profile.id],
+      );
+    }
+
+    await client.query("commit");
+    return upsert.rows[0];
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function toggleBookmark(eventId: string, session: Session | null, save: boolean) {
@@ -3978,265 +4329,9 @@ export async function getMutualClicksForSession(session: Session | null): Promis
   }
 }
 
-export type ConversationListEntry = {
-  id: string;
-  otherProfileId: string;
-  otherDisplayName: string;
-  otherPhotoUrl: string | null;
-  lastMessageAt: string | null;
-  preview: string | null;
-  unread: boolean;
-};
-
-export async function getConversationsForSession(
-  session: Session | null,
-): Promise<ConversationListEntry[]> {
-  const pool = getPostgresPool();
-  const email = getSessionEmail(session);
-  if (!pool || !email) return [];
-
-  try {
-    const profile = await ensureProfileForSession(session);
-    const result = await pool.query<{
-      id: string;
-      other_id: string;
-      other_name: string;
-      other_photo: string | null;
-      last_message_at: Date | null;
-      preview: string | null;
-      unread_count: string;
-    }>(
-      `
-        with mine as (
-          select c.*,
-            (case when c.profile_a_id = $1::uuid then c.profile_b_id else c.profile_a_id end) as other_id
-          from conversations c
-          where c.profile_a_id = $1::uuid or c.profile_b_id = $1::uuid
-        )
-        select
-          mine.id::text,
-          mine.other_id::text,
-          other.display_name as other_name,
-          other.photo_url as other_photo,
-          mine.last_message_at,
-          (
-            select substring(m.body for 120)
-            from messages m
-            where m.conversation_id = mine.id
-            order by m.created_at desc
-            limit 1
-          ) as preview,
-          (
-            select count(*)::text
-            from messages m
-            where m.conversation_id = mine.id
-              and m.sender_profile_id <> $1::uuid
-              and m.read_at is null
-          ) as unread_count
-        from mine
-        join profiles other on other.id = mine.other_id
-        order by mine.last_message_at desc nulls last
-        limit 50
-      `,
-      [profile.id],
-    );
-
-    return result.rows.map((row) => ({
-      id: row.id,
-      otherProfileId: row.other_id,
-      otherDisplayName: row.other_name,
-      otherPhotoUrl: row.other_photo,
-      lastMessageAt: row.last_message_at ? row.last_message_at.toISOString() : null,
-      preview: row.preview,
-      unread: Number(row.unread_count) > 0,
-    }));
-  } catch {
-    return [];
-  }
-}
-
-export type ConversationMessage = {
-  id: string;
-  senderProfileId: string;
-  isMine: boolean;
-  body: string;
-  createdAt: string;
-};
-
-export type ConversationDetail = {
-  id: string;
-  otherProfileId: string;
-  otherDisplayName: string;
-  otherPhotoUrl: string | null;
-  messages: ConversationMessage[];
-};
-
-export async function getConversationDetail(
-  session: Session | null,
-  conversationId: string,
-): Promise<ConversationDetail | null> {
-  const pool = getPostgresPool();
-  const email = getSessionEmail(session);
-  if (!pool || !email) return null;
-
-  try {
-    const profile = await ensureProfileForSession(session);
-
-    const convResult = await pool.query<{
-      id: string;
-      profile_a_id: string;
-      profile_b_id: string;
-      other_name: string;
-      other_photo: string | null;
-    }>(
-      `
-        select c.id::text, c.profile_a_id::text, c.profile_b_id::text,
-               other.display_name as other_name, other.photo_url as other_photo
-        from conversations c
-        join profiles other on other.id = (
-          case when c.profile_a_id = $1::uuid then c.profile_b_id else c.profile_a_id end
-        )
-        where c.id = $2::uuid
-          and (c.profile_a_id = $1::uuid or c.profile_b_id = $1::uuid)
-        limit 1
-      `,
-      [profile.id, conversationId],
-    );
-
-    const conv = convResult.rows[0];
-    if (!conv) return null;
-
-    const otherId =
-      conv.profile_a_id === profile.id ? conv.profile_b_id : conv.profile_a_id;
-
-    const messagesResult = await pool.query<{
-      id: string;
-      sender_profile_id: string;
-      body: string;
-      created_at: Date;
-    }>(
-      `
-        select id::text, sender_profile_id::text, body, created_at
-        from messages
-        where conversation_id = $1::uuid
-        order by created_at asc
-        limit 200
-      `,
-      [conv.id],
-    );
-
-    await pool.query(
-      `
-        update messages
-        set read_at = now()
-        where conversation_id = $1::uuid
-          and sender_profile_id <> $2::uuid
-          and read_at is null
-      `,
-      [conv.id, profile.id],
-    );
-
-    return {
-      id: conv.id,
-      otherProfileId: otherId,
-      otherDisplayName: conv.other_name,
-      otherPhotoUrl: conv.other_photo,
-      messages: messagesResult.rows.map((m) => ({
-        id: m.id,
-        senderProfileId: m.sender_profile_id,
-        isMine: m.sender_profile_id === profile.id,
-        body: m.body,
-        createdAt: m.created_at.toISOString(),
-      })),
-    };
-  } catch {
-    return null;
-  }
-}
-
-export async function sendMessage(
-  session: Session | null,
-  conversationId: string,
-  body: string,
-) {
-  const pool = getPostgresPool();
-  if (!pool) throw databaseUnavailableError();
-  const email = getSessionEmail(session);
-  if (!email) throw authError();
-
-  const trimmed = body.trim();
-  if (!trimmed) return;
-  if (trimmed.length > 2000) {
-    throw new Error("Message too long.");
-  }
-
-  const profile = await ensureProfileForSession(session);
-  const client = await pool.connect();
-  try {
-    await client.query("begin");
-
-    const conv = await client.query<{ id: string }>(
-      `
-        select id::text from conversations
-        where id = $1::uuid
-          and (profile_a_id = $2::uuid or profile_b_id = $2::uuid)
-        for update
-      `,
-      [conversationId, profile.id],
-    );
-    if (!conv.rows[0]) {
-      await client.query("rollback");
-      throw new Error("Conversation not found.");
-    }
-
-    await client.query(
-      `insert into messages (conversation_id, sender_profile_id, body)
-       values ($1::uuid, $2::uuid, $3)`,
-      [conversationId, profile.id, trimmed],
-    );
-    await client.query(
-      `update conversations set last_message_at = now() where id = $1::uuid`,
-      [conversationId],
-    );
-
-    await client.query("commit");
-  } catch (e) {
-    await client.query("rollback");
-    throw e;
-  } finally {
-    client.release();
-  }
-}
-
-export async function getOrCreateConversation(
-  session: Session | null,
-  otherProfileId: string,
-): Promise<string | null> {
-  const pool = getPostgresPool();
-  if (!pool) return null;
-  const email = getSessionEmail(session);
-  if (!email) return null;
-
-  try {
-    const profile = await ensureProfileForSession(session);
-    if (profile.id === otherProfileId) return null;
-
-    const [a, b] = [profile.id, otherProfileId].sort();
-    const result = await pool.query<{ id: string }>(
-      `
-        insert into conversations (profile_a_id, profile_b_id)
-        values ($1::uuid, $2::uuid)
-        on conflict (profile_a_id, profile_b_id) do update
-          set profile_a_id = excluded.profile_a_id
-        returning id::text
-      `,
-      [a, b],
-    );
-    return result.rows[0]?.id ?? null;
-  } catch {
-    return null;
-  }
-}
+// Conversation / messaging helpers were removed when /messages was retired —
+// the platform's no-chat principle is enforced by deleting the surface, not
+// by hiding it. Mutual Click coordination uses the Proposal UI (no free text).
 
 export type PersonalityQuizInput = {
   personaName: string;

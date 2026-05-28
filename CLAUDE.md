@@ -54,9 +54,8 @@ Every route in `src/app`. URI on the left, source file on the right. Use this to
 | `/profile/edit` | `src/app/profile/edit/page.tsx` |
 | `/account-settings` | `src/app/account-settings/page.tsx` |
 | `/notifications` | `src/app/notifications/page.tsx` |
-| `/messages` | `src/app/messages/page.tsx` |
 | `/bookmarks` | `src/app/bookmarks/page.tsx` |
-| `/saved-events` | `src/app/saved-events/page.tsx` |
+| `/saved-events` | `src/app/saved-events/page.tsx` (redirect → `/bookmarks`) |
 | `/confirmed-events` | `src/app/confirmed-events/page.tsx` |
 
 ### Merchant

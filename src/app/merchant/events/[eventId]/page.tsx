@@ -50,7 +50,7 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
   const session = await auth();
 
   if (!session?.user) {
-    redirect(`/login?callbackUrl=/merchant/events/${eventId}`);
+    redirect(`/merchant/login?callbackUrl=/merchant/events/${eventId}`);
   }
 
   const status = await getProfileStatus(session);

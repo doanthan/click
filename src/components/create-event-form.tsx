@@ -120,7 +120,7 @@ export function CreateEventForm() {
       });
 
       if (response.status === 401) {
-        window.location.href = `/login?callbackUrl=${encodeURIComponent("/merchant")}`;
+        window.location.href = `/merchant/login?callbackUrl=${encodeURIComponent("/merchant")}`;
         return;
       }
 

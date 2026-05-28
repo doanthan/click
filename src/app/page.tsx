@@ -1,7 +1,9 @@
 import Image from "next/image";
 import Link from "next/link";
+import { auth } from "@/auth";
 import { EventCard } from "@/components/event-card";
 import { LinkButton, SectionIntro } from "@/components/click-ui";
+import { HomeQuiz } from "@/components/home-quiz";
 import { LocationLabel } from "@/components/location-label";
 import {
   architectureLayers,
@@ -9,7 +11,10 @@ import {
   personaCards,
   roleCards,
 } from "@/lib/click-data";
-import { getEventsForExplore } from "@/lib/event-repository";
+import {
+  getEventsForExplore,
+  getLatestPersonaForSession,
+} from "@/lib/event-repository";
 
 const floatingChips = [
   { label: "Make friends", tone: "peach", rotate: "-rotate-3", left: "left-[6%]", top: "top-[12%]" },
@@ -26,11 +31,19 @@ const chipPalette: Record<string, string> = {
 };
 
 export default async function Home() {
-  const events = await getEventsForExplore();
+  const session = await auth();
+  const isLoggedIn = Boolean(session?.user);
+  const [events, persona] = await Promise.all([
+    getEventsForExplore(),
+    isLoggedIn ? getLatestPersonaForSession(session) : Promise.resolve(null),
+  ]);
   const upcomingEvents = events.slice(0, 6);
 
   return (
     <main className="paper-noise min-h-screen max-w-full overflow-hidden text-[color:var(--ink)]">
+      {/* ============================ HOME QUIZ ============================ */}
+      <HomeQuiz isLoggedIn={isLoggedIn} persona={persona} />
+
       {/* ============================ HERO ============================ */}
       <section className="relative overflow-hidden bg-[color:var(--champagne)] px-4 pb-16 pt-12 sm:px-6 lg:pt-20">
         {/* Decorative confetti dots */}

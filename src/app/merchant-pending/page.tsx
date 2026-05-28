@@ -1,0 +1,139 @@
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import { auth } from "@/auth";
+import { getProfileStatus } from "@/lib/event-repository";
+
+// Spec §1 post-submission holding page. Shown to merchants whose application
+// has landed but isn't yet approved by admin (verification_status='pending').
+// The /merchant portal is gated until status='approved' — anyone who tries to
+// access it while pending bounces here.
+
+export const metadata = {
+  title: "Application received | Click",
+  description:
+    "Your Click host application is being reviewed. Here's what to prepare while you wait.",
+};
+
+export default async function MerchantPendingPage() {
+  const session = await auth();
+  if (!session?.user) {
+    redirect("/merchant/login?callbackUrl=/merchant-pending");
+  }
+
+  const status = await getProfileStatus(session);
+  if (!status.merchantProfile) {
+    redirect("/merchant/signup");
+  }
+  if (status.merchantProfile.verification_status === "approved") {
+    redirect("/merchant");
+  }
+
+  const rejected = status.merchantProfile.verification_status === "rejected";
+
+  return (
+    <main className="paper-noise min-h-screen bg-[color:var(--champagne)] px-4 py-12 text-[color:var(--ink)] sm:px-6">
+      <section className="mx-auto grid max-w-5xl gap-10 lg:grid-cols-[0.5fr_0.5fr] lg:items-start">
+        <div className="lg:sticky lg:top-24">
+          <span className={`sticker ${rejected ? "sticker--rose" : "sticker--peach"} tilt-l-2 inline-flex`}>
+            <span className={`size-2 rounded-full ${rejected ? "bg-[color:var(--punch)]" : "bg-[color:var(--rose)] pulse-ring"}`} />
+            {rejected ? "Application needs another look" : "Application received"}
+          </span>
+
+          <h1 className="font-display mt-6 text-5xl font-light leading-[0.96] tracking-tight sm:text-6xl">
+            {rejected ? (
+              <>
+                We need to <span className="italic text-[color:var(--rose)]">talk it over</span>.
+              </>
+            ) : (
+              <>
+                Thanks, <span className="italic">we’re on it</span>.
+              </>
+            )}
+          </h1>
+
+          <p className="mt-6 max-w-xl text-base font-medium leading-7 text-[color:var(--mauve)]">
+            {rejected
+              ? "An admin reviewed your application and flagged something. Check your email for the reason and resubmit when you’ve addressed it."
+              : "Your merchant application is in the admin queue. We aim to review new merchants within 1 business day. We’ll email you the moment your portal unlocks."}
+          </p>
+
+          <p className="mt-6 text-sm font-bold text-[color:var(--ink)]">
+            Application for: <span className="font-display italic">{status.merchantProfile.business_name}</span>
+          </p>
+          <p className="mt-1 text-sm font-medium text-[color:var(--mauve)]">
+            Contact email on file: {status.merchantProfile.contact_email}
+          </p>
+
+          <div className="mt-8 flex flex-wrap gap-3">
+            <Link
+              href="/dashboard"
+              className="inline-flex items-center gap-2 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-2.5 text-sm font-bold text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--cream)]"
+            >
+              ← Use Click as an attendee
+            </Link>
+            {rejected ? (
+              <Link
+                href="/merchant/signup"
+                className="inline-flex items-center gap-2 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)]"
+              >
+                Resubmit application →
+              </Link>
+            ) : null}
+          </div>
+        </div>
+
+        {/* First-event prep checklist per spec §1 post-submission. */}
+        <div className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-6 hard-shadow">
+          <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+            While you wait
+          </p>
+          <h2 className="mt-3 font-display text-3xl font-light leading-tight">
+            Get your first event live in 15 minutes — prep these now.
+          </h2>
+
+          <ol className="mt-6 grid gap-4">
+            {[
+              {
+                t: "Pick your strongest event idea",
+                d: "Strong titles include the activity + vibe: ‘Thursday Pottery for Beginners’, not ‘Pottery Class’.",
+              },
+              {
+                t: "Choose a high-traffic suburb for launch",
+                d: "Inner-city Sydney events fill fastest. Surry Hills, Newtown, and Darlinghurst are the best starting points.",
+              },
+              {
+                t: "Plan an intimate first event (10–20 people)",
+                d: "Smaller events convert better on Click. Save big events for after you’ve built an audience.",
+              },
+              {
+                t: "Connect Stripe for paid events",
+                d: "Required before you can charge. You’ll be prompted at Step 3 of the event wizard if Stripe isn’t connected.",
+              },
+              {
+                t: "Tag richly",
+                d: "Users filter by tags. A cooking class can be Food + Social + Learning + Creative — pick all that fit.",
+              },
+            ].map((step, idx) => (
+              <li
+                key={step.t}
+                className="flex gap-4 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-4"
+              >
+                <span className="grid size-8 shrink-0 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] font-mono text-sm font-bold text-[color:var(--surface-deep)]">
+                  {idx + 1}
+                </span>
+                <div>
+                  <p className="font-bold text-[color:var(--ink)]">{step.t}</p>
+                  <p className="mt-1 text-sm font-medium leading-6 text-[color:var(--mauve)]">{step.d}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
+
+          <p className="mt-6 font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]/70">
+            ✷ We’ll email you when approval lands ✷
+          </p>
+        </div>
+      </section>
+    </main>
+  );
+}

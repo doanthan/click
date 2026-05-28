@@ -158,7 +158,7 @@ export function EventCreateWizard() {
       const response = await fetch("/api/events", { method: "POST", body: form });
 
       if (response.status === 401) {
-        window.location.href = "/login?callbackUrl=/merchant/events/create";
+        window.location.href = "/merchant/login?callbackUrl=/merchant/events/create";
         return;
       }
 

@@ -4,8 +4,17 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { interestTagCategories } from "@/lib/click-data";
 import { REGISTER_PREFILL_KEY, type RegisterPrefill } from "@/components/register-form";
+import { BirthDatePicker } from "@/components/birth-date-picker";
 
-type Intent = "dating" | "friendship" | "networking" | "exploring";
+type Intent =
+  | "dating"
+  | "friendship"
+  | "networking"
+  | "exploring"
+  | "hobbies"
+  | "wellness"
+  | "community"
+  | "new_in_town";
 
 type IntentOption = {
   value: Intent;
@@ -15,10 +24,14 @@ type IntentOption = {
 };
 
 const INTENT_OPTIONS: IntentOption[] = [
-  { value: "friendship", emoji: "🫶", label: "Friendship", body: "Low-pressure plans to make new friends." },
-  { value: "dating", emoji: "🌹", label: "Dating", body: "Slow dating tables and relationship-minded events." },
-  { value: "networking", emoji: "💼", label: "Networking", body: "Career switchers, founders, peer support." },
-  { value: "exploring", emoji: "✨", label: "Exploring", body: "Just curious — show me a bit of everything." },
+  { value: "friendship",  emoji: "🫶", label: "Friendship",  body: "Low-pressure plans to make new friends." },
+  { value: "dating",      emoji: "🌹", label: "Dating",      body: "Slow dating tables and relationship-minded events." },
+  { value: "networking",  emoji: "💼", label: "Networking",  body: "Career switchers, founders, peer support." },
+  { value: "hobbies",     emoji: "🎨", label: "Hobbies",     body: "Find people who share your craft — creative, sport, gaming, books." },
+  { value: "wellness",    emoji: "🧘", label: "Wellness",    body: "Slow mornings, mindful movement, sober-friendly nights." },
+  { value: "community",   emoji: "🏘️", label: "Community",   body: "Local meetups, volunteering, neighbourhood vibes." },
+  { value: "new_in_town", emoji: "🧭", label: "New in town", body: "Just relocated — looking to plug into Sydney fast." },
+  { value: "exploring",   emoji: "✨", label: "Exploring",   body: "Just curious — show me a bit of everything." },
 ];
 
 // The 6 stops in the order the spec called out: low-friction first, free-text last.
@@ -107,7 +120,9 @@ export function OnboardingForm({ initialName }: OnboardingFormProps) {
   const [stepError, setStepError] = useState("");
 
   const hydratedRef = useRef(false);
-  const firstFieldRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
+  const firstFieldRef = useRef<
+    HTMLInputElement | HTMLTextAreaElement | HTMLButtonElement | null
+  >(null);
 
   // Hydrate from sessionStorage (signup prefill) and localStorage (draft) once.
   // This is the "synchronize React with an external store on mount" pattern —
@@ -459,21 +474,23 @@ export function OnboardingForm({ initialName }: OnboardingFormProps) {
               title="When were you born?"
               subtitle="Click is 18+. We compute your age from this and never show your full DOB."
             >
-              <label className="grid gap-2 text-sm font-bold">
-                Birth date
-                <input
-                  ref={firstFieldRef as React.Ref<HTMLInputElement>}
-                  type="date"
-                  required
+              <div className="grid gap-2 text-sm font-bold">
+                <span id="birth-date-label">Birth date</span>
+                <BirthDatePicker
+                  labelledBy="birth-date-label"
+                  ref={firstFieldRef as React.Ref<HTMLButtonElement>}
                   value={birthDate}
+                  onChange={setBirthDate}
                   max={maxBirthDate}
-                  onChange={(e) => setBirthDate(e.target.value)}
-                  className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-3 text-base font-semibold outline-none focus:border-[color:var(--rose)]"
+                  describedBy="birth-date-hint"
                 />
-                <span className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+                <span
+                  id="birth-date-hint"
+                  className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-[color:var(--mauve)]"
+                >
                   18+ only. Used once for the age gate, then hidden.
                 </span>
-              </label>
+              </div>
             </StepShell>
           )}
 

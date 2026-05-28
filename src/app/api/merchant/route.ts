@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { registerMerchantProfile } from "@/lib/event-repository";
+import {
+  registerMerchantProfile,
+  registerMerchantWizardSubmit,
+  type MerchantWizardInput,
+} from "@/lib/event-repository";
 
 function errorResponse(error: unknown) {
   if (!(error instanceof Error)) {
@@ -44,41 +48,76 @@ function normalizeHttpsWebsiteUrl(value: string) {
   }
 }
 
+function isWizardPayload(payload: unknown): payload is MerchantWizardInput {
+  // We pick on `mode === "wizard"` (set by the new wizard) rather than
+  // sniffing field presence, so the legacy short form keeps working unchanged.
+  return (
+    typeof payload === "object" &&
+    payload !== null &&
+    (payload as { mode?: unknown }).mode === "wizard"
+  );
+}
+
 export async function POST(request: Request) {
   const session = await auth();
 
-  let payload: {
-    businessName?: string;
-    contactEmail?: string;
-    websiteUrl?: string;
-    abn?: string;
-  };
-
+  let payload: Record<string, unknown>;
   try {
-    payload = await request.json();
+    payload = (await request.json()) as Record<string, unknown>;
   } catch {
     return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
   }
 
-  const normalizedWebsite = normalizeHttpsWebsiteUrl(payload.websiteUrl ?? "");
+  const normalizedWebsite = normalizeHttpsWebsiteUrl(
+    typeof payload.websiteUrl === "string" ? payload.websiteUrl : "",
+  );
   if (normalizedWebsite.error) {
     return NextResponse.json({ error: normalizedWebsite.error }, { status: 400 });
   }
   const normalizedWebsiteUrl = normalizedWebsite.url ?? "";
 
   try {
+    if (isWizardPayload(payload)) {
+      const merchant = await registerMerchantWizardSubmit(
+        {
+          businessName: stringField(payload.businessName),
+          tradingName: stringField(payload.tradingName),
+          abn: stringField(payload.abn),
+          acn: stringField(payload.acn),
+          businessType: payload.businessType as MerchantWizardInput["businessType"],
+          eventCategoryIds: Array.isArray(payload.eventCategoryIds)
+            ? (payload.eventCategoryIds as unknown[]).map(String)
+            : [],
+          contactEmail: stringField(payload.contactEmail),
+          phone: stringField(payload.phone),
+          websiteUrl: normalizedWebsiteUrl,
+          addressStreet: stringField(payload.addressStreet),
+          addressSuburb: stringField(payload.addressSuburb),
+          addressState: payload.addressState as MerchantWizardInput["addressState"],
+          addressPostcode: stringField(payload.addressPostcode),
+        },
+        session,
+      );
+      return NextResponse.json({ ok: true, merchant });
+    }
+
+    // Legacy short-form payload (kept for backwards compatibility with the
+    // older single-page merchant-signup-form.tsx during the transition).
     const merchant = await registerMerchantProfile(
       {
-        businessName: payload.businessName ?? "",
-        contactEmail: payload.contactEmail ?? "",
+        businessName: stringField(payload.businessName),
+        contactEmail: stringField(payload.contactEmail),
         websiteUrl: normalizedWebsiteUrl,
-        abn: payload.abn ?? "",
+        abn: stringField(payload.abn),
       },
       session,
     );
-
     return NextResponse.json({ ok: true, merchant });
   } catch (error) {
     return errorResponse(error);
   }
+}
+
+function stringField(value: unknown): string {
+  return typeof value === "string" ? value : "";
 }

@@ -79,8 +79,6 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
   const isWaitlistMode = event.status === "Waitlist" || isFull;
   const isLockedEvent = event.status === "Locked" && !isRegistered;
   const isPaid = event.priceCents > 0;
-  const seatsLeft = Math.max(0, event.capacity - event.attendees);
-  const fullness = Math.min((event.attendees / event.capacity) * 100, 100);
   const bookmarked = profileStatus?.bookmarkedEventIds.includes(event.id) ?? false;
   const showStripeUnavailableHint = isPaid && !process.env.STRIPE_SECRET_KEY;
 
@@ -198,20 +196,15 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                 </div>
 
                 <div className="mt-5">
-                  <div className="flex justify-between text-xs font-bold text-[color:var(--mauve)]">
-                    <span>Seats</span>
-                    <span>
-                      {isFull
-                        ? "Full"
-                        : `${seatsLeft} of ${event.capacity} left`}
-                    </span>
-                  </div>
-                  <div className="mt-2 h-2 overflow-hidden rounded-full border border-[color:var(--line)] bg-[color:var(--champagne)]">
-                    <div
-                      className={`h-full rounded-full ${isFull ? "bg-[color:var(--ink)]" : "bg-[color:var(--rose)]"}`}
-                      style={{ width: `${fullness}%` }}
-                    />
-                  </div>
+                  <span
+                    className={`inline-flex items-center rounded-full border-2 border-[color:var(--line)] px-3 py-1.5 text-[0.7rem] font-bold uppercase tracking-wider hard-shadow-sm ${
+                      isFull
+                        ? "bg-[color:var(--ink)] text-[color:var(--on-deep)]"
+                        : "bg-[color:var(--peach)] text-[color:var(--surface-deep)]"
+                    }`}
+                  >
+                    {isFull ? "Fully booked" : "Limited spaces!"}
+                  </span>
                 </div>
 
                 <div className="mt-6 grid gap-2">

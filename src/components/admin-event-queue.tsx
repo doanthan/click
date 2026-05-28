@@ -83,6 +83,9 @@ export function AdminEventQueue({ events }: { events: AdminEventRow[] }) {
 
   const filtered = useMemo(() => {
     const search = query.trim().toLowerCase();
+    // Snapshot "now" each time filters change. We don't need minute-level
+    // freshness — admins reload often, and a stale boundary is harmless.
+    // eslint-disable-next-line react-hooks/purity -- intentional snapshot inside memo
     const now = Date.now();
     return rows.filter((event) => {
       if (filter !== "all" && event.status !== filter) return false;

@@ -82,7 +82,7 @@ export function MerchantSignupForm({
     });
 
     if (response.status === 401) {
-      window.location.href = "/login?callbackUrl=/merchant/signup";
+      window.location.href = "/merchant/login?callbackUrl=/merchant/signup";
       return;
     }
 

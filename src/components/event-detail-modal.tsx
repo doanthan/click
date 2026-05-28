@@ -58,19 +58,23 @@ export function EventDetailModal({
     document.body.style.overflow = "hidden";
 
     // Pull the live record from Supabase (falls back to static data server-side).
-    const controller = new AbortController();
-    fetch(`/api/events/${encodeURIComponent(event.id)}`, { signal: controller.signal })
+    let cancelled = false;
+    fetch(`/api/events/${encodeURIComponent(event.id)}`)
       .then((response) => (response.ok ? response.json() : null))
       .then((payload: { event?: EventDetailData } | null) => {
+        if (cancelled) return;
         if (payload?.event) setDetail(payload.event);
       })
       .catch(() => {
         /* keep the card data already on screen */
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (cancelled) return;
+        setLoading(false);
+      });
 
     return () => {
-      controller.abort();
+      cancelled = true;
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = "";
     };

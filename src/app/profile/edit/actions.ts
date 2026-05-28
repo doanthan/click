@@ -5,7 +5,16 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { updateOwnProfile } from "@/lib/event-repository";
 
-const VALID_INTENTS = new Set(["friendship", "dating", "networking", "exploring"]);
+const VALID_INTENTS = new Set([
+  "friendship",
+  "dating",
+  "networking",
+  "exploring",
+  "hobbies",
+  "wellness",
+  "community",
+  "new_in_town",
+]);
 
 function strField(formData: FormData, key: string) {
   const v = formData.get(key);

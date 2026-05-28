@@ -59,12 +59,17 @@ type MerchantPageProps = {
 export default async function MerchantPage({ searchParams }: MerchantPageProps) {
   const session = await auth();
   if (!session?.user) {
-    redirect("/login?callbackUrl=/merchant");
+    redirect("/merchant/login?callbackUrl=/merchant");
   }
 
   const status = await getProfileStatus(session);
   if (!status.merchantProfile) {
     redirect("/merchant/signup");
+  }
+  // Spec §1: portal access is blocked until status='approved'. Pending or
+  // rejected applications get the holding page instead of an empty portal.
+  if (status.merchantProfile.verification_status !== "approved") {
+    redirect("/merchant-pending");
   }
 
   const params = (await searchParams) ?? {};

@@ -57,3 +57,36 @@ export function validateOptionalAbn(value: string): string | null {
   }
   return null;
 }
+
+/**
+ * Validate a required ABN — empty value is an error. Used by the merchant
+ * signup wizard per spec §1 (ABN is mandatory for merchants).
+ */
+export function validateRequiredAbn(value: string): string | null {
+  const digits = normalizeAbn(value);
+  if (!digits) return "ABN is required.";
+  return validateOptionalAbn(value);
+}
+
+/** Strip spaces and other separators, leaving only digits. */
+export function normalizeAcn(value: string): string {
+  return value.replace(/\D/g, "");
+}
+
+/** Format 9 digits as "000 000 000" (the ASIC display grouping). */
+export function formatAcn(value: string): string {
+  const digits = normalizeAcn(value);
+  if (digits.length !== 9) return value.trim();
+  return [digits.slice(0, 3), digits.slice(3, 6), digits.slice(6, 9)].join(" ");
+}
+
+/**
+ * Validate an optional ACN. Spec §1 lists ACN as optional with 9-digit
+ * format validation only — no checksum required.
+ */
+export function validateOptionalAcn(value: string): string | null {
+  const digits = normalizeAcn(value);
+  if (!digits) return null;
+  if (digits.length !== 9) return "ACN must be 9 digits.";
+  return null;
+}

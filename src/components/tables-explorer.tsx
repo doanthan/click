@@ -211,11 +211,9 @@ function TableData({ table }: { table: string }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const controller = new AbortController();
+    let cancelled = false;
 
-    fetch(`/api/tables/${encodeURIComponent(table)}/rows?page=${page}&pageSize=${pageSize}`, {
-      signal: controller.signal,
-    })
+    fetch(`/api/tables/${encodeURIComponent(table)}/rows?page=${page}&pageSize=${pageSize}`)
       .then(async (response) => {
         const json = await response.json();
         if (!response.ok || !json.ok) {
@@ -224,17 +222,20 @@ function TableData({ table }: { table: string }) {
         return json as RowsResponse;
       })
       .then((json) => {
+        if (cancelled) return;
         setData(json);
         setError(null);
         setLoading(false);
       })
       .catch((err: unknown) => {
-        if (err instanceof Error && err.name === "AbortError") return;
+        if (cancelled) return;
         setError(err instanceof Error ? err.message : "Failed to load rows.");
         setLoading(false);
       });
 
-    return () => controller.abort();
+    return () => {
+      cancelled = true;
+    };
   }, [table, page, pageSize]);
 
   if (error) {

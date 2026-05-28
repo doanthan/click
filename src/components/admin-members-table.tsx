@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 import {
   suspendMemberAction,
@@ -10,16 +10,30 @@ import type { AdminMemberRow } from "@/lib/event-repository";
 
 type RoleFilter = "all" | "attendee" | "merchant" | "admin";
 
+type EventOption = { slug: string; title: string };
+
+const PAGE_SIZES = [10, 20, 50, 100] as const;
+const DEFAULT_PAGE_SIZE = 20;
+
 const dateFormatter = new Intl.DateTimeFormat("en-AU", {
   day: "numeric",
   month: "short",
   year: "numeric",
 });
 
+const countFormatter = new Intl.NumberFormat("en-AU");
+
 function roleTone(role: AdminMemberRow["role"]) {
   if (role === "admin") return "bg-[color:var(--ink)] text-[color:var(--champagne)]";
   if (role === "merchant") return "bg-[color:var(--rose)] text-[color:var(--surface-deep)]";
   return "bg-[color:var(--peach)] text-[color:var(--surface-deep)]";
+}
+
+function eventSummary(events: AdminMemberRow["events"]) {
+  if (events.length === 0) return null;
+  const titles = events.map((event) => event.title);
+  if (titles.length <= 2) return titles.join(" · ");
+  return `${titles.slice(0, 2).join(" · ")} · +${titles.length - 2} more`;
 }
 
 function MemberRow({ member }: { member: AdminMemberRow }) {
@@ -29,6 +43,8 @@ function MemberRow({ member }: { member: AdminMemberRow }) {
   const isSeed = !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
     member.id,
   );
+  const eventLine = eventSummary(member.events);
+  const eventTooltip = member.events.map((event) => event.title).join("\n");
 
   function suspend() {
     const form = new FormData();
@@ -69,6 +85,17 @@ function MemberRow({ member }: { member: AdminMemberRow }) {
         {member.intents.length > 0 ? (
           <p className="mt-1 text-[0.7rem] font-bold uppercase tracking-wider text-[color:var(--mauve)]/80">
             {member.intents.join(" · ")}
+          </p>
+        ) : null}
+        {eventLine ? (
+          <p
+            className="mt-1 truncate text-[0.7rem] font-bold text-[color:var(--ink)]/70"
+            title={eventTooltip}
+          >
+            <span className="uppercase tracking-wider text-[color:var(--mauve)]/80">
+              Events:
+            </span>{" "}
+            {eventLine}
           </p>
         ) : null}
         {suspended && member.suspendedReason ? (
@@ -140,22 +167,64 @@ function MemberRow({ member }: { member: AdminMemberRow }) {
   );
 }
 
-export function AdminMembersTable({ members }: { members: AdminMemberRow[] }) {
+export function AdminMembersTable({
+  members,
+  eventOptions = [],
+}: {
+  members: AdminMemberRow[];
+  eventOptions?: EventOption[];
+}) {
   const [role, setRole] = useState<RoleFilter>("all");
   const [query, setQuery] = useState("");
+  const [eventFilter, setEventFilter] = useState<string>("all");
+  const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
+  const [page, setPage] = useState<number>(1);
+
+  // Build a combined event list: every event we got from the page plus any
+  // event present on a member but missing from the server list (defensive).
+  const eventDropdownOptions = useMemo<EventOption[]>(() => {
+    const map = new Map<string, EventOption>();
+    for (const option of eventOptions) {
+      map.set(option.slug, option);
+    }
+    for (const member of members) {
+      for (const event of member.events) {
+        if (!map.has(event.slug)) {
+          map.set(event.slug, event);
+        }
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => a.title.localeCompare(b.title));
+  }, [eventOptions, members]);
 
   const filtered = useMemo(() => {
     const search = query.trim().toLowerCase();
     return members.filter((member) => {
       if (role !== "all" && member.role !== role) return false;
+      if (eventFilter !== "all" && !member.events.some((event) => event.slug === eventFilter)) {
+        return false;
+      }
       if (!search) return true;
       return (
         member.displayName.toLowerCase().includes(search) ||
         member.email.toLowerCase().includes(search) ||
-        (member.suburb ?? "").toLowerCase().includes(search)
+        (member.suburb ?? "").toLowerCase().includes(search) ||
+        member.events.some((event) => event.title.toLowerCase().includes(search))
       );
     });
-  }, [members, role, query]);
+  }, [members, role, query, eventFilter]);
+
+  // Reset to page 1 whenever the filter result set changes shape.
+  useEffect(() => {
+    setPage(1);
+  }, [role, query, eventFilter, pageSize]);
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const startIndex = (currentPage - 1) * pageSize;
+  const endIndex = Math.min(startIndex + pageSize, filtered.length);
+  const visible = filtered.slice(startIndex, endIndex);
+  const startRow = filtered.length === 0 ? 0 : startIndex + 1;
 
   const roles: { value: RoleFilter; label: string; count: number }[] = [
     { value: "all", label: "All", count: members.length },
@@ -183,13 +252,31 @@ export function AdminMembersTable({ members }: { members: AdminMemberRow[] }) {
             </button>
           ))}
         </div>
-        <input
-          type="search"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search name, email, suburb…"
-          className="w-full rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-2 text-sm font-medium text-[color:var(--ink)] placeholder:text-[color:var(--mauve)]/70 sm:w-72"
-        />
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <label className="sr-only" htmlFor="admin-members-event-filter">
+            Filter by event
+          </label>
+          <select
+            id="admin-members-event-filter"
+            value={eventFilter}
+            onChange={(event) => setEventFilter(event.target.value)}
+            className="w-full rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-2 text-sm font-bold text-[color:var(--ink)] sm:w-64"
+          >
+            <option value="all">All events</option>
+            {eventDropdownOptions.map((option) => (
+              <option key={option.slug} value={option.slug}>
+                {option.title}
+              </option>
+            ))}
+          </select>
+          <input
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search name, email, suburb, event…"
+            className="w-full rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-2 text-sm font-medium text-[color:var(--ink)] placeholder:text-[color:var(--mauve)]/70 sm:w-72"
+          />
+        </div>
       </div>
 
       <div className="mt-6 overflow-hidden rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow-sm">
@@ -202,15 +289,56 @@ export function AdminMembersTable({ members }: { members: AdminMemberRow[] }) {
           <span>Joined</span>
           <span>Moderation</span>
         </div>
-        {filtered.length === 0 ? (
+        {visible.length === 0 ? (
           <p className="px-5 py-8 text-center text-sm font-bold text-[color:var(--mauve)]">
             No members match this filter.
           </p>
         ) : (
-          filtered.map((member) => (
-            <MemberRow key={member.id} member={member} />
-          ))
+          visible.map((member) => <MemberRow key={member.id} member={member} />)
         )}
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <p className="font-mono text-[0.7rem] font-bold uppercase tracking-wider text-[color:var(--mauve)]">
+          {filtered.length === 0
+            ? "0 members"
+            : `${countFormatter.format(startRow)}–${countFormatter.format(endIndex)} of ${countFormatter.format(filtered.length)}`}
+        </p>
+        <div className="flex items-center gap-2">
+          <label className="font-mono text-[0.7rem] font-bold uppercase tracking-wider text-[color:var(--mauve)]">
+            <span className="sr-only">Rows per page</span>
+            <select
+              value={pageSize}
+              onChange={(event) => setPageSize(Number(event.target.value))}
+              className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-1 font-mono text-[0.7rem] font-bold text-[color:var(--ink)]"
+            >
+              {PAGE_SIZES.map((size) => (
+                <option key={size} value={size}>
+                  {size} / page
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            disabled={currentPage <= 1}
+            onClick={() => setPage((current) => Math.max(1, current - 1))}
+            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-1 font-mono text-[0.7rem] font-bold uppercase tracking-wider text-[color:var(--ink)] transition-colors hover:bg-[color:var(--champagne)] disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Prev
+          </button>
+          <span className="font-mono text-[0.7rem] font-bold uppercase tracking-wider text-[color:var(--ink)]">
+            {currentPage} / {pageCount}
+          </span>
+          <button
+            type="button"
+            disabled={currentPage >= pageCount}
+            onClick={() => setPage((current) => Math.min(pageCount, current + 1))}
+            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-1 font-mono text-[0.7rem] font-bold uppercase tracking-wider text-[color:var(--ink)] transition-colors hover:bg-[color:var(--champagne)] disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Next
+          </button>
+        </div>
       </div>
     </div>
   );
