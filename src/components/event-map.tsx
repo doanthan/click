@@ -1,17 +1,23 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import {
-  AdvancedMarker,
-  APIProvider,
-  InfoWindow,
-  Map,
-  Pin,
-} from "@vis.gl/react-google-maps";
+import "mapbox-gl/dist/mapbox-gl.css";
+import { useEffect, useMemo, useRef, useState } from "react";
+import Map, {
+  Layer,
+  Marker,
+  NavigationControl,
+  Popup,
+  Source,
+  type LayerProps,
+  type MapRef,
+} from "react-map-gl/mapbox";
+import type { FeatureCollection } from "geojson";
 import type { EventItem } from "@/lib/click-data";
+import type { LatLng } from "@/lib/geo";
 
+const TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+const STYLE = "mapbox://styles/mapbox/streets-v12";
 const SYDNEY = { lat: -33.8688, lng: 151.2093 };
-const MAP_ID = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID || "DEMO_MAP_ID";
 
 function averageCenter(events: EventItem[]) {
   const located = events.filter((event) => event.lat && event.lng);
@@ -23,23 +29,107 @@ function averageCenter(events: EventItem[]) {
   return { lat: sum.lat / located.length, lng: sum.lng / located.length };
 }
 
+// Approximate a true-km circle as a polygon. A circle paint-layer uses pixel
+// units, which would shrink/grow with zoom — a polygon keeps the radius honest
+// at every scale.
+function circlePolygon(
+  center: LatLng,
+  radiusKm: number,
+  steps = 96,
+): FeatureCollection {
+  const earthR = 6371;
+  const coords: [number, number][] = [];
+  const latRad = (center.lat * Math.PI) / 180;
+  for (let i = 0; i <= steps; i++) {
+    const a = (i * 360) / steps;
+    const theta = (a * Math.PI) / 180;
+    const dLat = ((radiusKm / earthR) * Math.cos(theta) * 180) / Math.PI;
+    const dLng =
+      ((radiusKm / earthR) * Math.sin(theta) * 180) /
+      Math.PI /
+      Math.cos(latRad);
+    coords.push([center.lng + dLng, center.lat + dLat]);
+  }
+  return {
+    type: "FeatureCollection",
+    features: [
+      {
+        type: "Feature",
+        properties: {},
+        geometry: { type: "Polygon", coordinates: [coords] },
+      },
+    ],
+  };
+}
+
+const radiusFill: LayerProps = {
+  id: "radius-fill",
+  type: "fill",
+  paint: {
+    "fill-color": "#FF6978",
+    "fill-opacity": 0.12,
+  },
+};
+
+const radiusOutline: LayerProps = {
+  id: "radius-outline",
+  type: "line",
+  paint: {
+    "line-color": "#340068",
+    "line-width": 2,
+    "line-opacity": 0.7,
+  },
+};
+
 export function EventMap({
   events,
   selectedSuburb,
   searchQuery,
   mapsUrl,
+  userCoords = null,
+  radiusKm = null,
 }: {
   events: EventItem[];
   selectedSuburb: string;
   searchQuery: string;
   mapsUrl: string;
+  userCoords?: LatLng | null;
+  radiusKm?: number | null;
 }) {
-  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+  const mapRef = useRef<MapRef | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
 
-  // Re-center whenever the set of events changes (suburb/search/filters).
-  const center = useMemo(() => averageCenter(events), [events]);
-  const centerKey = `${center.lat.toFixed(3)},${center.lng.toFixed(3)}`;
+  const eventsCenter = useMemo(() => averageCenter(events), [events]);
+  const center = userCoords ?? eventsCenter;
+
+  const radiusGeoJSON = useMemo(
+    () => (userCoords && radiusKm ? circlePolygon(userCoords, radiusKm) : null),
+    [userCoords, radiusKm],
+  );
+
+  // Fit the map to the radius circle when the user shares location or moves
+  // the slider. If there's no radius, just recenter.
+  useEffect(() => {
+    const map = mapRef.current?.getMap();
+    if (!map) return;
+    if (userCoords && radiusKm) {
+      // Same math as circlePolygon but only the four cardinal points.
+      const earthR = 6371;
+      const dLat = ((radiusKm / earthR) * 180) / Math.PI;
+      const dLng = dLat / Math.cos((userCoords.lat * Math.PI) / 180);
+      map.fitBounds(
+        [
+          [userCoords.lng - dLng, userCoords.lat - dLat],
+          [userCoords.lng + dLng, userCoords.lat + dLat],
+        ],
+        { padding: 32, duration: 600 },
+      );
+    } else if (userCoords) {
+      map.flyTo({ center: [userCoords.lng, userCoords.lat], duration: 600 });
+    }
+  }, [userCoords, radiusKm]);
+
+  const activeEvent = activeId ? events.find((e) => e.id === activeId) ?? null : null;
 
   return (
     <div className="mt-5 overflow-hidden rounded-lg border border-[color:var(--line)] bg-[color:var(--champagne)] shadow-sm">
@@ -53,62 +143,88 @@ export function EventMap({
       </div>
 
       <div className="relative h-72">
-        {apiKey ? (
-          <APIProvider apiKey={apiKey}>
+        {TOKEN ? (
+          <>
             <Map
-              key={centerKey}
-              defaultCenter={center}
-              defaultZoom={12}
-              mapId={MAP_ID}
-              gestureHandling="greedy"
-              disableDefaultUI={false}
-              className="h-full w-full"
+              ref={mapRef}
+              mapboxAccessToken={TOKEN}
+              mapStyle={STYLE}
+              initialViewState={{
+                longitude: center.lng,
+                latitude: center.lat,
+                zoom: 12,
+              }}
+              style={{ width: "100%", height: "100%" }}
+              attributionControl={false}
             >
-              {events.map((event, index) => (
-                <AdvancedMarker
-                  key={event.id}
-                  position={{ lat: event.lat, lng: event.lng }}
-                  onClick={() => setActiveId(event.id)}
-                >
-                  <Pin
-                    background="#FF6978"
-                    glyphColor="#FFF8EE"
-                    borderColor="#340068"
+              <NavigationControl position="top-right" showCompass={false} />
+
+              {radiusGeoJSON ? (
+                <Source id="radius" type="geojson" data={radiusGeoJSON}>
+                  <Layer {...radiusFill} />
+                  <Layer {...radiusOutline} />
+                </Source>
+              ) : null}
+
+              {userCoords ? (
+                <Marker longitude={userCoords.lng} latitude={userCoords.lat} anchor="bottom">
+                  <div
+                    title="Your location"
+                    className="flex h-7 items-center rounded-full border-2 border-[color:var(--champagne)] bg-[color:var(--ink)] px-2 text-[0.6rem] font-black uppercase tracking-wider text-[color:var(--peach)] shadow"
                   >
-                    <span className="text-[11px] font-black">{index + 1}</span>
-                  </Pin>
-                </AdvancedMarker>
+                    YOU
+                  </div>
+                </Marker>
+              ) : null}
+
+              {events.map((event, index) => (
+                <Marker
+                  key={event.id}
+                  longitude={event.lng}
+                  latitude={event.lat}
+                  anchor="bottom"
+                  onClick={(e) => {
+                    e.originalEvent.stopPropagation();
+                    setActiveId(event.id);
+                  }}
+                >
+                  <button
+                    type="button"
+                    aria-label={`${event.title} marker`}
+                    className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-[color:var(--ink)] bg-[color:var(--rose)] text-[0.7rem] font-black text-[color:var(--surface-deep)] shadow hover:scale-110"
+                  >
+                    {index + 1}
+                  </button>
+                </Marker>
               ))}
 
-              {activeId
-                ? (() => {
-                    const event = events.find((item) => item.id === activeId);
-                    if (!event) return null;
-                    return (
-                      <InfoWindow
-                        position={{ lat: event.lat, lng: event.lng }}
-                        onCloseClick={() => setActiveId(null)}
-                        pixelOffset={[0, -36]}
-                      >
-                        <div className="max-w-[200px] text-[color:var(--ink)]">
-                          <p className="text-sm font-black leading-tight">
-                            {event.title}
-                          </p>
-                          <p className="mt-1 text-xs">{event.location}</p>
-                          <p className="mt-0.5 text-xs text-[color:var(--mauve)]">
-                            {event.date} · {event.time}
-                          </p>
-                          <a
-                            href={`/events/${event.id}`}
-                            className="mt-2 inline-block text-xs font-black text-[#1A73E8]"
-                          >
-                            View event →
-                          </a>
-                        </div>
-                      </InfoWindow>
-                    );
-                  })()
-                : null}
+              {activeEvent ? (
+                <Popup
+                  longitude={activeEvent.lng}
+                  latitude={activeEvent.lat}
+                  anchor="bottom"
+                  offset={32}
+                  closeButton={true}
+                  closeOnClick={false}
+                  onClose={() => setActiveId(null)}
+                >
+                  <div className="max-w-[220px] text-[color:var(--ink)]">
+                    <p className="text-sm font-black leading-tight">
+                      {activeEvent.title}
+                    </p>
+                    <p className="mt-1 text-xs">{activeEvent.location}</p>
+                    <p className="mt-0.5 text-xs text-[color:var(--mauve)]">
+                      {activeEvent.date} · {activeEvent.time}
+                    </p>
+                    <a
+                      href={`/events/${activeEvent.id}`}
+                      className="mt-2 inline-block text-xs font-black text-[#1A73E8]"
+                    >
+                      View event →
+                    </a>
+                  </div>
+                </Popup>
+              ) : null}
             </Map>
 
             <a
@@ -119,15 +235,16 @@ export function EventMap({
             >
               Open in Maps
             </a>
-          </APIProvider>
+          </>
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-2 bg-[#E8F2EA] px-6 text-center">
             <p className="text-sm font-black text-[color:var(--ink)]">
-              Add a Google Maps API key to load the map
+              Add a Mapbox public token to load the map
             </p>
             <p className="text-xs text-[color:var(--mauve)]">
-              Set <code>NEXT_PUBLIC_GOOGLE_MAPS_API_KEY</code> in your{" "}
-              <code>.env</code> file, then restart the dev server.
+              Paste your <code>pk.*</code> token as{" "}
+              <code>NEXT_PUBLIC_MAPBOX_TOKEN</code> in <code>.env.local</code> and
+              restart the dev server.
             </p>
             <a
               href={mapsUrl}

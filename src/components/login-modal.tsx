@@ -8,6 +8,11 @@ import {
   type EmailLoginFormState,
 } from "@/app/login/actions";
 import { REGISTER_PREFILL_KEY, type RegisterPrefill } from "@/components/register-form";
+import {
+  type LoginMethod,
+  readLastLoginMethod,
+  rememberLoginMethod,
+} from "@/lib/last-login";
 
 type LoginModalProps = {
   open: boolean;
@@ -40,6 +45,7 @@ export function LoginModal({
   );
   const [mode, setMode] = useState<Mode>("login");
   const [name, setName] = useState("");
+  const [lastUsed, setLastUsed] = useState<LoginMethod | null>(null);
   const firstFieldRef = useRef<HTMLInputElement>(null);
 
   const isSignup = mode === "signup";
@@ -47,6 +53,8 @@ export function LoginModal({
 
   useEffect(() => {
     if (!open) return;
+
+    setLastUsed(readLastLoginMethod());
 
     function handleKey(event: KeyboardEvent) {
       if (event.key === "Escape") onClose();
@@ -79,6 +87,13 @@ export function LoginModal({
     } catch {
       // sessionStorage can be unavailable in private mode — ignore.
     }
+  }
+
+  // Records the chosen method (for the "Last used" pill) and carries the
+  // signup name prefill forward, on every sign-in form submit.
+  function handleSubmit(method: LoginMethod) {
+    rememberLoginMethod(method);
+    stashSignupPrefill();
   }
 
   if (!open) return null;
@@ -207,7 +222,7 @@ export function LoginModal({
           ) : null}
 
           <div className="mt-6 grid gap-3">
-            <form action={signInWithGoogle} onSubmit={stashSignupPrefill}>
+            <form action={signInWithGoogle} onSubmit={() => handleSubmit("google")}>
               <input type="hidden" name="callbackUrl" value={formCallbackUrl} />
               <button
                 type="submit"
@@ -222,10 +237,13 @@ export function LoginModal({
                       : "Continue with Google"
                     : "Google · setup required"}
                 </span>
+                {!isSignup && lastUsed === "google" && googleConfigured ? (
+                  <LastUsedBadge />
+                ) : null}
               </button>
             </form>
 
-            <form action={signInWithMeta} onSubmit={stashSignupPrefill}>
+            <form action={signInWithMeta} onSubmit={() => handleSubmit("facebook")}>
               <input type="hidden" name="callbackUrl" value={formCallbackUrl} />
               <button
                 type="submit"
@@ -240,6 +258,9 @@ export function LoginModal({
                       : "Continue with Facebook"
                     : "Facebook · setup required"}
                 </span>
+                {!isSignup && lastUsed === "facebook" && metaConfigured ? (
+                  <LastUsedBadge />
+                ) : null}
               </button>
             </form>
           </div>
@@ -252,7 +273,7 @@ export function LoginModal({
             <span className="h-[2px] flex-1 bg-[color:var(--line-soft)]" />
           </div>
 
-          <form action={emailAction} onSubmit={stashSignupPrefill} className="grid gap-3">
+          <form action={emailAction} onSubmit={() => handleSubmit("email")} className="grid gap-3">
             <input type="hidden" name="callbackUrl" value={formCallbackUrl} />
 
             {isSignup ? (
@@ -310,6 +331,7 @@ export function LoginModal({
                   ? "Create account"
                   : "Continue with email"}
               <span aria-hidden>→</span>
+              {!isSignup && lastUsed === "email" ? <LastUsedBadge /> : null}
             </button>
           </form>
 
@@ -326,6 +348,14 @@ export function LoginModal({
         </div>
       </div>
     </div>
+  );
+}
+
+function LastUsedBadge() {
+  return (
+    <span className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-2 py-0.5 font-mono text-[0.6rem] font-bold uppercase leading-none tracking-[0.1em] text-[color:var(--surface-deep)]">
+      Last used
+    </span>
   );
 }
 

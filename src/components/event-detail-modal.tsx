@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import type { EventItem } from "@/lib/click-data";
 import { Pill } from "./click-ui";
 import { EventBookmarkButton } from "./event-bookmark-button";
@@ -42,6 +43,10 @@ export function EventDetailModal({
   const [open, setOpen] = useState(false);
   const [detail, setDetail] = useState<EventDetailData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  // Portals need a DOM target, so wait until we're on the client.
+  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
     if (!open) return;
@@ -106,7 +111,8 @@ export function EventDetailModal({
         Details
       </button>
 
-      {open ? (
+      {open && mounted
+        ? createPortal(
         <div
           role="dialog"
           aria-modal="true"
@@ -252,8 +258,10 @@ export function EventDetailModal({
               </div>
             </div>
           </div>
-        </div>
-      ) : null}
+        </div>,
+            document.body,
+          )
+        : null}
     </>
   );
 }

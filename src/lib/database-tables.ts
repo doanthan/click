@@ -42,6 +42,8 @@ const TABLE_NOTES: Record<string, string> = {
   conversations: "Pairwise 1-to-1 message threads.",
   messages: "Append-only messages inside a conversation.",
   system_settings: "Runtime KV flags admins can flip without a redeploy.",
+  test_cases: "Editable QA test cases people add/remove on the /test page.",
+  test_case_comments: "Comment threads attached to a test case.",
 };
 
 // Known column counts from database/*.sql, used so the fallback list still
@@ -66,6 +68,8 @@ const FALLBACK_TABLES: { name: string; columnCount: number }[] = [
   { name: "conversations", columnCount: 6 },
   { name: "messages", columnCount: 6 },
   { name: "system_settings", columnCount: 4 },
+  { name: "test_cases", columnCount: 7 },
+  { name: "test_case_comments", columnCount: 5 },
 ];
 
 function fallbackTables(): TablesResult {

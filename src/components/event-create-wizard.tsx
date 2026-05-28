@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { categories } from "@/lib/click-data";
+import { MapboxAutocomplete, type MapboxPlace } from "./mapbox-autocomplete";
 
 type WizardValues = {
   title: string;
@@ -13,6 +14,10 @@ type WizardValues = {
   capacity: string;
   locationName: string;
   suburb: string;
+  // Captured from the Mapbox address autocomplete in step 3 and serialized
+  // alongside the rest of the form on submit.
+  latitude: number | null;
+  longitude: number | null;
   price: string;
   tags: string;
   relationshipGoal: string;
@@ -37,6 +42,8 @@ const initial: WizardValues = {
   capacity: "12",
   locationName: "",
   suburb: "",
+  latitude: null,
+  longitude: null,
   price: "Free",
   tags: "",
   relationshipGoal: "",
@@ -137,6 +144,10 @@ export function EventCreateWizard() {
       form.set("capacity", values.capacity);
       form.set("locationName", values.locationName);
       form.set("suburb", values.suburb);
+      if (values.latitude !== null && values.longitude !== null) {
+        form.set("latitude", String(values.latitude));
+        form.set("longitude", String(values.longitude));
+      }
       form.set("price", values.price);
       form.set("tags", values.tags);
       form.set("relationshipGoal", values.relationshipGoal);
@@ -415,6 +426,15 @@ function Step3Location({
   values: WizardValues;
   set: <K extends keyof WizardValues>(k: K, v: WizardValues[K]) => void;
 }) {
+  function handlePick(place: MapboxPlace) {
+    set("locationName", place.name || place.address || values.locationName);
+    if (place.suburb) set("suburb", place.suburb);
+    set("latitude", place.lat);
+    set("longitude", place.lng);
+  }
+
+  const pinned = values.latitude !== null && values.longitude !== null;
+
   return (
     <div className="space-y-5">
       <header>
@@ -424,7 +444,24 @@ function Step3Location({
         <h2 className="font-display mt-2 text-3xl font-light leading-tight">
           Where in Sydney?
         </h2>
+        <p className="mt-1 text-sm font-bold text-[color:var(--mauve)]">
+          Search a venue or street address — we&apos;ll fill the fields below
+          and pin it on the map.
+        </p>
       </header>
+
+      <Field
+        label="Find venue or address"
+        hint="Powered by Mapbox. Bias is Australia; pick a suggestion to capture exact coordinates."
+      >
+        <MapboxAutocomplete
+          value={values.locationName}
+          onValueChange={(v) => set("locationName", v)}
+          onSelect={handlePick}
+          placeholder="e.g. Bar Lucia, Potts Point"
+        />
+      </Field>
+
       <div className="grid gap-4 md:grid-cols-2">
         <Field label="Venue name">
           <input
@@ -445,6 +482,16 @@ function Step3Location({
           />
         </Field>
       </div>
+
+      <p
+        className={`font-mono text-[0.7rem] uppercase tracking-[0.14em] ${
+          pinned ? "text-[color:var(--rose)]" : "text-[color:var(--mauve)]/70"
+        }`}
+      >
+        {pinned
+          ? `Pinned at ${values.latitude!.toFixed(5)}, ${values.longitude!.toFixed(5)}`
+          : "No coordinates yet — picking a suggestion will pin this on the map."}
+      </p>
     </div>
   );
 }

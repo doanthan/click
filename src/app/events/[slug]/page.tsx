@@ -1,10 +1,10 @@
-import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { auth } from "@/auth";
 import { Pill } from "@/components/click-ui";
 import { EventAttendeePreview } from "@/components/event-attendee-preview";
 import { EventBookingDialog } from "@/components/event-booking-dialog";
+import { EventMediaGallery } from "@/components/event-media-gallery";
 import { EventPaymentButton } from "@/components/event-payment-button";
 import { EventRegistrationButton } from "@/components/event-registration-button";
 import { EventBookmarkButton } from "@/components/event-bookmark-button";
@@ -101,25 +101,15 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
           </div>
         ) : null}
 
-        <article className="mt-6 overflow-hidden rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow-sm">
-          <div className="relative h-64 w-full overflow-hidden border-b-2 border-[color:var(--line)] sm:h-96">
-            <Image
-              src={event.image}
-              alt={event.imageAlt}
-              fill
-              sizes="(min-width: 1024px) 960px, 100vw"
-              className="object-cover"
-              priority
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-[color:var(--ink)]/40 via-transparent to-transparent" />
-            <span className="absolute left-4 top-4 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-3 py-1.5 text-[0.7rem] font-bold uppercase tracking-wider text-[color:var(--surface-deep)] hard-shadow-sm">
-              {event.status}
-            </span>
-            <span className="absolute right-4 top-4 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-1.5 text-[0.7rem] font-bold uppercase tracking-wider hard-shadow-sm">
-              {event.category}
-            </span>
-          </div>
+        <div className="mt-6">
+          <EventMediaGallery
+            items={event.media}
+            statusLabel={event.status}
+            categoryLabel={event.category}
+          />
+        </div>
 
+        <article className="mt-8 overflow-hidden rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow-sm">
           <div className="grid gap-8 p-6 sm:p-10 lg:grid-cols-[1fr_320px]">
             <div>
               <p className="font-mono text-xs font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">

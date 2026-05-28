@@ -15,6 +15,7 @@ Run the SQL files in this directory against your Supabase project in order:
 4. `004_messages.sql` (1-to-1 conversations + messages tables for the `/messages` route)
 5. `005_profile_extras.sql` (adds `birth_date`, `dating_visible`, `flexible_discovery` to profiles)
 6. `006_admin_extras.sql` (adds `suspended_at` / `suspended_reason` to profiles + creates `system_settings` KV)
+7. `007_test_cases.sql` (creates `test_cases` + `test_case_comments` for the editable QA board on `/test`)
 
 You can paste them into the Supabase SQL editor, or pipe them through `psql`
 using the connection string from Project Settings -> Database.

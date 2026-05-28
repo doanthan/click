@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getEventsForExplore } from "@/lib/event-repository";
 import SupabaseLogDrawer from "./SupabaseLogDrawer";
+import TestCasesBoard from "./TestCasesBoard";
 
 export const metadata = {
   title: "Test personas | Click",
@@ -45,6 +46,25 @@ export default async function TestPage() {
           ],
         },
         {
+          title: "Take the Click Life quiz",
+          description:
+            "Optional but feeds the matching algorithm — life tags, persona, and dating prefs.",
+          steps: [
+            { href: "/quiz", label: "Quiz" },
+            { href: "/quiz/life", label: "Life" },
+            { href: "/quiz/personality", label: "Personality" },
+          ],
+        },
+        {
+          title: "Edit profile & settings",
+          description:
+            "Update name, photo, tags, intent — then tune notification and privacy settings.",
+          steps: [
+            { href: "/profile/edit", label: "Edit profile" },
+            { href: "/account-settings", label: "Settings" },
+          ],
+        },
+        {
           title: "View events",
           description:
             "Browse the live events grid, then open one for the full detail page.",
@@ -64,6 +84,24 @@ export default async function TestPage() {
           ],
         },
         {
+          title: "Cancel an RSVP",
+          description:
+            "Open a confirmed booking and cancel — capacity returns and the waitlist gets offered.",
+          steps: [
+            { href: "/confirmed-events", label: "Confirmed" },
+            { href: `/events/${sampleSlug}`, label: "Cancel RSVP" },
+          ],
+        },
+        {
+          title: "Join a waitlist",
+          description:
+            "When an event is full, join its waitlist — spot offers expire after 15 min.",
+          steps: [
+            { href: `/events/${sampleSlug}`, label: "Join waitlist" },
+            { href: "/dashboard", label: "Waitlist tab" },
+          ],
+        },
+        {
           title: "Save events",
           description:
             "Tap Save on an event to bookmark it, then find it in your saved list.",
@@ -73,18 +111,18 @@ export default async function TestPage() {
           ],
         },
         {
-          title: "Click with another user",
+          title: "Click with someone",
           description:
-            "See suggested people, Click privately, and watch for a mutual match.",
+            "See suggested people, Click privately, watch for a mutual match — both sides get a shared event suggestion (no chat by design).",
           steps: [{ href: "/people", label: "People" }],
         },
         {
-          title: "Messages",
+          title: "Notifications",
           description:
-            "A mutual Click opens a conversation — chat with your match.",
+            "Mutual Clicks, waitlist offers, and event reminders land here and on the dashboard.",
           steps: [
-            { href: "/people", label: "Mutual Click" },
-            { href: "/messages", label: "Messages" },
+            { href: "/notifications", label: "Notifications" },
+            { href: "/dashboard", label: "Dashboard" },
           ],
         },
       ],
@@ -211,6 +249,8 @@ export default async function TestPage() {
             </section>
           ))}
         </div>
+
+        <TestCasesBoard />
 
         <p className="mt-10 text-center font-mono text-[0.6rem] uppercase tracking-[0.18em] text-[color:var(--mauve)]/40">
           ✷ doan is the best ✷

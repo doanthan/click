@@ -2,8 +2,11 @@ import type { Session } from "next-auth";
 import { mkdir, readFile, writeFile } from "fs/promises";
 import os from "os";
 import path from "path";
+import { normalizeAbn, validateOptionalAbn } from "./abn";
 import { clickEvents, type EventItem, type EventStatus } from "./click-data";
+import { buildEventMediaGallery, type MediaItem } from "./event-media";
 import { sendTransactionalEmail } from "./email";
+import { regionForEvent, type Region } from "./geo";
 import { getPostgresPool } from "./postgres";
 import { writeAuditLog } from "@/utils/admin/audit-logger";
 
@@ -86,6 +89,10 @@ export type CreateEventInput = {
   startsAt: string;
   locationName: string;
   suburb: string;
+  // Captured from the Mapbox address autocomplete in the create wizard. When
+  // null we fall back to the Sydney CBD reference point used elsewhere.
+  latitude: number | null;
+  longitude: number | null;
   price: string;
   capacity: number;
   description: string;
@@ -105,6 +112,14 @@ export type AdminEventRow = {
   attendees: number;
   capacity: number;
   startsAt: string;
+  region: Region;
+  suburb: string | null;
+  locationName: string | null;
+};
+
+export type AdminMemberEventRef = {
+  slug: string;
+  title: string;
 };
 
 export type AdminMemberRow = {
@@ -116,6 +131,7 @@ export type AdminMemberRow = {
   intents: string[];
   bookmarks: number;
   registrations: number;
+  events: AdminMemberEventRef[];
   emailVerified: boolean;
   photoVerified: boolean;
   joinedAt: string;
@@ -452,9 +468,12 @@ function eventItemFromInput(input: CreateEventInput, session: Session | null): E
     startsAt: startsAt.toISOString(),
     location: input.locationName.trim() || "Sydney NSW",
     suburb: input.suburb.trim() || "Sydney",
-    distanceKm: distanceKmFromSydney(sydneyReference.lat, sydneyReference.lng),
-    lat: sydneyReference.lat,
-    lng: sydneyReference.lng,
+    distanceKm: distanceKmFromSydney(
+      input.latitude ?? sydneyReference.lat,
+      input.longitude ?? sydneyReference.lng,
+    ),
+    lat: input.latitude ?? sydneyReference.lat,
+    lng: input.longitude ?? sydneyReference.lng,
     price: formatPrice(priceCents),
     attendees: 0,
     capacity,
@@ -516,7 +535,7 @@ async function approveLocalEventForAdmin(eventId: string, session: Session | nul
   };
 }
 
-async function getFallbackAdminEvents() {
+async function getFallbackAdminEvents(): Promise<AdminEventRow[]> {
   const events = await getFallbackEvents({ includePending: true });
 
   return events.map((event) => ({
@@ -529,6 +548,9 @@ async function getFallbackAdminEvents() {
     attendees: event.attendees,
     capacity: event.capacity,
     startsAt: event.startsAt,
+    region: regionForEvent({ lat: event.lat ?? null, lng: event.lng ?? null, suburb: event.suburb ?? null }),
+    suburb: event.suburb ?? null,
+    locationName: event.location ?? null,
   }));
 }
 
@@ -1036,6 +1058,7 @@ export type EventDetail = EventItem & {
   address: string | null;
   endsAt: string | null;
   viewerRsvpStatus: "confirmed" | "waitlisted" | "pending_payment" | "cancelled" | null;
+  media: MediaItem[];
 };
 
 export async function getEventBySlug(
@@ -1055,6 +1078,11 @@ export async function getEventBySlug(
       address: null,
       endsAt: null,
       viewerRsvpStatus: null,
+      media: buildEventMediaGallery({
+        slug,
+        primaryImage: fallback.image,
+        primaryAlt: fallback.imageAlt,
+      }),
     };
   }
 
@@ -1120,6 +1148,11 @@ export async function getEventBySlug(
         address: null,
         endsAt: null,
         viewerRsvpStatus: null,
+        media: buildEventMediaGallery({
+          slug,
+          primaryImage: fallback.image,
+          primaryAlt: fallback.imageAlt,
+        }),
       };
     }
 
@@ -1156,6 +1189,11 @@ export async function getEventBySlug(
       address: row.address,
       endsAt: row.ends_at ? row.ends_at.toISOString() : null,
       viewerRsvpStatus,
+      media: buildEventMediaGallery({
+        slug,
+        primaryImage: base.image,
+        primaryAlt: base.imageAlt,
+      }),
     };
   } catch (error) {
     if (isDatabaseConnectivityError(error)) {
@@ -1169,6 +1207,11 @@ export async function getEventBySlug(
         address: null,
         endsAt: null,
         viewerRsvpStatus: null,
+        media: buildEventMediaGallery({
+          slug,
+          primaryImage: fallback.image,
+          primaryAlt: fallback.imageAlt,
+        }),
       };
     }
     throw error;
@@ -1204,11 +1247,14 @@ export async function registerForEvent(eventId: string, session: Session | null)
             event.capacity,
             event.status::text,
             event.price_cents,
-            count(attendee.id) filter (where attendee.status in ('confirmed', 'pending_payment')) as confirmed_attendees
+            (
+              select count(*)
+              from event_attendees attendee
+              where attendee.event_id = event.id
+                and attendee.status in ('confirmed', 'pending_payment')
+            ) as confirmed_attendees
           from events event
-          left join event_attendees attendee on attendee.event_id = event.id
           where event.slug = $1
-          group by event.id
           for update of event
         `,
         [eventId],
@@ -1357,6 +1403,8 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
           ends_at,
           location_name,
           suburb,
+          latitude,
+          longitude,
           price_cents,
           capacity,
           image_url,
@@ -1384,7 +1432,9 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
           $15,
           $16,
           $17,
-          $18
+          $18,
+          $19,
+          $20
         )
         returning slug, title
       `,
@@ -1401,6 +1451,8 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
         endsAt,
         input.locationName.trim() || "Sydney NSW",
         input.suburb.trim() || "Sydney",
+        input.latitude,
+        input.longitude,
         parsePriceCents(input.price),
         capacity,
         input.imageUrl?.trim() || imageForCategory(category),
@@ -1605,6 +1657,10 @@ export async function getAdminEvents() {
       capacity: number;
       starts_at: Date;
       confirmed_attendees: string;
+      suburb: string | null;
+      location_name: string | null;
+      latitude: string | null;
+      longitude: string | null;
     }>(`
       select
         event.slug,
@@ -1615,6 +1671,10 @@ export async function getAdminEvents() {
         event.host_name,
         event.capacity,
         event.starts_at,
+        event.suburb,
+        event.location_name,
+        event.latitude::text,
+        event.longitude::text,
         count(attendee.id) filter (where attendee.status in ('confirmed', 'pending_payment')) as confirmed_attendees
       from events event
       left join event_attendees attendee on attendee.event_id = event.id
@@ -1623,17 +1683,24 @@ export async function getAdminEvents() {
       limit 40
     `);
 
-    return result.rows.map((event): AdminEventRow => ({
-      id: event.slug,
-      title: event.title,
-      category: event.category,
-      status: eventStatusFromDb(event.status),
-      booking: bookingFromDb(event.booking_model),
-      host: event.host_name,
-      attendees: Number(event.confirmed_attendees),
-      capacity: event.capacity,
-      startsAt: event.starts_at.toISOString(),
-    }));
+    return result.rows.map((event): AdminEventRow => {
+      const lat = event.latitude ? Number(event.latitude) : null;
+      const lng = event.longitude ? Number(event.longitude) : null;
+      return {
+        id: event.slug,
+        title: event.title,
+        category: event.category,
+        status: eventStatusFromDb(event.status),
+        booking: bookingFromDb(event.booking_model),
+        host: event.host_name,
+        attendees: Number(event.confirmed_attendees),
+        capacity: event.capacity,
+        startsAt: event.starts_at.toISOString(),
+        region: regionForEvent({ lat, lng, suburb: event.suburb }),
+        suburb: event.suburb,
+        locationName: event.location_name,
+      };
+    });
   } catch (error) {
     if (process.env.CLICK_DB_DEBUG === "true") {
       console.warn("Falling back to static admin events.", error);
@@ -1728,7 +1795,7 @@ const fallbackAdminMerchants: AdminMerchantRow[] = [
     contactEmail: "zara@kindredkitchens.com",
     verificationStatus: "approved",
     websiteUrl: "https://kindredkitchens.com",
-    abn: "88 211 339 220",
+    abn: "51 824 753 556",
     ownerName: "Zara Diallo",
     ownerEmail: "zara@kindredkitchens.com",
     eventsHosted: 3,
@@ -1822,6 +1889,7 @@ export async function getAdminMembers(): Promise<AdminMemberRow[]> {
       intents: string[] | null;
       bookmarks: string;
       registrations: string;
+      events: AdminMemberEventRef[] | null;
       email_verified_at: Date | null;
       photo_verified_at: Date | null;
       created_at: Date;
@@ -1837,6 +1905,11 @@ export async function getAdminMembers(): Promise<AdminMemberRow[]> {
         profile.connection_intents::text[] as intents,
         coalesce(count(distinct bookmark.event_id), 0) as bookmarks,
         coalesce(count(distinct attendee.id) filter (where attendee.status in ('confirmed', 'waitlisted')), 0) as registrations,
+        coalesce(
+          jsonb_agg(distinct jsonb_build_object('slug', event.slug, 'title', event.title))
+            filter (where attendee.status in ('confirmed', 'waitlisted') and event.id is not null),
+          '[]'::jsonb
+        ) as events,
         profile.email_verified_at,
         profile.photo_verified_at,
         profile.created_at,
@@ -1845,9 +1918,10 @@ export async function getAdminMembers(): Promise<AdminMemberRow[]> {
       from profiles profile
       left join bookmarks bookmark on bookmark.profile_id = profile.id
       left join event_attendees attendee on attendee.profile_id = profile.id
+      left join events event on event.id = attendee.event_id
       group by profile.id
       order by profile.created_at desc
-      limit 100
+      limit 250
     `);
 
     return result.rows.map((row): AdminMemberRow => ({
@@ -2117,6 +2191,64 @@ export async function getAdminAuditLog(): Promise<AdminAuditRow[]> {
   }
 }
 
+export type AdminSidebarCounts = {
+  members: number;
+  events: number;
+  merchants: number;
+  tags: number;
+  audit: number;
+};
+
+export async function getAdminSidebarCounts(): Promise<AdminSidebarCounts> {
+  const pool = getPostgresPool();
+  if (!pool) {
+    return {
+      members: fallbackAdminMembers.length,
+      events: (await getFallbackAdminEvents()).length,
+      merchants: fallbackAdminMerchants.length,
+      tags: fallbackAdminTags().length,
+      audit: fallbackAdminAudit.length,
+    };
+  }
+
+  try {
+    const result = await pool.query<{
+      members: string;
+      events: string;
+      merchants: string;
+      tags: string;
+      audit: string;
+    }>(`
+      select
+        (select count(*) from profiles) as members,
+        (select count(*) from events) as events,
+        (select count(*) from merchant_profiles) as merchants,
+        (select count(*) from tags) as tags,
+        (select count(*) from audit_logs) as audit
+    `);
+
+    const row = result.rows[0];
+    return {
+      members: Number(row?.members ?? 0),
+      events: Number(row?.events ?? 0),
+      merchants: Number(row?.merchants ?? 0),
+      tags: Number(row?.tags ?? 0),
+      audit: Number(row?.audit ?? 0),
+    };
+  } catch (error) {
+    if (process.env.CLICK_DB_DEBUG === "true") {
+      console.warn("Falling back to static admin counts.", error);
+    }
+    return {
+      members: fallbackAdminMembers.length,
+      events: (await getFallbackAdminEvents()).length,
+      merchants: fallbackAdminMerchants.length,
+      tags: fallbackAdminTags().length,
+      audit: fallbackAdminAudit.length,
+    };
+  }
+}
+
 export async function getAdminMetrics(events: AdminEventRow[]): Promise<AdminMetrics> {
   const pool = getPostgresPool();
   const pendingCount = events.filter((event) => event.status === "Pending").length;
@@ -2380,10 +2512,11 @@ export async function saveOnboarding(input: OnboardingInput, session: Session | 
 
   const displayName = input.displayName.trim();
   const suburb = input.suburb.trim();
+  // Bio moved to an optional final onboarding step — accept empty string here.
   const bio = input.bio.trim();
 
-  if (!displayName || !suburb || !bio) {
-    const error = new Error("Name, suburb, and a short bio are required.");
+  if (!displayName || !suburb) {
+    const error = new Error("Name and suburb are required.");
     error.name = "ValidationError";
     throw error;
   }
@@ -2497,6 +2630,14 @@ export async function registerMerchantProfile(input: MerchantSignupInput, sessio
     throw error;
   }
 
+  const abnError = validateOptionalAbn(input.abn);
+  if (abnError) {
+    const error = new Error(abnError);
+    error.name = "ValidationError";
+    throw error;
+  }
+  const abn = normalizeAbn(input.abn);
+
   const profile = await ensureProfileForSession(session);
 
   const result = await pool.query<MerchantProfileRow>(
@@ -2512,7 +2653,7 @@ export async function registerMerchantProfile(input: MerchantSignupInput, sessio
         updated_at = now()
       returning id::text, business_name, contact_email::text, verification_status
     `,
-    [profile.id, businessName, contactEmail, input.websiteUrl.trim(), input.abn.trim()],
+    [profile.id, businessName, contactEmail, input.websiteUrl.trim(), abn],
   );
 
   if (profile.role === "attendee") {
@@ -3116,11 +3257,14 @@ export async function createPaymentHold(
           event.price_cents,
           event.currency,
           event.merchant_profile_id::text,
-          count(attendee.id) filter (where attendee.status in ('confirmed', 'pending_payment')) as confirmed_attendees
+          (
+            select count(*)
+            from event_attendees attendee
+            where attendee.event_id = event.id
+              and attendee.status in ('confirmed', 'pending_payment')
+          ) as confirmed_attendees
         from events event
-        left join event_attendees attendee on attendee.event_id = event.id
         where event.slug = $1
-        group by event.id
         for update of event
       `,
       [eventSlug],

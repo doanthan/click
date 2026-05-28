@@ -3,11 +3,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { categories, type EventItem } from "@/lib/click-data";
+import { haversineKm, roundKm, type LatLng } from "@/lib/geo";
 import { EventListCard } from "./event-list-card";
 import { EventMap } from "./event-map";
+import { MapboxAutocomplete } from "./mapbox-autocomplete";
 import { Pill } from "./click-ui";
 
 const PAGE_SIZE = 12;
+// Top of the radius slider. At the max we treat it as "any distance" so people
+// far from the events (or who just want everything) aren't filtered to nothing.
+const MAX_DISTANCE_KM = 50;
 
 type DateWindow = "7" | "30" | "all";
 type LocationStatus = "idle" | "requesting" | "shared" | "denied" | "unsupported";
@@ -54,6 +59,9 @@ export function EventExplorer({
   const initialPage = Math.max(1, Number.parseInt(urlParams?.get("page") ?? "1", 10) || 1);
 
   const [locationStatus, setLocationStatus] = useState<LocationStatus>("idle");
+  // The user's real coordinates once they share location. When set, every
+  // event's distance is recomputed from here instead of from Sydney CBD.
+  const [userCoords, setUserCoords] = useState<LatLng | null>(null);
   const [locationQuery, setLocationQuery] = useState("Sydney CBD");
   const [searchQuery, setSearchQuery] = useState(
     initialSearch || (initialTag ? `#${initialTag}` : ""),
@@ -77,11 +85,21 @@ export function EventExplorer({
     [events],
   );
 
+  // Recompute each event's distance from the user's shared location. Without a
+  // location we keep the server's distance-from-CBD value.
+  const locatedEvents = useMemo(() => {
+    if (!userCoords) return events;
+    return events.map((event) => ({
+      ...event,
+      distanceKm: roundKm(haversineKm(userCoords, { lat: event.lat, lng: event.lng })),
+    }));
+  }, [events, userCoords]);
+
   const filteredEvents = useMemo(() => {
     const normalizedSearch = searchQuery.trim().toLowerCase();
     const normalizedTag = tagFilter.trim().toLowerCase();
 
-    return events
+    return locatedEvents
       .filter((event) => {
         const eventDays = daysUntil(event.startsAt, todayTime);
         const matchesDate =
@@ -92,7 +110,8 @@ export function EventExplorer({
           selectedCategory === "All" || event.category === selectedCategory;
         const matchesSuburb =
           selectedSuburb === "All Sydney" || event.suburb === selectedSuburb;
-        const matchesDistance = event.distanceKm <= distanceKm;
+        const matchesDistance =
+          distanceKm >= MAX_DISTANCE_KM || event.distanceKm <= distanceKm;
         const matchesTag =
           !normalizedTag ||
           event.tags.some((t) => t.toLowerCase() === normalizedTag);
@@ -138,7 +157,7 @@ export function EventExplorer({
   }, [
     dateWindow,
     distanceKm,
-    events,
+    locatedEvents,
     searchQuery,
     selectedCategory,
     selectedSuburb,
@@ -164,7 +183,7 @@ export function EventExplorer({
 
   // Reset to page 1 whenever filters change. React docs pattern: track the
   // previous filter snapshot in state and adjust during render.
-  const filterFingerprint = `${selectedCategory}|${searchQuery}|${tagFilter}|${selectedSuburb}|${dateWindow}|${distanceKm}|${sortMode}`;
+  const filterFingerprint = `${selectedCategory}|${searchQuery}|${tagFilter}|${selectedSuburb}|${dateWindow}|${distanceKm}|${sortMode}|${userCoords ? `${userCoords.lat},${userCoords.lng}` : ""}`;
   const [prevFingerprint, setPrevFingerprint] = useState(filterFingerprint);
   if (prevFingerprint !== filterFingerprint) {
     setPrevFingerprint(filterFingerprint);
@@ -190,16 +209,28 @@ export function EventExplorer({
 
     setLocationStatus("requesting");
     navigator.geolocation.getCurrentPosition(
-      () => {
+      (position) => {
+        setUserCoords({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        });
         setLocationStatus("shared");
         setLocationQuery("Your current location");
         setSelectedSuburb("All Sydney");
+        // Surface the nearest events first now that "near" means near you.
+        setSortMode("nearest");
       },
       () => {
         setLocationStatus("denied");
       },
       { enableHighAccuracy: true, timeout: 8000, maximumAge: 60_000 },
     );
+  }
+
+  function clearLocation() {
+    setUserCoords(null);
+    setLocationStatus("idle");
+    setLocationQuery("Sydney CBD");
   }
 
   function resetFilters() {
@@ -214,8 +245,8 @@ export function EventExplorer({
   }
 
   return (
-    <div className="mt-10 grid gap-8 lg:grid-cols-[0.86fr_1.14fr]">
-      <aside className="h-fit rounded-lg border border-[color:var(--line)] bg-[color:var(--champagne)] p-5 shadow-sm lg:sticky lg:top-28">
+    <div className="grid gap-8 lg:grid-cols-[0.82fr_1.18fr]">
+      <aside className="h-fit rounded-lg border border-[color:var(--line)] bg-[color:var(--champagne)] p-5 shadow-sm lg:sticky lg:top-24 lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between lg:flex-col">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.16em] text-[color:var(--rose)]">
@@ -241,13 +272,24 @@ export function EventExplorer({
         <div className="mt-5 rounded-lg border border-[color:var(--line)] bg-[color:var(--champagne)] p-4">
           <p className="text-sm font-black">
             {locationStatus === "shared"
-              ? "Location shared. Showing events around you."
+              ? distanceKm >= MAX_DISTANCE_KM
+                ? "Distances measured from your location."
+                : `Showing events within ${distanceKm} km of your location.`
               : locationStatus === "denied"
-                ? "Location was not shared. Using Sydney CBD sample."
+                ? "Location was not shared. Distances are measured from Sydney CBD."
                 : locationStatus === "unsupported"
-                  ? "Browser location is unavailable. Using Sydney CBD sample."
-                  : "Share location to unlock around-me ranking."}
+                  ? "Browser location is unavailable. Distances are measured from Sydney CBD."
+                  : "Share location to measure distance from where you are."}
           </p>
+          {userCoords ? (
+            <button
+              type="button"
+              onClick={clearLocation}
+              className="mt-3 rounded-full border border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-2 text-xs font-black text-[color:var(--ink)]"
+            >
+              Use Sydney CBD instead
+            </button>
+          ) : null}
         </div>
 
         <div className="mt-5 grid gap-4">
@@ -311,10 +353,19 @@ export function EventExplorer({
 
           <label className="grid gap-2 text-sm font-black">
             Search location
-            <input
+            <MapboxAutocomplete
               value={locationQuery}
-              onChange={(event) => setLocationQuery(event.target.value)}
-              className="rounded-lg border border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 font-bold outline-none focus:border-[color:var(--rose)]"
+              onValueChange={setLocationQuery}
+              onSelect={(place) => {
+                // Picking a place is equivalent to sharing location — we centre
+                // the radius on the chosen address, switch to nearest-first, and
+                // mirror the GPS-shared UX everywhere else.
+                setUserCoords({ lat: place.lat, lng: place.lng });
+                setLocationStatus("shared");
+                setLocationQuery(place.suburb || place.name || place.address);
+                setSelectedSuburb("All Sydney");
+                setSortMode("nearest");
+              }}
               placeholder="Bondi, Parramatta, Sydney CBD"
             />
           </label>
@@ -375,11 +426,19 @@ export function EventExplorer({
           </div>
 
           <label className="grid gap-2 text-sm font-black">
-            Distance: {distanceKm} km
+            <span className="flex items-center justify-between">
+              <span>Distance</span>
+              <span className="text-[color:var(--rose)]">
+                {distanceKm >= MAX_DISTANCE_KM ? "Any distance" : `${distanceKm} km`}
+                <span className="ml-1 font-bold text-[color:var(--mauve)]">
+                  {userCoords ? "from you" : "from Sydney CBD"}
+                </span>
+              </span>
+            </span>
             <input
               type="range"
               min="2"
-              max="25"
+              max={MAX_DISTANCE_KM}
               step="1"
               value={distanceKm}
               onChange={(event) => setDistanceKm(Number(event.target.value))}
@@ -407,6 +466,8 @@ export function EventExplorer({
           selectedSuburb={selectedSuburb}
           searchQuery={searchQuery}
           mapsUrl={mapsUrl}
+          userCoords={userCoords}
+          radiusKm={distanceKm >= MAX_DISTANCE_KM ? null : distanceKm}
         />
       </aside>
 
@@ -432,7 +493,9 @@ export function EventExplorer({
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Pill tone="aqua">{distanceKm} km radius</Pill>
+            <Pill tone="aqua">
+              {distanceKm >= MAX_DISTANCE_KM ? "Any distance" : `${distanceKm} km radius`}
+            </Pill>
             <Pill>{selectedSuburb}</Pill>
             <Pill tone="pink">{selectedCategory}</Pill>
           </div>
@@ -496,7 +559,7 @@ export function EventExplorer({
 
         {filteredEvents.length > 0 ? (
           <>
-            <div className="mt-8 grid gap-4 xl:grid-cols-2">
+            <div className="mt-8 grid gap-4 grid-cols-1">
               {pagedEvents.map((event) => (
                 <EventListCard
                   key={event.id}

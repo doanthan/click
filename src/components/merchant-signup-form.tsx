@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { formatAbn, validateOptionalAbn } from "@/lib/abn";
 
 type SubmitState = "idle" | "submitting" | "error";
 
@@ -43,6 +44,7 @@ export function MerchantSignupForm({
   const [contactEmail, setContactEmail] = useState(defaultContactEmail);
   const [websiteUrl, setWebsiteUrl] = useState(defaultWebsiteUrl);
   const [abn, setAbn] = useState("");
+  const [abnError, setAbnError] = useState("");
   const [state, setState] = useState<SubmitState>("idle");
   const [message, setMessage] = useState("");
 
@@ -54,6 +56,13 @@ export function MerchantSignupForm({
     if (normalizedWebsite.error) {
       setState("error");
       setMessage(normalizedWebsite.error);
+      return;
+    }
+
+    const abnValidationError = validateOptionalAbn(abn);
+    if (abnValidationError) {
+      setState("error");
+      setMessage(abnValidationError);
       return;
     }
 
@@ -136,10 +145,22 @@ export function MerchantSignupForm({
         ABN (optional)
         <input
           value={abn}
-          onChange={(event) => setAbn(event.target.value)}
+          inputMode="numeric"
+          onChange={(event) => {
+            setAbn(event.target.value);
+            if (abnError) setAbnError("");
+          }}
+          onBlur={() => {
+            setAbnError(validateOptionalAbn(abn) ?? "");
+            setAbn((current) => formatAbn(current));
+          }}
+          aria-invalid={abnError ? true : undefined}
           className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-3 font-semibold outline-none focus:border-[color:var(--rose)]"
           placeholder="11 222 333 444"
         />
+        {abnError ? (
+          <span className="text-xs font-semibold text-[color:var(--surface-deep)]">{abnError}</span>
+        ) : null}
       </label>
 
       {message ? (
