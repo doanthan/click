@@ -886,6 +886,151 @@ export async function getEventsForExplore() {
   }
 }
 
+export type EventCategory = {
+  name: string;
+  slug: string;
+  description: string | null;
+  eventCount: number;
+  tagCount: number;
+  tags: string[];
+};
+
+// Canonical category metadata mirrors database/002_seed.sql so the Categories
+// page still renders meaningfully when Postgres is unavailable (static mode).
+const staticCategoryMeta: Array<{
+  name: string;
+  slug: string;
+  description: string;
+  tags: string[];
+}> = [
+  {
+    name: "Social",
+    slug: "social",
+    description: "Friendship, low-pressure gatherings, and local community",
+    tags: ["Friends", "New to Town", "Low Pressure", "Games", "Books", "Quiet"],
+  },
+  {
+    name: "Fitness",
+    slug: "fitness",
+    description: "Training, movement, and accountability",
+    tags: ["CrossFit", "Fitness", "Accountability", "Running", "Yoga", "Swimming", "Outdoors", "Morning", "Wellness"],
+  },
+  {
+    name: "Relationships",
+    slug: "relationships",
+    description: "Dating and relationship-minded social events",
+    tags: ["Dating", "Relationships"],
+  },
+  {
+    name: "Food",
+    slug: "food",
+    description: "Restaurants, shared plates, dinners, and low-pressure table plans",
+    tags: ["Restaurant", "Dinner", "Food", "Dumplings"],
+  },
+  {
+    name: "Creative",
+    slug: "creative",
+    description: "Making, writing, art, music, and culture",
+    tags: ["Creative", "Brunch", "Live Music", "Pottery", "Photography"],
+  },
+  {
+    name: "Career",
+    slug: "career",
+    description: "Career change, networking, and professional support",
+    tags: ["Career Change", "Confidence", "Founders", "Women"],
+  },
+  {
+    name: "Community",
+    slug: "community",
+    description: "Volunteering, neighbourhood rituals, and local action",
+    tags: ["Pets", "Community", "Volunteering"],
+  },
+  {
+    name: "Music",
+    slug: "music",
+    description: "Music taste used as a subtle matching signal",
+    tags: ["Jazz", "Indie"],
+  },
+  {
+    name: "Life",
+    slug: "life",
+    description: "Life Quiz generated tags",
+    tags: ["Ambivert", "Weekend"],
+  },
+];
+
+function fallbackEventCategories(): EventCategory[] {
+  const counts = new Map<string, number>();
+  for (const event of clickEvents) {
+    if (event.status === "Pending" || event.status === "Cancelled") continue;
+    counts.set(event.category, (counts.get(event.category) ?? 0) + 1);
+  }
+
+  return staticCategoryMeta
+    .map((meta) => ({
+      name: meta.name,
+      slug: meta.slug,
+      description: meta.description,
+      eventCount: counts.get(meta.name) ?? 0,
+      tagCount: meta.tags.length,
+      tags: meta.tags,
+    }))
+    .sort((a, b) => b.eventCount - a.eventCount || a.name.localeCompare(b.name));
+}
+
+export async function getEventCategories(): Promise<EventCategory[]> {
+  const pool = getPostgresPool();
+
+  if (!pool) return fallbackEventCategories();
+
+  try {
+    const result = await pool.query<{
+      name: string;
+      slug: string;
+      description: string | null;
+      tags: string[] | null;
+      tag_count: string;
+      event_count: string;
+    }>(`
+      select
+        category.name,
+        category.slug,
+        category.description,
+        coalesce(
+          array_agg(distinct tag.label) filter (where tag.label is not null),
+          '{}'
+        ) as tags,
+        count(distinct tag.id) as tag_count,
+        coalesce(event_counts.event_count, 0) as event_count
+      from tag_categories category
+      left join tags tag on tag.category_id = category.id
+      left join (
+        select category, count(*)::int as event_count
+        from events
+        where status in ('live', 'featured', 'locked', 'waitlist')
+        group by category
+      ) event_counts on event_counts.category = category.name
+      group by category.id, event_counts.event_count
+      order by event_count desc, category.name asc
+    `);
+
+    return result.rows.map((row): EventCategory => ({
+      name: row.name,
+      slug: row.slug,
+      description: row.description,
+      eventCount: Number(row.event_count),
+      tagCount: Number(row.tag_count),
+      tags: (row.tags ?? []).slice().sort((a, b) => a.localeCompare(b)),
+    }));
+  } catch (error) {
+    if (process.env.CLICK_DB_DEBUG === "true") {
+      console.warn("Falling back to static event categories.", error);
+    }
+
+    return fallbackEventCategories();
+  }
+}
+
 export type EventDetail = EventItem & {
   priceCents: number;
   address: string | null;

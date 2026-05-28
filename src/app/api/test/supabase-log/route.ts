@@ -10,6 +10,9 @@ type LogEntry = {
   label: string;
   detail: string;
   entityId: string | null;
+  // Raw column values that were written for this row, shown verbatim in the
+  // tracker so you can see exactly what data landed.
+  data: Record<string, unknown>;
 };
 
 const PER_TABLE_LIMIT = 25;
@@ -17,7 +20,7 @@ const PER_TABLE_LIMIT = 25;
 type QuerySpec = {
   table: string;
   sql: string;
-  toEntry: (row: Record<string, unknown>) => LogEntry;
+  toEntry: (row: Record<string, unknown>) => Omit<LogEntry, "data">;
 };
 
 const queries: QuerySpec[] = [
@@ -228,7 +231,7 @@ export async function GET() {
       try {
         const result = await pool.query(spec.sql);
         for (const row of result.rows) {
-          entries.push(spec.toEntry(row));
+          entries.push({ ...spec.toEntry(row), data: row });
         }
       } catch (error) {
         const message =

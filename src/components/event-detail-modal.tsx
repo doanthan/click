@@ -116,9 +116,9 @@ export function EventDetailModal({
             if (e.target === e.currentTarget) setOpen(false);
           }}
         >
-          <div className="absolute inset-0 bg-[color:var(--surface-deep)]/60 backdrop-blur-sm" />
-          <div className="relative my-auto w-full max-w-2xl overflow-hidden rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow">
-            <div className="relative h-48 w-full overflow-hidden border-b-2 border-[color:var(--line)] sm:h-60">
+          <div className="absolute inset-0 bg-black/50" />
+          <div className="relative my-auto flex max-h-[calc(100dvh-2rem)] w-full max-w-3xl flex-col overflow-hidden rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow">
+            <div className="relative h-52 w-full shrink-0 overflow-hidden border-b-2 border-[color:var(--line)] sm:h-72">
               <Image
                 src={data.image}
                 alt={data.imageAlt}
@@ -140,7 +140,7 @@ export function EventDetailModal({
               </button>
             </div>
 
-            <div className="max-h-[60vh] overflow-y-auto p-6 sm:p-8">
+            <div className="flex-1 overflow-y-auto p-6 sm:p-8">
               <p className="font-mono text-xs font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
                 {data.date} · {data.time} · {data.category}
                 {loading ? " · refreshing…" : ""}
@@ -171,7 +171,9 @@ export function EventDetailModal({
               {data.tags.length > 0 ? (
                 <div className="mt-4 flex flex-wrap gap-1.5">
                   {data.tags.map((tag) => (
-                    <Pill key={tag}>#{tag}</Pill>
+                    <Pill key={tag} href={`/events?tag=${encodeURIComponent(tag)}`}>
+                      #{tag}
+                    </Pill>
                   ))}
                 </div>
               ) : null}

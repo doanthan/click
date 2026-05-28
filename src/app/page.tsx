@@ -162,18 +162,18 @@ export default async function Home() {
             Browse →
           </span>
           {[
-            { label: "Make friends", tone: "peach" },
-            { label: "Dating", tone: "rose" },
-            { label: "Sports + Fitness", tone: "cream" },
-            { label: "Food + Drink", tone: "peach" },
-            { label: "Creative people", tone: "ink" },
-            { label: "Career support", tone: "cream" },
-            { label: "This weekend", tone: "rose" },
-            { label: "Free events", tone: "peach" },
+            { label: "Make friends", tone: "peach", href: "/events?category=Social" },
+            { label: "Dating", tone: "rose", href: "/events?category=Relationships" },
+            { label: "Sports + Fitness", tone: "cream", href: "/events?category=Fitness" },
+            { label: "Food + Drink", tone: "peach", href: "/events?category=Food" },
+            { label: "Creative people", tone: "ink", href: "/events?category=Creative" },
+            { label: "Career support", tone: "cream", href: "/events?category=Career" },
+            { label: "This weekend", tone: "rose", href: "/events?tag=weekend" },
+            { label: "Free events", tone: "peach", href: "/events?search=free" },
           ].map((category, idx) => (
             <Link
               key={category.label}
-              href="/discover"
+              href={category.href}
               className={`shrink-0 rounded-full border-2 border-[color:var(--line)] px-4 py-1.5 text-sm font-bold uppercase tracking-wide hard-shadow-sm hover:-translate-x-[1px] hover:-translate-y-[1px] ${
                 idx % 3 === 0 ? "tilt-l-2" : idx % 3 === 1 ? "tilt-r-2" : ""
               } ${chipPalette[category.tone]}`}
@@ -205,7 +205,7 @@ export default async function Home() {
                 eyebrow: "Slow tables",
                 title: "Slow dating + small dinners",
                 body: "10 people, one long table, a host who actually hosts. No swiping required.",
-                href: "/events?category=Dating",
+                href: "/events?category=Relationships",
               },
               {
                 tone: "rose",
@@ -219,7 +219,7 @@ export default async function Home() {
                 eyebrow: "Hands on",
                 title: "Classes + workshops",
                 body: "Pottery, cooking, life-drawing — common output, common excuse to chat.",
-                href: "/events?category=Arts",
+                href: "/events?category=Creative",
               },
               {
                 tone: "ink",

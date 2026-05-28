@@ -25,6 +25,7 @@ export async function SiteHeader() {
   const navItems: Array<{ label: string; href: string }> = [
     { label: "Discover", href: "/discover" },
     { label: "Events", href: "/events" },
+    { label: "Categories", href: "/categories" },
   ];
   if (session?.user) {
     navItems.push({ label: "Dashboard", href: "/dashboard" });
@@ -115,9 +116,9 @@ export async function SiteFooter() {
   const isAdmin = !!session?.user && isAdminEmail(session.user.email);
 
   const footerGroups: Array<[string, ...string[]]> = [
-    ["Product", "Discover", "Events", "Dashboard", "Onboarding"],
+    ["Product", "Discover", "Events", "Categories", "Dashboard", "Onboarding"],
     isAdmin
-      ? ["Platform", "Host events", "Admin", "Privacy", "Matching"]
+      ? ["Platform", "Host events", "Admin", "Scale", "Privacy", "Matching"]
       : ["Platform", "Host events", "Privacy", "Matching"],
     ["Modes", "Friendship", "Dating", "Networking", "Exploring"],
   ];
@@ -175,9 +176,11 @@ function linkForFooterItem(item: string) {
 
   if (normalized === "discover") return "/discover";
   if (normalized === "events") return "/events";
+  if (normalized === "categories") return "/categories";
   if (normalized === "dashboard") return "/dashboard";
   if (normalized === "onboarding") return "/onboarding";
   if (normalized === "host events" || normalized === "merchant") return "/merchant";
   if (normalized === "admin") return "/admin";
+  if (normalized === "scale") return "/scale";
   return "/";
 }

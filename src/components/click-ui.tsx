@@ -124,9 +124,11 @@ type PillTone = "cream" | "peach" | "rose" | "ink" | "aqua" | "pink" | "white";
 export function Pill({
   children,
   tone = "cream",
+  href,
 }: {
   children: ReactNode;
   tone?: PillTone;
+  href?: string;
 }) {
   // legacy aliases → new palette
   const t = tone === "aqua" ? "peach" : tone === "pink" ? "rose" : tone === "white" ? "cream" : tone;
@@ -139,13 +141,20 @@ export function Pill({
           ? "bg-[color:var(--peach)] text-[color:var(--surface-deep)]"
           : "bg-[color:var(--cream)] text-[color:var(--ink)]";
 
-  return (
-    <span
-      className={`inline-flex max-w-full min-w-0 items-center whitespace-normal break-words rounded-full border-2 border-[color:var(--line)] ${palette} px-3 py-1 text-left text-[0.7rem] font-bold uppercase tracking-wider`}
-    >
-      {children}
-    </span>
-  );
+  const base = `inline-flex max-w-full min-w-0 items-center whitespace-normal break-words rounded-full border-2 border-[color:var(--line)] ${palette} px-3 py-1 text-left text-[0.7rem] font-bold uppercase tracking-wider`;
+
+  if (href) {
+    return (
+      <Link
+        href={href}
+        className={`${base} transition-transform hover:-translate-x-[1px] hover:-translate-y-[1px] hover:border-[color:var(--rose)] hover:[box-shadow:2px_2px_0_0_var(--shadow-ink)]`}
+      >
+        {children}
+      </Link>
+    );
+  }
+
+  return <span className={base}>{children}</span>;
 }
 
 export function LinkButton({

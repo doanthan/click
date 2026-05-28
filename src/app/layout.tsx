@@ -7,6 +7,7 @@ import {
   Shrikhand,
 } from "next/font/google";
 import { Toaster } from "sonner";
+import DevSupabaseDrawer from "@/components/dev-supabase-drawer";
 import { LoginModalHost } from "@/components/login-modal-host";
 import { SiteFooter, SiteHeader } from "@/components/site-chrome";
 import "./globals.css";
@@ -66,7 +67,11 @@ export default function RootLayout({
       data-scroll-behavior="smooth"
       className={`${manrope.variable} ${fraunces.variable} ${plexMono.variable} ${caveat.variable} ${shrikhand.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">
+      {/* suppressHydrationWarning: browser extensions (e.g. ColorZilla's
+          cz-shortcut-listen, Grammarly) inject attributes onto <body> before
+          React hydrates. This suppresses only body's own attribute mismatch,
+          not mismatches inside the component tree. */}
+      <body className="min-h-full flex flex-col" suppressHydrationWarning>
         <SiteHeader />
         {children}
         <SiteFooter />
@@ -76,6 +81,7 @@ export default function RootLayout({
           showDemoCredentials={showDemoCredentials}
         />
         <Toaster position="top-right" richColors closeButton />
+        {process.env.NEXT_PUBLIC_MODE === "DEVELOPMENT" ? <DevSupabaseDrawer /> : null}
       </body>
     </html>
   );

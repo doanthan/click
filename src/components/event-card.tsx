@@ -86,7 +86,9 @@ export function EventCard({
 
         <div className="mt-4 flex flex-wrap gap-1.5">
           {event.tags.slice(0, compact ? 3 : 5).map((tag) => (
-            <Pill key={tag}>{tag}</Pill>
+            <Pill key={tag} href={`/events?tag=${encodeURIComponent(tag)}`}>
+              {tag}
+            </Pill>
           ))}
         </div>
 
