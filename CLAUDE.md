@@ -82,6 +82,7 @@ Every route in `src/app`. URI on the left, source file on the right. Use this to
 | `/how-it-works` | `src/app/how-it-works/page.tsx` |
 | `/discover` | `src/app/discover/page.tsx` |
 | `/categories` | `src/app/categories/page.tsx` |
+| `/categories/[slug]` | `src/app/categories/[slug]/page.tsx` |
 | `/events` | `src/app/events/page.tsx` |
 | `/events/[slug]` | `src/app/events/[slug]/page.tsx` |
 | `/people` | `src/app/people/page.tsx` |

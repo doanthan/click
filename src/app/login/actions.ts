@@ -61,18 +61,53 @@ export async function signOutOfClick() {
   await signOut({ redirectTo: "/" });
 }
 
-// Dev-only: instant sign-in as one of the seeded test accounts so you can hop
-// between Attendee / Merchant / Admin without the login/logout dance. Funnels
-// through /post-login like every other sign-in, so the destination is decided
-// by the same admin/merchant/onboarding gates. No-ops outside DEVELOPMENT so a
-// stray call in prod can't impersonate an account by email alone.
-export async function signInAsTestAccount(formData: FormData) {
-  if (process.env.NEXT_PUBLIC_MODE !== "DEVELOPMENT") return;
+// Clear the session from the test-account switcher so you can exercise the
+// signed-out ("Not signed in") state without leaving wherever you're testing.
+// `redirectTo` is constrained to a local path and defaults to "/".
+//
+// SECURITY: previously gated to DEVELOPMENT. The gate has been removed so the
+// switcher works on a private/staging deploy — meaning anyone who can reach the
+// site can sign in (passwordless) as any seeded account, including admin. Do
+// NOT expose this deployment to the public internet.
+export async function signOutOfTestAccount(formData: FormData) {
+  const next = getFormValue(formData, "redirectTo");
+  const dest = next.startsWith("/") && !next.startsWith("//") ? next : "/";
 
+  await signOut({ redirectTo: dest });
+}
+
+// Instant sign-in as one of the seeded test accounts so you can hop between
+// Attendee / Merchant / Admin without the login/logout dance. Funnels through
+// /post-login like every other sign-in, so the destination is decided by the
+// same admin/merchant/onboarding gates.
+//
+// SECURITY: the DEVELOPMENT gate has been removed at the owner's request so this
+// works on a private/staging deploy. It now impersonates ANY seeded account
+// (including admin) by email alone, with no password. Keep this deployment
+// private — do NOT expose it to the public internet.
+export async function signInAsTestAccount(formData: FormData) {
   const email = getFormValue(formData, "email").toLowerCase();
   if (!email.includes("@")) return;
 
   await signIn("email-login", { email, redirectTo: "/post-login" });
+}
+
+// Kick off a /test journey as the persona's seeded account. Unlike
+// signInAsTestAccount, this lands directly on the journey's first step (`next`)
+// instead of funneling through /post-login, so you walk the journey from where
+// it actually begins rather than being re-routed by the role gates. `next` is
+// constrained to a local path.
+//
+// SECURITY: same caveat as signInAsTestAccount — the DEVELOPMENT gate is gone,
+// so this is passwordless impersonation by email. Keep the deployment private.
+export async function startTestJourney(formData: FormData) {
+  const email = getFormValue(formData, "email").toLowerCase();
+  if (!email.includes("@")) return;
+
+  const next = getFormValue(formData, "next");
+  const dest = next.startsWith("/") && !next.startsWith("//") ? next : "/post-login";
+
+  await signIn("email-login", { email, redirectTo: dest });
 }
 
 export type EmailLoginFormState = { error: string | null };

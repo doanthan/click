@@ -54,7 +54,7 @@ export const metadata: Metadata = {
     "Click helps ordinary people find local groups, dating, friendship and Sydney events with a reason to talk.",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
@@ -62,6 +62,7 @@ export default function RootLayout({
   const googleConfigured = !!(process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET);
   const metaConfigured = !!(process.env.AUTH_FACEBOOK_ID && process.env.AUTH_FACEBOOK_SECRET);
   const showDemoCredentials = true;
+  const session = await auth();
 
   return (
     <html
@@ -83,12 +84,8 @@ export default function RootLayout({
           showDemoCredentials={showDemoCredentials}
         />
         <Toaster position="top-right" richColors closeButton />
-        {process.env.NEXT_PUBLIC_MODE === "DEVELOPMENT" ? (
-          <>
-            <DevSupabaseDrawer />
-            <TestAccountSwitcher />
-          </>
-        ) : null}
+        <DevSupabaseDrawer />
+        <TestAccountSwitcher currentEmail={session?.user?.email ?? null} />
       </body>
     </html>
   );

@@ -1,8 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { categories, type EventItem } from "@/lib/click-data";
+import { categories, categorySlug, type EventItem } from "@/lib/click-data";
 import { haversineKm, roundKm, type LatLng } from "@/lib/geo";
 import { EventTileCard } from "./event-tile-card";
 import { FilterSelect } from "./filter-select";
@@ -306,11 +307,21 @@ export function EventExplorer({
         <div className="flex flex-col gap-10">
           {groupedByCategory.map(({ category, events: categoryEvents }) => (
             <section key={category}>
-              {/* Heading row stays bounded — mirrors the filter card's right margin. */}
+              {/* Heading row stays bounded — mirrors the filter card's right margin.
+                  The title links to the dedicated /categories/<slug> browse page. */}
               <div className="mr-4 flex items-baseline justify-between gap-3 sm:mr-6">
-                <h2 className="text-2xl font-black text-[color:var(--ink)] sm:text-3xl">
+                <Link
+                  href={`/categories/${categorySlug(category)}`}
+                  className="group/heading inline-flex items-baseline gap-2 text-2xl font-black text-[color:var(--ink)] hover:text-[color:var(--punch)] sm:text-3xl"
+                >
                   {category}
-                </h2>
+                  <span
+                    aria-hidden
+                    className="text-lg transition-transform group-hover/heading:translate-x-1 sm:text-xl"
+                  >
+                    →
+                  </span>
+                </Link>
                 <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
                   {categoryEvents.length} {categoryEvents.length === 1 ? "event" : "events"}
                 </span>
@@ -319,7 +330,7 @@ export function EventExplorer({
                   peek off-screen — signals "more inventory" instantly. */}
               <div className="mt-4 flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2 pr-4 [scrollbar-width:thin] sm:pr-6">
                 {categoryEvents.map((event) => (
-                  <div key={event.id} className="snap-start">
+                  <div key={event.id} className="shrink-0 snap-start">
                     <EventTileCard
                       event={event}
                       bookmarked={bookmarkedSet.has(event.id)}

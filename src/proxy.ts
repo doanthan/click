@@ -1,4 +1,4 @@
-import { auth, isAdminEmail } from "@/auth";
+import { auth } from "@/auth";
 import { updateSession } from "@/utils/supabase/middleware";
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -16,8 +16,12 @@ export const proxy = auth((request) => {
   const pathname = nextRequest.nextUrl.pathname;
   const session = request.auth;
 
+  // /dashboard and /admin only require a signed-in session here. Admin-specific
+  // authorization is enforced in src/app/admin/layout.tsx, which renders an
+  // inline "Access denied" page for logged-in non-admins instead of bouncing
+  // them back to /login in a loop.
   if (pathname.startsWith("/dashboard") || pathname.startsWith("/admin")) {
-    if (!isAdminEmail(session?.user?.email)) {
+    if (!session?.user) {
       return redirectToLogin(nextRequest);
     }
   }

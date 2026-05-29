@@ -156,6 +156,64 @@ const phases = [
   },
 ];
 
+// Monthly infra cost per tier (USD, early 2026 — planning ranges, not quotes).
+// Stripe is excluded here: it's per-transaction, modelled as a take-rate below.
+const costTiers = [
+  {
+    tier: "Tier 0",
+    when: "Today · beta",
+    total: "~$0–20",
+    lines: [
+      { svc: "Vercel", plan: "Hobby / Pro", cost: "$0–20" },
+      { svc: "Supabase", plan: "Free", cost: "$0" },
+      { svc: "Mapbox", plan: "Free tier", cost: "$0" },
+      { svc: "Stripe", plan: "Pay-as-you-go", cost: "per-txn" },
+    ],
+    caveat: "Free Supabase pauses after 7 days idle, no daily backups. Vercel Hobby bans commercial use — you're off it the moment you take real payments.",
+    accent: "mauve" as const,
+  },
+  {
+    tier: "Tier 1",
+    when: "100 merchants · 2000 browsers",
+    total: "~$120–250",
+    lines: [
+      { svc: "Vercel", plan: "Pro + usage", cost: "$20–60" },
+      { svc: "Supabase", plan: "Pro base", cost: "$25" },
+      { svc: "Supabase", plan: "Small/Medium compute", cost: "$15–60" },
+      { svc: "Mapbox", plan: "Pay-as-you-go", cost: "$0–250" },
+    ],
+    caveat: "The transaction pooler (Wall #1 fix) is included free on Pro. Mapbox is the swing factor — map loads + search sessions can outgrow the DB bill before the DB ever strains.",
+    accent: "rose" as const,
+  },
+  {
+    tier: "Tier 2+",
+    when: "Three regions",
+    total: "~$400–1,400",
+    lines: [
+      { svc: "Vercel", plan: "Pro (Enterprise for multi-region fns)", cost: "$20–60+" },
+      { svc: "Supabase", plan: "Pro + Medium/Large primary", cost: "$85–135" },
+      { svc: "Supabase", plan: "2× read replicas", cost: "$30–220" },
+      { svc: "Mapbox", plan: "Scaled traffic", cost: "$250–1k+" },
+    ],
+    caveat: "Each read replica is billed as its own compute instance, sized to the primary. The costly jump is Vercel Enterprise for multi-region functions — not the replicas.",
+    accent: "peach" as const,
+  },
+];
+
+// The two cost axes that don't behave like fixed infra.
+const costAxes = [
+  {
+    title: "Mapbox — your biggest variable",
+    body:
+      "Two metered APIs: map loads (GL JS) free to 50k/mo then ~$5/1k, and search sessions free to ~100k/mo. 2,000 daily sessions each loading the /discover map = ~60k loads/mo — already over the free tier. Mitigate: lazy-mount the map, use static map images on cards, and debounce autocomplete to consolidate sessions.",
+  },
+  {
+    title: "Stripe — scales with GMV, not load",
+    body:
+      "No base fee. ~1.75% + A$0.30 domestic (2.9%+ international cards). Connect adds ~0.25% + payout fees and ~$2/active connected account. Model it as a ~2–3.5% take-rate out of transaction revenue, not fixed overhead.",
+  },
+];
+
 const suggestions = [
   "Move DB traffic onto the Supabase transaction pooler",
   "Cache explore + categories reads (5–10 min)",
@@ -427,6 +485,89 @@ export default function ScalePage() {
               </div>
             ))}
           </div>
+        </div>
+      </section>
+
+      {/* What it costs */}
+      <section className="border-t-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-16 sm:px-6">
+        <div className="mx-auto max-w-6xl">
+          <SectionIntro
+            eyebrow="What it costs"
+            title="The bill, per tier."
+            body="Monthly infra in USD (early 2026 — planning ranges, not quotes). Stripe is excluded here because it's per-transaction; it and Mapbox are the two costs that don't behave like fixed infra, called out below."
+          />
+
+          <div className="mt-10 grid gap-5 lg:grid-cols-3">
+            {costTiers.map((t) => (
+              <div
+                key={t.tier}
+                className="flex flex-col rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-6 hard-shadow-sm"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <span className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--ink)] px-3 py-1 text-[0.7rem] font-black uppercase tracking-wider text-[color:var(--champagne)]">
+                    {t.tier}
+                  </span>
+                  <span
+                    className={`block size-3 rounded-full ${
+                      t.accent === "mauve"
+                        ? "bg-[color:var(--mauve)]"
+                        : t.accent === "rose"
+                          ? "bg-[color:var(--rose)]"
+                          : "bg-[color:var(--peach)]"
+                    }`}
+                    aria-hidden
+                  />
+                </div>
+                <p className="mt-4 font-mono text-[0.65rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+                  {t.when}
+                </p>
+                <p className="font-display mt-2 text-4xl font-light leading-none text-[color:var(--rose)]">
+                  {t.total}
+                  <span className="ml-1 align-baseline text-base text-[color:var(--mauve)]">/mo</span>
+                </p>
+
+                <dl className="mt-5 grid gap-2">
+                  {t.lines.map((l, j) => (
+                    <div
+                      key={`${l.svc}-${j}`}
+                      className="flex items-baseline justify-between gap-3 border-b border-dashed border-[color:var(--line)] pb-2 text-sm"
+                    >
+                      <dt className="font-medium leading-6 text-[color:var(--mauve)]">
+                        <span className="font-bold text-[color:var(--ink)]">{l.svc}</span> · {l.plan}
+                      </dt>
+                      <dd className="shrink-0 font-mono text-[0.8rem] font-bold text-[color:var(--ink)]">
+                        {l.cost}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+
+                <p className="mt-4 text-[0.8rem] font-medium leading-5 text-[color:var(--mauve)]">
+                  {t.caveat}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-8 grid gap-4 lg:grid-cols-2">
+            {costAxes.map((a) => (
+              <div
+                key={a.title}
+                className="rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--champagne)] p-6"
+              >
+                <h4 className="font-display text-xl font-light leading-snug text-[color:var(--ink)]">
+                  {a.title}
+                </h4>
+                <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+                  {a.body}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          <p className="mt-6 font-mono text-[0.7rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+            Stripe ≈ 2–3.5% take-rate on GMV · billed out of transaction revenue, not infra
+          </p>
         </div>
       </section>
 

@@ -123,6 +123,22 @@ export const categories = [
   "Community",
 ];
 
+// URL slug <-> display name for category browse pages (/categories/<slug>).
+// Slugs are lowercased display names; keep the mapping centralized so the
+// discover rails and the category landing pages never drift apart.
+export function categorySlug(category: string): string {
+  return category.toLowerCase();
+}
+
+// Resolve a slug back to the canonical display name (case-insensitive),
+// returning null for unknown categories so callers can 404.
+export function categoryFromSlug(slug: string): string | null {
+  const match = categories.find(
+    (category) => category !== "All" && categorySlug(category) === slug.toLowerCase(),
+  );
+  return match ?? null;
+}
+
 export const clickEvents: EventItem[] = [
   {
     id: "new-friends-barangaroo",

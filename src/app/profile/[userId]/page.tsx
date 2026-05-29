@@ -1,7 +1,8 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { auth } from "@/auth";
 import { Pill } from "@/components/click-ui";
-import { getPublicProfileById } from "@/lib/event-repository";
+import { getOwnProfile, getPublicProfileById } from "@/lib/event-repository";
 
 export const metadata = {
   title: "Profile | Click",
@@ -19,11 +20,17 @@ export default async function PublicProfilePage({ params }: PublicProfilePagePro
     notFound();
   }
 
-  const [session, profile] = await Promise.all([auth(), getPublicProfileById(userId)]);
+  const session = await auth();
+  const [profile, ownProfile] = await Promise.all([
+    getPublicProfileById(userId),
+    session?.user ? getOwnProfile(session) : Promise.resolve(null),
+  ]);
 
   if (!profile) {
     notFound();
   }
+
+  const isOwnProfile = ownProfile?.id === userId;
 
   return (
     <main className="paper-noise min-h-screen bg-[color:var(--champagne)] px-4 py-12 text-[color:var(--ink)] sm:px-6">
@@ -38,6 +45,15 @@ export default async function PublicProfilePage({ params }: PublicProfilePagePro
         <p className="mt-3 text-sm font-mono font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
           {profile.suburb ?? profile.city}
         </p>
+
+        {isOwnProfile ? (
+          <Link
+            href="/profile/edit"
+            className="mt-5 inline-flex items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
+          >
+            Edit profile
+          </Link>
+        ) : null}
 
         {!session?.user ? (
           <p className="mt-4 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-4 text-sm font-medium leading-6 text-[color:var(--mauve)]">

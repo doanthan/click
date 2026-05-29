@@ -1,5 +1,8 @@
 import Link from "next/link";
 import { getEventsForExplore } from "@/lib/event-repository";
+import { startTestJourney } from "@/app/login/actions";
+import { auth } from "@/auth";
+import { TestAccountSwitcher } from "@/components/test-account-switcher";
 import SupabaseLogDrawer from "./SupabaseLogDrawer";
 import TestCasesBoard from "./TestCasesBoard";
 
@@ -29,10 +32,15 @@ type Persona = {
   tagline: string;
   // Tailwind utility classes for the persona's accent header.
   accent: string;
+  // Seeded dev account (database/002_seed.sql) whose role matches this persona.
+  // Starting a story signs in as this account so the journey runs with the
+  // right role. Dev-only — startTestJourney no-ops outside DEVELOPMENT.
+  account: { email: string; label: string };
   stories: Story[];
 };
 
 export default async function TestPage() {
+  const session = await auth();
   const events = await getEventsForExplore();
   const sampleSlug = events[0]?.id ?? "sample-event";
   const sampleTitle = events[0]?.title ?? "an event";
@@ -42,6 +50,7 @@ export default async function TestPage() {
       name: "Customer",
       tagline: "Browse events, book a spot, and Click with someone.",
       accent: "bg-[color:var(--rose)] text-[color:var(--surface-deep)]",
+      account: { email: "maya@click.local", label: "Maya (Attendee)" },
       stories: [
         {
           title: "Sign up process",
@@ -211,6 +220,7 @@ export default async function TestPage() {
       tagline:
         "Register → wait for approval → list events → fill seats. Mirrors context/02_MERCHANT_JOURNEY.md.",
       accent: "bg-[color:var(--peach)] text-[color:var(--surface-deep)]",
+      account: { email: "theo@click.local", label: "Theo (Merchant)" },
       stories: [
         {
           title: "Registration wizard (4 steps)",
@@ -388,6 +398,7 @@ export default async function TestPage() {
       name: "Admin",
       tagline: "Keep the platform clean and trustworthy.",
       accent: "bg-[color:var(--ink)] text-[color:var(--champagne)]",
+      account: { email: "admin@click.local", label: "Click Admin" },
       stories: [
         {
           title: "Dashboard",
@@ -418,9 +429,27 @@ export default async function TestPage() {
           <SupabaseLogDrawer />
         </div>
         <p className="mt-4 max-w-2xl text-base font-medium leading-7 text-[color:var(--mauve)]">
-          Pick a persona and walk its key journeys. Each step opens in a new tab;
-          open the Supabase log to confirm the writes landed.
+          Pick a persona and walk its key journeys. The ▶ first step signs you
+          in as that persona&rsquo;s seeded account, then opens the step in the
+          current tab; the rest open in new tabs. Open the Supabase log to
+          confirm the writes landed.
         </p>
+
+        <div className="mt-10 max-w-sm">
+          <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+            Login
+          </p>
+          <p className="mb-3 mt-1 text-xs font-medium leading-5 text-[color:var(--mauve)]">
+            Swap the active session — or sign out into the public, not-signed-in
+            state. Same switcher as the floating pill, pinned here for quick
+            access. Stays on /test after you switch.
+          </p>
+          <TestAccountSwitcher
+            currentEmail={session?.user?.email ?? null}
+            variant="inline"
+            redirectTo="/test"
+          />
+        </div>
 
         <div className="mt-10 grid gap-6 lg:grid-cols-3">
           {personas.map((persona) => (
@@ -466,23 +495,53 @@ export default async function TestPage() {
                               →
                             </span>
                           ) : null}
-                          <Link
-                            href={step.href}
-                            target="_blank"
-                            rel="noreferrer"
-                            title={
-                              step.gap
-                                ? "Spec-only — route or feature not built yet"
-                                : undefined
-                            }
-                            className={
-                              step.gap
-                                ? "rounded-full border-2 border-dashed border-[color:var(--mauve)]/50 bg-[color:var(--champagne)]/50 px-3 py-1 text-[0.7rem] font-bold uppercase tracking-[0.12em] text-[color:var(--mauve)] transition hover:border-[color:var(--mauve)] hover:text-[color:var(--ink)]"
-                                : "rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-1 text-[0.7rem] font-bold uppercase tracking-[0.12em] text-[color:var(--ink)] transition hover:border-[color:var(--ink)] hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)]"
-                            }
-                          >
-                            {step.label} {step.gap ? "⚠" : "↗"}
-                          </Link>
+                          {idx === 0 ? (
+                            // The first step doubles as the journey starter: it
+                            // signs in as the persona's seeded account (so the
+                            // journey runs with the right role) and then lands on
+                            // this step. Submits in the current tab because the
+                            // sign-in swaps the session cookie globally. The
+                            // remaining steps stay plain new-tab links.
+                            <form action={startTestJourney}>
+                              <input
+                                type="hidden"
+                                name="email"
+                                value={persona.account.email}
+                              />
+                              <input type="hidden" name="next" value={step.href} />
+                              <button
+                                type="submit"
+                                title={`Sign in as ${persona.account.label}${
+                                  step.gap ? " (route not built yet)" : ""
+                                } and open this step`}
+                                className={
+                                  step.gap
+                                    ? "rounded-full border-2 border-dashed border-[color:var(--mauve)]/60 bg-[color:var(--champagne)]/50 px-3 py-1 text-[0.7rem] font-bold uppercase tracking-[0.12em] text-[color:var(--mauve)] transition hover:border-[color:var(--mauve)] hover:text-[color:var(--ink)]"
+                                    : "rounded-full border-2 border-[color:var(--ink)] bg-[color:var(--ink)] px-3 py-1 text-[0.7rem] font-bold uppercase tracking-[0.12em] text-[color:var(--champagne)] transition hover:bg-[color:var(--rose)] hover:text-[color:var(--surface-deep)]"
+                                }
+                              >
+                                ▶ {step.label}
+                              </button>
+                            </form>
+                          ) : (
+                            <Link
+                              href={step.href}
+                              target="_blank"
+                              rel="noreferrer"
+                              title={
+                                step.gap
+                                  ? "Spec-only — route or feature not built yet"
+                                  : undefined
+                              }
+                              className={
+                                step.gap
+                                  ? "rounded-full border-2 border-dashed border-[color:var(--mauve)]/50 bg-[color:var(--champagne)]/50 px-3 py-1 text-[0.7rem] font-bold uppercase tracking-[0.12em] text-[color:var(--mauve)] transition hover:border-[color:var(--mauve)] hover:text-[color:var(--ink)]"
+                                  : "rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-1 text-[0.7rem] font-bold uppercase tracking-[0.12em] text-[color:var(--ink)] transition hover:border-[color:var(--ink)] hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)]"
+                              }
+                            >
+                              {step.label} {step.gap ? "⚠" : "↗"}
+                            </Link>
+                          )}
                         </li>
                       ))}
                     </ol>
