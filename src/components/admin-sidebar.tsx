@@ -42,7 +42,7 @@ const NAV_PRIMARY: NavItem[] = [
   { key: "members", label: "Attendees Management", icon: "attendees", href: "/admin/members" },
   { key: "merchants", label: "Merchants Management", icon: "merchants", href: "/admin/merchants" },
   { key: "transactions", label: "Transactions Management", icon: "transactions", href: "/admin/transactions" },
-  { key: "tags", label: "Contents Management", icon: "contents", href: "/admin/tags" },
+  { key: "tags", label: "Tags & Categories", icon: "contents", href: "/admin/tags" },
   { key: "matching", label: "Matching Formula", icon: "matching", href: "/admin/matching" },
 ];
 

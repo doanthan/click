@@ -24,12 +24,16 @@ type LoginModalProps = {
 };
 
 type Mode = "login" | "signup";
+type SignupRole = "attendee" | "host";
 
 const initialEmailState: EmailLoginFormState = { error: null };
 
-// New accounts route through /post-login, which sends anyone with an
+// Attendee signups route through /post-login, which sends anyone with an
 // incomplete profile to /onboarding (where the prefill below is read).
-const SIGNUP_CALLBACK_URL = "/post-login";
+// Host signups land directly on the 4-step merchant wizard — it detects the
+// fresh session and skips its own inline auth step.
+const ATTENDEE_SIGNUP_CALLBACK_URL = "/post-login";
+const HOST_SIGNUP_CALLBACK_URL = "/merchant/signup";
 
 export function LoginModal({
   open,
@@ -44,12 +48,18 @@ export function LoginModal({
     initialEmailState,
   );
   const [mode, setMode] = useState<Mode>("login");
+  const [role, setRole] = useState<SignupRole>("attendee");
   const [name, setName] = useState("");
   const [lastUsed, setLastUsed] = useState<LoginMethod | null>(null);
   const firstFieldRef = useRef<HTMLInputElement>(null);
 
   const isSignup = mode === "signup";
-  const formCallbackUrl = isSignup ? SIGNUP_CALLBACK_URL : callbackUrl;
+  const isHostSignup = isSignup && role === "host";
+  const formCallbackUrl = isSignup
+    ? isHostSignup
+      ? HOST_SIGNUP_CALLBACK_URL
+      : ATTENDEE_SIGNUP_CALLBACK_URL
+    : callbackUrl;
 
   useEffect(() => {
     if (!open) return;
@@ -159,22 +169,72 @@ export function LoginModal({
             })}
           </div>
 
+          {isSignup ? (
+            <fieldset
+              aria-label="What kind of account?"
+              className="mt-5 grid grid-cols-2 gap-1 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-1"
+            >
+              {(
+                [
+                  { value: "attendee", title: "Attend", body: "RSVP & meet people" },
+                  { value: "host", title: "Host", body: "List & run events" },
+                ] as const
+              ).map((option) => {
+                const active = role === option.value;
+                return (
+                  <label
+                    key={option.value}
+                    className={`cursor-pointer rounded-xl px-3 py-2 text-left transition ${
+                      active
+                        ? "border-2 border-[color:var(--line)] bg-[color:var(--peach)] hard-shadow-sm"
+                        : "border-2 border-transparent hover:bg-[color:var(--champagne)]"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="signup-role"
+                      value={option.value}
+                      checked={active}
+                      onChange={() => setRole(option.value)}
+                      className="sr-only"
+                    />
+                    <span className="block text-sm font-bold uppercase tracking-wide text-[color:var(--ink)]">
+                      {option.title}
+                    </span>
+                    <span className="font-mono mt-0.5 block text-[0.6rem] font-bold uppercase tracking-[0.14em] text-[color:var(--mauve)]">
+                      {option.body}
+                    </span>
+                  </label>
+                );
+              })}
+            </fieldset>
+          ) : null}
+
           <span className="sticker sticker--peach tilt-l-2 mt-5 inline-flex">
             <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
-            {isSignup ? "New here" : "Welcome back"}
+            {isSignup ? (isHostSignup ? "Host an event" : "New here") : "Welcome back"}
           </span>
           <h2
             id="login-modal-title"
             className="font-display mt-4 text-3xl font-light leading-[1] tracking-tight text-[color:var(--ink)] sm:text-4xl"
           >
             {isSignup ? (
-              <>
-                Make your{" "}
-                <span className="italic">
-                  <span className="peach-highlight">first Click</span>
-                </span>
-                .
-              </>
+              isHostSignup ? (
+                <>
+                  You run the room.{" "}
+                  <span className="italic">
+                    <span className="peach-highlight">We bring the people.</span>
+                  </span>
+                </>
+              ) : (
+                <>
+                  Make your{" "}
+                  <span className="italic">
+                    <span className="peach-highlight">first Click</span>
+                  </span>
+                  .
+                </>
+              )
             ) : (
               <>
                 Get into your{" "}
@@ -187,7 +247,9 @@ export function LoginModal({
           </h2>
           <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--mauve)]">
             {isSignup
-              ? "Create an account to RSVP, save events, and start private Clicks."
+              ? isHostSignup
+                ? "After sign-in we'll take you to the 4-step host application: business details, address, documents, review."
+                : "Create an account to RSVP, save events, and start private Clicks."
               : "One account for RSVPs, saved events, and private Clicks."}
           </p>
 
@@ -231,11 +293,13 @@ export function LoginModal({
               >
                 <GoogleMark className="size-5 shrink-0" />
                 <span>
-                  {googleConfigured
-                    ? isSignup
-                      ? "Sign up with Google"
-                      : "Continue with Google"
-                    : "Google · setup required"}
+                  {!googleConfigured
+                    ? "Google · setup required"
+                    : isSignup
+                      ? isHostSignup
+                        ? "Sign up as host with Google"
+                        : "Sign up with Google"
+                      : "Continue with Google"}
                 </span>
                 {!isSignup && lastUsed === "google" && googleConfigured ? (
                   <LastUsedBadge />
@@ -252,11 +316,13 @@ export function LoginModal({
               >
                 <FacebookMark className="size-5 shrink-0" />
                 <span>
-                  {metaConfigured
-                    ? isSignup
-                      ? "Sign up with Facebook"
-                      : "Continue with Facebook"
-                    : "Facebook · setup required"}
+                  {!metaConfigured
+                    ? "Facebook · setup required"
+                    : isSignup
+                      ? isHostSignup
+                        ? "Sign up as host with Facebook"
+                        : "Sign up with Facebook"
+                      : "Continue with Facebook"}
                 </span>
                 {!isSignup && lastUsed === "facebook" && metaConfigured ? (
                   <LastUsedBadge />
@@ -328,7 +394,9 @@ export function LoginModal({
                   ? "Creating account..."
                   : "Signing in..."
                 : isSignup
-                  ? "Create account"
+                  ? isHostSignup
+                    ? "Create host account"
+                    : "Create account"
                   : "Continue with email"}
               <span aria-hidden>→</span>
               {!isSignup && lastUsed === "email" ? <LastUsedBadge /> : null}

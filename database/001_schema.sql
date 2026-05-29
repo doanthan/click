@@ -39,7 +39,7 @@ create table merchant_profiles (
   website_url text,
   contact_email citext not null,
   verification_status text not null default 'pending'
-    check (verification_status in ('pending', 'approved', 'rejected')),
+    check (verification_status in ('pending', 'approved', 'rejected', 'suspended')),
   stripe_connect_account_id text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()

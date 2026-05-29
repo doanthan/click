@@ -1,12 +1,12 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { getProfileStatus } from "@/lib/event-repository";
 
 // Spec §1 post-submission holding page. Shown to merchants whose application
 // has landed but isn't yet approved by admin (verification_status='pending').
-// The /merchant portal is gated until status='approved' — anyone who tries to
-// access it while pending bounces here.
+// The /merchant portal is gated until status='approved'. Anyone who isn't a
+// pending/rejected merchant gets a clear access-denied state (no silent
+// redirect) so the page never just "vanishes".
 
 export const metadata = {
   title: "Application received | Click",
@@ -14,21 +14,59 @@ export const metadata = {
     "Your Click host application is being reviewed. Here's what to prepare while you wait.",
 };
 
+function AccessDenied({ reason }: { reason: string }) {
+  return (
+    <main className="paper-noise grid min-h-screen place-items-center bg-[color:var(--champagne)] px-4 py-12 text-[color:var(--ink)] sm:px-6">
+      <section className="mx-auto w-full max-w-xl rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-8 text-center hard-shadow sm:p-10">
+        <span className="sticker sticker--rose tilt-l-2 inline-flex">
+          <span className="size-2 rounded-full bg-[color:var(--punch)]" />
+          No access
+        </span>
+        <h1 className="font-display mt-6 text-4xl font-light leading-[0.98] tracking-tight sm:text-5xl">
+          You don’t have access to this page.
+        </h1>
+        <p className="mt-5 text-base font-medium leading-7 text-[color:var(--mauve)]">
+          {reason}
+        </p>
+        <div className="mt-8 flex flex-wrap justify-center gap-3">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-2 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-2.5 text-sm font-bold text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--cream)]"
+          >
+            ← Back to Click
+          </Link>
+        </div>
+      </section>
+    </main>
+  );
+}
+
 export default async function MerchantPendingPage() {
   const session = await auth();
-  if (!session?.user) {
-    redirect("/merchant/login?callbackUrl=/merchant-pending");
+  const status = session?.user ? await getProfileStatus(session) : null;
+  const merchantProfile = status?.merchantProfile ?? null;
+
+  if (
+    !merchantProfile ||
+    (merchantProfile.verification_status !== "pending" &&
+      merchantProfile.verification_status !== "rejected")
+  ) {
+    let reason: string;
+    if (!session?.user) {
+      reason =
+        "This page is only for merchants reviewing their application status. Sign in with your merchant account to view it.";
+    } else if (!merchantProfile) {
+      reason =
+        "You haven’t submitted a host application yet, so there’s nothing pending to show here.";
+    } else {
+      // verification_status === "approved"
+      reason =
+        "Your merchant application is already approved — your portal is live, so there’s no pending status to show.";
+    }
+    return <AccessDenied reason={reason} />;
   }
 
-  const status = await getProfileStatus(session);
-  if (!status.merchantProfile) {
-    redirect("/merchant/signup");
-  }
-  if (status.merchantProfile.verification_status === "approved") {
-    redirect("/merchant");
-  }
-
-  const rejected = status.merchantProfile.verification_status === "rejected";
+  const rejected = merchantProfile.verification_status === "rejected";
 
   return (
     <main className="paper-noise min-h-screen bg-[color:var(--champagne)] px-4 py-12 text-[color:var(--ink)] sm:px-6">
@@ -58,10 +96,10 @@ export default async function MerchantPendingPage() {
           </p>
 
           <p className="mt-6 text-sm font-bold text-[color:var(--ink)]">
-            Application for: <span className="font-display italic">{status.merchantProfile.business_name}</span>
+            Application for: <span className="font-display italic">{merchantProfile.business_name}</span>
           </p>
           <p className="mt-1 text-sm font-medium text-[color:var(--mauve)]">
-            Contact email on file: {status.merchantProfile.contact_email}
+            Contact email on file: {merchantProfile.contact_email}
           </p>
 
           <div className="mt-8 flex flex-wrap gap-3">

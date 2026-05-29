@@ -9,9 +9,14 @@ function getFormValue(formData: FormData, key: string) {
   return typeof value === "string" ? value : "";
 }
 
+// Every sign-in is funneled through /post-login so the admin gate there can
+// override the requested destination (admins always land on /admin). For
+// non-admins, the original target is preserved as ?next=<value> and applied by
+// /post-login after its admin/onboarding/merchant checks.
 function safeCallbackUrl(value: string) {
-  if (value.startsWith("/") && !value.startsWith("//")) return value;
-  return "/post-login";
+  if (!value.startsWith("/") || value.startsWith("//")) return "/post-login";
+  if (value === "/post-login" || value.startsWith("/post-login?")) return value;
+  return `/post-login?next=${encodeURIComponent(value)}`;
 }
 
 function redirectWithAuthError(error: AuthError, callbackUrl: string) {

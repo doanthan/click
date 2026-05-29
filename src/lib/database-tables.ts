@@ -48,8 +48,8 @@ const TABLE_NOTES: Record<string, string> = {
 // conveys table shape when there is no live database to introspect.
 const FALLBACK_TABLES: { name: string; columnCount: number }[] = [
   { name: "profiles", columnCount: 22 },
-  { name: "merchant_profiles", columnCount: 10 },
-  { name: "tag_categories", columnCount: 5 },
+  { name: "merchant_profiles", columnCount: 23 },
+  { name: "tag_categories", columnCount: 6 },
   { name: "tags", columnCount: 7 },
   { name: "user_tags", columnCount: 4 },
   { name: "click_personas", columnCount: 9 },

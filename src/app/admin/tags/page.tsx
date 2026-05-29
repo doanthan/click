@@ -2,7 +2,7 @@ import { AdminTagManager } from "@/components/admin-tag-manager";
 import { getAdminTags } from "@/lib/event-repository";
 
 export const metadata = {
-  title: "Contents Management | Admin",
+  title: "Tags & Categories | Admin",
 };
 
 export default async function AdminTagsPage() {

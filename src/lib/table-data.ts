@@ -72,6 +72,26 @@ async function primaryKeyColumns(
   return result.rows.map((row) => row.column_name);
 }
 
+// Pick a "newest first" sort column. Most of our tables have created_at; a
+// few use inserted_at / updated_at. We probe in that order and return the
+// first match, so callers can sort by it descending.
+async function newestSortColumn(
+  pool: NonNullable<ReturnType<typeof getPostgresPool>>,
+  name: string,
+): Promise<string | null> {
+  const candidates = ["created_at", "inserted_at", "updated_at"];
+  const result = await pool.query<{ column_name: string }>(
+    `select column_name
+       from information_schema.columns
+      where table_schema = 'public'
+        and table_name = $1
+        and column_name = any($2::text[])`,
+    [name, candidates],
+  );
+  const found = new Set(result.rows.map((row) => row.column_name));
+  return candidates.find((c) => found.has(c)) ?? null;
+}
+
 export async function getTableRows(
   tableName: string,
   options: { page?: number; pageSize?: number } = {},
@@ -91,12 +111,25 @@ export async function getTableRows(
   const offset = (page - 1) * pageSize;
 
   const ident = quoteIdent(tableName);
-  // Order by the primary key for stable pagination; fall back to ctid (always
-  // present, cheap) when a table has no primary key.
-  const pkColumns = await primaryKeyColumns(pool, tableName);
-  const orderBy = pkColumns.length
-    ? `order by ${pkColumns.map(quoteIdent).join(", ")}`
-    : "order by ctid";
+  // Show newest rows first. Prefer created_at / inserted_at / updated_at
+  // (desc, nulls last), then break ties on the primary key (desc) for stable
+  // pagination. If neither is available, fall back to ctid desc — always
+  // present, cheap, and gives a "physically newest first" approximation.
+  const [pkColumns, newestColumn] = await Promise.all([
+    primaryKeyColumns(pool, tableName),
+    newestSortColumn(pool, tableName),
+  ]);
+  const pkSort = pkColumns.map((c) => `${quoteIdent(c)} desc`).join(", ");
+  let orderBy: string;
+  if (newestColumn) {
+    orderBy = `order by ${quoteIdent(newestColumn)} desc nulls last${
+      pkSort ? `, ${pkSort}` : ""
+    }`;
+  } else if (pkSort) {
+    orderBy = `order by ${pkSort}`;
+  } else {
+    orderBy = "order by ctid desc";
+  }
 
   const [rowsResult, countResult] = await Promise.all([
     pool.query(

@@ -2,16 +2,18 @@ import Link from "next/link";
 import type { Session } from "next-auth";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
-import { MetricCard, PageHero, Pill, SectionIntro } from "@/components/click-ui";
+import { MetricCard, Pill, SectionIntro } from "@/components/click-ui";
 import { CreateEventForm } from "@/components/create-event-form";
 import { MerchantCalendar } from "@/components/merchant-calendar";
 import { MerchantEventsPanel } from "@/components/merchant-events-panel";
 import { MerchantAttendeesPanel } from "@/components/merchant-attendees-panel";
+import { StripeDashboardButton } from "@/components/stripe-dashboard-button";
 import {
   getMerchantAllAttendees,
   getMerchantEvents,
   getMerchantFinancesSummary,
   getProfileStatus,
+  type MerchantFinancesSummary,
 } from "@/lib/event-repository";
 
 export const metadata = {
@@ -71,6 +73,12 @@ export default async function MerchantPage({ searchParams }: MerchantPageProps) 
   if (status.merchantProfile.verification_status !== "approved") {
     redirect("/merchant-pending");
   }
+  // First visit after approval: send the merchant through the one-time
+  // onboarding walkthrough (how-to + Stripe payout setup). It's skippable —
+  // reaching the final step stamps onboarding_completed_at so we don't loop.
+  if (!status.merchantProfile.onboarding_completed_at) {
+    redirect("/merchant/onboarding");
+  }
 
   const params = (await searchParams) ?? {};
   const tab: TabKey = TABS.some((t) => t.key === params.tab)
@@ -85,31 +93,19 @@ export default async function MerchantPage({ searchParams }: MerchantPageProps) 
     (event) => new Date(event.startsAt).getTime() >= now,
   );
 
+  // Analytics tab still wants the rolled-up totals; the hero that previously
+  // surfaced them was redundant with the dashboard sections below, so it's
+  // gone. fillRate / pendingCount lived only in that hero and went with it.
   const totalConfirmed = merchantEvents.reduce((sum, event) => sum + event.confirmed, 0);
   const totalCapacity = merchantEvents.reduce((sum, event) => sum + event.capacity, 0);
   const totalRevenueCents = merchantEvents.reduce(
     (sum, event) => sum + event.priceCents * event.confirmed,
     0,
   );
-  const pendingCount = merchantEvents.filter((event) => event.status === "Pending").length;
-  const fillRate = totalCapacity > 0 ? Math.round((totalConfirmed / totalCapacity) * 100) : 0;
 
   return (
     <main className="min-h-screen bg-[color:var(--champagne)] text-[color:var(--ink)]">
-      <PageHero
-        eyebrow="Merchant portal"
-        title={`Hosting as ${status.merchantProfile.business_name}.`}
-        body="Create events, set capacity, watch RSVPs come in. Click into any event to see the people booking and contact them if needed."
-      >
-        <div className="grid grid-cols-2 gap-3">
-          <MetricCard label="Hosted events" value={merchantEvents.length.toString()} tone="white" />
-          <MetricCard label="Fill rate" value={`${fillRate}%`} tone="aqua" />
-          <MetricCard label="Confirmed revenue" value={formatPrice(totalRevenueCents)} tone="pink" />
-          <MetricCard label="Pending review" value={pendingCount.toString()} tone="white" />
-        </div>
-      </PageHero>
-
-      <nav className="sticky top-0 z-30 border-y-2 border-[color:var(--line)] bg-[color:var(--cream)]">
+      <nav className="sticky top-0 z-30 border-b-2 border-[color:var(--line)] bg-[color:var(--cream)]">
         <div className="mx-auto flex max-w-7xl items-center gap-2 overflow-x-auto px-4 py-3 sm:px-6">
           <span className="font-mono shrink-0 text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
             Portal ✷
@@ -140,6 +136,8 @@ export default async function MerchantPage({ searchParams }: MerchantPageProps) 
           monthParam={params.month}
           merchantApproved={merchantApproved}
           verificationStatus={status.merchantProfile.verification_status}
+          businessName={status.merchantProfile.business_name}
+          payoutsEnabled={status.merchantProfile.payouts_enabled}
         />
       ) : null}
       {tab === "events" ? <EventsTab events={merchantEvents} /> : null}
@@ -173,15 +171,26 @@ function DashboardTab({
   monthParam,
   merchantApproved,
   verificationStatus,
+  businessName,
+  payoutsEnabled,
 }: {
   merchantEvents: Awaited<ReturnType<typeof getMerchantEvents>>;
   upcomingCount: number;
   monthParam?: string;
   merchantApproved: boolean;
   verificationStatus: string;
+  businessName: string;
+  payoutsEnabled: boolean;
 }) {
+  // First-run welcome: shown only while the merchant has zero events. It
+  // disappears on its own once the first event is created, so there's no
+  // dismiss-state to persist.
+  const showWelcome = merchantApproved && merchantEvents.length === 0;
   return (
     <>
+      {merchantApproved && !payoutsEnabled ? <PayoutSetupBanner /> : null}
+      {showWelcome ? <WelcomeToClick businessName={businessName} /> : null}
+
       <section className="bg-[color:var(--champagne)] py-12">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           <SectionIntro
@@ -247,6 +256,109 @@ function DashboardTab({
         </div>
       </section>
     </>
+  );
+}
+
+// Persistent nudge shown on the dashboard until the merchant finishes Stripe
+// payout onboarding. Until payouts are enabled they can still create free
+// events, but paid events can't pay out — so we keep the path one click away.
+function PayoutSetupBanner() {
+  return (
+    <section className="border-b-2 border-[color:var(--line)] bg-[color:var(--rose)]">
+      <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
+        <p className="text-sm font-bold text-[color:var(--surface-deep)]">
+          ✷ Connect your bank to take payments — finish payout setup to publish paid events.
+        </p>
+        <Link
+          href="/merchant/onboarding/payouts"
+          className="inline-flex shrink-0 rounded-full border-2 border-[color:var(--surface-deep)] bg-[color:var(--champagne)] px-4 py-1.5 text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--cream)]"
+        >
+          Finish payout setup →
+        </Link>
+      </div>
+    </section>
+  );
+}
+
+function WelcomeToClick({ businessName }: { businessName: string }) {
+  const steps = [
+    {
+      n: "01",
+      title: "Create your first event.",
+      body: "Pick a date, capacity, and price. Use the 5-step wizard or the quick form below — submissions go live the moment they pass admin review.",
+    },
+    {
+      n: "02",
+      title: "Share the link.",
+      body: "Every event gets a public page on Discover. Post it to your socials or DM regulars; RSVPs flow straight into Bookings.",
+    },
+    {
+      n: "03",
+      title: "Run the door.",
+      body: "Open Attendees on the day to check people in, message no-shows, or export a CSV. Payouts land in Finances after the event wraps.",
+    },
+  ];
+
+  return (
+    <section className="border-b-2 border-[color:var(--line)] bg-[color:var(--peach-soft)] py-12">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6">
+        <div className="grid gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-start">
+          <div>
+            <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
+              ✷ Welcome to Click
+            </span>
+            <h2 className="font-display mt-3 text-4xl font-light leading-[1.04] text-[color:var(--ink)] sm:text-5xl">
+              You&apos;re in, {businessName}.
+            </h2>
+            <p className="mt-4 max-w-prose text-sm font-medium leading-6 text-[color:var(--mauve)]">
+              Your merchant profile is approved. This portal is where you spin
+              up events, watch RSVPs roll in, and get paid. Here&apos;s the
+              three-step lap so you know the room.
+            </p>
+            <div className="mt-6 flex flex-wrap gap-2">
+              <Pill tone="rose">Approved host</Pill>
+              <Pill tone="peach">No events yet</Pill>
+              <Pill>Free + paid supported</Pill>
+            </div>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Link
+                href="/merchant/events/create"
+                className="inline-flex rounded-full border-2 border-[color:var(--surface-deep)] bg-[color:var(--rose)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
+              >
+                Create your first event →
+              </Link>
+              <Link
+                href="/merchant?tab=support"
+                className="inline-flex rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)]"
+              >
+                Read the FAQ
+              </Link>
+            </div>
+          </div>
+
+          <ol className="grid gap-3 sm:grid-cols-1">
+            {steps.map((step) => (
+              <li
+                key={step.n}
+                className="flex gap-4 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-5 hard-shadow-sm"
+              >
+                <span className="font-display shrink-0 text-3xl font-light leading-none text-[color:var(--rose)]">
+                  {step.n}
+                </span>
+                <div className="min-w-0">
+                  <p className="font-display text-xl font-light leading-tight text-[color:var(--ink)]">
+                    {step.title}
+                  </p>
+                  <p className="mt-1.5 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+                    {step.body}
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -415,6 +527,129 @@ async function BookingsTabAsync({
   );
 }
 
+// Payout-status row at the top of the Finances tab. Drives a five-state badge
+// from the cached Connect capability columns and surfaces the right CTA for
+// each state — same source of truth as the /merchant?tab=dashboard banner so
+// the two views never disagree.
+function PayoutStatusCard({
+  connect,
+}: {
+  connect: MerchantFinancesSummary["connect"];
+}) {
+  let badgeTone: "rose" | "peach" | "aqua" | "cream" = "rose";
+  let badgeLabel = "Not set up";
+  let body = "Connect a Stripe account to accept paid bookings and get paid out automatically.";
+
+  if (!connect.hasAccount) {
+    badgeTone = "rose";
+    badgeLabel = "Not set up";
+    body = "Connect a Stripe account to accept paid bookings and get paid out automatically.";
+  } else if (!connect.detailsSubmitted) {
+    badgeTone = "rose";
+    badgeLabel = "Onboarding incomplete";
+    body = "Pick up where you left off in the hosted Stripe flow to finish connecting your bank.";
+  } else if (!connect.chargesEnabled) {
+    badgeTone = "aqua";
+    badgeLabel = "Verification pending";
+    body = "Stripe is reviewing your details. Once approved, paid events will accept bookings.";
+  } else if (!connect.payoutsEnabled) {
+    badgeTone = "peach";
+    badgeLabel = "Charging only";
+    body = "You can charge for events, but payouts to your bank aren't enabled yet — finish payout setup in Stripe.";
+  } else {
+    badgeTone = "peach";
+    badgeLabel = "Active";
+    body = "Payments route to your connected account and pay out on the monthly schedule.";
+  }
+
+  // Action varies by state: not-yet-charging merchants go back to the
+  // onboarding wizard; live merchants get a Stripe-dashboard deep link.
+  const ready = connect.hasAccount && connect.chargesEnabled;
+
+  return (
+    <div className="mt-8 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] hard-shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-4 p-5">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-3">
+            <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
+              Payouts
+            </span>
+            <Pill tone={badgeTone}>{badgeLabel}</Pill>
+          </div>
+          <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+            {body}
+          </p>
+        </div>
+        <div className="shrink-0">
+          {ready ? (
+            <StripeDashboardButton />
+          ) : (
+            <Link
+              href="/merchant/onboarding/payouts"
+              className="inline-flex items-center justify-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
+            >
+              {connect.hasAccount ? "Continue setup →" : "Connect Stripe →"}
+            </Link>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Recent Stripe payouts from the connected account. Populated by the
+// `payout.*` webhook in stripe-sync.ts; older history lives in the Express
+// dashboard, one click away via <StripeDashboardButton />.
+function RecentPayoutsCard({
+  payouts,
+}: {
+  payouts: MerchantFinancesSummary["recentPayouts"];
+}) {
+  return (
+    <div className="mt-6 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] hard-shadow-sm">
+      <div className="border-b-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-3">
+        <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
+          Recent payouts
+        </span>
+      </div>
+      {payouts.length === 0 ? (
+        <p className="p-6 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+          No payouts yet — Stripe pays out monthly once you have a connected
+          balance. Past payouts will show up here.
+        </p>
+      ) : (
+        <ul className="divide-y-2 divide-[color:var(--line-soft)]">
+          {payouts.map((p) => (
+            <li
+              key={p.id}
+              className="flex flex-wrap items-center justify-between gap-3 px-5 py-3"
+            >
+              <div className="min-w-0">
+                <p className="font-bold text-[color:var(--ink)]">
+                  {p.arrivalDate
+                    ? dateTimeFormatter.format(new Date(p.arrivalDate))
+                    : "Pending arrival"}
+                </p>
+                {p.bankLast4 ? (
+                  <p className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+                    Bank ····{p.bankLast4}
+                  </p>
+                ) : null}
+              </div>
+              <div className="flex items-center gap-3">
+                <Pill tone={p.status === "paid" ? "peach" : "rose"}>{p.status}</Pill>
+                <span className="font-bold text-[color:var(--ink)]">
+                  {formatPrice(p.amountCents)}
+                </span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 async function FinancesTabAsync({
   session,
 }: {
@@ -430,13 +665,15 @@ async function FinancesTabAsync({
           title="Payouts + revenue."
           body="Click-managed paid events route through Stripe. Free events don’t appear here."
         />
-        <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <PayoutStatusCard connect={finances.connect} />
+        <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <MetricCard label="Total" value={formatPrice(finances.totalRevenueCents)} tone="pink" />
           <MetricCard label="Paid" value={formatPrice(finances.paidRevenueCents)} tone="aqua" />
           <MetricCard label="Pending" value={formatPrice(finances.pendingRevenueCents)} tone="white" />
           <MetricCard label="Refunded" value={formatPrice(finances.refundedRevenueCents)} tone="white" />
         </div>
-        <div className="mt-8 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] hard-shadow-sm">
+        <RecentPayoutsCard payouts={finances.recentPayouts} />
+        <div className="mt-6 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] hard-shadow-sm">
           <div className="border-b-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-3">
             <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
               Recent transactions

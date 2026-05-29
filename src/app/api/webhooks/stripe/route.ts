@@ -1,17 +1,37 @@
+import type Stripe from "stripe";
 import { NextResponse } from "next/server";
 import {
   markPaymentFailed,
   markPaymentSucceeded,
+  updateMerchantConnectStatus,
 } from "@/lib/event-repository";
+import { getConnectedAccountStatus } from "@/lib/stripe-connect";
 import {
   getStripeClient,
   getStripeWebhookSecret,
 } from "@/lib/stripe";
+import {
+  recordDisputeAudit,
+  syncTransactionFromStripe,
+  upsertPayoutFromEvent,
+} from "@/lib/stripe-sync";
 
 export const runtime = "nodejs";
 
 function paymentIdFromMetadata(metadata: Record<string, string> | null | undefined) {
   return metadata?.payment_transaction_id ?? null;
+}
+
+// Pulls the connected account id out of a Connect account event. v1 Connect
+// events carry it on `event.account`; otherwise fall back to the object id.
+function connectedAccountIdFromEvent(event: Stripe.Event): string | null {
+  const connectAccount = (event as { account?: string }).account;
+  if (typeof connectAccount === "string") return connectAccount;
+  const obj = event.data?.object as { id?: string; object?: string } | undefined;
+  if (obj && (obj.object === "account" || obj.object === "v2.core.account")) {
+    return typeof obj.id === "string" ? obj.id : null;
+  }
+  return null;
 }
 
 export async function POST(request: Request) {
@@ -62,8 +82,50 @@ export async function POST(request: Request) {
         if (id) await markPaymentFailed(id);
         break;
       }
-      default:
+      case "charge.refunded": {
+        // Both partial and full refunds fire this event. We pull the latest
+        // PI snapshot (refunds list + amount_refunded) and let the sync helper
+        // decide the new payment_transactions.status.
+        const charge = event.data.object;
+        const pi =
+          typeof charge.payment_intent === "string"
+            ? charge.payment_intent
+            : charge.payment_intent?.id ?? null;
+        if (pi) await syncTransactionFromStripe(pi);
         break;
+      }
+      case "charge.dispute.created":
+      case "charge.dispute.updated":
+      case "charge.dispute.closed": {
+        // No first-class disputes table yet — log to audit_logs so
+        // /admin/audit surfaces it. Disputes table is a follow-up.
+        await recordDisputeAudit(event.data.object, event.type);
+        break;
+      }
+      case "payout.created":
+      case "payout.updated":
+      case "payout.paid":
+      case "payout.failed":
+      case "payout.canceled": {
+        // Payouts always come from a connected account context.
+        const accountId =
+          typeof event.account === "string" ? event.account : null;
+        await upsertPayoutFromEvent(event.data.object, accountId);
+        break;
+      }
+      default: {
+        // Connect: a merchant's connected account changed (capabilities,
+        // requirements, bank details). Re-fetch the authoritative status and
+        // cache it. Best-effort — /merchant/onboarding also syncs on return.
+        if (event.type === "account.updated" || event.type.startsWith("v2.core.account")) {
+          const accountId = connectedAccountIdFromEvent(event);
+          if (accountId) {
+            const status = await getConnectedAccountStatus(accountId);
+            await updateMerchantConnectStatus(accountId, status);
+          }
+        }
+        break;
+      }
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "webhook handler failed";

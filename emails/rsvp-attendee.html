@@ -1,0 +1,197 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="x-apple-disable-message-reformatting">
+    <title>You're going to {{eventTitle}}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+      body { margin: 0; padding: 0; width: 100% !important; background: #FFFCF9; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+      table { border-collapse: collapse; mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+      img { border: 0; outline: none; text-decoration: none; -ms-interpolation-mode: bicubic; }
+      a { color: #340068; }
+      .serif { font-family: 'Fraunces', Georgia, 'Times New Roman', serif; }
+      .sans { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; }
+      @media only screen and (max-width: 600px) {
+        .container { width: 100% !important; }
+        .px-gutter { padding-left: 24px !important; padding-right: 24px !important; }
+        .hero-title { font-size: 28px !important; line-height: 1.15 !important; }
+        .stack { display: block !important; width: 100% !important; padding-right: 0 !important; padding-bottom: 16px !important; }
+        .meta-cell { padding-bottom: 14px !important; }
+      }
+    </style>
+  </head>
+  <body style="margin:0;padding:0;background:#FFFCF9;">
+    <div style="display:none;font-size:1px;color:#FFFCF9;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden;">
+      {{eventLongDate}}, {{eventStartTime}} at {{eventVenue}}. Your spot is held.
+    </div>
+
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#FFFCF9;">
+      <tr>
+        <td align="center" style="padding:32px 16px;">
+
+          <table role="presentation" class="container" width="600" cellspacing="0" cellpadding="0" border="0" style="width:600px;max-width:600px;background:#FFFFFF;border:1px solid #EDE3F0;">
+
+            <!-- header -->
+            <tr>
+              <td class="px-gutter" style="padding:28px 40px 20px 40px;border-bottom:1px solid #F1E9F2;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                  <tr>
+                    <td class="serif" style="font-family:'Fraunces',Georgia,serif;font-size:22px;font-weight:600;color:#340068;letter-spacing:-0.01em;">
+                      Click
+                    </td>
+                    <td align="right" class="sans" style="font-family:'Inter',Helvetica,Arial,sans-serif;font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:#6D435A;">
+                      RSVP confirmed
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <!-- hero -->
+            <tr>
+              <td class="px-gutter" style="padding:40px 40px 8px 40px;">
+                <p class="sans" style="margin:0 0 12px 0;font-family:'Inter',Helvetica,Arial,sans-serif;font-size:11px;font-weight:600;letter-spacing:0.18em;text-transform:uppercase;color:#6D435A;">
+                  You're going
+                </p>
+                <h1 class="serif hero-title" style="margin:0 0 16px 0;font-family:'Fraunces',Georgia,serif;font-weight:500;font-size:34px;line-height:1.1;color:#340068;letter-spacing:-0.015em;">
+                  See you at {{eventTitle}}, {{firstName}}.
+                </h1>
+                <p class="sans" style="margin:0;font-family:'Inter',Helvetica,Arial,sans-serif;font-size:16px;line-height:1.55;color:#2A1F36;">
+                  Your spot is held. Add it to your calendar so it survives the week, and we'll send a small nudge the day before.
+                </p>
+              </td>
+            </tr>
+
+            <!-- ticket card -->
+            <tr>
+              <td class="px-gutter" style="padding:28px 40px 0 40px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#FFFCF9;border:1px solid #EDE3F0;border-top:2px dashed #340068;">
+                  <!-- title row -->
+                  <tr>
+                    <td style="padding:24px 24px 4px 24px;">
+                      <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                        <tr>
+                          <td bgcolor="#B1EDE8" style="background:#B1EDE8;padding:5px 10px;">
+                            <span class="sans" style="font-family:'Inter',Helvetica,Arial,sans-serif;font-size:10px;font-weight:600;letter-spacing:0.16em;text-transform:uppercase;color:#340068;">{{eventCategory}}</span>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="padding:12px 24px 0 24px;">
+                      <h2 class="serif" style="margin:0;font-family:'Fraunces',Georgia,serif;font-weight:600;font-size:22px;line-height:1.2;color:#1F1530;letter-spacing:-0.01em;">
+                        {{eventTitle}}
+                      </h2>
+                      <p class="sans" style="margin:6px 0 0 0;font-family:'Inter',Helvetica,Arial,sans-serif;font-size:14px;color:#6D435A;line-height:1.5;">
+                        Hosted by {{eventHostName}}
+                      </p>
+                    </td>
+                  </tr>
+
+                  <!-- meta grid -->
+                  <tr>
+                    <td style="padding:20px 24px 4px 24px;">
+                      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                        <tr>
+                          <td class="stack meta-cell" width="50%" valign="top" style="padding-right:16px;padding-bottom:20px;">
+                            <p class="sans" style="margin:0 0 4px 0;font-family:'Inter',Helvetica,Arial,sans-serif;font-size:10px;font-weight:600;letter-spacing:0.16em;text-transform:uppercase;color:#6D435A;">When</p>
+                            <p class="sans" style="margin:0;font-family:'Inter',Helvetica,Arial,sans-serif;font-size:15px;font-weight:600;color:#1F1530;line-height:1.4;">{{eventLongDate}}</p>
+                            <p class="sans" style="margin:2px 0 0 0;font-family:'Inter',Helvetica,Arial,sans-serif;font-size:15px;color:#2A1F36;line-height:1.4;">{{eventStartTime}} &ndash; {{eventEndTime}}</p>
+                          </td>
+                          <td class="stack meta-cell" width="50%" valign="top" style="padding-bottom:20px;">
+                            <p class="sans" style="margin:0 0 4px 0;font-family:'Inter',Helvetica,Arial,sans-serif;font-size:10px;font-weight:600;letter-spacing:0.16em;text-transform:uppercase;color:#6D435A;">Where</p>
+                            <p class="sans" style="margin:0;font-family:'Inter',Helvetica,Arial,sans-serif;font-size:15px;font-weight:600;color:#1F1530;line-height:1.4;">{{eventVenue}}</p>
+                            <p class="sans" style="margin:2px 0 0 0;font-family:'Inter',Helvetica,Arial,sans-serif;font-size:15px;color:#2A1F36;line-height:1.4;">{{eventAddress}}<br>{{eventCity}}</p>
+                          </td>
+                        </tr>
+                        <tr>
+                          <td class="stack meta-cell" width="50%" valign="top" style="padding-right:16px;padding-bottom:4px;">
+                            <p class="sans" style="margin:0 0 4px 0;font-family:'Inter',Helvetica,Arial,sans-serif;font-size:10px;font-weight:600;letter-spacing:0.16em;text-transform:uppercase;color:#6D435A;">Price</p>
+                            <p class="sans" style="margin:0;font-family:'Inter',Helvetica,Arial,sans-serif;font-size:15px;font-weight:600;color:#1F1530;line-height:1.4;">{{eventPriceLabel}}</p>
+                          </td>
+                          <td class="stack meta-cell" width="50%" valign="top" style="padding-bottom:4px;">
+                            <p class="sans" style="margin:0 0 4px 0;font-family:'Inter',Helvetica,Arial,sans-serif;font-size:10px;font-weight:600;letter-spacing:0.16em;text-transform:uppercase;color:#6D435A;">Capacity</p>
+                            <p class="sans" style="margin:0;font-family:'Inter',Helvetica,Arial,sans-serif;font-size:15px;font-weight:600;color:#1F1530;line-height:1.4;">{{eventSpotsFilledLabel}}</p>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+
+                  <!-- social signal (omit row if {{socialSignalLabel}} is empty) -->
+                  <tr>
+                    <td style="padding:8px 24px 24px 24px;">
+                      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-top:1px solid #EDE3F0;">
+                        <tr>
+                          <td style="padding-top:16px;">
+                            <p class="sans" style="margin:0;font-family:'Inter',Helvetica,Arial,sans-serif;font-size:14px;color:#340068;line-height:1.5;">
+                              <span class="serif" style="font-family:'Fraunces',Georgia,serif;font-style:italic;">{{socialSignalLabel}}</span>
+                            </p>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <!-- CTAs -->
+            <tr>
+              <td class="px-gutter" style="padding:28px 40px 8px 40px;">
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                  <tr>
+                    <td bgcolor="#FF6978" style="background:#FF6978;">
+                      <a href="{{eventDetailsUrl}}" class="sans" style="display:inline-block;padding:14px 28px;font-family:'Inter',Helvetica,Arial,sans-serif;font-size:13px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:#FFFFFF;text-decoration:none;">View event details</a>
+                    </td>
+                  </tr>
+                </table>
+                <p class="sans" style="margin:14px 0 0 0;font-family:'Inter',Helvetica,Arial,sans-serif;font-size:14px;color:#6D435A;line-height:1.5;">
+                  <a href="{{addToCalendarUrl}}" style="color:#340068;text-decoration:underline;">Add to calendar</a> &middot; <a href="{{cancelRsvpUrl}}" style="color:#340068;text-decoration:underline;">Can't make it?</a>
+                </p>
+              </td>
+            </tr>
+
+            <!-- "good to know" -->
+            <tr>
+              <td class="px-gutter" style="padding:32px 40px 0 40px;">
+                <p class="sans" style="margin:0 0 14px 0;font-family:'Inter',Helvetica,Arial,sans-serif;font-size:11px;font-weight:600;letter-spacing:0.18em;text-transform:uppercase;color:#6D435A;">
+                  Good to know
+                </p>
+                <p class="sans" style="margin:0 0 10px 0;font-family:'Inter',Helvetica,Arial,sans-serif;font-size:15px;color:#2A1F36;line-height:1.6;">
+                  &middot; Plans change. If you can't make it, cancel as early as you can &mdash; it frees the seat for someone on the waitlist.
+                </p>
+                <p class="sans" style="margin:0 0 10px 0;font-family:'Inter',Helvetica,Arial,sans-serif;font-size:15px;color:#2A1F36;line-height:1.6;">
+                  &middot; Coming alone is the norm here, not the exception. Most people you'll meet are doing the same.
+                </p>
+                <p class="sans" style="margin:0;font-family:'Inter',Helvetica,Arial,sans-serif;font-size:15px;color:#2A1F36;line-height:1.6;">
+                  &middot; Questions about the event itself reach the host fastest &mdash; reply to this email and we'll route it.
+                </p>
+              </td>
+            </tr>
+
+            <!-- footer -->
+            <tr>
+              <td class="px-gutter" style="padding:36px 40px 28px 40px;border-top:1px solid #F1E9F2;margin-top:32px;">
+                <p class="sans" style="margin:0 0 6px 0;font-family:'Inter',Helvetica,Arial,sans-serif;font-size:12px;color:#6D435A;line-height:1.6;">
+                  You're getting this because you RSVP'd through Click.
+                </p>
+                <p class="sans" style="margin:0;font-family:'Inter',Helvetica,Arial,sans-serif;font-size:12px;color:#6D435A;line-height:1.6;">
+                  <a href="{{unsubscribeUrl}}" style="color:#6D435A;text-decoration:underline;">Email preferences</a> &middot; <a href="mailto:{{supportEmail}}" style="color:#6D435A;text-decoration:underline;">{{supportEmail}}</a>
+                </p>
+              </td>
+            </tr>
+
+          </table>
+
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

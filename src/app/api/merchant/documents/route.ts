@@ -101,9 +101,12 @@ export async function POST(request: Request) {
     throw error;
   }
 
-  const buffer = Buffer.from(await file.arrayBuffer());
+  // Uint8Array, not a Node Buffer: storage-js on Node 18+/24 hands a Buffer
+  // body straight to undici's fetch, which fails with an opaque "fetch failed".
+  // A Uint8Array view of the same bytes uploads correctly.
+  const bytes = new Uint8Array(await file.arrayBuffer());
 
-  const { error: uploadError } = await supabase.storage.from(BUCKET).upload(objectKey, buffer, {
+  const { error: uploadError } = await supabase.storage.from(BUCKET).upload(objectKey, bytes, {
     contentType: file.type,
     upsert: false,
   });

@@ -1,9 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import Link from "next/link";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { AdminMerchantRow } from "@/lib/event-repository";
 
-type StatusFilter = "all" | "pending" | "approved" | "rejected";
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+type StatusFilter = "all" | "pending" | "approved" | "rejected" | "suspended";
+type VerificationStatus = "pending" | "approved" | "rejected" | "suspended";
 
 const dateFormatter = new Intl.DateTimeFormat("en-AU", {
   day: "numeric",
@@ -14,7 +18,130 @@ const dateFormatter = new Intl.DateTimeFormat("en-AU", {
 function statusTone(status: string) {
   if (status === "approved") return "bg-[color:var(--peach)] text-[color:var(--surface-deep)]";
   if (status === "rejected") return "bg-[color:var(--ink)] text-[color:var(--champagne)]";
-  return "bg-[color:var(--rose)] text-[color:var(--surface-deep)]";
+  if (status === "suspended") return "bg-[color:var(--rose)] text-[color:var(--surface-deep)]";
+  // pending
+  return "bg-[color:var(--cream)] text-[color:var(--ink)]";
+}
+
+function MerchantActions({
+  merchant,
+  onUpdate,
+  pendingMessage,
+}: {
+  merchant: AdminMerchantRow;
+  onUpdate: (status: VerificationStatus) => void;
+  pendingMessage?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handlePointer(event: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+    function handleKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", handlePointer);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handlePointer);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [open]);
+
+  const status = merchant.verificationStatus;
+  // Approve is the catch-all "make this merchant active": works for fresh pending
+  // signups *and* for reinstating a previously suspended/rejected merchant.
+  const canApprove = status !== "approved";
+  const canSuspend = status === "approved";
+  // Reject is only for the initial vetting decision on a pending application.
+  // Once approved, the deactivation path is Suspend (reversible, hides events
+  // but keeps existing RSVPs valid) — not Reject.
+  const canReject = status === "pending";
+
+  function run(next: VerificationStatus) {
+    onUpdate(next);
+    setOpen(false);
+  }
+
+  return (
+    <div ref={containerRef} className="relative flex justify-start md:justify-end">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`Actions for ${merchant.businessName}`}
+        onClick={() => setOpen((value) => !value)}
+        className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] text-[color:var(--ink)] transition-colors hover:bg-[color:var(--cream)]"
+      >
+        <svg viewBox="0 0 20 20" className="h-4 w-4" fill="currentColor" aria-hidden="true">
+          <circle cx="10" cy="4" r="1.6" />
+          <circle cx="10" cy="10" r="1.6" />
+          <circle cx="10" cy="16" r="1.6" />
+        </svg>
+      </button>
+      {open ? (
+        <div
+          role="menu"
+          className="absolute right-0 top-10 z-20 w-56 rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-2 text-left hard-shadow-sm"
+        >
+          {UUID_RE.test(merchant.id) ? (
+            <Link
+              href={`/admin/merchants/${merchant.id}`}
+              role="menuitem"
+              className="block rounded-lg px-3 py-2 text-xs font-bold text-[color:var(--ink)] transition-colors hover:bg-[color:var(--cream)]"
+            >
+              View profile
+            </Link>
+          ) : null}
+          {canApprove ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => run("approved")}
+              className="block w-full rounded-lg px-3 py-2 text-left text-xs font-bold text-[color:var(--ink)] transition-colors hover:bg-[color:var(--peach)]"
+            >
+              {status === "suspended" ? "Reinstate merchant" : "Approve merchant"}
+            </button>
+          ) : null}
+          {canSuspend ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => run("suspended")}
+              className="block w-full rounded-lg px-3 py-2 text-left text-xs font-bold text-[color:var(--rose)] transition-colors hover:bg-[color:var(--rose)]/10"
+            >
+              Suspend merchant
+            </button>
+          ) : null}
+          {canReject ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => run("rejected")}
+              className="block w-full rounded-lg px-3 py-2 text-left text-xs font-bold text-[color:var(--ink)] transition-colors hover:bg-[color:var(--cream)]"
+            >
+              Reject merchant
+            </button>
+          ) : null}
+          {status === "suspended" ? (
+            <p className="mt-1 px-3 py-1 text-[0.6rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]/80">
+              Events hidden from Discover
+            </p>
+          ) : null}
+          {pendingMessage ? (
+            <p className="mt-1 px-3 py-1 text-[0.65rem] font-bold text-[color:var(--mauve)]">
+              {pendingMessage}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 export function AdminMerchantsTable({ merchants }: { merchants: AdminMerchantRow[] }) {
@@ -41,12 +168,10 @@ export function AdminMerchantsTable({ merchants }: { merchants: AdminMerchantRow
     { value: "pending", label: "Pending", count: rows.filter((m) => m.verificationStatus === "pending").length },
     { value: "approved", label: "Approved", count: rows.filter((m) => m.verificationStatus === "approved").length },
     { value: "rejected", label: "Rejected", count: rows.filter((m) => m.verificationStatus === "rejected").length },
+    { value: "suspended", label: "Suspended", count: rows.filter((m) => m.verificationStatus === "suspended").length },
   ];
 
-  async function updateVerification(
-    merchantId: string,
-    nextStatus: "pending" | "approved" | "rejected",
-  ) {
+  async function updateVerification(merchantId: string, nextStatus: VerificationStatus) {
     setActionState((current) => ({ ...current, [merchantId]: "Saving..." }));
 
     const response = await fetch(`/api/admin/merchants/${merchantId}/verification`, {
@@ -62,7 +187,7 @@ export function AdminMerchantsTable({ merchants }: { merchants: AdminMerchantRow
     if (!response.ok) {
       setActionState((current) => ({
         ...current,
-        [merchantId]: payload.error ?? "Approval failed.",
+        [merchantId]: payload.error ?? "Update failed.",
       }));
       return;
     }
@@ -77,7 +202,17 @@ export function AdminMerchantsTable({ merchants }: { merchants: AdminMerchantRow
           : merchant,
       ),
     );
-    setActionState((current) => ({ ...current, [merchantId]: "Updated." }));
+    setActionState((current) => ({
+      ...current,
+      [merchantId]:
+        nextStatus === "approved"
+          ? "Approved."
+          : nextStatus === "suspended"
+            ? "Suspended."
+            : nextStatus === "rejected"
+              ? "Rejected."
+              : "Updated.",
+    }));
   }
 
   return (
@@ -108,13 +243,16 @@ export function AdminMerchantsTable({ merchants }: { merchants: AdminMerchantRow
         />
       </div>
 
-      <div className="mt-6 overflow-hidden rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow-sm">
-        <div className="hidden grid-cols-[1.4fr_0.8fr_1fr_0.7fr_0.8fr] gap-4 bg-[color:var(--surface-deep)] px-5 py-3 text-xs font-black uppercase tracking-[0.14em] text-[color:var(--on-deep)] md:grid">
+      {/* overflow-visible so the row's dropdown menu can render outside the
+          card edge instead of being clipped by overflow-hidden. */}
+      <div className="mt-6 overflow-visible rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow-sm">
+        <div className="hidden grid-cols-[1.4fr_0.8fr_1fr_0.7fr_0.8fr_0.3fr] gap-4 bg-[color:var(--surface-deep)] px-5 py-3 text-xs font-black uppercase tracking-[0.14em] text-[color:var(--on-deep)] md:grid">
           <span>Business</span>
           <span>Status</span>
           <span>Owner</span>
           <span>Events</span>
           <span>Joined</span>
+          <span className="text-right">Actions</span>
         </div>
         {filtered.length === 0 ? (
           <p className="px-5 py-8 text-center text-sm font-bold text-[color:var(--mauve)]">
@@ -124,10 +262,21 @@ export function AdminMerchantsTable({ merchants }: { merchants: AdminMerchantRow
           filtered.map((merchant) => (
             <div
               key={merchant.id}
-              className="grid gap-3 border-b border-[color:var(--line)] px-5 py-4 text-sm font-medium text-[color:var(--mauve)] last:border-0 md:grid-cols-[1.4fr_0.8fr_1fr_0.7fr_0.8fr] md:items-center"
+              className="grid gap-3 border-b border-[color:var(--line)] px-5 py-4 text-sm font-medium text-[color:var(--mauve)] last:border-0 md:grid-cols-[1.4fr_0.8fr_1fr_0.7fr_0.8fr_0.3fr] md:items-center"
             >
               <div>
-                <p className="font-black text-[color:var(--ink)]">{merchant.businessName}</p>
+                {UUID_RE.test(merchant.id) ? (
+                  <Link
+                    href={`/admin/merchants/${merchant.id}`}
+                    className="font-black text-[color:var(--ink)] hover:underline"
+                  >
+                    {merchant.businessName}
+                  </Link>
+                ) : (
+                  <p className="font-black text-[color:var(--ink)]">
+                    {merchant.businessName}
+                  </p>
+                )}
                 <p className="text-xs font-medium">{merchant.contactEmail}</p>
                 {merchant.websiteUrl ? (
                   <a
@@ -151,26 +300,6 @@ export function AdminMerchantsTable({ merchants }: { merchants: AdminMerchantRow
                     ABN {merchant.abn}
                   </p>
                 ) : null}
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  {merchant.verificationStatus !== "approved" ? (
-                    <button
-                      type="button"
-                      onClick={() => updateVerification(merchant.id, "approved")}
-                      className="rounded-full border border-[color:var(--line)] bg-[color:var(--peach)] px-2.5 py-1 text-[0.65rem] font-black uppercase tracking-wider text-[color:var(--surface-deep)] hover:bg-[color:var(--rose)]"
-                    >
-                      Approve
-                    </button>
-                  ) : null}
-                  {merchant.verificationStatus !== "rejected" ? (
-                    <button
-                      type="button"
-                      onClick={() => updateVerification(merchant.id, "rejected")}
-                      className="rounded-full border border-[color:var(--line)] bg-[color:var(--champagne)] px-2.5 py-1 text-[0.65rem] font-black uppercase tracking-wider text-[color:var(--ink)] hover:bg-[color:var(--cream)]"
-                    >
-                      Reject
-                    </button>
-                  ) : null}
-                </div>
                 {actionState[merchant.id] ? (
                   <p className="mt-1 text-[0.65rem] font-bold text-[color:var(--mauve)]">
                     {actionState[merchant.id]}
@@ -183,6 +312,11 @@ export function AdminMerchantsTable({ merchants }: { merchants: AdminMerchantRow
               </div>
               <span className="font-bold text-[color:var(--ink)]">{merchant.eventsHosted}</span>
               <span>{dateFormatter.format(new Date(merchant.createdAt))}</span>
+              <MerchantActions
+                merchant={merchant}
+                onUpdate={(next) => updateVerification(merchant.id, next)}
+                pendingMessage={actionState[merchant.id]}
+              />
             </div>
           ))
         )}

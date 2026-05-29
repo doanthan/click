@@ -49,6 +49,31 @@ function formatPrice(cents: number, currency: string) {
   }).format(cents / 100);
 }
 
+// Google Calendar "add event" deep-link. Dates are UTC basic-format
+// (YYYYMMDDTHHMMSSZ); end defaults to +2h when the event has no explicit end.
+function buildGoogleCalendarUrl(opts: {
+  title: string;
+  startsAt: string;
+  endsAt: string | null;
+  location: string;
+  details: string;
+}) {
+  const toBasic = (iso: string) =>
+    new Date(iso).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+  const start = toBasic(opts.startsAt);
+  const end = toBasic(
+    opts.endsAt ?? new Date(new Date(opts.startsAt).getTime() + 2 * 3_600_000).toISOString(),
+  );
+  const params = new URLSearchParams({
+    action: "TEMPLATE",
+    text: opts.title,
+    dates: `${start}/${end}`,
+    location: opts.location,
+    details: opts.details,
+  });
+  return `https://calendar.google.com/calendar/render?${params.toString()}`;
+}
+
 export default async function EventDetailPage({ params, searchParams }: PageProps) {
   const { slug } = await params;
   const search = searchParams ? await searchParams : undefined;
@@ -81,6 +106,25 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
   const isPaid = event.priceCents > 0;
   const bookmarked = profileStatus?.bookmarkedEventIds.includes(event.id) ?? false;
   const showStripeUnavailableHint = isPaid && !process.env.STRIPE_SECRET_KEY;
+  const isAuthenticated = Boolean(session?.user);
+
+  const successDetails = {
+    title: event.title,
+    dateLabel: formatLongDate(event.startsAt),
+    timeLabel: formatTimeRange(event.startsAt, event.endsAt),
+    location: event.location,
+    suburb: event.suburb,
+    slug: event.id,
+    calendarUrl: buildGoogleCalendarUrl({
+      title: event.title,
+      startsAt: event.startsAt,
+      endsAt: event.endsAt,
+      location: [event.location, event.address, event.suburb]
+        .filter(Boolean)
+        .join(", "),
+      details: `You're going to ${event.title}. See details: ${process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") || "http://localhost:3000"}/events/${event.id}`,
+    }),
+  };
 
   return (
     <main className="min-h-screen bg-[color:var(--champagne)] text-[color:var(--ink)]">
@@ -160,6 +204,8 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
               <EventAttendeePreview
                 items={attendeePreview.items}
                 totalConfirmed={attendeePreview.totalConfirmed}
+                isAuthenticated={isAuthenticated}
+                eventSlug={event.id}
               />
             </div>
 
@@ -281,6 +327,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                         eventId={event.id}
                         initiallyRegistered={false}
                         isWaitlist={false}
+                        successDetails={successDetails}
                       />
                     </EventBookingDialog>
                   )}

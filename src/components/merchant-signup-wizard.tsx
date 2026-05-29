@@ -1,6 +1,14 @@
 "use client";
 
-import { useReducer, useState } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useReducer,
+  useRef,
+  useState,
+  type Dispatch,
+} from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -13,25 +21,42 @@ import {
   formatAcn,
   normalizeAbn,
   normalizeAcn,
+  validateOptionalAbn,
   validateOptionalAcn,
-  validateRequiredAbn,
 } from "@/lib/abn";
+import { MapboxAutocomplete, type MapboxPlace } from "./mapbox-autocomplete";
 
-// Merchant signup wizard — spec §1, 4 steps:
-//   1 · Business details
-//   2 · Contact & address
-//   3 · Documents
-//   4 · Review & submit (single POST to /api/merchant)
-// Step 0 (account / sign-in) is a precondition rendered when !isAuthed.
+// Merchant signup — multi-step wizard covering spec §1. Each step has its own
+// URL so users can bookmark, link to, and browser-back through them:
+//   /merchant/signup           · auth gate (rendered for logged-out visitors)
+//   /merchant/signup/business  · step 1 · business details
+//   /merchant/signup/contact   · step 2 · contact & address
+//   /merchant/signup/documents · step 3 · documents → Submit
 //
-// Wizard state lives client-side; documents are uploaded immediately on
-// file-pick to /api/merchant/documents so the review step has confirmed
-// records. Everything else commits on Step 4.
+// Form state lives in a React context provided by <MerchantSignupProvider>
+// mounted inside the route's layout, so it persists across client-side
+// navigation between sibling step pages (App Router keeps shared layouts
+// mounted). Each step page renders <WizardShell step={n}> which surfaces the
+// step indicator, validation messages, and Back / Next / Submit nav. Per-step
+// validators run on Next; Submit re-runs all three and router.push()'es back
+// to the offending step's URL. Documents upload immediately on file-pick to
+// /api/merchant/documents; everything else commits on Submit.
 
-// ---------- props + types ----------
+// ---------- constants & types ----------
 
 const AU_STATES = ["NSW", "VIC", "QLD", "WA", "SA", "TAS", "ACT", "NT"] as const;
 type AuState = (typeof AU_STATES)[number];
+
+const AU_STATE_NAMES: Record<AuState, string> = {
+  NSW: "New South Wales",
+  VIC: "Victoria",
+  QLD: "Queensland",
+  WA: "Western Australia",
+  SA: "South Australia",
+  TAS: "Tasmania",
+  ACT: "Aust. Capital Terr.",
+  NT: "Northern Territory",
+};
 
 const BUSINESS_TYPES = [
   { value: "sole_trader", label: "Sole trader" },
@@ -45,29 +70,35 @@ const DOC_TYPES = ["abn_certificate", "public_liability_insurance", "liquor_lice
 type DocumentType = (typeof DOC_TYPES)[number];
 
 type CategoryOption = { id: string; name: string; slug: string };
-
 type ExistingDoc = { documentType: DocumentType; fileName: string };
 
-export type MerchantSignupWizardProps = {
-  isAuthed: boolean;
+export type MerchantSignupProviderProps = {
   sessionEmail: string;
   sessionName: string;
   categories: CategoryOption[];
   existingDocs: ExistingDoc[];
-  googleConfigured: boolean;
-  metaConfigured: boolean;
+  children: React.ReactNode;
 };
 
+// 0 = Business, 1 = Contact, 2 = Documents.
+export type StepIndex = 0 | 1 | 2;
+const STEP_COUNT = 3;
+const STEP_TITLES = ["Business", "Contact", "Documents"] as const;
+export const STEP_PATHS = [
+  "/merchant/signup/business",
+  "/merchant/signup/contact",
+  "/merchant/signup/documents",
+] as const;
+
 type State = {
-  step: 1 | 2 | 3 | 4;
-  // Step 1
+  // Business
   businessName: string;
   tradingName: string;
   abn: string;
   acn: string;
   businessType: BusinessType | "";
   eventCategoryIds: string[];
-  // Step 2
+  // Contact & address
   contactEmail: string;
   phone: string;
   websiteUrl: string;
@@ -75,18 +106,24 @@ type State = {
   addressSuburb: string;
   addressState: AuState | "";
   addressPostcode: string;
-  // Step 3
+  // Documents
   uploads: Record<DocumentType, { fileName: string } | null>;
-  // Step 4 submission
+  // Submission
   submitState: "idle" | "submitting" | "success" | "error";
   submitMessage: string;
 };
 
 type Action =
-  | { type: "field"; key: keyof Omit<State, "step" | "uploads" | "submitState" | "submitMessage" | "eventCategoryIds">; value: string }
+  | {
+      type: "field";
+      key: keyof Omit<
+        State,
+        "uploads" | "submitState" | "submitMessage" | "eventCategoryIds"
+      >;
+      value: string;
+    }
   | { type: "toggleCategory"; id: string }
   | { type: "upload"; docType: DocumentType; info: { fileName: string } | null }
-  | { type: "step"; step: State["step"] }
   | { type: "submitStart" }
   | { type: "submitError"; message: string }
   | { type: "submitSuccess" };
@@ -94,7 +131,8 @@ type Action =
 function reducer(state: State, action: Action): State {
   switch (action.type) {
     case "field":
-      return { ...state, [action.key]: action.value };
+      // Editing any field invalidates a stale submit error — clear it.
+      return { ...state, [action.key]: action.value, submitMessage: "" };
     case "toggleCategory": {
       const has = state.eventCategoryIds.includes(action.id);
       return {
@@ -102,12 +140,15 @@ function reducer(state: State, action: Action): State {
         eventCategoryIds: has
           ? state.eventCategoryIds.filter((id) => id !== action.id)
           : [...state.eventCategoryIds, action.id],
+        submitMessage: "",
       };
     }
     case "upload":
-      return { ...state, uploads: { ...state.uploads, [action.docType]: action.info } };
-    case "step":
-      return { ...state, step: action.step, submitMessage: "" };
+      return {
+        ...state,
+        uploads: { ...state.uploads, [action.docType]: action.info },
+        submitMessage: "",
+      };
     case "submitStart":
       return { ...state, submitState: "submitting", submitMessage: "" };
     case "submitError":
@@ -117,7 +158,11 @@ function reducer(state: State, action: Action): State {
   }
 }
 
-function initialState(props: MerchantSignupWizardProps): State {
+function initialState(props: {
+  sessionEmail: string;
+  sessionName: string;
+  existingDocs: ExistingDoc[];
+}): State {
   const existing: State["uploads"] = {
     abn_certificate: null,
     public_liability_insurance: null,
@@ -127,7 +172,6 @@ function initialState(props: MerchantSignupWizardProps): State {
     existing[doc.documentType] = { fileName: doc.fileName };
   }
   return {
-    step: 1,
     businessName: props.sessionName ? `${props.sessionName}'s Events` : "",
     tradingName: "",
     abn: "",
@@ -147,76 +191,114 @@ function initialState(props: MerchantSignupWizardProps): State {
   };
 }
 
-// ---------- component ----------
+// ---------- context ----------
 
-export function MerchantSignupWizard(props: MerchantSignupWizardProps) {
-  if (!props.isAuthed) {
-    return (
-      <StepAuthCard
-        googleConfigured={props.googleConfigured}
-        metaConfigured={props.metaConfigured}
-      />
+type WizardContextValue = {
+  state: State;
+  dispatch: Dispatch<Action>;
+  categories: CategoryOption[];
+};
+
+const WizardContext = createContext<WizardContextValue | null>(null);
+
+function useWizard(): WizardContextValue {
+  const value = useContext(WizardContext);
+  if (!value) {
+    throw new Error(
+      "useWizard must be used inside <MerchantSignupProvider> (mounted in src/app/merchant/signup/layout.tsx)",
     );
   }
-  return <AuthedWizard {...props} />;
+  return value;
 }
 
-function AuthedWizard(props: MerchantSignupWizardProps) {
-  const router = useRouter();
-  const [state, dispatch] = useReducer(reducer, props, initialState);
+export function MerchantSignupProvider({
+  sessionEmail,
+  sessionName,
+  categories,
+  existingDocs,
+  children,
+}: MerchantSignupProviderProps) {
+  const [state, dispatch] = useReducer(
+    reducer,
+    { sessionEmail, sessionName, existingDocs },
+    initialState,
+  );
+  return (
+    <WizardContext.Provider value={{ state, dispatch, categories }}>
+      {children}
+    </WizardContext.Provider>
+  );
+}
 
-  function validateStep(step: State["step"]): string | null {
-    if (step === 1) {
-      const name = state.businessName.trim();
-      if (name.length < 2 || name.length > 100) return "Business name must be 2–100 characters.";
-      const abnError = validateRequiredAbn(state.abn);
-      if (abnError) return abnError;
-      const acnError = validateOptionalAcn(state.acn);
-      if (acnError) return acnError;
-      if (!state.businessType) return "Pick a business type.";
-      if (state.eventCategoryIds.length === 0) return "Pick at least one event category.";
-    }
-    if (step === 2) {
-      if (!state.contactEmail.includes("@")) return "Enter a valid contact email.";
-      if (!/^(?:\+?61|0)\d{9}$/.test(state.phone.replace(/\s+/g, ""))) {
-        return "Phone must be a valid Australian number (e.g. 0412 345 678).";
-      }
-      if (!state.addressStreet.trim()) return "Street address is required.";
-      if (!state.addressSuburb.trim()) return "Suburb is required.";
-      if (!state.addressState) return "Pick a state.";
-      if (!/^[0-9]{4}$/.test(state.addressPostcode.trim())) return "Postcode must be 4 digits.";
-    }
-    if (step === 3) {
-      if (!state.uploads.abn_certificate) return "Upload your ABN certificate.";
-      if (!state.uploads.public_liability_insurance) {
-        return "Upload your public liability insurance certificate.";
-      }
-    }
+// ---------- step validation ----------
+
+function validateStep(step: StepIndex, state: State): string | null {
+  if (step === 0) {
+    const name = state.businessName.trim();
+    if (name.length < 2 || name.length > 100)
+      return "Business name must be 2–100 characters.";
+    // ABN is optional for now — only validate the format when supplied.
+    const abnError = validateOptionalAbn(state.abn);
+    if (abnError) return abnError;
+    const acnError = validateOptionalAcn(state.acn);
+    if (acnError) return acnError;
+    if (!state.businessType) return "Pick a business type.";
+    if (state.eventCategoryIds.length === 0)
+      return "Pick at least one event category.";
     return null;
   }
+  if (step === 1) {
+    if (!state.contactEmail.includes("@")) return "Enter a valid contact email.";
+    if (!/^(?:\+?61|0)\d{9}$/.test(state.phone.replace(/\s+/g, ""))) {
+      return "Phone must be a valid Australian number (e.g. 0412 345 678).";
+    }
+    if (!state.addressStreet.trim()) return "Street address is required.";
+    if (!state.addressSuburb.trim()) return "Suburb is required.";
+    if (!state.addressState) return "Pick a state.";
+    if (!/^[0-9]{4}$/.test(state.addressPostcode.trim()))
+      return "Postcode must be 4 digits.";
+    return null;
+  }
+  // All documents are optional at signup; admins can request follow-ups during verification.
+  return null;
+}
+
+// ---------- wizard shell ----------
+
+export function WizardShell({
+  step,
+  children,
+}: {
+  step: StepIndex;
+  children: React.ReactNode;
+}) {
+  const { state, dispatch } = useWizard();
+  const router = useRouter();
+  const isLast = step === STEP_COUNT - 1;
 
   function goNext() {
-    const error = validateStep(state.step);
+    const error = validateStep(step, state);
     if (error) {
       dispatch({ type: "submitError", message: error });
       return;
     }
-    dispatch({ type: "step", step: (state.step + 1) as State["step"] });
+    router.push(STEP_PATHS[step + 1]);
   }
 
   function goBack() {
-    if (state.step > 1) {
-      dispatch({ type: "step", step: (state.step - 1) as State["step"] });
+    if (step > 0) {
+      router.push(STEP_PATHS[step - 1]);
     }
   }
 
   async function submit() {
-    // Re-validate every step server-side via the API too, but cheap to gate here.
-    for (const s of [1, 2, 3] as const) {
-      const error = validateStep(s);
+    // Re-run every step's validation on final submit — guards against a user
+    // editing an earlier step after passing it, or deep-linking past one.
+    for (let s = 0; s < STEP_COUNT; s++) {
+      const error = validateStep(s as StepIndex, state);
       if (error) {
-        dispatch({ type: "submitError", message: `Step ${s}: ${error}` });
-        dispatch({ type: "step", step: s });
+        dispatch({ type: "submitError", message: error });
+        router.push(STEP_PATHS[s]);
         return;
       }
     }
@@ -264,60 +346,124 @@ function AuthedWizard(props: MerchantSignupWizardProps) {
 
   return (
     <div className="grid gap-6">
-      <Stepper step={state.step} />
+      <StepIndicator current={step} />
 
-      <div className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-6 hard-shadow sm:p-8">
-        {state.step === 1 ? <Step1 state={state} dispatch={dispatch} categories={props.categories} /> : null}
-        {state.step === 2 ? <Step2 state={state} dispatch={dispatch} /> : null}
-        {state.step === 3 ? <Step3 state={state} dispatch={dispatch} /> : null}
-        {state.step === 4 ? <Step4 state={state} categories={props.categories} /> : null}
+      <SectionCard>{children}</SectionCard>
 
-        {state.submitMessage ? (
-          <p
-            role="alert"
-            className="mt-6 rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-4 py-3 text-sm font-bold text-[color:var(--surface-deep)]"
-          >
-            {state.submitMessage}
-          </p>
-        ) : null}
+      {state.submitMessage ? (
+        <p
+          role="alert"
+          className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-4 py-3 text-sm font-bold text-[color:var(--surface-deep)]"
+        >
+          {state.submitMessage}
+        </p>
+      ) : null}
 
-        <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <button
+          type="button"
+          onClick={goBack}
+          disabled={step === 0 || state.submitState === "submitting"}
+          className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-6 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm disabled:cursor-not-allowed disabled:opacity-40 hover:bg-[color:var(--cream)]"
+        >
+          ← Back
+        </button>
+
+        <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+          Step {step + 1} of {STEP_COUNT} · {STEP_TITLES[step]}
+        </span>
+
+        {isLast ? (
           <button
             type="button"
-            onClick={goBack}
-            disabled={state.step === 1}
-            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-2.5 text-sm font-bold text-[color:var(--ink)] hard-shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
+            onClick={submit}
+            disabled={state.submitState === "submitting"}
+            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-6 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm disabled:cursor-not-allowed disabled:opacity-60 hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)]"
           >
-            ← Back
+            {state.submitState === "submitting" ? "Submitting…" : "Submit application →"}
           </button>
-
-          {state.step < 4 ? (
-            <button
-              type="button"
-              onClick={goNext}
-              className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-6 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)]"
-            >
-              Next: {STEP_TITLES[state.step + 1] ?? ""} →
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={submit}
-              disabled={state.submitState === "submitting"}
-              className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-6 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm disabled:cursor-not-allowed disabled:opacity-60 hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)]"
-            >
-              {state.submitState === "submitting" ? "Submitting…" : "Submit application →"}
-            </button>
-          )}
-        </div>
+        ) : (
+          <button
+            type="button"
+            onClick={goNext}
+            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-6 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)]"
+          >
+            Next →
+          </button>
+        )}
       </div>
+    </div>
+  );
+}
+
+function StepIndicator({ current }: { current: StepIndex }) {
+  // Completed steps (i < current) render as <Link>s so users can jump back to
+  // an earlier stage without using the Back button — matches the goBack()
+  // behaviour above (backward nav skips per-step validation; forward nav is
+  // still gated by the Next button). Active and not-yet-reached steps stay
+  // as plain spans so users can't skip ahead past unvalidated input.
+  return (
+    <ol className="flex items-center gap-2 sm:gap-3">
+      {STEP_TITLES.map((title, i) => {
+        const isDone = i < current;
+        const isActive = i === current;
+        const circleClass = `flex size-8 flex-none items-center justify-center rounded-full border-2 border-[color:var(--line)] text-xs font-bold ${
+          isActive
+            ? "bg-[color:var(--rose)] text-[color:var(--surface-deep)] hard-shadow-sm"
+            : isDone
+              ? "bg-[color:var(--peach)] text-[color:var(--surface-deep)]"
+              : "bg-[color:var(--champagne)] text-[color:var(--mauve)]"
+        }`;
+        const labelClass = `hidden sm:inline font-mono text-[0.7rem] font-bold uppercase tracking-[0.16em] ${
+          isActive ? "text-[color:var(--ink)]" : "text-[color:var(--mauve)]"
+        }`;
+
+        const stepContent = isDone ? (
+          <Link
+            href={STEP_PATHS[i]}
+            aria-label={`Go back to ${title}`}
+            className="flex items-center gap-2 sm:gap-3 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--champagne)] hover:opacity-80"
+          >
+            <span className={circleClass}>✓</span>
+            <span className={labelClass}>{title}</span>
+          </Link>
+        ) : (
+          <>
+            <span className={circleClass} aria-current={isActive ? "step" : undefined}>
+              {i + 1}
+            </span>
+            <span className={labelClass}>{title}</span>
+          </>
+        );
+
+        return (
+          <li key={title} className="flex flex-1 items-center gap-2 sm:gap-3">
+            {stepContent}
+            {i < STEP_TITLES.length - 1 ? (
+              <span
+                className={`h-[2px] flex-1 ${
+                  isDone ? "bg-[color:var(--peach)]" : "bg-[color:var(--line-soft)]"
+                }`}
+              />
+            ) : null}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function SectionCard({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-6 hard-shadow sm:p-8">
+      {children}
     </div>
   );
 }
 
 // ---------- step 0 (auth gate) ----------
 
-function StepAuthCard({
+export function StepAuthCard({
   googleConfigured,
   metaConfigured,
 }: {
@@ -331,14 +477,14 @@ function StepAuthCard({
     <div className="grid gap-6 lg:grid-cols-[0.45fr_0.55fr] lg:items-start">
       <div>
         <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-          Step 0 · Sign in
+          Sign in first
         </p>
         <h2 className="mt-3 font-display text-3xl font-light leading-tight">
           One account for hosting and attending.
         </h2>
         <p className="mt-4 text-sm font-medium leading-6 text-[color:var(--mauve)]">
           We use the same identity for your Click attendee profile and your merchant portal.
-          Sign in with Google, Facebook, or email — we’ll bring you straight back to Step 1.
+          Sign in with Google, Facebook, or email — we’ll bring you straight back to the form.
         </p>
         <p className="mt-4 text-sm font-medium leading-6 text-[color:var(--mauve)]">
           Already a host?{" "}
@@ -397,54 +543,11 @@ function StepAuthCard({
             type="submit"
             className="inline-flex min-h-[52px] items-center justify-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)]"
           >
-            Continue → Step 1
+            Continue →
           </button>
         </form>
       </div>
     </div>
-  );
-}
-
-// ---------- stepper ----------
-
-const STEP_TITLES: Record<number, string> = {
-  1: "Business",
-  2: "Contact & Address",
-  3: "Documents",
-  4: "Review",
-};
-
-function Stepper({ step }: { step: State["step"] }) {
-  return (
-    <ol className="flex flex-wrap items-center gap-3">
-      {([1, 2, 3, 4] as const).map((n) => {
-        const isActive = n === step;
-        const isDone = n < step;
-        return (
-          <li key={n} className="flex items-center gap-2">
-            <span
-              className={`grid size-8 place-items-center rounded-full border-2 border-[color:var(--line)] font-mono text-sm font-bold ${
-                isActive
-                  ? "bg-[color:var(--rose)] text-[color:var(--surface-deep)]"
-                  : isDone
-                    ? "bg-[color:var(--peach)] text-[color:var(--surface-deep)]"
-                    : "bg-[color:var(--champagne)] text-[color:var(--mauve)]"
-              }`}
-            >
-              {isDone ? "✓" : n}
-            </span>
-            <span
-              className={`text-xs font-bold uppercase tracking-[0.12em] ${
-                isActive ? "text-[color:var(--ink)]" : "text-[color:var(--mauve)]"
-              }`}
-            >
-              {STEP_TITLES[n]}
-            </span>
-            {n < 4 ? <span aria-hidden className="text-[color:var(--mauve)]/50">→</span> : null}
-          </li>
-        );
-      })}
-    </ol>
   );
 }
 
@@ -467,20 +570,13 @@ function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
   );
 }
 
-// ---------- step 1 · business ----------
+// ---------- section · business ----------
 
-function Step1({
-  state,
-  dispatch,
-  categories,
-}: {
-  state: State;
-  dispatch: React.Dispatch<Action>;
-  categories: CategoryOption[];
-}) {
+export function BusinessSection() {
+  const { state, dispatch, categories } = useWizard();
   return (
     <div className="grid gap-5">
-      <h3 className="font-display text-3xl font-light leading-tight">Step 1 · Business details</h3>
+      <h3 className="font-display text-3xl font-light leading-tight">Business details</h3>
 
       <label className="grid gap-2">
         <FieldLabel>Business name *</FieldLabel>
@@ -503,16 +599,22 @@ function Step1({
 
       <div className="grid gap-5 sm:grid-cols-2">
         <label className="grid gap-2">
-          <FieldLabel>ABN * (11 digits, checksum-validated)</FieldLabel>
+          <FieldLabel>ABN (optional, 11 digits, checksum-validated)</FieldLabel>
           <TextInput
             value={state.abn}
             inputMode="numeric"
-            onChange={(e) => dispatch({ type: "field", key: "abn", value: e.target.value })}
+            maxLength={14}
+            onChange={(e) =>
+              dispatch({
+                type: "field",
+                key: "abn",
+                value: normalizeAbn(e.target.value).slice(0, 11),
+              })
+            }
             onBlur={() =>
               dispatch({ type: "field", key: "abn", value: formatAbn(state.abn) })
             }
             placeholder="11 222 333 444"
-            required
           />
         </label>
 
@@ -553,53 +655,124 @@ function Step1({
         </div>
       </fieldset>
 
-      <fieldset className="grid gap-3">
-        <legend className="mb-1">
-          <FieldLabel>Event categories you host * (pick at least one)</FieldLabel>
-        </legend>
-        {categories.length === 0 ? (
-          <p className="text-sm font-medium text-[color:var(--mauve)]">
-            No categories available — check your database connection.
-          </p>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {categories.map((cat) => {
-              const selected = state.eventCategoryIds.includes(cat.id);
-              return (
-                <button
-                  key={cat.id}
-                  type="button"
-                  onClick={() => dispatch({ type: "toggleCategory", id: cat.id })}
-                  className={`rounded-full border-2 border-[color:var(--line)] px-3.5 py-1.5 text-xs font-bold uppercase tracking-[0.1em] ${
-                    selected
-                      ? "bg-[color:var(--peach)] text-[color:var(--surface-deep)]"
-                      : "bg-[color:var(--champagne)] text-[color:var(--ink)] hover:bg-[color:var(--cream)]"
-                  }`}
-                >
-                  {selected ? "✓ " : ""}
-                  {cat.name}
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </fieldset>
+      <CategoryPicker
+        categories={categories}
+        selectedIds={state.eventCategoryIds}
+        onToggle={(id) => dispatch({ type: "toggleCategory", id })}
+      />
     </div>
   );
 }
 
-// ---------- step 2 · contact & address ----------
-
-function Step2({
-  state,
-  dispatch,
+// Searchable multi-select for event categories. Selected pills stay pinned
+// above the search results so they're always visible while the user filters.
+function CategoryPicker({
+  categories,
+  selectedIds,
+  onToggle,
 }: {
-  state: State;
-  dispatch: React.Dispatch<Action>;
+  categories: CategoryOption[];
+  selectedIds: string[];
+  onToggle: (id: string) => void;
 }) {
+  const [query, setQuery] = useState("");
+  const selectedSet = new Set(selectedIds);
+  const selected = categories.filter((c) => selectedSet.has(c.id));
+  const q = query.trim().toLowerCase();
+  const available = categories.filter((c) => {
+    if (selectedSet.has(c.id)) return false;
+    if (!q) return true;
+    return c.name.toLowerCase().includes(q) || c.slug.toLowerCase().includes(q);
+  });
+
+  return (
+    <fieldset className="grid gap-3">
+      <legend className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
+        <FieldLabel>Event categories you host * (pick at least one)</FieldLabel>
+        <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.14em] text-[color:var(--mauve)]">
+          {selectedIds.length} selected
+        </span>
+      </legend>
+
+      {categories.length === 0 ? (
+        <p className="text-sm font-medium text-[color:var(--mauve)]">
+          No categories available — check your database connection.
+        </p>
+      ) : (
+        <>
+          {selected.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {selected.map((cat) => (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => onToggle(cat.id)}
+                  className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-3.5 py-1.5 text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--surface-deep)] hover:bg-[color:var(--rose)]"
+                  aria-label={`Remove ${cat.name}`}
+                >
+                  ✓ {cat.name} ×
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          <div className="relative">
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search categories…"
+              aria-label="Search event categories"
+              className="w-full rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-2.5 text-sm font-semibold text-[color:var(--ink)] outline-none focus:bg-[color:var(--cream)]"
+            />
+          </div>
+
+          {available.length === 0 ? (
+            <p className="text-sm font-medium text-[color:var(--mauve)]">
+              {q
+                ? `No categories match “${query}”.`
+                : "All categories selected — nice."}
+            </p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {available.map((cat) => (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => onToggle(cat.id)}
+                  className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3.5 py-1.5 text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--ink)] hover:bg-[color:var(--cream)]"
+                >
+                  {cat.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </fieldset>
+  );
+}
+
+// ---------- section · contact & address ----------
+
+export function ContactSection() {
+  const { state, dispatch } = useWizard();
+
+  // Picking a Mapbox suggestion fills street + suburb/state/postcode in one go.
+  function handlePick(place: MapboxPlace) {
+    dispatch({ type: "field", key: "addressStreet", value: place.street || place.name });
+    if (place.suburb) dispatch({ type: "field", key: "addressSuburb", value: place.suburb });
+    if ((AU_STATES as readonly string[]).includes(place.state)) {
+      dispatch({ type: "field", key: "addressState", value: place.state });
+    }
+    if (/^[0-9]{4}$/.test(place.postcode)) {
+      dispatch({ type: "field", key: "addressPostcode", value: place.postcode });
+    }
+  }
+
   return (
     <div className="grid gap-5">
-      <h3 className="font-display text-3xl font-light leading-tight">Step 2 · Contact & address</h3>
+      <h3 className="font-display text-3xl font-light leading-tight">Contact & address</h3>
 
       <div className="grid gap-5 sm:grid-cols-2">
         <label className="grid gap-2">
@@ -636,12 +809,15 @@ function Step2({
 
       <label className="grid gap-2">
         <FieldLabel>Street address *</FieldLabel>
-        <TextInput
+        <MapboxAutocomplete
           value={state.addressStreet}
-          onChange={(e) => dispatch({ type: "field", key: "addressStreet", value: e.target.value })}
-          placeholder="42 Crown Street"
-          required
+          onValueChange={(v) => dispatch({ type: "field", key: "addressStreet", value: v })}
+          onSelect={handlePick}
+          placeholder="Start typing — e.g. 42 Crown Street, Surry Hills"
         />
+        <span className="text-xs font-medium text-[color:var(--mauve)]">
+          Pick a suggestion and we&apos;ll fill in suburb, state &amp; postcode.
+        </span>
       </label>
 
       <div className="grid gap-5 sm:grid-cols-[2fr_1fr_1fr]">
@@ -656,17 +832,10 @@ function Step2({
         </label>
         <label className="grid gap-2">
           <FieldLabel>State *</FieldLabel>
-          <select
+          <StateSelect
             value={state.addressState}
-            onChange={(e) => dispatch({ type: "field", key: "addressState", value: e.target.value })}
-            className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 text-base font-semibold text-[color:var(--ink)] outline-none focus:bg-[color:var(--cream)]"
-            required
-          >
-            <option value="">—</option>
-            {AU_STATES.map((s) => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </select>
+            onChange={(value) => dispatch({ type: "field", key: "addressState", value })}
+          />
         </label>
         <label className="grid gap-2">
           <FieldLabel>Postcode *</FieldLabel>
@@ -684,31 +853,137 @@ function Step2({
   );
 }
 
-// ---------- step 3 · documents ----------
-
-function Step3({
-  state,
-  dispatch,
+// Custom State picker — replaces the native <select> so the dropdown surface
+// can actually be styled on-brand (the OS-rendered popup ignores CSS). Mirrors
+// the chip-button vocabulary used by Business type above, but as a popover so
+// it stays compact inside the narrow Suburb / State / Postcode row.
+function StateSelect({
+  value,
+  onChange,
 }: {
-  state: State;
-  dispatch: React.Dispatch<Action>;
+  value: AuState | "";
+  onChange: (value: AuState) => void;
 }) {
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  // Close on outside-click or Escape. Both listeners are only attached while
+  // the popover is open so we don't leak globals across the whole wizard.
+  useEffect(() => {
+    if (!open) return;
+    function onPointer(event: MouseEvent) {
+      if (!wrapperRef.current) return;
+      if (!wrapperRef.current.contains(event.target as Node)) setOpen(false);
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={wrapperRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className={`flex w-full items-center justify-between gap-2 rounded-xl border-2 border-[color:var(--line)] px-4 py-3 text-base font-semibold outline-none hard-shadow-sm ${
+          open
+            ? "bg-[color:var(--cream)] text-[color:var(--ink)]"
+            : "bg-[color:var(--champagne)] text-[color:var(--ink)] hover:bg-[color:var(--cream)]"
+        }`}
+      >
+        <span className={value ? "" : "text-[color:var(--mauve)]"}>
+          {value || "—"}
+        </span>
+        <svg
+          viewBox="0 0 12 8"
+          width="12"
+          height="8"
+          aria-hidden="true"
+          className={`flex-none transition-transform ${open ? "rotate-180" : ""}`}
+        >
+          <path
+            d="M1 1.5l5 5 5-5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
+
+      {open ? (
+        <div
+          role="listbox"
+          aria-label="Australian state or territory"
+          className="absolute left-0 right-0 top-full z-20 mt-2 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-2 hard-shadow"
+        >
+          <ul className="grid grid-cols-2 gap-1.5">
+            {AU_STATES.map((s) => {
+              const selected = value === s;
+              return (
+                <li key={s}>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={selected}
+                    onClick={() => {
+                      onChange(s);
+                      setOpen(false);
+                    }}
+                    className={`flex w-full flex-col items-start gap-0.5 rounded-xl border-2 border-[color:var(--line)] px-2.5 py-1.5 text-left ${
+                      selected
+                        ? "bg-[color:var(--rose)] text-[color:var(--surface-deep)]"
+                        : "bg-[color:var(--champagne)] text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+                    }`}
+                  >
+                    <span className="text-sm font-bold leading-tight">{s}</span>
+                    <span
+                      className={`font-mono text-[0.6rem] font-bold uppercase tracking-[0.1em] leading-tight ${
+                        selected ? "text-[color:var(--surface-deep)]" : "text-[color:var(--mauve)]"
+                      }`}
+                    >
+                      {AU_STATE_NAMES[s]}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// ---------- section · documents ----------
+
+export function DocumentsSection() {
+  const { state, dispatch } = useWizard();
   return (
     <div className="grid gap-5">
-      <h3 className="font-display text-3xl font-light leading-tight">Step 3 · Documents</h3>
+      <h3 className="font-display text-3xl font-light leading-tight">Documents</h3>
       <p className="text-sm font-medium leading-6 text-[color:var(--mauve)]">
         Upload PDFs or images (max 5 MB each). Files land in a private Supabase Storage bucket;
         only admins and you can access them via signed URLs.
       </p>
 
       <DocumentUploadRow
-        label="ABN certificate *"
+        label="ABN certificate (optional)"
         documentType="abn_certificate"
         state={state}
         dispatch={dispatch}
       />
       <DocumentUploadRow
-        label="Public liability insurance *"
+        label="Public liability insurance (optional)"
         documentType="public_liability_insurance"
         state={state}
         dispatch={dispatch}
@@ -732,7 +1007,7 @@ function DocumentUploadRow({
   label: string;
   documentType: DocumentType;
   state: State;
-  dispatch: React.Dispatch<Action>;
+  dispatch: Dispatch<Action>;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -791,90 +1066,6 @@ function DocumentUploadRow({
       {error ? (
         <p className="text-xs font-bold text-[color:var(--surface-deep)]">{error}</p>
       ) : null}
-    </div>
-  );
-}
-
-// ---------- step 4 · review ----------
-
-function Step4({
-  state,
-  categories,
-}: {
-  state: State;
-  categories: CategoryOption[];
-}) {
-  const selectedCats = categories
-    .filter((cat) => state.eventCategoryIds.includes(cat.id))
-    .map((cat) => cat.name);
-
-  return (
-    <div className="grid gap-5">
-      <h3 className="font-display text-3xl font-light leading-tight">Step 4 · Review & submit</h3>
-      <p className="text-sm font-medium leading-6 text-[color:var(--mauve)]">
-        Have one more look. On submit we create your merchant profile, send it to admin review, and
-        you’ll land on the holding page until approval.
-      </p>
-
-      <ReviewBlock title="Business">
-        <ReviewLine label="Business name" value={state.businessName} />
-        <ReviewLine label="Trading name" value={state.tradingName || "—"} />
-        <ReviewLine label="ABN" value={formatAbn(state.abn)} />
-        <ReviewLine label="ACN" value={state.acn ? formatAcn(state.acn) : "—"} />
-        <ReviewLine
-          label="Business type"
-          value={BUSINESS_TYPES.find((b) => b.value === state.businessType)?.label ?? "—"}
-        />
-        <ReviewLine
-          label="Categories"
-          value={selectedCats.length ? selectedCats.join(", ") : "—"}
-        />
-      </ReviewBlock>
-
-      <ReviewBlock title="Contact & address">
-        <ReviewLine label="Email" value={state.contactEmail} />
-        <ReviewLine label="Phone" value={state.phone} />
-        <ReviewLine label="Website" value={state.websiteUrl || "—"} />
-        <ReviewLine
-          label="Address"
-          value={[state.addressStreet, state.addressSuburb, state.addressState, state.addressPostcode].filter(Boolean).join(", ")}
-        />
-      </ReviewBlock>
-
-      <ReviewBlock title="Documents">
-        <ReviewLine
-          label="ABN certificate"
-          value={state.uploads.abn_certificate?.fileName ?? "—"}
-        />
-        <ReviewLine
-          label="Public liability insurance"
-          value={state.uploads.public_liability_insurance?.fileName ?? "—"}
-        />
-        <ReviewLine
-          label="Liquor licence"
-          value={state.uploads.liquor_licence?.fileName ?? "(not provided)"}
-        />
-      </ReviewBlock>
-    </div>
-  );
-}
-
-function ReviewBlock({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-4">
-      <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
-        {title}
-      </p>
-      <dl className="mt-3 grid gap-2">{children}</dl>
-    </div>
-  );
-}
-
-function ReviewLine({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="grid grid-cols-[160px_1fr] gap-3 text-sm">
-      <dt className="font-bold text-[color:var(--mauve)]">{label}</dt>
-      <dd className="font-semibold text-[color:var(--ink)]">{value || "—"}</dd>
     </div>
   );
 }

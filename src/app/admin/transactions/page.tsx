@@ -1,31 +1,36 @@
+import { AdminTransactionsTable } from "@/components/admin-transactions-table";
+import {
+  listAdminConnectAccounts,
+  listAdminPayouts,
+  listAdminTransactions,
+} from "@/lib/event-repository";
+
 export const metadata = {
   title: "Transactions Management | Admin",
 };
 
-export default function AdminTransactionsPage() {
-  return (
-    <div className="space-y-8 py-10">
-      <ComingSoon
-        label="Transactions Management"
-        note="The transactions ledger UI is being wired up to the payment_transactions table. Charges, refunds, and payout status will land here."
-      />
-    </div>
-  );
+// ISO timestamps so the table's date filters can default to the last 30 days
+// without re-rendering on every state change.
+function isoDaysAgo(days: number) {
+  return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 }
 
-function ComingSoon({ label, note }: { label: string; note: string }) {
+export default async function AdminTransactionsPage() {
+  const dateFrom = isoDaysAgo(30);
+  const [transactions, payouts, connectAccounts] = await Promise.all([
+    listAdminTransactions({ dateFrom, limit: 200 }),
+    listAdminPayouts({ limit: 50 }),
+    listAdminConnectAccounts(),
+  ]);
+
   return (
-    <div className="rounded-3xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] px-6 py-12 text-center hard-shadow-sm">
-      <span className="sticker sticker--rose tilt-r-2 inline-flex">
-        <span className="size-2 rounded-full bg-[color:var(--surface-deep)]" />
-        Coming soon
-      </span>
-      <h3 className="font-display mt-5 text-3xl font-light leading-tight text-[color:var(--ink)]">
-        {label}
-      </h3>
-      <p className="mx-auto mt-3 max-w-md text-sm font-medium leading-6 text-[color:var(--mauve)]">
-        {note}
-      </p>
+    <div className="space-y-8 py-10">
+      <AdminTransactionsTable
+        initialTransactions={transactions}
+        initialPayouts={payouts}
+        connectAccounts={connectAccounts}
+        defaultDateFrom={dateFrom}
+      />
     </div>
   );
 }

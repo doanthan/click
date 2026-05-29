@@ -22,13 +22,15 @@ export const proxy = auth((request) => {
     }
   }
 
-  // /merchant/login and /merchant/signup are themselves merchant routes but
-  // must NOT redirect (they're the entry points). Everything else under
-  // /merchant requires a session and bounces to the host login if missing.
+  // /merchant/login and the entire /merchant/signup flow are entry points and
+  // must NOT redirect to login (the signup wizard steps live under
+  // /merchant/signup/{business,contact,documents} and handle their own session
+  // redirect back to /merchant/signup). Everything else under /merchant
+  // requires a session and bounces to the host login if missing.
   if (
     pathname.startsWith("/merchant") &&
     pathname !== "/merchant/login" &&
-    pathname !== "/merchant/signup" &&
+    !pathname.startsWith("/merchant/signup") &&
     !session?.user
   ) {
     return redirectToLogin(nextRequest, "merchant");

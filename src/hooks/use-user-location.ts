@@ -53,7 +53,36 @@ export function useUserLocation(): UserLocation {
 
     let cancelled = false;
 
-    fetch("https://ipapi.co/json/")
+    function fail() {
+      if (cancelled) return;
+      setState({
+        city: null,
+        region: null,
+        country: null,
+        latitude: null,
+        longitude: null,
+        loading: false,
+        error: true,
+      });
+    }
+
+    // Privacy / tracker-blocking extensions (Ghostery, uBlock, Brave Shields…)
+    // monkey-patch `window.fetch` to block ipapi.co, and some of them throw
+    // *synchronously* before the call returns a Promise. A bare `.catch()`
+    // wouldn't see that throw, so it would surface as an unhandled error and
+    // pop the Next.js dev overlay over the page. Wrap the kick-off in
+    // try/catch and let the async path go through `.catch()` as well.
+    let pending: Promise<Response>;
+    try {
+      pending = fetch("https://ipapi.co/json/");
+    } catch {
+      fail();
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    pending
       .then((response) => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return response.json();
@@ -86,18 +115,7 @@ export function useUserLocation(): UserLocation {
           // Ignore quota and privacy mode failures.
         }
       })
-      .catch(() => {
-        if (cancelled) return;
-        setState({
-          city: null,
-          region: null,
-          country: null,
-          latitude: null,
-          longitude: null,
-          loading: false,
-          error: true,
-        });
-      });
+      .catch(fail);
 
     return () => {
       cancelled = true;

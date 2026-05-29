@@ -16,6 +16,12 @@ Run the SQL files in this directory against your Supabase project in order:
 5. `005_profile_extras.sql` (adds `birth_date`, `dating_visible`, `flexible_discovery` to profiles)
 6. `006_admin_extras.sql` (adds `suspended_at` / `suspended_reason` to profiles + creates `system_settings` KV)
 7. `007_test_cases.sql` (creates `test_cases` + `test_case_comments` for the editable QA board on `/test`)
+8. `008_intent_extras.sql`
+9. `009_merchant_full_signup.sql` (extends `merchant_profiles` for the 4-step wizard; creates `merchant_event_categories` + `merchant_documents` + the `merchant_document_type` enum + the private `merchant-documents` storage bucket — required by `/merchant/signup`)
+10. `010_merchant_suspended.sql` (adds `'suspended'` to the `merchant_profiles.verification_status` CHECK so admins can suspend approved merchants from the `/admin/merchants` row menu; suspended merchants' events are filtered out of the public Discover feed)
+11. `011_extend_tag_categories.sql` (adds `tag_categories.internal_only` so Life + Music — matching signals, not event types — are hidden from the merchant signup picker and the public `/categories` page; seeds 8 new categories: Outdoors, Sports, Nightlife, Games, Learning, Wellness, Family, Travel)
+12. `012_email_events.sql` (dev/staging email log — renders templates locally into `email_events` instead of wiring SMTP; see `src/lib/email.ts`)
+13. `013_merchant_stripe_onboarding.sql` (adds `charges_enabled` / `payouts_enabled` / `details_submitted` / `onboarding_completed_at` to `merchant_profiles` for the post-approval `/merchant/onboarding` flow + Stripe Connect; the capability flags mirror the connected account and are kept in sync by the `account.updated` Connect webhook)
 
 You can paste them into the Supabase SQL editor, or pipe them through `psql`
 using the connection string from Project Settings -> Database.

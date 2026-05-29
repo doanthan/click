@@ -97,13 +97,14 @@ function NotificationItem({
   id,
   title,
   body,
-  actionUrl,
   createdAt,
   unread,
 }: {
   id: string;
   title: string;
   body: string;
+  // actionUrl is still on NotificationRow but unused here — the secondary
+  // "Take action" link lives on /notifications/[id]/email instead.
   actionUrl: string | null;
   createdAt: string;
   unread: boolean;
@@ -128,14 +129,16 @@ function NotificationItem({
           </p>
         </div>
         <div className="flex flex-col items-end gap-2 shrink-0">
-          {actionUrl ? (
-            <Link
-              href={actionUrl}
-              className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
-            >
-              Open
-            </Link>
-          ) : null}
+          {/* "Open" renders the email that fired this notification (with the
+              notification's `action_url` available as a "Take action" button
+              on that page). Falls back to a notification-only view when no
+              email_events row was logged. */}
+          <Link
+            href={`/notifications/${id}/email`}
+            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
+          >
+            Open
+          </Link>
           {unread ? (
             <form action={markReadAction}>
               <input type="hidden" name="notification_id" value={id} />

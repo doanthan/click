@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
+import { AvatarUploader } from "@/components/avatar-uploader";
 import { getOwnProfile } from "@/lib/event-repository";
 import { saveProfileEditAction } from "./actions";
 
@@ -34,33 +35,30 @@ export default async function EditProfilePage() {
   const selectedIntents = new Set(profile.intents);
 
   return (
-    <main className="paper-noise min-h-screen bg-[color:var(--champagne)] px-4 py-12 text-[color:var(--ink)] sm:px-6">
-      <section className="mx-auto max-w-3xl">
+    <main className="paper-noise min-h-screen bg-[color:var(--champagne)] px-4 py-8 text-[color:var(--ink)] sm:px-6">
+      <section className="mx-auto max-w-4xl">
         <span className="sticker sticker--peach tilt-l-2 inline-flex">
           <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
           Edit profile
         </span>
-        <h1 className="mt-6 font-display text-5xl font-light leading-[0.96] tracking-tight sm:text-6xl">
-          Update your <span className="italic">Click</span>.
-        </h1>
 
-        <form action={saveProfileEditAction} className="mt-10 grid gap-6 rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-6 hard-shadow-sm">
-          <Field label="Display name" name="display_name" defaultValue={profile.displayName} required />
-          <Field label="Suburb" name="suburb" defaultValue={profile.suburb ?? ""} />
-          <Field
-            label="Age (optional)"
-            name="age"
-            type="number"
-            min={18}
-            defaultValue={profile.age?.toString() ?? ""}
+        <form action={saveProfileEditAction} className="mt-5 grid gap-5 rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-6 hard-shadow-sm">
+          <AvatarUploader
+            initialUrl={profile.photoUrl}
+            displayName={profile.displayName}
           />
-          <Field
-            label="Photo URL (optional)"
-            name="photo_url"
-            type="url"
-            defaultValue={profile.photoUrl ?? ""}
-            placeholder="https://…"
-          />
+
+          <div className="grid gap-5 sm:grid-cols-2">
+            <Field label="Display name" name="display_name" defaultValue={profile.displayName} required />
+            <Field label="Suburb" name="suburb" defaultValue={profile.suburb ?? ""} />
+            <Field
+              label="Age (optional)"
+              name="age"
+              type="number"
+              min={18}
+              defaultValue={profile.age?.toString() ?? ""}
+            />
+          </div>
 
           <label className="grid gap-2 text-sm font-bold text-[color:var(--ink)]">
             <span className="font-mono text-[0.7rem] uppercase tracking-[0.18em] text-[color:var(--mauve)]">
@@ -79,7 +77,7 @@ export default async function EditProfilePage() {
             <legend className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
               Intents (pick any)
             </legend>
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {intentOptions.map((opt) => {
                 const checked = selectedIntents.has(opt.value);
                 return (

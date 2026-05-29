@@ -7,11 +7,10 @@ import {
   normalizeAcn,
   validateOptionalAbn,
   validateOptionalAcn,
-  validateRequiredAbn,
 } from "./abn";
 import { clickEvents, type EventItem, type EventStatus } from "./click-data";
 import { buildEventMediaGallery, type MediaItem } from "./event-media";
-import { sendTransactionalEmail } from "./email";
+import { logEmailEvent, sendTransactionalEmail } from "./email";
 import { regionForEvent, type Region } from "./geo";
 import { getPostgresPool } from "./postgres";
 import { writeAuditLog } from "@/utils/admin/audit-logger";
@@ -92,6 +91,12 @@ export type MerchantProfileRow = {
   business_name: string;
   contact_email: string;
   verification_status: string;
+  business_type: string | null;
+  stripe_connect_account_id: string | null;
+  charges_enabled: boolean;
+  payouts_enabled: boolean;
+  details_submitted: boolean;
+  onboarding_completed_at: string | null;
 };
 
 export type ProfileStatus = {
@@ -126,6 +131,10 @@ export type CreateEventInput = {
   tags: string;
   imageUrl?: string;
   imageAlt?: string;
+  // Full ordered gallery from the wizard's multi-photo Media step. Persisted
+  // to events.image_urls (see 015_event_image_urls.sql). When set, the first
+  // entry is mirrored to image_url so existing readers don't need to change.
+  imageUrls?: string[];
 };
 
 export type AdminEventRow = {
@@ -165,17 +174,158 @@ export type AdminMemberRow = {
   suspendedReason: string | null;
 };
 
+export type AdminMemberDetailTag = {
+  slug: string;
+  label: string;
+  tagType: string;
+  source: string;
+};
+
+export type AdminMemberDetailEvent = {
+  slug: string;
+  title: string;
+  startsAt: string | null;
+  status: string;
+  checkedInAt: string | null;
+  rsvpAt: string;
+};
+
+export type AdminMemberDetailBookmark = {
+  slug: string;
+  title: string;
+  startsAt: string | null;
+  createdAt: string;
+};
+
+export type AdminMemberDetailTransaction = {
+  id: string;
+  eventSlug: string | null;
+  eventTitle: string | null;
+  amountCents: number;
+  currency: string;
+  status: string;
+  stripePaymentIntentId: string | null;
+  createdAt: string;
+};
+
+export type AdminMemberDetailPersona = {
+  personaName: string;
+  socialEnergy: string;
+  pace: string;
+  openness: string;
+  engagementFrequency: string;
+  intentMix: Record<string, number>;
+  generatedAt: string;
+};
+
+export type AdminMemberDetail = {
+  id: string;
+  displayName: string;
+  email: string;
+  role: "attendee" | "merchant" | "admin";
+  city: string | null;
+  suburb: string | null;
+  bio: string | null;
+  photoUrl: string | null;
+  age: number | null;
+  intents: string[];
+  emailVerified: boolean;
+  photoVerified: boolean;
+  joinedAt: string;
+  suspendedAt: string | null;
+  suspendedReason: string | null;
+  tags: AdminMemberDetailTag[];
+  events: AdminMemberDetailEvent[];
+  bookmarks: AdminMemberDetailBookmark[];
+  transactions: AdminMemberDetailTransaction[];
+  persona: AdminMemberDetailPersona | null;
+};
+
 export type AdminMerchantRow = {
   id: string;
   businessName: string;
   contactEmail: string;
-  verificationStatus: "pending" | "approved" | "rejected" | string;
+  verificationStatus: "pending" | "approved" | "rejected" | "suspended" | string;
   websiteUrl: string | null;
   abn: string | null;
   ownerName: string;
   ownerEmail: string;
   eventsHosted: number;
   createdAt: string;
+};
+
+export type AdminMerchantDetailEvent = {
+  id: string;
+  slug: string;
+  title: string;
+  status: string;
+  startsAt: string | null;
+  endsAt: string | null;
+  locationName: string | null;
+  suburb: string | null;
+  capacity: number | null;
+  priceCents: number;
+  currency: string;
+  confirmedAttendees: number;
+  waitlistedAttendees: number;
+  grossRevenueCents: number;
+  paidRevenueCents: number;
+};
+
+export type AdminMerchantDetailTransaction = {
+  id: string;
+  eventSlug: string | null;
+  eventTitle: string | null;
+  attendeeName: string | null;
+  attendeeEmail: string | null;
+  amountCents: number;
+  currency: string;
+  status: string;
+  stripePaymentIntentId: string | null;
+  createdAt: string;
+};
+
+export type AdminMerchantDetailTotals = {
+  upcomingEvents: number;
+  pastEvents: number;
+  totalEvents: number;
+  totalBookings: number;
+  paidBookings: number;
+  totalRevenueCents: number;
+  paidRevenueCents: number;
+  pendingRevenueCents: number;
+  refundedRevenueCents: number;
+};
+
+export type AdminMerchantDetail = {
+  id: string;
+  businessName: string;
+  tradingName: string | null;
+  contactEmail: string;
+  phone: string | null;
+  websiteUrl: string | null;
+  abn: string | null;
+  acn: string | null;
+  businessType: string | null;
+  verificationStatus: "pending" | "approved" | "rejected" | "suspended" | string;
+  stripeConnectAccountId: string | null;
+  addressStreet: string | null;
+  addressSuburb: string | null;
+  addressState: string | null;
+  addressPostcode: string | null;
+  submittedAt: string | null;
+  createdAt: string;
+  owner: {
+    id: string;
+    displayName: string;
+    email: string;
+    photoUrl: string | null;
+  };
+  eventCategories: string[];
+  upcomingEvents: AdminMerchantDetailEvent[];
+  pastEvents: AdminMerchantDetailEvent[];
+  transactions: AdminMerchantDetailTransaction[];
+  totals: AdminMerchantDetailTotals;
 };
 
 export type AdminTagRow = {
@@ -391,12 +541,226 @@ async function sendWorkflowEmail(input: {
   }
 }
 
+// Shared site-origin lookup for absolute URLs in templated emails. Falls back
+// to localhost so dev sessions still produce clickable links in the drawer.
+function emailOrigin() {
+  return process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") || "http://localhost:3000";
+}
+
+// Date/time formatting for the templated emails. We always use Sydney
+// (defaulting events.timezone) so the subject line and body match the venue's
+// local time rather than the merchant's clock.
+function formatEmailDates(startsAt: Date, endsAt: Date | null, timezone: string) {
+  const tz = timezone || "Australia/Sydney";
+  const eventLongDate = new Intl.DateTimeFormat("en-AU", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: tz,
+  }).format(startsAt);
+  const eventShortDate = new Intl.DateTimeFormat("en-AU", {
+    day: "numeric",
+    month: "short",
+    timeZone: tz,
+  }).format(startsAt);
+  const eventStartTime = new Intl.DateTimeFormat("en-AU", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: tz,
+  }).format(startsAt);
+  const eventEndTime = endsAt
+    ? new Intl.DateTimeFormat("en-AU", {
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+        timeZone: tz,
+      }).format(endsAt)
+    : "";
+  return { eventLongDate, eventShortDate, eventStartTime, eventEndTime };
+}
+
+function priceLabel(priceCents: number, currency: string) {
+  if (priceCents <= 0) return "Free";
+  return new Intl.NumberFormat("en-AU", {
+    style: "currency",
+    currency: currency || "AUD",
+    maximumFractionDigits: 0,
+  }).format(priceCents / 100);
+}
+
+// Post-commit emailer for a confirmed RSVP. Runs OUTSIDE the txn so a failed
+// template lookup never rolls back the booking. Pulls everything needed for
+// both templates in a single query so we don't re-walk the tree twice.
+async function logRsvpEmails(
+  pool: NonNullable<ReturnType<typeof getPostgresPool>>,
+  eventDbId: string,
+  attendeeProfileId: string,
+  // For paid bookings (called from markPaymentSucceeded), overrides the
+  // displayed price label with the actual amount charged and surfaces the
+  // receipt URL. Free RSVPs omit this and the templates render unchanged.
+  receipt?: { amountPaidCents: number; currency: string },
+) {
+  try {
+    const result = await pool.query<{
+      event_id: string;
+      event_slug: string;
+      event_title: string;
+      event_category: string;
+      starts_at: Date;
+      ends_at: Date | null;
+      timezone: string;
+      location_name: string;
+      address: string | null;
+      suburb: string;
+      city: string;
+      price_cents: number;
+      currency: string;
+      capacity: number;
+      host_name: string;
+      confirmed_count: string;
+      attendee_email: string;
+      attendee_display_name: string;
+      attendee_suburb: string | null;
+      merchant_id: string | null;
+      merchant_business_name: string | null;
+      merchant_contact_email: string | null;
+      merchant_owner_profile_id: string | null;
+      merchant_owner_display_name: string | null;
+    }>(
+      `
+        select
+          e.id::text as event_id,
+          e.slug as event_slug,
+          e.title as event_title,
+          e.category as event_category,
+          e.starts_at,
+          e.ends_at,
+          e.timezone,
+          e.location_name,
+          e.address,
+          e.suburb,
+          e.city,
+          e.price_cents,
+          e.currency::text as currency,
+          e.capacity,
+          e.host_name,
+          (
+            select count(*)::text
+            from event_attendees a
+            where a.event_id = e.id and a.status = 'confirmed'
+          ) as confirmed_count,
+          p.email::text as attendee_email,
+          p.display_name as attendee_display_name,
+          p.suburb as attendee_suburb,
+          mp.id::text as merchant_id,
+          mp.business_name as merchant_business_name,
+          mp.contact_email::text as merchant_contact_email,
+          mp.profile_id::text as merchant_owner_profile_id,
+          owner.display_name as merchant_owner_display_name
+        from events e
+        join profiles p on p.id = $2::uuid
+        left join merchant_profiles mp on mp.id = e.merchant_profile_id
+        left join profiles owner on owner.id = mp.profile_id
+        where e.id = $1::uuid
+        limit 1
+      `,
+      [eventDbId, attendeeProfileId],
+    );
+
+    const row = result.rows[0];
+    if (!row) return;
+
+    const origin = emailOrigin();
+    const dates = formatEmailDates(
+      row.starts_at,
+      row.ends_at,
+      row.timezone,
+    );
+    const confirmedCount = Number(row.confirmed_count) || 0;
+    const spotsLabel = `${confirmedCount} of ${row.capacity} spots filled`;
+    const attendeeFirstName =
+      (row.attendee_display_name || "").split(/\s+/)[0] || "there";
+    const merchantFirstName =
+      (row.merchant_owner_display_name || row.merchant_business_name || "")
+        .split(/\s+/)[0] || "there";
+
+    // Paid bookings: show the actual amount charged with a "Paid" suffix in
+    // the existing price slot. Falls back to the event's listed price for
+    // free RSVPs.
+    const priceLabelForEmail = receipt && receipt.amountPaidCents > 0
+      ? `${priceLabel(receipt.amountPaidCents, receipt.currency)} · Paid`
+      : priceLabel(row.price_cents, row.currency);
+
+    void logEmailEvent({
+      template: "rsvp-attendee",
+      toEmail: row.attendee_email,
+      toProfileId: attendeeProfileId,
+      vars: {
+        firstName: attendeeFirstName,
+        eventTitle: row.event_title,
+        eventLongDate: dates.eventLongDate,
+        eventShortDate: dates.eventShortDate,
+        eventStartTime: dates.eventStartTime,
+        eventEndTime: dates.eventEndTime,
+        eventVenue: row.location_name,
+        eventAddress: row.address ?? "",
+        eventCity: row.city,
+        eventHostName: row.host_name,
+        eventPriceLabel: priceLabelForEmail,
+        eventCategory: row.event_category,
+        eventSpotsFilledLabel: spotsLabel,
+        socialSignalLabel: "",
+        eventDetailsUrl: `${origin}/events/${row.event_slug}`,
+        cancelRsvpUrl: `${origin}/confirmed-events`,
+        addToCalendarUrl: `${origin}/events/${row.event_slug}`,
+        supportEmail: "hello@click.app",
+        unsubscribeUrl: `${origin}/account-settings`,
+      },
+    });
+
+    if (row.merchant_contact_email) {
+      void logEmailEvent({
+        template: "rsvp-merchant",
+        toEmail: row.merchant_contact_email,
+        toProfileId: row.merchant_owner_profile_id,
+        vars: {
+          merchantFirstName,
+          attendeeFirstName,
+          attendeeCity: row.attendee_suburb ?? "",
+          attendeeIntentLabel: "",
+          eventTitle: row.event_title,
+          eventLongDate: dates.eventLongDate,
+          eventStartTime: dates.eventStartTime,
+          eventVenue: row.location_name,
+          eventSpotsFilledLabel: spotsLabel,
+          attendeesUrl: `${origin}/merchant/events/${row.event_id}`,
+          eventDashboardUrl: `${origin}/merchant/events/${row.event_id}`,
+          supportEmail: "hello@click.app",
+          unsubscribeUrl: `${origin}/account-settings`,
+        },
+      });
+    }
+  } catch (error) {
+    console.warn("logRsvpEmails failed", { eventDbId, attendeeProfileId, error });
+  }
+}
+
 function getSessionEmail(session: Session | null) {
   return session?.user?.email?.trim().toLowerCase() ?? "";
 }
 
 function getSessionName(session: Session | null) {
   return session?.user?.name?.trim() || getSessionEmail(session) || "Click member";
+}
+
+// The OAuth provider's profile picture (e.g. Google `picture`). NextAuth's
+// default JWT strategy copies this through to `session.user.image` on first
+// sign-in. May be undefined for the email-credentials path.
+function getSessionImage(session: Session | null): string | null {
+  const image = session?.user?.image?.trim();
+  return image && /^https?:\/\//i.test(image) ? image : null;
 }
 
 function isConfiguredAdminEmail(email: string) {
@@ -630,7 +994,12 @@ async function ensureProfileForSession(session: Session | null) {
   const displayName = getSessionName(session);
   const initialRole: ProfileRow["role"] = isConfiguredAdminEmail(email) ? "admin" : "attendee";
 
-  const result = await pool.query<ProfileRow>(
+  // `xmax = 0` is the standard Postgres tell that the row came from the
+  // INSERT branch of an upsert (no prior tuple version exists). We use it to
+  // fire the account-welcome email exactly once, on the very first sign-in.
+  const result = await pool.query<
+    ProfileRow & { photo_url: string | null; is_new: boolean }
+  >(
     `
       insert into profiles (auth_subject, role, email, display_name, email_verified_at)
       values ($1, $2::user_role, $3, $4, now())
@@ -646,19 +1015,93 @@ async function ensureProfileForSession(session: Session | null) {
           else profiles.role
         end,
         updated_at = now()
-      returning id::text, role::text as role, email::text, display_name
+      returning id::text, role::text as role, email::text, display_name, photo_url,
+        (xmax = 0) as is_new
     `,
     [`auth:${email}`, initialRole, email, displayName],
   );
 
-  return result.rows[0];
+  const row = result.rows[0];
+
+  // First-time Google sign-in backfill: if the user has no avatar yet but the
+  // OAuth provider gave us one, fetch it and rehost to Supabase Storage once
+  // so we get a stable URL we control. Fire-and-forget — never blocks the page
+  // render and never throws (failures are logged inside the helper).
+  if (row && !row.photo_url) {
+    const remote = getSessionImage(session);
+    if (remote) {
+      void backfillAvatarFromRemote(row.id, remote);
+    }
+  }
+
+  // Log the account-welcome email for fresh signups only. Fire-and-forget so
+  // a DB hiccup or missing template never blocks auth. Visible in Supabase
+  // Studio → Table Editor → email_events.
+  if (row?.is_new) {
+    const firstName = (row.display_name || "").split(/\s+/)[0] || "there";
+    const origin =
+      process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") || "http://localhost:3000";
+    void logEmailEvent({
+      template: "account-welcome",
+      toEmail: row.email,
+      toProfileId: row.id,
+      vars: {
+        firstName,
+        quizUrl: `${origin}/quiz/life`,
+        discoverUrl: `${origin}/discover`,
+        supportEmail: "hello@click.app",
+        unsubscribeUrl: `${origin}/account-settings`,
+      },
+    });
+  }
+
+  // Strip photo_url + is_new from the return so the shape stays ProfileRow for callers.
+  return { id: row.id, role: row.role, email: row.email, display_name: row.display_name };
+}
+
+// Coalesce concurrent backfills for the same profile so two parallel page
+// loads on a fresh session don't both try to PUT the same key.
+const inFlightAvatarBackfills = new Set<string>();
+
+async function backfillAvatarFromRemote(profileId: string, sourceUrl: string) {
+  if (inFlightAvatarBackfills.has(profileId)) return;
+  inFlightAvatarBackfills.add(profileId);
+  try {
+    const { uploadAvatarFromUrl } = await import("./avatar-storage");
+    const publicUrl = await uploadAvatarFromUrl(profileId, sourceUrl);
+    if (!publicUrl) return;
+
+    const pool = getPostgresPool();
+    if (!pool) return;
+    // Race-safe: only write if still null, so a user upload that landed
+    // between the read and now isn't clobbered.
+    await pool.query(
+      `update profiles set photo_url = $2, updated_at = now()
+         where id = $1::uuid and photo_url is null`,
+      [profileId, publicUrl],
+    );
+  } catch (error) {
+    console.warn("backfillAvatarFromRemote failed", { profileId, error });
+  } finally {
+    inFlightAvatarBackfills.delete(profileId);
+  }
 }
 
 async function getMerchantProfile(pool: ReturnType<typeof getPostgresPool>, profileId: string) {
   if (!pool) return null;
   const result = await pool.query<MerchantProfileRow>(
     `
-      select id::text, business_name, contact_email::text, verification_status
+      select
+        id::text,
+        business_name,
+        contact_email::text,
+        verification_status,
+        business_type,
+        stripe_connect_account_id,
+        charges_enabled,
+        payouts_enabled,
+        details_submitted,
+        onboarding_completed_at::text
       from merchant_profiles
       where profile_id = $1::uuid
       limit 1
@@ -919,7 +1362,9 @@ export async function getEventsForExplore() {
       left join event_attendees attendee on attendee.event_id = event.id
       left join event_tags event_tag on event_tag.event_id = event.id
       left join tags tag on tag.id = event_tag.tag_id
+      left join merchant_profiles merchant on merchant.id = event.merchant_profile_id
       where event.status in ('live', 'featured', 'locked', 'waitlist')
+        and coalesce(merchant.verification_status, 'approved') <> 'suspended'
       group by event.id
       order by event.starts_at asc
     `);
@@ -1053,11 +1498,14 @@ export async function getEventCategories(): Promise<EventCategory[]> {
       from tag_categories category
       left join tags tag on tag.category_id = category.id
       left join (
-        select category, count(*)::int as event_count
-        from events
-        where status in ('live', 'featured', 'locked', 'waitlist')
-        group by category
+        select event.category, count(*)::int as event_count
+        from events event
+        left join merchant_profiles merchant on merchant.id = event.merchant_profile_id
+        where event.status in ('live', 'featured', 'locked', 'waitlist')
+          and coalesce(merchant.verification_status, 'approved') <> 'suspended'
+        group by event.category
       ) event_counts on event_counts.category = category.name
+      where category.internal_only = false
       group by category.id, event_counts.event_count
       order by event_count desc, category.name asc
     `);
@@ -1356,6 +1804,12 @@ export async function registerForEvent(eventId: string, session: Session | null)
             `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3001"}/events/${event.slug}`,
           ].join("\n\n"),
         });
+      } else {
+        // Confirmed RSVP → log rsvp-attendee + rsvp-merchant to email_events.
+        // One supplementary SELECT gathers everything both templates need so
+        // we don't pollute the in-txn block above with email-shaped data.
+        // Fire-and-forget — failures never bubble into the API response.
+        void logRsvpEmails(pool, event.id, profile.id);
       }
 
       return {
@@ -1406,11 +1860,39 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
       throw error;
     }
 
+    // Gate paid events on Stripe Connect being ready. Free events stay
+    // frictionless; the moment a merchant tries to publish with a price > 0
+    // we bounce them to /merchant/onboarding/payouts to finish hosted KYC.
+    // `charges_enabled` is the same cached column the `account.updated`
+    // webhook keeps in sync with Stripe.
+    const priceCents = parsePriceCents(input.price);
+    if (priceCents > 0 && !merchantProfile.charges_enabled) {
+      const error = new Error(
+        "Finish payout setup to publish a paid event — we'll take you there now.",
+      );
+      error.name = "PayoutsNotReadyError";
+      throw error;
+    }
+
     const slug = `${slugFromTitle(title)}-${Date.now().toString(36)}`;
     const endsAt = new Date(startsAt.getTime() + 2 * 60 * 60 * 1000);
     const category = input.category.trim() || "Social";
     const relationshipGoal =
       input.relationshipGoal.trim() || "Help people meet through a shared plan.";
+
+    // Normalise the multi-photo gallery from the Media step. Drop empties,
+    // de-dupe (paste-twice is easy to do), and treat the first as the cover
+    // — mirrored into image_url so legacy readers keep working. We prefer
+    // the gallery over the single imageUrl input so the cover stays in sync
+    // with the first card the merchant sees in the UI.
+    const galleryUrls = (input.imageUrls ?? [])
+      .map((u) => u.trim())
+      .filter(Boolean);
+    const dedupedGallery = Array.from(new Set(galleryUrls));
+    const coverImage =
+      dedupedGallery[0] || input.imageUrl?.trim() || imageForCategory(category);
+    const imageUrlsForDb =
+      dedupedGallery.length > 0 ? dedupedGallery : null;
 
     const result = await pool.query<{ slug: string; title: string }>(
       `
@@ -1434,6 +1916,7 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
           price_cents,
           capacity,
           image_url,
+          image_urls,
           image_alt,
           relationship_goal,
           fomo
@@ -1460,7 +1943,8 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
           $17,
           $18,
           $19,
-          $20
+          $20,
+          $21
         )
         returning slug, title
       `,
@@ -1479,9 +1963,10 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
         input.suburb.trim() || "Sydney",
         input.latitude,
         input.longitude,
-        parsePriceCents(input.price),
+        priceCents,
         capacity,
-        input.imageUrl?.trim() || imageForCategory(category),
+        coverImage,
+        imageUrlsForDb,
         input.imageAlt?.trim() || "Community event listing",
         relationshipGoal,
         "Pending admin review before being promoted to members.",
@@ -1515,6 +2000,32 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
         [slug, rawTags],
       );
     }
+
+    // Log event-created-merchant to email_events. Everything the template
+    // needs is already in scope here, so no second SELECT. Fire-and-forget.
+    const origin = emailOrigin();
+    const dates = formatEmailDates(startsAt, endsAt, "Australia/Sydney");
+    const merchantFirstName =
+      (profile.display_name || merchantProfile.business_name || "").split(/\s+/)[0] ||
+      "there";
+    void logEmailEvent({
+      template: "event-created-merchant",
+      toEmail: merchantProfile.contact_email,
+      toProfileId: profile.id,
+      vars: {
+        merchantFirstName,
+        eventTitle: title,
+        eventLongDate: dates.eventLongDate,
+        eventStartTime: dates.eventStartTime,
+        eventCity: input.suburb.trim() || "Sydney",
+        eventCategory: category,
+        eventCapacityLabel: `Capacity ${capacity}`,
+        eventDashboardUrl: `${origin}/merchant/events/${slug}`,
+        editEventUrl: `${origin}/merchant/events/${slug}`,
+        supportEmail: "hello@click.app",
+        unsubscribeUrl: `${origin}/account-settings`,
+      },
+    });
 
     return result.rows[0];
   } catch (error) {
@@ -1571,7 +2082,7 @@ export async function approveEventForAdmin(eventId: string, session: Session | n
 
 export async function updateMerchantVerificationForAdmin(
   merchantId: string,
-  status: "pending" | "approved" | "rejected",
+  status: "pending" | "approved" | "rejected" | "suspended",
   session: Session | null,
 ) {
   const pool = getPostgresPool();
@@ -1636,11 +2147,21 @@ export async function updateMerchantVerificationForAdmin(
     `,
     [
       merchant.owner_profile_id,
-      status === "approved" ? "Merchant approved" : status === "rejected" ? "Merchant needs review" : "Merchant pending",
       status === "approved"
-        ? `${merchant.business_name} is approved to host Click events.`
-        : `${merchant.business_name} is now marked ${status}.`,
-      "/merchant",
+        ? "Merchant approved"
+        : status === "rejected"
+          ? "Merchant needs review"
+          : status === "suspended"
+            ? "Merchant suspended"
+            : "Merchant pending",
+      status === "approved"
+        ? `${merchant.business_name} is approved to host Click events. Finish a quick setup to start taking payments.`
+        : status === "suspended"
+          ? `${merchant.business_name} has been suspended. Your events are hidden from Discover until an admin reinstates the account.`
+          : `${merchant.business_name} is now marked ${status}.`,
+      // Approved merchants land in the post-approval onboarding (walkthrough +
+      // Stripe payout setup); other statuses go to the portal/holding page.
+      status === "approved" ? "/merchant/onboarding" : "/merchant",
     ],
   );
 
@@ -1649,15 +2170,56 @@ export async function updateMerchantVerificationForAdmin(
     subject:
       status === "approved"
         ? `${merchant.business_name} is approved on Click`
-        : `${merchant.business_name} merchant status: ${status}`,
+        : status === "suspended"
+          ? `${merchant.business_name} has been suspended on Click`
+          : `${merchant.business_name} merchant status: ${status}`,
     text: [
       `Hi ${merchant.owner_name},`,
       status === "approved"
-        ? `${merchant.business_name} is approved to create and manage events on Click.`
-        : `${merchant.business_name} is now marked ${status}.`,
-      `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3001"}/merchant`,
+        ? `${merchant.business_name} is approved to create and manage events on Click. Finish a quick setup to learn the ropes and connect payouts.`
+        : status === "suspended"
+          ? `${merchant.business_name} has been suspended. Your events are hidden from Discover until an admin reinstates the account.`
+          : `${merchant.business_name} is now marked ${status}.`,
+      `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3001"}${status === "approved" ? "/merchant/onboarding" : "/merchant"}`,
     ].join("\n\n"),
   });
+
+  // Log the rendered HTML to email_events for the dev drawer. Only approved /
+  // rejected have templates in /emails today; suspended + pending fall through
+  // until someone drafts those .html files.
+  const origin = emailOrigin();
+  const merchantFirstName =
+    (merchant.owner_name || merchant.business_name || "").split(/\s+/)[0] || "there";
+  if (status === "approved") {
+    void logEmailEvent({
+      template: "merchant-verified-merchant",
+      toEmail: merchant.owner_email,
+      toProfileId: merchant.owner_profile_id,
+      vars: {
+        businessName: merchant.business_name,
+        merchantFirstName,
+        createEventUrl: `${origin}/merchant/events/create`,
+        merchantDashboardUrl: `${origin}/merchant`,
+        supportEmail: "hello@click.app",
+        unsubscribeUrl: `${origin}/account-settings`,
+      },
+    });
+  } else if (status === "rejected") {
+    void logEmailEvent({
+      template: "merchant-rejected-merchant",
+      toEmail: merchant.owner_email,
+      toProfileId: merchant.owner_profile_id,
+      vars: {
+        businessName: merchant.business_name,
+        merchantFirstName,
+        rejectionReason:
+          "Our reviewer flagged something in your application. Reply to this email and we'll walk you through it.",
+        resubmitUrl: `${origin}/merchant/signup/documents`,
+        supportEmail: "hello@click.app",
+        unsubscribeUrl: `${origin}/account-settings`,
+      },
+    });
+  }
 
   return {
     id: merchant.id,
@@ -1988,6 +2550,224 @@ export async function getAdminMembers(): Promise<AdminMemberRow[]> {
   }
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export async function getAdminMemberDetail(
+  memberId: string,
+): Promise<AdminMemberDetail | null> {
+  if (!UUID_RE.test(memberId)) return null;
+
+  const pool = getPostgresPool();
+  if (!pool) return null;
+
+  try {
+    const [
+      profileResult,
+      tagsResult,
+      personaResult,
+      eventsResult,
+      bookmarksResult,
+      transactionsResult,
+    ] = await Promise.all([
+        pool.query<{
+          id: string;
+          display_name: string;
+          email: string;
+          role: string;
+          city: string | null;
+          suburb: string | null;
+          bio: string | null;
+          photo_url: string | null;
+          age: number | null;
+          intents: string[] | null;
+          email_verified_at: Date | null;
+          photo_verified_at: Date | null;
+          created_at: Date;
+          suspended_at: Date | null;
+          suspended_reason: string | null;
+        }>(
+          `
+            select id::text, display_name, email::text, role::text,
+                   city, suburb, bio, photo_url, age,
+                   connection_intents::text[] as intents,
+                   email_verified_at, photo_verified_at, created_at,
+                   suspended_at, suspended_reason
+            from profiles
+            where id = $1::uuid
+          `,
+          [memberId],
+        ),
+        pool.query<{
+          slug: string;
+          label: string;
+          tag_type: string;
+          source: string;
+        }>(
+          `
+            select tag.slug, tag.label, tag.tag_type, ut.source
+            from user_tags ut
+            join tags tag on tag.id = ut.tag_id
+            where ut.profile_id = $1::uuid
+            order by tag.tag_type asc, tag.label asc
+          `,
+          [memberId],
+        ),
+        pool.query<{
+          persona_name: string;
+          social_energy: string;
+          pace: string;
+          openness: string;
+          engagement_frequency: string;
+          intent_mix: Record<string, number> | null;
+          generated_at: Date;
+        }>(
+          `
+            select persona_name, social_energy, pace, openness,
+                   engagement_frequency, intent_mix, generated_at
+            from click_personas
+            where profile_id = $1::uuid
+            order by generated_at desc
+            limit 1
+          `,
+          [memberId],
+        ),
+        pool.query<{
+          slug: string;
+          title: string;
+          starts_at: Date | null;
+          status: string;
+          checked_in_at: Date | null;
+          rsvp_at: Date;
+        }>(
+          `
+            select event.slug, event.title, event.starts_at,
+                   attendee.status::text as status,
+                   attendee.checked_in_at,
+                   attendee.created_at as rsvp_at
+            from event_attendees attendee
+            join events event on event.id = attendee.event_id
+            where attendee.profile_id = $1::uuid
+            order by event.starts_at desc nulls last
+            limit 50
+          `,
+          [memberId],
+        ),
+        pool.query<{
+          slug: string;
+          title: string;
+          starts_at: Date | null;
+          created_at: Date;
+        }>(
+          `
+            select event.slug, event.title, event.starts_at, b.created_at
+            from bookmarks b
+            join events event on event.id = b.event_id
+            where b.profile_id = $1::uuid
+            order by b.created_at desc
+            limit 50
+          `,
+          [memberId],
+        ),
+        pool.query<{
+          id: string;
+          event_slug: string | null;
+          event_title: string | null;
+          amount_cents: number;
+          currency: string;
+          status: string;
+          stripe_payment_intent_id: string | null;
+          created_at: Date;
+        }>(
+          `
+            select pt.id::text,
+                   event.slug as event_slug,
+                   event.title as event_title,
+                   pt.amount_cents,
+                   pt.currency::text as currency,
+                   pt.status::text as status,
+                   pt.stripe_payment_intent_id,
+                   pt.created_at
+            from payment_transactions pt
+            left join events event on event.id = pt.event_id
+            where pt.profile_id = $1::uuid
+            order by pt.created_at desc
+            limit 50
+          `,
+          [memberId],
+        ),
+      ]);
+
+    const row = profileResult.rows[0];
+    if (!row) return null;
+
+    const personaRow = personaResult.rows[0];
+
+    return {
+      id: row.id,
+      displayName: row.display_name,
+      email: row.email,
+      role: (row.role as AdminMemberDetail["role"]) ?? "attendee",
+      city: row.city,
+      suburb: row.suburb,
+      bio: row.bio,
+      photoUrl: row.photo_url,
+      age: row.age,
+      intents: row.intents ?? [],
+      emailVerified: !!row.email_verified_at,
+      photoVerified: !!row.photo_verified_at,
+      joinedAt: row.created_at.toISOString(),
+      suspendedAt: row.suspended_at ? row.suspended_at.toISOString() : null,
+      suspendedReason: row.suspended_reason,
+      tags: tagsResult.rows.map((t) => ({
+        slug: t.slug,
+        label: t.label,
+        tagType: t.tag_type,
+        source: t.source,
+      })),
+      persona: personaRow
+        ? {
+            personaName: personaRow.persona_name,
+            socialEnergy: personaRow.social_energy,
+            pace: personaRow.pace,
+            openness: personaRow.openness,
+            engagementFrequency: personaRow.engagement_frequency,
+            intentMix: personaRow.intent_mix ?? {},
+            generatedAt: personaRow.generated_at.toISOString(),
+          }
+        : null,
+      events: eventsResult.rows.map((e) => ({
+        slug: e.slug,
+        title: e.title,
+        startsAt: e.starts_at ? e.starts_at.toISOString() : null,
+        status: e.status,
+        checkedInAt: e.checked_in_at ? e.checked_in_at.toISOString() : null,
+        rsvpAt: e.rsvp_at.toISOString(),
+      })),
+      bookmarks: bookmarksResult.rows.map((b) => ({
+        slug: b.slug,
+        title: b.title,
+        startsAt: b.starts_at ? b.starts_at.toISOString() : null,
+        createdAt: b.created_at.toISOString(),
+      })),
+      transactions: transactionsResult.rows.map((t) => ({
+        id: t.id,
+        eventSlug: t.event_slug,
+        eventTitle: t.event_title,
+        amountCents: t.amount_cents,
+        currency: t.currency,
+        status: t.status,
+        stripePaymentIntentId: t.stripe_payment_intent_id,
+        createdAt: t.created_at.toISOString(),
+      })),
+    };
+  } catch (error) {
+    if (process.env.CLICK_DB_DEBUG === "true") {
+      console.warn("getAdminMemberDetail fallback", error);
+    }
+    return null;
+  }
+}
+
 export async function getAdminMerchants(): Promise<AdminMerchantRow[]> {
   const pool = getPostgresPool();
   if (!pool) return fallbackAdminMerchants;
@@ -2041,6 +2821,276 @@ export async function getAdminMerchants(): Promise<AdminMerchantRow[]> {
       console.warn("Falling back to static admin merchants.", error);
     }
     return fallbackAdminMerchants;
+  }
+}
+
+export async function getAdminMerchantDetail(
+  merchantId: string,
+): Promise<AdminMerchantDetail | null> {
+  if (!UUID_RE.test(merchantId)) return null;
+
+  const pool = getPostgresPool();
+  if (!pool) return null;
+
+  try {
+    const [merchantResult, categoriesResult, eventsResult, transactionsResult, totalsResult] =
+      await Promise.all([
+        pool.query<{
+          id: string;
+          business_name: string;
+          trading_name: string | null;
+          contact_email: string;
+          phone: string | null;
+          website_url: string | null;
+          abn: string | null;
+          acn: string | null;
+          business_type: string | null;
+          verification_status: string;
+          stripe_connect_account_id: string | null;
+          address_street: string | null;
+          address_suburb: string | null;
+          address_state: string | null;
+          address_postcode: string | null;
+          submitted_at: Date | null;
+          created_at: Date;
+          owner_id: string;
+          owner_display_name: string;
+          owner_email: string;
+          owner_photo_url: string | null;
+        }>(
+          `
+            select
+              m.id::text,
+              m.business_name,
+              m.trading_name,
+              m.contact_email::text,
+              m.phone,
+              m.website_url,
+              m.abn,
+              m.acn,
+              m.business_type,
+              m.verification_status,
+              m.stripe_connect_account_id,
+              m.address_street,
+              m.address_suburb,
+              m.address_state,
+              m.address_postcode,
+              m.submitted_at,
+              m.created_at,
+              owner.id::text as owner_id,
+              owner.display_name as owner_display_name,
+              owner.email::text as owner_email,
+              owner.photo_url as owner_photo_url
+            from merchant_profiles m
+            join profiles owner on owner.id = m.profile_id
+            where m.id = $1::uuid
+          `,
+          [merchantId],
+        ),
+        pool.query<{ name: string }>(
+          `
+            select category.name
+            from merchant_event_categories mec
+            join tag_categories category on category.id = mec.tag_category_id
+            where mec.merchant_profile_id = $1::uuid
+            order by category.name asc
+          `,
+          [merchantId],
+        ),
+        pool.query<{
+          id: string;
+          slug: string;
+          title: string;
+          status: string;
+          starts_at: Date | null;
+          ends_at: Date | null;
+          location_name: string | null;
+          suburb: string | null;
+          capacity: number | null;
+          price_cents: number;
+          currency: string;
+          confirmed_attendees: string;
+          waitlisted_attendees: string;
+          gross_revenue_cents: string;
+          paid_revenue_cents: string;
+        }>(
+          `
+            select
+              event.id::text,
+              event.slug,
+              event.title,
+              event.status::text as status,
+              event.starts_at,
+              event.ends_at,
+              event.location_name,
+              event.suburb,
+              event.capacity,
+              event.price_cents,
+              event.currency::text as currency,
+              coalesce(count(distinct attendee.id) filter (where attendee.status = 'confirmed'), 0)::text as confirmed_attendees,
+              coalesce(count(distinct attendee.id) filter (where attendee.status = 'waitlisted'), 0)::text as waitlisted_attendees,
+              coalesce(sum(pt.amount_cents), 0)::text as gross_revenue_cents,
+              coalesce(sum(pt.amount_cents) filter (where pt.status = 'paid'), 0)::text as paid_revenue_cents
+            from events event
+            left join event_attendees attendee on attendee.event_id = event.id
+            left join payment_transactions pt on pt.event_id = event.id
+            where event.merchant_profile_id = $1::uuid
+            group by event.id
+            order by event.starts_at desc nulls last
+            limit 200
+          `,
+          [merchantId],
+        ),
+        pool.query<{
+          id: string;
+          event_slug: string | null;
+          event_title: string | null;
+          attendee_name: string | null;
+          attendee_email: string | null;
+          amount_cents: number;
+          currency: string;
+          status: string;
+          stripe_payment_intent_id: string | null;
+          created_at: Date;
+        }>(
+          `
+            select
+              pt.id::text,
+              event.slug as event_slug,
+              event.title as event_title,
+              attendee.display_name as attendee_name,
+              attendee.email::text as attendee_email,
+              pt.amount_cents,
+              pt.currency::text as currency,
+              pt.status::text as status,
+              pt.stripe_payment_intent_id,
+              pt.created_at
+            from payment_transactions pt
+            left join events event on event.id = pt.event_id
+            left join profiles attendee on attendee.id = pt.profile_id
+            where pt.merchant_profile_id = $1::uuid
+            order by pt.created_at desc
+            limit 100
+          `,
+          [merchantId],
+        ),
+        pool.query<{
+          total: string;
+          paid: string;
+          pending: string;
+          refunded: string;
+          total_bookings: string;
+          paid_bookings: string;
+        }>(
+          `
+            select
+              coalesce(sum(amount_cents), 0)::text as total,
+              coalesce(sum(amount_cents) filter (where status = 'paid'), 0)::text as paid,
+              coalesce(sum(amount_cents) filter (where status = 'pending'), 0)::text as pending,
+              coalesce(sum(amount_cents) filter (where status = 'refunded'), 0)::text as refunded,
+              count(*)::text as total_bookings,
+              count(*) filter (where status = 'paid')::text as paid_bookings
+            from payment_transactions
+            where merchant_profile_id = $1::uuid
+          `,
+          [merchantId],
+        ),
+      ]);
+
+    const row = merchantResult.rows[0];
+    if (!row) return null;
+
+    const now = Date.now();
+    const allEvents = eventsResult.rows.map((e): AdminMerchantDetailEvent => ({
+      id: e.id,
+      slug: e.slug,
+      title: e.title,
+      status: e.status,
+      startsAt: e.starts_at ? e.starts_at.toISOString() : null,
+      endsAt: e.ends_at ? e.ends_at.toISOString() : null,
+      locationName: e.location_name,
+      suburb: e.suburb,
+      capacity: e.capacity,
+      priceCents: e.price_cents,
+      currency: e.currency,
+      confirmedAttendees: Number(e.confirmed_attendees),
+      waitlistedAttendees: Number(e.waitlisted_attendees),
+      grossRevenueCents: Number(e.gross_revenue_cents),
+      paidRevenueCents: Number(e.paid_revenue_cents),
+    }));
+
+    const upcomingEvents = allEvents.filter(
+      (e) => e.startsAt && new Date(e.startsAt).getTime() >= now,
+    );
+    const pastEvents = allEvents.filter(
+      (e) => !e.startsAt || new Date(e.startsAt).getTime() < now,
+    );
+
+    // Upcoming should be soonest-first.
+    upcomingEvents.sort((a, b) => {
+      const aTime = a.startsAt ? new Date(a.startsAt).getTime() : Infinity;
+      const bTime = b.startsAt ? new Date(b.startsAt).getTime() : Infinity;
+      return aTime - bTime;
+    });
+
+    const totalsRow = totalsResult.rows[0];
+
+    return {
+      id: row.id,
+      businessName: row.business_name,
+      tradingName: row.trading_name,
+      contactEmail: row.contact_email,
+      phone: row.phone,
+      websiteUrl: row.website_url,
+      abn: row.abn,
+      acn: row.acn,
+      businessType: row.business_type,
+      verificationStatus: row.verification_status,
+      stripeConnectAccountId: row.stripe_connect_account_id,
+      addressStreet: row.address_street,
+      addressSuburb: row.address_suburb,
+      addressState: row.address_state,
+      addressPostcode: row.address_postcode,
+      submittedAt: row.submitted_at ? row.submitted_at.toISOString() : null,
+      createdAt: row.created_at.toISOString(),
+      owner: {
+        id: row.owner_id,
+        displayName: row.owner_display_name,
+        email: row.owner_email,
+        photoUrl: row.owner_photo_url,
+      },
+      eventCategories: categoriesResult.rows.map((c) => c.name),
+      upcomingEvents,
+      pastEvents,
+      transactions: transactionsResult.rows.map((t) => ({
+        id: t.id,
+        eventSlug: t.event_slug,
+        eventTitle: t.event_title,
+        attendeeName: t.attendee_name,
+        attendeeEmail: t.attendee_email,
+        amountCents: t.amount_cents,
+        currency: t.currency,
+        status: t.status,
+        stripePaymentIntentId: t.stripe_payment_intent_id,
+        createdAt: t.created_at.toISOString(),
+      })),
+      totals: {
+        upcomingEvents: upcomingEvents.length,
+        pastEvents: pastEvents.length,
+        totalEvents: allEvents.length,
+        totalBookings: Number(totalsRow?.total_bookings ?? 0),
+        paidBookings: Number(totalsRow?.paid_bookings ?? 0),
+        totalRevenueCents: Number(totalsRow?.total ?? 0),
+        paidRevenueCents: Number(totalsRow?.paid ?? 0),
+        pendingRevenueCents: Number(totalsRow?.pending ?? 0),
+        refundedRevenueCents: Number(totalsRow?.refunded ?? 0),
+      },
+    };
+  } catch (error) {
+    if (process.env.CLICK_DB_DEBUG === "true") {
+      console.warn("getAdminMerchantDetail fallback", error);
+    }
+    return null;
   }
 }
 
@@ -2544,6 +3594,92 @@ export async function getProfileStatus(session: Session | null): Promise<Profile
   }
 }
 
+// Resolves the caller's merchant profile and asserts it has been approved.
+// Used by the post-approval Stripe Connect onboarding routes — those actions
+// must never run for a pending/rejected/suspended merchant.
+export async function getApprovedMerchantForSession(
+  session: Session | null,
+): Promise<MerchantProfileRow> {
+  const pool = getPostgresPool();
+  const email = getSessionEmail(session);
+  if (!email) throw authError();
+  if (!pool) throw databaseUnavailableError();
+
+  const profile = await ensureProfileForSession(session);
+  const merchant = await getMerchantProfile(pool, profile.id);
+  if (!merchant) {
+    const error = new Error("No merchant profile found for this account.");
+    error.name = "NotFoundError";
+    throw error;
+  }
+  if (merchant.verification_status !== "approved") {
+    const error = new Error("Your merchant application isn't approved yet.");
+    error.name = "ForbiddenError";
+    throw error;
+  }
+  return merchant;
+}
+
+// Persists the connected account id created via the Accounts v2 API.
+export async function setMerchantConnectAccountId(
+  merchantProfileId: string,
+  accountId: string,
+) {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+  await pool.query(
+    `
+      update merchant_profiles
+      set stripe_connect_account_id = $2, updated_at = now()
+      where id = $1::uuid
+    `,
+    [merchantProfileId, accountId],
+  );
+}
+
+// Caches the connected account's capability state on the merchant row. Keyed by
+// the account id so the Stripe webhook can sync without knowing the profile.
+// Returns true when a row matched (false if the account id is unknown to us).
+export async function updateMerchantConnectStatus(
+  accountId: string,
+  status: { chargesEnabled: boolean; payoutsEnabled: boolean; detailsSubmitted: boolean },
+): Promise<boolean> {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+  const result = await pool.query(
+    `
+      update merchant_profiles
+      set charges_enabled = $2,
+          payouts_enabled = $3,
+          details_submitted = $4,
+          updated_at = now()
+      where stripe_connect_account_id = $1
+    `,
+    [accountId, status.chargesEnabled, status.payoutsEnabled, status.detailsSubmitted],
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
+// Marks the one-time post-approval walkthrough as done (or skipped), so
+// /merchant stops redirecting the merchant into /merchant/onboarding.
+export async function markMerchantOnboardingComplete(session: Session | null) {
+  const pool = getPostgresPool();
+  const email = getSessionEmail(session);
+  if (!email) throw authError();
+  if (!pool) throw databaseUnavailableError();
+
+  const profile = await ensureProfileForSession(session);
+  await pool.query(
+    `
+      update merchant_profiles
+      set onboarding_completed_at = coalesce(onboarding_completed_at, now()),
+          updated_at = now()
+      where profile_id = $1::uuid
+    `,
+    [profile.id],
+  );
+}
+
 export async function saveOnboarding(input: OnboardingInput, session: Session | null) {
   const pool = getPostgresPool();
   const email = getSessionEmail(session);
@@ -2702,7 +3838,9 @@ export async function registerMerchantProfile(input: MerchantSignupInput, sessio
         website_url = excluded.website_url,
         abn = excluded.abn,
         updated_at = now()
-      returning id::text, business_name, contact_email::text, verification_status
+      returning id::text, business_name, contact_email::text, verification_status,
+        business_type, stripe_connect_account_id, charges_enabled, payouts_enabled,
+        details_submitted, onboarding_completed_at::text
     `,
     [profile.id, businessName, contactEmail, input.websiteUrl.trim(), abn],
   );
@@ -2749,12 +3887,19 @@ export type MerchantCategoryOption = { id: string; name: string; slug: string };
  * Lightweight category list for the merchant signup wizard Step 1. Returns
  * id + name so the wizard can submit FK references. Falls back to an empty
  * list if the DB isn't reachable — the wizard surfaces that as a load error.
+ *
+ * Filters out `internal_only` categories (e.g. Life, Music) — those are
+ * matching signals from the Life Quiz and music-taste vibes, not event
+ * types a merchant hosts.
  */
 export async function getMerchantCategoryOptions(): Promise<MerchantCategoryOption[]> {
   const pool = getPostgresPool();
   if (!pool) return [];
   const result = await pool.query<{ id: string; name: string; slug: string }>(
-    `select id::text, name, slug from tag_categories order by name asc`,
+    `select id::text, name, slug
+       from tag_categories
+      where internal_only = false
+      order by name asc`,
   );
   return result.rows;
 }
@@ -2869,7 +4014,8 @@ export async function registerMerchantWizardSubmit(
     throw validationError("A valid contact email is required.");
   }
 
-  const abnError = validateRequiredAbn(input.abn);
+  // ABN is optional for now — only validate format/checksum when supplied.
+  const abnError = validateOptionalAbn(input.abn);
   if (abnError) throw validationError(abnError);
   const abn = normalizeAbn(input.abn);
 
@@ -2941,7 +4087,9 @@ export async function registerMerchantWizardSubmit(
           address_postcode = excluded.address_postcode,
           submitted_at = coalesce(merchant_profiles.submitted_at, now()),
           updated_at = now()
-        returning id::text, business_name, contact_email::text, verification_status
+        returning id::text, business_name, contact_email::text, verification_status,
+          business_type, stripe_connect_account_id, charges_enabled, payouts_enabled,
+          details_submitted, onboarding_completed_at::text
       `,
       [
         profile.id,
@@ -2977,20 +4125,9 @@ export async function registerMerchantWizardSubmit(
       [merchantId, categoryIds],
     );
 
-    // Verify required docs uploaded — ABN cert + insurance per spec §1 Step 3.
-    const docCheck = await client.query<{ document_type: string }>(
-      `select document_type from merchant_documents where profile_id = $1::uuid`,
-      [profile.id],
-    );
-    const docTypes = new Set(docCheck.rows.map((r) => r.document_type));
-    if (!docTypes.has("abn_certificate")) {
-      throw validationError("Upload your ABN certificate before submitting.");
-    }
-    if (!docTypes.has("public_liability_insurance")) {
-      throw validationError("Upload your public liability insurance before submitting.");
-    }
-
-    // Back-fill merchant_profile_id on any docs uploaded before this commit.
+    // All documents are optional at signup — admins can request follow-ups
+    // during verification. Just back-fill merchant_profile_id on any docs the
+    // user did upload before this commit.
     await client.query(
       `
         update merchant_documents
@@ -3572,6 +4709,10 @@ export type PaymentHold = {
   priceCents: number;
   currency: string;
   profileEmail: string;
+  // Connected merchant's Stripe account id when present + payouts ready.
+  // Null for legacy platform-managed events where the platform itself is the
+  // merchant — those keep the existing single-charge behaviour.
+  merchantStripeAccountId: string | null;
 };
 
 export async function createPaymentHold(
@@ -3596,6 +4737,8 @@ export async function createPaymentHold(
       price_cents: number;
       currency: string;
       merchant_profile_id: string | null;
+      merchant_stripe_account_id: string | null;
+      merchant_charges_enabled: boolean | null;
       confirmed_attendees: string;
     }>(
       `
@@ -3608,6 +4751,8 @@ export async function createPaymentHold(
           event.price_cents,
           event.currency,
           event.merchant_profile_id::text,
+          merchant.stripe_connect_account_id as merchant_stripe_account_id,
+          merchant.charges_enabled as merchant_charges_enabled,
           (
             select count(*)
             from event_attendees attendee
@@ -3615,6 +4760,7 @@ export async function createPaymentHold(
               and attendee.status in ('confirmed', 'pending_payment')
           ) as confirmed_attendees
         from events event
+        left join merchant_profiles merchant on merchant.id = event.merchant_profile_id
         where event.slug = $1
         for update of event
       `,
@@ -3631,6 +4777,19 @@ export async function createPaymentHold(
       const error = new Error("This event is free — use the Register button instead.");
       error.name = "ValidationError";
       throw error;
+    }
+
+    // Merchant-hosted paid events must route the charge to the merchant's
+    // connected account via destination charge. Platform-managed events
+    // (merchant_profile_id IS NULL) skip this and bill into the platform.
+    if (event.merchant_profile_id) {
+      if (!event.merchant_stripe_account_id || !event.merchant_charges_enabled) {
+        const error = new Error(
+          "This event isn't accepting payments yet — the host is finishing payout setup.",
+        );
+        error.name = "PayoutsNotReadyError";
+        throw error;
+      }
     }
 
     const confirmedCount = Number(event.confirmed_attendees);
@@ -3685,6 +4844,7 @@ export async function createPaymentHold(
       priceCents: event.price_cents,
       currency: event.currency,
       profileEmail: profile.email,
+      merchantStripeAccountId: event.merchant_stripe_account_id,
     };
   } catch (error) {
     await client.query("rollback");
@@ -3724,6 +4884,8 @@ export async function markPaymentSucceeded(paymentTransactionId: string) {
       event_id: string;
       profile_id: string;
       status: string;
+      amount_cents: number;
+      currency: string;
       event_title: string;
       event_slug: string;
       display_name: string;
@@ -3738,6 +4900,8 @@ export async function markPaymentSucceeded(paymentTransactionId: string) {
           event_id::text,
           profile_id::text,
           status::text,
+          amount_cents,
+          currency::text as currency,
           (select title from events where id = payment_transactions.event_id) as event_title,
           (select slug from events where id = payment_transactions.event_id) as event_slug,
           (select display_name from profiles where id = payment_transactions.profile_id) as display_name,
@@ -3776,15 +4940,14 @@ export async function markPaymentSucceeded(paymentTransactionId: string) {
 
     await client.query("commit");
 
-    await sendWorkflowEmail({
-      to: payment.profile_email,
-      subject: `You are booked for ${payment.event_title}`,
-      text: [
-        `Hi ${payment.display_name},`,
-        `Your payment is confirmed and your RSVP is booked for ${payment.event_title}.`,
-        "You can view the event details from your Click dashboard.",
-        `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3001"}/events/${payment.event_slug}`,
-      ].join("\n\n"),
+    // Use the same templated rsvp-attendee / rsvp-merchant flow that free RSVPs
+    // already trigger via registerForEvent, passing the receipt so the price
+    // slot shows "$25 · Paid" instead of the event's listed price. Fire-and-
+    // forget — failures inside logRsvpEmails warn-log and never throw, so a
+    // template/email hiccup can't roll back the booking.
+    void logRsvpEmails(pool, payment.event_id, payment.profile_id, {
+      amountPaidCents: payment.amount_cents,
+      currency: payment.currency,
     });
   } catch (error) {
     await client.query("rollback");
@@ -4203,6 +5366,102 @@ export async function markAllNotificationsRead(session: Session | null) {
   );
 }
 
+export type NotificationEmailView = {
+  notification: NotificationRow;
+  email: {
+    id: string;
+    template: string;
+    subject: string;
+    html: string;
+    toEmail: string;
+    createdAt: string;
+  } | null;
+};
+
+// Resolve the email that was logged for a given notification. There's no FK
+// between `notifications` and `email_events` today — every wired trigger
+// inserts both rows in the same handler, so we pick the closest `email_events`
+// row for the recipient within a small time window. Returns the notification
+// itself even when no matching email row exists (older notifications, or
+// templates whose handler hasn't been wired to `logEmailEvent` yet).
+export async function getNotificationEmailForSession(
+  session: Session | null,
+  notificationId: string,
+): Promise<NotificationEmailView | null> {
+  const pool = getPostgresPool();
+  const email = getSessionEmail(session);
+  if (!pool || !email) return null;
+
+  const profile = await ensureProfileForSession(session);
+
+  const notifResult = await pool.query<{
+    id: string;
+    title: string;
+    body: string;
+    action_url: string | null;
+    channel: string;
+    read_at: Date | null;
+    created_at: Date;
+  }>(
+    `
+      select id::text, title, body, action_url, channel::text,
+             read_at, created_at
+      from notifications
+      where id = $1::uuid and profile_id = $2::uuid
+      limit 1
+    `,
+    [notificationId, profile.id],
+  );
+
+  const notif = notifResult.rows[0];
+  if (!notif) return null;
+
+  const emailResult = await pool.query<{
+    id: string;
+    template: string;
+    subject: string;
+    html: string;
+    to_email: string;
+    created_at: Date;
+  }>(
+    `
+      select id::text, template, subject, html, to_email::text as to_email,
+             created_at
+      from email_events
+      where to_profile_id = $1::uuid
+        and created_at between $2::timestamptz - interval '10 minutes'
+                          and $2::timestamptz + interval '10 minutes'
+      order by abs(extract(epoch from (created_at - $2::timestamptz))) asc
+      limit 1
+    `,
+    [profile.id, notif.created_at],
+  );
+
+  const emailRow = emailResult.rows[0];
+
+  return {
+    notification: {
+      id: notif.id,
+      title: notif.title,
+      body: notif.body,
+      actionUrl: notif.action_url,
+      channel: notif.channel,
+      readAt: notif.read_at ? notif.read_at.toISOString() : null,
+      createdAt: notif.created_at.toISOString(),
+    },
+    email: emailRow
+      ? {
+          id: emailRow.id,
+          template: emailRow.template,
+          subject: emailRow.subject,
+          html: emailRow.html,
+          toEmail: emailRow.to_email,
+          createdAt: emailRow.created_at.toISOString(),
+        }
+      : null,
+  };
+}
+
 export type SuggestedPerson = {
   id: string;
   displayName: string;
@@ -4553,6 +5812,26 @@ export type MerchantFinancesSummary = {
     status: string;
     createdAt: string;
   }[];
+  // Cached Connect capability flags, kept in sync by the `account.updated`
+  // webhook. Drives the payout-status badge + the gate on the
+  // "Open Stripe dashboard" button in the Finances tab.
+  connect: {
+    hasAccount: boolean;
+    chargesEnabled: boolean;
+    payoutsEnabled: boolean;
+    detailsSubmitted: boolean;
+  };
+  // Recent Stripe payouts, populated by the `payout.*` webhook handler via
+  // upsertPayoutFromEvent. Empty until the merchant earns enough to trigger a
+  // Stripe payout on the monthly schedule.
+  recentPayouts: {
+    id: string;
+    amountCents: number;
+    currency: string;
+    status: string;
+    arrivalDate: string | null;
+    bankLast4: string | null;
+  }[];
 };
 
 export async function getMerchantFinancesSummary(
@@ -4564,6 +5843,13 @@ export async function getMerchantFinancesSummary(
     pendingRevenueCents: 0,
     refundedRevenueCents: 0,
     recentTransactions: [],
+    connect: {
+      hasAccount: false,
+      chargesEnabled: false,
+      payoutsEnabled: false,
+      detailsSubmitted: false,
+    },
+    recentPayouts: [],
   };
 
   const pool = getPostgresPool();
@@ -4575,7 +5861,7 @@ export async function getMerchantFinancesSummary(
     const merchant = await getMerchantProfile(pool, profile.id);
     if (!merchant) return empty;
 
-    const [aggResult, recentResult] = await Promise.all([
+    const [aggResult, recentResult, payoutsResult] = await Promise.all([
       pool.query<{
         total: string;
         paid: string;
@@ -4610,6 +5896,27 @@ export async function getMerchantFinancesSummary(
         `,
         [merchant.id],
       ),
+      // Recent Stripe payouts on this merchant's connected account. Populated
+      // by the `payout.*` webhook in src/lib/stripe-sync.ts. Cap at 6 so the
+      // Finances tab stays scannable; older history lives in the Express
+      // dashboard, linked from the same tab.
+      pool.query<{
+        id: string;
+        amount_cents: number;
+        currency: string;
+        status: string;
+        arrival_date: Date | null;
+        bank_last4: string | null;
+      }>(
+        `
+          select id::text, amount_cents, currency, status, arrival_date, bank_last4
+          from merchant_payouts
+          where merchant_profile_id = $1::uuid
+          order by coalesce(arrival_date, created_at) desc
+          limit 6
+        `,
+        [merchant.id],
+      ),
     ]);
 
     const row = aggResult.rows[0];
@@ -4624,6 +5931,20 @@ export async function getMerchantFinancesSummary(
         amountCents: r.amount_cents,
         status: r.status,
         createdAt: r.created_at.toISOString(),
+      })),
+      connect: {
+        hasAccount: Boolean(merchant.stripe_connect_account_id),
+        chargesEnabled: merchant.charges_enabled,
+        payoutsEnabled: merchant.payouts_enabled,
+        detailsSubmitted: merchant.details_submitted,
+      },
+      recentPayouts: payoutsResult.rows.map((p) => ({
+        id: p.id,
+        amountCents: p.amount_cents,
+        currency: p.currency,
+        status: p.status,
+        arrivalDate: p.arrival_date ? p.arrival_date.toISOString() : null,
+        bankLast4: p.bank_last4,
       })),
     };
   } catch {
@@ -4936,4 +6257,511 @@ export async function markPaymentFailed(paymentTransactionId: string) {
   } finally {
     client.release();
   }
+}
+
+// ---------------------------------------------------------------------------
+// /admin/transactions — list + detail
+//
+// Stripe is the source of truth; these reads come straight from the local
+// mirror (payment_transactions + payment_refunds + merchant_payouts). The
+// admin "Sync from Stripe" button (POST /api/admin/transactions/sync) and the
+// extended webhook keep that mirror current.
+// ---------------------------------------------------------------------------
+
+export type AdminTransactionRow = {
+  id: string;
+  createdAt: string;
+  status: string;
+  amountCents: number;
+  currency: string;
+  applicationFeeCents: number | null;
+  transferAmountCents: number | null;
+  refundedAmountCents: number;
+  stripePaymentIntentId: string | null;
+  stripeChargeId: string | null;
+  eventId: string | null;
+  eventSlug: string | null;
+  eventTitle: string | null;
+  attendeeId: string | null;
+  attendeeName: string | null;
+  attendeeEmail: string | null;
+  merchantProfileId: string | null;
+  merchantName: string | null;
+  lastSyncedAt: string | null;
+};
+
+export type AdminTransactionFilter = {
+  status?: string;
+  merchantId?: string;
+  search?: string;
+  dateFrom?: string; // ISO date
+  dateTo?: string;
+  limit?: number;
+  offset?: number;
+};
+
+export type AdminTransactionRefund = {
+  id: string;
+  stripeRefundId: string;
+  amountCents: number;
+  currency: string;
+  status: string;
+  reason: string | null;
+  failureReason: string | null;
+  initiatedBy: {
+    profileId: string;
+    displayName: string;
+    email: string;
+  } | null;
+  createdAt: string;
+};
+
+export type AdminTransactionDetail = AdminTransactionRow & {
+  refunds: AdminTransactionRefund[];
+  refundableAmountCents: number;
+};
+
+export type AdminPayoutRow = {
+  id: string;
+  merchantProfileId: string;
+  merchantName: string | null;
+  stripeConnectAccountId: string;
+  stripePayoutId: string;
+  amountCents: number;
+  currency: string;
+  status: string;
+  arrivalDate: string | null;
+  bankLast4: string | null;
+  failureMessage: string | null;
+  createdAt: string;
+};
+
+export type AdminConnectAccountRow = {
+  merchantProfileId: string;
+  businessName: string;
+  stripeConnectAccountId: string;
+  chargesEnabled: boolean;
+  payoutsEnabled: boolean;
+  detailsSubmitted: boolean;
+  verificationStatus: string;
+};
+
+export async function listAdminTransactions(
+  filter: AdminTransactionFilter = {},
+): Promise<AdminTransactionRow[]> {
+  const pool = getPostgresPool();
+  if (!pool) return [];
+
+  const limit = Math.min(Math.max(filter.limit ?? 200, 1), 500);
+  const offset = Math.max(filter.offset ?? 0, 0);
+  const params: unknown[] = [];
+  const where: string[] = [];
+
+  if (filter.status && filter.status !== "all") {
+    params.push(filter.status);
+    where.push(`pt.status::text = $${params.length}`);
+  }
+  if (filter.merchantId && UUID_RE.test(filter.merchantId)) {
+    params.push(filter.merchantId);
+    where.push(`pt.merchant_profile_id = $${params.length}::uuid`);
+  }
+  if (filter.dateFrom) {
+    params.push(filter.dateFrom);
+    where.push(`pt.created_at >= $${params.length}::timestamptz`);
+  }
+  if (filter.dateTo) {
+    params.push(filter.dateTo);
+    where.push(`pt.created_at < $${params.length}::timestamptz`);
+  }
+  if (filter.search) {
+    params.push(`%${filter.search}%`);
+    const i = params.length;
+    where.push(
+      `(event.title ilike $${i} or attendee.display_name ilike $${i} or attendee.email::text ilike $${i} or merchant.business_name ilike $${i} or pt.stripe_payment_intent_id ilike $${i} or pt.stripe_charge_id ilike $${i})`,
+    );
+  }
+
+  const whereClause = where.length ? `where ${where.join(" and ")}` : "";
+  params.push(limit, offset);
+  const limitIdx = params.length - 1;
+  const offsetIdx = params.length;
+
+  try {
+    const result = await pool.query<{
+      id: string;
+      created_at: Date;
+      status: string;
+      amount_cents: number;
+      currency: string;
+      application_fee_cents: number | null;
+      transfer_amount_cents: number | null;
+      refunded_amount_cents: number;
+      stripe_payment_intent_id: string | null;
+      stripe_charge_id: string | null;
+      event_id: string | null;
+      event_slug: string | null;
+      event_title: string | null;
+      attendee_id: string | null;
+      attendee_name: string | null;
+      attendee_email: string | null;
+      merchant_profile_id: string | null;
+      merchant_name: string | null;
+      last_synced_at: Date | null;
+    }>(
+      `
+        select
+          pt.id::text,
+          pt.created_at,
+          pt.status::text,
+          pt.amount_cents,
+          pt.currency::text as currency,
+          pt.application_fee_cents,
+          pt.transfer_amount_cents,
+          pt.refunded_amount_cents,
+          pt.stripe_payment_intent_id,
+          pt.stripe_charge_id,
+          event.id::text as event_id,
+          event.slug as event_slug,
+          event.title as event_title,
+          attendee.id::text as attendee_id,
+          attendee.display_name as attendee_name,
+          attendee.email::text as attendee_email,
+          pt.merchant_profile_id::text,
+          merchant.business_name as merchant_name,
+          pt.last_synced_at
+        from payment_transactions pt
+        left join events event on event.id = pt.event_id
+        left join profiles attendee on attendee.id = pt.profile_id
+        left join merchant_profiles merchant on merchant.id = pt.merchant_profile_id
+        ${whereClause}
+        order by pt.created_at desc
+        limit $${limitIdx} offset $${offsetIdx}
+      `,
+      params,
+    );
+
+    return result.rows.map((row): AdminTransactionRow => ({
+      id: row.id,
+      createdAt: row.created_at.toISOString(),
+      status: row.status,
+      amountCents: Number(row.amount_cents),
+      currency: row.currency,
+      applicationFeeCents:
+        row.application_fee_cents == null ? null : Number(row.application_fee_cents),
+      transferAmountCents:
+        row.transfer_amount_cents == null ? null : Number(row.transfer_amount_cents),
+      refundedAmountCents: Number(row.refunded_amount_cents),
+      stripePaymentIntentId: row.stripe_payment_intent_id,
+      stripeChargeId: row.stripe_charge_id,
+      eventId: row.event_id,
+      eventSlug: row.event_slug,
+      eventTitle: row.event_title,
+      attendeeId: row.attendee_id,
+      attendeeName: row.attendee_name,
+      attendeeEmail: row.attendee_email,
+      merchantProfileId: row.merchant_profile_id,
+      merchantName: row.merchant_name,
+      lastSyncedAt: row.last_synced_at ? row.last_synced_at.toISOString() : null,
+    }));
+  } catch (error) {
+    if (process.env.CLICK_DB_DEBUG === "true") {
+      console.warn("listAdminTransactions failed", error);
+    }
+    return [];
+  }
+}
+
+export async function getAdminTransactionDetail(
+  transactionId: string,
+): Promise<AdminTransactionDetail | null> {
+  if (!UUID_RE.test(transactionId)) return null;
+  const pool = getPostgresPool();
+  if (!pool) return null;
+
+  try {
+    const txnResult = await pool.query<{
+      id: string;
+      created_at: Date;
+      status: string;
+      amount_cents: number;
+      currency: string;
+      application_fee_cents: number | null;
+      transfer_amount_cents: number | null;
+      refunded_amount_cents: number;
+      stripe_payment_intent_id: string | null;
+      stripe_charge_id: string | null;
+      event_id: string | null;
+      event_slug: string | null;
+      event_title: string | null;
+      attendee_id: string | null;
+      attendee_name: string | null;
+      attendee_email: string | null;
+      merchant_profile_id: string | null;
+      merchant_name: string | null;
+      last_synced_at: Date | null;
+    }>(
+      `
+        select
+          pt.id::text,
+          pt.created_at,
+          pt.status::text,
+          pt.amount_cents,
+          pt.currency::text as currency,
+          pt.application_fee_cents,
+          pt.transfer_amount_cents,
+          pt.refunded_amount_cents,
+          pt.stripe_payment_intent_id,
+          pt.stripe_charge_id,
+          event.id::text as event_id,
+          event.slug as event_slug,
+          event.title as event_title,
+          attendee.id::text as attendee_id,
+          attendee.display_name as attendee_name,
+          attendee.email::text as attendee_email,
+          pt.merchant_profile_id::text,
+          merchant.business_name as merchant_name,
+          pt.last_synced_at
+        from payment_transactions pt
+        left join events event on event.id = pt.event_id
+        left join profiles attendee on attendee.id = pt.profile_id
+        left join merchant_profiles merchant on merchant.id = pt.merchant_profile_id
+        where pt.id = $1::uuid
+        limit 1
+      `,
+      [transactionId],
+    );
+    const r = txnResult.rows[0];
+    if (!r) return null;
+
+    const refundsResult = await pool.query<{
+      id: string;
+      stripe_refund_id: string;
+      amount_cents: number;
+      currency: string;
+      status: string;
+      reason: string | null;
+      failure_reason: string | null;
+      initiated_by_profile_id: string | null;
+      initiated_by_display_name: string | null;
+      initiated_by_email: string | null;
+      created_at: Date;
+    }>(
+      `
+        select pr.id::text,
+               pr.stripe_refund_id,
+               pr.amount_cents,
+               pr.currency,
+               pr.status,
+               pr.reason,
+               pr.failure_reason,
+               pr.initiated_by_profile_id::text,
+               initiator.display_name as initiated_by_display_name,
+               initiator.email::text as initiated_by_email,
+               pr.created_at
+        from payment_refunds pr
+        left join profiles initiator on initiator.id = pr.initiated_by_profile_id
+        where pr.payment_transaction_id = $1::uuid
+        order by pr.created_at desc
+      `,
+      [transactionId],
+    );
+
+    const refunds = refundsResult.rows.map((row): AdminTransactionRefund => ({
+      id: row.id,
+      stripeRefundId: row.stripe_refund_id,
+      amountCents: Number(row.amount_cents),
+      currency: row.currency,
+      status: row.status,
+      reason: row.reason,
+      failureReason: row.failure_reason,
+      initiatedBy:
+        row.initiated_by_profile_id && row.initiated_by_display_name && row.initiated_by_email
+          ? {
+              profileId: row.initiated_by_profile_id,
+              displayName: row.initiated_by_display_name,
+              email: row.initiated_by_email,
+            }
+          : null,
+      createdAt: row.created_at.toISOString(),
+    }));
+
+    const amountCents = Number(r.amount_cents);
+    const refundedAmountCents = Number(r.refunded_amount_cents);
+
+    return {
+      id: r.id,
+      createdAt: r.created_at.toISOString(),
+      status: r.status,
+      amountCents,
+      currency: r.currency,
+      applicationFeeCents:
+        r.application_fee_cents == null ? null : Number(r.application_fee_cents),
+      transferAmountCents:
+        r.transfer_amount_cents == null ? null : Number(r.transfer_amount_cents),
+      refundedAmountCents,
+      stripePaymentIntentId: r.stripe_payment_intent_id,
+      stripeChargeId: r.stripe_charge_id,
+      eventId: r.event_id,
+      eventSlug: r.event_slug,
+      eventTitle: r.event_title,
+      attendeeId: r.attendee_id,
+      attendeeName: r.attendee_name,
+      attendeeEmail: r.attendee_email,
+      merchantProfileId: r.merchant_profile_id,
+      merchantName: r.merchant_name,
+      lastSyncedAt: r.last_synced_at ? r.last_synced_at.toISOString() : null,
+      refunds,
+      refundableAmountCents: Math.max(amountCents - refundedAmountCents, 0),
+    };
+  } catch (error) {
+    if (process.env.CLICK_DB_DEBUG === "true") {
+      console.warn("getAdminTransactionDetail failed", error);
+    }
+    return null;
+  }
+}
+
+export async function listAdminPayouts(
+  { merchantId, status, limit = 100 }: {
+    merchantId?: string;
+    status?: string;
+    limit?: number;
+  } = {},
+): Promise<AdminPayoutRow[]> {
+  const pool = getPostgresPool();
+  if (!pool) return [];
+
+  const params: unknown[] = [];
+  const where: string[] = [];
+  if (merchantId && UUID_RE.test(merchantId)) {
+    params.push(merchantId);
+    where.push(`mp.merchant_profile_id = $${params.length}::uuid`);
+  }
+  if (status && status !== "all") {
+    params.push(status);
+    where.push(`mp.status = $${params.length}`);
+  }
+  const whereClause = where.length ? `where ${where.join(" and ")}` : "";
+  params.push(Math.min(Math.max(limit, 1), 500));
+
+  try {
+    const result = await pool.query<{
+      id: string;
+      merchant_profile_id: string;
+      merchant_name: string | null;
+      stripe_connect_account_id: string;
+      stripe_payout_id: string;
+      amount_cents: number;
+      currency: string;
+      status: string;
+      arrival_date: Date | null;
+      bank_last4: string | null;
+      failure_message: string | null;
+      created_at: Date;
+    }>(
+      `
+        select mp.id::text,
+               mp.merchant_profile_id::text,
+               merchant.business_name as merchant_name,
+               mp.stripe_connect_account_id,
+               mp.stripe_payout_id,
+               mp.amount_cents,
+               mp.currency,
+               mp.status,
+               mp.arrival_date,
+               mp.bank_last4,
+               mp.failure_message,
+               mp.created_at
+        from merchant_payouts mp
+        left join merchant_profiles merchant on merchant.id = mp.merchant_profile_id
+        ${whereClause}
+        order by mp.created_at desc
+        limit $${params.length}
+      `,
+      params,
+    );
+
+    return result.rows.map((row): AdminPayoutRow => ({
+      id: row.id,
+      merchantProfileId: row.merchant_profile_id,
+      merchantName: row.merchant_name,
+      stripeConnectAccountId: row.stripe_connect_account_id,
+      stripePayoutId: row.stripe_payout_id,
+      amountCents: Number(row.amount_cents),
+      currency: row.currency,
+      status: row.status,
+      arrivalDate: row.arrival_date ? row.arrival_date.toISOString() : null,
+      bankLast4: row.bank_last4,
+      failureMessage: row.failure_message,
+      createdAt: row.created_at.toISOString(),
+    }));
+  } catch (error) {
+    if (process.env.CLICK_DB_DEBUG === "true") {
+      console.warn("listAdminPayouts failed", error);
+    }
+    return [];
+  }
+}
+
+export async function listAdminConnectAccounts(): Promise<AdminConnectAccountRow[]> {
+  const pool = getPostgresPool();
+  if (!pool) return [];
+
+  try {
+    const result = await pool.query<{
+      id: string;
+      business_name: string;
+      stripe_connect_account_id: string;
+      charges_enabled: boolean;
+      payouts_enabled: boolean;
+      details_submitted: boolean;
+      verification_status: string;
+    }>(
+      `
+        select id::text,
+               business_name,
+               stripe_connect_account_id,
+               charges_enabled,
+               payouts_enabled,
+               details_submitted,
+               verification_status
+        from merchant_profiles
+        where stripe_connect_account_id is not null
+        order by business_name
+      `,
+    );
+
+    return result.rows.map((row): AdminConnectAccountRow => ({
+      merchantProfileId: row.id,
+      businessName: row.business_name,
+      stripeConnectAccountId: row.stripe_connect_account_id,
+      chargesEnabled: row.charges_enabled,
+      payoutsEnabled: row.payouts_enabled,
+      detailsSubmitted: row.details_submitted,
+      verificationStatus: row.verification_status,
+    }));
+  } catch (error) {
+    if (process.env.CLICK_DB_DEBUG === "true") {
+      console.warn("listAdminConnectAccounts failed", error);
+    }
+    return [];
+  }
+}
+
+// Looks up the admin profile id for an authenticated session, used so refund
+// audit rows can attribute who clicked the button. Returns null if the session
+// has no email or hasn't matched a profile yet (the refund still goes through;
+// the audit row just has actor_profile_id = null).
+export async function getAdminProfileIdForSession(
+  session: Session | null,
+): Promise<string | null> {
+  const email = getSessionEmail(session);
+  if (!email) return null;
+  const pool = getPostgresPool();
+  if (!pool) return null;
+  const result = await pool.query<{ id: string }>(
+    `select id::text from profiles where email = $1::citext limit 1`,
+    [email],
+  );
+  return result.rows[0]?.id ?? null;
 }

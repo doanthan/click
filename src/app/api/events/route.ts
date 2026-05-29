@@ -53,6 +53,16 @@ function responseForError(error: unknown) {
     return NextResponse.json({ error: error.message }, { status: 403 });
   }
 
+  // Paid events require a Stripe Connect account with charges_enabled. Send
+  // the merchant to the payouts step of the onboarding wizard — the client
+  // wizard follows the `redirect` field after showing the toast.
+  if (error.name === "PayoutsNotReadyError") {
+    return NextResponse.json(
+      { error: error.message, redirect: "/merchant/onboarding/payouts" },
+      { status: 403 },
+    );
+  }
+
   return NextResponse.json({ error: error.message || "Event creation failed." }, { status: 500 });
 }
 
@@ -76,6 +86,12 @@ export async function POST(request: Request) {
     tags: getString(formData.get("tags")),
     imageUrl: getString(formData.get("imageUrl")) || undefined,
     imageAlt: getString(formData.get("imageAlt")) || undefined,
+    // Multi-photo gallery from the wizard's Media step. The client appends one
+    // `imageUrls` entry per uploaded photo, in display order.
+    imageUrls: formData
+      .getAll("imageUrls")
+      .map((v) => (typeof v === "string" ? v.trim() : ""))
+      .filter(Boolean),
   };
 
   try {

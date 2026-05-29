@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { AdminEventRow } from "@/lib/event-repository";
 import type { EventStatus } from "@/lib/click-data";
 import type { Region } from "@/lib/geo";
@@ -9,8 +9,21 @@ import type { Region } from "@/lib/geo";
 type StatusFilter = "all" | EventStatus;
 type RegionFilter = "all" | Region;
 type DateFilter = "all" | "upcoming" | "past";
+type SortKey = "title" | "status" | "category" | "startsAt" | "attendees";
+type SortDir = "asc" | "desc";
 
 const PAGE_SIZE = 10;
+
+// Natural order for the Status pill — Pending first matches the queue's purpose
+// (admins are usually triaging), then the live/featured states, then the cold tail.
+const statusRank: Record<EventStatus, number> = {
+  Pending: 0,
+  Live: 1,
+  Featured: 2,
+  Waitlist: 3,
+  Locked: 4,
+  Cancelled: 5,
+};
 
 const regionOrder: RegionFilter[] = ["all", "Sydney", "Melbourne", "Other"];
 const dateOrder: { value: DateFilter; label: string }[] = [
@@ -54,6 +67,21 @@ export function AdminEventQueue({ events }: { events: AdminEventRow[] }) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [page, setPage] = useState(1);
+  // Default sort matches the default date filter (upcoming) — soonest first.
+  const [sortKey, setSortKey] = useState<SortKey>("startsAt");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      // Dates default ascending (soonest first); everything else descending
+      // (biggest counts / latest statuses on top is the more useful first glance).
+      setSortDir(key === "startsAt" || key === "title" || key === "category" ? "asc" : "desc");
+    }
+    setPage(1);
+  }
 
   // Filter setters reset to page 1 so users never land on an empty page.
   // (We do this inline rather than via an effect — keeps state changes
@@ -107,16 +135,45 @@ export function AdminEventQueue({ events }: { events: AdminEventRow[] }) {
     });
   }, [rows, filter, regionFilter, dateFilter, query]);
 
+  const sorted = useMemo(() => {
+    const dir = sortDir === "asc" ? 1 : -1;
+    const collator = new Intl.Collator("en-AU", { sensitivity: "base", numeric: true });
+    // Copy before sorting — `filtered` is derived from `rows` state, mutating
+    // it would scramble the source for the next memo run.
+    return filtered.slice().sort((a, b) => {
+      switch (sortKey) {
+        case "title":
+          return collator.compare(a.title, b.title) * dir;
+        case "category":
+          return collator.compare(a.category, b.category) * dir;
+        case "status":
+          return (statusRank[a.status] - statusRank[b.status]) * dir;
+        case "attendees":
+          return (a.attendees - b.attendees) * dir;
+        case "startsAt": {
+          // Unparseable dates sink to the bottom regardless of direction —
+          // they're noise, not the answer to "soonest" or "latest".
+          const at = new Date(a.startsAt).getTime();
+          const bt = new Date(b.startsAt).getTime();
+          if (!Number.isFinite(at) && !Number.isFinite(bt)) return 0;
+          if (!Number.isFinite(at)) return 1;
+          if (!Number.isFinite(bt)) return -1;
+          return (at - bt) * dir;
+        }
+      }
+    });
+  }, [filtered, sortKey, sortDir]);
+
   // Clamp page if the filtered set shrank under us (e.g. approve flips a row
   // out of view). Cheap and deterministic — no effect needed.
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount);
   const pageRows = useMemo(
-    () => filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE),
-    [filtered, safePage],
+    () => sorted.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE),
+    [sorted, safePage],
   );
-  const pageStart = filtered.length === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1;
-  const pageEnd = Math.min(safePage * PAGE_SIZE, filtered.length);
+  const pageStart = sorted.length === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1;
+  const pageEnd = Math.min(safePage * PAGE_SIZE, sorted.length);
 
   async function approve(eventId: string) {
     setMessage("");
@@ -215,14 +272,15 @@ export function AdminEventQueue({ events }: { events: AdminEventRow[] }) {
         ))}
       </div>
 
-      <div className="mt-6 overflow-hidden rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow-sm">
-        <div className="hidden grid-cols-[1.35fr_0.8fr_0.7fr_0.9fr_0.7fr_0.9fr] gap-4 bg-[color:var(--surface-deep)] px-5 py-3 text-xs font-black uppercase tracking-[0.14em] text-[color:var(--on-deep)] md:grid">
-          <span>Event</span>
-          <span>Status</span>
-          <span>Category</span>
-          <span>Starts</span>
-          <span>Going</span>
-          <span>Action</span>
+      {/* overflow-visible so the row's 3-dot menu can render outside the card edge. */}
+      <div className="mt-6 overflow-visible rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow-sm">
+        <div className="hidden grid-cols-[1.35fr_0.8fr_0.7fr_0.9fr_0.7fr_0.4fr] gap-4 bg-[color:var(--surface-deep)] px-5 py-3 text-xs font-black uppercase tracking-[0.14em] text-[color:var(--on-deep)] md:grid">
+          <SortHeader label="Event"    sortKey="title"     activeKey={sortKey} dir={sortDir} onClick={toggleSort} />
+          <SortHeader label="Status"   sortKey="status"    activeKey={sortKey} dir={sortDir} onClick={toggleSort} />
+          <SortHeader label="Category" sortKey="category"  activeKey={sortKey} dir={sortDir} onClick={toggleSort} />
+          <SortHeader label="Starts"   sortKey="startsAt"  activeKey={sortKey} dir={sortDir} onClick={toggleSort} />
+          <SortHeader label="Going"    sortKey="attendees" activeKey={sortKey} dir={sortDir} onClick={toggleSort} />
+          <span className="text-right">Actions</span>
         </div>
         {message ? (
           <p className="border-b border-[color:var(--line)] bg-[color:var(--peach)] px-5 py-3 text-sm font-black text-[color:var(--surface-deep)]">
@@ -246,7 +304,7 @@ export function AdminEventQueue({ events }: { events: AdminEventRow[] }) {
                 key={event.id}
                 className="border-b border-[color:var(--line)] last:border-0"
               >
-                <div className="grid gap-3 px-5 py-4 text-sm font-medium text-[color:var(--mauve)] md:grid-cols-[1.35fr_0.8fr_0.7fr_0.9fr_0.7fr_0.9fr] md:items-center">
+                <div className="grid gap-3 px-5 py-4 text-sm font-medium text-[color:var(--mauve)] md:grid-cols-[1.35fr_0.8fr_0.7fr_0.9fr_0.7fr_0.4fr] md:items-center">
                   <div className="text-left">
                     <Link
                       href={`/events/${event.id}`}
@@ -300,35 +358,13 @@ export function AdminEventQueue({ events }: { events: AdminEventRow[] }) {
                   <span className="font-bold text-[color:var(--ink)]">
                     {event.attendees}/{event.capacity}
                   </span>
-                  <div className="flex flex-wrap gap-2">
-                    {event.status === "Pending" ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => approve(event.id)}
-                          disabled={busyId === event.id}
-                          className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--ink)] px-4 py-1.5 text-xs font-black uppercase tracking-wider text-[color:var(--champagne)] hard-shadow-sm disabled:opacity-60"
-                        >
-                          {busyId === event.id ? "Approving…" : "Approve"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setExpanded(isExpanded ? null : event.id)}
-                          className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-1.5 text-xs font-black uppercase tracking-wider text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--cream)]"
-                        >
-                          {isExpanded ? "Hide" : "Inspect"}
-                        </button>
-                      </>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => setExpanded(isExpanded ? null : event.id)}
-                        className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-1.5 text-xs font-black uppercase tracking-wider text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--cream)]"
-                      >
-                        {isExpanded ? "Hide" : "Inspect"}
-                      </button>
-                    )}
-                  </div>
+                  <EventActions
+                    event={event}
+                    isExpanded={isExpanded}
+                    isBusy={busyId === event.id}
+                    onToggleExpand={() => setExpanded(isExpanded ? null : event.id)}
+                    onApprove={() => approve(event.id)}
+                  />
                 </div>
                 {isExpanded ? (
                   <dl className="grid gap-3 border-t border-dashed border-[color:var(--line)] bg-[color:var(--cream)]/40 px-5 py-4 text-xs font-bold uppercase tracking-wider text-[color:var(--mauve)] sm:grid-cols-4">
@@ -399,5 +435,136 @@ export function AdminEventQueue({ events }: { events: AdminEventRow[] }) {
         ) : null}
       </div>
     </div>
+  );
+}
+
+function EventActions({
+  event,
+  isExpanded,
+  isBusy,
+  onToggleExpand,
+  onApprove,
+}: {
+  event: AdminEventRow;
+  isExpanded: boolean;
+  isBusy: boolean;
+  onToggleExpand: () => void;
+  onApprove: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handlePointer(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", handlePointer);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handlePointer);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [open]);
+
+  // Close the menu after firing — keeps the row's expand transition feeling
+  // like the only thing that happened.
+  function run(fn: () => void) {
+    fn();
+    setOpen(false);
+  }
+
+  return (
+    <div ref={containerRef} className="relative flex justify-start md:justify-end">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`Actions for ${event.title}`}
+        onClick={() => setOpen((v) => !v)}
+        className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] text-[color:var(--ink)] transition-colors hover:bg-[color:var(--cream)]"
+      >
+        <svg viewBox="0 0 20 20" className="h-4 w-4" fill="currentColor" aria-hidden="true">
+          <circle cx="10" cy="4" r="1.6" />
+          <circle cx="10" cy="10" r="1.6" />
+          <circle cx="10" cy="16" r="1.6" />
+        </svg>
+      </button>
+      {open ? (
+        <div
+          role="menu"
+          className="absolute right-0 top-10 z-20 w-56 rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-2 text-left hard-shadow-sm"
+        >
+          {event.status === "Pending" ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => run(onApprove)}
+              disabled={isBusy}
+              className="block w-full rounded-lg px-3 py-2 text-left text-xs font-bold text-[color:var(--ink)] transition-colors hover:bg-[color:var(--peach)] disabled:opacity-60"
+            >
+              {isBusy ? "Approving…" : "Approve event"}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => run(onToggleExpand)}
+            className="block w-full rounded-lg px-3 py-2 text-left text-xs font-bold text-[color:var(--ink)] transition-colors hover:bg-[color:var(--cream)]"
+          >
+            {isExpanded ? "Hide details" : "Inspect details"}
+          </button>
+          <Link
+            href={`/events/${event.id}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            role="menuitem"
+            onClick={() => setOpen(false)}
+            className="block rounded-lg px-3 py-2 text-xs font-bold text-[color:var(--ink)] transition-colors hover:bg-[color:var(--cream)]"
+          >
+            Open in new tab ↗
+          </Link>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function SortHeader({
+  label,
+  sortKey,
+  activeKey,
+  dir,
+  onClick,
+}: {
+  label: string;
+  sortKey: SortKey;
+  activeKey: SortKey;
+  dir: SortDir;
+  onClick: (key: SortKey) => void;
+}) {
+  const active = sortKey === activeKey;
+  // ▲/▼ glyphs are dim until the column is the active sort — keeps the row
+  // visually quiet but still hints clickability.
+  const arrow = active ? (dir === "asc" ? "▲" : "▼") : "▾";
+  return (
+    <button
+      type="button"
+      onClick={() => onClick(sortKey)}
+      aria-sort={active ? (dir === "asc" ? "ascending" : "descending") : "none"}
+      className={`flex items-center gap-1 text-left uppercase tracking-[0.14em] transition hover:text-[color:var(--champagne)] ${
+        active ? "text-[color:var(--champagne)]" : "text-[color:var(--on-deep)]"
+      }`}
+    >
+      <span>{label}</span>
+      <span className={`text-[0.7em] ${active ? "opacity-100" : "opacity-40"}`} aria-hidden="true">
+        {arrow}
+      </span>
+    </button>
   );
 }

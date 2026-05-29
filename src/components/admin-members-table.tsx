@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import Link from "next/link";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import {
   suspendMemberAction,
@@ -29,24 +30,193 @@ function roleTone(role: AdminMemberRow["role"]) {
   return "bg-[color:var(--peach)] text-[color:var(--surface-deep)]";
 }
 
-function eventSummary(events: AdminMemberRow["events"]) {
+const MAX_EVENT_CARDS = 4;
+
+function EventCards({
+  events,
+  onSelect,
+}: {
+  events: AdminMemberRow["events"];
+  onSelect?: (slug: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
   if (events.length === 0) return null;
-  const titles = events.map((event) => event.title);
-  if (titles.length <= 2) return titles.join(" · ");
-  return `${titles.slice(0, 2).join(" · ")} · +${titles.length - 2} more`;
+
+  const visible = expanded ? events : events.slice(0, MAX_EVENT_CARDS);
+  const hidden = events.length - visible.length;
+
+  return (
+    <div className="mt-2">
+      <p className="text-[0.6rem] font-black uppercase tracking-[0.16em] text-[color:var(--mauve)]/80">
+        Events
+      </p>
+      <div className="mt-1.5 flex flex-wrap gap-1.5">
+        {visible.map((event) => (
+          <button
+            key={event.slug}
+            type="button"
+            onClick={() => onSelect?.(event.slug)}
+            title={event.title}
+            className="max-w-[14rem] truncate rounded-lg border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-2.5 py-1 text-[0.7rem] font-bold text-[color:var(--ink)] transition-colors hover:bg-[color:var(--peach)]"
+          >
+            {event.title}
+          </button>
+        ))}
+        {hidden > 0 ? (
+          <button
+            type="button"
+            onClick={() => setExpanded(true)}
+            className="rounded-lg border-2 border-dashed border-[color:var(--line)] bg-transparent px-2.5 py-1 text-[0.7rem] font-bold text-[color:var(--mauve)] transition-colors hover:bg-[color:var(--cream)]"
+          >
+            +{hidden} more
+          </button>
+        ) : null}
+        {expanded && events.length > MAX_EVENT_CARDS ? (
+          <button
+            type="button"
+            onClick={() => setExpanded(false)}
+            className="rounded-lg border-2 border-dashed border-[color:var(--line)] bg-transparent px-2.5 py-1 text-[0.7rem] font-bold text-[color:var(--mauve)] transition-colors hover:bg-[color:var(--cream)]"
+          >
+            Show less
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
 }
 
-function MemberRow({ member }: { member: AdminMemberRow }) {
-  const [isPending, startTransition] = useTransition();
+function MemberActions({
+  member,
+  suspended,
+  isPending,
+  onSuspend,
+  onUnsuspend,
+}: {
+  member: AdminMemberRow;
+  suspended: boolean;
+  isPending: boolean;
+  onSuspend: (reason: string) => void;
+  onUnsuspend: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [reason, setReason] = useState("");
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handlePointer(event: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setOpen(false);
+        setConfirming(false);
+      }
+    }
+    function handleKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpen(false);
+        setConfirming(false);
+      }
+    }
+    document.addEventListener("mousedown", handlePointer);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handlePointer);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={containerRef} className="relative flex justify-start md:justify-end">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`Actions for ${member.displayName}`}
+        onClick={() => setOpen((value) => !value)}
+        className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] text-[color:var(--ink)] transition-colors hover:bg-[color:var(--cream)]"
+      >
+        <svg viewBox="0 0 20 20" className="h-4 w-4" fill="currentColor" aria-hidden="true">
+          <circle cx="10" cy="4" r="1.6" />
+          <circle cx="10" cy="10" r="1.6" />
+          <circle cx="10" cy="16" r="1.6" />
+        </svg>
+      </button>
+      {open ? (
+        <div
+          role="menu"
+          className="absolute right-0 top-10 z-20 w-56 rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-2 text-left hard-shadow-sm"
+        >
+          <Link
+            href={`/admin/members/${member.id}`}
+            role="menuitem"
+            className="block rounded-lg px-3 py-2 text-xs font-bold text-[color:var(--ink)] transition-colors hover:bg-[color:var(--cream)]"
+          >
+            View profile
+          </Link>
+          {suspended ? (
+            <button
+              type="button"
+              role="menuitem"
+              disabled={isPending}
+              onClick={() => {
+                onUnsuspend();
+                setOpen(false);
+              }}
+              className="block w-full rounded-lg px-3 py-2 text-left text-xs font-bold text-[color:var(--ink)] transition-colors hover:bg-[color:var(--peach)] disabled:opacity-60"
+            >
+              Unsuspend member
+            </button>
+          ) : confirming ? (
+            <div className="grid gap-2 p-1">
+              <input
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+                placeholder="Reason (shown in audit log)"
+                className="rounded-md border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-2 py-1.5 text-xs"
+              />
+              <button
+                type="button"
+                disabled={isPending}
+                onClick={() => {
+                  onSuspend(reason);
+                  setOpen(false);
+                  setConfirming(false);
+                }}
+                className="rounded-lg border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-[color:var(--surface-deep)] hard-shadow-sm disabled:opacity-60"
+              >
+                Confirm suspend
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => setConfirming(true)}
+              className="block w-full rounded-lg px-3 py-2 text-left text-xs font-bold text-[color:var(--rose)] transition-colors hover:bg-[color:var(--rose)]/10"
+            >
+              Suspend member
+            </button>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function MemberRow({
+  member,
+  onEventSelect,
+}: {
+  member: AdminMemberRow;
+  onEventSelect?: (slug: string) => void;
+}) {
+  const [isPending, startTransition] = useTransition();
   const suspended = !!member.suspendedAt;
   const isSeed = !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
     member.id,
   );
-  const eventLine = eventSummary(member.events);
-  const eventTooltip = member.events.map((event) => event.title).join("\n");
 
-  function suspend() {
+  function suspend(reason: string) {
     const form = new FormData();
     form.set("profile_id", member.id);
     form.set("reason", reason);
@@ -80,24 +250,23 @@ function MemberRow({ member }: { member: AdminMemberRow }) {
       }`}
     >
       <div>
-        <p className="font-black text-[color:var(--ink)]">{member.displayName}</p>
+        {isSeed ? (
+          <p className="font-black text-[color:var(--ink)]">{member.displayName}</p>
+        ) : (
+          <Link
+            href={`/admin/members/${member.id}`}
+            className="font-black text-[color:var(--ink)] hover:underline"
+          >
+            {member.displayName}
+          </Link>
+        )}
         <p className="text-xs font-medium text-[color:var(--mauve)]">{member.email}</p>
         {member.intents.length > 0 ? (
           <p className="mt-1 text-[0.7rem] font-bold uppercase tracking-wider text-[color:var(--mauve)]/80">
             {member.intents.join(" · ")}
           </p>
         ) : null}
-        {eventLine ? (
-          <p
-            className="mt-1 truncate text-[0.7rem] font-bold text-[color:var(--ink)]/70"
-            title={eventTooltip}
-          >
-            <span className="uppercase tracking-wider text-[color:var(--mauve)]/80">
-              Events:
-            </span>{" "}
-            {eventLine}
-          </p>
-        ) : null}
+        <EventCards events={member.events} onSelect={onEventSelect} />
         {suspended && member.suspendedReason ? (
           <p className="mt-1 text-xs font-bold text-[color:var(--rose)]">
             Suspended: {member.suspendedReason}
@@ -125,44 +294,19 @@ function MemberRow({ member }: { member: AdminMemberRow }) {
         </span>
       </span>
       <span>{dateFormatter.format(new Date(member.joinedAt))}</span>
-      <div className="flex flex-col gap-2">
-        {isSeed ? (
-          <span className="font-mono text-[0.6rem] uppercase tracking-[0.16em] text-[color:var(--mauve)]">
-            seed data
-          </span>
-        ) : suspended ? (
-          <button
-            type="button"
-            onClick={unsuspend}
-            disabled={isPending}
-            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-3 py-1 text-[0.65rem] font-bold uppercase tracking-wider text-[color:var(--surface-deep)] hard-shadow-sm disabled:opacity-60"
-          >
-            Unsuspend
-          </button>
-        ) : (
-          <details className="text-[0.65rem]">
-            <summary className="cursor-pointer rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-3 py-1 text-center font-bold uppercase tracking-wider text-[color:var(--surface-deep)] hard-shadow-sm">
-              Suspend
-            </summary>
-            <div className="mt-2 grid gap-2">
-              <input
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                placeholder="Reason (shown in audit log)"
-                className="rounded-md border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-2 py-1 text-xs"
-              />
-              <button
-                type="button"
-                onClick={suspend}
-                disabled={isPending}
-                className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--ink)] px-3 py-1 font-bold uppercase tracking-wider text-[color:var(--on-deep)] hard-shadow-sm disabled:opacity-60"
-              >
-                Confirm suspend
-              </button>
-            </div>
-          </details>
-        )}
-      </div>
+      {isSeed ? (
+        <span className="font-mono text-[0.6rem] uppercase tracking-[0.16em] text-[color:var(--mauve)] md:text-right">
+          seed data
+        </span>
+      ) : (
+        <MemberActions
+          member={member}
+          suspended={suspended}
+          isPending={isPending}
+          onSuspend={suspend}
+          onUnsuspend={unsuspend}
+        />
+      )}
     </div>
   );
 }
@@ -279,8 +423,8 @@ export function AdminMembersTable({
         </div>
       </div>
 
-      <div className="mt-6 overflow-hidden rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow-sm">
-        <div className="hidden grid-cols-[1.4fr_0.6fr_0.8fr_0.8fr_0.7fr_0.6fr_0.7fr] gap-4 bg-[color:var(--surface-deep)] px-5 py-3 text-xs font-black uppercase tracking-[0.14em] text-[color:var(--on-deep)] md:grid">
+      <div className="mt-6 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow-sm">
+        <div className="hidden grid-cols-[1.4fr_0.6fr_0.8fr_0.8fr_0.7fr_0.6fr_0.7fr] gap-4 rounded-t-2xl bg-[color:var(--surface-deep)] px-5 py-3 text-xs font-black uppercase tracking-[0.14em] text-[color:var(--on-deep)] md:grid">
           <span>Member</span>
           <span>Role</span>
           <span>Suburb</span>
@@ -294,7 +438,13 @@ export function AdminMembersTable({
             No members match this filter.
           </p>
         ) : (
-          visible.map((member) => <MemberRow key={member.id} member={member} />)
+          visible.map((member) => (
+            <MemberRow
+              key={member.id}
+              member={member}
+              onEventSelect={setEventFilter}
+            />
+          ))
         )}
       </div>
 

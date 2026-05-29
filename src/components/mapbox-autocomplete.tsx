@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useCallback } from "react";
+import { useCallback, useMemo, useRef } from "react";
 
 // `@mapbox/search-js-react` touches `document` at import time, so we can't
 // bundle it into the SSR pass. next/dynamic with `ssr: false` lazy-loads it on
@@ -22,6 +22,98 @@ const SearchBox = dynamic(
 
 const TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
+// As you type, the SearchBox aborts each superseded suggestion request via
+// `AbortController.abort()` (no reason). The browser rejects the in-flight
+// fetch with a benign `AbortError` ("signal is aborted without reason"). The
+// library discards aborted results, but on one fetch path the rejection isn't
+// caught, so it bubbles up as an unhandled rejection — which Next's dev error
+// overlay shows as a "Runtime AbortError".
+//
+// We can't swallow it with an `unhandledrejection` listener: Next's overlay
+// handler is registered before app code and ignores `event.preventDefault()`
+// (it only bails for its own router errors — see Next's `use-error-handler`).
+// So neutralise it at the source instead — wrap `fetch` so an aborted *Mapbox*
+// request returns a promise that never settles. The library's await on a
+// discarded request simply never proceeds (equivalent to its own
+// catch-and-return), so no rejection is ever produced. Scoped to Mapbox URLs
+// so every other aborted fetch in the app still rejects normally; installed
+// once on the client. Harmless in prod (no overlay there).
+if (typeof window !== "undefined") {
+  const w = window as typeof window & { __mapboxAbortPatched?: boolean };
+  if (!w.__mapboxAbortPatched) {
+    w.__mapboxAbortPatched = true;
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url;
+      const pending = originalFetch(input, init);
+      if (!url.includes("mapbox.com")) return pending;
+      return pending.catch((err: unknown) => {
+        if ((err as { name?: string } | null)?.name === "AbortError") {
+          // Never-settling: the request was aborted because the query moved
+          // on, so its result is discarded either way. Returning a pending
+          // promise stops the benign AbortError from ever surfacing.
+          return new Promise<Response>(() => {});
+        }
+        throw err;
+      });
+    };
+  }
+}
+
+// Fully static, so define it once at module scope. The SearchBox wrapper keys a
+// `useEffect` on `theme`; a fresh object literal per render would re-assign the
+// theme on every keystroke and add churn to the underlying web component.
+const SEARCH_BOX_THEME = {
+  // Match the surrounding TextInput / StateSelect chrome exactly:
+  // rounded-xl (0.75rem), 2px ink border, champagne fill, cream hover,
+  // semibold ink text, px-4 py-3 padding, no shadow.
+  variables: {
+    colorPrimary: "#FF6978",
+    colorText: "#340068",
+    colorBackground: "#FFFCF9",
+    colorBackgroundHover: "#fff6f7",
+    colorBackgroundActive: "#fff6f7",
+    border: "2px solid #340068",
+    borderRadius: "0.75rem",
+    boxShadow: "none",
+    padding: "0.75em 1em",
+    fontFamily: "inherit",
+    fontWeight: "600",
+    fontWeightSemibold: "700",
+    fontWeightBold: "700",
+    lineHeight: "1.5",
+    unit: "16px",
+  },
+  // The variables above style the wrapper. To make the typed value
+  // ("48 Spencer Road") render with the same weight/colour as
+  // "Cecil Hills" in the field next door, override the inner .Input
+  // directly and brand the placeholder. The magnifier is hidden so
+  // the Street field doesn't stand out from the icon-less neighbours.
+  cssText: `
+    .SearchBox .SearchIcon { display: none; }
+    .SearchBox .Input {
+      font-weight: 600;
+      color: #340068;
+      letter-spacing: 0;
+    }
+    .SearchBox .Input::placeholder {
+      font-weight: 500;
+      color: #6D435A;
+      opacity: 1;
+    }
+    .Results, .ResultsList, .Suggestion, .SuggestionName {
+      color: #340068;
+      font-weight: 600;
+    }
+    .SuggestionDesc { color: #6D435A; font-weight: 500; }
+  `,
+};
+
 export type MapboxPlace = {
   lat: number;
   lng: number;
@@ -29,11 +121,19 @@ export type MapboxPlace = {
   name: string;
   /** Full formatted address line. */
   address: string;
+  /** Just the street line, e.g. "42 Crown Street". */
+  street: string;
   /** Best-effort suburb / locality. */
   suburb: string;
+  /** Region/state code, e.g. "NSW" (best-effort). */
+  state: string;
+  /** Postcode (best-effort). */
+  postcode: string;
 };
 
-type RetrieveContextEntry = { name?: string } | undefined;
+type RetrieveContextEntry =
+  | { name?: string; region_code?: string; short_code?: string }
+  | undefined;
 
 type RetrieveFeature = {
   geometry?: { coordinates?: [number, number] };
@@ -42,6 +142,7 @@ type RetrieveFeature = {
     full_address?: string;
     place_formatted?: string;
     address?: string;
+    address_line1?: string;
     context?: {
       place?: RetrieveContextEntry;
       locality?: RetrieveContextEntry;
@@ -67,6 +168,23 @@ function suburbFrom(feature: RetrieveFeature): string {
   );
 }
 
+// Pull the 2-3 letter state/region code (e.g. "NSW") off the region context.
+// Mapbox exposes it as `region_code`, or as a `short_code` like "AU-NSW".
+function stateFrom(feature: RetrieveFeature): string {
+  const region = feature.properties?.context?.region;
+  if (!region) return "";
+  if (region.region_code) return region.region_code.toUpperCase();
+  if (region.short_code) {
+    const parts = region.short_code.split("-");
+    return (parts[parts.length - 1] ?? "").toUpperCase();
+  }
+  return "";
+}
+
+function postcodeFrom(feature: RetrieveFeature): string {
+  return feature.properties?.context?.postcode?.name ?? "";
+}
+
 export function MapboxAutocomplete({
   value,
   onValueChange,
@@ -84,6 +202,20 @@ export function MapboxAutocomplete({
   country?: string;
   className?: string;
 }) {
+  const boxRef = useRef<HTMLDivElement>(null);
+
+  // Stable options object — a fresh literal each render would re-assign
+  // `.options` on the SearchBox (it keys a useEffect on the prop) every
+  // keystroke, churning the underlying web component.
+  const options = useMemo(
+    () => ({
+      country,
+      language: "en",
+      ...(proximity ? { proximity: { lng: proximity.lng, lat: proximity.lat } } : {}),
+    }),
+    [country, proximity?.lat, proximity?.lng], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
   const handleRetrieve = useCallback(
     (res: unknown) => {
       const feature = (res as { features?: RetrieveFeature[] } | undefined)
@@ -96,7 +228,18 @@ export function MapboxAutocomplete({
         lng,
         name: props.name ?? props.address ?? "",
         address: props.full_address ?? props.place_formatted ?? props.name ?? "",
+        street: props.address_line1 ?? props.address ?? props.name ?? "",
         suburb: suburbFrom(feature),
+        state: stateFrom(feature),
+        postcode: postcodeFrom(feature),
+      });
+      // After a pick the SearchBox keeps its (now stale) suggestion list and
+      // re-opens it whenever the input regains focus — and focus bounces back
+      // to the input as soon as the just-clicked suggestion element is hidden.
+      // Blur the input so the dropdown stays closed; the SearchBox's own
+      // `focusout` handler then runs hideResults().
+      requestAnimationFrame(() => {
+        boxRef.current?.querySelector("input")?.blur();
       });
     },
     [onSelect],
@@ -118,31 +261,15 @@ export function MapboxAutocomplete({
   }
 
   return (
-    <div className={className}>
+    <div className={className} ref={boxRef}>
       <SearchBox
         accessToken={TOKEN}
         value={value}
         onChange={onValueChange}
         onRetrieve={handleRetrieve}
         placeholder={placeholder}
-        options={{
-          country,
-          language: "en",
-          ...(proximity ? { proximity: { lng: proximity.lng, lat: proximity.lat } } : {}),
-        }}
-        theme={{
-          variables: {
-            colorPrimary: "#FF6978",
-            colorText: "#340068",
-            colorBackground: "#FFFCF9",
-            colorBackgroundHover: "#fff6f7",
-            border: "2px solid #340068",
-            borderRadius: "0.5rem",
-            boxShadow: "none",
-            fontFamily: "inherit",
-            unit: "16px",
-          },
-        }}
+        options={options}
+        theme={SEARCH_BOX_THEME}
       />
     </div>
   );

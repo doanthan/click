@@ -1,8 +1,12 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { openLoginModal } from "./login-modal-host";
+import {
+  EventRsvpSuccessOverlay,
+  type EventSuccessDetails,
+} from "./event-rsvp-success-overlay";
 
 type RegistrationState =
   | "idle"
@@ -17,16 +21,21 @@ export function EventRegistrationButton({
   eventId,
   initiallyRegistered = false,
   isWaitlist = false,
+  successDetails,
 }: {
   eventId: string;
   initiallyRegistered?: boolean;
   isWaitlist?: boolean;
+  // When present, a confirmed (non-waitlist) RSVP pops the confetti overlay.
+  successDetails?: EventSuccessDetails;
 }) {
   const [state, setState] = useState<RegistrationState>(
     initiallyRegistered ? "registered" : "idle",
   );
   const [message, setMessage] = useState("");
+  const [showSuccess, setShowSuccess] = useState(false);
   const pathname = usePathname();
+  const router = useRouter();
 
   async function register() {
     setState("submitting");
@@ -64,6 +73,9 @@ export function EventRegistrationButton({
     setMessage(
       status === "waitlisted" ? "You are on the waitlist." : "You are registered.",
     );
+    if (status !== "waitlisted" && successDetails) {
+      setShowSuccess(true);
+    }
   }
 
   async function cancel() {
@@ -96,6 +108,16 @@ export function EventRegistrationButton({
 
   return (
     <div className="grid gap-1">
+      {showSuccess && successDetails ? (
+        <EventRsvpSuccessOverlay
+          details={successDetails}
+          onClose={() => {
+            setShowSuccess(false);
+            // Reflect the new RSVP in the server-rendered "who's clicked in" list.
+            router.refresh();
+          }}
+        />
+      ) : null}
       {isLocked ? (
         <button
           type="button"

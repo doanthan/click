@@ -1,6 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
-import { auth, isAdminEmail, signOut } from "@/auth";
+import { auth, isAdminEmail } from "@/auth";
 import {
   getProfileStatus,
   getUnreadNotificationCount,
@@ -80,19 +80,6 @@ export async function SiteHeader() {
             <>
               <HeaderNotificationsBell unreadCount={unreadCount} />
               <HeaderRoleSwitcher roles={portalRoles} userLabel={userLabel} />
-              <form
-                action={async () => {
-                  "use server";
-                  await signOut({ redirectTo: "/" });
-                }}
-              >
-                <button
-                  type="submit"
-                  className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--ink)] px-4 py-2 text-sm font-bold text-[color:var(--champagne)] hard-shadow-sm hover:bg-[color:var(--ink-deep)]"
-                >
-                  Sign out
-                </button>
-              </form>
             </>
           ) : (
             <>

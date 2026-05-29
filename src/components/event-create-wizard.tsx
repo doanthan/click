@@ -1,10 +1,40 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useRef,
+  useState,
+  type ClipboardEvent as ReactClipboardEvent,
+  type DragEvent as ReactDragEvent,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { toast } from "sonner";
-import { categories } from "@/lib/click-data";
 import { MapboxAutocomplete, type MapboxPlace } from "./mapbox-autocomplete";
+
+// Create-event — multi-step wizard. Each step has its own URL so users can
+// bookmark, link to, and browser-back through them:
+//   /merchant/events/create           · redirects → /basics
+//   /merchant/events/create/basics    · step 1 · what is this event
+//   /merchant/events/create/schedule  · step 2 · when + how many
+//   /merchant/events/create/location  · step 3 · where (Mapbox)
+//   /merchant/events/create/media     · step 4 · photos (drop / paste / pick)
+//   /merchant/events/create/review    · step 5 · review → Submit
+//
+// Form state lives in a React context provided by <EventCreateProvider>
+// mounted inside the route's layout, so it persists across client-side
+// navigation between sibling step pages (App Router keeps shared layouts
+// mounted). Each step page renders <WizardShell step={n}> which surfaces the
+// step indicator, validation messages, and Back / Next / Submit nav. Per-step
+// validators run on Next; Submit re-runs all five and router.push()'es back to
+// the offending step's URL.
+
+type RecurrenceFreq = "none" | "weekly" | "fortnightly" | "monthly";
 
 type WizardValues = {
   title: string;
@@ -14,30 +44,42 @@ type WizardValues = {
   capacity: string;
   locationName: string;
   suburb: string;
-  // Captured from the Mapbox address autocomplete in step 3 and serialized
-  // alongside the rest of the form on submit.
+  // Captured from the Mapbox address autocomplete in the location step and
+  // serialized alongside the rest of the form on submit.
   latitude: number | null;
   longitude: number | null;
   price: string;
   tags: string;
   relationshipGoal: string;
   description: string;
-  imageUrl: string;
+  // Ordered gallery captured in the Media step's drop / paste / file-picker
+  // zone. Each entry is a public URL returned by /api/upload/event-image.
+  // images[0] is the event cover (mirrored to events.image_url) and the rest
+  // land in events.image_urls[]. See database/015_event_image_urls.sql.
+  images: string[];
   imageAlt: string;
+  // Recurrence is expanded client-side at submit time: WizardShell.submit()
+  // POSTs one event per occurrence to /api/events. "none" submits a single row.
+  recurrenceFreq: RecurrenceFreq;
+  recurrenceCount: string;
 };
 
-const STEPS = [
-  { key: "basics", label: "Basics" },
-  { key: "schedule", label: "Schedule" },
-  { key: "location", label: "Location" },
-  { key: "media", label: "Media" },
-  { key: "review", label: "Review" },
+// 0 = Basics, 1 = Schedule, 2 = Location, 3 = Media, 4 = Review.
+export type StepIndex = 0 | 1 | 2 | 3 | 4;
+const STEP_COUNT = 5;
+const STEP_TITLES = ["Basics", "Schedule", "Location", "Media", "Review"] as const;
+export const STEP_PATHS = [
+  "/merchant/events/create/basics",
+  "/merchant/events/create/schedule",
+  "/merchant/events/create/location",
+  "/merchant/events/create/media",
+  "/merchant/events/create/review",
 ] as const;
 
 const initial: WizardValues = {
   title: "",
   groupName: "",
-  category: "Food",
+  category: "",
   startsAt: "",
   capacity: "12",
   locationName: "",
@@ -48,11 +90,13 @@ const initial: WizardValues = {
   tags: "",
   relationshipGoal: "",
   description: "",
-  imageUrl: "",
+  images: [],
   imageAlt: "",
+  recurrenceFreq: "none",
+  recurrenceCount: "1",
 };
 
-function validateStep(step: number, v: WizardValues): string | null {
+function validateStep(step: StepIndex, v: WizardValues): string | null {
   if (step === 0) {
     if (!v.title.trim()) return "Event title is required.";
     if (!v.groupName.trim()) return "Group / host name is required.";
@@ -70,15 +114,21 @@ function validateStep(step: number, v: WizardValues): string | null {
     if (!Number.isFinite(capacity) || capacity < 1) {
       return "Capacity must be a positive number.";
     }
+    if (v.recurrenceFreq !== "none") {
+      const n = Number.parseInt(v.recurrenceCount, 10);
+      if (!Number.isFinite(n) || n < 2 || n > 26) {
+        return "Pick 2–26 occurrences for a recurring event.";
+      }
+    }
   }
   if (step === 2) {
     if (!v.locationName.trim()) return "Venue name is required.";
     if (!v.suburb.trim()) return "Suburb is required.";
   }
   if (step === 3) {
-    if (v.imageUrl && !/^https?:\/\//i.test(v.imageUrl)) {
-      return "Image URL must start with http:// or https://.";
-    }
+    // Media step is optional — when the merchant skips uploads we fall back
+    // to a category-themed placeholder server-side, so there's nothing to
+    // validate here.
   }
   return null;
 }
@@ -96,28 +146,181 @@ function formatDateTime(value: string) {
   }).format(d);
 }
 
-export function EventCreateWizard() {
-  const router = useRouter();
-  const [step, setStep] = useState(0);
-  const [values, setValues] = useState<WizardValues>(initial);
+// ---------- date helpers (DateTimePicker + RecurrencePicker) ----------
+
+const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+const QUICK_TIMES: Array<{ label: string; hour: number; minute: number }> = [
+  { label: "5:00 PM", hour: 17, minute: 0 },
+  { label: "6:00 PM", hour: 18, minute: 0 },
+  { label: "6:30 PM", hour: 18, minute: 30 },
+  { label: "7:00 PM", hour: 19, minute: 0 },
+  { label: "7:30 PM", hour: 19, minute: 30 },
+  { label: "8:00 PM", hour: 20, minute: 0 },
+];
+const FREQ_OPTIONS: Array<{ value: RecurrenceFreq; label: string; hint: string }> = [
+  { value: "none", label: "Just once", hint: "Single event." },
+  { value: "weekly", label: "Weekly", hint: "Same weekday + time every 7 days." },
+  { value: "fortnightly", label: "Fortnightly", hint: "Every 14 days." },
+  { value: "monthly", label: "Monthly", hint: "Same date each month." },
+];
+
+function pad2(n: number) {
+  return n < 10 ? `0${n}` : String(n);
+}
+
+function startOfDay(d: Date) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+function sameDay(a: Date, b: Date) {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+function addMonths(d: Date, n: number) {
+  const next = new Date(d);
+  next.setMonth(next.getMonth() + n);
+  return next;
+}
+
+// startsAt is stored in the same shape an <input type="datetime-local"> emits
+// (YYYY-MM-DDTHH:MM, local wall-clock). Parse it back into discrete pieces the
+// calendar grid + time controls can work with.
+function parseLocalDateTime(
+  value: string,
+): { date: Date; hour: number; minute: number } | null {
+  if (!value) return null;
+  const m = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  if (m) {
+    return {
+      date: new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])),
+      hour: Number(m[4]),
+      minute: Number(m[5]),
+    };
+  }
+  const fallback = new Date(value);
+  if (Number.isNaN(fallback.getTime())) return null;
+  return {
+    date: startOfDay(fallback),
+    hour: fallback.getHours(),
+    minute: fallback.getMinutes(),
+  };
+}
+
+function formatLocalDateTimeString(date: Date, hour: number, minute: number) {
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}T${pad2(hour)}:${pad2(minute)}`;
+}
+
+// Returns one Date per occurrence. "none" → just the start. Capped at 26 to
+// match validateStep so a typo can't blow up the queue.
+function computeOccurrenceDates(
+  startsAt: string,
+  freq: RecurrenceFreq,
+  count: number,
+): Date[] {
+  const parsed = parseLocalDateTime(startsAt);
+  if (!parsed) return [];
+  const base = new Date(
+    parsed.date.getFullYear(),
+    parsed.date.getMonth(),
+    parsed.date.getDate(),
+    parsed.hour,
+    parsed.minute,
+  );
+  if (freq === "none") return [base];
+  const n = Math.max(1, Math.min(26, count));
+  const out: Date[] = [];
+  for (let i = 0; i < n; i++) {
+    const d = new Date(base);
+    if (freq === "weekly") d.setDate(d.getDate() + 7 * i);
+    else if (freq === "fortnightly") d.setDate(d.getDate() + 14 * i);
+    else if (freq === "monthly") d.setMonth(d.getMonth() + i);
+    out.push(d);
+  }
+  return out;
+}
+
+// ---------- context ----------
+
+type WizardContextValue = {
+  values: WizardValues;
+  setValues: Dispatch<SetStateAction<WizardValues>>;
+  set: <K extends keyof WizardValues>(key: K, value: WizardValues[K]) => void;
+  categoryOptions: string[];
+  stepError: string | null;
+  setStepError: Dispatch<SetStateAction<string | null>>;
+  submitting: boolean;
+  setSubmitting: Dispatch<SetStateAction<boolean>>;
+};
+
+const WizardContext = createContext<WizardContextValue | null>(null);
+
+function useWizard(): WizardContextValue {
+  const value = useContext(WizardContext);
+  if (!value) {
+    throw new Error(
+      "useWizard must be used inside <EventCreateProvider> (mounted in src/app/merchant/events/create/layout.tsx)",
+    );
+  }
+  return value;
+}
+
+export function EventCreateProvider({
+  categoryOptions,
+  children,
+}: {
+  categoryOptions: string[];
+  children: React.ReactNode;
+}) {
+  const [values, setValues] = useState<WizardValues>(() => ({
+    ...initial,
+    category: categoryOptions[0] ?? "",
+  }));
   const [stepError, setStepError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const tagsPreview = useMemo(
-    () =>
-      values.tags
-        .split(",")
-        .map((t) => t.trim())
-        .filter(Boolean)
-        .slice(0, 6),
-    [values.tags],
-  );
-
-  function set<K extends keyof WizardValues>(key: K, value: WizardValues[K]) {
+  const set = <K extends keyof WizardValues>(key: K, value: WizardValues[K]) =>
     setValues((v) => ({ ...v, [key]: value }));
-  }
 
-  function next() {
+  return (
+    <WizardContext.Provider
+      value={{
+        values,
+        setValues,
+        set,
+        categoryOptions,
+        stepError,
+        setStepError,
+        submitting,
+        setSubmitting,
+      }}
+    >
+      {children}
+    </WizardContext.Provider>
+  );
+}
+
+// ---------- wizard shell ----------
+
+export function WizardShell({
+  step,
+  children,
+}: {
+  step: StepIndex;
+  children: React.ReactNode;
+}) {
+  const { values, stepError, setStepError, submitting, setSubmitting } = useWizard();
+  const router = useRouter();
+  const isLast = step === STEP_COUNT - 1;
+
+  function goNext() {
     const err = validateStep(step, values);
     if (err) {
       setStepError(err);
@@ -125,55 +328,127 @@ export function EventCreateWizard() {
       return;
     }
     setStepError(null);
-    setStep((s) => Math.min(STEPS.length - 1, s + 1));
+    router.push(STEP_PATHS[step + 1]);
   }
-  function prev() {
-    setStepError(null);
-    setStep((s) => Math.max(0, s - 1));
+
+  function goBack() {
+    if (step > 0) {
+      setStepError(null);
+      router.push(STEP_PATHS[step - 1]);
+    }
   }
 
   async function submit() {
+    // Re-run every step's validation on final submit — guards against a user
+    // editing an earlier step after passing it, or deep-linking past one.
+    for (let s = 0; s < STEP_COUNT; s++) {
+      const err = validateStep(s as StepIndex, values);
+      if (err) {
+        setStepError(err);
+        toast.error(err);
+        router.push(STEP_PATHS[s]);
+        return;
+      }
+    }
+
     setSubmitting(true);
     setStepError(null);
     try {
-      const form = new FormData();
-      form.set("title", values.title);
-      form.set("groupName", values.groupName);
-      form.set("category", values.category);
-      form.set("startsAt", values.startsAt);
-      form.set("capacity", values.capacity);
-      form.set("locationName", values.locationName);
-      form.set("suburb", values.suburb);
-      if (values.latitude !== null && values.longitude !== null) {
-        form.set("latitude", String(values.latitude));
-        form.set("longitude", String(values.longitude));
+      // Expand recurrence client-side: one POST per occurrence. "none" yields
+      // a single-element array so the loop is the only path.
+      const occurrences = computeOccurrenceDates(
+        values.startsAt,
+        values.recurrenceFreq,
+        Number.parseInt(values.recurrenceCount, 10) || 1,
+      );
+      const startsAtList = occurrences.length
+        ? occurrences.map((d) =>
+            formatLocalDateTimeString(d, d.getHours(), d.getMinutes()),
+          )
+        : [values.startsAt];
+
+      let okCount = 0;
+      const errors: string[] = [];
+      let firstTitle: string | undefined;
+
+      for (const startsAt of startsAtList) {
+        const form = new FormData();
+        form.set("title", values.title);
+        form.set("groupName", values.groupName);
+        form.set("category", values.category);
+        form.set("startsAt", startsAt);
+        form.set("capacity", values.capacity);
+        form.set("locationName", values.locationName);
+        form.set("suburb", values.suburb);
+        if (values.latitude !== null && values.longitude !== null) {
+          form.set("latitude", String(values.latitude));
+          form.set("longitude", String(values.longitude));
+        }
+        form.set("price", values.price);
+        form.set("tags", values.tags);
+        form.set("relationshipGoal", values.relationshipGoal);
+        form.set("description", values.description);
+        // Multi-photo gallery from the Media step — one append per URL so the
+        // server gets the full ordered list via formData.getAll("imageUrls").
+        for (const url of values.images) {
+          if (url) form.append("imageUrls", url);
+        }
+        // Mirror the first photo into imageUrl for older code paths that still
+        // read a single cover; the server prefers imageUrls when both are set.
+        if (values.images[0]) form.set("imageUrl", values.images[0]);
+        if (values.imageAlt) form.set("imageAlt", values.imageAlt);
+
+        const response = await fetch("/api/events", { method: "POST", body: form });
+
+        if (response.status === 401) {
+          window.location.href =
+            "/merchant/login?callbackUrl=/merchant/events/create";
+          return;
+        }
+
+        const payload = (await response.json().catch(() => ({}))) as {
+          event?: { title?: string };
+          error?: string;
+          redirect?: string;
+        };
+        if (!response.ok) {
+          // Server can hand us a follow-up URL (e.g. PayoutsNotReadyError →
+          // /merchant/onboarding/payouts). Toast the reason and navigate
+          // there — every queued occurrence shares the same root cause, so
+          // there's nothing useful to retry until the merchant finishes the
+          // step the server pointed them at.
+          if (payload.redirect) {
+            const msg = payload.error ?? "Action needed before publishing.";
+            toast.error(msg);
+            window.location.href = payload.redirect;
+            return;
+          }
+          errors.push(payload.error ?? "Submission failed.");
+          continue;
+        }
+        okCount++;
+        firstTitle = firstTitle ?? payload.event?.title;
       }
-      form.set("price", values.price);
-      form.set("tags", values.tags);
-      form.set("relationshipGoal", values.relationshipGoal);
-      form.set("description", values.description);
-      if (values.imageUrl) form.set("imageUrl", values.imageUrl);
-      if (values.imageAlt) form.set("imageAlt", values.imageAlt);
 
-      const response = await fetch("/api/events", { method: "POST", body: form });
-
-      if (response.status === 401) {
-        window.location.href = "/merchant/login?callbackUrl=/merchant/events/create";
-        return;
-      }
-
-      const payload = (await response.json().catch(() => ({}))) as {
-        event?: { title?: string };
-        error?: string;
-      };
-      if (!response.ok) {
-        const msg = payload.error ?? "Submission failed.";
+      if (okCount === 0) {
+        const msg = errors[0] ?? "Submission failed.";
         setStepError(msg);
         toast.error(msg);
         return;
       }
 
-      toast.success(`${payload.event?.title ?? "Event"} submitted for admin review.`);
+      const label = firstTitle ?? values.title ?? "Event";
+      if (errors.length === 0) {
+        toast.success(
+          startsAtList.length === 1
+            ? `${label} submitted for admin review.`
+            : `${okCount} occurrences of ${label} submitted for admin review.`,
+        );
+      } else {
+        toast.success(`${okCount} of ${startsAtList.length} submitted`, {
+          description: `${errors.length} failed — retry from the merchant dashboard.`,
+        });
+      }
       router.push("/merchant?tab=events");
       router.refresh();
     } catch {
@@ -187,44 +462,16 @@ export function EventCreateWizard() {
 
   return (
     <div className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] hard-shadow-sm">
-      <ol className="flex flex-wrap items-center gap-2 border-b-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-4">
-        {STEPS.map((s, idx) => {
-          const active = idx === step;
-          const done = idx < step;
-          return (
-            <li
-              key={s.key}
-              className={`flex items-center gap-2 rounded-full border-2 border-[color:var(--line)] px-3 py-1.5 text-xs font-bold uppercase tracking-wide hard-shadow-sm ${
-                active
-                  ? "bg-[color:var(--rose)] text-[color:var(--surface-deep)]"
-                  : done
-                    ? "bg-[color:var(--peach)] text-[color:var(--surface-deep)]"
-                    : "bg-[color:var(--cream)] text-[color:var(--mauve)]"
-              }`}
-            >
-              <span className="font-mono">{idx + 1}</span>
-              {s.label}
-              {done ? <span aria-hidden>✓</span> : null}
-            </li>
-          );
-        })}
-      </ol>
+      <StepIndicator current={step} />
 
       <div className="space-y-6 p-6">
-        {step === 0 ? (
-          <Step1Basics values={values} set={set} />
-        ) : step === 1 ? (
-          <Step2Schedule values={values} set={set} />
-        ) : step === 2 ? (
-          <Step3Location values={values} set={set} />
-        ) : step === 3 ? (
-          <Step4Media values={values} set={set} />
-        ) : (
-          <Step5Review values={values} formatDateTime={formatDateTime} tagsPreview={tagsPreview} />
-        )}
+        {children}
 
         {stepError ? (
-          <p className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-4 py-3 text-sm font-bold text-[color:var(--surface-deep)]">
+          <p
+            role="alert"
+            className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-4 py-3 text-sm font-bold text-[color:var(--surface-deep)]"
+          >
             {stepError}
           </p>
         ) : null}
@@ -232,21 +479,13 @@ export function EventCreateWizard() {
         <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
           <button
             type="button"
-            onClick={prev}
-            disabled={step === 0}
+            onClick={goBack}
+            disabled={step === 0 || submitting}
             className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)] disabled:opacity-50 disabled:cursor-not-allowed"
           >
             ← Back
           </button>
-          {step < STEPS.length - 1 ? (
-            <button
-              type="button"
-              onClick={next}
-              className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-6 py-3 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
-            >
-              Next →
-            </button>
-          ) : (
+          {isLast ? (
             <button
               type="button"
               onClick={submit}
@@ -255,10 +494,56 @@ export function EventCreateWizard() {
             >
               {submitting ? "Submitting…" : "Submit for review"}
             </button>
+          ) : (
+            <button
+              type="button"
+              onClick={goNext}
+              className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-6 py-3 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
+            >
+              Next →
+            </button>
           )}
         </div>
       </div>
     </div>
+  );
+}
+
+function StepIndicator({ current }: { current: StepIndex }) {
+  // Every step is a <Link> so users can jump anywhere in the wizard — the
+  // form state lives in React context (mounted in layout.tsx), so navigating
+  // away preserves what they've entered, and Submit re-runs every validator
+  // and rebounces them to the offending step if any are still incomplete.
+  // The current step links to itself (idempotent) just to keep the markup
+  // uniform; aria-current marks it for screen readers.
+  return (
+    <ol className="flex flex-wrap items-center gap-2 border-b-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-4">
+      {STEP_TITLES.map((title, idx) => {
+        const active = idx === current;
+        const done = idx < current;
+        const className = `flex cursor-pointer items-center gap-2 rounded-full border-2 border-[color:var(--line)] px-3 py-1.5 text-xs font-bold uppercase tracking-wide hard-shadow-sm transition-colors hover:bg-[color:var(--rose)] hover:text-[color:var(--surface-deep)] ${
+          active
+            ? "bg-[color:var(--rose)] text-[color:var(--surface-deep)]"
+            : done
+              ? "bg-[color:var(--peach)] text-[color:var(--surface-deep)]"
+              : "bg-[color:var(--cream)] text-[color:var(--mauve)]"
+        }`;
+        return (
+          <li key={title}>
+            <Link
+              href={STEP_PATHS[idx]}
+              aria-label={`Go to ${title}`}
+              aria-current={active ? "step" : undefined}
+              className={className}
+            >
+              <span className="font-mono">{idx + 1}</span>
+              {title}
+              {done ? <span aria-hidden>✓</span> : null}
+            </Link>
+          </li>
+        );
+      })}
+    </ol>
   );
 }
 
@@ -290,13 +575,8 @@ function inputClass() {
   return "rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 text-base font-semibold text-[color:var(--ink)] outline-none focus:bg-[color:var(--cream)]";
 }
 
-function Step1Basics({
-  values,
-  set,
-}: {
-  values: WizardValues;
-  set: <K extends keyof WizardValues>(k: K, v: WizardValues[K]) => void;
-}) {
+export function BasicsSection() {
+  const { values, set, categoryOptions } = useWizard();
   return (
     <div className="space-y-5">
       <header>
@@ -332,11 +612,11 @@ function Step1Basics({
             onChange={(e) => set("category", e.target.value)}
             className={inputClass()}
           >
-            {categories
-              .filter((c) => c !== "All")
-              .map((c) => (
-                <option key={c}>{c}</option>
-              ))}
+            {categoryOptions.length === 0 ? (
+              <option value="">No categories available</option>
+            ) : (
+              categoryOptions.map((c) => <option key={c}>{c}</option>)
+            )}
           </select>
         </Field>
         <Field label="Tags" hint="Comma-separated. Top 5 used for matching.">
@@ -369,15 +649,10 @@ function Step1Basics({
   );
 }
 
-function Step2Schedule({
-  values,
-  set,
-}: {
-  values: WizardValues;
-  set: <K extends keyof WizardValues>(k: K, v: WizardValues[K]) => void;
-}) {
+export function ScheduleSection() {
+  const { values, set } = useWizard();
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <header>
         <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
           Step 2 · Schedule
@@ -386,16 +661,21 @@ function Step2Schedule({
           When + how many?
         </h2>
       </header>
-      <div className="grid gap-4 md:grid-cols-3">
-        <Field label="Start time">
-          <input
-            type="datetime-local"
-            value={values.startsAt}
-            onChange={(e) => set("startsAt", e.target.value)}
-            className={inputClass()}
-            required
-          />
-        </Field>
+
+      <DateTimePicker
+        value={values.startsAt}
+        onChange={(v) => set("startsAt", v)}
+      />
+
+      <RecurrencePicker
+        startsAt={values.startsAt}
+        freq={values.recurrenceFreq}
+        count={values.recurrenceCount}
+        onFreqChange={(f) => set("recurrenceFreq", f)}
+        onCountChange={(c) => set("recurrenceCount", c)}
+      />
+
+      <div className="grid gap-4 md:grid-cols-2">
         <Field label="Capacity">
           <input
             type="number"
@@ -419,15 +699,352 @@ function Step2Schedule({
   );
 }
 
-function Step3Location({
-  values,
-  set,
+// Inline month-view calendar + time controls. Replaces the native
+// <input type="datetime-local"> so the picker matches the rest of the
+// wizard's sticker / hard-shadow styling and so past days are visually
+// disabled in addition to validateStep rejecting them.
+function DateTimePicker({
+  value,
+  onChange,
 }: {
-  values: WizardValues;
-  set: <K extends keyof WizardValues>(k: K, v: WizardValues[K]) => void;
+  value: string;
+  onChange: (v: string) => void;
 }) {
+  const today = useMemo(() => startOfDay(new Date()), []);
+  const parsed = parseLocalDateTime(value);
+  const selectedDate = parsed?.date ?? null;
+  const selectedHour = parsed?.hour ?? 19;
+  const selectedMinute = parsed?.minute ?? 0;
+
+  const [cursor, setCursor] = useState<Date>(() => {
+    const base = selectedDate ?? today;
+    return new Date(base.getFullYear(), base.getMonth(), 1);
+  });
+  const cursorYear = cursor.getFullYear();
+  const cursorMonth = cursor.getMonth();
+
+  // 6-week grid for stable height. First cell is the Sunday on or before the
+  // 1st; cells outside the current month are dimmed but still pickable so
+  // users don't lose the end of last month / start of next.
+  const firstWeekday = new Date(cursorYear, cursorMonth, 1).getDay();
+  const cells: Array<{ date: Date; inMonth: boolean }> = [];
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(cursorYear, cursorMonth, 1 + (i - firstWeekday));
+    cells.push({ date: d, inMonth: d.getMonth() === cursorMonth });
+  }
+
+  const canGoBackMonth = cursor > new Date(today.getFullYear(), today.getMonth(), 1);
+
+  function pickDay(d: Date) {
+    if (d < today) return;
+    onChange(formatLocalDateTimeString(d, selectedHour, selectedMinute));
+  }
+  function pickTime(hour: number, minute: number) {
+    const base = selectedDate ?? today;
+    onChange(formatLocalDateTimeString(base, hour, minute));
+  }
+
+  const summary = parsed
+    ? new Intl.DateTimeFormat("en-AU", {
+        weekday: "long",
+        month: "long",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      }).format(
+        new Date(
+          parsed.date.getFullYear(),
+          parsed.date.getMonth(),
+          parsed.date.getDate(),
+          parsed.hour,
+          parsed.minute,
+        ),
+      )
+    : null;
+
+  return (
+    <fieldset className="mx-auto w-full max-w-sm rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-4 hard-shadow-sm">
+      <legend className="flex flex-wrap items-baseline justify-between gap-2 px-2">
+        <span className="font-mono text-[0.7rem] uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+          Start time
+        </span>
+        <span className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.14em] text-[color:var(--rose)]">
+          {summary ?? "Pick a day + time"}
+        </span>
+      </legend>
+
+      <div className="mt-3 flex items-center justify-between gap-3">
+        <button
+          type="button"
+          onClick={() => setCursor((c) => addMonths(c, -1))}
+          disabled={!canGoBackMonth}
+          aria-label="Previous month"
+          className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-1.5 text-sm font-bold text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)] disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          ←
+        </button>
+        <span className="font-display text-xl font-light leading-none">
+          {MONTH_NAMES[cursorMonth]} {cursorYear}
+        </span>
+        <button
+          type="button"
+          onClick={() => setCursor((c) => addMonths(c, 1))}
+          aria-label="Next month"
+          className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-1.5 text-sm font-bold text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)]"
+        >
+          →
+        </button>
+      </div>
+
+      <div className="mt-4 grid grid-cols-7 gap-1 text-center">
+        {WEEKDAY_LABELS.map((w) => (
+          <span
+            key={w}
+            className="font-mono text-[0.6rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]"
+          >
+            {w}
+          </span>
+        ))}
+      </div>
+
+      <div className="mt-2 grid grid-cols-7 gap-1">
+        {cells.map(({ date, inMonth }, i) => {
+          const isPast = date < today;
+          const isToday = sameDay(date, today);
+          const isSelected = selectedDate ? sameDay(date, selectedDate) : false;
+          const base =
+            "h-9 flex items-center justify-center rounded-lg border-2 text-xs font-bold transition-colors";
+          const stateClass = isSelected
+            ? "bg-[color:var(--rose)] text-[color:var(--surface-deep)] border-[color:var(--line)] hard-shadow-sm"
+            : isPast
+              ? "bg-transparent text-[color:var(--mauve)]/40 border-transparent cursor-not-allowed"
+              : inMonth
+                ? `bg-[color:var(--cream)] border-[color:var(--line)]/30 text-[color:var(--ink)] hover:bg-[color:var(--peach)] ${
+                    isToday ? "ring-2 ring-[color:var(--rose)]" : ""
+                  }`
+                : "bg-transparent text-[color:var(--mauve)]/50 border-transparent hover:bg-[color:var(--peach)]/40";
+          return (
+            <button
+              key={i}
+              type="button"
+              onClick={() => pickDay(date)}
+              disabled={isPast}
+              aria-pressed={isSelected}
+              aria-label={date.toDateString()}
+              className={`${base} ${stateClass}`}
+            >
+              {date.getDate()}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="mt-5 border-t-2 border-dashed border-[color:var(--line)]/40 pt-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="mr-1 font-mono text-[0.65rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+            Time
+          </span>
+          {(() => {
+            const isPm = selectedHour >= 12;
+            const hour12 = selectedHour % 12 === 0 ? 12 : selectedHour % 12;
+            const to24 = (h12: number, pm: boolean) =>
+              pm ? (h12 === 12 ? 12 : h12 + 12) : h12 === 12 ? 0 : h12;
+            const selectClass =
+              "rounded-lg border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-2.5 py-2 text-base font-bold text-[color:var(--ink)] outline-none focus:bg-[color:var(--champagne)]";
+            return (
+              <>
+                <select
+                  aria-label="Hour"
+                  value={hour12}
+                  onChange={(e) =>
+                    pickTime(to24(Number(e.target.value), isPm), selectedMinute)
+                  }
+                  className={selectClass}
+                >
+                  {Array.from({ length: 12 }, (_, i) => i + 1).map((h) => (
+                    <option key={h} value={h}>
+                      {h}
+                    </option>
+                  ))}
+                </select>
+                <span className="font-bold text-[color:var(--ink)]">:</span>
+                <select
+                  aria-label="Minute"
+                  value={selectedMinute}
+                  onChange={(e) =>
+                    pickTime(selectedHour, Number(e.target.value))
+                  }
+                  className={selectClass}
+                >
+                  {[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map((m) => (
+                    <option key={m} value={m}>
+                      {pad2(m)}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  aria-label="AM or PM"
+                  value={isPm ? "pm" : "am"}
+                  onChange={(e) =>
+                    pickTime(to24(hour12, e.target.value === "pm"), selectedMinute)
+                  }
+                  className={selectClass}
+                >
+                  <option value="am">AM</option>
+                  <option value="pm">PM</option>
+                </select>
+              </>
+            );
+          })()}
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {QUICK_TIMES.map((t) => {
+            const active = t.hour === selectedHour && t.minute === selectedMinute;
+            return (
+              <button
+                key={t.label}
+                type="button"
+                onClick={() => pickTime(t.hour, t.minute)}
+                className={`rounded-full border-2 border-[color:var(--line)] px-3 py-1.5 text-xs font-bold uppercase tracking-wide hard-shadow-sm transition-colors ${
+                  active
+                    ? "bg-[color:var(--rose)] text-[color:var(--surface-deep)]"
+                    : "bg-[color:var(--cream)] text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+                }`}
+              >
+                {t.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </fieldset>
+  );
+}
+
+// Recurrence selector — expanded into N events at submit time. Cap is 26 so a
+// typo can't blow up the queue; backend doesn't currently know about
+// recurrence, each occurrence is just another row.
+function RecurrencePicker({
+  startsAt,
+  freq,
+  count,
+  onFreqChange,
+  onCountChange,
+}: {
+  startsAt: string;
+  freq: RecurrenceFreq;
+  count: string;
+  onFreqChange: (v: RecurrenceFreq) => void;
+  onCountChange: (v: string) => void;
+}) {
+  const n = Number.parseInt(count, 10) || 1;
+  const occurrences = computeOccurrenceDates(startsAt, freq, n);
+  const showPreview = freq !== "none" && occurrences.length > 0;
+
+  return (
+    <fieldset className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-5 hard-shadow-sm">
+      <legend className="flex flex-wrap items-baseline justify-between gap-2 px-2">
+        <span className="font-mono text-[0.7rem] uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+          Repeat
+        </span>
+        <span className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.14em] text-[color:var(--mauve)]">
+          {freq === "none" ? "One event" : `${n} events on submit`}
+        </span>
+      </legend>
+
+      <div
+        role="radiogroup"
+        aria-label="Recurrence"
+        className="mt-3 flex flex-wrap gap-2"
+      >
+        {FREQ_OPTIONS.map((opt) => {
+          const active = opt.value === freq;
+          return (
+            <button
+              key={opt.value}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              title={opt.hint}
+              onClick={() => {
+                onFreqChange(opt.value);
+                // Bump the count to a sensible default when switching off
+                // "none" — otherwise the user lands on "1" and has to type.
+                if (opt.value !== "none" && (Number.parseInt(count, 10) || 0) < 2) {
+                  onCountChange("4");
+                }
+              }}
+              className={`rounded-full border-2 border-[color:var(--line)] px-3.5 py-1.5 text-xs font-bold uppercase tracking-[0.1em] hard-shadow-sm transition-colors ${
+                active
+                  ? "bg-[color:var(--rose)] text-[color:var(--surface-deep)]"
+                  : "bg-[color:var(--cream)] text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+              }`}
+            >
+              {opt.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {freq !== "none" ? (
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-2 text-sm font-bold text-[color:var(--ink)]">
+            <span className="font-mono text-[0.65rem] uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+              How many?
+            </span>
+            <input
+              type="number"
+              min={2}
+              max={26}
+              value={count}
+              onChange={(e) => onCountChange(e.target.value)}
+              className="w-20 rounded-lg border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-2 text-base font-bold text-[color:var(--ink)] outline-none focus:bg-[color:var(--champagne)]"
+            />
+          </label>
+          <span className="font-mono text-[0.65rem] uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+            Max 26 · one event row per date below.
+          </span>
+        </div>
+      ) : null}
+
+      {showPreview ? (
+        <div className="mt-4 rounded-xl border-2 border-dashed border-[color:var(--line)]/50 bg-[color:var(--cream)] p-3">
+          <p className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+            Will create
+          </p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {occurrences.slice(0, 12).map((d, i) => (
+              <span
+                key={i}
+                className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-2.5 py-1 font-mono text-[0.65rem] font-bold uppercase tracking-wide text-[color:var(--ink)]"
+              >
+                {new Intl.DateTimeFormat("en-AU", {
+                  month: "short",
+                  day: "numeric",
+                }).format(d)}
+              </span>
+            ))}
+            {occurrences.length > 12 ? (
+              <span className="font-mono text-[0.65rem] font-bold uppercase tracking-wide text-[color:var(--mauve)]">
+                +{occurrences.length - 12} more
+              </span>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </fieldset>
+  );
+}
+
+export function LocationSection() {
+  const { values, set } = useWizard();
+  // The search box is its own field — a throwaway query used only to locate
+  // the address and pin the map. It is intentionally NOT bound to the venue
+  // name: picking a place fills the address details below (suburb + pinned
+  // coordinates) and leaves the merchant free to type their own venue name.
+  const [query, setQuery] = useState("");
+
   function handlePick(place: MapboxPlace) {
-    set("locationName", place.name || place.address || values.locationName);
     if (place.suburb) set("suburb", place.suburb);
     set("latitude", place.lat);
     set("longitude", place.lng);
@@ -445,20 +1062,20 @@ function Step3Location({
           Where in Sydney?
         </h2>
         <p className="mt-1 text-sm font-bold text-[color:var(--mauve)]">
-          Search a venue or street address — we&apos;ll fill the fields below
-          and pin it on the map.
+          Search a street address to fill the suburb and pin it on the map,
+          then name your venue below.
         </p>
       </header>
 
       <Field
-        label="Find venue or address"
-        hint="Powered by Mapbox. Bias is Australia; pick a suggestion to capture exact coordinates."
+        label="Find address"
+        hint="Powered by Mapbox. Bias is Australia; pick a suggestion to fill the suburb and capture exact coordinates. Your venue name is set separately below."
       >
         <MapboxAutocomplete
-          value={values.locationName}
-          onValueChange={(v) => set("locationName", v)}
+          value={query}
+          onValueChange={setQuery}
           onSelect={handlePick}
-          placeholder="e.g. Bar Lucia, Potts Point"
+          placeholder="e.g. 48 Spencer Road, Potts Point"
         />
       </Field>
 
@@ -496,13 +1113,215 @@ function Step3Location({
   );
 }
 
-function Step4Media({
-  values,
-  set,
-}: {
-  values: WizardValues;
-  set: <K extends keyof WizardValues>(k: K, v: WizardValues[K]) => void;
-}) {
+// Drop / paste / file-picker uploader for the Media step. Each accepted file
+// gets a local "pending" tile that flips to a public URL once the server has
+// resized + stored it. Errored uploads stay visible with a retry-by-remove
+// affordance so the merchant notices and re-tries. Tiles can be reordered
+// (drag) and the first one becomes the event cover.
+type PendingUpload = {
+  // Stable client-side id used as the React key and the drag identifier.
+  // Switches to `url` once the upload finishes, but the id stays.
+  id: string;
+  // Local object URL for the preview while uploading; replaced by the
+  // server URL on success. Either way it's what the <img> renders.
+  previewUrl: string;
+  status: "uploading" | "done" | "error";
+  // Server-side public URL once upload succeeds. Empty until then; the
+  // submit handler reads from each tile's `url` to build the imageUrls list.
+  url: string;
+  error?: string;
+  // Filename shown under the tile so paste-from-clipboard tiles still get a
+  // label even if the OS doesn't supply one ("image.png" is the fallback).
+  name: string;
+};
+
+const MEDIA_ACCEPTED_MIME = new Set(["image/jpeg", "image/png", "image/webp"]);
+const MEDIA_MAX_BYTES = 10 * 1024 * 1024;
+
+function makeUploadId() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `up-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+export function MediaSection() {
+  const { values, set } = useWizard();
+  const [pending, setPending] = useState<PendingUpload[]>([]);
+  const [dropping, setDropping] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const dragIndexRef = useRef<number | null>(null);
+
+  // Keep the wizard's `images` array in sync with successfully-uploaded
+  // tiles, in their current display order. We rebuild it from `pending`
+  // whenever an upload finishes or a tile is removed/reordered, so the rest
+  // of the wizard (Review section, submit handler) just reads values.images.
+  const commit = useCallback(
+    (next: PendingUpload[]) => {
+      setPending(next);
+      set(
+        "images",
+        next.filter((p) => p.status === "done" && p.url).map((p) => p.url),
+      );
+    },
+    [set],
+  );
+
+  const uploadOne = useCallback(
+    async (file: File, id: string) => {
+      const form = new FormData();
+      form.set("file", file);
+      try {
+        const res = await fetch("/api/upload/event-image", {
+          method: "POST",
+          body: form,
+        });
+        const payload = (await res.json().catch(() => ({}))) as {
+          url?: string;
+          error?: string;
+        };
+        if (!res.ok || !payload.url) {
+          throw new Error(payload.error || "Upload failed.");
+        }
+        setPending((prev) => {
+          const next = prev.map((p) =>
+            p.id === id ? { ...p, status: "done" as const, url: payload.url! } : p,
+          );
+          // Re-derive images from the just-updated list.
+          set(
+            "images",
+            next.filter((p) => p.status === "done" && p.url).map((p) => p.url),
+          );
+          return next;
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Upload failed.";
+        setPending((prev) =>
+          prev.map((p) =>
+            p.id === id ? { ...p, status: "error" as const, error: message } : p,
+          ),
+        );
+        toast.error(message);
+      }
+    },
+    [set],
+  );
+
+  const addFiles = useCallback(
+    (files: File[]) => {
+      // One pass: validate, build a tile for each survivor, and remember
+      // the (tile, file) pairing so we kick off each upload with the right
+      // file. Rejected files surface a toast but never reach `pending`.
+      const accepted: Array<{ tile: PendingUpload; file: File }> = [];
+      for (const file of files) {
+        if (!MEDIA_ACCEPTED_MIME.has(file.type)) {
+          toast.error(`${file.name || "Image"} — only JPG, PNG, or WEBP allowed.`);
+          continue;
+        }
+        if (file.size > MEDIA_MAX_BYTES) {
+          toast.error(`${file.name || "Image"} — must be 10 MB or smaller.`);
+          continue;
+        }
+        if (file.size === 0) continue;
+        accepted.push({
+          file,
+          tile: {
+            id: makeUploadId(),
+            previewUrl: URL.createObjectURL(file),
+            status: "uploading",
+            url: "",
+            name: file.name || "Pasted image",
+          },
+        });
+      }
+      if (accepted.length === 0) return;
+      setPending((prev) => [...prev, ...accepted.map((a) => a.tile)]);
+      // Fire-and-forget; each upload patches its own tile when it resolves.
+      for (const { file, tile } of accepted) {
+        void uploadOne(file, tile.id);
+      }
+    },
+    [uploadOne],
+  );
+
+  function handleFileInputChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const files = event.target.files ? Array.from(event.target.files) : [];
+    if (files.length > 0) addFiles(files);
+    // Reset so picking the same file twice in a row still triggers onChange.
+    event.target.value = "";
+  }
+
+  function handleDrop(event: ReactDragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setDropping(false);
+    const files = Array.from(event.dataTransfer.files ?? []);
+    if (files.length > 0) addFiles(files);
+  }
+
+  function handleDragOver(event: ReactDragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    if (!dropping) setDropping(true);
+  }
+
+  function handleDragLeave(event: ReactDragEvent<HTMLDivElement>) {
+    // Only clear the highlight when the drag actually leaves the container,
+    // not when it enters a child element.
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+    setDropping(false);
+  }
+
+  function handlePaste(event: ReactClipboardEvent<HTMLDivElement>) {
+    const items = event.clipboardData?.items ?? [];
+    const files: File[] = [];
+    for (const item of items) {
+      if (item.kind === "file") {
+        const file = item.getAsFile();
+        if (file) files.push(file);
+      }
+    }
+    if (files.length === 0) return;
+    event.preventDefault();
+    addFiles(files);
+  }
+
+  function removeTile(id: string) {
+    const next = pending.filter((p) => p.id !== id);
+    // Release the object URL we created in addFiles so it doesn't leak.
+    const removed = pending.find((p) => p.id === id);
+    if (removed && removed.previewUrl.startsWith("blob:")) {
+      URL.revokeObjectURL(removed.previewUrl);
+    }
+    commit(next);
+  }
+
+  function onTileDragStart(index: number) {
+    return (event: ReactDragEvent<HTMLDivElement>) => {
+      dragIndexRef.current = index;
+      event.dataTransfer.effectAllowed = "move";
+      // Setting any data makes Firefox actually start the drag.
+      event.dataTransfer.setData("text/plain", String(index));
+    };
+  }
+
+  function onTileDragOver(event: ReactDragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+  }
+
+  function onTileDrop(toIndex: number) {
+    return (event: ReactDragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const from = dragIndexRef.current;
+      dragIndexRef.current = null;
+      if (from === null || from === toIndex) return;
+      const next = [...pending];
+      const [moved] = next.splice(from, 1);
+      next.splice(toIndex, 0, moved);
+      commit(next);
+    };
+  }
+
   return (
     <div className="space-y-5">
       <header>
@@ -510,19 +1329,114 @@ function Step4Media({
           Step 4 · Media
         </p>
         <h2 className="font-display mt-2 text-3xl font-light leading-tight">
-          One real photo helps a lot.
+          Drop in a few real photos.
         </h2>
+        <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+          The first one becomes the cover. Drag, paste from your clipboard, or
+          click to pick — drop multiple at once, and reorder by dragging the
+          tiles below.
+        </p>
       </header>
-      <Field label="Image URL (optional)" hint="Use a real photo of the room or food. A placeholder is used if you skip.">
+
+      {/* Drop / paste zone — focusable so paste works on click, mirrors the
+          "drop anything here" affordance of Claude's chat composer. */}
+      <div
+        tabIndex={0}
+        role="button"
+        aria-label="Drop photos here, paste from clipboard, or click to pick files"
+        onClick={() => fileInputRef.current?.click()}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            fileInputRef.current?.click();
+          }
+        }}
+        onDrop={handleDrop}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onPaste={handlePaste}
+        className={`grid place-items-center gap-3 rounded-2xl border-2 border-dashed px-6 py-10 text-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--rose)] ${
+          dropping
+            ? "border-[color:var(--rose)] bg-[color:var(--peach)]"
+            : "border-[color:var(--line)] bg-[color:var(--champagne)] hover:bg-[color:var(--peach)]/40"
+        }`}
+      >
+        <span className="font-display text-2xl font-light leading-tight text-[color:var(--ink)]">
+          Drop photos, paste, or click to upload
+        </span>
+        <span className="font-mono text-[0.7rem] uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+          JPG · PNG · WEBP · up to 10 MB each
+        </span>
         <input
-          type="url"
-          value={values.imageUrl}
-          onChange={(e) => set("imageUrl", e.target.value)}
-          placeholder="https://images.example.com/your-event.jpg"
-          className={inputClass()}
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          multiple
+          onChange={handleFileInputChange}
+          className="hidden"
         />
-      </Field>
-      <Field label="Image alt text" hint="One sentence for screen readers.">
+      </div>
+
+      {/* Card grid for uploaded photos. Each card is draggable so the
+          merchant can promote any photo to the cover slot. */}
+      {pending.length > 0 ? (
+        <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
+          {pending.map((tile, idx) => {
+            const isCover = idx === 0;
+            return (
+              <div
+                key={tile.id}
+                draggable={tile.status === "done"}
+                onDragStart={onTileDragStart(idx)}
+                onDragOver={onTileDragOver}
+                onDrop={onTileDrop(idx)}
+                className="group relative overflow-hidden rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] hard-shadow-sm"
+              >
+                <div className="aspect-[4/3] w-full overflow-hidden bg-[color:var(--champagne)]">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={tile.url || tile.previewUrl}
+                    alt={tile.name}
+                    className={`size-full object-cover transition ${
+                      tile.status === "uploading" ? "opacity-60" : ""
+                    }`}
+                  />
+                </div>
+                {isCover ? (
+                  <span className="absolute left-2 top-2 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-2 py-0.5 font-mono text-[0.65rem] font-bold uppercase tracking-[0.14em] text-[color:var(--surface-deep)] hard-shadow-sm">
+                    Cover
+                  </span>
+                ) : null}
+                {tile.status === "uploading" ? (
+                  <span className="absolute right-2 top-2 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-2 py-0.5 font-mono text-[0.65rem] font-bold uppercase tracking-[0.14em] text-[color:var(--mauve)]">
+                    Uploading…
+                  </span>
+                ) : null}
+                {tile.status === "error" ? (
+                  <span className="absolute right-2 top-2 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-2 py-0.5 font-mono text-[0.65rem] font-bold uppercase tracking-[0.14em] text-[color:var(--surface-deep)]">
+                    Failed
+                  </span>
+                ) : null}
+                <div className="flex items-center justify-between gap-2 border-t-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-2">
+                  <span className="truncate font-mono text-[0.65rem] font-bold uppercase tracking-[0.14em] text-[color:var(--mauve)]">
+                    {tile.name}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => removeTile(tile.id)}
+                    className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-2 py-0.5 font-mono text-[0.65rem] font-bold uppercase tracking-[0.14em] text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--rose)] hover:text-[color:var(--surface-deep)]"
+                    aria-label={`Remove ${tile.name}`}
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+
+      <Field label="Alt text for the cover photo" hint="One sentence for screen readers.">
         <input
           value={values.imageAlt}
           onChange={(e) => set("imageAlt", e.target.value)}
@@ -530,32 +1444,22 @@ function Step4Media({
           className={inputClass()}
         />
       </Field>
-      {values.imageUrl ? (
-        <div className="rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--champagne)] p-4">
-          <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-            Preview
-          </p>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={values.imageUrl}
-            alt={values.imageAlt || "Event"}
-            className="mt-3 max-h-64 w-full rounded-xl border-2 border-[color:var(--line)] object-cover"
-          />
-        </div>
-      ) : null}
     </div>
   );
 }
 
-function Step5Review({
-  values,
-  formatDateTime,
-  tagsPreview,
-}: {
-  values: WizardValues;
-  formatDateTime: (s: string) => string;
-  tagsPreview: string[];
-}) {
+export function ReviewSection() {
+  const { values } = useWizard();
+  const tagsPreview = useMemo(
+    () =>
+      values.tags
+        .split(",")
+        .map((t) => t.trim())
+        .filter(Boolean)
+        .slice(0, 6),
+    [values.tags],
+  );
+
   return (
     <div className="space-y-5">
       <header>
@@ -590,6 +1494,11 @@ function Step5Review({
           <span className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-3 py-1 text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)]">
             {values.price || "Free"}
           </span>
+          {values.recurrenceFreq !== "none" ? (
+            <span className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-3 py-1 text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)]">
+              {values.recurrenceCount}× {values.recurrenceFreq}
+            </span>
+          ) : null}
           {tagsPreview.map((t) => (
             <span
               key={t}

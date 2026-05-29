@@ -26,14 +26,18 @@ export default async function PostLoginPage({ searchParams }: PostLoginPageProps
     redirect("/login?callbackUrl=/post-login");
   }
 
+  // Admins always go to /admin, even if a deep-link callback (?next=…) tried
+  // to send them somewhere else. This runs before the explicit-next branch so
+  // an admin who clicked a "Log in" link off, say, /events/foo still lands on
+  // the admin console.
+  if (isAdminEmail(session.user.email)) {
+    redirect("/admin");
+  }
+
   const params = await searchParams;
   const explicitNext = safeNext(params?.next);
   if (explicitNext) {
     redirect(explicitNext);
-  }
-
-  if (isAdminEmail(session.user.email)) {
-    redirect("/admin");
   }
 
   const status = await getProfileStatus(session);

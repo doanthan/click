@@ -6,6 +6,7 @@ import {
   markPaymentFailed,
 } from "@/lib/event-repository";
 import { getAppUrl, getStripeClient } from "@/lib/stripe";
+import { calculateApplicationFee } from "@/lib/stripe-connect";
 
 type RouteContext = {
   params: Promise<{ eventId: string }>;
@@ -31,6 +32,11 @@ function errorResponse(error: unknown) {
     return NextResponse.json({ error: error.message }, { status: 404 });
   }
   if (error.name === "ConflictError") {
+    return NextResponse.json({ error: error.message }, { status: 409 });
+  }
+  // Merchant hasn't finished Connect onboarding — the listing shouldn't have
+  // been live, but we still block at the buyer's checkout as a backstop.
+  if (error.name === "PayoutsNotReadyError") {
     return NextResponse.json({ error: error.message }, { status: 409 });
   }
   if (error.name === "ValidationError") {
@@ -93,6 +99,21 @@ export async function POST(_request: Request, context: RouteContext) {
           event_uuid: hold.eventUuid,
           event_slug: hold.eventSlug,
         },
+        // Merchant-hosted events: destination charge with `on_behalf_of` so
+        // the charge settles in the merchant's AU/AUD scope (correct tax
+        // receipt + statement descriptor) while the platform remains merchant
+        // of record for dispute/refund routing. application_fee_amount is the
+        // platform's cut (0 by default; flip PLATFORM_FEE_BPS env to enable).
+        // Funds then flow through to the merchant's connected balance and
+        // Stripe pays them out on the schedule set when the account was
+        // created in src/lib/stripe-connect.ts.
+        ...(hold.merchantStripeAccountId
+          ? {
+              transfer_data: { destination: hold.merchantStripeAccountId },
+              on_behalf_of: hold.merchantStripeAccountId,
+              application_fee_amount: calculateApplicationFee(hold.priceCents),
+            }
+          : {}),
       },
     });
 

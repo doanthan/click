@@ -6,7 +6,7 @@ type RouteContext = {
   params: Promise<{ merchantId: string }>;
 };
 
-const allowedStatuses = new Set(["pending", "approved", "rejected"]);
+const allowedStatuses = new Set(["pending", "approved", "rejected", "suspended"]);
 
 function errorResponse(error: unknown) {
   if (!(error instanceof Error)) {
@@ -44,7 +44,7 @@ export async function POST(request: Request, context: RouteContext) {
   try {
     const result = await updateMerchantVerificationForAdmin(
       merchantId,
-      body.status as "pending" | "approved" | "rejected",
+      body.status as "pending" | "approved" | "rejected" | "suspended",
       session,
     );
     return NextResponse.json({ ok: true, ...result });

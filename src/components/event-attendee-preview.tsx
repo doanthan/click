@@ -5,19 +5,47 @@ import type { EventAttendeePreviewRow } from "@/lib/event-repository";
 export function EventAttendeePreview({
   items,
   totalConfirmed,
+  isAuthenticated,
+  eventSlug,
 }: {
   items: EventAttendeePreviewRow[];
   totalConfirmed: number;
+  isAuthenticated: boolean;
+  eventSlug: string;
 }) {
+  // Who's-clicked-in is a members-only signal — anonymous visitors get a
+  // count + sign-in nudge rather than the actual people.
+  if (!isAuthenticated) {
+    return (
+      <section className="mt-6 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-5">
+        <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+          Who&apos;s clicked in
+        </p>
+        <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+          {totalConfirmed > 0
+            ? `${totalConfirmed} ${totalConfirmed === 1 ? "person has" : "people have"} clicked into this event.`
+            : "No one has clicked in yet."}{" "}
+          <Link
+            href={`/login?callbackUrl=${encodeURIComponent(`/events/${eventSlug}`)}`}
+            className="font-bold text-[color:var(--ink)] underline hover:text-[color:var(--mauve)]"
+          >
+            Sign in
+          </Link>{" "}
+          to see who&apos;s going.
+        </p>
+      </section>
+    );
+  }
+
   if (totalConfirmed === 0) {
     return (
       <section className="mt-6 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-5">
         <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-          Attendees
+          Who&apos;s clicked in
         </p>
         <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
-          Be the first to RSVP. The host shows attendees here once a couple of
-          people are in.
+          Be the first to RSVP. The people who&apos;ve clicked into this event
+          show up here once a couple are in.
         </p>
       </section>
     );
@@ -26,9 +54,9 @@ export function EventAttendeePreview({
   const remaining = Math.max(0, totalConfirmed - items.length);
 
   return (
-    <section className="mt-6">
+    <section className="mt-6 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-5 hard-shadow-sm">
       <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-        Going · {totalConfirmed}
+        Who&apos;s clicked in · {totalConfirmed}
       </p>
       <ul className="mt-3 flex flex-wrap items-center gap-3">
         {items.map((p) => {

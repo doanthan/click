@@ -23,6 +23,16 @@ type QuerySpec = {
   toEntry: (row: Record<string, unknown>) => Omit<LogEntry, "data">;
 };
 
+// pg returns timestamp columns as Date objects, and `String(date)` produces a
+// locale-style string ("Thu May 28 2026 …") which doesn't sort lexicographically
+// in chronological order across days. Normalise to ISO so both the JS merge-sort
+// below and the client's lexical comparisons stay correct.
+function toIso(value: unknown): string {
+  if (value instanceof Date) return value.toISOString();
+  const parsed = new Date(String(value));
+  return Number.isNaN(parsed.getTime()) ? String(value) : parsed.toISOString();
+}
+
 const queries: QuerySpec[] = [
   {
     table: "profiles",
@@ -36,7 +46,7 @@ const queries: QuerySpec[] = [
     toEntry: (row) => ({
       id: `profiles:${row.id}`,
       table: "profiles",
-      createdAt: String(row.created_at),
+      createdAt: toIso(row.created_at),
       label: String(row.display_name ?? row.email ?? "profile"),
       detail: `${row.email} · ${row.role}${row.suburb ? ` · ${row.suburb}` : ""}`,
       entityId: row.id ? String(row.id) : null,
@@ -55,7 +65,7 @@ const queries: QuerySpec[] = [
     toEntry: (row) => ({
       id: `merchant_profiles:${row.id}`,
       table: "merchant_profiles",
-      createdAt: String(row.created_at),
+      createdAt: toIso(row.created_at),
       label: String(row.business_name ?? "merchant"),
       detail: `${row.contact_email} · ${row.verification_status}${row.owner_email ? ` · owner ${row.owner_email}` : ""}`,
       entityId: row.id ? String(row.id) : null,
@@ -76,7 +86,7 @@ const queries: QuerySpec[] = [
       return {
         id: `events:${row.id}`,
         table: "events",
-        createdAt: String(row.created_at),
+        createdAt: toIso(row.created_at),
         label: String(row.title ?? row.slug ?? "event"),
         detail: `${row.status} · ${priceLabel} · cap ${row.capacity}${row.suburb ? ` · ${row.suburb}` : ""}`,
         entityId: row.id ? String(row.id) : null,
@@ -97,7 +107,7 @@ const queries: QuerySpec[] = [
     toEntry: (row) => ({
       id: `event_attendees:${row.id}`,
       table: "event_attendees",
-      createdAt: String(row.created_at),
+      createdAt: toIso(row.created_at),
       label: `RSVP · ${row.event_title ?? "event"}`,
       detail: `${row.attendee_email ?? "user"} · ${row.status}`,
       entityId: row.id ? String(row.id) : null,
@@ -117,7 +127,7 @@ const queries: QuerySpec[] = [
     toEntry: (row) => ({
       id: `event_waitlists:${row.id}`,
       table: "event_waitlists",
-      createdAt: String(row.created_at),
+      createdAt: toIso(row.created_at),
       label: `Waitlist · ${row.event_title ?? "event"}`,
       detail: String(row.attendee_email ?? "user"),
       entityId: row.id ? String(row.id) : null,
@@ -137,7 +147,7 @@ const queries: QuerySpec[] = [
     toEntry: (row) => ({
       id: `bookmarks:${row.id}`,
       table: "bookmarks",
-      createdAt: String(row.created_at),
+      createdAt: toIso(row.created_at),
       label: `Bookmark · ${row.event_title ?? "event"}`,
       detail: String(row.attendee_email ?? "user"),
       entityId: row.id ? String(row.id) : null,
@@ -161,7 +171,7 @@ const queries: QuerySpec[] = [
       return {
         id: `payment_transactions:${row.id}`,
         table: "payment_transactions",
-        createdAt: String(row.created_at),
+        createdAt: toIso(row.created_at),
         label: `Payment · ${row.event_title ?? "event"}`,
         detail: `${amountLabel} · ${row.status} · ${row.buyer_email ?? "buyer"}`,
         entityId: row.id ? String(row.id) : null,
@@ -182,7 +192,7 @@ const queries: QuerySpec[] = [
     toEntry: (row) => ({
       id: `user_clicks:${row.id}`,
       table: "user_clicks",
-      createdAt: String(row.created_at),
+      createdAt: toIso(row.created_at),
       label: "Click",
       detail: `${row.clicker_email ?? "?"} → ${row.clicked_email ?? "?"} · ${row.status}`,
       entityId: row.id ? String(row.id) : null,
@@ -201,7 +211,7 @@ const queries: QuerySpec[] = [
     toEntry: (row) => ({
       id: `audit_logs:${row.id}`,
       table: "audit_logs",
-      createdAt: String(row.created_at),
+      createdAt: toIso(row.created_at),
       label: `Audit · ${row.action}`,
       detail: `${row.entity_table}${row.entity_id ? `#${String(row.entity_id).slice(0, 8)}` : ""}${row.actor_email ? ` · by ${row.actor_email}` : ""}`,
       entityId: row.id ? String(row.id) : null,

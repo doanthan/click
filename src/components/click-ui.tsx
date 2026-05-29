@@ -42,16 +42,23 @@ type PageHeroProps = {
 };
 
 export function PageHero({ eyebrow, title, body, children }: PageHeroProps) {
+  // Tight by default — most pages just need a labelled title above content,
+  // not a full-screen marquee. Side content (children) gets equal weight on
+  // wide screens; without it, the text column stays narrow and readable.
   return (
-    <section className="relative overflow-hidden border-b-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-14 sm:px-6 lg:py-20">
+    <section className="relative overflow-hidden border-b-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-6 sm:px-6 sm:py-8">
       <div className="paper-noise pointer-events-none absolute inset-0 opacity-80" />
-      <div className="relative z-10 mx-auto grid max-w-7xl gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-end">
+      <div
+        className={`relative z-10 mx-auto grid max-w-7xl gap-6 ${
+          children ? "lg:grid-cols-[0.9fr_1.1fr] lg:items-end" : ""
+        }`}
+      >
         <div>
           <p className="eyebrow">{eyebrow}</p>
-          <h1 className="font-display mt-4 text-5xl font-light italic leading-[0.92] tracking-tight text-[color:var(--ink)] sm:text-7xl">
+          <h1 className="font-display mt-2 text-3xl font-light italic leading-[0.98] tracking-tight text-[color:var(--ink)] sm:text-4xl">
             {title}
           </h1>
-          <p className="mt-5 max-w-2xl text-base font-medium leading-7 text-[color:var(--mauve)] sm:text-lg">
+          <p className="mt-3 max-w-2xl text-sm font-medium leading-6 text-[color:var(--mauve)] sm:text-base">
             {body}
           </p>
         </div>
