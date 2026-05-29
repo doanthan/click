@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { sendTransactionalEmail } from "@/lib/email";
+import { logEmailEvent, sendTransactionalEmail } from "@/lib/email";
 
 function getFormValue(formData: FormData, key: string) {
   const value = formData.get(key);
@@ -28,6 +28,20 @@ export async function requestPasswordReset(formData: FormData) {
         loginUrl,
         "If you did not request this, you can ignore this email.",
       ].join("\n\n"),
+    });
+
+    // Mirror to email_events so the dev log captures the reset/sign-in link.
+    // Fire-and-forget — never blocks the redirect or leaks whether the email
+    // exists (we log on any well-formed address, same as the send above).
+    void logEmailEvent({
+      template: "password-reset",
+      toEmail: email,
+      vars: {
+        resetUrl: loginUrl,
+        expiryWindowLabel: "60 minutes",
+        requestIpLabel: "",
+        supportEmail: "hello@click.app",
+      },
     });
   }
 

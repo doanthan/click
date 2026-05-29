@@ -16,7 +16,7 @@ type Props = {
   min?: string;                          // defaults to 1920-01-01
   describedBy?: string;
   labelledBy?: string;
-  ref?: React.Ref<HTMLButtonElement>;
+  ref?: React.Ref<HTMLInputElement>;
 };
 
 const MONTHS_LONG = [
@@ -49,6 +49,41 @@ function toIso(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+// Forgiving free-text parser. Accepts day-first input with any non-digit
+// separators — "10.10.88", "10/10/1988", "10-10-88", "10 10 1988" — plus
+// pasted ISO "1988-10-10". Two-digit years pivot on the current year (so
+// "88" → 1988, "05" → 2005). Returns ISO "yyyy-mm-dd" or null if it can't
+// make a real calendar date out of the input.
+function parseFlexible(input: string): string | null {
+  const s = input.trim();
+  if (!s) return null;
+  const parts = s.split(/[^\d]+/).filter(Boolean);
+  if (parts.length !== 3) return null;
+
+  let d: number, mo: number, y: number;
+  if (parts[0].length === 4) {
+    // yyyy-mm-dd (pasted ISO)
+    [y, mo, d] = [Number(parts[0]), Number(parts[1]), Number(parts[2])];
+  } else {
+    [d, mo, y] = [Number(parts[0]), Number(parts[1]), Number(parts[2])];
+    if (parts[2].length <= 2) {
+      const nowYY = new Date().getFullYear() % 100;
+      y = y <= nowYY ? 2000 + y : 1900 + y;
+    }
+  }
+
+  const date = new Date(y, mo - 1, d);
+  // Reject overflow like 31/02 or month 13.
+  if (
+    date.getFullYear() !== y ||
+    date.getMonth() !== mo - 1 ||
+    date.getDate() !== d
+  ) {
+    return null;
+  }
+  return toIso(date);
+}
+
 function fmtDisplay(d: Date | null): string {
   if (!d) return "";
   const day = String(d.getDate()).padStart(2, "0");
@@ -74,16 +109,18 @@ export function BirthDatePicker({
   ref,
 }: Props) {
   const id = useId();
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
   const popoverRef = useRef<HTMLDivElement | null>(null);
 
-  // Merge external ref (from the form's `firstFieldRef`) with the internal one.
-  const setTriggerRef = useCallback(
-    (node: HTMLButtonElement | null) => {
-      triggerRef.current = node;
+  // Merge external ref (from the form's `firstFieldRef`) with the internal one
+  // — the form focuses this on step entry, so it points at the text input.
+  const setInputRef = useCallback(
+    (node: HTMLInputElement | null) => {
+      inputRef.current = node;
       if (typeof ref === "function") ref(node);
       else if (ref && typeof ref === "object") {
-        (ref as React.RefObject<HTMLButtonElement | null>).current = node;
+        (ref as React.RefObject<HTMLInputElement | null>).current = node;
       }
     },
     [ref],
@@ -110,6 +147,11 @@ export function BirthDatePicker({
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<Mode>("days");
 
+  // Free-text the user is typing. Mirrors the committed value when not focused;
+  // parsed + normalised on blur/Enter via commitText().
+  const [text, setText] = useState(() => fmtDisplay(selected));
+  const [focused, setFocused] = useState(false);
+
   // Sync the view back to a fresh external value (e.g. localStorage draft
   // hydration). This is the "external store -> React" sync pattern the rest
   // of the form uses for its draft restore — setting state in an effect is
@@ -121,6 +163,13 @@ export function BirthDatePicker({
     setViewMonth(selected.getMonth());
     setCursor(selected);
   }, [selected]);
+
+  // Keep the visible text in sync with the committed value whenever the user
+  // isn't actively typing (external draft hydration, calendar picks, clear).
+  useEffect(() => {
+    if (focused) return;
+    setText(fmtDisplay(selected));
+  }, [selected, focused]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   // Close on outside click + Escape.
@@ -129,14 +178,14 @@ export function BirthDatePicker({
     function onPointer(e: PointerEvent) {
       const t = e.target as Node;
       if (popoverRef.current?.contains(t)) return;
-      if (triggerRef.current?.contains(t)) return;
+      if (wrapperRef.current?.contains(t)) return;
       setOpen(false);
     }
     function onKey(e: KeyboardEvent) {
       if (e.key !== "Escape") return;
       e.preventDefault();
       setOpen(false);
-      triggerRef.current?.focus();
+      inputRef.current?.focus();
     }
     document.addEventListener("pointerdown", onPointer, true);
     document.addEventListener("keydown", onKey);
@@ -180,13 +229,38 @@ export function BirthDatePicker({
     setViewMonth(d.getMonth());
     setCursor(d);
     setOpen(false);
-    window.setTimeout(() => triggerRef.current?.focus(), 0);
+    window.setTimeout(() => inputRef.current?.focus(), 0);
   }
 
   function clear() {
     onChange("");
+    setText("");
     setOpen(false);
-    window.setTimeout(() => triggerRef.current?.focus(), 0);
+    window.setTimeout(() => inputRef.current?.focus(), 0);
+  }
+
+  // Parse + normalise the typed text. Commits a valid, in-range date and
+  // reformats it to "dd / mm / yyyy"; otherwise snaps back to the last good
+  // value so the field never sits in a half-typed/invalid state.
+  function commitText() {
+    const raw = text.trim();
+    if (!raw) {
+      onChange("");
+      setText("");
+      return;
+    }
+    const iso = parseFlexible(raw);
+    const parsed = iso ? parseIso(iso) : null;
+    if (parsed && parsed >= minDate && parsed <= maxDate) {
+      onChange(iso!);
+      setText(fmtDisplay(parsed));
+      setViewYear(parsed.getFullYear());
+      setViewMonth(parsed.getMonth());
+      setCursor(parsed);
+      return;
+    }
+    // Invalid or out of the 18+ range — revert to the committed value.
+    setText(fmtDisplay(selected));
   }
 
   function shiftMonth(delta: number) {
@@ -265,39 +339,60 @@ export function BirthDatePicker({
     setMode("days");
   }
 
-  const display = fmtDisplay(selected);
-
   return (
     <div className="relative">
-      <button
-        ref={setTriggerRef}
-        id={id}
-        type="button"
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        aria-describedby={describedBy}
-        aria-labelledby={labelledBy}
-        onClick={() => {
-          if (!open) setMode("days");
-          setOpen((v) => !v);
-        }}
-        className={`flex w-full items-center justify-between gap-3 rounded-xl border-2 bg-[color:var(--cream)] px-4 py-3 text-left text-base font-semibold outline-none transition ${
-          open
+      <div
+        ref={wrapperRef}
+        className={`flex w-full items-center justify-between gap-3 rounded-xl border-2 bg-[color:var(--cream)] px-4 py-3 transition ${
+          open || focused
             ? "border-[color:var(--rose)]"
             : "border-[color:var(--line)] hover:bg-[color:var(--champagne)]"
         }`}
       >
-        <span
-          className={`tabular-nums tracking-[0.04em] ${
-            display ? "text-[color:var(--ink)]" : "text-[color:var(--mauve)]"
+        <input
+          ref={setInputRef}
+          id={id}
+          type="text"
+          inputMode="numeric"
+          autoComplete="bday"
+          placeholder="dd / mm / yyyy"
+          aria-describedby={describedBy}
+          aria-labelledby={labelledBy}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onFocus={() => setFocused(true)}
+          onBlur={() => {
+            setFocused(false);
+            commitText();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              commitText();
+            }
+          }}
+          className={`tabular-nums w-full bg-transparent text-base font-semibold tracking-[0.04em] outline-none placeholder:text-[color:var(--mauve)] ${
+            text ? "text-[color:var(--ink)]" : "text-[color:var(--mauve)]"
           }`}
-        >
-          {display || "dd / mm / yyyy"}
-        </span>
-        <CalendarIcon
-          className={open ? "text-[color:var(--rose)]" : "text-[color:var(--ink)]"}
         />
-      </button>
+        <button
+          type="button"
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          aria-label="Open calendar"
+          onClick={() => {
+            if (!open) setMode("days");
+            setOpen((v) => !v);
+          }}
+          className="-mr-1 grid size-7 shrink-0 place-items-center rounded-lg transition hover:bg-[color:var(--peach-soft)]"
+        >
+          <CalendarIcon
+            className={
+              open ? "text-[color:var(--rose)]" : "text-[color:var(--ink)]"
+            }
+          />
+        </button>
+      </div>
 
       {open ? (
         <div
@@ -487,9 +582,9 @@ function ChevronIcon({
 }) {
   const rotation =
     direction === "left"
-      ? -90
+      ? 90
       : direction === "right"
-        ? 90
+        ? -90
         : direction === "up"
           ? 180
           : 0;

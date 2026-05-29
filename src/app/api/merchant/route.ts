@@ -91,6 +91,7 @@ export async function POST(request: Request) {
           contactEmail: stringField(payload.contactEmail),
           phone: stringField(payload.phone),
           websiteUrl: normalizedWebsiteUrl,
+          socialHandle: stringField(payload.socialHandle),
           addressStreet: stringField(payload.addressStreet),
           addressSuburb: stringField(payload.addressSuburb),
           addressState: payload.addressState as MerchantWizardInput["addressState"],

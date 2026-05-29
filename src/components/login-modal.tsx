@@ -122,7 +122,7 @@ export function LoginModal({
         className="absolute inset-0 cursor-default bg-[color:var(--ink)]/55 backdrop-blur-sm"
       />
 
-      <div className="relative z-10 max-h-[92vh] w-full max-w-md overflow-y-auto rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow">
+      <div className="relative z-10 max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow">
         <div className="flex items-center justify-between gap-3 border-b-2 border-[color:var(--line)] bg-[color:var(--cream)] px-5 py-3">
           <div className="flex items-center gap-2">
             <span className="size-3 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)]" />
@@ -142,7 +142,7 @@ export function LoginModal({
           </button>
         </div>
 
-        <div className="p-6 sm:p-7">
+        <div className="p-7 sm:p-9">
           <div
             role="tablist"
             aria-label="Log in or sign up"

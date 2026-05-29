@@ -8,8 +8,10 @@ import {
 } from "next/font/google";
 import { Toaster } from "sonner";
 import DevSupabaseDrawer from "@/components/dev-supabase-drawer";
+import { TestAccountSwitcher } from "@/components/test-account-switcher";
 import { LoginModalHost } from "@/components/login-modal-host";
 import { SiteFooter, SiteHeader } from "@/components/site-chrome";
+import { auth } from "@/auth";
 import "./globals.css";
 
 const manrope = Manrope({
@@ -81,7 +83,12 @@ export default function RootLayout({
           showDemoCredentials={showDemoCredentials}
         />
         <Toaster position="top-right" richColors closeButton />
-        {process.env.NEXT_PUBLIC_MODE === "DEVELOPMENT" ? <DevSupabaseDrawer /> : null}
+        {process.env.NEXT_PUBLIC_MODE === "DEVELOPMENT" ? (
+          <>
+            <DevSupabaseDrawer />
+            <TestAccountSwitcher />
+          </>
+        ) : null}
       </body>
     </html>
   );

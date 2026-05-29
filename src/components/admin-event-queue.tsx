@@ -5,7 +5,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { AdminEventRow } from "@/lib/event-repository";
 import type { EventStatus } from "@/lib/click-data";
 import type { Region } from "@/lib/geo";
+import { AdminEventsMap } from "@/components/admin-events-map";
 
+type ViewMode = "table" | "map";
 type StatusFilter = "all" | EventStatus;
 type RegionFilter = "all" | Region;
 type DateFilter = "all" | "upcoming" | "past";
@@ -66,6 +68,7 @@ export function AdminEventQueue({ events }: { events: AdminEventRow[] }) {
   const [query, setQuery] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [view, setView] = useState<ViewMode>("table");
   const [page, setPage] = useState(1);
   // Default sort matches the default date filter (upcoming) — soonest first.
   const [sortKey, setSortKey] = useState<SortKey>("startsAt");
@@ -222,13 +225,32 @@ export function AdminEventQueue({ events }: { events: AdminEventRow[] }) {
             </button>
           ))}
         </div>
-        <input
-          type="search"
-          value={query}
-          onChange={(event) => setQueryAndReset(event.target.value)}
-          placeholder="Search title, host, suburb, category…"
-          className="w-full rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-2 text-sm font-medium text-[color:var(--ink)] placeholder:text-[color:var(--mauve)]/70 sm:w-72"
-        />
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-0.5 hard-shadow-sm">
+            {(["table", "map"] as ViewMode[]).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setView(mode)}
+                aria-pressed={view === mode}
+                className={`rounded-full px-3 py-1 text-[0.65rem] font-black uppercase tracking-wider transition ${
+                  view === mode
+                    ? "bg-[color:var(--ink)] text-[color:var(--champagne)]"
+                    : "text-[color:var(--ink)] hover:bg-[color:var(--cream)]"
+                }`}
+              >
+                {mode === "table" ? "Table" : "Map"}
+              </button>
+            ))}
+          </div>
+          <input
+            type="search"
+            value={query}
+            onChange={(event) => setQueryAndReset(event.target.value)}
+            placeholder="Search title, host, suburb, category…"
+            className="w-full rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-2 text-sm font-medium text-[color:var(--ink)] placeholder:text-[color:var(--mauve)]/70 sm:w-72"
+          />
+        </div>
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -272,8 +294,11 @@ export function AdminEventQueue({ events }: { events: AdminEventRow[] }) {
         ))}
       </div>
 
-      {/* overflow-visible so the row's 3-dot menu can render outside the card edge. */}
-      <div className="mt-6 overflow-visible rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow-sm">
+      {view === "map" ? (
+        <AdminEventsMap events={sorted} />
+      ) : (
+        // overflow-visible so the row's 3-dot menu can render outside the card edge.
+        <div className="mt-6 overflow-visible rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow-sm">
         <div className="hidden grid-cols-[1.35fr_0.8fr_0.7fr_0.9fr_0.7fr_0.4fr] gap-4 bg-[color:var(--surface-deep)] px-5 py-3 text-xs font-black uppercase tracking-[0.14em] text-[color:var(--on-deep)] md:grid">
           <SortHeader label="Event"    sortKey="title"     activeKey={sortKey} dir={sortDir} onClick={toggleSort} />
           <SortHeader label="Status"   sortKey="status"    activeKey={sortKey} dir={sortDir} onClick={toggleSort} />
@@ -434,6 +459,7 @@ export function AdminEventQueue({ events }: { events: AdminEventRow[] }) {
           </nav>
         ) : null}
       </div>
+      )}
     </div>
   );
 }

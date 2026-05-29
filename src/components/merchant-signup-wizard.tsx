@@ -102,6 +102,7 @@ type State = {
   contactEmail: string;
   phone: string;
   websiteUrl: string;
+  socialHandle: string;
   addressStreet: string;
   addressSuburb: string;
   addressState: AuState | "";
@@ -181,6 +182,7 @@ function initialState(props: {
     contactEmail: props.sessionEmail,
     phone: "",
     websiteUrl: "",
+    socialHandle: "",
     addressStreet: "",
     addressSuburb: "",
     addressState: "",
@@ -316,6 +318,7 @@ export function WizardShell({
       contactEmail: state.contactEmail.trim().toLowerCase(),
       phone: state.phone.replace(/\s+/g, ""),
       websiteUrl: state.websiteUrl.trim(),
+      socialHandle: state.socialHandle.trim(),
       addressStreet: state.addressStreet.trim(),
       addressSuburb: state.addressSuburb.trim(),
       addressState: state.addressState,
@@ -805,6 +808,18 @@ export function ContactSection() {
           onChange={(e) => dispatch({ type: "field", key: "websiteUrl", value: e.target.value })}
           placeholder="https://www.yourbusiness.com.au"
         />
+      </label>
+
+      <label className="grid gap-2">
+        <FieldLabel>Facebook or Instagram handle (optional)</FieldLabel>
+        <TextInput
+          value={state.socialHandle}
+          onChange={(e) => dispatch({ type: "field", key: "socialHandle", value: e.target.value })}
+          placeholder="@yourbusiness"
+        />
+        <span className="text-xs font-medium text-[color:var(--mauve)]">
+          Handy for verifying hosts who don&apos;t have formal documents yet.
+        </span>
       </label>
 
       <label className="grid gap-2">

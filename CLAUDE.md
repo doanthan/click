@@ -56,8 +56,15 @@ Public bucket = anyone with the URL can read (avatars rendered on event cards, h
 | `account-welcome` | `ensureProfileForSession` in `src/lib/event-repository.ts`, on fresh insert only (detected via `xmax = 0`) |
 | `rsvp-attendee` + `rsvp-merchant` | `registerForEvent` in `src/lib/event-repository.ts`, after commit on the confirmed-RSVP branch (waitlisted still uses legacy `sendWorkflowEmail`) |
 | `event-created-merchant` | `createEventForMerchant` in `src/lib/event-repository.ts`, after the events insert + tag upsert |
+| `merchant-verified-merchant` + `merchant-rejected-merchant` | `updateMerchantVerificationForAdmin` in `src/lib/event-repository.ts`, branched on approved/rejected |
+| `merchant-application-received` | `registerMerchantWizardSubmit` in `src/lib/event-repository.ts`, after commit, first submission only (`xmax = 0`) |
+| `event-approved-merchant` | `approveEventForAdmin` in `src/lib/event-repository.ts`, via `logEventApprovedEmail` helper (looks up the owning merchant; skipped for platform-owned events) |
+| `rsvp-cancelled-attendee` + `rsvp-cancelled-merchant` | `cancelRegistration` in `src/lib/event-repository.ts`, after commit, via `logRsvpCancelledEmails` helper |
+| `event-cancelled-attendee` | `cancelMerchantEvent` in `src/lib/event-repository.ts`, fan-out to every affected attendee after commit |
+| `payment-receipt-attendee` | `markPaymentSucceeded` in `src/lib/event-repository.ts`, via `logPaymentReceiptEmail` helper (GST receipt, tax = total / 11) |
+| `password-reset` | `requestPasswordReset` in `src/app/forgot-password/actions.ts`, alongside the legacy `sendTransactionalEmail` magic-link send |
 
-Other templates listed in `EmailTemplate` (`merchant-application-received`, `event-approved-merchant`, `rsvp-cancelled-*`, etc.) are designed and typed but their handlers still need the `logEmailEvent` call wired in. When you touch those handlers, add the call — same shape as the wired ones above.
+Still unwired: `event-rejected-merchant` (no event-rejection handler exists yet) and `event-reminder-attendee` (needs a ~24h-out cron, not a request handler). When you add those trigger sites, call `logEmailEvent` — same shape as the wired ones above.
 
 ### Existing `sendTransactionalEmail` (Resend)
 

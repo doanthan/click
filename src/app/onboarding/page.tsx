@@ -31,10 +31,10 @@ export default async function OnboardingPage() {
             Set up your profile
           </span>
           <h1 className="font-display mt-6 text-5xl font-light leading-[0.96] tracking-tight">
-            Six quick taps. <span className="italic">No quiz.</span>
+            A few quick taps. <span className="italic">No quiz.</span>
           </h1>
           <p className="mt-6 max-w-xl text-base font-medium leading-7 text-[color:var(--mauve)]">
-            One decision per screen. Skip anything optional — you can polish it
+            Everything&apos;s on one page. Skip anything optional — you can polish it
             later from your dashboard.
           </p>
           <ul className="mt-6 grid gap-2 text-sm font-semibold text-[color:var(--mauve)]">

@@ -310,7 +310,7 @@ Click doesn't have an email backend wired up yet. When adding one, the recommend
 
 ## Open to-dos
 
-- Wire the trigger sites for the new templates. The HTML and the `EmailTemplate` union are in place; what's missing is the `void logEmailEvent(...)` call at the end of each handler. Priority order is roughly: `event-approved-merchant` (`POST /api/admin/events/[eventId]/approve`), `rsvp-cancelled-*` (cancel-RSVP route once it ships), `event-cancelled-attendee` (`POST /api/merchant/events/[eventId]/cancel`, fan-out to every confirmed RSVP), then the merchant-application + payment-receipt + password-reset flows.
+- Trigger sites are now wired for `event-approved-merchant`, `rsvp-cancelled-*`, `event-cancelled-attendee`, `merchant-application-received`, `merchant-verified/rejected-merchant`, `payment-receipt-attendee`, and `password-reset` (see the "Wired triggers" table in `CLAUDE.md` for the exact handler per template). Still unwired: `event-rejected-merchant` (no event-rejection handler exists yet — add the `logEmailEvent` call when you build one) and `event-reminder-attendee` (cron, below).
 - `event-reminder-attendee` needs a scheduler, not a request handler. Easiest path is a daily cron job that selects `events` starting ~24h out, joins confirmed RSVPs, and calls `logEmailEvent` per row. Pick the cron mechanism (Supabase `pg_cron`, Vercel cron, GitHub Actions) before building it.
 - Hook the unsubscribe link to a real preferences page — placeholder `unsubscribeUrl` won't satisfy CAN-SPAM/CASL on its own.
 - `payment-receipt-attendee.html` footer hard-codes a placeholder ABN. Fill in the real ABN once Click Pty Ltd is registered, and reconsider the GST line if you launch outside AU first.

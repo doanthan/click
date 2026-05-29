@@ -61,6 +61,20 @@ export async function signOutOfClick() {
   await signOut({ redirectTo: "/" });
 }
 
+// Dev-only: instant sign-in as one of the seeded test accounts so you can hop
+// between Attendee / Merchant / Admin without the login/logout dance. Funnels
+// through /post-login like every other sign-in, so the destination is decided
+// by the same admin/merchant/onboarding gates. No-ops outside DEVELOPMENT so a
+// stray call in prod can't impersonate an account by email alone.
+export async function signInAsTestAccount(formData: FormData) {
+  if (process.env.NEXT_PUBLIC_MODE !== "DEVELOPMENT") return;
+
+  const email = getFormValue(formData, "email").toLowerCase();
+  if (!email.includes("@")) return;
+
+  await signIn("email-login", { email, redirectTo: "/post-login" });
+}
+
 export type EmailLoginFormState = { error: string | null };
 
 const errorCopyByType: Record<string, string> = {

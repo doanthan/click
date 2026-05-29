@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { categories, type EventItem } from "@/lib/click-data";
 import { haversineKm, roundKm, type LatLng } from "@/lib/geo";
 import { EventTileCard } from "./event-tile-card";
+import { FilterSelect } from "./filter-select";
 import { MapboxAutocomplete } from "./mapbox-autocomplete";
 
 // Top of the radius slider. At the max we treat it as "any distance" so people
@@ -235,31 +236,29 @@ export function EventExplorer({
             />
           </label>
 
-          <label className="grid gap-1.5 text-xs font-black uppercase tracking-[0.14em] text-[color:var(--mauve)]">
+          <div className="grid gap-1.5 text-xs font-black uppercase tracking-[0.14em] text-[color:var(--mauve)]">
             Suburb
-            <select
+            <FilterSelect
+              ariaLabel="Filter by suburb"
               value={selectedSuburb}
-              onChange={(event) => setSelectedSuburb(event.target.value)}
-              className="min-h-11 rounded-lg border border-[color:var(--line)] bg-[color:var(--champagne)] px-3 text-sm font-bold text-[color:var(--ink)] outline-none focus:border-[color:var(--rose)]"
-            >
-              {suburbs.map((suburb) => (
-                <option key={suburb}>{suburb}</option>
-              ))}
-            </select>
-          </label>
+              onChange={setSelectedSuburb}
+              options={suburbs.map((suburb) => ({ value: suburb, label: suburb }))}
+            />
+          </div>
 
-          <label className="grid gap-1.5 text-xs font-black uppercase tracking-[0.14em] text-[color:var(--mauve)]">
+          <div className="grid gap-1.5 text-xs font-black uppercase tracking-[0.14em] text-[color:var(--mauve)]">
             Date
-            <select
+            <FilterSelect
+              ariaLabel="Filter by date"
               value={dateWindow}
-              onChange={(event) => setDateWindow(event.target.value as DateWindow)}
-              className="min-h-11 rounded-lg border border-[color:var(--line)] bg-[color:var(--champagne)] px-3 text-sm font-bold text-[color:var(--ink)] outline-none focus:border-[color:var(--rose)]"
-            >
-              <option value="7">Next 7 days</option>
-              <option value="30">Next 30 days</option>
-              <option value="all">Any upcoming date</option>
-            </select>
-          </label>
+              onChange={(next) => setDateWindow(next as DateWindow)}
+              options={[
+                { value: "7", label: "Next 7 days" },
+                { value: "30", label: "Next 30 days" },
+                { value: "all", label: "Any upcoming date" },
+              ]}
+            />
+          </div>
 
           <label className="grid gap-1.5 text-xs font-black uppercase tracking-[0.14em] text-[color:var(--mauve)]">
             <span className="flex items-center justify-between">

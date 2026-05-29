@@ -80,6 +80,7 @@ export type MerchantWizardInput = {
   contactEmail: string;
   phone: string;
   websiteUrl: string;
+  socialHandle: string;
   addressStreet: string;
   addressSuburb: string;
   addressState: "NSW" | "VIC" | "QLD" | "WA" | "SA" | "TAS" | "ACT" | "NT";
@@ -150,6 +151,9 @@ export type AdminEventRow = {
   region: Region;
   suburb: string | null;
   locationName: string | null;
+  address: string | null;
+  lat: number | null;
+  lng: number | null;
 };
 
 export type AdminMemberEventRef = {
@@ -747,6 +751,293 @@ async function logRsvpEmails(
   }
 }
 
+// Post-approval emailer. Fetches the event + owning merchant and logs the
+// event-approved-merchant template. Standalone (like logRsvpEmails) so the
+// admin approve handler stays lean and a template hiccup never bubbles up.
+async function logEventApprovedEmail(
+  pool: NonNullable<ReturnType<typeof getPostgresPool>>,
+  eventSlug: string,
+) {
+  try {
+    const result = await pool.query<{
+      event_slug: string;
+      event_title: string;
+      event_category: string;
+      starts_at: Date;
+      ends_at: Date | null;
+      timezone: string;
+      city: string;
+      capacity: number;
+      merchant_contact_email: string | null;
+      merchant_business_name: string | null;
+      merchant_owner_profile_id: string | null;
+      merchant_owner_display_name: string | null;
+    }>(
+      `
+        select
+          e.slug as event_slug,
+          e.title as event_title,
+          e.category as event_category,
+          e.starts_at,
+          e.ends_at,
+          e.timezone,
+          e.city,
+          e.capacity,
+          mp.contact_email::text as merchant_contact_email,
+          mp.business_name as merchant_business_name,
+          mp.profile_id::text as merchant_owner_profile_id,
+          owner.display_name as merchant_owner_display_name
+        from events e
+        left join merchant_profiles mp on mp.id = e.merchant_profile_id
+        left join profiles owner on owner.id = mp.profile_id
+        where e.slug = $1
+        limit 1
+      `,
+      [eventSlug],
+    );
+
+    const row = result.rows[0];
+    // Platform-owned events have no merchant to notify — nothing to log.
+    if (!row || !row.merchant_contact_email) return;
+
+    const origin = emailOrigin();
+    const dates = formatEmailDates(row.starts_at, row.ends_at, row.timezone);
+    const merchantFirstName =
+      (row.merchant_owner_display_name || row.merchant_business_name || "")
+        .split(/\s+/)[0] || "there";
+
+    void logEmailEvent({
+      template: "event-approved-merchant",
+      toEmail: row.merchant_contact_email,
+      toProfileId: row.merchant_owner_profile_id,
+      vars: {
+        merchantFirstName,
+        eventTitle: row.event_title,
+        eventLongDate: dates.eventLongDate,
+        eventStartTime: dates.eventStartTime,
+        eventCity: row.city,
+        eventCategory: row.event_category,
+        eventCapacityLabel: `Capacity ${row.capacity}`,
+        publicEventUrl: `${origin}/events/${row.event_slug}`,
+        eventDashboardUrl: `${origin}/merchant/events/${row.event_slug}`,
+        supportEmail: "hello@click.app",
+        unsubscribeUrl: `${origin}/account-settings`,
+      },
+    });
+  } catch (error) {
+    console.warn("logEventApprovedEmail failed", { eventSlug, error });
+  }
+}
+
+// Post-commit emailer for a cancelled RSVP. Mirrors logRsvpEmails — one
+// supplementary SELECT gathers the event, owning merchant, and the updated
+// headcount for both the attendee + merchant templates. Fire-and-forget.
+async function logRsvpCancelledEmails(
+  pool: NonNullable<ReturnType<typeof getPostgresPool>>,
+  eventDbId: string,
+  attendeeProfileId: string,
+) {
+  try {
+    const result = await pool.query<{
+      event_slug: string;
+      event_title: string;
+      starts_at: Date;
+      ends_at: Date | null;
+      timezone: string;
+      capacity: number;
+      confirmed_count: string;
+      waitlist_count: string;
+      attendee_email: string;
+      attendee_display_name: string;
+      merchant_contact_email: string | null;
+      merchant_business_name: string | null;
+      merchant_owner_profile_id: string | null;
+      merchant_owner_display_name: string | null;
+    }>(
+      `
+        select
+          e.slug as event_slug,
+          e.title as event_title,
+          e.starts_at,
+          e.ends_at,
+          e.timezone,
+          e.capacity,
+          (
+            select count(*)::text
+            from event_attendees a
+            where a.event_id = e.id and a.status = 'confirmed'
+          ) as confirmed_count,
+          (
+            select count(*)::text
+            from event_waitlists w
+            where w.event_id = e.id and w.accepted_at is null
+          ) as waitlist_count,
+          p.email::text as attendee_email,
+          p.display_name as attendee_display_name,
+          mp.contact_email::text as merchant_contact_email,
+          mp.business_name as merchant_business_name,
+          mp.profile_id::text as merchant_owner_profile_id,
+          owner.display_name as merchant_owner_display_name
+        from events e
+        join profiles p on p.id = $2::uuid
+        left join merchant_profiles mp on mp.id = e.merchant_profile_id
+        left join profiles owner on owner.id = mp.profile_id
+        where e.id = $1::uuid
+        limit 1
+      `,
+      [eventDbId, attendeeProfileId],
+    );
+
+    const row = result.rows[0];
+    if (!row) return;
+
+    const origin = emailOrigin();
+    const dates = formatEmailDates(row.starts_at, row.ends_at, row.timezone);
+    const confirmedCount = Number(row.confirmed_count) || 0;
+    const spotsLabel = `${confirmedCount} of ${row.capacity} spots filled`;
+    const waitlistCount = Number(row.waitlist_count) || 0;
+    const attendeeFirstName =
+      (row.attendee_display_name || "").split(/\s+/)[0] || "there";
+    const merchantFirstName =
+      (row.merchant_owner_display_name || row.merchant_business_name || "")
+        .split(/\s+/)[0] || "there";
+
+    void logEmailEvent({
+      template: "rsvp-cancelled-attendee",
+      toEmail: row.attendee_email,
+      toProfileId: attendeeProfileId,
+      vars: {
+        firstName: attendeeFirstName,
+        eventTitle: row.event_title,
+        eventLongDate: dates.eventLongDate,
+        eventStartTime: dates.eventStartTime,
+        discoverUrl: `${origin}/discover`,
+        supportEmail: "hello@click.app",
+        unsubscribeUrl: `${origin}/account-settings`,
+      },
+    });
+
+    if (row.merchant_contact_email) {
+      void logEmailEvent({
+        template: "rsvp-cancelled-merchant",
+        toEmail: row.merchant_contact_email,
+        toProfileId: row.merchant_owner_profile_id,
+        vars: {
+          merchantFirstName,
+          attendeeFirstName,
+          eventTitle: row.event_title,
+          eventLongDate: dates.eventLongDate,
+          eventStartTime: dates.eventStartTime,
+          eventSpotsFilledLabel: spotsLabel,
+          waitlistCountLabel:
+            waitlistCount === 1 ? "1 on the waitlist" : `${waitlistCount} on the waitlist`,
+          attendeesUrl: `${origin}/merchant/events/${row.event_slug}`,
+          eventDashboardUrl: `${origin}/merchant/events/${row.event_slug}`,
+          supportEmail: "hello@click.app",
+          unsubscribeUrl: `${origin}/account-settings`,
+        },
+      });
+    }
+  } catch (error) {
+    console.warn("logRsvpCancelledEmails failed", { eventDbId, attendeeProfileId, error });
+  }
+}
+
+// Post-commit GST tax receipt. Joins the paid transaction → event → buyer in a
+// single SELECT. AU GST is 10% included in the total, so tax = total / 11.
+// Fire-and-forget — never rolls back the booking it's attached to.
+async function logPaymentReceiptEmail(
+  pool: NonNullable<ReturnType<typeof getPostgresPool>>,
+  paymentTransactionId: string,
+) {
+  try {
+    const result = await pool.query<{
+      payment_id: string;
+      amount_cents: number;
+      currency: string;
+      profile_id: string;
+      profile_email: string;
+      display_name: string;
+      event_slug: string;
+      event_title: string;
+      starts_at: Date;
+      ends_at: Date | null;
+      timezone: string;
+      location_name: string;
+      host_name: string;
+    }>(
+      `
+        select
+          pt.id::text as payment_id,
+          pt.amount_cents,
+          pt.currency::text as currency,
+          pt.profile_id::text as profile_id,
+          p.email::text as profile_email,
+          p.display_name,
+          e.slug as event_slug,
+          e.title as event_title,
+          e.starts_at,
+          e.ends_at,
+          e.timezone,
+          e.location_name,
+          e.host_name
+        from payment_transactions pt
+        join events e on e.id = pt.event_id
+        join profiles p on p.id = pt.profile_id
+        where pt.id = $1::uuid
+        limit 1
+      `,
+      [paymentTransactionId],
+    );
+
+    const row = result.rows[0];
+    if (!row || row.amount_cents <= 0) return;
+
+    const origin = emailOrigin();
+    const dates = formatEmailDates(row.starts_at, row.ends_at, row.timezone);
+    const currency = row.currency || "AUD";
+    const money = (cents: number) =>
+      new Intl.NumberFormat("en-AU", { style: "currency", currency }).format(cents / 100);
+    const totalCents = row.amount_cents;
+    const taxCents = Math.round(totalCents / 11);
+    const subtotalCents = totalCents - taxCents;
+    const firstName = (row.display_name || "").split(/\s+/)[0] || "there";
+    const receiptDate = new Intl.DateTimeFormat("en-AU", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+      timeZone: "Australia/Sydney",
+    }).format(new Date());
+
+    void logEmailEvent({
+      template: "payment-receipt-attendee",
+      toEmail: row.profile_email,
+      toProfileId: row.profile_id,
+      vars: {
+        firstName,
+        eventTitle: row.event_title,
+        eventLongDate: dates.eventLongDate,
+        eventStartTime: dates.eventStartTime,
+        eventVenue: row.location_name,
+        eventHostName: row.host_name,
+        receiptDate,
+        priceLabel: money(subtotalCents),
+        taxLabel: money(taxCents),
+        totalLabel: money(totalCents),
+        paymentMethodLabel: "Card",
+        receiptNumber: `CL-${row.payment_id.slice(0, 8).toUpperCase()}`,
+        eventDetailsUrl: `${origin}/events/${row.event_slug}`,
+        downloadInvoiceUrl: `${origin}/confirmed-events`,
+        refundPolicyUrl: `${origin}/how-it-works`,
+        supportEmail: "hello@click.app",
+        unsubscribeUrl: `${origin}/account-settings`,
+      },
+    });
+  } catch (error) {
+    console.warn("logPaymentReceiptEmail failed", { paymentTransactionId, error });
+  }
+}
+
 function getSessionEmail(session: Session | null) {
   return session?.user?.email?.trim().toLowerCase() ?? "";
 }
@@ -941,6 +1232,9 @@ async function getFallbackAdminEvents(): Promise<AdminEventRow[]> {
     region: regionForEvent({ lat: event.lat ?? null, lng: event.lng ?? null, suburb: event.suburb ?? null }),
     suburb: event.suburb ?? null,
     locationName: event.location ?? null,
+    address: event.location ?? null,
+    lat: event.lat ?? null,
+    lng: event.lng ?? null,
   }));
 }
 
@@ -2070,6 +2364,10 @@ export async function approveEventForAdmin(eventId: string, session: Session | n
       [profile.id, JSON.stringify({ slug: event.slug, title: event.title })],
     );
 
+    // Notify the owning merchant their event is live. Fire-and-forget — never
+    // bubbles into the approve response (see helper for the merchant lookup).
+    void logEventApprovedEmail(pool, event.slug);
+
     return event;
   } catch (error) {
     if (isDatabaseConnectivityError(error)) {
@@ -2247,6 +2545,7 @@ export async function getAdminEvents() {
       confirmed_attendees: string;
       suburb: string | null;
       location_name: string | null;
+      address: string | null;
       latitude: string | null;
       longitude: string | null;
     }>(`
@@ -2261,6 +2560,7 @@ export async function getAdminEvents() {
         event.starts_at,
         event.suburb,
         event.location_name,
+        event.address,
         event.latitude::text,
         event.longitude::text,
         count(attendee.id) filter (where attendee.status in ('confirmed', 'pending_payment')) as confirmed_attendees
@@ -2287,6 +2587,9 @@ export async function getAdminEvents() {
         region: regionForEvent({ lat, lng, suburb: event.suburb }),
         suburb: event.suburb,
         locationName: event.location_name,
+        address: event.address,
+        lat,
+        lng,
       };
     });
   } catch (error) {
@@ -4058,18 +4361,18 @@ export async function registerMerchantWizardSubmit(
   try {
     await client.query("begin");
 
-    const upsert = await client.query<MerchantProfileRow>(
+    const upsert = await client.query<MerchantProfileRow & { is_new: boolean }>(
       `
         insert into merchant_profiles (
           profile_id, business_name, trading_name, abn, acn, business_type,
-          phone, contact_email, website_url,
+          phone, contact_email, website_url, social_handle,
           address_street, address_suburb, address_state, address_postcode,
           submitted_at
         )
         values (
           $1::uuid, $2, nullif($3, ''), $4, nullif($5, ''), $6,
-          $7, $8, nullif($9, ''),
-          $10, $11, $12, $13,
+          $7, $8, nullif($9, ''), nullif($10, ''),
+          $11, $12, $13, $14,
           now()
         )
         on conflict (profile_id) do update set
@@ -4081,6 +4384,7 @@ export async function registerMerchantWizardSubmit(
           phone = excluded.phone,
           contact_email = excluded.contact_email,
           website_url = excluded.website_url,
+          social_handle = excluded.social_handle,
           address_street = excluded.address_street,
           address_suburb = excluded.address_suburb,
           address_state = excluded.address_state,
@@ -4089,7 +4393,7 @@ export async function registerMerchantWizardSubmit(
           updated_at = now()
         returning id::text, business_name, contact_email::text, verification_status,
           business_type, stripe_connect_account_id, charges_enabled, payouts_enabled,
-          details_submitted, onboarding_completed_at::text
+          details_submitted, onboarding_completed_at::text, (xmax = 0) as is_new
       `,
       [
         profile.id,
@@ -4101,6 +4405,7 @@ export async function registerMerchantWizardSubmit(
         phoneDigits,
         contactEmail,
         input.websiteUrl.trim(),
+        input.socialHandle.trim(),
         street,
         suburb,
         input.addressState,
@@ -4145,6 +4450,35 @@ export async function registerMerchantWizardSubmit(
     }
 
     await client.query("commit");
+
+    // Log the merchant-application-received confirmation on first submission
+    // only (xmax = 0). Re-submitting after an edit upserts and must not re-fire
+    // the "we've got your application" email. Fire-and-forget, post-commit.
+    if (upsert.rows[0].is_new) {
+      const origin = emailOrigin();
+      const merchantFirstName =
+        (profile.display_name || businessName).split(/\s+/)[0] || "there";
+      const submittedDate = new Intl.DateTimeFormat("en-AU", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+        timeZone: "Australia/Sydney",
+      }).format(new Date());
+      void logEmailEvent({
+        template: "merchant-application-received",
+        toEmail: contactEmail,
+        toProfileId: profile.id,
+        vars: {
+          merchantFirstName,
+          businessName,
+          submittedDate,
+          merchantDashboardUrl: `${origin}/merchant`,
+          supportEmail: "hello@click.app",
+          unsubscribeUrl: `${origin}/account-settings`,
+        },
+      });
+    }
+
     return upsert.rows[0];
   } catch (error) {
     await client.query("rollback");
@@ -4535,6 +4869,11 @@ export async function cancelRegistration(eventId: string, session: Session | nul
 
     await client.query("commit");
 
+    // Log rsvp-cancelled-attendee (+ rsvp-cancelled-merchant) for the attendee
+    // who just bailed. Post-commit + fire-and-forget so a template hiccup can't
+    // roll back the cancellation.
+    void logRsvpCancelledEmails(pool, cancelled.event_id, profile.id);
+
     if (promotion) {
       await sendWorkflowEmail({
         to: promotion.email,
@@ -4580,6 +4919,7 @@ export async function cancelMerchantEvent(eventId: string, session: Session | nu
 
   const client = await pool.connect();
   let affectedProfiles: {
+    profileId: string;
     email: string;
     displayName: string;
   }[] = [];
@@ -4592,9 +4932,13 @@ export async function cancelMerchantEvent(eventId: string, session: Session | nu
       slug: string;
       title: string;
       status: string;
+      starts_at: Date;
+      ends_at: Date | null;
+      timezone: string;
+      host_name: string;
     }>(
       `
-        select id::text, slug, title, status::text
+        select id::text, slug, title, status::text, starts_at, ends_at, timezone, host_name
         from events
         where slug = $1 and merchant_profile_id = $2::uuid
         for update
@@ -4633,6 +4977,7 @@ export async function cancelMerchantEvent(eventId: string, session: Session | nu
     );
 
     affectedProfiles = attendeeResult.rows.map((row) => ({
+      profileId: row.profile_id,
       email: row.email,
       displayName: row.display_name,
     }));
@@ -4687,6 +5032,30 @@ export async function cancelMerchantEvent(eventId: string, session: Session | nu
         }),
       ),
     );
+
+    // Mirror the fan-out into email_events so each cancellation notice is in
+    // the dev log. Fire-and-forget — post-commit, never blocks the response.
+    const origin = emailOrigin();
+    const dates = formatEmailDates(event.starts_at, event.ends_at, event.timezone);
+    for (const attendee of affectedProfiles) {
+      void logEmailEvent({
+        template: "event-cancelled-attendee",
+        toEmail: attendee.email,
+        toProfileId: attendee.profileId,
+        vars: {
+          firstName: (attendee.displayName || "").split(/\s+/)[0] || "there",
+          eventTitle: event.title,
+          eventLongDate: dates.eventLongDate,
+          eventStartTime: dates.eventStartTime,
+          eventHostName: event.host_name,
+          cancellationReason: "",
+          refundLabel: "",
+          discoverUrl: `${origin}/discover`,
+          supportEmail: "hello@click.app",
+          unsubscribeUrl: `${origin}/account-settings`,
+        },
+      });
+    }
 
     return {
       eventTitle: event.title,
@@ -4949,6 +5318,9 @@ export async function markPaymentSucceeded(paymentTransactionId: string) {
       amountPaidCents: payment.amount_cents,
       currency: payment.currency,
     });
+
+    // Plus the GST tax receipt for the charged amount. Fire-and-forget.
+    void logPaymentReceiptEmail(pool, payment.id);
   } catch (error) {
     await client.query("rollback");
     throw error;
@@ -6072,6 +6444,7 @@ export async function unsuspendMemberAsAdmin(
 export type SystemSettings = {
   maintenanceMode: boolean;
   commissionRateBps: number;
+  bookingFeeBps: number;
   marketingBanner: string;
 };
 
@@ -6079,6 +6452,7 @@ export async function getSystemSettings(): Promise<SystemSettings> {
   const fallback: SystemSettings = {
     maintenanceMode: false,
     commissionRateBps: 290,
+    bookingFeeBps: 0,
     marketingBanner: "",
   };
 
@@ -6093,6 +6467,7 @@ export async function getSystemSettings(): Promise<SystemSettings> {
     return {
       maintenanceMode: Boolean(map.get("maintenance_mode")),
       commissionRateBps: Number(map.get("commission_rate_bps") ?? 290),
+      bookingFeeBps: Number(map.get("booking_fee_bps") ?? 0),
       marketingBanner: String(map.get("marketing_banner") ?? "").trim(),
     };
   } catch {
@@ -6116,6 +6491,12 @@ export async function updateSystemSettingsAsAdmin(
     writes.push({
       key: "commission_rate_bps",
       value: JSON.stringify(Math.max(0, Math.min(5000, Math.round(input.commissionRateBps)))),
+    });
+  }
+  if (typeof input.bookingFeeBps === "number" && Number.isFinite(input.bookingFeeBps)) {
+    writes.push({
+      key: "booking_fee_bps",
+      value: JSON.stringify(Math.max(0, Math.min(5000, Math.round(input.bookingFeeBps)))),
     });
   }
   if (typeof input.marketingBanner === "string") {

@@ -25,7 +25,6 @@ export async function SiteHeader() {
   const navItems: Array<{ label: string; href: string }> = [
     { label: "Discover", href: "/discover" },
     { label: "Events", href: "/events" },
-    { label: "Categories", href: "/categories" },
   ];
   if (session?.user) {
     navItems.push({ label: "Dashboard", href: "/dashboard" });

@@ -40,6 +40,7 @@ export async function updateSystemSettingsAction(formData: FormData) {
 
   const maintenance = formData.get("maintenance_mode");
   const commission = formData.get("commission_rate_bps");
+  const bookingFee = formData.get("booking_fee_bps");
   const banner = formData.get("marketing_banner");
 
   await updateSystemSettingsAsAdmin(session, {
@@ -47,6 +48,10 @@ export async function updateSystemSettingsAction(formData: FormData) {
     commissionRateBps:
       typeof commission === "string" && commission.trim() !== ""
         ? Number(commission)
+        : undefined,
+    bookingFeeBps:
+      typeof bookingFee === "string" && bookingFee.trim() !== ""
+        ? Number(bookingFee)
         : undefined,
     marketingBanner: typeof banner === "string" ? banner : undefined,
   });

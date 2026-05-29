@@ -66,15 +66,17 @@ export function useUserLocation(): UserLocation {
       });
     }
 
-    // Privacy / tracker-blocking extensions (Ghostery, uBlock, Brave Shields…)
-    // monkey-patch `window.fetch` to block ipapi.co, and some of them throw
-    // *synchronously* before the call returns a Promise. A bare `.catch()`
-    // wouldn't see that throw, so it would surface as an unhandled error and
-    // pop the Next.js dev overlay over the page. Wrap the kick-off in
-    // try/catch and let the async path go through `.catch()` as well.
+    // Geo lookup is proxied through our own origin (`/api/geo`) rather than
+    // hitting `ipapi.co` directly: privacy/tracker-blocking extensions
+    // (Ghostery, uBlock, Brave Shields…) block the ipapi domain by name and
+    // monkey-patch `window.fetch` to reject — sometimes throwing *synchronously*
+    // before a Promise is returned, which popped the Next.js dev overlay. A
+    // same-origin path isn't on those block-lists. We still wrap the kick-off
+    // in try/catch (in case an extension blocks all fetch) and route async
+    // failures through `.catch()`.
     let pending: Promise<Response>;
     try {
-      pending = fetch("https://ipapi.co/json/");
+      pending = fetch("/api/geo");
     } catch {
       fail();
       return () => {

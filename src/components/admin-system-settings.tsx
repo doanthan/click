@@ -8,6 +8,9 @@ import type { SystemSettings } from "@/lib/event-repository";
 export function AdminSystemSettings({ initial }: { initial: SystemSettings }) {
   const [maintenance, setMaintenance] = useState(initial.maintenanceMode);
   const [commission, setCommission] = useState(initial.commissionRateBps);
+  const [bookingFeePercent, setBookingFeePercent] = useState(
+    initial.bookingFeeBps / 100,
+  );
   const [banner, setBanner] = useState(initial.marketingBanner);
   const [isPending, startTransition] = useTransition();
 
@@ -15,6 +18,7 @@ export function AdminSystemSettings({ initial }: { initial: SystemSettings }) {
     const form = new FormData();
     if (maintenance) form.set("maintenance_mode", "on");
     form.set("commission_rate_bps", String(commission));
+    form.set("booking_fee_bps", String(Math.round(bookingFeePercent * 100)));
     form.set("marketing_banner", banner);
 
     startTransition(async () => {
@@ -78,6 +82,33 @@ export function AdminSystemSettings({ initial }: { initial: SystemSettings }) {
           />
           <span className="font-mono text-[0.7rem] uppercase tracking-[0.18em] text-[color:var(--mauve)]">
             bps · {(commission / 100).toFixed(2)}%
+          </span>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-5 hard-shadow-sm">
+        <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
+          Booking fees %
+        </p>
+        <h3 className="font-display mt-2 text-2xl font-light leading-tight">
+          Per-booking service fee
+        </h3>
+        <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+          Added on top of the ticket price at checkout. Set as a percentage of the
+          order subtotal. 0% disables the fee.
+        </p>
+        <div className="mt-4 flex items-center gap-3">
+          <input
+            type="number"
+            min={0}
+            max={50}
+            step={0.1}
+            value={bookingFeePercent}
+            onChange={(e) => setBookingFeePercent(Number(e.target.value))}
+            className="w-28 rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-2 font-bold"
+          />
+          <span className="font-mono text-[0.7rem] uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+            % · {Math.round(bookingFeePercent * 100)} bps
           </span>
         </div>
       </section>
