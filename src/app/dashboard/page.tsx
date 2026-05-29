@@ -3,8 +3,10 @@ import { redirect } from "next/navigation";
 import { auth, isAdminEmail } from "@/auth";
 import { EventCard } from "@/components/event-card";
 import { LinkButton, MetricCard, Pill } from "@/components/click-ui";
+import { PostEventClickCard } from "@/components/post-event-click-card";
 import {
   getDashboardData,
+  getPostEventClickPrompts,
   getProfileStatus,
 } from "@/lib/event-repository";
 
@@ -20,10 +22,15 @@ export default async function DashboardPage() {
     redirect("/login?callbackUrl=/dashboard");
   }
 
-  const [dashboard, profileStatus] = await Promise.all([
+  const [dashboard, profileStatus, postEventPrompts] = await Promise.all([
     getDashboardData(session),
     getProfileStatus(session),
+    getPostEventClickPrompts(session),
   ]);
+
+  const activePrompts = postEventPrompts.filter((p) =>
+    p.coAttendees.some((c) => !c.alreadyClicked),
+  );
 
   const userName = dashboard.userName || session.user.email || "there";
   const isAdmin = isAdminEmail(session.user.email);
@@ -113,6 +120,22 @@ export default async function DashboardPage() {
           </div>
         ) : null}
       </section>
+
+      {activePrompts.length > 0 ? (
+        <section className="mx-auto mt-12 max-w-6xl">
+          <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
+            After your events
+          </p>
+          <h2 className="font-display mt-2 text-3xl font-light leading-tight sm:text-4xl">
+            Who did you click with?
+          </h2>
+          <div className="mt-6 grid gap-5 lg:grid-cols-2">
+            {activePrompts.map((prompt) => (
+              <PostEventClickCard key={prompt.eventSlug} prompt={prompt} />
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <section className="mx-auto mt-12 max-w-6xl">
         <div className="flex items-end justify-between gap-4">

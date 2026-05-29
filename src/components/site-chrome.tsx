@@ -107,12 +107,13 @@ export async function SiteFooter() {
       ? ["Platform", "Host events", "Admin", "Scale", "Privacy", "Matching"]
       : ["Platform", "Host events", "Privacy", "Matching"],
     ["Modes", "Friendship", "Dating", "Networking", "Exploring"],
+    ["Legal", "Terms", "Privacy", "Refunds", "Safety"],
   ];
 
   return (
     <footer className="relative overflow-hidden border-t-2 border-[color:var(--surface-deep)] bg-[color:var(--surface-deep)] text-[color:var(--on-deep)]">
       <div className="diagonal-stripes h-3 w-full" />
-      <div className="mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:px-6 md:grid-cols-[1.4fr_0.8fr_0.8fr_0.8fr]">
+      <div className="mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:px-6 md:grid-cols-[1.4fr_0.8fr_0.8fr_0.8fr_0.8fr]">
         <div>
           <span className="click-wordmark text-6xl text-[color:var(--peach)]">
             Click
@@ -168,5 +169,9 @@ function linkForFooterItem(item: string) {
   if (normalized === "host events" || normalized === "merchant") return "/merchant";
   if (normalized === "admin") return "/admin";
   if (normalized === "scale") return "/scale";
+  if (normalized === "terms") return "/terms";
+  if (normalized === "privacy") return "/privacy";
+  if (normalized === "refunds") return "/refund-policy";
+  if (normalized === "safety") return "/safety";
   return "/";
 }

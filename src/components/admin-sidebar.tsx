@@ -11,6 +11,7 @@ export type AdminTabKey =
   | "members"
   | "merchants"
   | "transactions"
+  | "reports"
   | "tags"
   | "matching"
   | "audit"
@@ -24,6 +25,7 @@ type IconName =
   | "attendees"
   | "merchants"
   | "transactions"
+  | "reports"
   | "contents"
   | "matching"
   | "audit"
@@ -42,6 +44,7 @@ const NAV_PRIMARY: NavItem[] = [
   { key: "members", label: "Attendees Management", icon: "attendees", href: "/admin/members" },
   { key: "merchants", label: "Merchants Management", icon: "merchants", href: "/admin/merchants" },
   { key: "transactions", label: "Transactions Management", icon: "transactions", href: "/admin/transactions" },
+  { key: "reports", label: "Safety Reports", icon: "reports", href: "/admin/reports" },
   { key: "tags", label: "Tags & Categories", icon: "contents", href: "/admin/tags" },
   { key: "matching", label: "Matching Formula", icon: "matching", href: "/admin/matching" },
 ];
@@ -89,6 +92,13 @@ const ICON_PATHS: Record<IconName, ReactNode> = {
       <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z" />
       <path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8" />
       <path d="M12 17.5v-11" />
+    </>
+  ),
+  reports: (
+    <>
+      <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1Z" />
+      <path d="M12 8v4" />
+      <path d="M12 16h.01" />
     </>
   ),
   contents: (

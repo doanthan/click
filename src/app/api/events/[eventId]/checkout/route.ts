@@ -87,6 +87,11 @@ export async function POST(_request: Request, context: RouteContext) {
       ],
       success_url: `${appUrl}/dashboard/calendar?booked=${encodeURIComponent(hold.eventSlug)}`,
       cancel_url: `${appUrl}/events/${encodeURIComponent(hold.eventSlug)}?canceled=1`,
+      // Matches the `hold_expires_at` set in createPaymentHold so the reserved
+      // seat and the Stripe session expire together — no ghost seats, and no
+      // chance of a payment landing after the seat was freed and resold.
+      // 30 min is Stripe's minimum allowed session lifetime; without a reaper
+      // to expire the session early we hold the seat for the same window.
       expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
       metadata: {
         payment_transaction_id: hold.paymentTransactionId,

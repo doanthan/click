@@ -2,7 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { auth } from "@/auth";
 import { Pill } from "@/components/click-ui";
-import { getOwnProfile, getPublicProfileById } from "@/lib/event-repository";
+import { ProfileSafetyControls } from "@/components/profile-safety-controls";
+import { getOwnProfile, getPublicProfileById, getSafetyState } from "@/lib/event-repository";
 
 export const metadata = {
   title: "Profile | Click",
@@ -31,6 +32,8 @@ export default async function PublicProfilePage({ params }: PublicProfilePagePro
   }
 
   const isOwnProfile = ownProfile?.id === userId;
+  const safetyState =
+    session?.user && !isOwnProfile ? await getSafetyState(session, userId) : null;
 
   return (
     <main className="paper-noise min-h-screen bg-[color:var(--champagne)] px-4 py-12 text-[color:var(--ink)] sm:px-6">
@@ -59,6 +62,10 @@ export default async function PublicProfilePage({ params }: PublicProfilePagePro
           <p className="mt-4 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-4 text-sm font-medium leading-6 text-[color:var(--mauve)]">
             Sign in to Click on this person at events you both attend.
           </p>
+        ) : null}
+
+        {safetyState ? (
+          <ProfileSafetyControls profileId={userId} state={safetyState} />
         ) : null}
 
         <div className="mt-10 grid gap-6 md:grid-cols-[1fr_2fr]">

@@ -103,7 +103,8 @@ export type EmailTemplate =
   | "merchant-verified-merchant"
   | "merchant-rejected-merchant"
   | "password-reset"
-  | "payment-receipt-attendee";
+  | "payment-receipt-attendee"
+  | "report-received-admin";
 
 // Where the .html files live. Override with CLICK_EMAILS_DIR if Next moves
 // cwd somewhere unexpected in your deploy; otherwise resolves from repo root.
@@ -142,6 +143,8 @@ const SUBJECTS: Record<EmailTemplate, (vars: Record<string, string>) => string> 
   "password-reset": () => "Reset your Click password",
   "payment-receipt-attendee": (v) =>
     `Receipt — ${v.eventTitle ?? "your event"}${v.totalLabel ? ` (${v.totalLabel})` : ""}`,
+  "report-received-admin": (v) =>
+    `[Safety] New report — ${v.reason ?? "review needed"}`,
 };
 
 // In-process cache. .html files don't change between requests during a single

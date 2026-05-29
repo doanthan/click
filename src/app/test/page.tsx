@@ -1,8 +1,6 @@
 import Link from "next/link";
 import { getEventsForExplore } from "@/lib/event-repository";
-import { startTestJourney } from "@/app/login/actions";
-import { auth } from "@/auth";
-import { TestAccountSwitcher } from "@/components/test-account-switcher";
+import { startTestJourney, signOutOfTestAccount } from "@/app/login/actions";
 import SupabaseLogDrawer from "./SupabaseLogDrawer";
 import TestCasesBoard from "./TestCasesBoard";
 
@@ -24,6 +22,11 @@ type Story = {
   description: string;
   // Optional spec reference shown as a small caption (e.g. "spec §3.1").
   spec?: string;
+  // When true, the journey starts SIGNED OUT — the first step clears the test
+  // session (via signOutOfTestAccount) instead of signing in as the persona's
+  // seeded account. Needed for signup / sign-in / unverified-browse journeys,
+  // which are meaningless if you're already authenticated as an existing user.
+  signedOut?: boolean;
   steps: Step[];
 };
 
@@ -40,7 +43,6 @@ type Persona = {
 };
 
 export default async function TestPage() {
-  const session = await auth();
   const events = await getEventsForExplore();
   const sampleSlug = events[0]?.id ?? "sample-event";
   const sampleTitle = events[0]?.title ?? "an event";
@@ -56,6 +58,7 @@ export default async function TestPage() {
           title: "Sign up process",
           description:
             "Create an account, finish the attendee profile, and land on the dashboard.",
+          signedOut: true,
           steps: [
             { href: "/auth", label: "Sign up" },
             { href: "/onboarding", label: "Onboarding" },
@@ -66,6 +69,7 @@ export default async function TestPage() {
           title: "Sign in & role routing",
           description:
             "Existing user signs in — admin lands on /admin, merchant on /merchant, attendee on /dashboard (or /onboarding if incomplete).",
+          signedOut: true,
           steps: [
             { href: "/auth", label: "Sign in" },
             { href: "/post-login", label: "Post-login routing" },
@@ -76,6 +80,7 @@ export default async function TestPage() {
           title: "Email verification gate",
           description:
             "Unverified users can browse /events in a locked state but RSVP / Click actions 403 with a verification nudge.",
+          signedOut: true,
           steps: [
             { href: "/events", label: "Events (locked browse)" },
             { href: `/events/${sampleSlug}`, label: "Try to RSVP → nudge" },
@@ -419,9 +424,25 @@ export default async function TestPage() {
   return (
     <main className="min-h-screen bg-[color:var(--champagne)] px-4 py-12 text-[color:var(--ink)] sm:px-6">
       <section className="mx-auto max-w-6xl">
-        <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-          QA personas
-        </p>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+            QA personas
+          </p>
+          <nav className="flex flex-wrap items-center gap-2">
+            <Link
+              href="/scale"
+              className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-1 font-mono text-[0.7rem] font-bold uppercase tracking-[0.14em] text-[color:var(--ink)] transition-colors hover:bg-[color:var(--rose)] hover:text-[color:var(--surface-deep)]"
+            >
+              /scale
+            </Link>
+            <Link
+              href="/business"
+              className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-1 font-mono text-[0.7rem] font-bold uppercase tracking-[0.14em] text-[color:var(--ink)] transition-colors hover:bg-[color:var(--rose)] hover:text-[color:var(--surface-deep)]"
+            >
+              /business
+            </Link>
+          </nav>
+        </div>
         <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
           <h1 className="font-display text-5xl font-light leading-[0.96] tracking-tight sm:text-6xl">
             Test by <span className="italic text-[color:var(--rose)]">who</span>.
@@ -429,27 +450,14 @@ export default async function TestPage() {
           <SupabaseLogDrawer />
         </div>
         <p className="mt-4 max-w-2xl text-base font-medium leading-7 text-[color:var(--mauve)]">
-          Pick a persona and walk its key journeys. The ▶ first step signs you
-          in as that persona&rsquo;s seeded account, then opens the step in the
-          current tab; the rest open in new tabs. Open the Supabase log to
-          confirm the writes landed.
+          Pick a persona and walk its key journeys. Clicking the ▶ first step of
+          a persona (e.g. Customer) signs you in as that persona&rsquo;s seeded
+          account — so it changes your active login — then opens the step in the
+          current tab; the rest open in new tabs. Journeys that must run logged
+          out (signup, sign-in, the verification gate) start with a ⏏ button
+          that signs you out first instead. Open the Supabase log to confirm the
+          writes landed.
         </p>
-
-        <div className="mt-10 max-w-sm">
-          <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-            Login
-          </p>
-          <p className="mb-3 mt-1 text-xs font-medium leading-5 text-[color:var(--mauve)]">
-            Swap the active session — or sign out into the public, not-signed-in
-            state. Same switcher as the floating pill, pinned here for quick
-            access. Stays on /test after you switch.
-          </p>
-          <TestAccountSwitcher
-            currentEmail={session?.user?.email ?? null}
-            variant="inline"
-            redirectTo="/test"
-          />
-        </div>
 
         <div className="mt-10 grid gap-6 lg:grid-cols-3">
           {personas.map((persona) => (
@@ -495,7 +503,33 @@ export default async function TestPage() {
                               →
                             </span>
                           ) : null}
-                          {idx === 0 ? (
+                          {idx === 0 && story.signedOut ? (
+                            // Signed-out journey starter: clear any active test
+                            // session first (signOutOfTestAccount), then land on
+                            // this step — so signup / sign-in / unverified-browse
+                            // are exercised as a logged-out visitor, not as the
+                            // persona's already-existing seeded account.
+                            <form action={signOutOfTestAccount}>
+                              <input
+                                type="hidden"
+                                name="redirectTo"
+                                value={step.href}
+                              />
+                              <button
+                                type="submit"
+                                title={`Sign out (start as a logged-out visitor)${
+                                  step.gap ? " (route not built yet)" : ""
+                                } and open this step`}
+                                className={
+                                  step.gap
+                                    ? "rounded-full border-2 border-dashed border-[color:var(--mauve)]/60 bg-[color:var(--champagne)]/50 px-3 py-1 text-[0.7rem] font-bold uppercase tracking-[0.12em] text-[color:var(--mauve)] transition hover:border-[color:var(--mauve)] hover:text-[color:var(--ink)]"
+                                    : "rounded-full border-2 border-[color:var(--rose)] bg-[color:var(--champagne)] px-3 py-1 text-[0.7rem] font-bold uppercase tracking-[0.12em] text-[color:var(--rose)] transition hover:bg-[color:var(--rose)] hover:text-[color:var(--surface-deep)]"
+                                }
+                              >
+                                ⏏ {step.label}
+                              </button>
+                            </form>
+                          ) : idx === 0 ? (
                             // The first step doubles as the journey starter: it
                             // signs in as the persona's seeded account (so the
                             // journey runs with the right role) and then lands on
@@ -553,6 +587,33 @@ export default async function TestPage() {
         </div>
 
         <TestCasesBoard />
+
+        <div className="mt-10">
+          <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+            Internal / dev pages
+          </p>
+          <p className="mb-3 mt-1 max-w-2xl text-xs font-medium leading-5 text-[color:var(--mauve)]">
+            Standalone reference pages outside the persona journeys — open in a
+            new tab.
+          </p>
+          <ul className="flex flex-wrap items-center gap-1.5">
+            {[
+              { href: "/scale", label: "Scale — architecture & capacity" },
+              { href: "/business", label: "Business" },
+            ].map((link) => (
+              <li key={link.href}>
+                <Link
+                  href={link.href}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-1 text-[0.7rem] font-bold uppercase tracking-[0.12em] text-[color:var(--ink)] transition hover:border-[color:var(--ink)] hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)]"
+                >
+                  {link.label} ↗
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
 
         <p className="mt-10 text-center font-mono text-[0.6rem] uppercase tracking-[0.18em] text-[color:var(--mauve)]/40">
           ✷ doan is the best ✷

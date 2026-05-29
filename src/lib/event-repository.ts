@@ -1481,7 +1481,7 @@ export async function getMerchantEvents(session: Session | null): Promise<Mercha
         event.capacity,
         event.price_cents,
         event.category,
-        count(attendee.id) filter (where attendee.status in ('confirmed', 'pending_payment')) as confirmed,
+        count(attendee.id) filter (where (attendee.status = 'confirmed' or (attendee.status = 'pending_payment' and attendee.hold_expires_at > now()))) as confirmed,
         count(attendee.id) filter (where attendee.status = 'waitlisted') as waitlisted
       from events event
       left join event_attendees attendee on attendee.event_id = event.id
@@ -1551,7 +1551,7 @@ export async function getMerchantEventDetail(
         event.capacity,
         event.price_cents,
         event.category,
-        count(attendee.id) filter (where attendee.status in ('confirmed', 'pending_payment')) as confirmed,
+        count(attendee.id) filter (where (attendee.status = 'confirmed' or (attendee.status = 'pending_payment' and attendee.hold_expires_at > now()))) as confirmed,
         count(attendee.id) filter (where attendee.status = 'waitlisted') as waitlisted
       from events event
       left join event_attendees attendee on attendee.event_id = event.id
@@ -1641,7 +1641,7 @@ export async function getEventsForExplore() {
         event.description,
         event.relationship_goal,
         event.fomo,
-        count(distinct attendee.id) filter (where attendee.status in ('confirmed', 'pending_payment')) as confirmed_attendees,
+        count(distinct attendee.id) filter (where (attendee.status = 'confirmed' or (attendee.status = 'pending_payment' and attendee.hold_expires_at > now()))) as confirmed_attendees,
         coalesce(
           array_agg(distinct tag.slug)
             filter (where tag.tag_type in ('interest', 'vibe', 'music')),
@@ -1879,7 +1879,7 @@ export async function getEventBySlug(
           event.description,
           event.relationship_goal,
           event.fomo,
-          count(distinct attendee.id) filter (where attendee.status in ('confirmed', 'pending_payment')) as confirmed_attendees,
+          count(distinct attendee.id) filter (where (attendee.status = 'confirmed' or (attendee.status = 'pending_payment' and attendee.hold_expires_at > now()))) as confirmed_attendees,
           coalesce(
             array_agg(distinct tag.slug)
               filter (where tag.tag_type in ('interest', 'vibe', 'music')),
@@ -2019,7 +2019,7 @@ export async function registerForEvent(eventId: string, session: Session | null)
               select count(*)
               from event_attendees attendee
               where attendee.event_id = event.id
-                and attendee.status in ('confirmed', 'pending_payment')
+                and (attendee.status = 'confirmed' or (attendee.status = 'pending_payment' and attendee.hold_expires_at > now()))
             ) as confirmed_attendees
           from events event
           where event.slug = $1
@@ -2563,7 +2563,7 @@ export async function getAdminEvents() {
         event.address,
         event.latitude::text,
         event.longitude::text,
-        count(attendee.id) filter (where attendee.status in ('confirmed', 'pending_payment')) as confirmed_attendees
+        count(attendee.id) filter (where (attendee.status = 'confirmed' or (attendee.status = 'pending_payment' and attendee.hold_expires_at > now()))) as confirmed_attendees
       from events event
       left join event_attendees attendee on attendee.event_id = event.id
       group by event.id
@@ -3591,6 +3591,7 @@ export type AdminSidebarCounts = {
   merchants: number;
   tags: number;
   audit: number;
+  reports?: number;
 };
 
 export async function getAdminSidebarCounts(): Promise<AdminSidebarCounts> {
@@ -3612,13 +3613,15 @@ export async function getAdminSidebarCounts(): Promise<AdminSidebarCounts> {
       merchants: string;
       tags: string;
       audit: string;
+      reports: string;
     }>(`
       select
         (select count(*) from profiles) as members,
         (select count(*) from events) as events,
         (select count(*) from merchant_profiles) as merchants,
         (select count(*) from tags) as tags,
-        (select count(*) from audit_logs) as audit
+        (select count(*) from audit_logs) as audit,
+        (select count(*) from user_reports where status = 'open') as reports
     `);
 
     const row = result.rows[0];
@@ -3628,6 +3631,7 @@ export async function getAdminSidebarCounts(): Promise<AdminSidebarCounts> {
       merchants: Number(row?.merchants ?? 0),
       tags: Number(row?.tags ?? 0),
       audit: Number(row?.audit ?? 0),
+      reports: Number(row?.reports ?? 0),
     };
   } catch (error) {
     if (process.env.CLICK_DB_DEBUG === "true") {
@@ -3717,7 +3721,7 @@ const eventSelectColumns = `
         event.description,
         event.relationship_goal,
         event.fomo,
-        count(distinct attendee_count.id) filter (where attendee_count.status in ('confirmed', 'pending_payment')) as confirmed_attendees,
+        count(distinct attendee_count.id) filter (where (attendee_count.status = 'confirmed' or (attendee_count.status = 'pending_payment' and attendee_count.hold_expires_at > now()))) as confirmed_attendees,
         coalesce(
           array_agg(distinct tag.slug)
             filter (where tag.tag_type in ('interest', 'vibe', 'music')),
@@ -4572,13 +4576,51 @@ export async function createUserClickForSession(
       throw error;
     }
 
-    const sourceEventResult = input.sourceEventId
-      ? await client.query<{ id: string }>(
-          `select id::text from events where slug = $1 limit 1`,
-          [input.sourceEventId],
-        )
-      : null;
-    const sourceEventId = sourceEventResult?.rows[0]?.id ?? null;
+    const blockResult = await client.query<{ blocked: boolean }>(
+      `
+        select exists (
+          select 1 from user_blocks
+          where (blocker_profile_id = $1::uuid and blocked_profile_id = $2::uuid)
+             or (blocker_profile_id = $2::uuid and blocked_profile_id = $1::uuid)
+        ) as blocked
+      `,
+      [profile.id, clickedProfile.id],
+    );
+    if (blockResult.rows[0]?.blocked) {
+      const error = new Error("This person is unavailable.");
+      error.name = "ValidationError";
+      throw error;
+    }
+
+    // Clicks are gated to the post-event window: you can only Click someone you
+    // were both confirmed attendees of an event with, and only once that event
+    // has ended + 12 hours (business plan §1.2 step 5). If a specific source
+    // event slug is supplied (from the dashboard prompt) we verify *that* event
+    // qualifies; otherwise we pick the most recent qualifying shared event.
+    const eligibilityResult = await client.query<{ id: string }>(
+      `
+        select e.id::text
+        from events e
+        join event_attendees a1 on a1.event_id = e.id and a1.profile_id = $1::uuid and a1.status = 'confirmed'
+        join event_attendees a2 on a2.event_id = e.id and a2.profile_id = $2::uuid and a2.status = 'confirmed'
+        where coalesce(e.ends_at, e.starts_at) + interval '12 hours' <= now()
+          ${input.sourceEventId ? "and e.slug = $3" : ""}
+        order by coalesce(e.ends_at, e.starts_at) desc
+        limit 1
+      `,
+      input.sourceEventId
+        ? [profile.id, clickedProfile.id, input.sourceEventId]
+        : [profile.id, clickedProfile.id],
+    );
+    const sourceEventId = eligibilityResult.rows[0]?.id ?? null;
+
+    if (!sourceEventId) {
+      const error = new Error(
+        "You can only Click someone after an event you both attended has ended (12 hours later).",
+      );
+      error.name = "ValidationError";
+      throw error;
+    }
 
     await client.query(
       `
@@ -4658,7 +4700,7 @@ export async function createUserClickForSession(
         suggestedEvent = suggestedResult.rows[0] ?? null;
       }
 
-      await client.query(
+      const mutualResult = await client.query<{ id: string }>(
         `
           with pair as (
             select
@@ -4670,9 +4712,26 @@ export async function createUserClickForSession(
           from pair
           on conflict (profile_a_id, profile_b_id) do update
           set suggested_event_id = coalesce(excluded.suggested_event_id, mutual_clicks.suggested_event_id)
+          returning id::text
         `,
         [profile.id, clickedProfile.id, suggestedEvent?.id ?? null],
       );
+
+      // Open (or refresh) the Proposal that lets both sides coordinate the
+      // shared follow-up event with no free text. 7-day window.
+      const mutualClickId = mutualResult.rows[0]?.id;
+      if (mutualClickId) {
+        await client.query(
+          `
+            insert into event_proposals (mutual_click_id, suggested_event_id, proposed_by, expires_at)
+            values ($1::uuid, $2::uuid, $3::uuid, now() + interval '7 days')
+            on conflict (mutual_click_id) do update
+            set suggested_event_id = coalesce(event_proposals.suggested_event_id, excluded.suggested_event_id),
+                updated_at = now()
+          `,
+          [mutualClickId, suggestedEvent?.id ?? null, profile.id],
+        );
+      }
 
       await client.query(
         `
@@ -4687,12 +4746,16 @@ export async function createUserClickForSession(
         [profile.id, clickedProfile.id],
       );
 
+      // Notify each side, unless the recipient has muted the other party
+      // (mute = "disable notifications from that user", per the safety spec).
       await client.query(
         `
           insert into notifications (profile_id, title, body, action_url)
-          values
-            ($1::uuid, 'Mutual Click found', $3, $5),
-            ($2::uuid, 'Mutual Click found', $4, $5)
+          select $1::uuid, 'Mutual Click found', $3, $4
+          where not exists (
+            select 1 from user_mutes
+            where muter_profile_id = $1::uuid and muted_profile_id = $2::uuid
+          )
         `,
         [
           profile.id,
@@ -4700,6 +4763,21 @@ export async function createUserClickForSession(
           suggestedEvent
             ? `You and ${clickedProfile.display_name} both clicked. Try ${suggestedEvent.title}.`
             : `You and ${clickedProfile.display_name} both clicked. Click will suggest an event soon.`,
+          suggestedEvent ? `/events/${suggestedEvent.slug}` : "/dashboard",
+        ],
+      );
+      await client.query(
+        `
+          insert into notifications (profile_id, title, body, action_url)
+          select $1::uuid, 'Mutual Click found', $3, $4
+          where not exists (
+            select 1 from user_mutes
+            where muter_profile_id = $1::uuid and muted_profile_id = $2::uuid
+          )
+        `,
+        [
+          clickedProfile.id,
+          profile.id,
           suggestedEvent
             ? `You and ${profile.display_name} both clicked. Try ${suggestedEvent.title}.`
             : `You and ${profile.display_name} both clicked. Click will suggest an event soon.`,
@@ -5126,7 +5204,7 @@ export async function createPaymentHold(
             select count(*)
             from event_attendees attendee
             where attendee.event_id = event.id
-              and attendee.status in ('confirmed', 'pending_payment')
+              and (attendee.status = 'confirmed' or (attendee.status = 'pending_payment' and attendee.hold_expires_at > now()))
           ) as confirmed_attendees
         from events event
         left join merchant_profiles merchant on merchant.id = event.merchant_profile_id
@@ -5195,10 +5273,10 @@ export async function createPaymentHold(
 
     await client.query(
       `
-        insert into event_attendees (event_id, profile_id, status, payment_transaction_id)
-        values ($1::uuid, $2::uuid, 'pending_payment', $3::uuid)
+        insert into event_attendees (event_id, profile_id, status, payment_transaction_id, hold_expires_at)
+        values ($1::uuid, $2::uuid, 'pending_payment', $3::uuid, now() + interval '30 minutes')
         on conflict (event_id, profile_id) do update
-        set status = 'pending_payment', payment_transaction_id = excluded.payment_transaction_id, updated_at = now()
+        set status = 'pending_payment', payment_transaction_id = excluded.payment_transaction_id, hold_expires_at = now() + interval '30 minutes', updated_at = now()
       `,
       [event.id, profile.id, paymentTransactionId],
     );
@@ -5288,7 +5366,7 @@ export async function markPaymentSucceeded(paymentTransactionId: string) {
     await client.query(
       `
         update event_attendees
-        set status = 'confirmed', updated_at = now()
+        set status = 'confirmed', hold_expires_at = null, updated_at = now()
         where event_id = $1::uuid and profile_id = $2::uuid
       `,
       [payment.event_id, payment.profile_id],
@@ -5877,6 +5955,12 @@ export async function getSuggestedPeople(session: Session | null): Promise<Sugge
           )
         where p.id <> $1::uuid
           and p.role = 'attendee'
+          and p.suspended_at is null
+          and not exists (
+            select 1 from user_blocks b
+            where (b.blocker_profile_id = $1::uuid and b.blocked_profile_id = p.id)
+               or (b.blocker_profile_id = p.id and b.blocked_profile_id = $1::uuid)
+          )
         group by p.id
         order by array_length(
           coalesce(
@@ -5963,6 +6047,659 @@ export async function getMutualClicksForSession(session: Session | null): Promis
 // Conversation / messaging helpers were removed when /messages was retired —
 // the platform's no-chat principle is enforced by deleting the surface, not
 // by hiding it. Mutual Click coordination uses the Proposal UI (no free text).
+
+// ---------------------------------------------------------------------------
+// Safety: block / mute / report (migration 018_safety.sql)
+// ---------------------------------------------------------------------------
+
+export const REPORT_REASONS = [
+  "harassment",
+  "inappropriate_messages",
+  "spam_or_scam",
+  "fake_profile",
+  "safety_concern",
+  "other",
+] as const;
+export type ReportReason = (typeof REPORT_REASONS)[number];
+
+export type SafetyState = {
+  isBlocked: boolean; // viewer has blocked the target
+  isMuted: boolean; // viewer has muted the target
+  hasReported: boolean; // viewer has an open report against the target
+};
+
+export async function blockUser(session: Session | null, targetProfileId: string) {
+  const pool = getPostgresPool();
+  if (!getSessionEmail(session)) throw authError();
+  if (!pool) throw databaseUnavailableError();
+
+  const profile = await ensureProfileForSession(session);
+  if (profile.id === targetProfileId) throw validationError("You can't block yourself.");
+
+  await pool.query(
+    `
+      insert into user_blocks (blocker_profile_id, blocked_profile_id)
+      values ($1::uuid, $2::uuid)
+      on conflict do nothing
+    `,
+    [profile.id, targetProfileId],
+  );
+
+  // A block severs any pending Click in either direction so neither resurfaces.
+  await pool.query(
+    `
+      delete from user_clicks
+      where (clicker_profile_id = $1::uuid and clicked_profile_id = $2::uuid)
+         or (clicker_profile_id = $2::uuid and clicked_profile_id = $1::uuid)
+    `,
+    [profile.id, targetProfileId],
+  );
+}
+
+export async function unblockUser(session: Session | null, targetProfileId: string) {
+  const pool = getPostgresPool();
+  if (!getSessionEmail(session)) throw authError();
+  if (!pool) throw databaseUnavailableError();
+
+  const profile = await ensureProfileForSession(session);
+  await pool.query(
+    `delete from user_blocks where blocker_profile_id = $1::uuid and blocked_profile_id = $2::uuid`,
+    [profile.id, targetProfileId],
+  );
+}
+
+export async function muteUser(session: Session | null, targetProfileId: string) {
+  const pool = getPostgresPool();
+  if (!getSessionEmail(session)) throw authError();
+  if (!pool) throw databaseUnavailableError();
+
+  const profile = await ensureProfileForSession(session);
+  if (profile.id === targetProfileId) throw validationError("You can't mute yourself.");
+
+  await pool.query(
+    `
+      insert into user_mutes (muter_profile_id, muted_profile_id)
+      values ($1::uuid, $2::uuid)
+      on conflict do nothing
+    `,
+    [profile.id, targetProfileId],
+  );
+}
+
+export async function unmuteUser(session: Session | null, targetProfileId: string) {
+  const pool = getPostgresPool();
+  if (!getSessionEmail(session)) throw authError();
+  if (!pool) throw databaseUnavailableError();
+
+  const profile = await ensureProfileForSession(session);
+  await pool.query(
+    `delete from user_mutes where muter_profile_id = $1::uuid and muted_profile_id = $2::uuid`,
+    [profile.id, targetProfileId],
+  );
+}
+
+export async function reportUser(
+  session: Session | null,
+  input: { reportedProfileId: string; reason: ReportReason; details?: string; sourceEventSlug?: string },
+) {
+  const pool = getPostgresPool();
+  if (!getSessionEmail(session)) throw authError();
+  if (!pool) throw databaseUnavailableError();
+
+  const profile = await ensureProfileForSession(session);
+  if (profile.id === input.reportedProfileId) throw validationError("You can't report yourself.");
+  if (!REPORT_REASONS.includes(input.reason)) throw validationError("Pick a valid report reason.");
+
+  const sourceEvent = input.sourceEventSlug
+    ? await pool.query<{ id: string }>(`select id::text from events where slug = $1 limit 1`, [
+        input.sourceEventSlug,
+      ])
+    : null;
+  const sourceEventId = sourceEvent?.rows[0]?.id ?? null;
+
+  const inserted = await pool.query<{ id: string }>(
+    `
+      insert into user_reports (reporter_profile_id, reported_profile_id, source_event_id, reason, details)
+      values ($1::uuid, $2::uuid, $3::uuid, $4::report_reason, $5)
+      on conflict (reporter_profile_id, reported_profile_id) where status = 'open'
+        do update set reason = excluded.reason, details = excluded.details,
+                      source_event_id = excluded.source_event_id, created_at = now()
+      returning id::text
+    `,
+    [profile.id, input.reportedProfileId, sourceEventId, input.reason, input.details?.slice(0, 2000) ?? null],
+  );
+
+  // Auto-mute the reported user for the reporter so they get immediate relief
+  // while the admin queue works through the 24hr SLA.
+  await pool.query(
+    `
+      insert into user_mutes (muter_profile_id, muted_profile_id)
+      values ($1::uuid, $2::uuid)
+      on conflict do nothing
+    `,
+    [profile.id, input.reportedProfileId],
+  );
+
+  const reportId = inserted.rows[0]?.id ?? null;
+
+  // Admin audit trail + alert (CLAUDE.md: every notify-able flow logs an email).
+  await writeAuditLog({
+    actorProfileId: profile.id,
+    action: "user.reported",
+    entityTable: "user_reports",
+    entityId: reportId,
+    metadata: { reportedProfileId: input.reportedProfileId, reason: input.reason },
+  });
+
+  void logEmailEvent({
+    template: "report-received-admin",
+    toEmail: process.env.SAFETY_INBOX_EMAIL || "safety@click.local",
+    vars: {
+      reportId: reportId ?? "—",
+      reason: input.reason,
+      details: input.details?.slice(0, 500) ?? "(none)",
+      reporterName: profile.display_name,
+    },
+  });
+
+  return { id: reportId };
+}
+
+export async function getSafetyState(
+  session: Session | null,
+  targetProfileId: string,
+): Promise<SafetyState> {
+  const pool = getPostgresPool();
+  if (!getSessionEmail(session) || !pool) {
+    return { isBlocked: false, isMuted: false, hasReported: false };
+  }
+
+  try {
+    const profile = await ensureProfileForSession(session);
+    const result = await pool.query<{ blocked: boolean; muted: boolean; reported: boolean }>(
+      `
+        select
+          exists(select 1 from user_blocks where blocker_profile_id = $1::uuid and blocked_profile_id = $2::uuid) as blocked,
+          exists(select 1 from user_mutes where muter_profile_id = $1::uuid and muted_profile_id = $2::uuid) as muted,
+          exists(select 1 from user_reports where reporter_profile_id = $1::uuid and reported_profile_id = $2::uuid and status = 'open') as reported
+      `,
+      [profile.id, targetProfileId],
+    );
+    const row = result.rows[0];
+    return {
+      isBlocked: Boolean(row?.blocked),
+      isMuted: Boolean(row?.muted),
+      hasReported: Boolean(row?.reported),
+    };
+  } catch {
+    return { isBlocked: false, isMuted: false, hasReported: false };
+  }
+}
+
+// --- Admin moderation queue ---
+
+export type AdminReportRow = {
+  id: string;
+  reason: ReportReason;
+  details: string | null;
+  status: "open" | "actioned" | "dismissed";
+  createdAt: string;
+  resolvedAt: string | null;
+  resolutionNote: string | null;
+  reporterId: string;
+  reporterName: string;
+  reportedId: string;
+  reportedName: string;
+  reportedSuspendedAt: string | null;
+  sourceEventTitle: string | null;
+};
+
+export async function getAdminReports(session: Session | null): Promise<AdminReportRow[]> {
+  const pool = getPostgresPool();
+  if (!pool) return [];
+  await requireAdminProfile(session);
+
+  const result = await pool.query<{
+    id: string;
+    reason: ReportReason;
+    details: string | null;
+    status: "open" | "actioned" | "dismissed";
+    created_at: Date;
+    resolved_at: Date | null;
+    resolution_note: string | null;
+    reporter_id: string;
+    reporter_name: string;
+    reported_id: string;
+    reported_name: string;
+    reported_suspended_at: Date | null;
+    source_event_title: string | null;
+  }>(
+    `
+      select r.id::text, r.reason, r.details, r.status, r.created_at, r.resolved_at,
+             r.resolution_note,
+             reporter.id::text as reporter_id, reporter.display_name as reporter_name,
+             reported.id::text as reported_id, reported.display_name as reported_name,
+             reported.suspended_at as reported_suspended_at,
+             event.title as source_event_title
+      from user_reports r
+      join profiles reporter on reporter.id = r.reporter_profile_id
+      join profiles reported on reported.id = r.reported_profile_id
+      left join events event on event.id = r.source_event_id
+      order by (r.status = 'open') desc, r.created_at desc
+      limit 200
+    `,
+  );
+
+  return result.rows.map((row) => ({
+    id: row.id,
+    reason: row.reason,
+    details: row.details,
+    status: row.status,
+    createdAt: row.created_at.toISOString(),
+    resolvedAt: row.resolved_at ? row.resolved_at.toISOString() : null,
+    resolutionNote: row.resolution_note,
+    reporterId: row.reporter_id,
+    reporterName: row.reporter_name,
+    reportedId: row.reported_id,
+    reportedName: row.reported_name,
+    reportedSuspendedAt: row.reported_suspended_at ? row.reported_suspended_at.toISOString() : null,
+    sourceEventTitle: row.source_event_title,
+  }));
+}
+
+export async function resolveReport(
+  session: Session | null,
+  reportId: string,
+  resolution: "actioned" | "dismissed",
+  note?: string,
+) {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+  const admin = await requireAdminProfile(session);
+
+  await pool.query(
+    `
+      update user_reports
+      set status = $2::report_status, resolution_note = $3, resolved_at = now(), resolved_by = $4::uuid
+      where id = $1::uuid and status = 'open'
+    `,
+    [reportId, resolution, note?.slice(0, 1000) ?? null, admin.id],
+  );
+
+  await writeAuditLog({
+    actorProfileId: admin.id,
+    action: `report.${resolution}`,
+    entityTable: "user_reports",
+    entityId: reportId,
+    metadata: { note: note ?? null },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Post-event click prompt + Proposal UI (migration 019_proposals.sql)
+// ---------------------------------------------------------------------------
+
+export type PostEventCoAttendee = {
+  id: string;
+  displayName: string;
+  suburb: string | null;
+  alreadyClicked: boolean;
+};
+
+export type PostEventClickPrompt = {
+  eventSlug: string;
+  eventTitle: string;
+  endedAt: string;
+  coAttendees: PostEventCoAttendee[];
+};
+
+// Events the viewer attended that ended between 12 hours and 14 days ago, with
+// the co-attendees they can still Click. Powers the dashboard "who did you
+// click with?" card (business plan §4.3). Blocked pairs are excluded.
+export async function getPostEventClickPrompts(
+  session: Session | null,
+): Promise<PostEventClickPrompt[]> {
+  const pool = getPostgresPool();
+  if (!getSessionEmail(session) || !pool) return [];
+
+  try {
+    const profile = await ensureProfileForSession(session);
+    const result = await pool.query<{
+      event_slug: string;
+      event_title: string;
+      ended_at: Date;
+      other_id: string;
+      other_name: string;
+      other_suburb: string | null;
+      already_clicked: boolean;
+    }>(
+      `
+        select
+          e.slug as event_slug,
+          e.title as event_title,
+          coalesce(e.ends_at, e.starts_at) as ended_at,
+          other.id::text as other_id,
+          other.display_name as other_name,
+          other.suburb as other_suburb,
+          exists (
+            select 1 from user_clicks c
+            where c.clicker_profile_id = $1::uuid and c.clicked_profile_id = other.id
+          ) as already_clicked
+        from events e
+        join event_attendees mine on mine.event_id = e.id
+          and mine.profile_id = $1::uuid and mine.status = 'confirmed'
+        join event_attendees theirs on theirs.event_id = e.id
+          and theirs.status = 'confirmed' and theirs.profile_id <> $1::uuid
+        join profiles other on other.id = theirs.profile_id
+          and other.role = 'attendee' and other.suspended_at is null
+        where coalesce(e.ends_at, e.starts_at) + interval '12 hours' <= now()
+          and coalesce(e.ends_at, e.starts_at) >= now() - interval '14 days'
+          and not exists (
+            select 1 from user_blocks b
+            where (b.blocker_profile_id = $1::uuid and b.blocked_profile_id = other.id)
+               or (b.blocker_profile_id = other.id and b.blocked_profile_id = $1::uuid)
+          )
+        order by coalesce(e.ends_at, e.starts_at) desc, other.display_name asc
+      `,
+      [profile.id],
+    );
+
+    const byEvent = new Map<string, PostEventClickPrompt>();
+    for (const row of result.rows) {
+      let entry = byEvent.get(row.event_slug);
+      if (!entry) {
+        entry = {
+          eventSlug: row.event_slug,
+          eventTitle: row.event_title,
+          endedAt: row.ended_at.toISOString(),
+          coAttendees: [],
+        };
+        byEvent.set(row.event_slug, entry);
+      }
+      entry.coAttendees.push({
+        id: row.other_id,
+        displayName: row.other_name,
+        suburb: row.other_suburb,
+        alreadyClicked: row.already_clicked,
+      });
+    }
+    return Array.from(byEvent.values());
+  } catch {
+    return [];
+  }
+}
+
+export type ProposalEntry = {
+  id: string;
+  status: "pending" | "confirmed" | "expired";
+  isExpired: boolean;
+  otherId: string;
+  otherName: string;
+  suggestedEventSlug: string | null;
+  suggestedEventTitle: string | null;
+  suggestedEventStartsAt: string | null;
+  alternativesRemaining: number;
+  expiresAt: string;
+  confirmedAt: string | null;
+};
+
+export async function getProposalsForSession(session: Session | null): Promise<ProposalEntry[]> {
+  const pool = getPostgresPool();
+  if (!getSessionEmail(session) || !pool) return [];
+
+  try {
+    const profile = await ensureProfileForSession(session);
+    const result = await pool.query<{
+      id: string;
+      status: "pending" | "confirmed" | "expired";
+      expired: boolean;
+      other_id: string;
+      other_name: string;
+      event_slug: string | null;
+      event_title: string | null;
+      event_starts_at: Date | null;
+      alternatives_count: number;
+      expires_at: Date;
+      confirmed_at: Date | null;
+    }>(
+      `
+        select
+          p.id::text,
+          p.status,
+          (p.status = 'pending' and p.expires_at <= now()) as expired,
+          case when m.profile_a_id = $1::uuid then m.profile_b_id::text else m.profile_a_id::text end as other_id,
+          other.display_name as other_name,
+          e.slug as event_slug,
+          e.title as event_title,
+          e.starts_at as event_starts_at,
+          p.alternatives_count,
+          p.expires_at,
+          p.confirmed_at
+        from event_proposals p
+        join mutual_clicks m on m.id = p.mutual_click_id
+        join profiles other on other.id = (
+          case when m.profile_a_id = $1::uuid then m.profile_b_id else m.profile_a_id end
+        )
+        left join events e on e.id = p.suggested_event_id
+        where m.profile_a_id = $1::uuid or m.profile_b_id = $1::uuid
+        order by (p.status = 'pending' and p.expires_at > now()) desc, p.updated_at desc
+        limit 50
+      `,
+      [profile.id],
+    );
+
+    return result.rows.map((row) => ({
+      id: row.id,
+      status: row.status,
+      isExpired: Boolean(row.expired),
+      otherId: row.other_id,
+      otherName: row.other_name,
+      suggestedEventSlug: row.event_slug,
+      suggestedEventTitle: row.event_title,
+      suggestedEventStartsAt: row.event_starts_at ? row.event_starts_at.toISOString() : null,
+      alternativesRemaining: Math.max(0, 3 - row.alternatives_count),
+      expiresAt: row.expires_at.toISOString(),
+      confirmedAt: row.confirmed_at ? row.confirmed_at.toISOString() : null,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+// Verifies the session profile participates in the proposal's mutual click.
+// Returns { proposalId, otherId } or throws.
+async function assertProposalParticipant(
+  client: import("pg").PoolClient,
+  proposalId: string,
+  profileId: string,
+) {
+  const result = await client.query<{ other_id: string; status: string; expires_at: Date }>(
+    `
+      select
+        case when m.profile_a_id = $2::uuid then m.profile_b_id::text else m.profile_a_id::text end as other_id,
+        p.status::text,
+        p.expires_at
+      from event_proposals p
+      join mutual_clicks m on m.id = p.mutual_click_id
+      where p.id = $1::uuid
+        and (m.profile_a_id = $2::uuid or m.profile_b_id = $2::uuid)
+      limit 1
+    `,
+    [proposalId, profileId],
+  );
+  const row = result.rows[0];
+  if (!row) {
+    const error = new Error("Proposal not found.");
+    error.name = "NotFoundError";
+    throw error;
+  }
+  return row;
+}
+
+export async function confirmProposal(session: Session | null, proposalId: string) {
+  const pool = getPostgresPool();
+  if (!getSessionEmail(session)) throw authError();
+  if (!pool) throw databaseUnavailableError();
+
+  const profile = await ensureProfileForSession(session);
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    const row = await assertProposalParticipant(client, proposalId, profile.id);
+    if (row.status !== "pending") {
+      await client.query("rollback");
+      return;
+    }
+    if (new Date(row.expires_at).getTime() <= Date.now()) {
+      await client.query(
+        `update event_proposals set status = 'expired', updated_at = now() where id = $1::uuid`,
+        [proposalId],
+      );
+      await client.query("commit");
+      throw validationError("This proposal has expired.");
+    }
+
+    await client.query(
+      `
+        update event_proposals
+        set status = 'confirmed', confirmed_by = $2::uuid, confirmed_at = now(), updated_at = now()
+        where id = $1::uuid and status = 'pending'
+      `,
+      [proposalId, profile.id],
+    );
+
+    await client.query(
+      `
+        insert into notifications (profile_id, title, body, action_url)
+        select $1::uuid, 'Plan confirmed', $2, '/proposals'
+        where not exists (
+          select 1 from user_mutes
+          where muter_profile_id = $1::uuid and muted_profile_id = $3::uuid
+        )
+      `,
+      [row.other_id, `${profile.display_name} confirmed your shared plan.`, profile.id],
+    );
+
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function proposeAlternativeForProposal(
+  session: Session | null,
+  proposalId: string,
+  eventSlug: string,
+) {
+  const pool = getPostgresPool();
+  if (!getSessionEmail(session)) throw authError();
+  if (!pool) throw databaseUnavailableError();
+
+  const profile = await ensureProfileForSession(session);
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    const row = await assertProposalParticipant(client, proposalId, profile.id);
+    if (row.status !== "pending") {
+      await client.query("rollback");
+      throw validationError("This plan is already settled.");
+    }
+
+    const countResult = await client.query<{ alternatives_count: number }>(
+      `select alternatives_count from event_proposals where id = $1::uuid for update`,
+      [proposalId],
+    );
+    if ((countResult.rows[0]?.alternatives_count ?? 0) >= 3) {
+      await client.query("rollback");
+      throw validationError("You've reached the limit of 3 alternative suggestions.");
+    }
+
+    // Alternative must be a real, bookable upcoming event from the catalogue —
+    // no free text is ever accepted.
+    const eventResult = await client.query<{ id: string; title: string }>(
+      `
+        select id::text, title from events
+        where slug = $1 and status in ('live', 'featured', 'waitlist') and starts_at > now()
+        limit 1
+      `,
+      [eventSlug],
+    );
+    const event = eventResult.rows[0];
+    if (!event) {
+      await client.query("rollback");
+      throw validationError("Pick an upcoming event from the catalogue.");
+    }
+
+    await client.query(
+      `
+        update event_proposals
+        set suggested_event_id = $2::uuid, proposed_by = $3::uuid,
+            alternatives_count = alternatives_count + 1, updated_at = now()
+        where id = $1::uuid
+      `,
+      [proposalId, event.id, profile.id],
+    );
+
+    await client.query(
+      `
+        insert into notifications (profile_id, title, body, action_url)
+        select $1::uuid, 'New plan suggested', $2, '/proposals'
+        where not exists (
+          select 1 from user_mutes
+          where muter_profile_id = $1::uuid and muted_profile_id = $3::uuid
+        )
+      `,
+      [row.other_id, `${profile.display_name} suggested ${event.title}.`, profile.id],
+    );
+
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export type ProposalCatalogueEvent = {
+  slug: string;
+  title: string;
+  startsAt: string;
+  suburb: string;
+};
+
+// Upcoming, bookable events offered when suggesting an alternative.
+export async function getProposalCatalogue(): Promise<ProposalCatalogueEvent[]> {
+  const pool = getPostgresPool();
+  if (!pool) return [];
+  try {
+    const result = await pool.query<{
+      slug: string;
+      title: string;
+      starts_at: Date;
+      suburb: string;
+    }>(
+      `
+        select slug, title, starts_at, suburb
+        from events
+        where status in ('live', 'featured', 'waitlist') and starts_at > now()
+        order by starts_at asc
+        limit 60
+      `,
+    );
+    return result.rows.map((row) => ({
+      slug: row.slug,
+      title: row.title,
+      startsAt: row.starts_at.toISOString(),
+      suburb: row.suburb,
+    }));
+  } catch {
+    return [];
+  }
+}
 
 export type PersonalityQuizInput = {
   personaName: string;

@@ -170,6 +170,7 @@ Admin layout: `src/app/admin/layout.tsx`. Sidebar nav: `src/components/admin-sid
 | --- | --- |
 | `/tables` | `src/app/tables/page.tsx` |
 | `/test` | `src/app/test/page.tsx` |
+| `/business` | `src/app/business/page.tsx` (founder forecasting + VC reality-check dashboard; modelled off `context/BUSINESS_CASE.md`, not in public nav) |
 
 ## API routes
 

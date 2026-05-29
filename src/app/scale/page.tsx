@@ -131,6 +131,19 @@ const tiers = [
   },
 ];
 
+// Per-tier load — the numbers each tier carries. Columns mirror the cost
+// tiers (Tier 0 / Tier 1 / Tier 2+) so the two tables read as a pair.
+const tierNumbers = [
+  { metric: "Merchants (event hosts)", t0: "1–10", t1: "100", t2: "~1,000" },
+  { metric: "Live events", t0: "10–50", t1: "~1,000", t2: "~10,000" },
+  { metric: "Peak concurrent browsers", t0: "~50", t1: "2,000", t2: "~20,000" },
+  { metric: "Peak requests/sec", t0: "~2–5", t1: "~30–60", t2: "~300–600" },
+  { metric: "Click writes/sec", t0: "<1", t1: "~5–15", t2: "~50–150" },
+  { metric: "user_clicks rows", t0: "<100k", t1: "100k–1M", t2: "10M+" },
+  { metric: "DB topology", t0: "Pool of 5", t1: "Pooler (PgBouncer)", t2: "Primary + 2 replicas" },
+  { metric: "Regions", t0: "1", t1: "1", t2: "3" },
+];
+
 // Multi-region rollout.
 const regions = [
   { city: "Sydney", role: "Write primary", code: "ap-southeast-2 · syd1", note: "Product is Sydney-first — home the primary here" },
@@ -430,8 +443,73 @@ export default function ScalePage() {
         </div>
       </section>
 
-      {/* Multi-region */}
+      {/* By the numbers — per-tier load */}
       <section className="border-t-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-16 sm:px-6">
+        <div className="mx-auto max-w-6xl">
+          <SectionIntro
+            eyebrow="By the numbers"
+            title="What each tier carries."
+            body="The same three tiers as the bill, but in load instead of dollars — merchants, events, traffic, and where the database sits. Tier 1 is the asked-for target; Tier 2+ is roughly 10× beyond it."
+          />
+
+          {/* Header row */}
+          <div className="mt-10 overflow-hidden rounded-2xl border-2 border-[color:var(--line)] hard-shadow-sm">
+            <div className="grid grid-cols-[1.4fr_repeat(3,0.9fr)] items-stretch bg-[color:var(--ink)] text-[color:var(--champagne)]">
+              <div className="px-4 py-3 text-[0.7rem] font-black uppercase tracking-[0.14em]">
+                Metric
+              </div>
+              {[
+                { tier: "Tier 0", when: "Today", dot: "bg-[color:var(--mauve)]" },
+                { tier: "Tier 1", when: "Target", dot: "bg-[color:var(--rose)]" },
+                { tier: "Tier 2+", when: "~10×", dot: "bg-[color:var(--peach)]" },
+              ].map((h) => (
+                <div
+                  key={h.tier}
+                  className="flex flex-col gap-0.5 border-l-2 border-[color:var(--champagne)]/25 px-4 py-3"
+                >
+                  <span className="flex items-center gap-1.5 text-[0.7rem] font-black uppercase tracking-wider">
+                    <span className={`block size-2 rounded-full ${h.dot}`} aria-hidden />
+                    {h.tier}
+                  </span>
+                  <span className="font-mono text-[0.6rem] font-bold uppercase tracking-[0.12em] text-[color:var(--champagne)]/70">
+                    {h.when}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            {tierNumbers.map((row, i) => (
+              <div
+                key={row.metric}
+                className={`grid grid-cols-[1.4fr_repeat(3,0.9fr)] items-center ${
+                  i % 2 === 0 ? "bg-[color:var(--champagne)]" : "bg-[color:var(--cream)]"
+                } border-t-2 border-dashed border-[color:var(--line)]`}
+              >
+                <div className="px-4 py-3 text-sm font-bold text-[color:var(--ink)]">
+                  {row.metric}
+                </div>
+                {[row.t0, row.t1, row.t2].map((val, j) => (
+                  <div
+                    key={j}
+                    className={`border-l-2 border-dashed border-[color:var(--line)] px-4 py-3 font-mono text-[0.8rem] font-bold ${
+                      j === 1 ? "text-[color:var(--rose)]" : "text-[color:var(--ink)]"
+                    }`}
+                  >
+                    {val}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+
+          <p className="mt-6 font-mono text-[0.7rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+            Browsers = peak concurrent visitor sessions, not total signups
+          </p>
+        </div>
+      </section>
+
+      {/* Multi-region */}
+      <section className="border-t-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-16 sm:px-6">
         <div className="mx-auto max-w-6xl">
           <SectionIntro
             eyebrow="Saigon · Sydney · London"
