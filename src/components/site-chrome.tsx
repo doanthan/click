@@ -24,17 +24,18 @@ export async function SiteHeader() {
 
   const navItems: Array<{ label: string; href: string }> = [
     { label: "Discover", href: "/discover" },
-    { label: "Events", href: "/events" },
   ];
   if (session?.user) {
     navItems.push({ label: "Dashboard", href: "/dashboard" });
   }
-  // Host entry is always visible — logged-out visitors land on /merchant/signup,
-  // which routes through login and brings them back to register as a host.
-  navItems.push({
-    label: hasMerchantProfile ? "Host" : "Host an event",
-    href: hasMerchantProfile ? "/merchant" : "/merchant/signup",
-  });
+  // Existing hosts get a direct link to their portal in the nav, labelled "Host
+  // dashboard" so it reads as the management hub (the actual "Host an event" CTA
+  // lives on the dashboard + portal). Everyone else (logged-out visitors +
+  // attendees) gets the prominent "Host an event" button in the action cluster
+  // below instead, so the entry point is always visible.
+  if (hasMerchantProfile) {
+    navItems.push({ label: "Host dashboard", href: "/merchant" });
+  }
   if (isAdmin) {
     navItems.push({ label: "Admin", href: "/admin" });
   }
@@ -75,6 +76,17 @@ export async function SiteHeader() {
         </nav>
 
         <div className="flex items-center gap-2">
+          {/* Host entry — shown to logged-out visitors and attendees (anyone
+              who isn't already a host). Routes through login when needed and
+              brings them back to register as a host. */}
+          {!hasMerchantProfile && (
+            <Link
+              href="/merchant/signup"
+              className="hidden rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-4 py-2 text-sm font-bold text-[color:var(--surface-deep)] hard-shadow-sm hover:-translate-x-[1px] hover:-translate-y-[1px] hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)] sm:block"
+            >
+              Host an event
+            </Link>
+          )}
           {session?.user ? (
             <>
               <HeaderNotificationsBell unreadCount={unreadCount} />
@@ -84,10 +96,10 @@ export async function SiteHeader() {
             <>
               <LoginTrigger className="hidden rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-2 text-sm font-bold text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)] sm:block" />
               <Link
-                href="/discover"
+                href="/signup"
                 className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-4 py-2 text-sm font-bold text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)]"
               >
-                Explore →
+                Sign up →
               </Link>
             </>
           )}
@@ -102,7 +114,7 @@ export async function SiteFooter() {
   const isAdmin = !!session?.user && isAdminEmail(session.user.email);
 
   const footerGroups: Array<[string, ...string[]]> = [
-    ["Product", "Discover", "Events", "Categories", "Dashboard", "Onboarding"],
+    ["Product", "Discover", "Categories", "Dashboard", "Onboarding"],
     isAdmin
       ? ["Platform", "Host events", "Admin", "Scale", "Privacy", "Matching"]
       : ["Platform", "Host events", "Privacy", "Matching"],

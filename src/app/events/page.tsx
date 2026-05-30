@@ -1,28 +1,20 @@
-import { auth } from "@/auth";
-import { EventExplorer } from "@/components/event-explorer";
-import { getEventsForExplore, getProfileStatus } from "@/lib/event-repository";
+import { redirect } from "next/navigation";
 
-export const metadata = {
-  title: "Events | Click",
-  description: "Click events, RSVP states, hosted cards, and discovery filters.",
-};
-
-export default async function EventsPage() {
-  const session = await auth();
-  const [events, profileStatus] = await Promise.all([
-    getEventsForExplore(),
-    session?.user ? getProfileStatus(session) : null,
-  ]);
-
-  return (
-    <main className="min-h-screen bg-[color:var(--champagne)] text-[color:var(--ink)]">
-      <section className="bg-[color:var(--champagne)] py-8 pl-4 pr-0 sm:py-10 sm:pl-6">
-        <EventExplorer
-          events={events}
-          bookmarkedEventIds={profileStatus?.bookmarkedEventIds ?? []}
-          registeredEventIds={profileStatus?.registeredEventIds ?? []}
-        />
-      </section>
-    </main>
-  );
+// /events and /discover used to render the identical explorer. They're now
+// consolidated onto /discover (which also carries the personalized rail), so
+// this route just forwards — preserving any ?tag= / ?category= / ?search=
+// deep links that still point here (homepage chips, emails, old bookmarks).
+export default async function EventsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = await searchParams;
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (Array.isArray(value)) value.forEach((entry) => query.append(key, entry));
+    else if (value != null) query.set(key, value);
+  }
+  const queryString = query.toString();
+  redirect(queryString ? `/discover?${queryString}` : "/discover");
 }

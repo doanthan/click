@@ -225,11 +225,6 @@ function DashboardTab({
                   : "An admin needs to approve your merchant profile before you can create Click-managed events."
               }
             />
-            <div className="mt-8 flex flex-wrap gap-2">
-              <Pill tone="pink">Capacity enforced</Pill>
-              <Pill>Auto-waitlist</Pill>
-              <Pill tone="aqua">Schedule conflict check</Pill>
-            </div>
             {merchantApproved ? (
               <Link
                 href="/merchant/events/create"

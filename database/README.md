@@ -26,6 +26,39 @@ Run the SQL files in this directory against your Supabase project in order:
 You can paste them into the Supabase SQL editor, or pipe them through `psql`
 using the connection string from Project Settings -> Database.
 
+## Migration runner + ledger
+
+Prefer `scripts/run-migrations.mjs` over pasting by hand — it tracks what's been
+applied in a `schema_migrations` ledger (filename + sha256 + applied_at, created
+by `021_schema_migrations.sql`) and skips anything already recorded, so reruns
+are safe and drift can't go silent.
+
+```bash
+# Apply every not-yet-recorded file in order (records each on success):
+node scripts/run-migrations.mjs database/0*.sql
+
+# Apply one new migration:
+node scripts/run-migrations.mjs database/0NN_whatever.sql
+```
+
+The runner reads `DATABASE_URL` from `.env.local`/`.env`. Each file is sent as
+one implicit transaction (a mid-file error rolls that file back and halts the
+run). It warns — but does not block — if a recorded file's checksum later
+changes on disk. `filename` is the basename, so every migration gets its own
+ledger row. Keep migration numbers unique — one file per number.
+
+**Baselining an existing database** (one-time, for a DB whose schema predates
+the ledger): record the already-applied files *without* re-running their SQL,
+so a later normal run won't try to re-execute non-idempotent migrations:
+
+```bash
+node scripts/run-migrations.mjs --baseline database/0*.sql
+```
+
+When you add a new migration, drop the numbered `.sql` in this directory and run
+the runner — no need to edit the runner. The numbered list above is descriptive,
+not the source of truth; the ledger is.
+
 ## App connection
 
 Set `DATABASE_URL` to the Supabase connection pooler URL (Project Settings ->

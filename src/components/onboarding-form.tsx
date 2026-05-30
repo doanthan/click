@@ -35,12 +35,15 @@ const INTENT_OPTIONS: IntentOption[] = [
 ];
 
 const STORAGE_KEY = "click:onboarding-draft";
-const DRAFT_VERSION = 2;
+const DRAFT_VERSION = 3;
+
+// Australian postcodes are exactly 4 digits.
+const POSTCODE_RE = /^\d{4}$/;
 
 type Draft = {
   v: number;
   displayName: string;
-  suburb: string;
+  postcode: string;
   birthDate: string;
   intents: Intent[];
   datingVisible: boolean;
@@ -80,7 +83,7 @@ export function OnboardingForm({ initialName }: OnboardingFormProps) {
   const maxBirthDate = useMemo(() => getMaxBirthDate(), []);
 
   const [displayName, setDisplayName] = useState(initialName);
-  const [suburb, setSuburb] = useState("Sydney");
+  const [postcode, setPostcode] = useState("");
   const [birthDate, setBirthDate] = useState("");
   const [intents, setIntents] = useState<Set<Intent>>(new Set(["friendship"]));
   // Dating visibility default OFF — opt-in is the safer default on a
@@ -127,7 +130,7 @@ export function OnboardingForm({ initialName }: OnboardingFormProps) {
         const draft = JSON.parse(raw) as Partial<Draft>;
         if (draft.v === DRAFT_VERSION) {
           if (draft.displayName) setDisplayName(draft.displayName);
-          if (draft.suburb) setSuburb(draft.suburb);
+          if (typeof draft.postcode === "string") setPostcode(draft.postcode);
           if (typeof draft.birthDate === "string") setBirthDate(draft.birthDate);
           if (Array.isArray(draft.intents) && draft.intents.length) {
             setIntents(new Set(draft.intents));
@@ -153,7 +156,7 @@ export function OnboardingForm({ initialName }: OnboardingFormProps) {
       const draft: Draft = {
         v: DRAFT_VERSION,
         displayName,
-        suburb,
+        postcode,
         birthDate,
         intents: Array.from(intents),
         datingVisible,
@@ -165,7 +168,7 @@ export function OnboardingForm({ initialName }: OnboardingFormProps) {
     } catch {
       // localStorage can fail (quota, private mode) — ignore.
     }
-  }, [displayName, suburb, birthDate, intents, datingVisible, flexibleDiscovery, tags, bio]);
+  }, [displayName, postcode, birthDate, intents, datingVisible, flexibleDiscovery, tags, bio]);
 
   function toggleIntent(intent: Intent) {
     setIntents((current) => {
@@ -192,7 +195,8 @@ export function OnboardingForm({ initialName }: OnboardingFormProps) {
   // Returns "" if OK, else an inline message.
   function validateAll(): string {
     if (!displayName.trim()) return "Add a name people will see.";
-    if (!suburb.trim()) return "Tell us your suburb.";
+    if (!postcode.trim()) return "Add your postcode.";
+    if (!POSTCODE_RE.test(postcode.trim())) return "Enter a valid 4-digit Australian postcode.";
     if (!birthDate) return "Pick your birth date so we can confirm you're 18+.";
     const age = ageFromBirthDate(birthDate);
     if (age === null) return "That birth date doesn't look right.";
@@ -220,7 +224,8 @@ export function OnboardingForm({ initialName }: OnboardingFormProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           displayName,
-          suburb,
+          // Stored in profiles.suburb — we now collect a 4-digit AU postcode here.
+          suburb: postcode.trim(),
           age: "", // age is derived from birthDate server-side now
           bio,
           intents: Array.from(intents),
@@ -287,7 +292,7 @@ export function OnboardingForm({ initialName }: OnboardingFormProps) {
           <Section
             eyebrow="About you"
             title="What should we call you?"
-            subtitle="Just a name and a suburb so we can stop calling you 'new user'."
+            subtitle="Just a name and a postcode so we can stop calling you 'new user'."
           >
             <label className="grid gap-2 text-sm font-bold">
               Display name
@@ -302,14 +307,17 @@ export function OnboardingForm({ initialName }: OnboardingFormProps) {
               />
             </label>
             <label className="grid gap-2 text-sm font-bold">
-              Suburb in Sydney
+              Postcode
               <input
                 required
-                autoComplete="address-level2"
-                value={suburb}
-                onChange={(e) => setSuburb(e.target.value)}
+                autoComplete="postal-code"
+                inputMode="numeric"
+                pattern="\d{4}"
+                maxLength={4}
+                value={postcode}
+                onChange={(e) => setPostcode(e.target.value.replace(/\D/g, "").slice(0, 4))}
                 className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-3 text-base font-semibold outline-none focus:border-[color:var(--rose)]"
-                placeholder="Marrickville"
+                placeholder="2204"
               />
             </label>
             {coords ? (
@@ -407,7 +415,7 @@ export function OnboardingForm({ initialName }: OnboardingFormProps) {
           <Section
             eyebrow="Optional"
             title="What are you into?"
-            subtitle="Tap whatever fits. Skip what doesn't. These shape your recommendations."
+            subtitle="Tap whatever fits. Skip what doesn't. These shape your recommendations — pick as many as you like, and you can always add more or edit this later from your dashboard."
           >
             <div className="grid gap-4">
               {interestTagCategories.map(([category, ...tagList]) => (

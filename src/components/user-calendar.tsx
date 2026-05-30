@@ -31,6 +31,7 @@ type UserCalendarProps = {
   events: EventItem[];
   monthParam?: string;
   bookedSlug?: string;
+  basePath?: string;
 };
 
 function isoDateInSydney(date: Date) {
@@ -120,7 +121,12 @@ function chipStyle(event: EventItem) {
   return "bg-[color:var(--peach)] text-[color:var(--surface-deep)]";
 }
 
-export function UserCalendar({ events, monthParam, bookedSlug }: UserCalendarProps) {
+export function UserCalendar({
+  events,
+  monthParam,
+  bookedSlug,
+  basePath = "/dashboard/calendar",
+}: UserCalendarProps) {
   const earliestEvent = events[0] ? new Date(events[0].startsAt) : new Date();
   const monthAnchor = parseMonthParam(monthParam, earliestEvent);
   const todayIso = isoDateInSydney(new Date());
@@ -128,6 +134,8 @@ export function UserCalendar({ events, monthParam, bookedSlug }: UserCalendarPro
   const prevMonth = formatMonthParam(addMonths(monthAnchor, -1));
   const nextMonth = formatMonthParam(addMonths(monthAnchor, 1));
   const heading = MONTH_NAME_FORMATTER.format(monthAnchor);
+  const monthSeparator = basePath.includes("?") ? "&" : "?";
+  const monthHref = (month: string) => `${basePath}${monthSeparator}month=${month}`;
 
   const monthEvents = events.filter((event) => {
     const key = isoDateInSydney(new Date(event.startsAt));
@@ -164,20 +172,20 @@ export function UserCalendar({ events, monthParam, bookedSlug }: UserCalendarPro
           </span>
           <div className="flex items-center gap-1.5">
             <Link
-              href={`/dashboard/calendar?month=${prevMonth}`}
+              href={monthHref(prevMonth)}
               aria-label="Previous month"
               className="grid size-9 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] text-sm font-bold text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
             >
               ←
             </Link>
             <Link
-              href="/dashboard/calendar"
+              href={basePath}
               className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-1.5 text-xs font-bold text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
             >
               Today
             </Link>
             <Link
-              href={`/dashboard/calendar?month=${nextMonth}`}
+              href={monthHref(nextMonth)}
               aria-label="Next month"
               className="grid size-9 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] text-sm font-bold text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
             >

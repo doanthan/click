@@ -1,4 +1,4 @@
--- 017_click_personas.sql
+-- 023_click_personas.sql (renumbered from 017 to keep migration numbers unique)
 --
 -- The click_personas table was added by appending to 001_schema.sql after the
 -- base schema had already been provisioned. Databases created before that edit

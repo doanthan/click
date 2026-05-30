@@ -75,6 +75,11 @@ export function EventRegistrationButton({
     );
     if (status !== "waitlisted" && successDetails) {
       setShowSuccess(true);
+    } else {
+      // No confetti overlay to refresh on close (waitlist join, or a confirmed
+      // RSVP without success details) — refresh now so the server-rendered
+      // dashboard / confirmed-events counts pick up the new row immediately.
+      router.refresh();
     }
   }
 
@@ -101,6 +106,8 @@ export function EventRegistrationButton({
 
     setState("cancelled");
     setMessage("Your RSVP was cancelled.");
+    // Drop the cancelled event off the dashboard / confirmed-events lists.
+    router.refresh();
   }
 
   const isLocked =

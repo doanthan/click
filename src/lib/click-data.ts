@@ -93,7 +93,6 @@ export function avatarFor(person: { id: string; avatar?: string }) {
 
 export const navItems = [
   { label: "Discover", href: "/discover" },
-  { label: "Events", href: "/events" },
   { label: "Dashboard", href: "/dashboard" },
   { label: "Merchant", href: "/merchant" },
   { label: "Admin", href: "/admin" },

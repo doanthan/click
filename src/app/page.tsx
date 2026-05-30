@@ -41,9 +41,6 @@ export default async function Home() {
 
   return (
     <main className="paper-noise min-h-screen max-w-full overflow-hidden text-[color:var(--ink)]">
-      {/* ============================ HOME QUIZ ============================ */}
-      <HomeQuiz isLoggedIn={isLoggedIn} persona={persona} />
-
       {/* ============================ HERO ============================ */}
       <section className="relative overflow-hidden bg-[color:var(--champagne)] px-4 pb-16 pt-12 sm:px-6 lg:pt-20">
         {/* Decorative confetti dots */}
@@ -137,9 +134,6 @@ export default async function Home() {
             <LinkButton href="/events" variant="secondary">
               Browse events
             </LinkButton>
-            <LinkButton href="/merchant/signup" variant="ink">
-              Host an event
-            </LinkButton>
             <span className="font-script ml-2 hidden text-2xl text-[color:var(--mauve)] sm:inline-flex sm:items-center sm:gap-2">
               <ArrowSquiggle className="text-[color:var(--rose)]" /> takes 30 seconds
             </span>
@@ -167,6 +161,9 @@ export default async function Home() {
           </div>
         </div>
       </section>
+
+      {/* ============================ HOME QUIZ ============================ */}
+      <HomeQuiz isLoggedIn={isLoggedIn} persona={persona} />
 
       {/* ============================ STICKY CATEGORY BAR ============================ */}
       <section className="border-y-2 border-[color:var(--line)] bg-[color:var(--cream)]">
@@ -576,87 +573,6 @@ export default async function Home() {
               ))}
             </div>
           </div>
-        </div>
-      </section>
-
-      {/* ============================ PARTNER / HOST CTA ============================ */}
-      <section className="relative overflow-hidden border-t-2 border-[color:var(--line)] bg-[color:var(--peach)] py-20 text-[color:var(--surface-deep)]">
-        <div className="absolute inset-0 stamp-grid opacity-30" aria-hidden />
-        <div className="relative mx-auto grid max-w-7xl gap-10 px-4 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
-          <div>
-            <p className="font-mono text-[0.72rem] font-bold uppercase tracking-[0.22em] text-[color:var(--surface-deep)]/70">
-              For hosts + venues
-            </p>
-            <h2 className="font-display mt-4 text-5xl font-light leading-[0.95] tracking-tight text-[color:var(--surface-deep)] sm:text-6xl">
-              You run the room.{" "}
-              <span className="italic">We bring the right people.</span>
-            </h2>
-            <p className="mt-6 max-w-2xl text-base font-medium leading-7 text-[color:var(--surface-deep)]/80 sm:text-lg">
-              List your event in minutes. Click matches it with users who already
-              care — by interest tag, suburb, life stage, and intent. Free events
-              are free to list. Paid events get Click-managed booking + secure
-              payouts via Stripe.
-            </p>
-            <ul className="mt-6 grid gap-2 text-sm font-bold text-[color:var(--surface-deep)] sm:grid-cols-2">
-              {[
-                "Vetted attendee profiles",
-                "Capacity + waitlist on autopilot",
-                "Free events stay free",
-                "ABN verification once, list forever",
-              ].map((item) => (
-                <li key={item} className="flex items-start gap-2">
-                  <span className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full border-2 border-[color:var(--surface-deep)] bg-[color:var(--champagne)] text-[10px] font-bold">
-                    ✓
-                  </span>
-                  {item}
-                </li>
-              ))}
-            </ul>
-            <div className="mt-8 flex flex-wrap items-center gap-3">
-              <Link
-                href="/merchant/signup"
-                className="rounded-full border-2 border-[color:var(--surface-deep)] bg-[color:var(--rose)] px-6 py-3 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] [box-shadow:4px_4px_0_0_var(--surface-deep)] hover:-translate-x-[2px] hover:-translate-y-[2px] hover:[box-shadow:6px_6px_0_0_var(--surface-deep)]"
-              >
-                Become a host
-              </Link>
-              <Link
-                href="/merchant"
-                className="rounded-full border-2 border-[color:var(--surface-deep)] bg-[color:var(--champagne)] px-6 py-3 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hover:bg-[color:var(--cream)]"
-              >
-                Tour the host portal
-              </Link>
-            </div>
-          </div>
-          <aside className="relative">
-            <div className="rounded-3xl border-2 border-[color:var(--surface-deep)] bg-[color:var(--champagne)] p-6 [box-shadow:6px_6px_0_0_var(--surface-deep)] sm:p-8">
-              <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
-                Quick numbers
-              </p>
-              <dl className="mt-5 grid gap-4 sm:grid-cols-2">
-                {[
-                  ["7 days", "Avg. time to first booking"],
-                  ["94%", "Show-up rate"],
-                  ["Free", "Listing fee for free events"],
-                  ["2.9% + 30¢", "Click managed fee per paid ticket"],
-                ].map(([num, label]) => (
-                  <div
-                    key={label}
-                    className="rounded-2xl border-2 border-[color:var(--surface-deep)] bg-[color:var(--cream)] p-4"
-                  >
-                    <dt className="font-display text-3xl font-light italic leading-none text-[color:var(--rose)]">
-                      {num}
-                    </dt>
-                    <dd className="font-mono mt-2 text-[0.65rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
-                      {label}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-              <p className="font-script mt-6 text-2xl text-[color:var(--rose)]">
-                hosts who care, win ✷
-              </p>
-            </div>
-          </aside>
         </div>
       </section>
 

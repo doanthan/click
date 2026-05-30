@@ -1,11 +1,22 @@
-// One-off migration runner. Applies the given SQL files in order against
-// DATABASE_URL, using the same connection settings as the app (Supabase pooler
-// + relaxed TLS). Each file is sent as a single simple query, so Postgres runs
-// it as one implicit transaction — a mid-file error rolls that file back.
+// Migration runner with an applied-migrations ledger (schema_migrations).
+//
+// Each file is sent as a single simple query, so Postgres runs it as one
+// implicit transaction — a mid-file error rolls that file back. Files already
+// recorded in schema_migrations are skipped; a file that applies cleanly is
+// recorded (basename + sha256). Uses the same connection settings as the app
+// (Supabase pooler + relaxed TLS).
 //
 //   node scripts/run-migrations.mjs database/001_schema.sql database/002_seed.sql ...
+//     Apply each not-yet-recorded file in order, recording it on success.
+//
+//   node scripts/run-migrations.mjs --baseline database/0*.sql
+//     Record the given files as applied WITHOUT running their SQL. One-time use
+//     to capture a database whose schema predates this ledger, so a subsequent
+//     normal run won't try to re-execute already-applied (and possibly
+//     non-idempotent) migrations.
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { Pool } from "pg";
 
@@ -33,9 +44,11 @@ if (!connectionString) {
   process.exit(1);
 }
 
-const files = process.argv.slice(2);
+const argv = process.argv.slice(2);
+const baseline = argv.includes("--baseline");
+const files = argv.filter((arg) => arg !== "--baseline");
 if (files.length === 0) {
-  console.error("Usage: node scripts/run-migrations.mjs <file.sql> [...]");
+  console.error("Usage: node scripts/run-migrations.mjs [--baseline] <file.sql> [...]");
   process.exit(1);
 }
 
@@ -46,12 +59,46 @@ const pool = new Pool({
   ssl: needsSsl ? { rejectUnauthorized: false } : undefined,
 });
 
+const checksum = (sql) => createHash("sha256").update(sql).digest("hex");
+const record = (name, sum) =>
+  pool.query(
+    "insert into schema_migrations (filename, checksum) values ($1, $2) on conflict (filename) do nothing",
+    [name, sum]
+  );
+
 try {
+  // Bootstrap the ledger so the very first run (before 021 is applied) works.
+  await pool.query(`create table if not exists schema_migrations (
+    filename text primary key,
+    checksum text not null,
+    applied_at timestamptz not null default now()
+  )`);
+
+  const { rows } = await pool.query("select filename, checksum from schema_migrations");
+  const applied = new Map(rows.map((r) => [r.filename, r.checksum]));
+
   for (const file of files) {
+    const name = path.basename(file);
     const sql = readFileSync(path.join(root, file), "utf8");
-    process.stdout.write(`Applying ${file} ... `);
+    const sum = checksum(sql);
+
+    if (applied.has(name)) {
+      const drift =
+        applied.get(name) !== sum ? "  (warning: file changed since it was applied)" : "";
+      console.log(`Skipping ${name} — already applied${drift}`);
+      continue;
+    }
+
+    if (baseline) {
+      await record(name, sum);
+      console.log(`Baselined ${name} — recorded as applied (SQL not run)`);
+      continue;
+    }
+
+    process.stdout.write(`Applying ${name} ... `);
     try {
       await pool.query(sql);
+      await record(name, sum);
       console.log("OK");
     } catch (error) {
       console.log("FAILED");
@@ -64,4 +111,4 @@ try {
   await pool.end();
 }
 
-if (process.exitCode !== 1) console.log("All migrations applied.");
+if (process.exitCode !== 1) console.log(baseline ? "Baseline complete." : "Migrations up to date.");

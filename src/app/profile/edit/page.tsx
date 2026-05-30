@@ -83,9 +83,7 @@ export default async function EditProfilePage() {
                 return (
                   <label
                     key={opt.value}
-                    className={`cursor-pointer rounded-2xl border-2 border-[color:var(--line)] p-4 hard-shadow-sm transition-colors ${
-                      checked ? "bg-[color:var(--rose)] text-[color:var(--surface-deep)]" : "bg-[color:var(--champagne)] text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
-                    }`}
+                    className="cursor-pointer rounded-2xl border-2 border-[color:var(--line)] p-4 hard-shadow-sm transition-colors bg-[color:var(--champagne)] text-[color:var(--ink)] hover:bg-[color:var(--peach)] has-[:checked]:bg-[color:var(--rose)] has-[:checked]:text-[color:var(--surface-deep)] has-[:checked]:hover:bg-[color:var(--rose)]"
                   >
                     <input
                       type="checkbox"

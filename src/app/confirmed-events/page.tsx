@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { EventCard } from "@/components/event-card";
+import { UserCalendar } from "@/components/user-calendar";
 import { Pill } from "@/components/click-ui";
 import {
   getConfirmedEvents,
@@ -14,7 +15,7 @@ export const metadata = {
 };
 
 type ConfirmedEventsPageProps = {
-  searchParams?: Promise<{ tab?: string }>;
+  searchParams?: Promise<{ tab?: string; month?: string }>;
 };
 
 export default async function ConfirmedEventsPage({ searchParams }: ConfirmedEventsPageProps) {
@@ -61,35 +62,57 @@ export default async function ConfirmedEventsPage({ searchParams }: ConfirmedEve
           </TabLink>
         </div>
 
-        {events.length > 0 ? (
-          <div className="mt-8 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {events.map((event) => (
-              <EventCard
-                key={event.id}
-                event={event}
-                bookmarked={bookmarkSet.has(event.id)}
-                registered
+        <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
+          {/* Left column — RSVP list */}
+          <div>
+            <h2 className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+              {tab === "past" ? "Past RSVPs" : "Your RSVPs"}
+            </h2>
+            {events.length > 0 ? (
+              <div className="mt-4 grid gap-6 sm:grid-cols-2 lg:grid-cols-1">
+                {events.map((event) => (
+                  <EventCard
+                    key={event.id}
+                    event={event}
+                    bookmarked={bookmarkSet.has(event.id)}
+                    registered
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="mt-4 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-8 text-center">
+                <p className="font-display text-3xl font-light leading-tight">
+                  {tab === "past" ? "No past RSVPs yet." : "No upcoming RSVPs."}
+                </p>
+                <p className="mt-3 text-sm font-semibold leading-6 text-[color:var(--mauve)]">
+                  {tab === "past"
+                    ? "Once you’ve attended events they’ll land here."
+                    : "RSVP to an event and it’ll show up here."}
+                </p>
+                <Link
+                  href="/events"
+                  className="mt-6 inline-flex rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
+                >
+                  Find events
+                </Link>
+              </div>
+            )}
+          </div>
+
+          {/* Right column — calendar */}
+          <div>
+            <h2 className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+              On your calendar
+            </h2>
+            <div className="mt-4 lg:sticky lg:top-6">
+              <UserCalendar
+                events={events}
+                monthParam={params?.month}
+                basePath={`/confirmed-events?tab=${tab}`}
               />
-            ))}
+            </div>
           </div>
-        ) : (
-          <div className="mt-8 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-8 text-center">
-            <p className="font-display text-3xl font-light leading-tight">
-              {tab === "past" ? "No past RSVPs yet." : "No upcoming RSVPs."}
-            </p>
-            <p className="mt-3 text-sm font-semibold leading-6 text-[color:var(--mauve)]">
-              {tab === "past"
-                ? "Once you’ve attended events they’ll land here."
-                : "RSVP to an event and it’ll show up here."}
-            </p>
-            <Link
-              href="/events"
-              className="mt-6 inline-flex rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
-            >
-              Find events
-            </Link>
-          </div>
-        )}
+        </div>
       </section>
     </main>
   );

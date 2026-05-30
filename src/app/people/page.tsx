@@ -59,6 +59,12 @@ export default async function PeoplePage() {
               </div>
               <Pill tone="cream">{mutuals.length}</Pill>
             </div>
+            <Link
+              href="/proposals"
+              className="mt-4 inline-flex rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-2 text-xs font-bold uppercase tracking-wide text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+            >
+              Open your proposals →
+            </Link>
             <ul className="mt-5 grid gap-3 md:grid-cols-2">
               {mutuals.map((m) => (
                 <li

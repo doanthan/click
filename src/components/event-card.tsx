@@ -22,7 +22,6 @@ export function EventCard({
   const isFull = seatsLeft === 0;
   const isWaitlistEvent = event.status === "Waitlist" || isFull;
   const isLockedEvent = event.status === "Locked" && !registered;
-  const fullness = Math.min((event.attendees / event.capacity) * 100, 100);
   const statusLabel = isFull && event.status === "Live" ? "Full" : event.status;
   const availabilityLabel = isFull
     ? "Sold out"
@@ -78,53 +77,23 @@ export function EventCard({
           </Link>
         </h3>
         <p className="mt-1 text-sm font-semibold text-[color:var(--mauve)]">
-          Hosted by {event.host} <span className="opacity-50">·</span> {event.group}
-        </p>
-        <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--mauve)]">
-          {event.description}
+          {isLockedEvent ? (
+            <span className="inline-flex items-center gap-1.5 text-[color:var(--ink)]">
+              <span aria-hidden>🔒</span> RSVP to unlock the venue
+            </span>
+          ) : (
+            event.location
+          )}
         </p>
 
         <div className="mt-4 flex flex-wrap gap-1.5">
-          {event.tags.slice(0, compact ? 3 : 5).map((tag) => (
+          {event.tags.slice(0, compact ? 2 : 3).map((tag) => (
             <Pill key={tag} href={`/events?tag=${encodeURIComponent(tag)}`}>
               {tag}
             </Pill>
           ))}
         </div>
-
-        <div className="mt-5 rounded-lg border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-3">
-          <p className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-            social signal
-          </p>
-          <p className="mt-1 text-sm font-bold leading-5 text-[color:var(--ink)]">{event.fomo}</p>
-        </div>
-
-        <div className="mt-5">
-          <div className="flex justify-between gap-4 text-xs font-bold text-[color:var(--mauve)]">
-            <span>
-              {isLockedEvent ? (
-                <span className="inline-flex items-center gap-1.5 text-[color:var(--ink)]">
-                  <span aria-hidden>🔒</span>
-                  RSVP to unlock the venue
-                </span>
-              ) : (
-                event.location
-              )}
-            </span>
-            <span>
-              {isFull
-                ? "Full — join waitlist"
-                : `${seatsLeft} of ${event.capacity} seats left`}
-            </span>
-          </div>
-          <div className="mt-2 h-2 overflow-hidden rounded-full border border-[color:var(--line)] bg-[color:var(--champagne)]">
-            <div
-              className={`h-full rounded-full ${isFull ? "bg-[color:var(--ink)]" : "bg-[color:var(--rose)]"}`}
-              style={{ width: `${fullness}%` }}
-            />
-          </div>
-          <p className="sr-only">{formatCapacity(event)}</p>
-        </div>
+        <p className="sr-only">{formatCapacity(event)}</p>
 
         <div className="mt-5 grid grid-cols-2 gap-2">
           <EventRegistrationButton

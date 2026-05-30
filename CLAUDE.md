@@ -80,13 +80,17 @@ Every route in `src/app`. URI on the left, source file on the right. Use this to
 | --- | --- |
 | `/` | `src/app/page.tsx` |
 | `/how-it-works` | `src/app/how-it-works/page.tsx` |
-| `/discover` | `src/app/discover/page.tsx` |
+| `/discover` | `src/app/discover/page.tsx` (canonical event browse: personalized rail + `EventExplorer`) |
 | `/categories` | `src/app/categories/page.tsx` |
 | `/categories/[slug]` | `src/app/categories/[slug]/page.tsx` |
-| `/events` | `src/app/events/page.tsx` |
+| `/events` | `src/app/events/page.tsx` (redirect → `/discover`, preserving query string) |
 | `/events/[slug]` | `src/app/events/[slug]/page.tsx` |
 | `/people` | `src/app/people/page.tsx` |
 | `/profile/[userId]` | `src/app/profile/[userId]/page.tsx` |
+| `/terms` | `src/app/terms/page.tsx` |
+| `/privacy` | `src/app/privacy/page.tsx` |
+| `/refund-policy` | `src/app/refund-policy/page.tsx` |
+| `/safety` | `src/app/safety/page.tsx` |
 
 ### Auth & onboarding
 
@@ -121,6 +125,7 @@ Every route in `src/app`. URI on the left, source file on the right. Use this to
 | `/bookmarks` | `src/app/bookmarks/page.tsx` |
 | `/saved-events` | `src/app/saved-events/page.tsx` (redirect → `/bookmarks`) |
 | `/confirmed-events` | `src/app/confirmed-events/page.tsx` |
+| `/proposals` | `src/app/proposals/page.tsx` (post-mutual-click coordination UI; no free text) |
 
 ### Merchant
 
@@ -157,6 +162,7 @@ The post-approval onboarding (`/merchant/onboarding/*`) is a one-time walkthroug
 | `/admin/merchants` | `src/app/admin/merchants/page.tsx` | Merchants Management |
 | `/admin/members` | `src/app/admin/members/page.tsx` | Attendees Management |
 | `/admin/transactions` | `src/app/admin/transactions/page.tsx` | Transactions Management |
+| `/admin/reports` | `src/app/admin/reports/page.tsx` | Safety Reports |
 | `/admin/tags` | `src/app/admin/tags/page.tsx` | Tags & Categories |
 | `/admin/matching` | `src/app/admin/matching/page.tsx` | Matching Formula |
 | `/admin/audit` | `src/app/admin/audit/page.tsx` | Audit Log |

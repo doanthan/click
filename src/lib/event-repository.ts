@@ -9,6 +9,14 @@ import {
   validateOptionalAcn,
 } from "./abn";
 import { clickEvents, type EventItem, type EventStatus } from "./click-data";
+import {
+  DEFAULT_MATCHING_WEIGHTS,
+  type MatchingWeights,
+  type UserMatchContext,
+  rankEditorialFallback,
+  readinessScore,
+  scorePersonalizedEvent,
+} from "./personalized-matching";
 import { buildEventMediaGallery, type MediaItem } from "./event-media";
 import { logEmailEvent, sendTransactionalEmail } from "./email";
 import { regionForEvent, type Region } from "./geo";
@@ -1673,6 +1681,87 @@ export async function getEventsForExplore() {
   }
 }
 
+export type PersonalizedDiscovery = {
+  events: EventItem[];
+  readiness: number;
+  fallback: boolean;
+  heading: string;
+  blurb: string;
+};
+
+// Ranks the live catalogue for one member. Above the readiness threshold we
+// sort by the tunable personalised score; below it (cold-start) we serve the
+// editorial fallback feed of popular events. Returns null when signed out / no
+// DB so callers can simply skip the rail.
+export async function getPersonalizedDiscovery(
+  session: Session | null,
+  limit = 6,
+): Promise<PersonalizedDiscovery | null> {
+  const pool = getPostgresPool();
+  if (!getSessionEmail(session) || !pool) return null;
+
+  try {
+    const profile = await ensureProfileForSession(session);
+    const [allEvents, settings] = await Promise.all([getEventsForExplore(), getSystemSettings()]);
+    if (allEvents.length === 0) return null;
+
+    const [tagsResult, profileResult, personaResult, attendedResult] = await Promise.all([
+      pool.query<{ slug: string }>(
+        `select t.slug from user_tags ut join tags t on t.id = ut.tag_id where ut.profile_id = $1::uuid`,
+        [profile.id],
+      ),
+      pool.query<{ intents: string[] }>(
+        `select connection_intents::text[] as intents from profiles where id = $1::uuid`,
+        [profile.id],
+      ),
+      pool.query<{ openness: string; social_energy: string }>(
+        `select openness, social_energy from click_personas where profile_id = $1::uuid order by generated_at desc limit 1`,
+        [profile.id],
+      ),
+      pool.query<{ count: string }>(
+        `select count(*)::text as count from event_attendees where profile_id = $1::uuid and status = 'confirmed'`,
+        [profile.id],
+      ),
+    ]);
+
+    const personaRow = personaResult.rows[0];
+    const ctx: UserMatchContext = {
+      tagSlugs: tagsResult.rows.map((r) => r.slug),
+      intents: profileResult.rows[0]?.intents ?? [],
+      persona: personaRow
+        ? {
+            openness: personaRow.openness as "cautious" | "curious" | "ready",
+            socialEnergy: personaRow.social_energy as "introvert" | "ambivert" | "extrovert",
+          }
+        : null,
+    };
+
+    const attendedCount = Number(attendedResult.rows[0]?.count ?? 0);
+    const weights = settings.matchingWeights;
+    const readiness = readinessScore(ctx, attendedCount);
+    const fallback = readiness < weights.readinessThreshold || ctx.tagSlugs.length === 0;
+
+    const ranked = fallback
+      ? rankEditorialFallback(allEvents)
+      : allEvents
+          .map((event) => scorePersonalizedEvent(event, ctx, weights))
+          .sort((a, b) => b.score - a.score)
+          .map((scored) => scored.event);
+
+    return {
+      events: ranked.slice(0, limit),
+      readiness,
+      fallback,
+      heading: fallback ? "Popular in inner Sydney" : "Picked for you",
+      blurb: fallback
+        ? "Add a few interest tags to your profile and this becomes personalised to you."
+        : "Ranked by your interests, intent, and persona.",
+    };
+  } catch {
+    return null;
+  }
+}
+
 export type EventCategory = {
   name: string;
   slug: string;
@@ -2601,122 +2690,13 @@ export async function getAdminEvents() {
   }
 }
 
-const fallbackAdminMembers: AdminMemberRow[] = [
-  {
-    id: "seed-maya",
-    displayName: "Maya Chen",
-    email: "maya@click.local",
-    role: "attendee",
-    suburb: "Barangaroo",
-    intents: ["friendship", "exploring"],
-    bookmarks: 4,
-    registrations: 2,
-    events: [
-      { slug: "sunset-rooftop", title: "Sunset rooftop sketch jam" },
-      { slug: "harbour-pottery", title: "Harbourside pottery hour" },
-    ],
-    emailVerified: true,
-    photoVerified: true,
-    joinedAt: "2025-08-12T03:18:00.000Z",
-    suspendedAt: null,
-    suspendedReason: null,
-  },
-  {
-    id: "seed-leo",
-    displayName: "Leo Park",
-    email: "leo@click.local",
-    role: "attendee",
-    suburb: "Surry Hills",
-    intents: ["dating", "friendship"],
-    bookmarks: 7,
-    registrations: 3,
-    events: [
-      { slug: "sunset-rooftop", title: "Sunset rooftop sketch jam" },
-    ],
-    emailVerified: true,
-    photoVerified: false,
-    joinedAt: "2025-09-04T12:02:00.000Z",
-    suspendedAt: null,
-    suspendedReason: null,
-  },
-  {
-    id: "seed-anika",
-    displayName: "Anika Bose",
-    email: "anika@click.local",
-    role: "attendee",
-    suburb: "Newtown",
-    intents: ["friendship", "networking"],
-    bookmarks: 5,
-    registrations: 4,
-    events: [
-      { slug: "harbour-pottery", title: "Harbourside pottery hour" },
-    ],
-    emailVerified: true,
-    photoVerified: true,
-    joinedAt: "2025-09-19T22:45:00.000Z",
-    suspendedAt: null,
-    suspendedReason: null,
-  },
-  {
-    id: "seed-host-zara",
-    displayName: "Zara Diallo",
-    email: "zara@kindredkitchens.com",
-    role: "merchant",
-    suburb: "Redfern",
-    intents: ["networking"],
-    bookmarks: 1,
-    registrations: 0,
-    events: [],
-    emailVerified: true,
-    photoVerified: true,
-    joinedAt: "2025-07-30T01:10:00.000Z",
-    suspendedAt: null,
-    suspendedReason: null,
-  },
-  {
-    id: "seed-admin",
-    displayName: "Click Admin",
-    email: "admin@click.local",
-    role: "admin",
-    suburb: "CBD",
-    intents: ["networking"],
-    bookmarks: 0,
-    registrations: 0,
-    events: [],
-    emailVerified: true,
-    photoVerified: true,
-    joinedAt: "2025-06-01T00:00:00.000Z",
-    suspendedAt: null,
-    suspendedReason: null,
-  },
-];
+// Admin fallbacks below are used only when Postgres is unreachable. They return
+// empty data instead of seeded "Maya Chen / Kindred Kitchens" placeholders, so
+// the admin console degrades to an honest empty state rather than showing fake
+// members, merchants, and audit entries. Real data flows via the live queries.
+const fallbackAdminMembers: AdminMemberRow[] = [];
 
-const fallbackAdminMerchants: AdminMerchantRow[] = [
-  {
-    id: "seed-kindred",
-    businessName: "Kindred Kitchens",
-    contactEmail: "zara@kindredkitchens.com",
-    verificationStatus: "approved",
-    websiteUrl: "https://kindredkitchens.com",
-    abn: "51 824 753 556",
-    ownerName: "Zara Diallo",
-    ownerEmail: "zara@kindredkitchens.com",
-    eventsHosted: 3,
-    createdAt: "2025-07-30T01:10:00.000Z",
-  },
-  {
-    id: "seed-yoga",
-    businessName: "Open Air Yoga Co.",
-    contactEmail: "hello@openairyoga.co",
-    verificationStatus: "pending",
-    websiteUrl: "https://openairyoga.co",
-    abn: null,
-    ownerName: "Priya Shah",
-    ownerEmail: "priya@openairyoga.co",
-    eventsHosted: 1,
-    createdAt: "2026-04-22T00:00:00.000Z",
-  },
-];
+const fallbackAdminMerchants: AdminMerchantRow[] = [];
 
 function fallbackAdminTags(): AdminTagRow[] {
   return clickEvents
@@ -2738,43 +2718,18 @@ function fallbackAdminTags(): AdminTagRow[] {
     .slice(0, 40);
 }
 
-const fallbackAdminAudit: AdminAuditRow[] = [
-  {
-    id: "log-1",
-    action: "approve_event",
-    entityTable: "events",
-    actorName: "Click Admin",
-    metadata: { title: "Sunset rooftop sketch jam", slug: "sunset-rooftop" },
-    createdAt: "2026-05-12T08:14:00.000Z",
-  },
-  {
-    id: "log-2",
-    action: "verify_merchant",
-    entityTable: "merchant_profiles",
-    actorName: "Click Admin",
-    metadata: { business: "Kindred Kitchens" },
-    createdAt: "2026-05-09T01:42:00.000Z",
-  },
-  {
-    id: "log-3",
-    action: "archive_tag",
-    entityTable: "tags",
-    actorName: "Click Admin",
-    metadata: { slug: "running-club-old" },
-    createdAt: "2026-05-04T22:11:00.000Z",
-  },
-];
+const fallbackAdminAudit: AdminAuditRow[] = [];
 
 function fallbackAdminMetrics(eventCount: number, pendingCount: number): AdminMetrics {
   return {
     totalMembers: fallbackAdminMembers.length,
-    newMembersThisWeek: 1,
+    newMembersThisWeek: 0,
     totalMerchants: fallbackAdminMerchants.length,
     pendingMerchants: fallbackAdminMerchants.filter((m) => m.verificationStatus === "pending").length,
     totalEvents: eventCount,
     pendingEvents: pendingCount,
     confirmedRsvps: fallbackAdminMembers.reduce((sum, m) => sum + m.registrations, 0),
-    mutualClicks: 12,
+    mutualClicks: 0,
   };
 }
 
@@ -3740,15 +3695,16 @@ export async function getDashboardData(session: Session | null): Promise<Dashboa
   const userName = getSessionName(session);
 
   if (!pool || !email) {
-    const upcomingEvents = clickEvents.slice(0, 2);
-
+    // No DB / no session: show an honest empty dashboard rather than slicing
+    // the static clickEvents catalogue, which made freshly signed-up users see
+    // fake "2 upcoming / 2 saved" plans they never RSVP'd to.
     return {
       userName,
-      upcomingEvents,
-      savedEvents: clickEvents.slice(2, 4),
+      upcomingEvents: [],
+      savedEvents: [],
       stats: {
-        upcoming: upcomingEvents.length,
-        saved: upcomingEvents.length,
+        upcoming: 0,
+        saved: 0,
         clicks: 0,
         radar: "Offline",
       },
@@ -3815,18 +3771,19 @@ export async function getDashboardData(session: Session | null): Promise<Dashboa
     };
   } catch (error) {
     if (process.env.CLICK_DB_DEBUG === "true") {
-      console.warn("Falling back to static dashboard data.", error);
+      console.warn("Falling back to empty dashboard data.", error);
     }
 
-    const upcomingEvents = clickEvents.slice(0, 2);
-
+    // Query failed (e.g. Postgres unreachable): never fabricate RSVPs/bookmarks
+    // for a real signed-in user — return an empty dashboard so the UI shows the
+    // genuine "No RSVPs yet" state instead of seed events.
     return {
       userName,
-      upcomingEvents,
-      savedEvents: clickEvents.slice(2, 4),
+      upcomingEvents: [],
+      savedEvents: [],
       stats: {
-        upcoming: upcomingEvents.length,
-        saved: upcomingEvents.length,
+        upcoming: 0,
+        saved: 0,
         clicks: 0,
         radar: "Offline",
       },
@@ -3898,6 +3855,83 @@ export async function getProfileStatus(session: Session | null): Promise<Profile
       bookmarkedEventIds: [],
       registeredEventIds: [],
     };
+  }
+}
+
+export type ProfileCompletionItem = {
+  key: string;
+  label: string;
+  done: boolean;
+  href: string;
+};
+
+export type ProfileCompletion = {
+  // 0–100, rounded. Drives the "complete your profile" progress ring.
+  percent: number;
+  complete: boolean;
+  // Separate from `complete` so the dashboard can prompt the quiz on its own,
+  // even when the rest of the profile is finished.
+  quizComplete: boolean;
+  items: ProfileCompletionItem[];
+};
+
+// Profile-completion checklist for the attendee dashboard. Each item is an
+// equal-weight step; `percent` is done/total. Quiz completion is surfaced both
+// as a checklist item and as a standalone `quizComplete` flag so the dashboard
+// can show a dedicated "take the quiz" prompt at the top.
+export async function getProfileCompletion(
+  session: Session | null,
+): Promise<ProfileCompletion> {
+  const empty = (): ProfileCompletion => {
+    const items: ProfileCompletionItem[] = [
+      { key: "photo", label: "Add a profile photo", done: false, href: "/profile/edit" },
+      { key: "suburb", label: "Set your suburb", done: false, href: "/onboarding" },
+      { key: "bio", label: "Write a short bio", done: false, href: "/profile/edit" },
+      { key: "tags", label: "Pick at least 3 interests", done: false, href: "/profile/edit" },
+      { key: "quiz", label: "Take the Click quiz", done: false, href: "/quiz/life" },
+    ];
+    return { percent: 0, complete: false, quizComplete: false, items };
+  };
+
+  const pool = getPostgresPool();
+  const emailPresent = !!getSessionEmail(session);
+  if (!pool || !emailPresent) return empty();
+
+  try {
+    const profile = await ensureProfileForSession(session);
+    const [fieldsResult, tagCountResult, personaResult] = await Promise.all([
+      pool.query<{ photo_url: string | null; suburb: string | null; bio: string | null }>(
+        `select photo_url, suburb, bio from profiles where id = $1::uuid`,
+        [profile.id],
+      ),
+      pool.query<{ count: string }>(
+        `select count(*)::text as count from user_tags where profile_id = $1::uuid`,
+        [profile.id],
+      ),
+      pool.query<{ count: string }>(
+        `select count(*)::text as count from click_personas where profile_id = $1::uuid`,
+        [profile.id],
+      ),
+    ]);
+
+    const row = fieldsResult.rows[0];
+    const tagCount = Number(tagCountResult.rows[0]?.count ?? 0);
+    const quizComplete = Number(personaResult.rows[0]?.count ?? 0) > 0;
+
+    const items: ProfileCompletionItem[] = [
+      { key: "photo", label: "Add a profile photo", done: !!row?.photo_url, href: "/profile/edit" },
+      { key: "suburb", label: "Set your suburb", done: !!row?.suburb, href: "/onboarding" },
+      { key: "bio", label: "Write a short bio", done: !!row?.bio, href: "/profile/edit" },
+      { key: "tags", label: "Pick at least 3 interests", done: tagCount >= 3, href: "/profile/edit" },
+      { key: "quiz", label: "Take the Click quiz", done: quizComplete, href: "/quiz/life" },
+    ];
+
+    const doneCount = items.filter((i) => i.done).length;
+    const percent = Math.round((doneCount / items.length) * 100);
+
+    return { percent, complete: doneCount === items.length, quizComplete, items };
+  } catch {
+    return empty();
   }
 }
 
@@ -4762,8 +4796,8 @@ export async function createUserClickForSession(
           clickedProfile.id,
           suggestedEvent
             ? `You and ${clickedProfile.display_name} both clicked. Try ${suggestedEvent.title}.`
-            : `You and ${clickedProfile.display_name} both clicked. Click will suggest an event soon.`,
-          suggestedEvent ? `/events/${suggestedEvent.slug}` : "/dashboard",
+            : `You and ${clickedProfile.display_name} both clicked. Open your proposal to plan.`,
+          "/proposals",
         ],
       );
       await client.query(
@@ -4780,8 +4814,8 @@ export async function createUserClickForSession(
           profile.id,
           suggestedEvent
             ? `You and ${profile.display_name} both clicked. Try ${suggestedEvent.title}.`
-            : `You and ${profile.display_name} both clicked. Click will suggest an event soon.`,
-          suggestedEvent ? `/events/${suggestedEvent.slug}` : "/dashboard",
+            : `You and ${profile.display_name} both clicked. Open your proposal to plan.`,
+          "/proposals",
         ],
       );
     }
@@ -7183,7 +7217,22 @@ export type SystemSettings = {
   commissionRateBps: number;
   bookingFeeBps: number;
   marketingBanner: string;
+  matchingWeights: MatchingWeights;
 };
+
+function parseMatchingWeights(value: unknown): MatchingWeights {
+  const raw = (value ?? {}) as Partial<Record<keyof MatchingWeights, unknown>>;
+  const num = (v: unknown, fallback: number) =>
+    typeof v === "number" && Number.isFinite(v) ? v : fallback;
+  return {
+    tagOverlap: num(raw.tagOverlap, DEFAULT_MATCHING_WEIGHTS.tagOverlap),
+    intentMatch: num(raw.intentMatch, DEFAULT_MATCHING_WEIGHTS.intentMatch),
+    personaBoost: num(raw.personaBoost, DEFAULT_MATCHING_WEIGHTS.personaBoost),
+    momentum: num(raw.momentum, DEFAULT_MATCHING_WEIGHTS.momentum),
+    featured: num(raw.featured, DEFAULT_MATCHING_WEIGHTS.featured),
+    readinessThreshold: num(raw.readinessThreshold, DEFAULT_MATCHING_WEIGHTS.readinessThreshold),
+  };
+}
 
 export async function getSystemSettings(): Promise<SystemSettings> {
   const fallback: SystemSettings = {
@@ -7191,6 +7240,7 @@ export async function getSystemSettings(): Promise<SystemSettings> {
     commissionRateBps: 290,
     bookingFeeBps: 0,
     marketingBanner: "",
+    matchingWeights: DEFAULT_MATCHING_WEIGHTS,
   };
 
   const pool = getPostgresPool();
@@ -7206,6 +7256,7 @@ export async function getSystemSettings(): Promise<SystemSettings> {
       commissionRateBps: Number(map.get("commission_rate_bps") ?? 290),
       bookingFeeBps: Number(map.get("booking_fee_bps") ?? 0),
       marketingBanner: String(map.get("marketing_banner") ?? "").trim(),
+      matchingWeights: parseMatchingWeights(map.get("matching_weights")),
     };
   } catch {
     return fallback;
@@ -7240,6 +7291,22 @@ export async function updateSystemSettingsAsAdmin(
     writes.push({
       key: "marketing_banner",
       value: JSON.stringify(input.marketingBanner.slice(0, 200)),
+    });
+  }
+  if (input.matchingWeights) {
+    const w = input.matchingWeights;
+    const clamp = (n: number, max: number) =>
+      Math.max(0, Math.min(max, Number.isFinite(n) ? n : 0));
+    writes.push({
+      key: "matching_weights",
+      value: JSON.stringify({
+        tagOverlap: clamp(w.tagOverlap, 50),
+        intentMatch: clamp(w.intentMatch, 50),
+        personaBoost: clamp(w.personaBoost, 50),
+        momentum: clamp(w.momentum, 50),
+        featured: clamp(w.featured, 50),
+        readinessThreshold: clamp(w.readinessThreshold, 100),
+      }),
     });
   }
 
