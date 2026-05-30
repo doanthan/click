@@ -53,15 +53,9 @@ function responseForError(error: unknown) {
     return NextResponse.json({ error: error.message }, { status: 403 });
   }
 
-  // Paid events require a Stripe Connect account with charges_enabled. Send
-  // the merchant to the payouts step of the onboarding wizard — the client
-  // wizard follows the `redirect` field after showing the toast.
-  if (error.name === "PayoutsNotReadyError") {
-    return NextResponse.json(
-      { error: error.message, redirect: "/merchant/onboarding/payouts" },
-      { status: 403 },
-    );
-  }
+  // Note: event creation no longer gates on Stripe Connect. Merchants can
+  // submit paid events before payout setup; admin review (+ the checkout-time
+  // PayoutsNotReadyError gate) is the safety net. See createEventForMerchant.
 
   return NextResponse.json({ error: error.message || "Event creation failed." }, { status: 500 });
 }

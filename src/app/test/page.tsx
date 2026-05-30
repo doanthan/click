@@ -331,7 +331,7 @@ export default async function TestPage() {
           description:
             "Attendees tab: bookings JOIN profiles for this merchant's events. Filters by event/status. Check-in flips checked_in + checked_in_at (RLS-scoped to merchant's events).",
           steps: [
-            { href: "/merchant?tab=attendees", label: "Attendees" },
+            { href: "/merchant?tab=bookings", label: "Bookings (attendees)" },
             { href: "/merchant?tab=bookings", label: "Bookings" },
           ],
         },
@@ -341,7 +341,7 @@ export default async function TestPage() {
           description:
             "Export first_name, email, booking_date, payment_status, checked_in, checked_in_at. Excludes full address / DOB / private profile data.",
           steps: [
-            { href: "/merchant?tab=attendees", label: "Export CSV", gap: true },
+            { href: "/merchant?tab=bookings", label: "Export CSV", gap: true },
           ],
         },
         {
@@ -350,8 +350,8 @@ export default async function TestPage() {
           description:
             "Reusable venue records (venues table) and merchant-scoped discount codes — both feed event creation and analytics.",
           steps: [
-            { href: "/merchant?tab=venues", label: "Venues" },
-            { href: "/merchant?tab=discounts", label: "Discounts" },
+            { href: "/merchant?tab=events", label: "Venues" },
+            { href: "/merchant?tab=settings", label: "Discounts" },
           ],
         },
         {
@@ -360,8 +360,8 @@ export default async function TestPage() {
           description:
             "Revenue over time, bookings per event, capacity utilisation, views → bookings, top tags, source attribution. Timeframe via ?timeframe= (7 / 30 / 90 / all).",
           steps: [
-            { href: "/merchant?tab=analytics", label: "Analytics" },
-            { href: "/merchant?tab=analytics&timeframe=90", label: "90-day" },
+            { href: "/merchant?tab=dashboard", label: "Analytics" },
+            { href: "/merchant?tab=dashboard&timeframe=90", label: "90-day" },
           ],
         },
         {
@@ -380,7 +380,7 @@ export default async function TestPage() {
           description:
             "Merchant raises and tracks support tickets — useSupportTickets / support_tickets table.",
           steps: [
-            { href: "/merchant?tab=support", label: "Support" },
+            { href: "/merchant?tab=settings", label: "Support" },
           ],
         },
         {

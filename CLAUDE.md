@@ -59,12 +59,13 @@ Public bucket = anyone with the URL can read (avatars rendered on event cards, h
 | `merchant-verified-merchant` + `merchant-rejected-merchant` | `updateMerchantVerificationForAdmin` in `src/lib/event-repository.ts`, branched on approved/rejected |
 | `merchant-application-received` | `registerMerchantWizardSubmit` in `src/lib/event-repository.ts`, after commit, first submission only (`xmax = 0`) |
 | `event-approved-merchant` | `approveEventForAdmin` in `src/lib/event-repository.ts`, via `logEventApprovedEmail` helper (looks up the owning merchant; skipped for platform-owned events) |
+| `event-rejected-merchant` | `rejectEventForAdmin` in `src/lib/event-repository.ts`, via `logEventRejectedEmail` helper (carries the admin's free-text reason; skipped for platform-owned events) |
 | `rsvp-cancelled-attendee` + `rsvp-cancelled-merchant` | `cancelRegistration` in `src/lib/event-repository.ts`, after commit, via `logRsvpCancelledEmails` helper |
 | `event-cancelled-attendee` | `cancelMerchantEvent` in `src/lib/event-repository.ts`, fan-out to every affected attendee after commit |
 | `payment-receipt-attendee` | `markPaymentSucceeded` in `src/lib/event-repository.ts`, via `logPaymentReceiptEmail` helper (GST receipt, tax = total / 11) |
 | `password-reset` | `requestPasswordReset` in `src/app/forgot-password/actions.ts`, alongside the legacy `sendTransactionalEmail` magic-link send |
 
-Still unwired: `event-rejected-merchant` (no event-rejection handler exists yet) and `event-reminder-attendee` (needs a ~24h-out cron, not a request handler). When you add those trigger sites, call `logEmailEvent` — same shape as the wired ones above.
+Still unwired: `event-reminder-attendee` (needs a ~24h-out cron, not a request handler). When you add that trigger site, call `logEmailEvent` — same shape as the wired ones above.
 
 ### Existing `sendTransactionalEmail` (Resend)
 
@@ -183,7 +184,7 @@ Admin layout: `src/app/admin/layout.tsx`. Sidebar nav: `src/components/admin-sid
 Mounted under `src/app/api/**`. Notable groups:
 
 - `api/auth/[...nextauth]` — NextAuth handler
-- `api/admin/events`, `api/admin/events/[eventId]/approve`, `api/admin/merchants/[merchantId]/verification`, `api/admin/tags`
+- `api/admin/events`, `api/admin/events/[eventId]/approve`, `api/admin/events/[eventId]/reject` (declines a pending event → `rejected`; optional `{ reason }` body rides through to the merchant email + audit log), `api/admin/merchants/[merchantId]/verification`, `api/admin/tags`
 - `api/events`, `api/events/[eventId]`, `api/events/[eventId]/{bookmark,checkout,register}`
 - `api/merchant/events`, `api/merchant/events/[eventId]/cancel`
 - `api/merchant/stripe/connect` (creates the Connect account + returns a hosted-onboarding URL; approved merchants only), `api/merchant/onboarding/complete` (marks the walkthrough done)

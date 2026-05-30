@@ -86,7 +86,7 @@ const initial: WizardValues = {
   suburb: "",
   latitude: null,
   longitude: null,
-  price: "Free",
+  price: "0",
   tags: "",
   relationshipGoal: "",
   description: "",
@@ -254,6 +254,7 @@ type WizardContextValue = {
   setValues: Dispatch<SetStateAction<WizardValues>>;
   set: <K extends keyof WizardValues>(key: K, value: WizardValues[K]) => void;
   categoryOptions: string[];
+  tagOptions: string[];
   stepError: string | null;
   setStepError: Dispatch<SetStateAction<string | null>>;
   submitting: boolean;
@@ -274,9 +275,11 @@ function useWizard(): WizardContextValue {
 
 export function EventCreateProvider({
   categoryOptions,
+  tagOptions = [],
   children,
 }: {
   categoryOptions: string[];
+  tagOptions?: string[];
   children: React.ReactNode;
 }) {
   const [values, setValues] = useState<WizardValues>(() => ({
@@ -296,6 +299,7 @@ export function EventCreateProvider({
         setValues,
         set,
         categoryOptions,
+        tagOptions,
         stepError,
         setStepError,
         submitting,
@@ -412,11 +416,12 @@ export function WizardShell({
           redirect?: string;
         };
         if (!response.ok) {
-          // Server can hand us a follow-up URL (e.g. PayoutsNotReadyError →
-          // /merchant/onboarding/payouts). Toast the reason and navigate
-          // there — every queued occurrence shares the same root cause, so
-          // there's nothing useful to retry until the merchant finishes the
-          // step the server pointed them at.
+          // Server can hand us a follow-up URL (e.g. MerchantSignupRequired →
+          // /merchant/signup). Toast the reason and navigate there — every
+          // queued occurrence shares the same root cause, so there's nothing
+          // useful to retry until the merchant finishes the step the server
+          // pointed them at. (Paid events no longer gate on payout setup — the
+          // event sits in pending for admin review regardless.)
           if (payload.redirect) {
             const msg = payload.error ?? "Action needed before publishing.";
             toast.error(msg);
@@ -575,8 +580,153 @@ function inputClass() {
   return "rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 text-base font-semibold text-[color:var(--ink)] outline-none focus:bg-[color:var(--cream)]";
 }
 
+// Max tags the merchant can attach. Mirrors the server-side `.slice(0, 8)` in
+// createEventForMerchant so the UI can't promise more than the backend keeps.
+const MAX_TAGS = 8;
+
+function parseTags(value: string): string[] {
+  return value
+    .split(",")
+    .map((t) => t.trim())
+    .filter(Boolean);
+}
+
+// Tag input backed by a comma-separated string (the wizard's `values.tags`).
+// Merchants search the admin-curated `options` list and click to add as pills.
+// Tags are "click tags" — never free-form: only labels present in `options` can
+// be added, so a merchant cannot mint a new tag. Picking from the list keeps tag
+// spelling consistent with the tags users hold on their profiles, which is
+// what powers matching. Selected tags render as removable pills; the serialised
+// comma string is handed back through `onChange` so the submit path is unchanged.
+function TagPicker({
+  value,
+  options,
+  onChange,
+}: {
+  value: string;
+  options: string[];
+  onChange: (next: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+
+  const selected = useMemo(() => parseTags(value), [value]);
+  const selectedKeys = useMemo(
+    () => new Set(selected.map((t) => t.toLowerCase())),
+    [selected],
+  );
+  // Canonical label for each allowed option, keyed by lowercase, so we can both
+  // reject non-list input and normalise spelling/casing to the curated label.
+  const optionByKey = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const opt of options) map.set(opt.toLowerCase(), opt);
+    return map;
+  }, [options]);
+  const atLimit = selected.length >= MAX_TAGS;
+
+  const suggestions = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return options
+      .filter((opt) => !selectedKeys.has(opt.toLowerCase()))
+      .filter((opt) => (q ? opt.toLowerCase().includes(q) : true))
+      .slice(0, 8);
+  }, [options, selectedKeys, query]);
+
+  const commit = (next: string[]) => onChange(next.join(", "));
+
+  const addTag = (raw: string) => {
+    if (atLimit) return;
+    // Click tags only: reject anything that isn't an exact (case-insensitive)
+    // match for a curated option. No free-form tags reach `onChange`.
+    const canonical = optionByKey.get(raw.trim().toLowerCase());
+    if (!canonical) return;
+    if (selectedKeys.has(canonical.toLowerCase())) {
+      setQuery("");
+      return;
+    }
+    commit([...selected, canonical]);
+    setQuery("");
+  };
+
+  const removeTag = (tag: string) =>
+    commit(selected.filter((t) => t.toLowerCase() !== tag.toLowerCase()));
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      // Enter commits the top suggestion (a curated tag), never the raw text.
+      e.preventDefault();
+      if (suggestions.length > 0) addTag(suggestions[0]);
+    } else if (e.key === "Backspace" && !query && selected.length > 0) {
+      removeTag(selected[selected.length - 1]);
+    }
+  };
+
+  return (
+    <div className="grid gap-2">
+      {selected.length > 0 ? (
+        <ul className="flex flex-wrap gap-2">
+          {selected.map((tag) => (
+            <li key={tag.toLowerCase()}>
+              <span className="inline-flex items-center gap-1.5 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] py-1 pl-3 pr-1.5 text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)]">
+                {tag}
+                <button
+                  type="button"
+                  onClick={() => removeTag(tag)}
+                  aria-label={`Remove ${tag}`}
+                  className="grid size-4 place-items-center rounded-full bg-[color:var(--surface-deep)] text-[0.7rem] leading-none text-[color:var(--peach)] hover:opacity-80"
+                >
+                  ×
+                </button>
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      <div className="relative">
+        <input
+          type="text"
+          value={query}
+          disabled={atLimit}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setTimeout(() => setOpen(false), 120)}
+          onKeyDown={handleKeyDown}
+          placeholder={
+            atLimit ? `Tag limit reached (${MAX_TAGS})` : "Search tags…"
+          }
+          className={`${inputClass()} w-full disabled:cursor-not-allowed disabled:opacity-60`}
+        />
+        {open && !atLimit && suggestions.length > 0 ? (
+          <ul className="absolute left-0 right-0 top-full z-20 mt-1 max-h-56 overflow-auto rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] py-1 hard-shadow-sm">
+            {suggestions.map((opt) => (
+              <li key={opt}>
+                <button
+                  type="button"
+                  // onMouseDown (not onClick) so the option is added before the
+                  // input's onBlur closes the dropdown.
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    addTag(opt);
+                  }}
+                  className="block w-full px-4 py-2 text-left text-sm font-semibold text-[color:var(--ink)] hover:bg-[color:var(--champagne)]"
+                >
+                  {opt}
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export function BasicsSection() {
-  const { values, set, categoryOptions } = useWizard();
+  const { values, set, categoryOptions, tagOptions } = useWizard();
   return (
     <div className="space-y-5">
       <header>
@@ -619,12 +769,14 @@ export function BasicsSection() {
             )}
           </select>
         </Field>
-        <Field label="Tags" hint="Comma-separated. Top 5 used for matching.">
-          <input
+        <Field
+          label="Tags"
+          hint="Search and pick from Click's tag list. Top 5 used for matching."
+        >
+          <TagPicker
             value={values.tags}
-            onChange={(e) => set("tags", e.target.value)}
-            placeholder="restaurant, dinner, food, low-pressure"
-            className={inputClass()}
+            options={tagOptions}
+            onChange={(next) => set("tags", next)}
           />
         </Field>
       </div>
@@ -676,21 +828,27 @@ export function ScheduleSection() {
       />
 
       <div className="grid gap-4 md:grid-cols-2">
-        <Field label="Capacity">
+        <Field label="Capacity" hint="Max number of guests.">
           <input
             type="number"
             min={1}
+            step={1}
+            inputMode="numeric"
             value={values.capacity}
-            onChange={(e) => set("capacity", e.target.value)}
+            onChange={(e) => set("capacity", e.target.value.replace(/[^0-9]/g, ""))}
             className={inputClass()}
             required
           />
         </Field>
-        <Field label="Price" hint="‘Free’ or like $38.">
+        <Field label="Price" hint="Enter 0 for free.">
           <input
+            type="number"
+            min={0}
+            step={1}
+            inputMode="numeric"
             value={values.price}
-            onChange={(e) => set("price", e.target.value)}
-            placeholder="Free"
+            onChange={(e) => set("price", e.target.value.replace(/[^0-9]/g, ""))}
+            placeholder="0"
             className={inputClass()}
           />
         </Field>
@@ -1492,7 +1650,9 @@ export function ReviewSection() {
             {values.capacity || "?"} seats
           </span>
           <span className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-3 py-1 text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)]">
-            {values.price || "Free"}
+            {!values.price || values.price === "0"
+              ? "Free"
+              : `$${values.price}`}
           </span>
           {values.recurrenceFreq !== "none" ? (
             <span className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-3 py-1 text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)]">

@@ -24,7 +24,8 @@ const statusRank: Record<EventStatus, number> = {
   Featured: 2,
   Waitlist: 3,
   Locked: 4,
-  Cancelled: 5,
+  Rejected: 5,
+  Cancelled: 6,
 };
 
 const regionOrder: RegionFilter[] = ["all", "Sydney", "Melbourne", "Other"];
@@ -48,13 +49,14 @@ const dateFormatter = new Intl.DateTimeFormat("en-AU", {
   minute: "2-digit",
 });
 
-const statusOrder: StatusFilter[] = ["all", "Pending", "Live", "Featured", "Waitlist", "Locked"];
+const statusOrder: StatusFilter[] = ["all", "Pending", "Live", "Featured", "Waitlist", "Locked", "Rejected"];
 
 function statusTone(status: EventStatus) {
   if (status === "Pending") return "bg-[color:var(--rose)] text-[color:var(--surface-deep)]";
   if (status === "Live") return "bg-[color:var(--peach)] text-[color:var(--surface-deep)]";
   if (status === "Featured") return "bg-[color:var(--ink)] text-[color:var(--champagne)]";
   if (status === "Waitlist") return "bg-[color:var(--cream)] text-[color:var(--ink)]";
+  if (status === "Rejected") return "bg-[color:var(--mauve)] text-[color:var(--champagne)]";
   return "bg-[color:var(--champagne)] text-[color:var(--ink)]";
 }
 
@@ -94,48 +96,67 @@ export function AdminEventQueue({ events }: { events: AdminEventRow[] }) {
   function setDateAndReset(v: DateFilter)     { setDateFilter(v);   setPage(1); }
   function setQueryAndReset(v: string)        { setQuery(v);        setPage(1); }
 
-  const counts = useMemo(() => {
-    const map = new Map<StatusFilter, number>();
-    map.set("all", rows.length);
-    for (const event of rows) {
-      map.set(event.status, (map.get(event.status) ?? 0) + 1);
-    }
-    return map;
-  }, [rows]);
-
-  const regionCounts = useMemo(() => {
-    const map = new Map<RegionFilter, number>();
-    map.set("all", rows.length);
-    for (const event of rows) {
-      map.set(event.region, (map.get(event.region) ?? 0) + 1);
-    }
-    return map;
-  }, [rows]);
-
-  const filtered = useMemo(() => {
+  // Faceted counts + filtered rows in one pass. Each facet's count reflects
+  // every OTHER active filter (but not itself), so a badge never disagrees with
+  // the table: e.g. with When=Upcoming active, the Pending badge counts only the
+  // upcoming pending events — exactly what clicking it would show. (Previously
+  // counts ignored all filters, so a past-dated pending event showed "Pending
+  // (1)" over an empty table.)
+  const { counts, regionCounts, filtered } = useMemo(() => {
     const search = query.trim().toLowerCase();
     // Snapshot "now" each time filters change. We don't need minute-level
     // freshness — admins reload often, and a stale boundary is harmless.
     // eslint-disable-next-line react-hooks/purity -- intentional snapshot inside memo
     const now = Date.now();
-    return rows.filter((event) => {
-      if (filter !== "all" && event.status !== filter) return false;
-      if (regionFilter !== "all" && event.region !== regionFilter) return false;
-      if (dateFilter !== "all") {
-        const startsMs = new Date(event.startsAt).getTime();
-        if (Number.isFinite(startsMs)) {
-          if (dateFilter === "upcoming" && startsMs < now) return false;
-          if (dateFilter === "past" && startsMs >= now) return false;
-        }
+
+    const matchesStatus = (event: AdminEventRow) => filter === "all" || event.status === filter;
+    const matchesRegion = (event: AdminEventRow) =>
+      regionFilter === "all" || event.region === regionFilter;
+    const matchesQuery = (event: AdminEventRow) =>
+      !search ||
+      event.title.toLowerCase().includes(search) ||
+      event.host.toLowerCase().includes(search) ||
+      event.category.toLowerCase().includes(search) ||
+      (event.suburb?.toLowerCase().includes(search) ?? false);
+    const matchesDate = (event: AdminEventRow) => {
+      if (dateFilter === "all") return true;
+      const startsMs = new Date(event.startsAt).getTime();
+      // Unparseable dates are never excluded by the date facet — they're noise,
+      // not a reason to hide a row from a reviewer.
+      if (!Number.isFinite(startsMs)) return true;
+      return dateFilter === "upcoming" ? startsMs >= now : startsMs < now;
+    };
+
+    const statusCounts = new Map<StatusFilter, number>();
+    const regionCountsMap = new Map<RegionFilter, number>();
+    const filteredRows: AdminEventRow[] = [];
+    let statusAll = 0;
+    let regionAll = 0;
+
+    for (const event of rows) {
+      const s = matchesStatus(event);
+      const r = matchesRegion(event);
+      const d = matchesDate(event);
+      const q = matchesQuery(event);
+
+      // Status facet ignores the status filter, region facet ignores the region
+      // filter — standard faceted-search behaviour.
+      if (r && d && q) {
+        statusAll += 1;
+        statusCounts.set(event.status, (statusCounts.get(event.status) ?? 0) + 1);
       }
-      if (!search) return true;
-      return (
-        event.title.toLowerCase().includes(search) ||
-        event.host.toLowerCase().includes(search) ||
-        event.category.toLowerCase().includes(search) ||
-        (event.suburb?.toLowerCase().includes(search) ?? false)
-      );
-    });
+      if (s && d && q) {
+        regionAll += 1;
+        regionCountsMap.set(event.region, (regionCountsMap.get(event.region) ?? 0) + 1);
+      }
+      if (s && r && d && q) {
+        filteredRows.push(event);
+      }
+    }
+    statusCounts.set("all", statusAll);
+    regionCountsMap.set("all", regionAll);
+
+    return { counts: statusCounts, regionCounts: regionCountsMap, filtered: filteredRows };
   }, [rows, filter, regionFilter, dateFilter, query]);
 
   const sorted = useMemo(() => {
@@ -200,6 +221,45 @@ export function AdminEventQueue({ events }: { events: AdminEventRow[] }) {
         ),
       );
       setMessage(`${payload.event?.title ?? "Event"} is now live.`);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function reject(eventId: string) {
+    // Capture an optional reason — it rides through to the
+    // event-rejected-merchant email + audit log. Cancel (null) aborts.
+    const reason = window.prompt(
+      "Why is this event being declined? The merchant sees this note.",
+      "",
+    );
+    if (reason === null) return;
+
+    setMessage("");
+    setBusyId(eventId);
+
+    try {
+      const response = await fetch(
+        `/api/admin/events/${encodeURIComponent(eventId)}/reject`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reason }),
+        },
+      );
+      const payload = (await response.json()) as { event?: { title?: string }; error?: string };
+
+      if (!response.ok) {
+        setMessage(payload.error ?? "Rejection failed.");
+        return;
+      }
+
+      setRows((current) =>
+        current.map((event) =>
+          event.id === eventId ? { ...event, status: "Rejected" } : event,
+        ),
+      );
+      setMessage(`${payload.event?.title ?? "Event"} was declined.`);
     } finally {
       setBusyId(null);
     }
@@ -371,12 +431,20 @@ export function AdminEventQueue({ events }: { events: AdminEventRow[] }) {
                       ) : null}
                     </p>
                   </div>
-                  <span>
+                  <span className="flex flex-col items-start gap-1">
                     <span
                       className={`inline-flex rounded-full border-2 border-[color:var(--line)] px-2.5 py-0.5 text-[0.65rem] font-black uppercase tracking-wider ${statusTone(event.status)}`}
                     >
                       {event.status}
                     </span>
+                    {event.payoutsNotConnected ? (
+                      <span
+                        title="This event charges a price but the merchant hasn't connected Stripe payouts. Approving publishes an event no one can pay for until they finish payout setup."
+                        className="inline-flex items-center gap-1 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-2 py-0.5 text-[0.6rem] font-black uppercase tracking-wider text-[color:var(--surface-deep)]"
+                      >
+                        ⚠ No payouts
+                      </span>
+                    ) : null}
                   </span>
                   <span>{event.category}</span>
                   <span>{startsLabel}</span>
@@ -389,6 +457,7 @@ export function AdminEventQueue({ events }: { events: AdminEventRow[] }) {
                     isBusy={busyId === event.id}
                     onToggleExpand={() => setExpanded(isExpanded ? null : event.id)}
                     onApprove={() => approve(event.id)}
+                    onReject={() => reject(event.id)}
                   />
                 </div>
                 {isExpanded ? (
@@ -470,12 +539,14 @@ function EventActions({
   isBusy,
   onToggleExpand,
   onApprove,
+  onReject,
 }: {
   event: AdminEventRow;
   isExpanded: boolean;
   isBusy: boolean;
   onToggleExpand: () => void;
   onApprove: () => void;
+  onReject: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -527,15 +598,32 @@ function EventActions({
           className="absolute right-0 top-10 z-20 w-56 rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-2 text-left hard-shadow-sm"
         >
           {event.status === "Pending" ? (
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => run(onApprove)}
-              disabled={isBusy}
-              className="block w-full rounded-lg px-3 py-2 text-left text-xs font-bold text-[color:var(--ink)] transition-colors hover:bg-[color:var(--peach)] disabled:opacity-60"
-            >
-              {isBusy ? "Approving…" : "Approve event"}
-            </button>
+            <>
+              {event.payoutsNotConnected ? (
+                <p className="mb-1 rounded-lg bg-[color:var(--peach)] px-3 py-2 text-[0.65rem] font-bold leading-snug text-[color:var(--surface-deep)]">
+                  ⚠ Paid event, but the merchant hasn&rsquo;t connected payouts.
+                  Approving publishes it; no one can pay until they finish setup.
+                </p>
+              ) : null}
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => run(onApprove)}
+                disabled={isBusy}
+                className="block w-full rounded-lg px-3 py-2 text-left text-xs font-bold text-[color:var(--ink)] transition-colors hover:bg-[color:var(--peach)] disabled:opacity-60"
+              >
+                {isBusy ? "Approving…" : "Approve event"}
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => run(onReject)}
+                disabled={isBusy}
+                className="block w-full rounded-lg px-3 py-2 text-left text-xs font-bold text-[color:var(--rose)] transition-colors hover:bg-[color:var(--rose)] hover:text-[color:var(--surface-deep)] disabled:opacity-60"
+              >
+                {isBusy ? "Working…" : "Reject event"}
+              </button>
+            </>
           ) : null}
           <button
             type="button"

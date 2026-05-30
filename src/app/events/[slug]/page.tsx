@@ -19,6 +19,13 @@ type PageProps = {
   searchParams?: Promise<{ canceled?: string }>;
 };
 
+// Statuses an event must be in to be visible to the public. Pending (awaiting
+// admin review), Rejected, and Cancelled events are hidden — the discover/browse
+// queries already exclude them, and this gate closes the direct-URL hole so an
+// unreviewed event can't be shared around before approval. The owning merchant
+// and admins are exempt so they can still preview.
+const PUBLIC_EVENT_STATUSES = new Set(["Featured", "Live", "Waitlist", "Locked"]);
+
 function formatLongDate(iso: string) {
   return new Intl.DateTimeFormat("en-AU", {
     weekday: "long",
@@ -86,6 +93,17 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
   ]);
 
   if (!event) notFound();
+
+  // Hide not-yet-public events (pending review, rejected, cancelled) from
+  // everyone except the owning merchant and admins. Without this, a direct slug
+  // link rendered the full listing — RSVP button and all — for any visitor.
+  if (!PUBLIC_EVENT_STATUSES.has(event.status)) {
+    const isAdmin = profileStatus?.role === "admin";
+    const isOwner =
+      Boolean(event.merchantProfileId) &&
+      profileStatus?.merchantProfile?.id === event.merchantProfileId;
+    if (!isAdmin && !isOwner) notFound();
+  }
 
   const startsAtMs = new Date(event.startsAt).getTime();
   // eslint-disable-next-line react-hooks/purity -- async server component, evaluated once per request

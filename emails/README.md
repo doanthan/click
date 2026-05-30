@@ -34,7 +34,7 @@ The first four are wired through `logEmailEvent` (see "Dev log" below). The rest
 | `merchant-rejected-merchant.html` | Same route, declined. | `{{businessName}} application — one small change` |
 | `event-created-merchant.html` | After a merchant submits an event for review (`POST /api/merchant/events`). | `Your event is in review — {{eventTitle}}` |
 | `event-approved-merchant.html` | After `POST /api/admin/events/[eventId]/approve` succeeds. | `{{eventTitle}} is live` |
-| `event-rejected-merchant.html` | Same route, declined. | `{{eventTitle}} needs another pass` |
+| `event-rejected-merchant.html` | After `POST /api/admin/events/[eventId]/reject` succeeds. | `{{eventTitle}} needs another pass` |
 | `rsvp-merchant.html` | Same trigger as `rsvp-attendee.html`, sent to the event's owning merchant. | `New RSVP — {{attendeeFirstName}} is going to {{eventTitle}}` |
 | `rsvp-cancelled-merchant.html` | Same trigger as `rsvp-cancelled-attendee.html`, sent to the event's owning merchant. | `{{attendeeFirstName}} can't make {{eventTitle}}` |
 
@@ -310,7 +310,7 @@ Click doesn't have an email backend wired up yet. When adding one, the recommend
 
 ## Open to-dos
 
-- Trigger sites are now wired for `event-approved-merchant`, `rsvp-cancelled-*`, `event-cancelled-attendee`, `merchant-application-received`, `merchant-verified/rejected-merchant`, `payment-receipt-attendee`, and `password-reset` (see the "Wired triggers" table in `CLAUDE.md` for the exact handler per template). Still unwired: `event-rejected-merchant` (no event-rejection handler exists yet — add the `logEmailEvent` call when you build one) and `event-reminder-attendee` (cron, below).
+- Trigger sites are now wired for `event-approved-merchant`, `event-rejected-merchant`, `rsvp-cancelled-*`, `event-cancelled-attendee`, `merchant-application-received`, `merchant-verified/rejected-merchant`, `payment-receipt-attendee`, and `password-reset` (see the "Wired triggers" table in `CLAUDE.md` for the exact handler per template). Still unwired: `event-reminder-attendee` (cron, below).
 - `event-reminder-attendee` needs a scheduler, not a request handler. Easiest path is a daily cron job that selects `events` starting ~24h out, joins confirmed RSVPs, and calls `logEmailEvent` per row. Pick the cron mechanism (Supabase `pg_cron`, Vercel cron, GitHub Actions) before building it.
 - Hook the unsubscribe link to a real preferences page — placeholder `unsubscribeUrl` won't satisfy CAN-SPAM/CASL on its own.
 - `payment-receipt-attendee.html` footer hard-codes a placeholder ABN. Fill in the real ABN once Click Pty Ltd is registered, and reconsider the GST line if you launch outside AU first.

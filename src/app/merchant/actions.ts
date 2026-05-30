@@ -10,7 +10,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export async function toggleAttendeeCheckInAction(formData: FormData) {
   const session = await auth();
   if (!session?.user) {
-    redirect("/merchant/login?callbackUrl=/merchant?tab=attendees");
+    redirect("/merchant/login?callbackUrl=/merchant?tab=bookings");
   }
 
   const id = formData.get("attendee_id");

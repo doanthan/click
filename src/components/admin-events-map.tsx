@@ -24,6 +24,7 @@ const STATUS_HEX: Record<EventStatus, { bg: string; fg: string }> = {
   Featured: { bg: "#340068", fg: "#F7E1B5" },
   Waitlist: { bg: "#FFF1D6", fg: "#340068" },
   Locked: { bg: "#F7E1B5", fg: "#340068" },
+  Rejected: { bg: "#8C7A9E", fg: "#FFFCF9" },
   Cancelled: { bg: "#C9B8D6", fg: "#340068" },
 };
 

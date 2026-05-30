@@ -1,12 +1,13 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import type { Session } from "next-auth";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
-import { MetricCard, Pill, SectionIntro } from "@/components/click-ui";
-import { CreateEventForm } from "@/components/create-event-form";
+import { MetricCard, Pill } from "@/components/click-ui";
 import { MerchantCalendar } from "@/components/merchant-calendar";
 import { MerchantEventsPanel } from "@/components/merchant-events-panel";
 import { MerchantAttendeesPanel } from "@/components/merchant-attendees-panel";
+import { MerchantSidebar, type MerchantTabKey } from "@/components/merchant-sidebar";
 import { StripeDashboardButton } from "@/components/stripe-dashboard-button";
 import {
   getMerchantAllAttendees,
@@ -21,20 +22,17 @@ export const metadata = {
   description: "Click merchant portal for event hosts, booking models, payments, and analytics.",
 };
 
-const TABS = [
-  { key: "dashboard", label: "Dashboard" },
-  { key: "events", label: "Events" },
-  { key: "venues", label: "Venues" },
-  { key: "attendees", label: "Attendees" },
-  { key: "bookings", label: "Bookings" },
-  { key: "finances", label: "Finances" },
-  { key: "analytics", label: "Analytics" },
-  { key: "discounts", label: "Discounts" },
-  { key: "support", label: "Support" },
-  { key: "settings", label: "Settings" },
-] as const;
-
-type TabKey = (typeof TABS)[number]["key"];
+// Consolidated from ten tabs down to five. Venues now live under Events,
+// Attendees + Bookings merged into Bookings, Analytics folded into Dashboard,
+// and Discounts + Support merged into Settings. Keys are validated against this
+// list when reading `?tab=`.
+const TAB_KEYS: MerchantTabKey[] = [
+  "dashboard",
+  "events",
+  "bookings",
+  "finances",
+  "settings",
+];
 
 const priceFormatter = new Intl.NumberFormat("en-AU", {
   style: "currency",
@@ -81,176 +79,186 @@ export default async function MerchantPage({ searchParams }: MerchantPageProps) 
   }
 
   const params = (await searchParams) ?? {};
-  const tab: TabKey = TABS.some((t) => t.key === params.tab)
-    ? (params.tab as TabKey)
+  const tab: MerchantTabKey = TAB_KEYS.includes(params.tab as MerchantTabKey)
+    ? (params.tab as MerchantTabKey)
     : "dashboard";
 
   const merchantEvents = await getMerchantEvents(session);
-  const merchantApproved = status.merchantProfile.verification_status === "approved";
-  // eslint-disable-next-line react-hooks/purity -- async server component, evaluated once per request
-  const now = Date.now();
-  const upcomingEvents = merchantEvents.filter(
-    (event) => new Date(event.startsAt).getTime() >= now,
-  );
-
-  // Analytics tab still wants the rolled-up totals; the hero that previously
-  // surfaced them was redundant with the dashboard sections below, so it's
-  // gone. fillRate / pendingCount lived only in that hero and went with it.
-  const totalConfirmed = merchantEvents.reduce((sum, event) => sum + event.confirmed, 0);
-  const totalCapacity = merchantEvents.reduce((sum, event) => sum + event.capacity, 0);
-  const totalRevenueCents = merchantEvents.reduce(
-    (sum, event) => sum + event.priceCents * event.confirmed,
-    0,
-  );
+  // Past this point the merchant is always approved (the redirect above guards
+  // it), so there's no "pending host" branch to render anymore.
+  const businessName = status.merchantProfile.business_name;
+  const payoutsEnabled = status.merchantProfile.payouts_enabled;
 
   return (
-    <main className="min-h-screen bg-[color:var(--champagne)] text-[color:var(--ink)]">
-      <nav className="sticky top-0 z-30 border-b-2 border-[color:var(--line)] bg-[color:var(--cream)]">
-        <div className="mx-auto flex max-w-7xl items-center gap-2 overflow-x-auto px-4 py-3 sm:px-6">
-          <span className="font-mono shrink-0 text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-            Portal ✷
-          </span>
-          {TABS.map((t) => {
-            const active = t.key === tab;
-            return (
-              <Link
-                key={t.key}
-                href={`/merchant?tab=${t.key}`}
-                className={`shrink-0 rounded-full border-2 border-[color:var(--line)] px-4 py-1.5 text-xs font-bold uppercase tracking-wide hard-shadow-sm ${
-                  active
-                    ? "bg-[color:var(--rose)] text-[color:var(--surface-deep)]"
-                    : "bg-[color:var(--champagne)] text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
-                }`}
-              >
-                {t.label}
-              </Link>
-            );
-          })}
+    <main className="min-h-screen bg-[color:var(--champagne)] px-4 py-8 text-[color:var(--ink)] sm:px-6 lg:py-10">
+      <div className="mx-auto flex max-w-7xl flex-col gap-6 lg:flex-row lg:items-start lg:gap-8">
+        <MerchantSidebar
+          activeTab={tab}
+          businessName={businessName}
+          counts={{ events: merchantEvents.length }}
+        />
+        <div className="min-w-0 flex-1">
+          {tab === "dashboard" ? (
+            <DashboardTab
+              merchantEvents={merchantEvents}
+              monthParam={params.month}
+              businessName={businessName}
+              payoutsEnabled={payoutsEnabled}
+            />
+          ) : null}
+          {tab === "events" ? <EventsTab events={merchantEvents} /> : null}
+          {tab === "bookings" ? <BookingsTabAsync session={session} /> : null}
+          {tab === "finances" ? <FinancesTabAsync session={session} /> : null}
+          {tab === "settings" ? (
+            <SettingsTab
+              businessName={businessName}
+              verification={status.merchantProfile.verification_status}
+            />
+          ) : null}
         </div>
-      </nav>
-
-      {tab === "dashboard" ? (
-        <DashboardTab
-          merchantEvents={merchantEvents}
-          upcomingCount={upcomingEvents.length}
-          monthParam={params.month}
-          merchantApproved={merchantApproved}
-          verificationStatus={status.merchantProfile.verification_status}
-          businessName={status.merchantProfile.business_name}
-          payoutsEnabled={status.merchantProfile.payouts_enabled}
-        />
-      ) : null}
-      {tab === "events" ? <EventsTab events={merchantEvents} /> : null}
-      {tab === "venues" ? <VenuesTab merchantEvents={merchantEvents} /> : null}
-      {tab === "attendees" ? <AttendeesTabAsync session={session} /> : null}
-      {tab === "bookings" ? <BookingsTabAsync session={session} /> : null}
-      {tab === "finances" ? <FinancesTabAsync session={session} /> : null}
-      {tab === "analytics" ? (
-        <AnalyticsTab
-          totalConfirmed={totalConfirmed}
-          totalCapacity={totalCapacity}
-          totalRevenueCents={totalRevenueCents}
-          merchantEvents={merchantEvents}
-        />
-      ) : null}
-      {tab === "discounts" ? <DiscountsTab /> : null}
-      {tab === "support" ? <SupportTab /> : null}
-      {tab === "settings" ? (
-        <SettingsTab
-          businessName={status.merchantProfile.business_name}
-          verification={status.merchantProfile.verification_status}
-        />
-      ) : null}
+      </div>
     </main>
+  );
+}
+
+// Lightweight section header sized for the content column (the old SectionIntro
+// rendered 6xl display titles meant for full-bleed marketing sections).
+function TabHeader({
+  eyebrow,
+  title,
+  body,
+  action,
+}: {
+  eyebrow: string;
+  title: string;
+  body?: string;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="max-w-2xl">
+        <p className="eyebrow">{eyebrow}</p>
+        <h1 className="font-display mt-2 text-3xl font-light leading-tight tracking-tight text-[color:var(--ink)] sm:text-4xl">
+          {title}
+        </h1>
+        {body ? (
+          <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+            {body}
+          </p>
+        ) : null}
+      </div>
+      {action ? <div className="shrink-0">{action}</div> : null}
+    </div>
   );
 }
 
 function DashboardTab({
   merchantEvents,
-  upcomingCount,
   monthParam,
-  merchantApproved,
-  verificationStatus,
   businessName,
   payoutsEnabled,
 }: {
   merchantEvents: Awaited<ReturnType<typeof getMerchantEvents>>;
-  upcomingCount: number;
   monthParam?: string;
-  merchantApproved: boolean;
-  verificationStatus: string;
   businessName: string;
   payoutsEnabled: boolean;
 }) {
+  // eslint-disable-next-line react-hooks/purity -- async server component, evaluated once per request
+  const now = Date.now();
+  const upcomingCount = merchantEvents.filter(
+    (event) => new Date(event.startsAt).getTime() >= now,
+  ).length;
+
+  // Analytics summary (folded in from the old Analytics tab).
+  const totalConfirmed = merchantEvents.reduce((sum, e) => sum + e.confirmed, 0);
+  const totalCapacity = merchantEvents.reduce((sum, e) => sum + e.capacity, 0);
+  const totalRevenueCents = merchantEvents.reduce(
+    (sum, e) => sum + e.priceCents * e.confirmed,
+    0,
+  );
+  const fillRate = totalCapacity > 0 ? Math.round((totalConfirmed / totalCapacity) * 100) : 0;
+
   // First-run welcome: shown only while the merchant has zero events. It
-  // disappears on its own once the first event is created, so there's no
-  // dismiss-state to persist.
-  const showWelcome = merchantApproved && merchantEvents.length === 0;
+  // disappears on its own once the first event is created.
+  const showWelcome = merchantEvents.length === 0;
+
   return (
-    <>
-      {merchantApproved && !payoutsEnabled ? <PayoutSetupBanner /> : null}
+    <div className="space-y-10 py-10">
+      {!payoutsEnabled ? <PayoutSetupBanner /> : null}
       {showWelcome ? <WelcomeToClick businessName={businessName} /> : null}
 
-      <section className="bg-[color:var(--champagne)] py-12">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6">
-          <SectionIntro
-            eyebrow="Calendar"
-            title={
-              upcomingCount > 0
-                ? `${upcomingCount} upcoming event${upcomingCount === 1 ? "" : "s"}.`
-                : "Your hosting calendar."
-            }
-            body="Each day shows your events and how many people have booked. Click any chip to see attendees."
-          />
+      <TabHeader
+        eyebrow="Overview"
+        title={
+          upcomingCount > 0
+            ? `${upcomingCount} upcoming event${upcomingCount === 1 ? "" : "s"}.`
+            : "Your hosting dashboard."
+        }
+        body="Snapshot of bookings and revenue across all your events, plus the calendar below."
+      />
 
-          <div className="mt-8">
-            <MerchantCalendar events={merchantEvents} monthParam={monthParam} />
-          </div>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <MetricCard label="Upcoming" value={upcomingCount.toString()} tone="pink" />
+        <MetricCard label="Confirmed RSVPs" value={totalConfirmed.toString()} tone="aqua" />
+        <MetricCard label="Fill rate" value={`${fillRate}%`} tone="white" />
+        <MetricCard label="Revenue" value={formatPrice(totalRevenueCents)} tone="white" />
+      </div>
+
+      <section>
+        <p className="eyebrow">Calendar</p>
+        <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+          Each day shows your events and how many people have booked. Click any
+          chip to see attendees.
+        </p>
+        <div className="mt-6">
+          <MerchantCalendar events={merchantEvents} monthParam={monthParam} />
         </div>
       </section>
 
-      <section className="bg-[color:var(--peach)] py-12">
-        <div className="mx-auto grid max-w-7xl gap-8 px-4 sm:px-6 lg:grid-cols-[0.74fr_1.26fr]">
-          <div>
-            <SectionIntro
-              eyebrow="Create event"
-              title={
-                merchantApproved
-                  ? "Add another event."
-                  : "Approval required before publishing."
-              }
-              body={
-                merchantApproved
-                  ? "Set the venue, date, seats, and price. Submissions go to admin for review."
-                  : "An admin needs to approve your merchant profile before you can create Click-managed events."
-              }
-            />
-            {merchantApproved ? (
-              <Link
-                href="/merchant/events/create"
-                className="mt-6 inline-flex rounded-full border-2 border-[color:var(--surface-deep)] bg-[color:var(--rose)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
-              >
-                Use 5-step wizard →
-              </Link>
-            ) : null}
-          </div>
+      {merchantEvents.length > 0 ? (
+        <ConfirmedRsvpChart merchantEvents={merchantEvents} />
+      ) : null}
+    </div>
+  );
+}
 
-          {merchantApproved ? (
-            <CreateEventForm />
-          ) : (
-            <div className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-6 hard-shadow-sm">
-              <p className="font-display text-3xl font-light leading-tight">
-                Current status: {verificationStatus}
-              </p>
-              <p className="mt-3 text-sm font-semibold leading-6 text-[color:var(--mauve)]">
-                Your ABN, website, and contact details are visible to admins in
-                the merchant approval queue. Once approved, this form unlocks.
-              </p>
-            </div>
-          )}
-        </div>
-      </section>
-    </>
+// Per-event RSVP bar list, folded in from the old Analytics tab.
+function ConfirmedRsvpChart({
+  merchantEvents,
+}: {
+  merchantEvents: Awaited<ReturnType<typeof getMerchantEvents>>;
+}) {
+  const max = Math.max(...merchantEvents.map((e) => e.confirmed), 1);
+  return (
+    <section className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-5 hard-shadow-sm">
+      <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
+        Confirmed RSVPs per event
+      </span>
+      <ul className="mt-5 space-y-3">
+        {merchantEvents.slice(0, 10).map((e) => {
+          const pct = Math.round((e.confirmed / max) * 100);
+          return (
+            <li key={e.slug}>
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="font-bold text-[color:var(--ink)] truncate">
+                  {e.status === "Pending" ? "· " : ""}
+                  {e.suburb} · {e.category}
+                </span>
+                <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+                  {e.confirmed}/{e.capacity}
+                </span>
+              </div>
+              <div className="mt-1 h-2 w-full rounded-full bg-[color:var(--peach-soft)]">
+                <div
+                  className="h-2 rounded-full bg-[color:var(--rose)]"
+                  style={{ width: `${Math.max(pct, 4)}%` }}
+                />
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 
@@ -259,19 +267,17 @@ function DashboardTab({
 // events, but paid events can't pay out — so we keep the path one click away.
 function PayoutSetupBanner() {
   return (
-    <section className="border-b-2 border-[color:var(--line)] bg-[color:var(--rose)]">
-      <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
-        <p className="text-sm font-bold text-[color:var(--surface-deep)]">
-          ✷ Connect your bank to take payments — finish payout setup to publish paid events.
-        </p>
-        <Link
-          href="/merchant/onboarding/payouts"
-          className="inline-flex shrink-0 rounded-full border-2 border-[color:var(--surface-deep)] bg-[color:var(--champagne)] px-4 py-1.5 text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--cream)]"
-        >
-          Finish payout setup →
-        </Link>
-      </div>
-    </section>
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-4 py-3 hard-shadow-sm">
+      <p className="text-sm font-bold text-[color:var(--surface-deep)]">
+        ✷ Connect your bank to take payments — finish payout setup to publish paid events.
+      </p>
+      <Link
+        href="/merchant/onboarding/payouts"
+        className="inline-flex shrink-0 rounded-full border-2 border-[color:var(--surface-deep)] bg-[color:var(--champagne)] px-4 py-1.5 text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--cream)]"
+      >
+        Finish payout setup →
+      </Link>
+    </div>
   );
 }
 
@@ -280,7 +286,7 @@ function WelcomeToClick({ businessName }: { businessName: string }) {
     {
       n: "01",
       title: "Create your first event.",
-      body: "Pick a date, capacity, and price. Use the 5-step wizard or the quick form below — submissions go live the moment they pass admin review.",
+      body: "Pick a date, capacity, and price in the 5-step wizard — submissions go live the moment they pass admin review.",
     },
     {
       n: "02",
@@ -290,68 +296,61 @@ function WelcomeToClick({ businessName }: { businessName: string }) {
     {
       n: "03",
       title: "Run the door.",
-      body: "Open Attendees on the day to check people in, message no-shows, or export a CSV. Payouts land in Finances after the event wraps.",
+      body: "Open Bookings on the day to check people in, message no-shows, or export a CSV. Payouts land in Finances after the event wraps.",
     },
   ];
 
   return (
-    <section className="border-b-2 border-[color:var(--line)] bg-[color:var(--peach-soft)] py-12">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6">
-        <div className="grid gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-start">
-          <div>
-            <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
-              ✷ Welcome to Click
+    <section className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--peach-soft)] p-6 hard-shadow-sm sm:p-8">
+      <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
+        ✷ Welcome to Click
+      </span>
+      <h2 className="font-display mt-3 text-3xl font-light leading-[1.04] text-[color:var(--ink)] sm:text-4xl">
+        You&apos;re in, {businessName}.
+      </h2>
+      <p className="mt-4 max-w-prose text-sm font-medium leading-6 text-[color:var(--mauve)]">
+        Your merchant profile is approved. This portal is where you spin up
+        events, watch RSVPs roll in, and get paid. Here&apos;s the three-step lap
+        so you know the room.
+      </p>
+      <div className="mt-5 flex flex-wrap gap-2">
+        <Pill tone="rose">Approved host</Pill>
+        <Pill tone="peach">No events yet</Pill>
+        <Pill>Free + paid supported</Pill>
+      </div>
+      <ol className="mt-6 grid gap-3 md:grid-cols-3">
+        {steps.map((step) => (
+          <li
+            key={step.n}
+            className="flex gap-4 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-5 hard-shadow-sm"
+          >
+            <span className="font-display shrink-0 text-3xl font-light leading-none text-[color:var(--rose)]">
+              {step.n}
             </span>
-            <h2 className="font-display mt-3 text-4xl font-light leading-[1.04] text-[color:var(--ink)] sm:text-5xl">
-              You&apos;re in, {businessName}.
-            </h2>
-            <p className="mt-4 max-w-prose text-sm font-medium leading-6 text-[color:var(--mauve)]">
-              Your merchant profile is approved. This portal is where you spin
-              up events, watch RSVPs roll in, and get paid. Here&apos;s the
-              three-step lap so you know the room.
-            </p>
-            <div className="mt-6 flex flex-wrap gap-2">
-              <Pill tone="rose">Approved host</Pill>
-              <Pill tone="peach">No events yet</Pill>
-              <Pill>Free + paid supported</Pill>
+            <div className="min-w-0">
+              <p className="font-display text-xl font-light leading-tight text-[color:var(--ink)]">
+                {step.title}
+              </p>
+              <p className="mt-1.5 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+                {step.body}
+              </p>
             </div>
-            <div className="mt-6 flex flex-wrap gap-3">
-              <Link
-                href="/merchant/events/create"
-                className="inline-flex rounded-full border-2 border-[color:var(--surface-deep)] bg-[color:var(--rose)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
-              >
-                Create your first event →
-              </Link>
-              <Link
-                href="/merchant?tab=support"
-                className="inline-flex rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)]"
-              >
-                Read the FAQ
-              </Link>
-            </div>
-          </div>
-
-          <ol className="grid gap-3 sm:grid-cols-1">
-            {steps.map((step) => (
-              <li
-                key={step.n}
-                className="flex gap-4 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-5 hard-shadow-sm"
-              >
-                <span className="font-display shrink-0 text-3xl font-light leading-none text-[color:var(--rose)]">
-                  {step.n}
-                </span>
-                <div className="min-w-0">
-                  <p className="font-display text-xl font-light leading-tight text-[color:var(--ink)]">
-                    {step.title}
-                  </p>
-                  <p className="mt-1.5 text-sm font-medium leading-6 text-[color:var(--mauve)]">
-                    {step.body}
-                  </p>
-                </div>
-              </li>
-            ))}
-          </ol>
-        </div>
+          </li>
+        ))}
+      </ol>
+      <div className="mt-6 flex flex-wrap gap-3">
+        <Link
+          href="/merchant/events/create"
+          className="inline-flex rounded-full border-2 border-[color:var(--surface-deep)] bg-[color:var(--rose)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
+        >
+          Create your first event →
+        </Link>
+        <Link
+          href="/merchant?tab=settings"
+          className="inline-flex rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)]"
+        >
+          Read the FAQ
+        </Link>
       </div>
     </section>
   );
@@ -362,50 +361,46 @@ function EventsTab({
 }: {
   events: Awaited<ReturnType<typeof getMerchantEvents>>;
 }) {
-  return (
-    <section className="bg-[color:var(--champagne)] py-12">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6">
-        <SectionIntro
-          eyebrow="My events"
-          title="All hosting commitments."
-          body="Filter by status and click any row to open attendees, edit, or cancel."
-        />
-        <div className="mt-8">
-          <MerchantEventsPanel events={events} />
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function VenuesTab({
-  merchantEvents,
-}: {
-  merchantEvents: Awaited<ReturnType<typeof getMerchantEvents>>;
-}) {
+  // Distinct venues, derived from events (folded in from the old Venues tab).
   const venues = Array.from(
     new Map(
-      merchantEvents.map((e) => [
+      events.map((e) => [
         `${e.locationName}|${e.suburb}`,
         { locationName: e.locationName, suburb: e.suburb, count: 0 },
       ]),
     ).values(),
   );
-  for (const e of merchantEvents) {
+  for (const e of events) {
     const v = venues.find((v) => v.locationName === e.locationName && v.suburb === e.suburb);
     if (v) v.count++;
   }
 
   return (
-    <section className="bg-[color:var(--champagne)] py-12">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6">
-        <SectionIntro
-          eyebrow="Venues"
-          title="Where you host."
-          body="Distinct venues across all your events. A full venues table with capacity and floor plans lands with the venue-management migration."
-        />
+    <div className="space-y-10 py-10">
+      <TabHeader
+        eyebrow="My events"
+        title="Events & venues."
+        body="Filter by status and click any row to open attendees, edit, or cancel."
+        action={
+          <Link
+            href="/merchant/events/create"
+            className="inline-flex rounded-full border-2 border-[color:var(--surface-deep)] bg-[color:var(--rose)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
+          >
+            Create event →
+          </Link>
+        }
+      />
+
+      <MerchantEventsPanel events={events} />
+
+      <section>
+        <p className="eyebrow">Venues</p>
+        <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+          Distinct venues across all your events. A full venues table with
+          capacity and floor plans lands with the venue-management migration.
+        </p>
         {venues.length > 0 ? (
-          <div className="mt-8 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {venues.map((venue) => (
               <article
                 key={`${venue.locationName}-${venue.suburb}`}
@@ -427,34 +422,12 @@ function VenuesTab({
             ))}
           </div>
         ) : (
-          <p className="mt-8 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-6 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+          <p className="mt-6 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-6 text-sm font-medium leading-6 text-[color:var(--mauve)]">
             No venues yet — create an event to add one.
           </p>
         )}
-      </div>
-    </section>
-  );
-}
-
-async function AttendeesTabAsync({
-  session,
-}: {
-  session: Session | null;
-}) {
-  const attendees = await getMerchantAllAttendees(session);
-  return (
-    <section className="bg-[color:var(--champagne)] py-12">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6">
-        <SectionIntro
-          eyebrow="Attendees"
-          title="People booked across your events."
-          body="Toggle check-in on the day. Export to CSV for door lists."
-        />
-        <div className="mt-8">
-          <MerchantAttendeesPanel rows={attendees} />
-        </div>
-      </div>
-    </section>
+      </section>
+    </div>
   );
 }
 
@@ -464,6 +437,8 @@ async function BookingsTabAsync({
   session: Session | null;
 }) {
   const attendees = await getMerchantAllAttendees(session);
+
+  // Per-event summary (folded in from the old Bookings tab).
   const grouped = new Map<string, typeof attendees>();
   for (const a of attendees) {
     const list = grouped.get(a.eventSlug) ?? [];
@@ -472,19 +447,17 @@ async function BookingsTabAsync({
   }
 
   return (
-    <section className="bg-[color:var(--champagne)] py-12">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6">
-        <SectionIntro
-          eyebrow="Bookings"
-          title="By event."
-          body="Bookings grouped by event, with status counts."
-        />
-        {grouped.size === 0 ? (
-          <p className="mt-8 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-6 text-sm font-medium leading-6 text-[color:var(--mauve)]">
-            No bookings yet.
-          </p>
-        ) : (
-          <ul className="mt-8 space-y-4">
+    <div className="space-y-10 py-10">
+      <TabHeader
+        eyebrow="Bookings"
+        title="Everyone booked across your events."
+        body="Per-event status counts up top; toggle check-in or export the full door list below."
+      />
+
+      {grouped.size > 0 ? (
+        <section>
+          <p className="eyebrow">By event</p>
+          <ul className="mt-6 space-y-4">
             {Array.from(grouped.entries()).map(([slug, list]) => {
               const confirmed = list.filter((a) => a.status === "confirmed").length;
               const waitlisted = list.filter((a) => a.status === "waitlisted").length;
@@ -516,16 +489,26 @@ async function BookingsTabAsync({
               );
             })}
           </ul>
-        )}
-      </div>
-    </section>
+        </section>
+      ) : null}
+
+      <section>
+        <p className="eyebrow">All attendees</p>
+        <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+          Toggle check-in on the day. Export to CSV for door lists.
+        </p>
+        <div className="mt-6">
+          <MerchantAttendeesPanel rows={attendees} />
+        </div>
+      </section>
+    </div>
   );
 }
 
 // Payout-status row at the top of the Finances tab. Drives a five-state badge
 // from the cached Connect capability columns and surfaces the right CTA for
-// each state — same source of truth as the /merchant?tab=dashboard banner so
-// the two views never disagree.
+// each state — same source of truth as the dashboard banner so the two views
+// never disagree.
 function PayoutStatusCard({
   connect,
 }: {
@@ -562,7 +545,7 @@ function PayoutStatusCard({
   const ready = connect.hasAccount && connect.chargesEnabled;
 
   return (
-    <div className="mt-8 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] hard-shadow-sm">
+    <div className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] hard-shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-4 p-5">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-3">
@@ -601,7 +584,7 @@ function RecentPayoutsCard({
   payouts: MerchantFinancesSummary["recentPayouts"];
 }) {
   return (
-    <div className="mt-6 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] hard-shadow-sm">
+    <div className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] hard-shadow-sm">
       <div className="border-b-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-3">
         <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
           Recent payouts
@@ -653,154 +636,67 @@ async function FinancesTabAsync({
   const finances = await getMerchantFinancesSummary(session);
 
   return (
-    <section className="bg-[color:var(--champagne)] py-12">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6">
-        <SectionIntro
-          eyebrow="Finances"
-          title="Payouts + revenue."
-          body="Click-managed paid events route through Stripe. Free events don’t appear here."
-        />
-        <PayoutStatusCard connect={finances.connect} />
-        <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <MetricCard label="Total" value={formatPrice(finances.totalRevenueCents)} tone="pink" />
-          <MetricCard label="Paid" value={formatPrice(finances.paidRevenueCents)} tone="aqua" />
-          <MetricCard label="Pending" value={formatPrice(finances.pendingRevenueCents)} tone="white" />
-          <MetricCard label="Refunded" value={formatPrice(finances.refundedRevenueCents)} tone="white" />
-        </div>
-        <RecentPayoutsCard payouts={finances.recentPayouts} />
-        <div className="mt-6 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] hard-shadow-sm">
-          <div className="border-b-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-3">
-            <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
-              Recent transactions
-            </span>
-          </div>
-          {finances.recentTransactions.length === 0 ? (
-            <p className="p-6 text-sm font-medium leading-6 text-[color:var(--mauve)]">
-              No transactions yet.
-            </p>
-          ) : (
-            <ul className="divide-y-2 divide-[color:var(--line-soft)]">
-              {finances.recentTransactions.map((t) => (
-                <li
-                  key={t.id}
-                  className="flex flex-wrap items-center justify-between gap-3 px-5 py-3"
-                >
-                  <div className="min-w-0">
-                    <p className="font-bold text-[color:var(--ink)] truncate">
-                      {t.eventTitle}
-                    </p>
-                    <p className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
-                      {dateTimeFormatter.format(new Date(t.createdAt))}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <Pill tone={t.status === "paid" ? "peach" : "rose"}>{t.status}</Pill>
-                    <span className="font-bold text-[color:var(--ink)]">
-                      {formatPrice(t.amountCents)}
-                    </span>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+    <div className="space-y-8 py-10">
+      <TabHeader
+        eyebrow="Finances"
+        title="Payouts + revenue."
+        body="Click-managed paid events route through Stripe. Free events don’t appear here."
+      />
+      <PayoutStatusCard connect={finances.connect} />
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <MetricCard label="Total" value={formatPrice(finances.totalRevenueCents)} tone="pink" />
+        <MetricCard label="Paid" value={formatPrice(finances.paidRevenueCents)} tone="aqua" />
+        <MetricCard label="Pending" value={formatPrice(finances.pendingRevenueCents)} tone="white" />
+        <MetricCard label="Refunded" value={formatPrice(finances.refundedRevenueCents)} tone="white" />
       </div>
-    </section>
-  );
-}
-
-function AnalyticsTab({
-  totalConfirmed,
-  totalCapacity,
-  totalRevenueCents,
-  merchantEvents,
-}: {
-  totalConfirmed: number;
-  totalCapacity: number;
-  totalRevenueCents: number;
-  merchantEvents: Awaited<ReturnType<typeof getMerchantEvents>>;
-}) {
-  const max = Math.max(...merchantEvents.map((e) => e.confirmed), 1);
-  return (
-    <section className="bg-[color:var(--champagne)] py-12">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6">
-        <SectionIntro
-          eyebrow="Analytics"
-          title="Performance at a glance."
-          body="Confirmed RSVPs per event, fill rate trend, revenue summary."
-        />
-        <div className="mt-8 grid gap-3 sm:grid-cols-3">
-          <MetricCard label="Confirmed RSVPs" value={totalConfirmed.toString()} tone="pink" />
-          <MetricCard
-            label="Fill rate"
-            value={`${totalCapacity > 0 ? Math.round((totalConfirmed / totalCapacity) * 100) : 0}%`}
-            tone="aqua"
-          />
-          <MetricCard label="Revenue" value={formatPrice(totalRevenueCents)} tone="white" />
-        </div>
-
-        <div className="mt-8 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-5 hard-shadow-sm">
+      <RecentPayoutsCard payouts={finances.recentPayouts} />
+      <div className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] hard-shadow-sm">
+        <div className="border-b-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-3">
           <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
-            Confirmed RSVPs per event
+            Recent transactions
           </span>
-          {merchantEvents.length === 0 ? (
-            <p className="mt-4 text-sm font-medium leading-6 text-[color:var(--mauve)]">
-              No events yet.
-            </p>
-          ) : (
-            <ul className="mt-5 space-y-3">
-              {merchantEvents.slice(0, 10).map((e) => {
-                const pct = Math.round((e.confirmed / max) * 100);
-                return (
-                  <li key={e.slug}>
-                    <div className="flex items-baseline justify-between gap-3">
-                      <span className="font-bold text-[color:var(--ink)] truncate">
-                        {e.status === "Pending" ? "· " : ""}
-                        {e.suburb} · {e.category}
-                      </span>
-                      <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-                        {e.confirmed}/{e.capacity}
-                      </span>
-                    </div>
-                    <div className="mt-1 h-2 w-full rounded-full bg-[color:var(--peach-soft)]">
-                      <div
-                        className="h-2 rounded-full bg-[color:var(--rose)]"
-                        style={{ width: `${Math.max(pct, 4)}%` }}
-                      />
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
         </div>
-      </div>
-    </section>
-  );
-}
-
-function DiscountsTab() {
-  return (
-    <section className="bg-[color:var(--champagne)] py-12">
-      <div className="mx-auto max-w-3xl px-4 sm:px-6">
-        <SectionIntro
-          eyebrow="Discounts"
-          title="Promo codes & comp tickets."
-          body="Issue percent-off, fixed-amount, or comp codes per event. The discount-codes migration lands next."
-        />
-        <div className="mt-8 rounded-3xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-6">
-          <p className="text-sm font-medium leading-6 text-[color:var(--mauve)]">
-            Discount code generator coming with the next migration. For now, share
-            a unique paid-event link directly with comp guests and you can issue a
-            full refund from Finances.
+        {finances.recentTransactions.length === 0 ? (
+          <p className="p-6 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+            No transactions yet.
           </p>
-        </div>
+        ) : (
+          <ul className="divide-y-2 divide-[color:var(--line-soft)]">
+            {finances.recentTransactions.map((t) => (
+              <li
+                key={t.id}
+                className="flex flex-wrap items-center justify-between gap-3 px-5 py-3"
+              >
+                <div className="min-w-0">
+                  <p className="font-bold text-[color:var(--ink)] truncate">
+                    {t.eventTitle}
+                  </p>
+                  <p className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+                    {dateTimeFormatter.format(new Date(t.createdAt))}
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Pill tone={t.status === "paid" ? "peach" : "rose"}>{t.status}</Pill>
+                  <span className="font-bold text-[color:var(--ink)]">
+                    {formatPrice(t.amountCents)}
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
-    </section>
+    </div>
   );
 }
 
-function SupportTab() {
+function SettingsTab({
+  businessName,
+  verification,
+}: {
+  businessName: string;
+  verification: string;
+}) {
   const faqs = [
     {
       q: "How long does merchant verification take?",
@@ -808,22 +704,53 @@ function SupportTab() {
     },
     {
       q: "Can I run free + paid events under the same profile?",
-      a: "Yes. Free events skip Stripe entirely. Paid events route via Stripe Connect — set up under Settings.",
+      a: "Yes. Free events skip Stripe entirely. Paid events route via Stripe Connect — set up under Finances.",
     },
     {
       q: "What happens if I cancel an event?",
       a: "All confirmed attendees are refunded automatically (paid events) and notified. Cancellations show on your profile to deter spam.",
     },
   ];
+
   return (
-    <section className="bg-[color:var(--champagne)] py-12">
-      <div className="mx-auto max-w-3xl px-4 sm:px-6">
-        <SectionIntro
-          eyebrow="Support"
-          title="Common merchant questions."
-          body="If you need a human, email support@click.local — we reply same business day."
-        />
-        <ul className="mt-8 space-y-4">
+    <div className="space-y-10 py-10">
+      <TabHeader
+        eyebrow="Settings"
+        title="Profile, discounts & support."
+        body="Update business details and payout account, issue promo codes, and find answers."
+      />
+
+      <section>
+        <p className="eyebrow">Profile + payouts</p>
+        <div className="mt-6 grid gap-3 sm:grid-cols-2">
+          <Field label="Business name" value={businessName} />
+          <Field label="Verification" value={verification} />
+        </div>
+        <div className="mt-4 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-5 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+          Editing business name / website / ABN ships with the
+          merchant-self-service migration. Today, email{" "}
+          <span className="font-mono">support@click.local</span> to update details.
+        </div>
+      </section>
+
+      <section>
+        <p className="eyebrow">Discounts</p>
+        <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+          Promo codes & comp tickets.
+        </p>
+        <div className="mt-4 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-5 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+          Discount code generator coming with the next migration. For now, share a
+          unique paid-event link directly with comp guests and you can issue a full
+          refund from Finances.
+        </div>
+      </section>
+
+      <section>
+        <p className="eyebrow">Support</p>
+        <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+          If you need a human, email support@click.local — we reply same business day.
+        </p>
+        <ul className="mt-6 space-y-4">
           {faqs.map((f) => (
             <li
               key={f.q}
@@ -838,37 +765,8 @@ function SupportTab() {
             </li>
           ))}
         </ul>
-      </div>
-    </section>
-  );
-}
-
-function SettingsTab({
-  businessName,
-  verification,
-}: {
-  businessName: string;
-  verification: string;
-}) {
-  return (
-    <section className="bg-[color:var(--champagne)] py-12">
-      <div className="mx-auto max-w-3xl px-4 sm:px-6">
-        <SectionIntro
-          eyebrow="Settings"
-          title="Profile + payouts."
-          body="Update business details, payout account, and notification preferences."
-        />
-        <div className="mt-8 grid gap-3 sm:grid-cols-2">
-          <Field label="Business name" value={businessName} />
-          <Field label="Verification" value={verification} />
-        </div>
-        <div className="mt-6 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-5 text-sm font-medium leading-6 text-[color:var(--mauve)]">
-          Editing business name / website / ABN ships with the
-          merchant-self-service migration. Today, email{" "}
-          <span className="font-mono">support@click.local</span> to update details.
-        </div>
-      </div>
-    </section>
+      </section>
+    </div>
   );
 }
 

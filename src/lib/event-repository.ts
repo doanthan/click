@@ -162,6 +162,13 @@ export type AdminEventRow = {
   address: string | null;
   lat: number | null;
   lng: number | null;
+  priceCents: number;
+  // True when the event charges a price but the owning merchant hasn't
+  // finished Stripe Connect payout setup (charges_enabled = false). Surfaces a
+  // warning in the admin queue so reviewers know approving it publishes an
+  // event no one can pay for until the merchant connects payouts. Always false
+  // for free or platform-owned events.
+  payoutsNotConnected: boolean;
 };
 
 export type AdminMemberEventRef = {
@@ -443,6 +450,7 @@ function eventStatusFromDb(status: string): EventStatus {
   if (status === "waitlist") return "Waitlist";
   if (status === "locked") return "Locked";
   if (status === "pending") return "Pending";
+  if (status === "rejected") return "Rejected";
   if (status === "cancelled") return "Cancelled";
   return "Live";
 }
@@ -837,6 +845,66 @@ async function logEventApprovedEmail(
   }
 }
 
+// Post-commit emailer for a rejected event submission. Mirrors
+// logEventApprovedEmail's merchant lookup, but carries the admin's free-text
+// reason through to the template. Platform-owned events have no merchant to
+// notify, so we skip them. Fire-and-forget — never bubbles into the reject
+// response.
+async function logEventRejectedEmail(
+  pool: NonNullable<ReturnType<typeof getPostgresPool>>,
+  eventSlug: string,
+  rejectionReason: string,
+) {
+  try {
+    const result = await pool.query<{
+      event_title: string;
+      merchant_contact_email: string | null;
+      merchant_business_name: string | null;
+      merchant_owner_profile_id: string | null;
+      merchant_owner_display_name: string | null;
+    }>(
+      `
+        select
+          e.title as event_title,
+          mp.contact_email::text as merchant_contact_email,
+          mp.business_name as merchant_business_name,
+          mp.profile_id::text as merchant_owner_profile_id,
+          owner.display_name as merchant_owner_display_name
+        from events e
+        left join merchant_profiles mp on mp.id = e.merchant_profile_id
+        left join profiles owner on owner.id = mp.profile_id
+        where e.slug = $1
+        limit 1
+      `,
+      [eventSlug],
+    );
+
+    const row = result.rows[0];
+    if (!row || !row.merchant_contact_email) return;
+
+    const origin = emailOrigin();
+    const merchantFirstName =
+      (row.merchant_owner_display_name || row.merchant_business_name || "")
+        .split(/\s+/)[0] || "there";
+
+    void logEmailEvent({
+      template: "event-rejected-merchant",
+      toEmail: row.merchant_contact_email,
+      toProfileId: row.merchant_owner_profile_id,
+      vars: {
+        merchantFirstName,
+        eventTitle: row.event_title,
+        rejectionReason,
+        editEventUrl: `${origin}/merchant/events/${eventSlug}`,
+        supportEmail: "hello@click.app",
+        unsubscribeUrl: `${origin}/account-settings`,
+      },
+    });
+  } catch (error) {
+    console.warn("logEventRejectedEmail failed", { eventSlug, error });
+  }
+}
+
 // Post-commit emailer for a cancelled RSVP. Mirrors logRsvpEmails — one
 // supplementary SELECT gathers the event, owning merchant, and the updated
 // headcount for both the attendee + merchant templates. Fire-and-forget.
@@ -1224,6 +1292,36 @@ async function approveLocalEventForAdmin(eventId: string, session: Session | nul
   };
 }
 
+async function rejectLocalEventForAdmin(eventId: string, session: Session | null) {
+  requireLocalAdminSession(session);
+
+  const store = await readLocalStore();
+  const target = store.events.find((event) => event.id === eventId);
+
+  if (!target) {
+    const error = new Error("Pending event not found.");
+    error.name = "NotFoundError";
+    throw error;
+  }
+
+  const nextEvent: EventItem = {
+    ...target,
+    status: "Rejected",
+    lifeSignals: target.lifeSignals.filter((signal) => signal !== "Pending review"),
+    fomo: "Declined by admin — needs another pass before it can go live.",
+  };
+
+  await writeLocalStore({
+    ...store,
+    events: store.events.map((event) => (event.id === eventId ? nextEvent : event)),
+  });
+
+  return {
+    slug: nextEvent.id,
+    title: nextEvent.title,
+  };
+}
+
 async function getFallbackAdminEvents(): Promise<AdminEventRow[]> {
   const events = await getFallbackEvents({ includePending: true });
 
@@ -1243,6 +1341,10 @@ async function getFallbackAdminEvents(): Promise<AdminEventRow[]> {
     address: event.location ?? null,
     lat: event.lat ?? null,
     lng: event.lng ?? null,
+    // The static fallback has no merchant payout state to read, so we can't
+    // know — default to "connected" rather than flagging every paid event.
+    priceCents: 0,
+    payoutsNotConnected: false,
   }));
 }
 
@@ -1916,6 +2018,10 @@ export type EventDetail = EventItem & {
   endsAt: string | null;
   viewerRsvpStatus: "confirmed" | "waitlisted" | "pending_payment" | "cancelled" | null;
   media: MediaItem[];
+  // Owning merchant (null for platform-owned / fallback events). Used by the
+  // detail page to let an owner preview their own not-yet-approved event while
+  // keeping pending/rejected events out of public reach.
+  merchantProfileId: string | null;
 };
 
 export async function getEventBySlug(
@@ -1935,6 +2041,7 @@ export async function getEventBySlug(
       address: null,
       endsAt: null,
       viewerRsvpStatus: null,
+      merchantProfileId: null,
       media: buildEventMediaGallery({
         slug,
         primaryImage: fallback.image,
@@ -1944,7 +2051,7 @@ export async function getEventBySlug(
   }
 
   try {
-    const result = await pool.query<EventRow & { price_cents: number; address: string | null; ends_at: Date | null }>(
+    const result = await pool.query<EventRow & { price_cents: number; address: string | null; ends_at: Date | null; merchant_profile_id: string | null }>(
       `
         select
           event.slug,
@@ -1953,6 +2060,7 @@ export async function getEventBySlug(
           event.host_name,
           event.category,
           event.status::text,
+          event.merchant_profile_id::text as merchant_profile_id,
           event.booking_model::text,
           event.starts_at,
           event.ends_at,
@@ -2005,6 +2113,7 @@ export async function getEventBySlug(
         address: null,
         endsAt: null,
         viewerRsvpStatus: null,
+        merchantProfileId: null,
         media: buildEventMediaGallery({
           slug,
           primaryImage: fallback.image,
@@ -2046,6 +2155,7 @@ export async function getEventBySlug(
       address: row.address,
       endsAt: row.ends_at ? row.ends_at.toISOString() : null,
       viewerRsvpStatus,
+      merchantProfileId: row.merchant_profile_id ?? null,
       media: buildEventMediaGallery({
         slug,
         primaryImage: base.image,
@@ -2064,6 +2174,7 @@ export async function getEventBySlug(
         address: null,
         endsAt: null,
         viewerRsvpStatus: null,
+        merchantProfileId: null,
         media: buildEventMediaGallery({
           slug,
           primaryImage: fallback.image,
@@ -2243,19 +2354,13 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
       throw error;
     }
 
-    // Gate paid events on Stripe Connect being ready. Free events stay
-    // frictionless; the moment a merchant tries to publish with a price > 0
-    // we bounce them to /merchant/onboarding/payouts to finish hosted KYC.
-    // `charges_enabled` is the same cached column the `account.updated`
-    // webhook keeps in sync with Stripe.
+    // No payout gate at creation time. Merchants can submit paid events
+    // before connecting Stripe — the event sits in 'pending' for admin review,
+    // and the admin can reject it (see rejectEventForAdmin). Stripe Connect is
+    // still enforced later, at attendee checkout time (the checkout route
+    // throws PayoutsNotReadyError if the merchant never finished payout setup),
+    // so no one can pay into an account that can't receive funds.
     const priceCents = parsePriceCents(input.price);
-    if (priceCents > 0 && !merchantProfile.charges_enabled) {
-      const error = new Error(
-        "Finish payout setup to publish a paid event — we'll take you there now.",
-      );
-      error.name = "PayoutsNotReadyError";
-      throw error;
-    }
 
     const slug = `${slugFromTitle(title)}-${Date.now().toString(36)}`;
     const endsAt = new Date(startsAt.getTime() + 2 * 60 * 60 * 1000);
@@ -2363,21 +2468,24 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
       .slice(0, 8);
 
     if (rawTags.length > 0) {
+      // Tags are "click tags" — never free-form. Attach only tags that already
+      // exist in the curated taxonomy, matched by slug; anything unrecognised is
+      // silently dropped (the UI only offers existing tags, this is defence in
+      // depth). New tags are created exclusively by admins via /api/admin/tags.
       await pool.query(
         `
           with target_event as (
             select id from events where slug = $1
           ),
-          inserted_tags as (
-            insert into tags (label, slug, tag_type, admin_managed)
-            select initcap(tag), regexp_replace(tag, '[^a-z0-9]+', '-', 'g'), 'interest', false
-            from unnest($2::text[]) as tag
-            on conflict (slug) do update set label = excluded.label
-            returning id
+          matched_tags as (
+            select tag.id
+            from unnest($2::text[]) as input(label)
+            join tags tag
+              on tag.slug = trim(both '-' from regexp_replace(input.label, '[^a-z0-9]+', '-', 'g'))
           )
           insert into event_tags (event_id, tag_id)
-          select target_event.id, inserted_tags.id
-          from target_event, inserted_tags
+          select target_event.id, matched_tags.id
+          from target_event, matched_tags
           on conflict do nothing
         `,
         [slug, rawTags],
@@ -2461,6 +2569,92 @@ export async function approveEventForAdmin(eventId: string, session: Session | n
   } catch (error) {
     if (isDatabaseConnectivityError(error)) {
       return approveLocalEventForAdmin(eventId, session);
+    }
+
+    throw error;
+  }
+}
+
+export async function rejectEventForAdmin(
+  eventId: string,
+  reason: string,
+  session: Session | null,
+) {
+  const pool = getPostgresPool();
+
+  if (!pool) return rejectLocalEventForAdmin(eventId, session);
+
+  // The admin's free-text reason flows into the event-rejected-merchant email
+  // and the audit log. Fall back to a generic line so the template never
+  // renders an empty "why" paragraph.
+  const rejectionReason =
+    reason.trim() || "This event needs a few changes before it can go live.";
+
+  try {
+    const profile = await requireAdminProfile(session);
+
+    const result = await pool.query<{
+      slug: string;
+      title: string;
+      owner_profile_id: string | null;
+    }>(
+      `
+        update events
+        set status = 'rejected', updated_at = now()
+        from (select id from events where slug = $1 and status = 'pending') target
+        where events.id = target.id
+        returning events.slug, events.title, events.host_profile_id::text as owner_profile_id
+      `,
+      [eventId],
+    );
+
+    const event = result.rows[0];
+    if (!event) {
+      const error = new Error("Pending event not found.");
+      error.name = "NotFoundError";
+      throw error;
+    }
+
+    await pool.query(
+      `
+        insert into audit_logs (actor_profile_id, action, entity_table, metadata)
+        values ($1::uuid, 'reject_event', 'events', $2::jsonb)
+      `,
+      [
+        profile.id,
+        JSON.stringify({
+          slug: event.slug,
+          title: event.title,
+          reason: rejectionReason,
+        }),
+      ],
+    );
+
+    // In-app notification for the host so the rejection shows up in their bell
+    // even before they read the email.
+    if (event.owner_profile_id) {
+      await pool.query(
+        `
+          insert into notifications (profile_id, title, body, action_url)
+          values ($1::uuid, $2, $3, $4)
+        `,
+        [
+          event.owner_profile_id,
+          "Event needs another pass",
+          `${event.title} wasn't approved: ${rejectionReason}`,
+          `/merchant/events/${event.slug}`,
+        ],
+      );
+    }
+
+    // Notify the owning merchant their event was declined. Fire-and-forget —
+    // never bubbles into the reject response (see helper for the lookup).
+    void logEventRejectedEmail(pool, event.slug, rejectionReason);
+
+    return event;
+  } catch (error) {
+    if (isDatabaseConnectivityError(error)) {
+      return rejectLocalEventForAdmin(eventId, session);
     }
 
     throw error;
@@ -2637,6 +2831,9 @@ export async function getAdminEvents() {
       address: string | null;
       latitude: string | null;
       longitude: string | null;
+      price_cents: number;
+      has_merchant: boolean;
+      merchant_charges_enabled: boolean | null;
     }>(`
       select
         event.slug,
@@ -2652,9 +2849,13 @@ export async function getAdminEvents() {
         event.address,
         event.latitude::text,
         event.longitude::text,
+        event.price_cents,
+        bool_or(merchant.id is not null) as has_merchant,
+        bool_or(merchant.charges_enabled) as merchant_charges_enabled,
         count(attendee.id) filter (where (attendee.status = 'confirmed' or (attendee.status = 'pending_payment' and attendee.hold_expires_at > now()))) as confirmed_attendees
       from events event
       left join event_attendees attendee on attendee.event_id = event.id
+      left join merchant_profiles merchant on merchant.id = event.merchant_profile_id
       group by event.id
       order by event.created_at desc
       limit 200
@@ -2663,6 +2864,7 @@ export async function getAdminEvents() {
     return result.rows.map((event): AdminEventRow => {
       const lat = event.latitude ? Number(event.latitude) : null;
       const lng = event.longitude ? Number(event.longitude) : null;
+      const priceCents = Number(event.price_cents) || 0;
       return {
         id: event.slug,
         title: event.title,
@@ -2679,6 +2881,9 @@ export async function getAdminEvents() {
         address: event.address,
         lat,
         lng,
+        priceCents,
+        payoutsNotConnected:
+          priceCents > 0 && event.has_merchant && !event.merchant_charges_enabled,
       };
     });
   } catch (error) {
@@ -4121,18 +4326,21 @@ export async function saveOnboarding(input: OnboardingInput, session: Session | 
     .slice(0, 24);
 
   if (rawTags.length > 0) {
+    // Tags are "click tags" — never free-form. Attach only curated tags that
+    // already exist, matched by slug (the onboarding chips are seeded as
+    // admin-managed `interest` tags in database/026_curate_interest_tags.sql).
+    // Anything unrecognised is dropped rather than minting a new tag.
     await pool.query(
       `
-        with picked_tags as (
-          insert into tags (label, slug, tag_type, admin_managed)
-          select initcap(tag), regexp_replace(tag, '[^a-z0-9]+', '-', 'g'), 'interest', false
-          from unnest($2::text[]) as tag
-          on conflict (slug) do update set label = excluded.label
-          returning id
+        with matched_tags as (
+          select tag.id
+          from unnest($2::text[]) as input(label)
+          join tags tag
+            on tag.slug = trim(both '-' from regexp_replace(input.label, '[^a-z0-9]+', '-', 'g'))
         )
         insert into user_tags (profile_id, tag_id, source)
-        select $1::uuid, picked_tags.id, 'user'
-        from picked_tags
+        select $1::uuid, matched_tags.id, 'user'
+        from matched_tags
         on conflict do nothing
       `,
       [profile.id, rawTags],
@@ -4243,6 +4451,32 @@ export async function getMerchantCategoryOptions(): Promise<MerchantCategoryOpti
       order by name asc`,
   );
   return result.rows;
+}
+
+/**
+ * Pre-made tag labels offered to merchants on the create-event Basics step.
+ * Merchants search/pick these as pills — tags are "click tags", never
+ * free-form, so this is the ONLY source of selectable event tags. Keeps tag
+ * spelling consistent so events match the same tags users hold on their
+ * profiles. Returns `interest` + `vibe` tags (the event-relevant types;
+ * `life`/`music` are matching signals, not event descriptors), ordered by
+ * how widely each tag is already used so the most common options surface
+ * first. The submit path (`createEventForMerchant`) only attaches tags that
+ * exist here; anything else is dropped. Falls back to an empty list if the DB
+ * is down. New tags are created by admins via /api/admin/tags.
+ */
+export async function getMerchantTagOptions(): Promise<string[]> {
+  const pool = getPostgresPool();
+  if (!pool) return [];
+  const result = await pool.query<{ label: string }>(
+    `select tag.label, count(event_tag.tag_id) as usage
+       from tags tag
+       left join event_tags event_tag on event_tag.tag_id = tag.id
+      where tag.tag_type in ('interest', 'vibe')
+      group by tag.id, tag.label
+      order by usage desc, tag.label asc`,
+  );
+  return result.rows.map((r) => r.label);
 }
 
 export type MerchantDocumentType =

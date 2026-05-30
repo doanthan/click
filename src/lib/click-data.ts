@@ -4,6 +4,7 @@ export type EventStatus =
   | "Waitlist"
   | "Locked"
   | "Pending"
+  | "Rejected"
   | "Cancelled";
 
 export type EventItem = {

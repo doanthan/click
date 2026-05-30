@@ -1,7 +1,11 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { EventCreateProvider } from "@/components/event-create-wizard";
-import { getMerchantCategoryOptions, getProfileStatus } from "@/lib/event-repository";
+import {
+  getMerchantCategoryOptions,
+  getMerchantTagOptions,
+  getProfileStatus,
+} from "@/lib/event-repository";
 
 export const metadata = {
   title: "Create event | Click",
@@ -50,13 +54,20 @@ export default async function CreateEventLayout({
     );
   }
 
-  const categoryOptions = (await getMerchantCategoryOptions()).map((c) => c.name);
+  const [categoryRows, tagOptions] = await Promise.all([
+    getMerchantCategoryOptions(),
+    getMerchantTagOptions(),
+  ]);
+  const categoryOptions = categoryRows.map((c) => c.name);
 
   return (
     <main className="min-h-screen bg-[color:var(--champagne)] text-[color:var(--ink)]">
       <section className="bg-[color:var(--champagne)] py-12">
         <div className="mx-auto max-w-4xl px-4 sm:px-6">
-          <EventCreateProvider categoryOptions={categoryOptions}>
+          <EventCreateProvider
+            categoryOptions={categoryOptions}
+            tagOptions={tagOptions}
+          >
             {children}
           </EventCreateProvider>
         </div>
