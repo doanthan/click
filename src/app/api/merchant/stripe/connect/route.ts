@@ -7,6 +7,7 @@ import {
 import {
   createAccountOnboardingLink,
   createConnectedAccount,
+  isRealConnectAccountId,
   isStripeConnectConfigured,
 } from "@/lib/stripe-connect";
 import { getAppUrl } from "@/lib/stripe";
@@ -49,7 +50,11 @@ export async function POST() {
     const session = await auth();
     const merchant = await getApprovedMerchantForSession(session);
 
-    let accountId = merchant.stripe_connect_account_id;
+    // A seed placeholder (acct_seed_*) is treated as no account so we mint a
+    // real one rather than 404 on the onboarding-link call below.
+    let accountId = isRealConnectAccountId(merchant.stripe_connect_account_id)
+      ? merchant.stripe_connect_account_id
+      : null;
     if (!accountId) {
       accountId = await createConnectedAccount({
         contactEmail: merchant.contact_email,
@@ -68,6 +73,7 @@ export async function POST() {
 
     return NextResponse.json({ ok: true, url });
   } catch (error) {
+    console.error("[stripe/connect] onboarding failed:", error);
     return errorResponse(error);
   }
 }

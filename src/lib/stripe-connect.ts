@@ -31,6 +31,17 @@ export function isStripeConnectConfigured(): boolean {
   return Boolean(process.env.STRIPE_SECRET_KEY);
 }
 
+// True only for ids that name a real Stripe Connect account. The DB seed
+// (database/002_seed.sql) plants placeholder ids like `acct_seed_theo` so the
+// fixtures look onboarded; those don't exist in Stripe, so reusing one makes
+// accountLinks.create 404 ("resource cannot be found"). Treat any placeholder
+// as "no account" so the onboarding flow creates a real one instead.
+export function isRealConnectAccountId(
+  accountId: string | null | undefined,
+): accountId is string {
+  return Boolean(accountId) && /^acct_[A-Za-z0-9]+$/.test(accountId!) && !accountId!.startsWith("acct_seed_");
+}
+
 // Platform take rate, in basis points (100 = 1%). Default 0 — we route the
 // full charge to the merchant. Flip via env when we turn on platform fees;
 // `calculateApplicationFee` then returns the cut Stripe will retain from each
