@@ -84,6 +84,10 @@ function socialUrl(platform: string | null, handle: string): string | null {
       return `https://tiktok.com/@${clean}`;
     case "facebook":
       return `https://facebook.com/${clean}`;
+    case "youtube":
+      return `https://youtube.com/@${clean}`;
+    case "x":
+      return `https://x.com/${clean}`;
     default:
       return null;
   }
@@ -121,12 +125,14 @@ export default async function AdminMerchantDetailPage({
   if (!merchant) notFound();
 
   const address = fullAddress(merchant);
-  const social = merchant.socialHandle
-    ? {
-        label: `${merchant.socialPlatform ? titleCase(merchant.socialPlatform) : "Social"} · ${merchant.socialHandle}`,
-        url: socialUrl(merchant.socialPlatform, merchant.socialHandle),
-      }
-    : null;
+  const socials = Object.entries(merchant.socials ?? {})
+    .filter(([, handle]) => handle)
+    .map(([platform, handle]) => ({
+      platform,
+      handle,
+      label: `${titleCase(platform)} · ${handle}`,
+      url: socialUrl(platform, handle),
+    }));
 
   return (
     <div className="space-y-8 py-10">
@@ -167,9 +173,10 @@ export default async function AdminMerchantDetailPage({
                   {merchant.websiteUrl.replace(/^https?:\/\//, "")}
                 </a>
               ) : null}
-              {social ? (
+              {socials.map((social) =>
                 social.url ? (
                   <a
+                    key={social.platform}
                     href={social.url}
                     target="_blank"
                     rel="noreferrer"
@@ -178,11 +185,14 @@ export default async function AdminMerchantDetailPage({
                     {social.label}
                   </a>
                 ) : (
-                  <span className="inline-block text-xs font-bold uppercase tracking-wider text-[color:var(--mauve)]">
+                  <span
+                    key={social.platform}
+                    className="inline-block text-xs font-bold uppercase tracking-wider text-[color:var(--mauve)]"
+                  >
                     {social.label}
                   </span>
-                )
-              ) : null}
+                ),
+              )}
             </div>
           </div>
         </div>
@@ -219,20 +229,8 @@ export default async function AdminMerchantDetailPage({
             value={merchant.businessType ? titleCase(merchant.businessType) : "—"}
           />
           <Stat
-            label="Social"
-            value={merchant.socialHandle ?? "—"}
-            action={
-              social?.url ? (
-                <a
-                  href={social.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-[0.65rem] font-bold uppercase tracking-wider text-[color:var(--rose)] underline"
-                >
-                  Open ↗
-                </a>
-              ) : null
-            }
+            label="Socials"
+            value={socials.length ? socials.map((s) => s.label).join(" · ") : "—"}
           />
           <Stat label="Phone" value={merchant.phone ?? "—"} />
           <Stat label="Address" value={address ?? "—"} />

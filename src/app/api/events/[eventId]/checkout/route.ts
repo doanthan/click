@@ -107,7 +107,7 @@ export async function POST(_request: Request, context: RouteContext) {
       // redirect — leave the braces unencoded. The landing page uses it to
       // reconcile the payment (fulfill-on-return) so confirmation doesn't depend
       // solely on webhook delivery. See reconcileCheckoutSession in stripe-sync.
-      success_url: `${appUrl}/dashboard/calendar?booked=${encodeURIComponent(hold.eventSlug)}&session_id={CHECKOUT_SESSION_ID}`,
+      success_url: `${appUrl}/events/${encodeURIComponent(hold.eventSlug)}?booked=1&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${appUrl}/events/${encodeURIComponent(hold.eventSlug)}?canceled=1`,
       // Matches the `hold_expires_at` set in createPaymentHold so the reserved
       // seat and the Stripe session expire together — no ghost seats, and no

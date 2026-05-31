@@ -70,9 +70,11 @@ const DOC_TYPES = ["abn_certificate", "public_liability_insurance", "liquor_lice
 type DocumentType = (typeof DOC_TYPES)[number];
 
 const SOCIAL_PLATFORMS = [
-  { value: "instagram", label: "Instagram" },
-  { value: "tiktok", label: "TikTok" },
-  { value: "facebook", label: "Facebook" },
+  { value: "instagram", label: "Instagram", placeholder: "@yourbusiness" },
+  { value: "tiktok", label: "TikTok", placeholder: "@yourbusiness" },
+  { value: "facebook", label: "Facebook", placeholder: "yourbusiness or page URL" },
+  { value: "youtube", label: "YouTube", placeholder: "@yourchannel" },
+  { value: "x", label: "X", placeholder: "@yourbusiness" },
 ] as const;
 type SocialPlatform = (typeof SOCIAL_PLATFORMS)[number]["value"];
 
@@ -138,8 +140,8 @@ type State = {
   contactEmail: string;
   phone: string;
   websiteUrl: string;
-  socialHandle: string;
-  socialPlatform: SocialPlatform | "";
+  // One handle per network — empty string means "not on it".
+  socials: Record<SocialPlatform, string>;
   addressStreet: string;
   addressSuburb: string;
   addressState: AuState | "";
@@ -156,10 +158,11 @@ type Action =
       type: "field";
       key: keyof Omit<
         State,
-        "uploads" | "submitState" | "submitMessage" | "eventCategoryIds"
+        "uploads" | "submitState" | "submitMessage" | "eventCategoryIds" | "socials"
       >;
       value: string;
     }
+  | { type: "social"; platform: SocialPlatform; value: string }
   | { type: "toggleCategory"; id: string }
   | { type: "upload"; docType: DocumentType; info: { fileName: string } | null }
   | { type: "submitStart" }
@@ -171,6 +174,12 @@ function reducer(state: State, action: Action): State {
     case "field":
       // Editing any field invalidates a stale submit error — clear it.
       return { ...state, [action.key]: action.value, submitMessage: "" };
+    case "social":
+      return {
+        ...state,
+        socials: { ...state.socials, [action.platform]: action.value },
+        submitMessage: "",
+      };
     case "toggleCategory": {
       const has = state.eventCategoryIds.includes(action.id);
       return {
@@ -219,8 +228,9 @@ function initialState(props: {
     contactEmail: props.sessionEmail,
     phone: "",
     websiteUrl: "",
-    socialHandle: "",
-    socialPlatform: "",
+    socials: Object.fromEntries(
+      SOCIAL_PLATFORMS.map((p) => [p.value, ""]),
+    ) as Record<SocialPlatform, string>,
     addressStreet: "",
     addressSuburb: "",
     addressState: "",
@@ -356,8 +366,12 @@ export function WizardShell({
       contactEmail: state.contactEmail.trim().toLowerCase(),
       phone: state.phone.replace(/\s+/g, ""),
       websiteUrl: state.websiteUrl.trim(),
-      socialHandle: state.socialHandle.trim(),
-      socialPlatform: state.socialHandle.trim() ? state.socialPlatform : "",
+      // Only send platforms the host actually filled in.
+      socials: Object.fromEntries(
+        SOCIAL_PLATFORMS.map((p) => [p.value, state.socials[p.value].trim()]).filter(
+          ([, handle]) => handle,
+        ),
+      ),
       addressStreet: state.addressStreet.trim(),
       addressSuburb: state.addressSuburb.trim(),
       addressState: state.addressState,
@@ -881,44 +895,30 @@ export function ContactSection() {
         />
       </label>
 
-      <div className="grid gap-2">
-        <FieldLabel>Social handle (optional)</FieldLabel>
-        <div className="grid gap-2 sm:grid-cols-[auto_1fr] sm:items-stretch">
-          <div className="flex flex-wrap gap-1.5">
-            {SOCIAL_PLATFORMS.map((opt) => {
-              const selected = state.socialPlatform === opt.value;
-              return (
-                <button
-                  key={opt.value}
-                  type="button"
-                  aria-pressed={selected}
-                  onClick={() =>
-                    dispatch({
-                      type: "field",
-                      key: "socialPlatform",
-                      // Toggle off if re-clicking the active platform.
-                      value: selected ? "" : opt.value,
-                    })
-                  }
-                  className={`rounded-xl border-2 border-[color:var(--line)] px-3 py-2.5 text-sm font-bold ${
-                    selected
-                      ? "bg-[color:var(--rose)] text-[color:var(--surface-deep)]"
-                      : "bg-[color:var(--champagne)] text-[color:var(--ink)] hover:bg-[color:var(--cream)]"
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              );
-            })}
-          </div>
-          <TextInput
-            value={state.socialHandle}
-            onChange={(e) => dispatch({ type: "field", key: "socialHandle", value: e.target.value })}
-            placeholder="@yourbusiness"
-          />
+      <div className="grid gap-2.5">
+        <FieldLabel>Social profiles (optional)</FieldLabel>
+        <div className="grid gap-2.5">
+          {SOCIAL_PLATFORMS.map((opt) => (
+            <label
+              key={opt.value}
+              className="grid gap-1.5 sm:grid-cols-[7rem_1fr] sm:items-center sm:gap-3"
+            >
+              <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.14em] text-[color:var(--mauve)]">
+                {opt.label}
+              </span>
+              <TextInput
+                value={state.socials[opt.value]}
+                onChange={(e) =>
+                  dispatch({ type: "social", platform: opt.value, value: e.target.value })
+                }
+                placeholder={opt.placeholder}
+                aria-label={`${opt.label} handle`}
+              />
+            </label>
+          ))}
         </div>
         <span className="text-xs font-medium text-[color:var(--mauve)]">
-          Pick the network, then add the handle — handy for verifying hosts who don&apos;t have formal documents yet.
+          Add any networks you&apos;re on — handy for verifying hosts who don&apos;t have formal documents yet.
         </span>
       </div>
 

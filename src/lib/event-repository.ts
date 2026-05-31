@@ -90,8 +90,8 @@ export type MerchantWizardInput = {
   contactEmail: string;
   phone: string;
   websiteUrl: string;
-  socialHandle: string;
-  socialPlatform: "instagram" | "tiktok" | "facebook" | "";
+  // Per-platform social handles, keyed by platform. Empty/missing = not on it.
+  socials: Partial<Record<"instagram" | "tiktok" | "facebook" | "youtube" | "x", string>>;
   addressStreet: string;
   addressSuburb: string;
   addressState: "NSW" | "VIC" | "QLD" | "WA" | "SA" | "TAS" | "ACT" | "NT";
@@ -340,8 +340,7 @@ export type AdminMerchantDetail = {
   abn: string | null;
   acn: string | null;
   businessType: string | null;
-  socialHandle: string | null;
-  socialPlatform: "instagram" | "tiktok" | "facebook" | null;
+  socials: Record<string, string>;
   verificationStatus: "pending" | "approved" | "rejected" | "suspended" | string;
   autoApproveEvents: boolean;
   stripeConnectAccountId: string | null;
@@ -3450,8 +3449,7 @@ export async function getAdminMerchantDetail(
           abn: string | null;
           acn: string | null;
           business_type: string | null;
-          social_handle: string | null;
-          social_platform: string | null;
+          socials: Record<string, string> | null;
           verification_status: string;
           auto_approve_events: boolean;
           stripe_connect_account_id: string | null;
@@ -3477,8 +3475,7 @@ export async function getAdminMerchantDetail(
               m.abn,
               m.acn,
               m.business_type,
-              m.social_handle,
-              m.social_platform,
+              m.socials,
               m.verification_status,
               m.auto_approve_events,
               m.stripe_connect_account_id,
@@ -3656,13 +3653,7 @@ export async function getAdminMerchantDetail(
       abn: row.abn,
       acn: row.acn,
       businessType: row.business_type,
-      socialHandle: row.social_handle,
-      socialPlatform:
-        row.social_platform === "instagram" ||
-        row.social_platform === "tiktok" ||
-        row.social_platform === "facebook"
-          ? row.social_platform
-          : null,
+      socials: row.socials ?? {},
       verificationStatus: row.verification_status,
       autoApproveEvents: row.auto_approve_events ?? false,
       stripeConnectAccountId: row.stripe_connect_account_id,
@@ -4759,7 +4750,13 @@ export async function registerMerchantProfile(input: MerchantSignupInput, sessio
 
 const AU_STATES = ["NSW", "VIC", "QLD", "WA", "SA", "TAS", "ACT", "NT"] as const;
 const BUSINESS_TYPES = ["sole_trader", "company", "partnership", "trust"] as const;
-const MERCHANT_SOCIAL_PLATFORMS = ["instagram", "tiktok", "facebook"] as const;
+const MERCHANT_SOCIAL_PLATFORMS = [
+  "instagram",
+  "tiktok",
+  "facebook",
+  "youtube",
+  "x",
+] as const;
 const AU_POSTCODE_RE = /^[0-9]{4}$/;
 // Accepts +61412345678, 0412345678, or with spacing — we strip to digits before checking.
 const AU_PHONE_RE = /^(?:\+?61|0)\d{9}$/;
@@ -5036,12 +5033,11 @@ export async function registerMerchantWizardSubmit(
     throw validationError("Street address and suburb are required.");
   }
 
-  // Social platform is optional, but when supplied must be one we offer. Only
-  // keep it when there's actually a handle to attach it to.
-  const socialHandle = input.socialHandle.trim();
-  const socialPlatform = socialHandle ? input.socialPlatform : "";
-  if (socialPlatform && !MERCHANT_SOCIAL_PLATFORMS.includes(socialPlatform)) {
-    throw validationError("Pick a social platform.");
+  // Socials are optional — keep only known platforms that carry a handle.
+  const socials: Record<string, string> = {};
+  for (const platform of MERCHANT_SOCIAL_PLATFORMS) {
+    const handle = (input.socials[platform] ?? "").trim();
+    if (handle) socials[platform] = handle;
   }
 
   const categoryIds = Array.from(new Set(input.eventCategoryIds.filter(Boolean)));
@@ -5059,14 +5055,14 @@ export async function registerMerchantWizardSubmit(
       `
         insert into merchant_profiles (
           profile_id, business_name, trading_name, abn, acn, business_type,
-          phone, contact_email, website_url, social_handle, social_platform,
+          phone, contact_email, website_url, socials,
           address_street, address_suburb, address_state, address_postcode,
           submitted_at
         )
         values (
           $1::uuid, $2, nullif($3, ''), $4, nullif($5, ''), $6,
-          $7, $8, nullif($9, ''), nullif($10, ''), nullif($11, ''),
-          $12, $13, $14, $15,
+          $7, $8, nullif($9, ''), $10::jsonb,
+          $11, $12, $13, $14,
           now()
         )
         on conflict (profile_id) do update set
@@ -5078,8 +5074,7 @@ export async function registerMerchantWizardSubmit(
           phone = excluded.phone,
           contact_email = excluded.contact_email,
           website_url = excluded.website_url,
-          social_handle = excluded.social_handle,
-          social_platform = excluded.social_platform,
+          socials = excluded.socials,
           address_street = excluded.address_street,
           address_suburb = excluded.address_suburb,
           address_state = excluded.address_state,
@@ -5100,8 +5095,7 @@ export async function registerMerchantWizardSubmit(
         phoneDigits,
         contactEmail,
         input.websiteUrl.trim(),
-        socialHandle,
-        socialPlatform,
+        JSON.stringify(socials),
         street,
         suburb,
         input.addressState,

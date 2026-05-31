@@ -6,14 +6,16 @@ export function EventAttendeePreview({
   items,
   totalConfirmed,
   isAuthenticated,
+  viewerIsAttendee,
   eventSlug,
 }: {
   items: EventAttendeePreviewRow[];
   totalConfirmed: number;
   isAuthenticated: boolean;
+  viewerIsAttendee: boolean;
   eventSlug: string;
 }) {
-  // Who's-clicked-in is a members-only signal — anonymous visitors get a
+  // Who's-clicked-in is an attendees-only signal — anonymous visitors get a
   // count + sign-in nudge rather than the actual people.
   if (!isAuthenticated) {
     return (
@@ -29,9 +31,33 @@ export function EventAttendeePreview({
             href={`/login?callbackUrl=${encodeURIComponent(`/events/${eventSlug}`)}`}
             className="font-bold text-[color:var(--ink)] underline hover:text-[color:var(--mauve)]"
           >
-            Sign in
+            Log in
+          </Link>{" "}
+          or{" "}
+          <Link
+            href={`/signup?callbackUrl=${encodeURIComponent(`/events/${eventSlug}`)}`}
+            className="font-bold text-[color:var(--ink)] underline hover:text-[color:var(--mauve)]"
+          >
+            sign up
           </Link>{" "}
           to see who&apos;s going.
+        </p>
+      </section>
+    );
+  }
+
+  // Signed in but not going yet — the roster is reserved for people who've
+  // actually clicked in. Show the count + an RSVP nudge, not the people.
+  if (!viewerIsAttendee) {
+    return (
+      <section className="mt-6 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-5">
+        <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+          Who&apos;s clicked in
+        </p>
+        <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+          {totalConfirmed > 0
+            ? `${totalConfirmed} ${totalConfirmed === 1 ? "person has" : "people have"} clicked into this event. RSVP to see who's going.`
+            : "No one has clicked in yet. RSVP to be the first."}
         </p>
       </section>
     );

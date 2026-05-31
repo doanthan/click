@@ -14,10 +14,11 @@ import {
   getProfileStatus,
   getSystemSettings,
 } from "@/lib/event-repository";
+import { reconcileCheckoutSession } from "@/lib/stripe-sync";
 
 type PageProps = {
   params: Promise<{ slug: string }>;
-  searchParams?: Promise<{ canceled?: string }>;
+  searchParams?: Promise<{ canceled?: string; booked?: string; session_id?: string }>;
 };
 
 // Statuses an event must be in to be visible to the public. Pending (awaiting
@@ -86,6 +87,16 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
   const { slug } = await params;
   const search = searchParams ? await searchParams : undefined;
   const session = await auth();
+
+  // Fulfill-on-return: when Stripe redirects back here after a paid checkout it
+  // appends the Checkout Session id. Reconcile it BEFORE loading the event so
+  // the viewer's RSVP status already reads 'confirmed' on this first render —
+  // the details unlock and the "pay" prompt is gone without waiting on (or, in
+  // dev, never receiving) the webhook. Idempotent and best-effort: a failure
+  // here just defers to the webhook / calendar reconcile.
+  if (search?.session_id) {
+    await reconcileCheckoutSession(search.session_id).catch(() => null);
+  }
 
   const [event, profileStatus, attendeePreview, systemSettings] = await Promise.all([
     getEventBySlug(slug, session),
@@ -174,6 +185,17 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
           </div>
         ) : null}
 
+        {search?.booked && isRegistered ? (
+          <div className="mt-6 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--mint,#d7f0e0)] p-4 text-sm font-bold text-[color:var(--surface-deep)] hard-shadow-sm">
+            You&apos;re in! Payment confirmed and your seat is locked. The full
+            details are unlocked below, and it&apos;s on your{" "}
+            <Link href="/dashboard/calendar" className="underline">
+              calendar
+            </Link>
+            .
+          </div>
+        ) : null}
+
         <div className="mt-6">
           <EventMediaGallery
             items={event.media}
@@ -236,6 +258,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                 items={attendeePreview.items}
                 totalConfirmed={attendeePreview.totalConfirmed}
                 isAuthenticated={isAuthenticated}
+                viewerIsAttendee={isRegistered || isAdmin || isOwner}
                 eventSlug={event.id}
               />
             </div>

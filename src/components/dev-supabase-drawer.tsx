@@ -119,7 +119,6 @@ export default function DevSupabaseDrawer() {
   const [emailLoading, setEmailLoading] = useState(false);
   const [emailFetchedAt, setEmailFetchedAt] = useState<string | null>(null);
   const [newEmailIds, setNewEmailIds] = useState<Set<string>>(new Set());
-  const [expandedEmailIds, setExpandedEmailIds] = useState<Set<string>>(new Set());
 
   // Every row id we've ever observed. The first poll seeds this as the
   // "baseline" so existing rows don't flash — only rows created afterwards do.
@@ -263,15 +262,6 @@ export default function DevSupabaseDrawer() {
     });
   }
 
-  function toggleEmailExpand(id: string) {
-    setExpandedEmailIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
   return (
     <>
       <style>{`
@@ -406,9 +396,7 @@ export default function DevSupabaseDrawer() {
                 error={emailError}
                 fetchedAt={emailFetchedAt}
                 newIds={newEmailIds}
-                expandedIds={expandedEmailIds}
                 clearNew={() => setNewEmailIds(new Set())}
-                toggleExpand={toggleEmailExpand}
               />
             )}
           </aside>
@@ -624,32 +612,45 @@ function WritesView({
 }
 
 // ── Emails view ────────────────────────────────────────────────────────────
-// Lists rows from `email_events`. Click a card to expand and see the rendered
-// HTML in a sandboxed iframe (same `srcDoc` approach as /email's preview).
-// `allow-same-origin` lets Google Fonts load; no `allow-scripts` so no email
-// JS can run — same rule real clients enforce.
+// Lists rows from `email_events`. Click a card to open a full-size modal with
+// the rendered HTML in a sandboxed iframe (same `srcDoc` approach as /email's
+// preview). `allow-same-origin` lets Google Fonts load; no `allow-scripts` so
+// no email JS can run — same rule real clients enforce.
 
 function EmailsView({
   entries,
   error,
   fetchedAt,
   newIds,
-  expandedIds,
   clearNew,
-  toggleExpand,
 }: {
   entries: EmailEntry[];
   error: string | null;
   fetchedAt: string | null;
   newIds: Set<string>;
-  expandedIds: Set<string>;
   clearNew: () => void;
-  toggleExpand: (id: string) => void;
 }) {
   const [sending, setSending] = useState<string | null>(null);
   const [scenario, setScenario] = useState<string>("user-signup");
   const [scenarios, setScenarios] = useState<{ id: string; label: string; to: string }[]>([]);
   const [sendError, setSendError] = useState<string | null>(null);
+  // The email currently shown in the preview modal (null = closed).
+  const [preview, setPreview] = useState<EmailEntry | null>(null);
+
+  // Esc closes the modal only — registered in the capture phase with
+  // stopImmediatePropagation so the drawer's own Esc-to-close (a bubble-phase
+  // window listener) doesn't also fire and yank the whole drawer shut.
+  useEffect(() => {
+    if (!preview) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.stopImmediatePropagation();
+        setPreview(null);
+      }
+    }
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [preview]);
 
   // Load the scenario list lazily — it's just a static array on the server
   // but importing it directly would pull all the email-template builders
@@ -796,68 +797,120 @@ function EmailsView({
         <ul className="grid gap-2">
           {sortedEntries.map((entry) => {
             const isNew = newIds.has(entry.id);
-            const isExpanded = expandedIds.has(entry.id);
             return (
-              <li
-                key={entry.id}
-                className={`rounded-xl border-2 p-3 ${
-                  isNew
-                    ? "click-dev-flash border-[color:var(--rose)] bg-[color:var(--cream)]"
-                    : "border-[color:var(--line)] bg-[color:var(--cream)]"
-                }`}
-              >
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="rounded-full border-2 border-[color:var(--ink)] bg-[color:var(--peach)] px-2 py-0.5 font-mono text-[0.58rem] font-bold uppercase tracking-[0.12em] text-[color:var(--surface-deep)]">
-                    {entry.template}
-                  </span>
-                  {isNew ? (
-                    <span className="rounded-full bg-[color:var(--rose)] px-2 py-0.5 font-mono text-[0.55rem] font-bold uppercase tracking-[0.14em] text-[color:var(--surface-deep)]">
-                      New
-                    </span>
-                  ) : null}
-                </div>
-
-                <p className="mt-2 break-words text-sm font-bold leading-snug text-[color:var(--ink)]">
-                  {entry.subject}
-                </p>
-                <p className="mt-1 break-words font-mono text-[0.7rem] text-[color:var(--mauve)]">
-                  to {entry.toEmail}
-                </p>
-
+              <li key={entry.id}>
+                {/* Whole card is the trigger — click opens the preview modal. */}
                 <button
                   type="button"
-                  onClick={() => toggleExpand(entry.id)}
-                  className="mt-2 font-mono text-[0.58rem] font-bold uppercase tracking-[0.14em] text-[color:var(--mauve)] underline-offset-2 hover:text-[color:var(--ink)] hover:underline"
+                  onClick={() => setPreview(entry)}
+                  className={`w-full rounded-xl border-2 p-3 text-left transition hover:border-[color:var(--ink)] ${
+                    isNew
+                      ? "click-dev-flash border-[color:var(--rose)] bg-[color:var(--cream)]"
+                      : "border-[color:var(--line)] bg-[color:var(--cream)]"
+                  }`}
                 >
-                  {isExpanded ? "▾ hide preview" : "▸ show preview"}
-                </button>
-
-                {isExpanded ? (
-                  <div className="mt-2 overflow-hidden rounded-lg border-2 border-[color:var(--line)] bg-[color:var(--champagne)]">
-                    <iframe
-                      title={`${entry.template} preview`}
-                      srcDoc={entry.html}
-                      sandbox="allow-same-origin"
-                      style={{
-                        width: "100%",
-                        height: 480,
-                        border: "none",
-                        background: "#FFFCF9",
-                        display: "block",
-                      }}
-                    />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full border-2 border-[color:var(--ink)] bg-[color:var(--peach)] px-2 py-0.5 font-mono text-[0.58rem] font-bold uppercase tracking-[0.12em] text-[color:var(--surface-deep)]">
+                      {entry.template}
+                    </span>
+                    {isNew ? (
+                      <span className="rounded-full bg-[color:var(--rose)] px-2 py-0.5 font-mono text-[0.55rem] font-bold uppercase tracking-[0.14em] text-[color:var(--surface-deep)]">
+                        New
+                      </span>
+                    ) : null}
+                    <span className="ml-auto font-mono text-[0.58rem] font-bold uppercase tracking-[0.14em] text-[color:var(--mauve)]">
+                      view ↗
+                    </span>
                   </div>
-                ) : null}
 
-                <p className="mt-2 font-mono text-[0.6rem] uppercase tracking-[0.14em] text-[color:var(--mauve)]">
-                  {formatTime(entry.createdAt)} · {relativeTime(entry.createdAt)}
-                  {` · #${entry.id.slice(0, 8)}`}
-                </p>
+                  <p className="mt-2 break-words text-sm font-bold leading-snug text-[color:var(--ink)]">
+                    {entry.subject}
+                  </p>
+                  <p className="mt-1 break-words font-mono text-[0.7rem] text-[color:var(--mauve)]">
+                    to {entry.toEmail}
+                  </p>
+
+                  <p className="mt-2 font-mono text-[0.6rem] uppercase tracking-[0.14em] text-[color:var(--mauve)]">
+                    {formatTime(entry.createdAt)} · {relativeTime(entry.createdAt)}
+                    {` · #${entry.id.slice(0, 8)}`}
+                  </p>
+                </button>
               </li>
             );
           })}
         </ul>
       </div>
+
+      {preview ? (
+        <EmailPreviewModal entry={preview} onClose={() => setPreview(null)} />
+      ) : null}
     </>
+  );
+}
+
+// ── Email preview modal ──────────────────────────────────────────────────────
+// Full-size render of a single `email_events` row, layered above the drawer
+// (z-[70] > the drawer's z-[60]). Backdrop click or the ✕ closes it; Esc is
+// handled by EmailsView. Same sandboxed-iframe rules as the inline preview.
+
+function EmailPreviewModal({
+  entry,
+  onClose,
+}: {
+  entry: EmailEntry;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 sm:p-8">
+      <button
+        type="button"
+        aria-label="Close preview"
+        onClick={onClose}
+        className="absolute inset-0 bg-[color:var(--ink)]/60 backdrop-blur-sm"
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${entry.template} email preview`}
+        className="relative flex max-h-full w-full max-w-3xl flex-col overflow-hidden rounded-2xl border-2 border-[color:var(--ink)] bg-[color:var(--champagne)] shadow-2xl"
+      >
+        <header className="flex items-start justify-between gap-3 border-b-2 border-[color:var(--line)] px-5 py-4">
+          <div className="min-w-0">
+            <span className="inline-block rounded-full border-2 border-[color:var(--ink)] bg-[color:var(--peach)] px-2 py-0.5 font-mono text-[0.58rem] font-bold uppercase tracking-[0.12em] text-[color:var(--surface-deep)]">
+              {entry.template}
+            </span>
+            <h3 className="mt-2 break-words text-base font-bold leading-snug text-[color:var(--ink)]">
+              {entry.subject}
+            </h3>
+            <p className="mt-1 break-words font-mono text-[0.7rem] text-[color:var(--mauve)]">
+              to {entry.toEmail} · {formatTime(entry.createdAt)}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="shrink-0 rounded-full border-2 border-[color:var(--ink)] bg-[color:var(--ink)] px-3 py-1 text-xs font-bold text-[color:var(--champagne)]"
+          >
+            ✕
+          </button>
+        </header>
+
+        <div className="min-h-0 flex-1 overflow-hidden bg-[#FFFCF9]">
+          <iframe
+            title={`${entry.template} preview`}
+            srcDoc={entry.html}
+            sandbox="allow-same-origin"
+            style={{
+              width: "100%",
+              height: "70vh",
+              border: "none",
+              background: "#FFFCF9",
+              display: "block",
+            }}
+          />
+        </div>
+      </div>
+    </div>
   );
 }

@@ -277,6 +277,11 @@ type WizardContextValue = {
   setStepError: Dispatch<SetStateAction<string | null>>;
   submitting: boolean;
   setSubmitting: Dispatch<SetStateAction<boolean>>;
+  // True while the Media step has one or more image uploads in flight. Set by
+  // MediaSection, read by WizardShell to block "Next" until uploads settle so
+  // a merchant can't advance with half-uploaded photos.
+  uploading: boolean;
+  setUploading: Dispatch<SetStateAction<boolean>>;
 };
 
 const WizardContext = createContext<WizardContextValue | null>(null);
@@ -310,6 +315,7 @@ export function EventCreateProvider({
   }));
   const [stepError, setStepError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [uploading, setUploading] = useState(false);
   // Gate persistence until after the rehydrate effect runs, so we don't clobber
   // saved progress with the default state on first paint.
   const [hydrated, setHydrated] = useState(false);
@@ -359,6 +365,8 @@ export function EventCreateProvider({
         setStepError,
         submitting,
         setSubmitting,
+        uploading,
+        setUploading,
       }}
     >
       {children}
@@ -375,11 +383,16 @@ export function WizardShell({
   step: StepIndex;
   children: React.ReactNode;
 }) {
-  const { values, stepError, setStepError, submitting, setSubmitting } = useWizard();
+  const { values, stepError, setStepError, submitting, setSubmitting, uploading } =
+    useWizard();
   const router = useRouter();
   const isLast = step === STEP_COUNT - 1;
 
   function goNext() {
+    if (uploading) {
+      toast.error("Hang on — your photos are still uploading.");
+      return;
+    }
     const err = validateStep(step, values);
     if (err) {
       setStepError(err);
@@ -567,9 +580,10 @@ export function WizardShell({
             <button
               type="button"
               onClick={goNext}
-              className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-6 py-3 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
+              disabled={uploading}
+              className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-6 py-3 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)] disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              Next →
+              {uploading ? "Uploading…" : "Next →"}
             </button>
           )}
         </div>
@@ -1476,7 +1490,7 @@ function makeUploadId() {
 }
 
 export function MediaSection() {
-  const { values, set } = useWizard();
+  const { values, set, setUploading } = useWizard();
   const [pending, setPending] = useState<PendingUpload[]>([]);
   const [dropping, setDropping] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -1503,6 +1517,15 @@ export function MediaSection() {
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pending]);
+
+  // Surface in-flight uploads to the wizard shell so it can block "Next" until
+  // every tile settles. Reset on unmount so a flag stuck `true` (e.g. the user
+  // navigates Back mid-upload) can't wedge the next step's button.
+  const hasUploading = pending.some((p) => p.status === "uploading");
+  useEffect(() => {
+    setUploading(hasUploading);
+    return () => setUploading(false);
+  }, [hasUploading, setUploading]);
 
   const uploadOne = useCallback(
     async (file: File, id: string) => {

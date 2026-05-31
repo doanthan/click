@@ -48,6 +48,28 @@ function normalizeHttpsWebsiteUrl(value: string) {
   }
 }
 
+const ALLOWED_SOCIAL_PLATFORMS = [
+  "instagram",
+  "tiktok",
+  "facebook",
+  "youtube",
+  "x",
+] as const;
+
+// Keep only known platforms that carry a non-empty handle.
+function sanitizeSocials(value: unknown): Record<string, string> {
+  if (typeof value !== "object" || value === null) return {};
+  const source = value as Record<string, unknown>;
+  const out: Record<string, string> = {};
+  for (const platform of ALLOWED_SOCIAL_PLATFORMS) {
+    const handle = source[platform];
+    if (typeof handle === "string" && handle.trim()) {
+      out[platform] = handle.trim();
+    }
+  }
+  return out;
+}
+
 function isWizardPayload(payload: unknown): payload is MerchantWizardInput {
   // We pick on `mode === "wizard"` (set by the new wizard) rather than
   // sniffing field presence, so the legacy short form keeps working unchanged.
@@ -91,8 +113,7 @@ export async function POST(request: Request) {
           contactEmail: stringField(payload.contactEmail),
           phone: stringField(payload.phone),
           websiteUrl: normalizedWebsiteUrl,
-          socialHandle: stringField(payload.socialHandle),
-          socialPlatform: payload.socialPlatform as MerchantWizardInput["socialPlatform"],
+          socials: sanitizeSocials(payload.socials),
           addressStreet: stringField(payload.addressStreet),
           addressSuburb: stringField(payload.addressSuburb),
           addressState: payload.addressState as MerchantWizardInput["addressState"],

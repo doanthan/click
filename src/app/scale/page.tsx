@@ -57,10 +57,10 @@ const workload = [
 const walls = [
   {
     eyebrow: "Wall #1 · hits first",
-    title: "Connection pool of 5",
+    title: "Serverless connection fan-out",
     body:
-      "src/lib/postgres.ts caps the pool at max: 5 per serverless instance. Vercel fans out to many instances, each opening up to 5 Postgres connections — you exhaust the database's connection limit long before you run out of CPU.",
-    fix: "Front all DB access with Supabase's transaction-mode pooler (PgBouncer). Keep the per-instance pg pool small but point it at the pooler, and cap serverless concurrency.",
+      "We already point DATABASE_URL at Supabase's transaction-mode pooler (PgBouncer, port 6543), so the Postgres-side connections are multiplexed. The remaining limit is the client side: src/lib/postgres.ts opens max: 5 per serverless instance, and Vercel fans out to many instances — enough cold instances and you still saturate the pooler's client slots.",
+    fix: "Cap serverless concurrency and right-size the per-instance max against the pooler's client limit. The pooler itself is already in place — this is tuning, not a rearchitecture.",
     accent: "rose" as const,
   },
   {
@@ -95,6 +95,14 @@ const walls = [
     fix: "Track a counter column or use advisory locks so registrations don't queue behind one exclusive lock.",
     accent: "rose" as const,
   },
+  {
+    eyebrow: "Wall #6 · scales with content, not load",
+    title: "Double-metered image pipeline",
+    body:
+      "Every event + avatar is an image, served Supabase Storage → Vercel Image Optimization → browser. That's two metered layers: Supabase egress (~$0.09/GB past the cap) and Vercel per-transform billing ($5/1k source images). The optimizer is largely redundant — avatar-storage.ts and event-image-storage.ts already pre-size with sharp (512² / 1600²), so we pay to re-optimize what's already optimized.",
+    fix: "Move public media to Cloudflare R2 (zero egress) behind the Cloudflare CDN, serve the pre-sized objects directly, and set unoptimized on those <Image>s to drop the Vercel transform bill to ~$0. The helpers already hide the backend, so the swap is contained.",
+    accent: "peach" as const,
+  },
 ];
 
 // Tiered roadmap.
@@ -114,9 +122,10 @@ const tiers = [
     when: "100 merchants · 2000 browsers",
     headline: "Pooler + read cache",
     moves: [
-      "Route DB through PgBouncer (transaction mode)",
+      "Tune serverless concurrency against the pooler",
       "Cache explore/categories aggregations",
       "Add the click-suggestion index",
+      "Move public media to R2 + bypass Vercel optimization",
     ],
   },
   {
@@ -179,6 +188,7 @@ const costTiers = [
     lines: [
       { svc: "Vercel", plan: "Hobby / Pro", cost: "$0–20" },
       { svc: "Supabase", plan: "Free", cost: "$0" },
+      { svc: "Media", plan: "Supabase Storage (free tier)", cost: "$0" },
       { svc: "Mapbox", plan: "Free tier", cost: "$0" },
       { svc: "Stripe", plan: "Pay-as-you-go", cost: "per-txn" },
     ],
@@ -188,27 +198,29 @@ const costTiers = [
   {
     tier: "Tier 1",
     when: "100 merchants · 2000 browsers",
-    total: "~$120–250",
+    total: "~$140–400",
     lines: [
       { svc: "Vercel", plan: "Pro + usage", cost: "$20–60" },
       { svc: "Supabase", plan: "Pro base", cost: "$25" },
       { svc: "Supabase", plan: "Small/Medium compute", cost: "$15–60" },
+      { svc: "Media", plan: "Storage egress + Vercel image transforms", cost: "$20–150" },
       { svc: "Mapbox", plan: "Pay-as-you-go", cost: "$0–250" },
     ],
-    caveat: "The transaction pooler (Wall #1 fix) is included free on Pro. Mapbox is the swing factor — map loads + search sessions can outgrow the DB bill before the DB ever strains.",
+    caveat: "The pooler is already on Pro (Wall #1). Two swing factors: Mapbox (map loads + search sessions), and the double-metered image pipeline (Wall #6) — moving public media to R2 + bypassing Vercel optimization collapses that media line to ~$1–10.",
     accent: "rose" as const,
   },
   {
     tier: "Tier 2+",
     when: "Three regions",
-    total: "~$400–1,400",
+    total: "~$420–1,500",
     lines: [
       { svc: "Vercel", plan: "Pro (Enterprise for multi-region fns)", cost: "$20–60+" },
       { svc: "Supabase", plan: "Pro + Medium/Large primary", cost: "$85–135" },
       { svc: "Supabase", plan: "2× read replicas", cost: "$30–220" },
+      { svc: "Media", plan: "R2 (zero egress) + Cloudflare CDN", cost: "$5–30" },
       { svc: "Mapbox", plan: "Scaled traffic", cost: "$250–1k+" },
     ],
-    caveat: "Each read replica is billed as its own compute instance, sized to the primary. The costly jump is Vercel Enterprise for multi-region functions — not the replicas.",
+    caveat: "Each read replica is billed as its own compute instance, sized to the primary. The costly jump is Vercel Enterprise for multi-region functions — not the replicas. Note media barely moves once it's on R2: zero egress means image bandwidth no longer scales the bill.",
     accent: "peach" as const,
   },
 ];
@@ -225,12 +237,18 @@ const costAxes = [
     body:
       "No base fee. ~1.75% + A$0.30 domestic (2.9%+ international cards). Connect adds ~0.25% + payout fees and ~$2/active connected account. Model it as a ~2–3.5% take-rate out of transaction revenue, not fixed overhead.",
   },
+  {
+    title: "Images — the double-metered line (fixable)",
+    body:
+      "Public media is served Supabase Storage → Vercel Image Optimization → browser, so it's billed twice: Supabase egress (~$0.09/GB past the cap) and Vercel per-transform ($5/1k source images). For an all-unique-images marketplace this grows with content, not traffic, and can rival the DB bill. We already pre-size with sharp, so the fix is cheap: move media to Cloudflare R2 (storage $0.015/GB, zero egress) behind the Cloudflare CDN and serve pre-sized objects directly — the helpers already abstract the backend. The app was on R2 before, so the surface is known.",
+  },
 ];
 
 const suggestions = [
-  "Move DB traffic onto the Supabase transaction pooler",
+  "Tune serverless concurrency against the Supabase pooler",
   "Cache explore + categories reads (5–10 min)",
   "Index the click-suggestion join",
+  "Move public media to Cloudflare R2 + serve pre-sized (bypass Vercel image optimization)",
   "Add read-after-write stickiness before any replica",
   "Cursor-paginate admin & list queries",
   "Queue + batch click writes when they outpace the pool",
@@ -655,7 +673,7 @@ export default function ScalePage() {
           <SectionIntro
             eyebrow="Do this next"
             title="The short list."
-            body="In priority order. The first three clear the way to the 100 / 2000 target; the rest carry you to multi-region."
+            body="In priority order. The first four clear the way to the 100 / 2000 target — the R2 move also cuts the fastest-growing cost line; the rest carry you to multi-region."
           />
 
           <ol className="mt-10 grid gap-3">
