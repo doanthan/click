@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AdminEventRow } from "@/lib/event-repository";
 import type { EventStatus } from "@/lib/click-data";
@@ -11,10 +12,76 @@ type ViewMode = "table" | "map";
 type StatusFilter = "all" | EventStatus;
 type RegionFilter = "all" | Region;
 type DateFilter = "all" | "upcoming" | "past";
-type SortKey = "title" | "status" | "category" | "startsAt" | "attendees";
+type SortKey = "title" | "status" | "category" | "startsAt" | "createdAt" | "attendees";
 type SortDir = "asc" | "desc";
 
 const PAGE_SIZE = 10;
+
+// --- URL <-> filter mapping ----------------------------------------------
+// Every filter is mirrored in the query string so each combination is its own
+// shareable URI (e.g. ?status=pending&region=sydney&when=past&q=jazz&page=2).
+// Slugs are lowercase for clean URLs; defaults are OMITTED from the URL so the
+// bare /admin/events stays canonical (Pending · upcoming · newest-first · p1).
+const STATUS_DEFAULT: StatusFilter = "Pending";
+const REGION_DEFAULT: RegionFilter = "all";
+const WHEN_DEFAULT: DateFilter = "upcoming";
+const VIEW_DEFAULT: ViewMode = "table";
+const SORT_DEFAULT: { key: SortKey; dir: SortDir } = { key: "createdAt", dir: "desc" };
+
+const STATUS_BY_SLUG: Record<string, StatusFilter> = {
+  all: "all",
+  pending: "Pending",
+  live: "Live",
+  featured: "Featured",
+  waitlist: "Waitlist",
+  locked: "Locked",
+  rejected: "Rejected",
+  cancelled: "Cancelled",
+};
+const SLUG_BY_STATUS: Record<StatusFilter, string> = {
+  all: "all",
+  Pending: "pending",
+  Live: "live",
+  Featured: "featured",
+  Waitlist: "waitlist",
+  Locked: "locked",
+  Rejected: "rejected",
+  Cancelled: "cancelled",
+};
+
+const REGION_BY_SLUG: Record<string, RegionFilter> = {
+  all: "all",
+  sydney: "Sydney",
+  melbourne: "Melbourne",
+  other: "Other",
+};
+const SLUG_BY_REGION: Record<RegionFilter, string> = {
+  all: "all",
+  Sydney: "sydney",
+  Melbourne: "melbourne",
+  Other: "other",
+};
+
+const SORT_KEYS: SortKey[] = ["title", "status", "category", "startsAt", "createdAt", "attendees"];
+
+function parseWhen(value: string | null): DateFilter {
+  return value === "past" || value === "all" ? value : WHEN_DEFAULT;
+}
+
+function parseSort(value: string | null): { key: SortKey; dir: SortDir } {
+  if (value) {
+    const [key, dir] = value.split(".");
+    if ((SORT_KEYS as string[]).includes(key) && (dir === "asc" || dir === "desc")) {
+      return { key: key as SortKey, dir };
+    }
+  }
+  return SORT_DEFAULT;
+}
+
+function parsePage(value: string | null): number {
+  const n = Number.parseInt(value ?? "", 10);
+  return Number.isFinite(n) && n > 0 ? n : 1;
+}
 
 // Natural order for the Status pill — Pending first matches the queue's purpose
 // (admins are usually triaging), then the live/featured states, then the cold tail.
@@ -49,7 +116,22 @@ const dateFormatter = new Intl.DateTimeFormat("en-AU", {
   minute: "2-digit",
 });
 
-const statusOrder: StatusFilter[] = ["all", "Pending", "Live", "Featured", "Waitlist", "Locked", "Rejected"];
+// "Created" only needs the date — admins triage by recency, not the minute.
+const createdFormatter = new Intl.DateTimeFormat("en-AU", {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+});
+
+// Status dropdown options. Pending leads (and is the default) — the queue's whole
+// purpose is triaging pending events; Live/Featured cover the published states;
+// All escapes the facet. Waitlist/Locked/Rejected/Cancelled stay reachable via All.
+const statusOptions: { value: StatusFilter; label: string }[] = [
+  { value: "Pending", label: "Pending" },
+  { value: "Live", label: "Live" },
+  { value: "Featured", label: "Featured" },
+  { value: "all", label: "All" },
+];
 
 function statusTone(status: EventStatus) {
   if (status === "Pending") return "bg-[color:var(--rose)] text-[color:var(--surface-deep)]";
@@ -61,40 +143,106 @@ function statusTone(status: EventStatus) {
 }
 
 export function AdminEventQueue({ events }: { events: AdminEventRow[] }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
   const [rows, setRows] = useState(events);
   const [message, setMessage] = useState("");
-  const [filter, setFilter] = useState<StatusFilter>("all");
-  const [regionFilter, setRegionFilter] = useState<RegionFilter>("all");
-  // Default to upcoming — that's the queue admins almost always want.
-  const [dateFilter, setDateFilter] = useState<DateFilter>("upcoming");
-  const [query, setQuery] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [view, setView] = useState<ViewMode>("table");
-  const [page, setPage] = useState(1);
-  // Default sort matches the default date filter (upcoming) — soonest first.
-  const [sortKey, setSortKey] = useState<SortKey>("startsAt");
-  const [sortDir, setSortDir] = useState<SortDir>("asc");
 
-  function toggleSort(key: SortKey) {
-    if (sortKey === key) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    } else {
-      setSortKey(key);
-      // Dates default ascending (soonest first); everything else descending
-      // (biggest counts / latest statuses on top is the more useful first glance).
-      setSortDir(key === "startsAt" || key === "title" || key === "category" ? "asc" : "desc");
-    }
-    setPage(1);
+  // The query string is the single source of truth for every filter, so the
+  // browser Back/Forward buttons replay filter states and each combination is
+  // its own shareable URI. We derive the live values from `searchParams` each
+  // render; setters write them back via `writeParams`. Defaults match the bare
+  // /admin/events (Pending · all regions · upcoming · newest-first · p1) and are
+  // omitted from the URL to keep it canonical.
+  const filter = STATUS_BY_SLUG[searchParams.get("status") ?? ""] ?? STATUS_DEFAULT;
+  const regionFilter = REGION_BY_SLUG[searchParams.get("region") ?? ""] ?? REGION_DEFAULT;
+  const dateFilter = parseWhen(searchParams.get("when"));
+  const view: ViewMode = searchParams.get("view") === "map" ? "map" : "table";
+  const { key: sortKey, dir: sortDir } = parseSort(searchParams.get("sort"));
+  const page = parsePage(searchParams.get("page"));
+  const urlQuery = searchParams.get("q") ?? "";
+
+  // The search box keeps its own local state so typing stays instant; it's
+  // debounced into the URL below. Seeded from the URL so a shared link lands
+  // with the box pre-filled.
+  const [query, setQuery] = useState(urlQuery);
+
+  // Pull URL → box so Back/Forward (or a fresh link) updates the input text.
+  // This is React's "adjust state during render when a value changes" pattern
+  // (not an effect): when `urlQuery` shifts under us we reset the box to match.
+  // It's a no-op while typing — the debounce write only changes `urlQuery` to a
+  // value the box already holds, so the guard skips the reset.
+  const [lastUrlQuery, setLastUrlQuery] = useState(urlQuery);
+  if (urlQuery !== lastUrlQuery) {
+    setLastUrlQuery(urlQuery);
+    setQuery(urlQuery);
   }
 
-  // Filter setters reset to page 1 so users never land on an empty page.
-  // (We do this inline rather than via an effect — keeps state changes
-  // batched and avoids the set-state-in-effect lint rule.)
-  function setFilterAndReset(v: StatusFilter) { setFilter(v); setPage(1); }
-  function setRegionAndReset(v: RegionFilter) { setRegionFilter(v); setPage(1); }
-  function setDateAndReset(v: DateFilter)     { setDateFilter(v);   setPage(1); }
-  function setQueryAndReset(v: string)        { setQuery(v);        setPage(1); }
+  // Merge updates into the current query string and replace the URL. `null`
+  // (or a default-equal value passed as null by the caller) deletes the param.
+  // router.replace (not push) means a single filter tweak doesn't bury the page
+  // you arrived from under a pile of history entries — but Back still steps
+  // through the distinct states you navigated to.
+  function writeParams(updates: Record<string, string | null>) {
+    const params = new URLSearchParams(searchParams.toString());
+    for (const [key, value] of Object.entries(updates)) {
+      if (value === null || value === "") params.delete(key);
+      else params.set(key, value);
+    }
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }
+
+  // Debounce the search box into the URL: one navigation when typing settles,
+  // not one per keystroke. We bail when the box already matches the URL so this
+  // never fights the Back/Forward sync effect below (which pushes URL → box).
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (trimmed === urlQuery) return;
+    const handle = setTimeout(() => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (trimmed) params.set("q", trimmed);
+      else params.delete("q");
+      params.delete("page"); // a new search resets to page 1
+      const qs = params.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    }, 300);
+    return () => clearTimeout(handle);
+  }, [query, urlQuery, searchParams, pathname, router]);
+
+  function toggleSort(key: SortKey) {
+    let nextDir: SortDir;
+    if (sortKey === key) {
+      nextDir = sortDir === "asc" ? "desc" : "asc";
+    } else {
+      // Dates default ascending (soonest first); everything else descending
+      // (biggest counts / latest statuses on top is the more useful first glance).
+      nextDir = key === "startsAt" || key === "title" || key === "category" ? "asc" : "desc";
+    }
+    const isDefault = key === SORT_DEFAULT.key && nextDir === SORT_DEFAULT.dir;
+    writeParams({ sort: isDefault ? null : `${key}.${nextDir}`, page: null });
+  }
+
+  // Filter setters drop the page param so users never land on an empty page.
+  function setFilterAndReset(v: StatusFilter) {
+    writeParams({ status: v === STATUS_DEFAULT ? null : SLUG_BY_STATUS[v], page: null });
+  }
+  function setRegionAndReset(v: RegionFilter) {
+    writeParams({ region: v === REGION_DEFAULT ? null : SLUG_BY_REGION[v], page: null });
+  }
+  function setDateAndReset(v: DateFilter) {
+    writeParams({ when: v === WHEN_DEFAULT ? null : v, page: null });
+  }
+  function setViewMode(v: ViewMode) {
+    writeParams({ view: v === VIEW_DEFAULT ? null : v });
+  }
+  function goToPage(p: number) {
+    writeParams({ page: p > 1 ? String(p) : null });
+  }
 
   // Faceted counts + filtered rows in one pass. Each facet's count reflects
   // every OTHER active filter (but not itself), so a badge never disagrees with
@@ -184,6 +332,16 @@ export function AdminEventQueue({ events }: { events: AdminEventRow[] }) {
           if (!Number.isFinite(bt)) return -1;
           return (at - bt) * dir;
         }
+        case "createdAt": {
+          // Same missing-date handling as startsAt — rows without a created-at
+          // timestamp (static fallback) always sink to the bottom.
+          const at = a.createdAt ? new Date(a.createdAt).getTime() : NaN;
+          const bt = b.createdAt ? new Date(b.createdAt).getTime() : NaN;
+          if (!Number.isFinite(at) && !Number.isFinite(bt)) return 0;
+          if (!Number.isFinite(at)) return 1;
+          if (!Number.isFinite(bt)) return -1;
+          return (at - bt) * dir;
+        }
       }
     });
   }, [filtered, sortKey, sortDir]);
@@ -268,22 +426,25 @@ export function AdminEventQueue({ events }: { events: AdminEventRow[] }) {
   return (
     <div className="mt-10">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-wrap gap-2">
-          {statusOrder.map((option) => (
-            <button
-              key={option}
-              type="button"
-              onClick={() => setFilterAndReset(option)}
-              className={`rounded-full border-2 border-[color:var(--line)] px-4 py-1.5 text-xs font-bold uppercase tracking-wider hard-shadow-sm transition ${
-                filter === option
-                  ? "bg-[color:var(--ink)] text-[color:var(--champagne)]"
-                  : "bg-[color:var(--champagne)] text-[color:var(--ink)] hover:bg-[color:var(--cream)]"
-              }`}
-            >
-              {option === "all" ? "All" : option}{" "}
-              <span className="opacity-60">({counts.get(option) ?? 0})</span>
-            </button>
-          ))}
+        <div className="flex items-center gap-2">
+          <label
+            htmlFor="status-filter"
+            className="text-[0.65rem] font-black uppercase tracking-[0.18em] text-[color:var(--mauve)]"
+          >
+            Status
+          </label>
+          <select
+            id="status-filter"
+            value={filter}
+            onChange={(event) => setFilterAndReset(event.target.value as StatusFilter)}
+            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-[color:var(--ink)] hard-shadow-sm transition hover:bg-[color:var(--cream)]"
+          >
+            {statusOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label} ({counts.get(option.value) ?? 0})
+              </option>
+            ))}
+          </select>
         </div>
         <div className="flex items-center gap-2">
           <div className="flex rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-0.5 hard-shadow-sm">
@@ -291,7 +452,7 @@ export function AdminEventQueue({ events }: { events: AdminEventRow[] }) {
               <button
                 key={mode}
                 type="button"
-                onClick={() => setView(mode)}
+                onClick={() => setViewMode(mode)}
                 aria-pressed={view === mode}
                 className={`rounded-full px-3 py-1 text-[0.65rem] font-black uppercase tracking-wider transition ${
                   view === mode
@@ -306,7 +467,7 @@ export function AdminEventQueue({ events }: { events: AdminEventRow[] }) {
           <input
             type="search"
             value={query}
-            onChange={(event) => setQueryAndReset(event.target.value)}
+            onChange={(event) => setQuery(event.target.value)}
             placeholder="Search title, host, suburb, category…"
             className="w-full rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-2 text-sm font-medium text-[color:var(--ink)] placeholder:text-[color:var(--mauve)]/70 sm:w-72"
           />
@@ -359,11 +520,12 @@ export function AdminEventQueue({ events }: { events: AdminEventRow[] }) {
       ) : (
         // overflow-visible so the row's 3-dot menu can render outside the card edge.
         <div className="mt-6 overflow-visible rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow-sm">
-        <div className="hidden grid-cols-[1.35fr_0.8fr_0.7fr_0.9fr_0.7fr_0.4fr] gap-4 bg-[color:var(--surface-deep)] px-5 py-3 text-xs font-black uppercase tracking-[0.14em] text-[color:var(--on-deep)] md:grid">
+        <div className="hidden grid-cols-[1.2fr_0.7fr_0.7fr_0.85fr_0.85fr_0.6fr_0.4fr] gap-4 bg-[color:var(--surface-deep)] px-5 py-3 text-xs font-black uppercase tracking-[0.14em] text-[color:var(--on-deep)] md:grid">
           <SortHeader label="Event"    sortKey="title"     activeKey={sortKey} dir={sortDir} onClick={toggleSort} />
           <SortHeader label="Status"   sortKey="status"    activeKey={sortKey} dir={sortDir} onClick={toggleSort} />
           <SortHeader label="Category" sortKey="category"  activeKey={sortKey} dir={sortDir} onClick={toggleSort} />
           <SortHeader label="Starts"   sortKey="startsAt"  activeKey={sortKey} dir={sortDir} onClick={toggleSort} />
+          <SortHeader label="Created"  sortKey="createdAt" activeKey={sortKey} dir={sortDir} onClick={toggleSort} />
           <SortHeader label="Going"    sortKey="attendees" activeKey={sortKey} dir={sortDir} onClick={toggleSort} />
           <span className="text-right">Actions</span>
         </div>
@@ -383,13 +545,18 @@ export function AdminEventQueue({ events }: { events: AdminEventRow[] }) {
             const startsLabel = Number.isNaN(startsAt.getTime())
               ? "—"
               : dateFormatter.format(startsAt);
+            const createdAt = event.createdAt ? new Date(event.createdAt) : null;
+            const createdLabel =
+              createdAt && !Number.isNaN(createdAt.getTime())
+                ? createdFormatter.format(createdAt)
+                : "—";
 
             return (
               <div
                 key={event.id}
                 className="border-b border-[color:var(--line)] last:border-0"
               >
-                <div className="grid gap-3 px-5 py-4 text-sm font-medium text-[color:var(--mauve)] md:grid-cols-[1.35fr_0.8fr_0.7fr_0.9fr_0.7fr_0.4fr] md:items-center">
+                <div className="grid gap-3 px-5 py-4 text-sm font-medium text-[color:var(--mauve)] md:grid-cols-[1.2fr_0.7fr_0.7fr_0.85fr_0.85fr_0.6fr_0.4fr] md:items-center">
                   <div className="text-left">
                     <Link
                       href={`/events/${event.id}`}
@@ -448,6 +615,7 @@ export function AdminEventQueue({ events }: { events: AdminEventRow[] }) {
                   </span>
                   <span>{event.category}</span>
                   <span>{startsLabel}</span>
+                  <span>{createdLabel}</span>
                   <span className="font-bold text-[color:var(--ink)]">
                     {event.attendees}/{event.capacity}
                   </span>
@@ -505,7 +673,7 @@ export function AdminEventQueue({ events }: { events: AdminEventRow[] }) {
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                onClick={() => goToPage(Math.max(1, safePage - 1))}
                 disabled={safePage <= 1}
                 className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-1.5 text-xs font-black uppercase tracking-wider text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--cream)] disabled:cursor-not-allowed disabled:opacity-40"
                 aria-label="Previous page"
@@ -517,7 +685,7 @@ export function AdminEventQueue({ events }: { events: AdminEventRow[] }) {
               </span>
               <button
                 type="button"
-                onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+                onClick={() => goToPage(Math.min(pageCount, safePage + 1))}
                 disabled={safePage >= pageCount}
                 className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-1.5 text-xs font-black uppercase tracking-wider text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--cream)] disabled:cursor-not-allowed disabled:opacity-40"
                 aria-label="Next page"
@@ -605,12 +773,23 @@ function EventActions({
                   Approving publishes it; no one can pay until they finish setup.
                 </p>
               ) : null}
+              {!event.approvable ? (
+                <p className="mb-1 rounded-lg bg-[color:var(--cream)] px-3 py-2 text-[0.65rem] font-bold leading-snug text-[color:var(--mauve)]">
+                  This event has already passed, so it can no longer be approved.
+                  Only upcoming events can go live.
+                </p>
+              ) : null}
               <button
                 type="button"
                 role="menuitem"
                 onClick={() => run(onApprove)}
-                disabled={isBusy}
-                className="block w-full rounded-lg px-3 py-2 text-left text-xs font-bold text-[color:var(--ink)] transition-colors hover:bg-[color:var(--peach)] disabled:opacity-60"
+                disabled={isBusy || !event.approvable}
+                title={
+                  event.approvable
+                    ? undefined
+                    : "This event has already passed and can no longer be approved."
+                }
+                className="block w-full rounded-lg px-3 py-2 text-left text-xs font-bold text-[color:var(--ink)] transition-colors hover:bg-[color:var(--peach)] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isBusy ? "Approving…" : "Approve event"}
               </button>

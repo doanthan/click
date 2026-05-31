@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { UserCalendar } from "@/components/user-calendar";
 import { getDashboardData } from "@/lib/event-repository";
+import { reconcileCheckoutSession } from "@/lib/stripe-sync";
 
 export const metadata = {
   title: "Calendar | Click",
@@ -10,7 +11,7 @@ export const metadata = {
 };
 
 type PageProps = {
-  searchParams?: Promise<{ month?: string; booked?: string }>;
+  searchParams?: Promise<{ month?: string; booked?: string; session_id?: string }>;
 };
 
 export default async function CalendarPage({ searchParams }: PageProps) {
@@ -20,6 +21,16 @@ export default async function CalendarPage({ searchParams }: PageProps) {
   }
 
   const search = searchParams ? await searchParams : undefined;
+
+  // Fulfill-on-return: when Stripe redirects back here after a paid checkout it
+  // appends the Checkout Session id. Reconcile it BEFORE loading dashboard data
+  // so the just-paid event is already 'confirmed' and shows up on this first
+  // render — instead of waiting on (or, in dev, never receiving) the webhook.
+  // Idempotent and best-effort: a failure here just defers to the webhook.
+  if (search?.session_id) {
+    await reconcileCheckoutSession(search.session_id).catch(() => null);
+  }
+
   const dashboard = await getDashboardData(session);
 
   return (

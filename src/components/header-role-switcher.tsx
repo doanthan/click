@@ -30,9 +30,11 @@ const ACCOUNT_LINKS: AccountLink[] = [
 export function HeaderRoleSwitcher({
   roles,
   userLabel,
+  avatarUrl,
 }: {
   roles: PortalRole[];
   userLabel: string;
+  avatarUrl?: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -63,8 +65,20 @@ export function HeaderRoleSwitcher({
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="flex max-w-52 items-center gap-2 truncate rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-2 text-sm font-bold text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)]"
+        className="flex max-w-52 items-center gap-2 truncate rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] py-1.5 pl-1.5 pr-4 text-sm font-bold text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)]"
       >
+        {avatarUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={avatarUrl}
+            alt={userLabel}
+            className="h-7 w-7 shrink-0 rounded-full border border-[color:var(--line)] object-cover"
+          />
+        ) : (
+          <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-[color:var(--line)] bg-[color:var(--peach)] text-xs font-bold uppercase text-[color:var(--ink)]">
+            {(userLabel.trim()[0] ?? "✷").toUpperCase()}
+          </span>
+        )}
         {showPortalSwitcher ? (
           <span className="font-mono text-[0.65rem] uppercase tracking-[0.16em] text-[color:var(--mauve)]">
             {PORTAL_LABEL[currentRole]}

@@ -15,6 +15,7 @@ export async function SiteHeader() {
   const isAdmin = !!session?.user && isAdminEmail(session.user.email);
   const profileStatus = session?.user ? await getProfileStatus(session) : null;
   const hasMerchantProfile = !!profileStatus?.merchantProfile;
+  const avatarUrl = profileStatus?.photoUrl ?? session?.user?.image ?? null;
   const unreadCount = session?.user ? await getUnreadNotificationCount(session) : 0;
 
   const portalRoles: PortalRole[] = [];
@@ -90,7 +91,7 @@ export async function SiteHeader() {
           {session?.user ? (
             <>
               <HeaderNotificationsBell unreadCount={unreadCount} />
-              <HeaderRoleSwitcher roles={portalRoles} userLabel={userLabel} />
+              <HeaderRoleSwitcher roles={portalRoles} userLabel={userLabel} avatarUrl={avatarUrl} />
             </>
           ) : (
             <>

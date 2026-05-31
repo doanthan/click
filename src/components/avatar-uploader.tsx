@@ -17,6 +17,7 @@
  */
 
 import { useId, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 
 const ACCEPT = "image/jpeg,image/png,image/webp";
 const MAX_BYTES = 5 * 1024 * 1024;
@@ -28,6 +29,7 @@ type AvatarUploaderProps = {
 
 export function AvatarUploader({ initialUrl, displayName }: AvatarUploaderProps) {
   const inputId = useId();
+  const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   const [url, setUrl] = useState<string | null>(initialUrl);
   const [pending, setPending] = useState(false);
@@ -60,10 +62,18 @@ export function AvatarUploader({ initialUrl, displayName }: AvatarUploaderProps)
         | { url?: string; error?: string }
         | null;
       if (!response.ok || !payload?.url) {
-        setError(payload?.error ?? "Upload failed. Try again.");
+        // 503 = storage env not configured on this deploy. It's not the user's
+        // fault and retrying won't help until ops sets the Supabase keys, so say
+        // so plainly rather than the bare "temporarily unavailable".
+        setError(
+          response.status === 503
+            ? "Photo uploads aren’t available right now — your other changes will still save."
+            : payload?.error ?? "Upload failed. Try again.",
+        );
         return;
       }
       setUrl(payload.url);
+      router.refresh();
     } catch {
       setError("Upload failed. Check your connection and try again.");
     } finally {

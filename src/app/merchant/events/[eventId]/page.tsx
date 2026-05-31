@@ -30,6 +30,21 @@ const rsvpDateFormatter = new Intl.DateTimeFormat("en-AU", {
   timeZone: "Australia/Sydney",
 });
 
+const timeFormatter = new Intl.DateTimeFormat("en-AU", {
+  hour: "numeric",
+  minute: "2-digit",
+  timeZone: "Australia/Sydney",
+});
+
+// Appends the end time as a range when the event has a known end.
+function formatWhen(startsAt: string, endsAt: string | null) {
+  const start = dateFormatter.format(new Date(startsAt));
+  if (!endsAt) return start;
+  const end = new Date(endsAt);
+  if (Number.isNaN(end.getTime())) return start;
+  return `${start} – ${timeFormatter.format(end)}`;
+}
+
 function formatPrice(cents: number) {
   if (cents === 0) return "Free";
   return new Intl.NumberFormat("en-AU", {
@@ -91,7 +106,7 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
               {event.title}
             </h1>
             <p className="mt-3 text-sm font-bold leading-6 text-[color:var(--mauve)]">
-              {dateFormatter.format(new Date(event.startsAt))} ·{" "}
+              {formatWhen(event.startsAt, event.endsAt)} ·{" "}
               {event.locationName} · {event.suburb}
             </p>
           </div>

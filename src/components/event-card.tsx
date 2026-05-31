@@ -1,11 +1,10 @@
 import Image from "next/image";
 import Link from "next/link";
-import type { EventItem } from "@/lib/click-data";
+import { type EventItem, formatEventTimeRange } from "@/lib/click-data";
 import { formatCapacity } from "@/lib/click-matching";
 import { Pill } from "./click-ui";
 import { EventBookmarkButton } from "./event-bookmark-button";
 import { EventDetailModal } from "./event-detail-modal";
-import { EventRegistrationButton } from "./event-registration-button";
 
 export function EventCard({
   event,
@@ -58,7 +57,7 @@ export function EventCard({
         </span>
         <span className="absolute bottom-3 left-3 rounded-md border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-2 text-[0.72rem] font-black uppercase leading-tight tracking-[0.14em] text-[color:var(--ink)] hard-shadow-sm">
           {event.date}
-          <span className="block font-mono text-[0.62rem] text-[color:var(--mauve)]">{event.time}</span>
+          <span className="block font-mono text-[0.62rem] text-[color:var(--mauve)]">{formatEventTimeRange(event)}</span>
         </span>
         <span className="absolute bottom-3 right-3 max-w-[8rem] truncate rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-2.5 py-1.5 text-[0.62rem] font-bold uppercase tracking-wider text-[color:var(--ink)] hard-shadow-sm sm:max-w-none sm:px-3 sm:text-[0.68rem]">
           {availabilityLabel}
@@ -95,12 +94,7 @@ export function EventCard({
         </div>
         <p className="sr-only">{formatCapacity(event)}</p>
 
-        <div className="mt-5 grid grid-cols-2 gap-2">
-          <EventRegistrationButton
-            eventId={event.id}
-            initiallyRegistered={registered}
-            isWaitlist={isWaitlistEvent}
-          />
+        <div className="mt-5">
           <EventDetailModal
             event={event}
             bookmarked={bookmarked}

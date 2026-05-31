@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { AdminMerchantAutoApprove } from "@/components/admin-merchant-auto-approve";
 import { getAdminMerchantDetail } from "@/lib/event-repository";
 import type { AdminMerchantDetailEvent } from "@/lib/event-repository";
 
@@ -71,6 +72,32 @@ function transactionTone(status: string) {
   return "bg-[color:var(--cream)] text-[color:var(--ink)]";
 }
 
+function socialUrl(platform: string | null, handle: string): string | null {
+  const clean = handle.replace(/^@/, "").trim();
+  if (!clean) return null;
+  // If the merchant pasted a full URL, trust it.
+  if (/^https?:\/\//i.test(handle)) return handle;
+  switch (platform) {
+    case "instagram":
+      return `https://instagram.com/${clean}`;
+    case "tiktok":
+      return `https://tiktok.com/@${clean}`;
+    case "facebook":
+      return `https://facebook.com/${clean}`;
+    default:
+      return null;
+  }
+}
+
+// ABR (Australian Business Register) public lookup. There is also a free SOAP/JSON
+// ABR Web Services API (requires a registered GUID via abr.business.gov.au/Tools/
+// WebServices) for automated verification — for now we deep-link the admin to the
+// official record so they can eyeball the entity name, status and GST registration.
+function abrSearchUrl(abn: string): string {
+  const digits = abn.replace(/\s+/g, "");
+  return `https://abr.business.gov.au/ABN/View?abn=${encodeURIComponent(digits)}`;
+}
+
 function fullAddress(merchant: {
   addressStreet: string | null;
   addressSuburb: string | null;
@@ -94,6 +121,12 @@ export default async function AdminMerchantDetailPage({
   if (!merchant) notFound();
 
   const address = fullAddress(merchant);
+  const social = merchant.socialHandle
+    ? {
+        label: `${merchant.socialPlatform ? titleCase(merchant.socialPlatform) : "Social"} · ${merchant.socialHandle}`,
+        url: socialUrl(merchant.socialPlatform, merchant.socialHandle),
+      }
+    : null;
 
   return (
     <div className="space-y-8 py-10">
@@ -123,16 +156,34 @@ export default async function AdminMerchantDetailPage({
             <p className="mt-2 font-mono text-xs font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
               {merchant.contactEmail}
             </p>
-            {merchant.websiteUrl ? (
-              <a
-                href={merchant.websiteUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="mt-1 inline-block text-xs font-bold uppercase tracking-wider text-[color:var(--ink)] underline"
-              >
-                {merchant.websiteUrl.replace(/^https?:\/\//, "")}
-              </a>
-            ) : null}
+            <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1">
+              {merchant.websiteUrl ? (
+                <a
+                  href={merchant.websiteUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-block text-xs font-bold uppercase tracking-wider text-[color:var(--ink)] underline"
+                >
+                  {merchant.websiteUrl.replace(/^https?:\/\//, "")}
+                </a>
+              ) : null}
+              {social ? (
+                social.url ? (
+                  <a
+                    href={social.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-block text-xs font-bold uppercase tracking-wider text-[color:var(--ink)] underline"
+                  >
+                    {social.label}
+                  </a>
+                ) : (
+                  <span className="inline-block text-xs font-bold uppercase tracking-wider text-[color:var(--mauve)]">
+                    {social.label}
+                  </span>
+                )
+              ) : null}
+            </div>
           </div>
         </div>
 
@@ -146,11 +197,42 @@ export default async function AdminMerchantDetailPage({
                 : "—"
             }
           />
-          <Stat label="ABN" value={merchant.abn ?? "—"} />
+          <Stat
+            label="ABN"
+            value={merchant.abn ?? "—"}
+            action={
+              merchant.abn ? (
+                <a
+                  href={abrSearchUrl(merchant.abn)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[0.65rem] font-bold uppercase tracking-wider text-[color:var(--rose)] underline"
+                >
+                  Verify on ABR ↗
+                </a>
+              ) : null
+            }
+          />
           <Stat label="ACN" value={merchant.acn ?? "—"} />
           <Stat
             label="Business type"
             value={merchant.businessType ? titleCase(merchant.businessType) : "—"}
+          />
+          <Stat
+            label="Social"
+            value={merchant.socialHandle ?? "—"}
+            action={
+              social?.url ? (
+                <a
+                  href={social.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[0.65rem] font-bold uppercase tracking-wider text-[color:var(--rose)] underline"
+                >
+                  Open ↗
+                </a>
+              ) : null
+            }
           />
           <Stat label="Phone" value={merchant.phone ?? "—"} />
           <Stat label="Address" value={address ?? "—"} />
@@ -160,6 +242,11 @@ export default async function AdminMerchantDetailPage({
           />
         </dl>
       </header>
+
+      <AdminMerchantAutoApprove
+        merchantId={merchant.id}
+        initial={merchant.autoApproveEvents}
+      />
 
       <section className="grid gap-6 lg:grid-cols-[1fr_1.4fr]">
         <Card title="Owner">
@@ -378,13 +465,24 @@ function EventRow({ event }: { event: AdminMerchantDetailEvent }) {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({
+  label,
+  value,
+  action,
+}: {
+  label: string;
+  value: string;
+  action?: React.ReactNode;
+}) {
   return (
     <div>
       <dt className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
         {label}
       </dt>
-      <dd className="mt-1 break-words font-bold text-[color:var(--ink)]">{value}</dd>
+      <dd className="mt-1 break-words font-bold text-[color:var(--ink)]">
+        {value}
+        {action ? <span className="ml-2 font-normal">{action}</span> : null}
+      </dd>
     </div>
   );
 }

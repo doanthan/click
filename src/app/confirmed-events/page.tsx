@@ -5,6 +5,7 @@ import { EventCard } from "@/components/event-card";
 import { UserCalendar } from "@/components/user-calendar";
 import { Pill } from "@/components/click-ui";
 import {
+  getBookmarkedEvents,
   getConfirmedEvents,
   getProfileStatus,
 } from "@/lib/event-repository";
@@ -26,14 +27,18 @@ export default async function ConfirmedEventsPage({ searchParams }: ConfirmedEve
   }
 
   const params = await searchParams;
-  const tab = params?.tab === "past" ? "past" : "upcoming";
+  const tab =
+    params?.tab === "past" ? "past" : params?.tab === "saved" ? "saved" : "upcoming";
 
-  const [confirmed, profileStatus] = await Promise.all([
+  const [confirmed, bookmarks, profileStatus] = await Promise.all([
     getConfirmedEvents(session),
+    getBookmarkedEvents(session),
     getProfileStatus(session),
   ]);
   const bookmarkSet = new Set(profileStatus.bookmarkedEventIds);
-  const events = tab === "past" ? confirmed.past : confirmed.upcoming;
+  const registeredSet = new Set(profileStatus.registeredEventIds);
+  const events =
+    tab === "past" ? confirmed.past : tab === "saved" ? bookmarks : confirmed.upcoming;
 
   return (
     <main className="paper-noise min-h-screen bg-[color:var(--champagne)] px-4 py-12 text-[color:var(--ink)] sm:px-6">
@@ -43,12 +48,18 @@ export default async function ConfirmedEventsPage({ searchParams }: ConfirmedEve
           Confirmed
         </span>
         <h1 className="mt-6 font-display text-5xl font-light leading-[0.96] tracking-tight sm:text-6xl">
-          {tab === "past" ? "Plans you’ve been to." : "Plans on your calendar."}
+          {tab === "past"
+            ? "Plans you’ve been to."
+            : tab === "saved"
+              ? "Plans you’ve saved."
+              : "Plans on your calendar."}
         </h1>
         <p className="mt-3 max-w-2xl text-base font-medium leading-7 text-[color:var(--mauve)]">
           {tab === "past"
             ? "Past RSVPs and waitlist offers, in case you want to revisit a host."
-            : "RSVPs and active waitlists. Cancel from the event page if your plans change."}
+            : tab === "saved"
+              ? "Events you’ve bookmarked. Tap the bookmark again on any card to remove it."
+              : "RSVPs and active waitlists. Cancel from the event page if your plans change."}
         </p>
 
         <div className="mt-8 flex flex-wrap gap-2">
@@ -60,13 +71,17 @@ export default async function ConfirmedEventsPage({ searchParams }: ConfirmedEve
             Past
             <Pill tone="cream">{confirmed.past.length}</Pill>
           </TabLink>
+          <TabLink active={tab === "saved"} href="/confirmed-events?tab=saved">
+            Saved
+            <Pill tone="cream">{bookmarks.length}</Pill>
+          </TabLink>
         </div>
 
         <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
           {/* Left column — RSVP list */}
           <div>
             <h2 className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-              {tab === "past" ? "Past RSVPs" : "Your RSVPs"}
+              {tab === "past" ? "Past RSVPs" : tab === "saved" ? "Saved events" : "Your RSVPs"}
             </h2>
             {events.length > 0 ? (
               <div className="mt-4 grid gap-6 sm:grid-cols-2 lg:grid-cols-1">
@@ -74,20 +89,26 @@ export default async function ConfirmedEventsPage({ searchParams }: ConfirmedEve
                   <EventCard
                     key={event.id}
                     event={event}
-                    bookmarked={bookmarkSet.has(event.id)}
-                    registered
+                    bookmarked={tab === "saved" ? true : bookmarkSet.has(event.id)}
+                    registered={tab === "saved" ? registeredSet.has(event.id) : true}
                   />
                 ))}
               </div>
             ) : (
               <div className="mt-4 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-8 text-center">
                 <p className="font-display text-3xl font-light leading-tight">
-                  {tab === "past" ? "No past RSVPs yet." : "No upcoming RSVPs."}
+                  {tab === "past"
+                    ? "No past RSVPs yet."
+                    : tab === "saved"
+                      ? "No saved events yet."
+                      : "No upcoming RSVPs."}
                 </p>
                 <p className="mt-3 text-sm font-semibold leading-6 text-[color:var(--mauve)]">
                   {tab === "past"
                     ? "Once you’ve attended events they’ll land here."
-                    : "RSVP to an event and it’ll show up here."}
+                    : tab === "saved"
+                      ? "Tap the bookmark icon on any event card and it’ll land here."
+                      : "RSVP to an event and it’ll show up here."}
                 </p>
                 <Link
                   href="/events"

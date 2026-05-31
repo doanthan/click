@@ -165,9 +165,10 @@ function DashboardTab({
 }) {
   // eslint-disable-next-line react-hooks/purity -- async server component, evaluated once per request
   const now = Date.now();
-  const upcomingCount = merchantEvents.filter(
+  const upcoming = merchantEvents.filter(
     (event) => new Date(event.startsAt).getTime() >= now,
-  ).length;
+  );
+  const upcomingCount = upcoming.length;
 
   // Analytics summary (folded in from the old Analytics tab).
   const totalConfirmed = merchantEvents.reduce((sum, e) => sum + e.confirmed, 0);
@@ -176,6 +177,7 @@ function DashboardTab({
     (sum, e) => sum + e.priceCents * e.confirmed,
     0,
   );
+  const totalWaitlisted = merchantEvents.reduce((sum, e) => sum + e.waitlisted, 0);
   const fillRate = totalCapacity > 0 ? Math.round((totalConfirmed / totalCapacity) * 100) : 0;
 
   // First-run welcome: shown only while the merchant has zero events. It
@@ -183,7 +185,7 @@ function DashboardTab({
   const showWelcome = merchantEvents.length === 0;
 
   return (
-    <div className="space-y-10 py-10">
+    <div className="space-y-8 py-10">
       {!payoutsEnabled ? <PayoutSetupBanner /> : null}
       {showWelcome ? <WelcomeToClick businessName={businessName} /> : null}
 
@@ -195,14 +197,61 @@ function DashboardTab({
             : "Your hosting dashboard."
         }
         body="Snapshot of bookings and revenue across all your events, plus the calendar below."
+        action={<CreateEventButton />}
       />
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <MetricCard label="Upcoming" value={upcomingCount.toString()} tone="pink" />
-        <MetricCard label="Confirmed RSVPs" value={totalConfirmed.toString()} tone="aqua" />
-        <MetricCard label="Fill rate" value={`${fillRate}%`} tone="white" />
-        <MetricCard label="Revenue" value={formatPrice(totalRevenueCents)} tone="white" />
-      </div>
+      {/* Analytics overview — booking + revenue snapshot across all events. */}
+      {!showWelcome ? (
+        <section>
+          <p className="eyebrow">This month at a glance</p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <MetricCard label="Upcoming" value={upcomingCount.toString()} tone="pink" />
+            <MetricCard label="Confirmed RSVPs" value={totalConfirmed.toString()} tone="aqua" />
+            <MetricCard label="Fill rate" value={`${fillRate}%`} tone="white" />
+            <MetricCard label="Revenue" value={formatPrice(totalRevenueCents)} tone="white" />
+          </div>
+          {totalWaitlisted > 0 ? (
+            <p className="mt-3 text-xs font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+              + {totalWaitlisted} on waitlist across your events
+            </p>
+          ) : null}
+        </section>
+      ) : null}
+
+      {/* Your events — quick list of what's coming up, with a create CTA. This
+          is the primary working surface, so it sits above the calendar. */}
+      {merchantEvents.length > 0 ? (
+        <section>
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <p className="eyebrow">Your events</p>
+              <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+                {upcomingCount > 0
+                  ? "Next events on your calendar — click any row to manage attendees."
+                  : "No upcoming events. Create one to start taking bookings."}
+              </p>
+            </div>
+            <Link
+              href="/merchant?tab=events"
+              className="inline-flex shrink-0 items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-2 text-xs font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)]"
+            >
+              View all events →
+            </Link>
+          </div>
+          <div className="mt-6">
+            {upcomingCount > 0 ? (
+              <MerchantEventsPanel events={upcoming.slice(0, 5)} />
+            ) : (
+              <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-6">
+                <p className="text-sm font-medium leading-6 text-[color:var(--mauve)]">
+                  Your past events are in the Events tab. Ready for the next one?
+                </p>
+                <CreateEventButton />
+              </div>
+            )}
+          </div>
+        </section>
+      ) : null}
 
       <section>
         <p className="eyebrow">Calendar</p>
@@ -219,6 +268,19 @@ function DashboardTab({
         <ConfirmedRsvpChart merchantEvents={merchantEvents} />
       ) : null}
     </div>
+  );
+}
+
+// Primary CTA — the merchant portal's most important action, so it gets the
+// rose fill treatment and is reused in the dashboard header + empty states.
+function CreateEventButton() {
+  return (
+    <Link
+      href="/merchant/events/create"
+      className="inline-flex shrink-0 items-center rounded-full border-2 border-[color:var(--surface-deep)] bg-[color:var(--rose)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
+    >
+      + Create event
+    </Link>
   );
 }
 
@@ -381,14 +443,7 @@ function EventsTab({
         eyebrow="My events"
         title="Events & venues."
         body="Filter by status and click any row to open attendees, edit, or cancel."
-        action={
-          <Link
-            href="/merchant/events/create"
-            className="inline-flex rounded-full border-2 border-[color:var(--surface-deep)] bg-[color:var(--rose)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
-          >
-            Create event →
-          </Link>
-        }
+        action={<CreateEventButton />}
       />
 
       <MerchantEventsPanel events={events} />

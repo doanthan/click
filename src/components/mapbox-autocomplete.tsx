@@ -3,9 +3,17 @@
 import dynamic from "next/dynamic";
 import { useCallback, useMemo, useRef } from "react";
 
-// `@mapbox/search-js-react` touches `document` at import time, so we can't
-// bundle it into the SSR pass. next/dynamic with `ssr: false` lazy-loads it on
+// `@mapbox/search-js-react` touches `document` at import time, so it can't be
+// bundled into the SSR pass. next/dynamic with `ssr: false` lazy-loads it on
 // the client only.
+//
+// As you type (and on blur after a pick), the SearchBox aborts each superseded
+// request via `AbortController.abort()` (no reason). On some paths the aborted
+// work escapes as a benign unhandled rejection — `AbortError: signal is aborted
+// without reason` — which Next's dev overlay paints as a "Runtime AbortError".
+// That's swallowed globally in `src/instrumentation-client.ts`, which registers
+// an `unhandledrejection` handler before Next's overlay does (component code
+// can't win that registration race, but the instrumentation hook can).
 const SearchBox = dynamic(
   () => import("@mapbox/search-js-react").then((m) => m.SearchBox),
   {
@@ -21,49 +29,6 @@ const SearchBox = dynamic(
 );
 
 const TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
-
-// As you type, the SearchBox aborts each superseded suggestion request via
-// `AbortController.abort()` (no reason). The browser rejects the in-flight
-// fetch with a benign `AbortError` ("signal is aborted without reason"). The
-// library discards aborted results, but on one fetch path the rejection isn't
-// caught, so it bubbles up as an unhandled rejection — which Next's dev error
-// overlay shows as a "Runtime AbortError".
-//
-// We can't swallow it with an `unhandledrejection` listener: Next's overlay
-// handler is registered before app code and ignores `event.preventDefault()`
-// (it only bails for its own router errors — see Next's `use-error-handler`).
-// So neutralise it at the source instead — wrap `fetch` so an aborted *Mapbox*
-// request returns a promise that never settles. The library's await on a
-// discarded request simply never proceeds (equivalent to its own
-// catch-and-return), so no rejection is ever produced. Scoped to Mapbox URLs
-// so every other aborted fetch in the app still rejects normally; installed
-// once on the client. Harmless in prod (no overlay there).
-if (typeof window !== "undefined") {
-  const w = window as typeof window & { __mapboxAbortPatched?: boolean };
-  if (!w.__mapboxAbortPatched) {
-    w.__mapboxAbortPatched = true;
-    const originalFetch = window.fetch.bind(window);
-    window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
-      const url =
-        typeof input === "string"
-          ? input
-          : input instanceof URL
-            ? input.href
-            : input.url;
-      const pending = originalFetch(input, init);
-      if (!url.includes("mapbox.com")) return pending;
-      return pending.catch((err: unknown) => {
-        if ((err as { name?: string } | null)?.name === "AbortError") {
-          // Never-settling: the request was aborted because the query moved
-          // on, so its result is discarded either way. Returning a pending
-          // promise stops the benign AbortError from ever surfacing.
-          return new Promise<Response>(() => {});
-        }
-        throw err;
-      });
-    };
-  }
-}
 
 // Fully static, so define it once at module scope. The SearchBox wrapper keys a
 // `useEffect` on `theme`; a fresh object literal per render would re-assign the

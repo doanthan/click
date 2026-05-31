@@ -62,7 +62,7 @@ export default async function CreateEventLayout({
 
   return (
     <main className="min-h-screen bg-[color:var(--champagne)] text-[color:var(--ink)]">
-      <section className="bg-[color:var(--champagne)] py-12">
+      <section className="bg-[color:var(--champagne)] py-8">
         <div className="mx-auto max-w-4xl px-4 sm:px-6">
           <EventCreateProvider
             categoryOptions={categoryOptions}

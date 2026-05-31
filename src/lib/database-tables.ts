@@ -28,7 +28,7 @@ const TABLE_NOTES: Record<string, string> = {
   tag_categories: "Groupings that organise the tag taxonomy.",
   tags: "Interest / life / music / vibe tags applied to people and events.",
   user_tags: "Join table linking profiles to their tags.",
-  click_personas: "Generated personality profile from the Life Quiz.",
+  click_personas: "Generated personality profile from the Personality Quiz.",
   events: "Public and merchant-created events powering Explore and RSVP.",
   event_tags: "Join table linking events to their tags.",
   event_attendees: "RSVPs and their status (confirmed, waitlisted, etc.).",

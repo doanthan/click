@@ -4,6 +4,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -41,6 +42,9 @@ type WizardValues = {
   groupName: string;
   category: string;
   startsAt: string;
+  // How long the event runs, in minutes. Combined with startsAt server-side to
+  // set events.ends_at — without it every event silently defaulted to 2 hours.
+  durationMinutes: string;
   capacity: string;
   locationName: string;
   suburb: string;
@@ -76,11 +80,20 @@ export const STEP_PATHS = [
   "/merchant/events/create/review",
 ] as const;
 
+// Wizard form state is held in React context (mounted in the route layout), so
+// it survives client-side navigation between step pages. It does NOT survive a
+// full page load — a refresh or a direct deep-link to a later step (e.g. opening
+// /review on its own) starts a fresh context and resets to these defaults. To
+// keep entered values across those reloads too, we mirror the state into
+// sessionStorage and rehydrate from it on mount.
+const STORAGE_KEY = "click:event-create-wizard";
+
 const initial: WizardValues = {
   title: "",
   groupName: "",
   category: "",
   startsAt: "",
+  durationMinutes: "120",
   capacity: "12",
   locationName: "",
   suburb: "",
@@ -133,19 +146,6 @@ function validateStep(step: StepIndex, v: WizardValues): string | null {
   return null;
 }
 
-function formatDateTime(value: string) {
-  if (!value) return "Pick a date";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return new Intl.DateTimeFormat("en-AU", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(d);
-}
-
 // ---------- date helpers (DateTimePicker + RecurrencePicker) ----------
 
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -160,6 +160,18 @@ const QUICK_TIMES: Array<{ label: string; hour: number; minute: number }> = [
   { label: "7:00 PM", hour: 19, minute: 0 },
   { label: "7:30 PM", hour: 19, minute: 30 },
   { label: "8:00 PM", hour: 20, minute: 0 },
+];
+const DURATION_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "30", label: "30 minutes" },
+  { value: "60", label: "1 hour" },
+  { value: "90", label: "1.5 hours" },
+  { value: "120", label: "2 hours" },
+  { value: "150", label: "2.5 hours" },
+  { value: "180", label: "3 hours" },
+  { value: "240", label: "4 hours" },
+  { value: "300", label: "5 hours" },
+  { value: "360", label: "6 hours" },
+  { value: "480", label: "8 hours" },
 ];
 const FREQ_OPTIONS: Array<{ value: RecurrenceFreq; label: string; hint: string }> = [
   { value: "none", label: "Just once", hint: "Single event." },
@@ -288,6 +300,37 @@ export function EventCreateProvider({
   }));
   const [stepError, setStepError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Gate persistence until after the rehydrate effect runs, so we don't clobber
+  // saved progress with the default state on first paint.
+  const [hydrated, setHydrated] = useState(false);
+
+  // Rehydrate from sessionStorage on mount (client only). Done in an effect
+  // rather than the useState initializer so server + first client render agree
+  // on the defaults (no hydration mismatch); the saved values flash in right
+  // after mount.
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const saved = JSON.parse(raw) as Partial<WizardValues>;
+        setValues((v) => ({ ...v, ...saved }));
+      }
+    } catch {
+      // Malformed / unavailable storage — fall back to defaults.
+    }
+    setHydrated(true);
+  }, []);
+
+  // Persist every change once hydrated so a refresh or a direct deep-link to a
+  // later step keeps what the merchant has entered.
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(values));
+    } catch {
+      // Storage full / unavailable — non-fatal, the in-memory state still works.
+    }
+  }, [values, hydrated]);
 
   const set = <K extends keyof WizardValues>(key: K, value: WizardValues[K]) =>
     setValues((v) => ({ ...v, [key]: value }));
@@ -381,6 +424,7 @@ export function WizardShell({
         form.set("groupName", values.groupName);
         form.set("category", values.category);
         form.set("startsAt", startsAt);
+        form.set("durationMinutes", values.durationMinutes);
         form.set("capacity", values.capacity);
         form.set("locationName", values.locationName);
         form.set("suburb", values.suburb);
@@ -442,6 +486,14 @@ export function WizardShell({
         return;
       }
 
+      // Submission succeeded — drop the saved draft so the next "Create event"
+      // starts clean instead of rehydrating this event's values.
+      try {
+        sessionStorage.removeItem(STORAGE_KEY);
+      } catch {
+        // Non-fatal.
+      }
+
       const label = firstTitle ?? values.title ?? "Event";
       if (errors.length === 0) {
         toast.success(
@@ -469,7 +521,7 @@ export function WizardShell({
     <div className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] hard-shadow-sm">
       <StepIndicator current={step} />
 
-      <div className="space-y-6 p-6">
+      <div className="space-y-5 p-6">
         {children}
 
         {stepError ? (
@@ -698,7 +750,7 @@ function TagPicker({
           placeholder={
             atLimit ? `Tag limit reached (${MAX_TAGS})` : "Search tags…"
           }
-          className={`${inputClass()} w-full disabled:cursor-not-allowed disabled:opacity-60`}
+          className={`${inputClass()} h-12 w-full disabled:cursor-not-allowed disabled:opacity-60`}
         />
         {open && !atLimit && suggestions.length > 0 ? (
           <ul className="absolute left-0 right-0 top-full z-20 mt-1 max-h-56 overflow-auto rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] py-1 hard-shadow-sm">
@@ -760,7 +812,7 @@ export function BasicsSection() {
           <select
             value={values.category}
             onChange={(e) => set("category", e.target.value)}
-            className={inputClass()}
+            className={`${inputClass()} h-12 self-start`}
           >
             {categoryOptions.length === 0 ? (
               <option value="">No categories available</option>
@@ -804,12 +856,12 @@ export function BasicsSection() {
 export function ScheduleSection() {
   const { values, set } = useWizard();
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <header>
         <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
           Step 2 · Schedule
         </p>
-        <h2 className="font-display mt-2 text-3xl font-light leading-tight">
+        <h2 className="font-display mt-1 text-2xl font-light leading-tight">
           When + how many?
         </h2>
       </header>
@@ -819,6 +871,20 @@ export function ScheduleSection() {
         onChange={(v) => set("startsAt", v)}
       />
 
+      <Field label="Duration" hint="How long does the event run?">
+        <select
+          value={values.durationMinutes}
+          onChange={(e) => set("durationMinutes", e.target.value)}
+          className={inputClass()}
+        >
+          {DURATION_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+      </Field>
+
       <RecurrencePicker
         startsAt={values.startsAt}
         freq={values.recurrenceFreq}
@@ -827,7 +893,7 @@ export function ScheduleSection() {
         onCountChange={(c) => set("recurrenceCount", c)}
       />
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-3 md:grid-cols-2">
         <Field label="Capacity" hint="Max number of guests.">
           <input
             type="number"
@@ -921,7 +987,7 @@ function DateTimePicker({
     : null;
 
   return (
-    <fieldset className="mx-auto w-full max-w-sm rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-4 hard-shadow-sm">
+    <fieldset className="mx-auto w-full max-w-sm rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 hard-shadow-sm md:max-w-2xl">
       <legend className="flex flex-wrap items-baseline justify-between gap-2 px-2">
         <span className="font-mono text-[0.7rem] uppercase tracking-[0.18em] text-[color:var(--mauve)]">
           Start time
@@ -931,7 +997,9 @@ function DateTimePicker({
         </span>
       </legend>
 
-      <div className="mt-3 flex items-center justify-between gap-3">
+      <div className="mt-2 flex flex-col gap-4 md:flex-row md:items-stretch md:gap-6">
+      <div className="md:flex-1">
+      <div className="flex items-center justify-between gap-3">
         <button
           type="button"
           onClick={() => setCursor((c) => addMonths(c, -1))}
@@ -954,7 +1022,7 @@ function DateTimePicker({
         </button>
       </div>
 
-      <div className="mt-4 grid grid-cols-7 gap-1 text-center">
+      <div className="mt-3 grid grid-cols-7 gap-1 text-center">
         {WEEKDAY_LABELS.map((w) => (
           <span
             key={w}
@@ -965,13 +1033,13 @@ function DateTimePicker({
         ))}
       </div>
 
-      <div className="mt-2 grid grid-cols-7 gap-1">
+      <div className="mt-1.5 grid grid-cols-7 gap-1">
         {cells.map(({ date, inMonth }, i) => {
           const isPast = date < today;
           const isToday = sameDay(date, today);
           const isSelected = selectedDate ? sameDay(date, selectedDate) : false;
           const base =
-            "h-9 flex items-center justify-center rounded-lg border-2 text-xs font-bold transition-colors";
+            "h-8 flex items-center justify-center rounded-lg border-2 text-xs font-bold transition-colors";
           const stateClass = isSelected
             ? "bg-[color:var(--rose)] text-[color:var(--surface-deep)] border-[color:var(--line)] hard-shadow-sm"
             : isPast
@@ -997,20 +1065,21 @@ function DateTimePicker({
         })}
       </div>
 
-      <div className="mt-5 border-t-2 border-dashed border-[color:var(--line)]/40 pt-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="mr-1 font-mono text-[0.65rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
-            Time
-          </span>
-          {(() => {
+      </div>
+
+      <div className="border-t-2 border-dashed border-[color:var(--line)]/40 pt-3 md:mt-0 md:w-60 md:border-l-2 md:border-t-0 md:pl-5 md:pt-0">
+        <span className="block font-mono text-[0.65rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+          Time
+        </span>
+        {(() => {
             const isPm = selectedHour >= 12;
             const hour12 = selectedHour % 12 === 0 ? 12 : selectedHour % 12;
             const to24 = (h12: number, pm: boolean) =>
               pm ? (h12 === 12 ? 12 : h12 + 12) : h12 === 12 ? 0 : h12;
             const selectClass =
-              "rounded-lg border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-2.5 py-2 text-base font-bold text-[color:var(--ink)] outline-none focus:bg-[color:var(--champagne)]";
+              "min-w-0 flex-1 rounded-lg border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-2 py-2 text-sm font-bold text-[color:var(--ink)] outline-none focus:bg-[color:var(--champagne)]";
             return (
-              <>
+              <div className="mt-2 flex flex-nowrap items-center gap-1.5">
                 <select
                   aria-label="Hour"
                   value={hour12}
@@ -1051,10 +1120,9 @@ function DateTimePicker({
                   <option value="am">AM</option>
                   <option value="pm">PM</option>
                 </select>
-              </>
+              </div>
             );
           })()}
-        </div>
         <div className="mt-3 flex flex-wrap gap-2">
           {QUICK_TIMES.map((t) => {
             const active = t.hour === selectedHour && t.minute === selectedMinute;
@@ -1074,6 +1142,7 @@ function DateTimePicker({
             );
           })}
         </div>
+      </div>
       </div>
     </fieldset>
   );
@@ -1100,7 +1169,7 @@ function RecurrencePicker({
   const showPreview = freq !== "none" && occurrences.length > 0;
 
   return (
-    <fieldset className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-5 hard-shadow-sm">
+    <fieldset className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-4 hard-shadow-sm">
       <legend className="flex flex-wrap items-baseline justify-between gap-2 px-2">
         <span className="font-mono text-[0.7rem] uppercase tracking-[0.18em] text-[color:var(--mauve)]">
           Repeat
@@ -1311,19 +1380,26 @@ export function MediaSection() {
   const dragIndexRef = useRef<number | null>(null);
 
   // Keep the wizard's `images` array in sync with successfully-uploaded
-  // tiles, in their current display order. We rebuild it from `pending`
-  // whenever an upload finishes or a tile is removed/reordered, so the rest
-  // of the wizard (Review section, submit handler) just reads values.images.
-  const commit = useCallback(
-    (next: PendingUpload[]) => {
-      setPending(next);
-      set(
-        "images",
-        next.filter((p) => p.status === "done" && p.url).map((p) => p.url),
-      );
-    },
-    [set],
-  );
+  // tiles, in their current display order. We mirror it from `pending` in an
+  // effect (below) rather than calling `set` inline, so the rest of the wizard
+  // (Review section, submit handler) just reads values.images.
+  const commit = useCallback((next: PendingUpload[]) => {
+    setPending(next);
+  }, []);
+
+  // Mirror successful uploads into the wizard's `images` after render. Calling
+  // the provider's `set` synchronously from inside a `setPending` updater (or
+  // during render) triggers React's "setState while rendering another
+  // component" error, so we derive it here instead. Keyed on `pending` only:
+  // the context `set` is stable between value changes, and depending on it
+  // would re-fire this effect on every wizard edit and loop.
+  useEffect(() => {
+    set(
+      "images",
+      pending.filter((p) => p.status === "done" && p.url).map((p) => p.url),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pending]);
 
   const uploadOne = useCallback(
     async (file: File, id: string) => {
@@ -1341,17 +1417,11 @@ export function MediaSection() {
         if (!res.ok || !payload.url) {
           throw new Error(payload.error || "Upload failed.");
         }
-        setPending((prev) => {
-          const next = prev.map((p) =>
+        setPending((prev) =>
+          prev.map((p) =>
             p.id === id ? { ...p, status: "done" as const, url: payload.url! } : p,
-          );
-          // Re-derive images from the just-updated list.
-          set(
-            "images",
-            next.filter((p) => p.status === "done" && p.url).map((p) => p.url),
-          );
-          return next;
-        });
+          ),
+        );
       } catch (err) {
         const message = err instanceof Error ? err.message : "Upload failed.";
         setPending((prev) =>
@@ -1593,15 +1663,6 @@ export function MediaSection() {
           })}
         </div>
       ) : null}
-
-      <Field label="Alt text for the cover photo" hint="One sentence for screen readers.">
-        <input
-          value={values.imageAlt}
-          onChange={(e) => set("imageAlt", e.target.value)}
-          placeholder="A long table set for dinner with candles."
-          className={inputClass()}
-        />
-      </Field>
     </div>
   );
 }
@@ -1614,9 +1675,44 @@ export function ReviewSection() {
         .split(",")
         .map((t) => t.trim())
         .filter(Boolean)
-        .slice(0, 6),
+        .slice(0, 3),
     [values.tags],
   );
+
+  // Derive the same display bits the live EventCard shows, so this preview is a
+  // faithful "here's how your card will look on Click" rather than a form dump.
+  const cover = values.images[0] || null;
+  const start = values.startsAt ? new Date(values.startsAt) : null;
+  const validStart = start && !Number.isNaN(start.getTime()) ? start : null;
+  const dateLabel = validStart
+    ? new Intl.DateTimeFormat("en-AU", {
+        weekday: "short",
+        day: "numeric",
+        month: "short",
+      }).format(validStart)
+    : "Date TBA";
+  const timeFormat = new Intl.DateTimeFormat("en-AU", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  const durationMinutes = Number.parseInt(values.durationMinutes, 10);
+  const validEnd =
+    validStart && Number.isFinite(durationMinutes) && durationMinutes > 0
+      ? new Date(validStart.getTime() + durationMinutes * 60 * 1000)
+      : null;
+  const timeLabel = validStart
+    ? validEnd
+      ? `${timeFormat.format(validStart)} – ${timeFormat.format(validEnd)}`
+      : timeFormat.format(validStart)
+    : "Pick a time";
+  const priceLabel =
+    !values.price || values.price === "0" ? "Free" : `$${values.price}`;
+  const capacity = Number.parseInt(values.capacity, 10);
+  const seatsLabel =
+    Number.isFinite(capacity) && capacity > 0 ? `${capacity} seats` : "Seats TBA";
+  const location =
+    [values.locationName, values.suburb].filter(Boolean).join(", ") ||
+    "Location TBA";
 
   return (
     <div className="space-y-5">
@@ -1628,47 +1724,84 @@ export function ReviewSection() {
           Looks good?
         </h2>
         <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
-          Submissions go to admin for approval before going live.
+          This is how your event card will look on Click. Submissions go to admin
+          for approval before going live.
         </p>
       </header>
-      <article className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-5 hard-shadow-sm">
-        <h3 className="font-display text-3xl font-light leading-tight">
-          {values.title || "Untitled event"}
-        </h3>
-        <p className="mt-1 font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-          {values.groupName || "—"} · {values.category}
-        </p>
-        <p className="mt-3 text-sm font-bold text-[color:var(--ink)]">
-          {formatDateTime(values.startsAt)} · {values.locationName || "—"},{" "}
-          {values.suburb || "—"}
-        </p>
-        <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--mauve)]">
-          {values.description || "Add a description on the basics step."}
-        </p>
-        <div className="mt-4 flex flex-wrap gap-2">
-          <span className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-3 py-1 text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)]">
-            {values.capacity || "?"} seats
-          </span>
-          <span className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-3 py-1 text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)]">
-            {!values.price || values.price === "0"
-              ? "Free"
-              : `$${values.price}`}
-          </span>
-          {values.recurrenceFreq !== "none" ? (
-            <span className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-3 py-1 text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)]">
-              {values.recurrenceCount}× {values.recurrenceFreq}
+
+      <div className="mx-auto w-full max-w-sm">
+        <article className="group relative min-w-0 overflow-hidden rounded-lg border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow-sm">
+          <div className="relative block h-60 overflow-hidden border-b-2 border-[color:var(--line)]">
+            {cover ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={cover}
+                alt={values.imageAlt || values.title || "Event cover"}
+                className="size-full object-cover"
+              />
+            ) : (
+              <div className="grid size-full place-items-center bg-[color:var(--peach)] px-6 text-center">
+                <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--surface-deep)]">
+                  {values.category
+                    ? `${values.category} · cover photo`
+                    : "Add a cover photo on the media step"}
+                </span>
+              </div>
+            )}
+            <div className="absolute inset-0 bg-gradient-to-t from-[color:var(--ink)]/30 via-transparent to-transparent" />
+            <span className="absolute left-3 top-3 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-3 py-1.5 text-[0.68rem] font-bold uppercase tracking-wider text-[color:var(--surface-deep)] hard-shadow-sm">
+              Pending review
             </span>
-          ) : null}
-          {tagsPreview.map((t) => (
-            <span
-              key={t}
-              className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-1 text-xs font-bold uppercase tracking-wide text-[color:var(--ink)]"
-            >
-              {t}
+            <span className="absolute bottom-3 left-3 rounded-md border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-2 text-[0.72rem] font-black uppercase leading-tight tracking-[0.14em] text-[color:var(--ink)] hard-shadow-sm">
+              {dateLabel}
+              <span className="block font-mono text-[0.62rem] text-[color:var(--mauve)]">
+                {timeLabel}
+              </span>
             </span>
-          ))}
-        </div>
-      </article>
+            <span className="absolute bottom-3 right-3 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-1.5 text-[0.68rem] font-bold uppercase tracking-wider text-[color:var(--ink)] hard-shadow-sm">
+              {seatsLabel}
+            </span>
+          </div>
+
+          <div className="p-5">
+            <p className="font-mono break-words text-xs font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+              {values.suburb || "—"} · {values.category || "—"} · {priceLabel}
+            </p>
+            <h3 className="font-display mt-2 text-[1.65rem] font-light leading-[1.04] text-[color:var(--ink)]">
+              {values.title || "Untitled event"}
+            </h3>
+            <p className="mt-1 text-sm font-semibold text-[color:var(--mauve)]">
+              {location}
+            </p>
+            {values.groupName ? (
+              <p className="mt-1 font-mono text-[0.65rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+                Hosted by {values.groupName}
+              </p>
+            ) : null}
+            <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+              {values.description || "Add a description on the basics step."}
+            </p>
+            <div className="mt-4 flex flex-wrap gap-1.5">
+              {values.recurrenceFreq !== "none" ? (
+                <span className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-3 py-1 text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)]">
+                  {values.recurrenceCount}× {values.recurrenceFreq}
+                </span>
+              ) : null}
+              {tagsPreview.map((t) => (
+                <span
+                  key={t}
+                  className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-1 text-xs font-bold uppercase tracking-wide text-[color:var(--ink)]"
+                >
+                  {t}
+                </span>
+              ))}
+            </div>
+          </div>
+        </article>
+        <p className="mt-3 text-center font-mono text-[0.62rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+          Preview · public listing card
+        </p>
+      </div>
     </div>
   );
 }

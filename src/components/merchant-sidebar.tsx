@@ -134,7 +134,7 @@ export function MerchantSidebar({
 
   return (
     <aside className="lg:sticky lg:top-6 lg:w-[17.5rem] lg:shrink-0">
-      <nav className="flex flex-col rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-3 hard-shadow">
+      <nav className="flex flex-col rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-3 pb-4 hard-shadow">
         <div className="flex items-center gap-3 px-2 pb-4 pt-2">
           <Image
             src="/click_blob_mascot.svg"
@@ -145,7 +145,7 @@ export function MerchantSidebar({
             className="h-11 w-11 shrink-0"
           />
           <span className="min-w-0">
-            <span className="click-wordmark block truncate text-2xl text-[color:var(--ink)]">
+            <span className="block truncate text-lg font-extrabold leading-tight text-[color:var(--ink)]">
               {businessName}
             </span>
             <span className="eyebrow mt-0.5 block">Merchant Portal</span>

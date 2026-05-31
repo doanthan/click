@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { createTagForAdmin } from "@/lib/event-repository";
+import {
+  createTagForAdmin,
+  deleteTagForAdmin,
+  updateTagForAdmin,
+} from "@/lib/event-repository";
 
 const allowedTagTypes = new Set(["interest", "music", "vibe"]);
 
@@ -17,6 +21,9 @@ function errorResponse(error: unknown) {
   }
   if (error.name === "ValidationError") {
     return NextResponse.json({ error: error.message }, { status: 400 });
+  }
+  if (error.name === "NotFoundError") {
+    return NextResponse.json({ error: error.message }, { status: 404 });
   }
   if (error.name === "DatabaseUnavailableError") {
     return NextResponse.json({ error: error.message }, { status: 503 });
@@ -48,6 +55,55 @@ export async function POST(request: Request) {
     );
 
     return NextResponse.json({ ok: true, tag });
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function PATCH(request: Request) {
+  const session = await auth();
+  const body = (await request.json().catch(() => ({}))) as {
+    id?: string;
+    label?: string;
+    categoryName?: string;
+    tagType?: string;
+  };
+
+  if (!body.id) {
+    return NextResponse.json({ error: "Tag id is required." }, { status: 400 });
+  }
+  if (!body.tagType || !allowedTagTypes.has(body.tagType)) {
+    return NextResponse.json({ error: "Valid tag type is required." }, { status: 400 });
+  }
+
+  try {
+    const tag = await updateTagForAdmin(
+      {
+        id: body.id,
+        label: body.label ?? "",
+        categoryName: body.categoryName ?? "",
+        tagType: body.tagType as "interest" | "music" | "vibe",
+      },
+      session,
+    );
+
+    return NextResponse.json({ ok: true, tag });
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function DELETE(request: Request) {
+  const session = await auth();
+  const id = new URL(request.url).searchParams.get("id") ?? "";
+
+  if (!id) {
+    return NextResponse.json({ error: "Tag id is required." }, { status: 400 });
+  }
+
+  try {
+    const result = await deleteTagForAdmin(id, session);
+    return NextResponse.json({ ok: true, ...result });
   } catch (error) {
     return errorResponse(error);
   }

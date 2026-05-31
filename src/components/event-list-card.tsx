@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import type { EventItem } from "@/lib/click-data";
+import { type EventItem, formatEventTimeRange } from "@/lib/click-data";
 import { EventBookmarkButton } from "./event-bookmark-button";
 
 function initials(name: string) {
@@ -81,7 +81,7 @@ export function EventListCard({
         </h3>
 
         <p className="mt-1 truncate text-sm font-semibold text-[color:var(--mauve)]">
-          {event.date} at {event.time} · {event.suburb}
+          {event.date} at {formatEventTimeRange(event)} · {event.suburb}
         </p>
 
         <p className="mt-2 line-clamp-2 text-sm font-medium leading-6 text-[color:var(--ink)]/80">

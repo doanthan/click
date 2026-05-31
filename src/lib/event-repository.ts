@@ -32,6 +32,7 @@ type EventRow = {
   status: string;
   booking_model: string;
   starts_at: Date;
+  ends_at: Date | null;
   location_name: string;
   suburb: string;
   latitude: string | null;
@@ -89,6 +90,7 @@ export type MerchantWizardInput = {
   phone: string;
   websiteUrl: string;
   socialHandle: string;
+  socialPlatform: "instagram" | "tiktok" | "facebook" | "";
   addressStreet: string;
   addressSuburb: string;
   addressState: "NSW" | "VIC" | "QLD" | "WA" | "SA" | "TAS" | "ACT" | "NT";
@@ -106,6 +108,7 @@ export type MerchantProfileRow = {
   payouts_enabled: boolean;
   details_submitted: boolean;
   onboarding_completed_at: string | null;
+  auto_approve_events: boolean;
 };
 
 export type ProfileStatus = {
@@ -115,6 +118,7 @@ export type ProfileStatus = {
   merchantProfile: MerchantProfileRow | null;
   bookmarkedEventIds: string[];
   registeredEventIds: string[];
+  photoUrl: string | null;
 };
 
 type LocalEventStore = {
@@ -127,6 +131,9 @@ export type CreateEventInput = {
   groupName: string;
   category: string;
   startsAt: string;
+  // Event length in minutes; combined with startsAt to derive ends_at. Falls
+  // back to 120 (2 hours) when absent so older callers keep working.
+  durationMinutes?: number;
   locationName: string;
   suburb: string;
   // Captured from the Mapbox address autocomplete in the create wizard. When
@@ -156,6 +163,7 @@ export type AdminEventRow = {
   attendees: number;
   capacity: number;
   startsAt: string;
+  createdAt: string | null;
   region: Region;
   suburb: string | null;
   locationName: string | null;
@@ -169,6 +177,11 @@ export type AdminEventRow = {
   // event no one can pay for until the merchant connects payouts. Always false
   // for free or platform-owned events.
   payoutsNotConnected: boolean;
+  // False once the event has already finished (end time, or start time when no
+  // end is set, is in the past). Drives the admin queue's "can't approve a past
+  // event" gate. (When recurring events land, a still-repeating series should
+  // stay approvable — extend this predicate then.)
+  approvable: boolean;
 };
 
 export type AdminMemberEventRef = {
@@ -326,7 +339,10 @@ export type AdminMerchantDetail = {
   abn: string | null;
   acn: string | null;
   businessType: string | null;
+  socialHandle: string | null;
+  socialPlatform: "instagram" | "tiktok" | "facebook" | null;
   verificationStatus: "pending" | "approved" | "rejected" | "suspended" | string;
+  autoApproveEvents: boolean;
   stripeConnectAccountId: string | null;
   addressStreet: string | null;
   addressSuburb: string | null;
@@ -473,6 +489,7 @@ function eventFromRow(row: EventRow): EventItem {
     date: formatDate(startsAt),
     time: formatTime(startsAt),
     startsAt: startsAt.toISOString(),
+    endsAt: row.ends_at ? row.ends_at.toISOString() : null,
     location: row.location_name,
     suburb: row.suburb,
     distanceKm: distanceKmFromSydney(lat, lng),
@@ -1323,29 +1340,13 @@ async function rejectLocalEventForAdmin(eventId: string, session: Session | null
 }
 
 async function getFallbackAdminEvents(): Promise<AdminEventRow[]> {
-  const events = await getFallbackEvents({ includePending: true });
-
-  return events.map((event) => ({
-    id: event.id,
-    title: event.title,
-    category: event.category,
-    status: event.status,
-    booking: event.booking,
-    host: event.host,
-    attendees: event.attendees,
-    capacity: event.capacity,
-    startsAt: event.startsAt,
-    region: regionForEvent({ lat: event.lat ?? null, lng: event.lng ?? null, suburb: event.suburb ?? null }),
-    suburb: event.suburb ?? null,
-    locationName: event.location ?? null,
-    address: event.location ?? null,
-    lat: event.lat ?? null,
-    lng: event.lng ?? null,
-    // The static fallback has no merchant payout state to read, so we can't
-    // know — default to "connected" rather than flagging every paid event.
-    priceCents: 0,
-    payoutsNotConnected: false,
-  }));
+  // The admin console must never present fabricated rows as real activity. When
+  // Postgres is unreachable we return an empty queue (matching the members /
+  // merchants / audit / tags fallbacks) so the page degrades to an honest empty
+  // state rather than seeded "demo" events that read as live data. If the
+  // deployed admin shows nothing, that's a DB-connectivity signal (see the
+  // Supabase pooler-host note), not real zero activity.
+  return [];
 }
 
 async function registerLocallyForEvent(eventId: string, session: Session | null) {
@@ -1505,7 +1506,8 @@ async function getMerchantProfile(pool: ReturnType<typeof getPostgresPool>, prof
         charges_enabled,
         payouts_enabled,
         details_submitted,
-        onboarding_completed_at::text
+        onboarding_completed_at::text,
+        auto_approve_events
       from merchant_profiles
       where profile_id = $1::uuid
       limit 1
@@ -1740,6 +1742,7 @@ export async function getEventsForExplore() {
         event.status::text,
         event.booking_model::text,
         event.starts_at,
+        event.ends_at,
         event.location_name,
         event.suburb,
         event.latitude::text,
@@ -2343,6 +2346,11 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
       error.name = "MerchantApprovalRequiredError";
       throw error;
     }
+    // Trusted merchants (an admin has approved at least one of their events, see
+    // approveEventForAdmin) skip the pending queue — their events publish straight
+    // to 'live'. New/untrusted merchants still land in 'pending' for manual review.
+    const autoApprove = merchantProfile.auto_approve_events === true;
+    const eventStatus = autoApprove ? "live" : "pending";
     const title = input.title.trim();
     const description = input.description.trim();
     const startsAt = new Date(input.startsAt);
@@ -2363,7 +2371,9 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
     const priceCents = parsePriceCents(input.price);
 
     const slug = `${slugFromTitle(title)}-${Date.now().toString(36)}`;
-    const endsAt = new Date(startsAt.getTime() + 2 * 60 * 60 * 1000);
+    const durationMinutes =
+      input.durationMinutes && input.durationMinutes > 0 ? input.durationMinutes : 120;
+    const endsAt = new Date(startsAt.getTime() + durationMinutes * 60 * 1000);
     const category = input.category.trim() || "Social";
     const relationshipGoal =
       input.relationshipGoal.trim() || "Help people meet through a shared plan.";
@@ -2418,7 +2428,7 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
           $6,
           $7,
           $8,
-          'pending',
+          $22::event_status,
           'click_managed',
           $9,
           $10,
@@ -2457,7 +2467,10 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
         imageUrlsForDb,
         input.imageAlt?.trim() || "Community event listing",
         relationshipGoal,
-        "Pending admin review before being promoted to members.",
+        autoApprove
+          ? "Now live for members to discover."
+          : "Pending admin review before being promoted to members.",
+        eventStatus,
       ],
     );
 
@@ -2518,6 +2531,29 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
       },
     });
 
+    // Ping every admin's notification bell when an event needs review, so a fresh
+    // submission doesn't sit unseen in /admin/events. Skipped for trusted
+    // merchants whose events auto-publish (nothing to review). Fire-and-forget.
+    if (!autoApprove) {
+      void pool
+        .query(
+          `
+            insert into notifications (profile_id, title, body, action_url)
+            select id, $1, $2, $3
+            from profiles
+            where role = 'admin'
+          `,
+          [
+            "Event awaiting review",
+            `${merchantProfile.business_name} submitted "${title}" for review.`,
+            "/admin/events",
+          ],
+        )
+        .catch((error) => {
+          console.warn("Failed to notify admins of new pending event.", error);
+        });
+    }
+
     return result.rows[0];
   } catch (error) {
     if (isDatabaseConnectivityError(error)) {
@@ -2536,10 +2572,39 @@ export async function approveEventForAdmin(eventId: string, session: Session | n
   try {
     const profile = await requireAdminProfile(session);
 
+    // Block approving an event that has already happened (end time, or start
+    // time when no end is set, is in the past). Only events still pending are
+    // checked here; the update below stays the gate for not-found / wrong-status.
+    // (When recurring events land, exempt a still-repeating series here.)
+    const eligibility = await pool.query<{ approvable: boolean }>(
+      `
+        select (coalesce(ends_at, starts_at) >= now()) as approvable
+        from events
+        where slug = $1 and status = 'pending'
+      `,
+      [eventId],
+    );
+
+    if ((eligibility.rowCount ?? 0) > 0 && !eligibility.rows[0].approvable) {
+      const error = new Error(
+        "This event has already passed and can no longer be approved.",
+      );
+      error.name = "ValidationError";
+      throw error;
+    }
+
     const result = await pool.query<{ slug: string; title: string }>(
       `
         update events
-        set status = 'live', updated_at = now()
+        set status = 'live',
+            -- Clear the legacy "pending review" sentinel that createEventForMerchant
+            -- used to seed into fomo; otherwise the approved/live event keeps
+            -- rendering it publicly. Genuine merchant fomo copy is preserved.
+            fomo = case
+              when fomo = 'Pending admin review before being promoted to members.' then null
+              else fomo
+            end,
+            updated_at = now()
         where slug = $1 and status = 'pending'
         returning slug, title
       `,
@@ -2560,6 +2625,26 @@ export async function approveEventForAdmin(eventId: string, session: Session | n
       `,
       [profile.id, JSON.stringify({ slug: event.slug, title: event.title })],
     );
+
+    // Trust the merchant going forward: this manual approval is the one-time QA
+    // pass, so the owning merchant's future events auto-publish without review.
+    // Admins can revoke this from the merchant detail page. Best-effort — a
+    // failure here must not fail the approval the admin just made.
+    void pool
+      .query(
+        `
+          update merchant_profiles
+          set auto_approve_events = true, updated_at = now()
+          from events
+          where events.slug = $1
+            and events.merchant_profile_id = merchant_profiles.id
+            and merchant_profiles.auto_approve_events = false
+        `,
+        [event.slug],
+      )
+      .catch((error) => {
+        console.warn("Failed to mark merchant as auto-approve after event approval.", error);
+      });
 
     // Notify the owning merchant their event is live. Fire-and-forget — never
     // bubbles into the approve response (see helper for the merchant lookup).
@@ -2808,6 +2893,57 @@ export async function updateMerchantVerificationForAdmin(
   };
 }
 
+// Grant or revoke a merchant's "trusted" status. When on, their new events skip
+// the pending review queue and publish straight to 'live'. Approving an event
+// flips this on automatically; admins use this to revoke trust (send a merchant
+// back to manual review) or grant it ahead of a first approval.
+export async function setMerchantAutoApproveForAdmin(
+  merchantId: string,
+  autoApprove: boolean,
+  session: Session | null,
+) {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+  if (!UUID_RE.test(merchantId)) {
+    const error = new Error("Valid merchant id is required.");
+    error.name = "ValidationError";
+    throw error;
+  }
+
+  const profile = await requireAdminProfile(session);
+  const result = await pool.query<{ id: string; auto_approve_events: boolean }>(
+    `
+      update merchant_profiles
+      set auto_approve_events = $2, updated_at = now()
+      where id = $1::uuid
+      returning id::text, auto_approve_events
+    `,
+    [merchantId, autoApprove],
+  );
+
+  const merchant = result.rows[0];
+  if (!merchant) {
+    const error = new Error("Merchant not found.");
+    error.name = "NotFoundError";
+    throw error;
+  }
+
+  await pool.query(
+    `
+      insert into audit_logs (actor_profile_id, action, entity_table, entity_id, metadata)
+      values ($1::uuid, $2, 'merchant_profiles', $3::uuid, $4::jsonb)
+    `,
+    [
+      profile.id,
+      autoApprove ? "merchant_auto_approve_on" : "merchant_auto_approve_off",
+      merchant.id,
+      JSON.stringify({ autoApprove }),
+    ],
+  );
+
+  return { id: merchant.id, autoApproveEvents: merchant.auto_approve_events };
+}
+
 export async function getAdminEvents() {
   const pool = getPostgresPool();
 
@@ -2825,6 +2961,7 @@ export async function getAdminEvents() {
       host_name: string;
       capacity: number;
       starts_at: Date;
+      created_at: Date;
       confirmed_attendees: string;
       suburb: string | null;
       location_name: string | null;
@@ -2834,6 +2971,7 @@ export async function getAdminEvents() {
       price_cents: number;
       has_merchant: boolean;
       merchant_charges_enabled: boolean | null;
+      approvable: boolean;
     }>(`
       select
         event.slug,
@@ -2844,6 +2982,7 @@ export async function getAdminEvents() {
         event.host_name,
         event.capacity,
         event.starts_at,
+        event.created_at,
         event.suburb,
         event.location_name,
         event.address,
@@ -2852,12 +2991,15 @@ export async function getAdminEvents() {
         event.price_cents,
         bool_or(merchant.id is not null) as has_merchant,
         bool_or(merchant.charges_enabled) as merchant_charges_enabled,
+        (coalesce(event.ends_at, event.starts_at) >= now()) as approvable,
         count(attendee.id) filter (where (attendee.status = 'confirmed' or (attendee.status = 'pending_payment' and attendee.hold_expires_at > now()))) as confirmed_attendees
       from events event
       left join event_attendees attendee on attendee.event_id = event.id
       left join merchant_profiles merchant on merchant.id = event.merchant_profile_id
       group by event.id
-      order by event.created_at desc
+      -- Pending events float to the top of the queue so a fresh submission never
+      -- gets buried under already-live listings; everything else stays newest-first.
+      order by (event.status = 'pending') desc, event.created_at desc
       limit 200
     `);
 
@@ -2875,6 +3017,7 @@ export async function getAdminEvents() {
         attendees: Number(event.confirmed_attendees),
         capacity: event.capacity,
         startsAt: event.starts_at.toISOString(),
+        createdAt: event.created_at ? event.created_at.toISOString() : null,
         region: regionForEvent({ lat, lng, suburb: event.suburb }),
         suburb: event.suburb,
         locationName: event.location_name,
@@ -2884,6 +3027,7 @@ export async function getAdminEvents() {
         priceCents,
         payoutsNotConnected:
           priceCents > 0 && event.has_merchant && !event.merchant_charges_enabled,
+        approvable: event.approvable,
       };
     });
   } catch (error) {
@@ -2904,23 +3048,10 @@ const fallbackAdminMembers: AdminMemberRow[] = [];
 const fallbackAdminMerchants: AdminMerchantRow[] = [];
 
 function fallbackAdminTags(): AdminTagRow[] {
-  return clickEvents
-    .flatMap((event) =>
-      event.tags.map((tag) => ({
-        id: `seed-${tag}`,
-        label: tag
-          .split("-")
-          .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-          .join(" "),
-        slug: tag,
-        tagType: "interest",
-        categoryName: event.category,
-        usageCount: 1,
-        createdAt: "2026-01-01T00:00:00.000Z",
-      })),
-    )
-    .filter((tag, index, all) => all.findIndex((item) => item.slug === tag.slug) === index)
-    .slice(0, 40);
+  // Empty rather than seeded-from-clickEvents: the tags admin must reflect the
+  // real `tags` table, never synthetic "seed-*" rows that look live. An empty
+  // list when Postgres is down is the honest signal (see Supabase pooler note).
+  return [];
 }
 
 const fallbackAdminAudit: AdminAuditRow[] = [];
@@ -3308,7 +3439,10 @@ export async function getAdminMerchantDetail(
           abn: string | null;
           acn: string | null;
           business_type: string | null;
+          social_handle: string | null;
+          social_platform: string | null;
           verification_status: string;
+          auto_approve_events: boolean;
           stripe_connect_account_id: string | null;
           address_street: string | null;
           address_suburb: string | null;
@@ -3332,7 +3466,10 @@ export async function getAdminMerchantDetail(
               m.abn,
               m.acn,
               m.business_type,
+              m.social_handle,
+              m.social_platform,
               m.verification_status,
+              m.auto_approve_events,
               m.stripe_connect_account_id,
               m.address_street,
               m.address_suburb,
@@ -3508,7 +3645,15 @@ export async function getAdminMerchantDetail(
       abn: row.abn,
       acn: row.acn,
       businessType: row.business_type,
+      socialHandle: row.social_handle,
+      socialPlatform:
+        row.social_platform === "instagram" ||
+        row.social_platform === "tiktok" ||
+        row.social_platform === "facebook"
+          ? row.social_platform
+          : null,
       verificationStatus: row.verification_status,
+      autoApproveEvents: row.auto_approve_events ?? false,
       stripeConnectAccountId: row.stripe_connect_account_id,
       addressStreet: row.address_street,
       addressSuburb: row.address_suburb,
@@ -3703,6 +3848,194 @@ export async function createTagForAdmin(
   } satisfies AdminTagRow;
 }
 
+// Edit an existing tag in place, identified by id. The slug is the join key used
+// by event_tags / user_tags, so we deliberately keep it stable — only the
+// human-facing label, category and type change. (Renaming the slug would orphan
+// every existing association; admins who want a different slug should delete and
+// recreate.)
+export async function updateTagForAdmin(
+  input: {
+    id: string;
+    label: string;
+    categoryName: string;
+    tagType: "interest" | "music" | "vibe";
+  },
+  session: Session | null,
+) {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+
+  const profile = await requireAdminProfile(session);
+  const id = input.id.trim();
+  const label = input.label.trim();
+  const categoryName = input.categoryName.trim();
+  const tagType = input.tagType;
+
+  if (!UUID_RE.test(id)) {
+    const error = new Error("Valid tag id is required.");
+    error.name = "ValidationError";
+    throw error;
+  }
+  if (!label || !categoryName) {
+    const error = new Error("Tag label and category are required.");
+    error.name = "ValidationError";
+    throw error;
+  }
+
+  const categorySlug = slugFromTitle(categoryName);
+
+  const result = await pool.query<{
+    id: string;
+    label: string;
+    slug: string;
+    tag_type: string;
+    category_name: string;
+    created_at: Date;
+  }>(
+    `
+      with category as (
+        insert into tag_categories (name, slug)
+        values ($3, $4)
+        on conflict (slug) do update set name = excluded.name
+        returning id, name
+      ),
+      updated_tag as (
+        update tags
+        set
+          label = $2,
+          category_id = category.id,
+          tag_type = $5,
+          admin_managed = true
+        from category
+        where tags.id = $1::uuid
+        returning tags.id::text, tags.label, tags.slug, tags.tag_type, tags.category_id, tags.created_at
+      )
+      select
+        updated_tag.id,
+        updated_tag.label,
+        updated_tag.slug,
+        updated_tag.tag_type,
+        category.name as category_name,
+        updated_tag.created_at
+      from updated_tag
+      join category on category.id = updated_tag.category_id
+    `,
+    [id, label, categoryName, categorySlug, tagType],
+  );
+
+  const tag = result.rows[0];
+  if (!tag) {
+    const error = new Error("Tag not found.");
+    error.name = "NotFoundError";
+    throw error;
+  }
+
+  await pool.query(
+    `
+      insert into audit_logs (actor_profile_id, action, entity_table, entity_id, metadata)
+      values ($1::uuid, 'update_tag', 'tags', $2::uuid, $3::jsonb)
+    `,
+    [
+      profile.id,
+      tag.id,
+      JSON.stringify({
+        label: tag.label,
+        slug: tag.slug,
+        tagType: tag.tag_type,
+        category: tag.category_name,
+      }),
+    ],
+  );
+
+  // Usage count isn't returned by the update; recompute cheaply so the row the
+  // client re-renders shows the right number rather than resetting to 0.
+  const usage = await pool.query<{ usage_count: string }>(
+    `
+      select
+        (
+          count(distinct user_tag.profile_id)
+          + count(distinct event_tag.event_id)
+        )::text as usage_count
+      from tags tag
+      left join user_tags user_tag on user_tag.tag_id = tag.id
+      left join event_tags event_tag on event_tag.tag_id = tag.id
+      where tag.id = $1::uuid
+      group by tag.id
+    `,
+    [tag.id],
+  );
+
+  return {
+    id: tag.id,
+    label: tag.label,
+    slug: tag.slug,
+    tagType: tag.tag_type,
+    categoryName: tag.category_name,
+    usageCount: Number(usage.rows[0]?.usage_count ?? 0),
+    createdAt: tag.created_at.toISOString(),
+  } satisfies AdminTagRow;
+}
+
+// Delete a tag and its associations. event_tags / user_tags rows are removed
+// first so the delete never trips a foreign-key constraint regardless of whether
+// the schema declares ON DELETE CASCADE.
+export async function deleteTagForAdmin(id: string, session: Session | null) {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+
+  const profile = await requireAdminProfile(session);
+  const tagId = id.trim();
+
+  if (!UUID_RE.test(tagId)) {
+    const error = new Error("Valid tag id is required.");
+    error.name = "ValidationError";
+    throw error;
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    const existing = await client.query<{ label: string; slug: string }>(
+      `select label, slug from tags where id = $1::uuid`,
+      [tagId],
+    );
+    if (existing.rowCount === 0) {
+      await client.query("rollback");
+      const error = new Error("Tag not found.");
+      error.name = "NotFoundError";
+      throw error;
+    }
+
+    await client.query(`delete from event_tags where tag_id = $1::uuid`, [tagId]);
+    await client.query(`delete from user_tags where tag_id = $1::uuid`, [tagId]);
+    await client.query(`delete from tags where id = $1::uuid`, [tagId]);
+
+    await client.query(
+      `
+        insert into audit_logs (actor_profile_id, action, entity_table, entity_id, metadata)
+        values ($1::uuid, 'delete_tag', 'tags', $2::uuid, $3::jsonb)
+      `,
+      [
+        profile.id,
+        tagId,
+        JSON.stringify({
+          label: existing.rows[0].label,
+          slug: existing.rows[0].slug,
+        }),
+      ],
+    );
+
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  return { id: tagId };
+}
+
 export async function getAdminAuditLog(): Promise<AdminAuditRow[]> {
   const pool = getPostgresPool();
   if (!pool) return fallbackAdminAudit;
@@ -3870,6 +4203,7 @@ const eventSelectColumns = `
         event.status::text,
         event.booking_model::text,
         event.starts_at,
+        event.ends_at,
         event.location_name,
         event.suburb,
         event.latitude::text,
@@ -4008,14 +4342,15 @@ export async function getProfileStatus(session: Session | null): Promise<Profile
       merchantProfile: null,
       bookmarkedEventIds: [],
       registeredEventIds: [],
+      photoUrl: null,
     };
   }
 
   try {
     const profile = await ensureProfileForSession(session);
     const [statusResult, bookmarksResult, registrationsResult, merchant] = await Promise.all([
-      pool.query<{ suburb: string | null; bio: string | null }>(
-        `select suburb, bio from profiles where id = $1::uuid`,
+      pool.query<{ suburb: string | null; bio: string | null; photo_url: string | null }>(
+        `select suburb, bio, photo_url from profiles where id = $1::uuid`,
         [profile.id],
       ),
       pool.query<{ slug: string }>(
@@ -4050,6 +4385,7 @@ export async function getProfileStatus(session: Session | null): Promise<Profile
       merchantProfile: merchant,
       bookmarkedEventIds: bookmarksResult.rows.map((entry) => entry.slug),
       registeredEventIds: registrationsResult.rows.map((entry) => entry.slug),
+      photoUrl: row?.photo_url ?? null,
     };
   } catch {
     return {
@@ -4059,6 +4395,7 @@ export async function getProfileStatus(session: Session | null): Promise<Profile
       merchantProfile: null,
       bookmarkedEventIds: [],
       registeredEventIds: [],
+      photoUrl: null,
     };
   }
 }
@@ -4104,7 +4441,7 @@ export async function getProfileCompletion(
 
   try {
     const profile = await ensureProfileForSession(session);
-    const [fieldsResult, tagCountResult, personaResult] = await Promise.all([
+    const [fieldsResult, tagCountResult, quizResult] = await Promise.all([
       pool.query<{ photo_url: string | null; suburb: string | null; bio: string | null }>(
         `select photo_url, suburb, bio from profiles where id = $1::uuid`,
         [profile.id],
@@ -4113,15 +4450,20 @@ export async function getProfileCompletion(
         `select count(*)::text as count from user_tags where profile_id = $1::uuid`,
         [profile.id],
       ),
+      // The dashboard "Take the Click quiz" card links to the Life Quiz
+      // (/quiz/life), which writes tags with source='quiz' via saveLifeQuizTags
+      // — it does NOT write to click_personas (that's the separate personality
+      // quiz). Detect completion from the same signal the Life Quiz produces so
+      // the prompt clears once the user finishes it.
       pool.query<{ count: string }>(
-        `select count(*)::text as count from click_personas where profile_id = $1::uuid`,
+        `select count(*)::text as count from user_tags where profile_id = $1::uuid and source = 'quiz'`,
         [profile.id],
       ),
     ]);
 
     const row = fieldsResult.rows[0];
     const tagCount = Number(tagCountResult.rows[0]?.count ?? 0);
-    const quizComplete = Number(personaResult.rows[0]?.count ?? 0) > 0;
+    const quizComplete = Number(quizResult.rows[0]?.count ?? 0) > 0;
 
     const items: ProfileCompletionItem[] = [
       { key: "photo", label: "Add a profile photo", done: !!row?.photo_url, href: "/profile/edit" },
@@ -4406,6 +4748,7 @@ export async function registerMerchantProfile(input: MerchantSignupInput, sessio
 
 const AU_STATES = ["NSW", "VIC", "QLD", "WA", "SA", "TAS", "ACT", "NT"] as const;
 const BUSINESS_TYPES = ["sole_trader", "company", "partnership", "trust"] as const;
+const MERCHANT_SOCIAL_PLATFORMS = ["instagram", "tiktok", "facebook"] as const;
 const AU_POSTCODE_RE = /^[0-9]{4}$/;
 // Accepts +61412345678, 0412345678, or with spacing — we strip to digits before checking.
 const AU_PHONE_RE = /^(?:\+?61|0)\d{9}$/;
@@ -4622,6 +4965,14 @@ export async function registerMerchantWizardSubmit(
     throw validationError("Street address and suburb are required.");
   }
 
+  // Social platform is optional, but when supplied must be one we offer. Only
+  // keep it when there's actually a handle to attach it to.
+  const socialHandle = input.socialHandle.trim();
+  const socialPlatform = socialHandle ? input.socialPlatform : "";
+  if (socialPlatform && !MERCHANT_SOCIAL_PLATFORMS.includes(socialPlatform)) {
+    throw validationError("Pick a social platform.");
+  }
+
   const categoryIds = Array.from(new Set(input.eventCategoryIds.filter(Boolean)));
   if (categoryIds.length === 0) {
     throw validationError("Pick at least one event category.");
@@ -4637,14 +4988,14 @@ export async function registerMerchantWizardSubmit(
       `
         insert into merchant_profiles (
           profile_id, business_name, trading_name, abn, acn, business_type,
-          phone, contact_email, website_url, social_handle,
+          phone, contact_email, website_url, social_handle, social_platform,
           address_street, address_suburb, address_state, address_postcode,
           submitted_at
         )
         values (
           $1::uuid, $2, nullif($3, ''), $4, nullif($5, ''), $6,
-          $7, $8, nullif($9, ''), nullif($10, ''),
-          $11, $12, $13, $14,
+          $7, $8, nullif($9, ''), nullif($10, ''), nullif($11, ''),
+          $12, $13, $14, $15,
           now()
         )
         on conflict (profile_id) do update set
@@ -4657,6 +5008,7 @@ export async function registerMerchantWizardSubmit(
           contact_email = excluded.contact_email,
           website_url = excluded.website_url,
           social_handle = excluded.social_handle,
+          social_platform = excluded.social_platform,
           address_street = excluded.address_street,
           address_suburb = excluded.address_suburb,
           address_state = excluded.address_state,
@@ -4677,7 +5029,8 @@ export async function registerMerchantWizardSubmit(
         phoneDigits,
         contactEmail,
         input.websiteUrl.trim(),
-        input.socialHandle.trim(),
+        socialHandle,
+        socialPlatform,
         street,
         suburb,
         input.addressState,
@@ -4749,6 +5102,27 @@ export async function registerMerchantWizardSubmit(
           unsubscribeUrl: `${origin}/account-settings`,
         },
       });
+
+      // Notify every admin that a new merchant is awaiting verification, so the
+      // verification queue surfaces in their bell without polling /admin/merchants.
+      // Fire-and-forget, post-commit — a notification hiccup must not fail signup.
+      void pool
+        .query(
+          `
+            insert into notifications (profile_id, title, body, action_url)
+            select id, $1, $2, $3
+            from profiles
+            where role = 'admin'
+          `,
+          [
+            "New merchant awaiting verification",
+            `${businessName} just signed up and is waiting for verification.`,
+            "/admin/merchants",
+          ],
+        )
+        .catch((error) => {
+          console.warn("Failed to notify admins of new merchant signup.", error);
+        });
     }
 
     return upsert.rows[0];
@@ -5421,7 +5795,14 @@ export type PaymentHold = {
   eventUuid: string;
   eventSlug: string;
   eventTitle: string;
+  // Base ticket price (the merchant's listed price).
   priceCents: number;
+  // Platform booking fee added on top of the ticket (system_settings.booking_fee_bps,
+  // snapshotted at hold time). 0 when the fee is disabled.
+  bookingFeeCents: number;
+  // What the buyer actually pays = priceCents + bookingFeeCents. Persisted as
+  // payment_transactions.amount_cents so receipts/refunds reconcile against it.
+  totalCents: number;
   currency: string;
   profileEmail: string;
   // Connected merchant's Stripe account id when present + payouts ready.
@@ -5529,13 +5910,20 @@ export async function createPaymentHold(
       throw error;
     }
 
+    // Booking fee is charged on top of the ticket and kept by the platform.
+    // Snapshot it at hold time so a later admin change to the rate can't alter an
+    // in-flight checkout. amount_cents stores the full buyer charge (ticket + fee).
+    const { bookingFeeBps } = await getSystemSettings();
+    const bookingFeeCents = Math.round((event.price_cents * bookingFeeBps) / 10_000);
+    const totalCents = event.price_cents + bookingFeeCents;
+
     const paymentResult = await client.query<{ id: string }>(
       `
         insert into payment_transactions (event_id, profile_id, merchant_profile_id, amount_cents, currency, status)
         values ($1::uuid, $2::uuid, $3::uuid, $4, $5, 'pending')
         returning id::text
       `,
-      [event.id, profile.id, event.merchant_profile_id, event.price_cents, event.currency],
+      [event.id, profile.id, event.merchant_profile_id, totalCents, event.currency],
     );
     const paymentTransactionId = paymentResult.rows[0].id;
 
@@ -5557,6 +5945,8 @@ export async function createPaymentHold(
       eventSlug: event.slug,
       eventTitle: event.title,
       priceCents: event.price_cents,
+      bookingFeeCents,
+      totalCents,
       currency: event.currency,
       profileEmail: profile.email,
       merchantStripeAccountId: event.merchant_stripe_account_id,
@@ -5783,6 +6173,10 @@ export type PublicProfile = {
 export type OwnProfile = PublicProfile & {
   email: string;
   role: string;
+  // Curated tag slugs split by type so the edit form can pre-check the right
+  // chips. `interests` (on PublicProfile) stays the full label list for display.
+  interestSlugs: string[];
+  musicSlugs: string[];
 };
 
 export async function getOwnProfile(session: Session | null): Promise<OwnProfile | null> {
@@ -5814,9 +6208,9 @@ export async function getOwnProfile(session: Session | null): Promise<OwnProfile
         `,
         [profile.id],
       ),
-      pool.query<{ slug: string; label: string }>(
+      pool.query<{ slug: string; label: string; tag_type: string }>(
         `
-          select tag.slug, tag.label
+          select tag.slug, tag.label, tag.tag_type
           from user_tags ut
           join tags tag on tag.id = ut.tag_id
           where ut.profile_id = $1::uuid
@@ -5849,6 +6243,8 @@ export async function getOwnProfile(session: Session | null): Promise<OwnProfile
       age: row.age,
       intents: row.connection_intents ?? [],
       interests: tagsResult.rows.map((t) => ({ slug: t.slug, label: t.label })),
+      interestSlugs: tagsResult.rows.filter((t) => t.tag_type === "interest").map((t) => t.slug),
+      musicSlugs: tagsResult.rows.filter((t) => t.tag_type === "music").map((t) => t.slug),
       attendedCount: Number(attendedResult.rows[0]?.count ?? 0),
     };
   } catch (error) {
@@ -5930,7 +6326,54 @@ export type ProfileUpdateInput = {
   photoUrl?: string;
   age?: number | null;
   intents?: string[];
+  // Curated tag slugs. When provided, the user's tags of that type are fully
+  // replaced (delete + re-attach matched). Pass `[]` to clear. Only `interest`
+  // and `music` rows are touched — quiz-sourced `life`/`vibe` tags are left
+  // alone. Slugs must already exist in `tags`; unknown ones are dropped.
+  interestTags?: string[];
+  musicTags?: string[];
 };
+
+// Replaces every `user_tags` row of one tag_type for a profile with the given
+// curated slugs (matched against existing admin tags). Runs inside the caller's
+// transaction client. Tags are "click tags" — unknown slugs are silently
+// dropped rather than minting new rows.
+async function syncUserTagsOfType(
+  client: import("pg").PoolClient,
+  profileId: string,
+  tagType: "interest" | "music",
+  slugs: string[],
+  source: "user" | "music",
+) {
+  await client.query(
+    `
+      delete from user_tags ut
+      using tags tag
+      where ut.profile_id = $1::uuid
+        and ut.tag_id = tag.id
+        and tag.tag_type = $2
+    `,
+    [profileId, tagType],
+  );
+
+  const cleaned = Array.from(
+    new Set(slugs.map((s) => s.trim().toLowerCase()).filter(Boolean)),
+  ).slice(0, 32);
+
+  if (cleaned.length === 0) return;
+
+  await client.query(
+    `
+      insert into user_tags (profile_id, tag_id, source)
+      select $1::uuid, tag.id, $4
+      from tags tag
+      where tag.tag_type = $2
+        and tag.slug = any($3::text[])
+      on conflict do nothing
+    `,
+    [profileId, tagType, cleaned, source],
+  );
+}
 
 export async function updateOwnProfile(
   session: Session | null,
@@ -5972,12 +6415,36 @@ export async function updateOwnProfile(
     params.push(input.intents);
   }
 
-  if (updates.length === 0) return;
+  const syncsInterests = input.interestTags !== undefined;
+  const syncsMusic = input.musicTags !== undefined;
 
-  await pool.query(
-    `update profiles set ${updates.join(", ")}, updated_at = now() where id = $1::uuid`,
-    params,
-  );
+  // Nothing to do — bail before opening a connection.
+  if (updates.length === 0 && !syncsInterests && !syncsMusic) return;
+
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+
+    if (updates.length > 0) {
+      await client.query(
+        `update profiles set ${updates.join(", ")}, updated_at = now() where id = $1::uuid`,
+        params,
+      );
+    }
+    if (syncsInterests) {
+      await syncUserTagsOfType(client, profile.id, "interest", input.interestTags ?? [], "user");
+    }
+    if (syncsMusic) {
+      await syncUserTagsOfType(client, profile.id, "music", input.musicTags ?? [], "music");
+    }
+
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export type NotificationRow = {
@@ -7600,7 +8067,14 @@ export async function getEventAttendeePreview(
           join events event on event.id = attendee.event_id
           join profiles profile on profile.id = attendee.profile_id
           where event.slug = $1
-            and attendee.status = 'confirmed'
+            -- Match the seat-count predicate used in getEventBySlug: a live
+            -- (non-expired) pending_payment hold occupies a seat, so the person
+            -- holding it should show in the attending list and count too.
+            -- Otherwise a "fully booked" event reads "0 of N seats taken".
+            and (
+              attendee.status = 'confirmed'
+              or (attendee.status = 'pending_payment' and attendee.hold_expires_at > now())
+            )
           order by attendee.created_at asc
           limit $2
         `,
@@ -7611,7 +8085,11 @@ export async function getEventAttendeePreview(
           select count(*)::text as count
           from event_attendees attendee
           join events event on event.id = attendee.event_id
-          where event.slug = $1 and attendee.status = 'confirmed'
+          where event.slug = $1
+            and (
+              attendee.status = 'confirmed'
+              or (attendee.status = 'pending_payment' and attendee.hold_expires_at > now())
+            )
         `,
         [eventSlug],
       ),

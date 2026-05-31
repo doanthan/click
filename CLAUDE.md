@@ -2,6 +2,16 @@
 
 Project guide for Claude Code working in this repo.
 
+## Project status — PRE-PRODUCTION
+
+This app has **not launched**. There are no real users, merchants, bookings, or payments — everything in the database is seed/demo/test data.
+
+- It is safe to truncate, reseed, or delete rows for testing. Do not stop to ask before clearing demo data.
+- **Stripe is test mode only** — no real charges exist. Never assume a payment row is real money.
+- Destructive migrations, `TRUNCATE`, and re-running seed scripts are all fine.
+- One caution: `profiles` may be tied to the developer's real Google/Facebook OAuth logins, and `email_events` is the audit/dev-inbox trail — prefer reseeding these over blind-wiping, but they're still not production data.
+- **Remove this section at launch.** Once it's gone, treat all data as production and ask before any destructive operation.
+
 ## Stack
 
 - Next.js 16 (App Router) + React 19
@@ -184,13 +194,16 @@ Admin layout: `src/app/admin/layout.tsx`. Sidebar nav: `src/components/admin-sid
 Mounted under `src/app/api/**`. Notable groups:
 
 - `api/auth/[...nextauth]` — NextAuth handler
-- `api/admin/events`, `api/admin/events/[eventId]/approve`, `api/admin/events/[eventId]/reject` (declines a pending event → `rejected`; optional `{ reason }` body rides through to the merchant email + audit log), `api/admin/merchants/[merchantId]/verification`, `api/admin/tags`
+- `api/admin/events`, `api/admin/events/[eventId]/approve` (approving also flips the owning merchant's `auto_approve_events` flag on — their future events then publish straight to `live`, skipping the pending queue; see below), `api/admin/events/[eventId]/reject` (declines a pending event → `rejected`; optional `{ reason }` body rides through to the merchant email + audit log), `api/admin/merchants/[merchantId]/verification`, `api/admin/merchants/[merchantId]/auto-approve` (`{ autoApprove: boolean }` — admins grant/revoke a merchant's trusted status), `api/admin/tags` (POST upsert, PATCH edit by `{ id }` keeping the slug stable, DELETE `?id=` removes the tag + its `event_tags`/`user_tags` links)
+
+  **Trusted-merchant auto-approval:** `merchant_profiles.auto_approve_events` (migration `database/031_merchant_auto_approve_events.sql`) gates whether `createEventForMerchant` inserts an event as `pending` (untrusted → admin reviews, all admins get a "Event awaiting review" notification) or `live` (trusted → no review). The first time an admin approves any one of a merchant's events, the flag turns on automatically; admins can revoke it from the merchant detail page.
 - `api/events`, `api/events/[eventId]`, `api/events/[eventId]/{bookmark,checkout,register}`
 - `api/merchant/events`, `api/merchant/events/[eventId]/cancel`
 - `api/merchant/stripe/connect` (creates the Connect account + returns a hosted-onboarding URL; approved merchants only), `api/merchant/onboarding/complete` (marks the walkthrough done)
 - `api/tables`, `api/tables/[table]/rows` — generic admin table CRUD
 - `api/test/cases`, `api/test/cases/[id]/comments`, `api/test/comments/[id]`
 - `api/clicks`, `api/onboarding`, `api/webhooks/stripe`
+- `api/geo/postcode?code=NNNN` — resolves a 4-digit AU postcode → `{ state, suburbs[] }` from the bundled `src/lib/postcode.ts` table (server-only `au-postcodes.json`; powers the `/profile/edit` postcode→suburb picker)
 - `api/upload/avatar` — multipart avatar upload, normalises via `sharp`, writes to the public Supabase `avatars` bucket and persists `profiles.photo_url`
 - `api/merchant/documents` — multipart KYC doc upload (private Supabase Storage bucket `merchant-documents`)
 

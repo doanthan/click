@@ -11,6 +11,22 @@ const dateFormatter = new Intl.DateTimeFormat("en-AU", {
   timeZone: "Australia/Sydney",
 });
 
+const timeFormatter = new Intl.DateTimeFormat("en-AU", {
+  hour: "numeric",
+  minute: "2-digit",
+  timeZone: "Australia/Sydney",
+});
+
+// "Sat, May 31, 6:30 PM – 8:30 PM" when the event has a known end, else just
+// the start. Mirrors formatEventTimeRange() used on the public cards.
+function formatWhen(startsAt: string, endsAt: string | null) {
+  const start = dateFormatter.format(new Date(startsAt));
+  if (!endsAt) return start;
+  const end = new Date(endsAt);
+  if (Number.isNaN(end.getTime())) return start;
+  return `${start} – ${timeFormatter.format(end)}`;
+}
+
 const priceFormatter = new Intl.NumberFormat("en-AU", {
   style: "currency",
   currency: "AUD",
@@ -70,7 +86,7 @@ export function MerchantEventsPanel({ events }: { events: MerchantEventSummary[]
             </div>
 
             <p className="text-sm font-semibold text-[color:var(--mauve)]">
-              {dateFormatter.format(new Date(event.startsAt))}
+              {formatWhen(event.startsAt, event.endsAt)}
             </p>
 
             <div>

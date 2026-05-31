@@ -7,11 +7,13 @@ const tagTypeOptions = ["interest", "music", "vibe"] as const;
 
 export function AdminTagManager({ tags }: { tags: AdminTagRow[] }) {
   const [rows, setRows] = useState(tags);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [label, setLabel] = useState("");
   const [categoryName, setCategoryName] = useState("");
   const [tagType, setTagType] = useState<(typeof tagTypeOptions)[number]>("interest");
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const categories = useMemo(
     () =>
@@ -21,15 +23,41 @@ export function AdminTagManager({ tags }: { tags: AdminTagRow[] }) {
     [rows],
   );
 
+  function resetForm() {
+    setEditingId(null);
+    setLabel("");
+    setCategoryName("");
+    setTagType("interest");
+  }
+
+  function startEdit(tag: AdminTagRow) {
+    setEditingId(tag.id);
+    setLabel(tag.label);
+    setCategoryName(tag.categoryName ?? "");
+    setTagType(
+      (tagTypeOptions as readonly string[]).includes(tag.tagType)
+        ? (tag.tagType as (typeof tagTypeOptions)[number])
+        : "interest",
+    );
+    setMessage("");
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitting(true);
     setMessage("");
 
     const response = await fetch("/api/admin/tags", {
-      method: "POST",
+      method: editingId ? "PATCH" : "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ label, categoryName, tagType }),
+      body: JSON.stringify(
+        editingId
+          ? { id: editingId, label, categoryName, tagType }
+          : { label, categoryName, tagType },
+      ),
     });
     const payload = (await response.json()) as {
       error?: string;
@@ -46,9 +74,39 @@ export function AdminTagManager({ tags }: { tags: AdminTagRow[] }) {
       const withoutExisting = current.filter((tag) => tag.id !== payload.tag?.id);
       return [payload.tag as AdminTagRow, ...withoutExisting];
     });
-    setLabel("");
-    setMessage("Tag saved and audit logged.");
+    setMessage(editingId ? "Tag updated and audit logged." : "Tag saved and audit logged.");
+    resetForm();
     setSubmitting(false);
+  }
+
+  async function remove(tag: AdminTagRow) {
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(
+        `Delete "${tag.label}"? This removes it from ${tag.usageCount} association${tag.usageCount === 1 ? "" : "s"} and cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+
+    setDeletingId(tag.id);
+    setMessage("");
+
+    const response = await fetch(`/api/admin/tags?id=${encodeURIComponent(tag.id)}`, {
+      method: "DELETE",
+    });
+    const payload = (await response.json().catch(() => ({}))) as { error?: string };
+
+    if (!response.ok) {
+      setDeletingId(null);
+      setMessage(payload.error ?? "Tag could not be deleted.");
+      return;
+    }
+
+    setRows((current) => current.filter((row) => row.id !== tag.id));
+    if (editingId === tag.id) resetForm();
+    setMessage("Tag deleted and audit logged.");
+    setDeletingId(null);
   }
 
   return (
@@ -58,8 +116,13 @@ export function AdminTagManager({ tags }: { tags: AdminTagRow[] }) {
         className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-5 hard-shadow-sm"
       >
         <h3 className="font-display text-3xl font-light leading-none text-[color:var(--ink)]">
-          Add or update tag
+          {editingId ? "Edit tag" : "Add or update tag"}
         </h3>
+        {editingId ? (
+          <p className="mt-2 text-xs font-bold text-[color:var(--mauve)]">
+            Editing keeps the slug stable so existing events and members stay linked.
+          </p>
+        ) : null}
         <div className="mt-5 grid gap-4">
           <label className="grid gap-2 text-sm font-bold text-[color:var(--ink)]">
             <span className="font-mono text-[0.7rem] uppercase tracking-[0.18em] text-[color:var(--mauve)]">
@@ -110,13 +173,28 @@ export function AdminTagManager({ tags }: { tags: AdminTagRow[] }) {
             </select>
           </label>
 
-          <button
-            type="submit"
-            disabled={submitting}
-            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-5 py-3 text-sm font-black uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)] disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {submitting ? "Saving..." : "Save tag"}
-          </button>
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="submit"
+              disabled={submitting}
+              className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-5 py-3 text-sm font-black uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {submitting
+                ? "Saving..."
+                : editingId
+                  ? "Update tag"
+                  : "Save tag"}
+            </button>
+            {editingId ? (
+              <button
+                type="button"
+                onClick={resetForm}
+                className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-5 py-3 text-sm font-black uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)]"
+              >
+                Cancel
+              </button>
+            ) : null}
+          </div>
           {message ? (
             <p className="text-xs font-bold text-[color:var(--mauve)]">{message}</p>
           ) : null}
@@ -124,16 +202,17 @@ export function AdminTagManager({ tags }: { tags: AdminTagRow[] }) {
       </form>
 
       <div className="overflow-hidden rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow-sm">
-        <div className="grid grid-cols-[1.1fr_0.8fr_0.6fr_0.5fr] gap-3 bg-[color:var(--surface-deep)] px-5 py-3 text-xs font-black uppercase tracking-[0.14em] text-[color:var(--on-deep)] max-sm:hidden">
+        <div className="grid grid-cols-[1.1fr_0.8fr_0.6fr_0.4fr_0.7fr] gap-3 bg-[color:var(--surface-deep)] px-5 py-3 text-xs font-black uppercase tracking-[0.14em] text-[color:var(--on-deep)] max-sm:hidden">
           <span>Tag</span>
           <span>Category</span>
           <span>Type</span>
           <span>Usage</span>
+          <span className="text-right">Actions</span>
         </div>
         {rows.slice(0, 80).map((tag) => (
           <div
             key={tag.id}
-            className="grid gap-2 border-b border-[color:var(--line)] px-5 py-4 text-sm font-medium text-[color:var(--mauve)] last:border-0 sm:grid-cols-[1.1fr_0.8fr_0.6fr_0.5fr] sm:items-center"
+            className="grid gap-2 border-b border-[color:var(--line)] px-5 py-4 text-sm font-medium text-[color:var(--mauve)] last:border-0 sm:grid-cols-[1.1fr_0.8fr_0.6fr_0.4fr_0.7fr] sm:items-center"
           >
             <div>
               <p className="font-black text-[color:var(--ink)]">{tag.label}</p>
@@ -144,10 +223,27 @@ export function AdminTagManager({ tags }: { tags: AdminTagRow[] }) {
             <span className="font-bold text-[color:var(--ink)]">
               {tag.categoryName ?? "Uncategorised"}
             </span>
-            <span className="rounded-full border border-[color:var(--line)] bg-[color:var(--cream)] px-2.5 py-1 text-[0.65rem] font-black uppercase tracking-wider text-[color:var(--ink)]">
+            <span className="justify-self-start rounded-full border border-[color:var(--line)] bg-[color:var(--cream)] px-2.5 py-1 text-[0.65rem] font-black uppercase tracking-wider text-[color:var(--ink)]">
               {tag.tagType}
             </span>
             <span className="font-black text-[color:var(--ink)]">{tag.usageCount}</span>
+            <div className="flex gap-2 sm:justify-end">
+              <button
+                type="button"
+                onClick={() => startEdit(tag)}
+                className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-1 text-[0.65rem] font-black uppercase tracking-wider text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+              >
+                Edit
+              </button>
+              <button
+                type="button"
+                onClick={() => remove(tag)}
+                disabled={deletingId === tag.id}
+                className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-1 text-[0.65rem] font-black uppercase tracking-wider text-[color:var(--punch)] hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {deletingId === tag.id ? "…" : "Delete"}
+              </button>
+            </div>
           </div>
         ))}
       </div>

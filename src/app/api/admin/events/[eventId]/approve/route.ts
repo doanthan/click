@@ -33,6 +33,10 @@ function responseForError(error: unknown) {
     return NextResponse.json({ error: error.message }, { status: 404 });
   }
 
+  if (error.name === "ValidationError") {
+    return NextResponse.json({ error: error.message }, { status: 422 });
+  }
+
   if (error.name === "DatabaseUnavailableError") {
     return NextResponse.json({ error: error.message }, { status: 503 });
   }

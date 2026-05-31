@@ -62,6 +62,14 @@ export default async function MerchantSignupLayout({
           Your application goes to admin review and unlocks the portal once approved.
         </p>
 
+        <div className="mt-4 flex max-w-2xl items-start gap-3 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-4 py-3 text-sm font-semibold leading-6 text-[color:var(--surface-deep)] hard-shadow-sm">
+          <span aria-hidden="true" className="mt-0.5 text-base leading-none">ⓘ</span>
+          <span>
+            We&apos;re piloting in <span className="font-bold">Sydney</span> first. Outside Sydney?
+            Sign up anyway — we&apos;ll add you to the waitlist and email you when we launch in your city.
+          </span>
+        </div>
+
         <div className="mt-5">
           <MerchantSignupProvider
             sessionEmail={session?.user?.email ?? ""}

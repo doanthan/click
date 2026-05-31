@@ -84,8 +84,29 @@ export async function POST(_request: Request, context: RouteContext) {
             },
           },
         },
+        // Booking fee as its own line so it shows distinctly on the Stripe page
+        // and the card statement. Omitted entirely when the fee is disabled (0).
+        ...(hold.bookingFeeCents > 0
+          ? [
+              {
+                quantity: 1,
+                price_data: {
+                  currency: hold.currency.toLowerCase(),
+                  unit_amount: hold.bookingFeeCents,
+                  product_data: {
+                    name: "Booking fee",
+                    description: "Click platform booking fee",
+                  },
+                },
+              },
+            ]
+          : []),
       ],
-      success_url: `${appUrl}/dashboard/calendar?booked=${encodeURIComponent(hold.eventSlug)}`,
+      // `{CHECKOUT_SESSION_ID}` is a Stripe template literal it substitutes on
+      // redirect — leave the braces unencoded. The landing page uses it to
+      // reconcile the payment (fulfill-on-return) so confirmation doesn't depend
+      // solely on webhook delivery. See reconcileCheckoutSession in stripe-sync.
+      success_url: `${appUrl}/dashboard/calendar?booked=${encodeURIComponent(hold.eventSlug)}&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${appUrl}/events/${encodeURIComponent(hold.eventSlug)}?canceled=1`,
       // Matches the `hold_expires_at` set in createPaymentHold so the reserved
       // seat and the Stripe session expire together — no ghost seats, and no
@@ -112,11 +133,17 @@ export async function POST(_request: Request, context: RouteContext) {
         // Funds then flow through to the merchant's connected balance and
         // Stripe pays them out on the schedule set when the account was
         // created in src/lib/stripe-connect.ts.
+        // The platform's cut = its % take on the ticket PLUS the whole booking
+        // fee (the fee is the platform's, not the merchant's). The merchant
+        // receives ticket − platform%; the booking fee never reaches their
+        // connected balance. application_fee_amount is taken off the total charge
+        // (ticket + booking fee), which is why we add the fee back in here.
         ...(hold.merchantStripeAccountId
           ? {
               transfer_data: { destination: hold.merchantStripeAccountId },
               on_behalf_of: hold.merchantStripeAccountId,
-              application_fee_amount: calculateApplicationFee(hold.priceCents),
+              application_fee_amount:
+                calculateApplicationFee(hold.priceCents) + hold.bookingFeeCents,
             }
           : {}),
       },

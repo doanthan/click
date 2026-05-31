@@ -12,6 +12,7 @@ import {
   getEventAttendeePreview,
   getEventBySlug,
   getProfileStatus,
+  getSystemSettings,
 } from "@/lib/event-repository";
 
 type PageProps = {
@@ -86,10 +87,11 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
   const search = searchParams ? await searchParams : undefined;
   const session = await auth();
 
-  const [event, profileStatus, attendeePreview] = await Promise.all([
+  const [event, profileStatus, attendeePreview, systemSettings] = await Promise.all([
     getEventBySlug(slug, session),
     session?.user ? getProfileStatus(session) : null,
     getEventAttendeePreview(slug, 8),
+    getSystemSettings(),
   ]);
 
   if (!event) notFound();
@@ -97,12 +99,12 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
   // Hide not-yet-public events (pending review, rejected, cancelled) from
   // everyone except the owning merchant and admins. Without this, a direct slug
   // link rendered the full listing — RSVP button and all — for any visitor.
-  if (!PUBLIC_EVENT_STATUSES.has(event.status)) {
-    const isAdmin = profileStatus?.role === "admin";
-    const isOwner =
-      Boolean(event.merchantProfileId) &&
-      profileStatus?.merchantProfile?.id === event.merchantProfileId;
-    if (!isAdmin && !isOwner) notFound();
+  const isAdmin = profileStatus?.role === "admin";
+  const isOwner =
+    Boolean(event.merchantProfileId) &&
+    profileStatus?.merchantProfile?.id === event.merchantProfileId;
+  if (!PUBLIC_EVENT_STATUSES.has(event.status) && !isAdmin && !isOwner) {
+    notFound();
   }
 
   const startsAtMs = new Date(event.startsAt).getTime();
@@ -120,8 +122,19 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
   const isPendingPayment = event.viewerRsvpStatus === "pending_payment";
   const isFull = event.attendees >= event.capacity;
   const isWaitlistMode = event.status === "Waitlist" || isFull;
-  const isLockedEvent = event.status === "Locked" && !isRegistered;
+  // Admins and the owning merchant always see the real venue — the "Open event"
+  // action in the admin queue needs the unlocked listing, not the RSVP-gated one.
+  const isLockedEvent =
+    event.status === "Locked" && !isRegistered && !isAdmin && !isOwner;
   const isPaid = event.priceCents > 0;
+  // Booking fee mirrors the checkout calc (createPaymentHold): a % of the ticket,
+  // charged on top, kept by the platform. Shown to the buyer before they reserve
+  // so the price they see equals the price Stripe charges.
+  const bookingFeeCents = isPaid
+    ? Math.round((event.priceCents * systemSettings.bookingFeeBps) / 10_000)
+    : 0;
+  const totalCents = event.priceCents + bookingFeeCents;
+  const hasBookingFee = bookingFeeCents > 0;
   const bookmarked = profileStatus?.bookmarkedEventIds.includes(event.id) ?? false;
   const showStripeUnavailableHint = isPaid && !process.env.STRIPE_SECRET_KEY;
   const isAuthenticated = Boolean(session?.user);
@@ -233,8 +246,20 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                   Price
                 </p>
                 <p className="font-display mt-1 text-3xl font-light leading-tight">
-                  {formatPrice(event.priceCents, "AUD")}
+                  {formatPrice(hasBookingFee ? totalCents : event.priceCents, "AUD")}
                 </p>
+                {hasBookingFee ? (
+                  <dl className="mt-2 space-y-0.5 text-xs font-medium text-[color:var(--mauve)]">
+                    <div className="flex items-center justify-between">
+                      <dt>Ticket</dt>
+                      <dd>{formatPrice(event.priceCents, "AUD")}</dd>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <dt>Booking fee</dt>
+                      <dd>{formatPrice(bookingFeeCents, "AUD")}</dd>
+                    </div>
+                  </dl>
+                ) : null}
 
                 <div className="mt-5">
                   <p className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
@@ -313,10 +338,16 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                       </p>
                     ) : (
                       <EventBookingDialog
-                        triggerLabel={`Reserve · ${formatPrice(event.priceCents, "AUD")}`}
-                        title={`Reserve a seat for ${formatPrice(event.priceCents, "AUD")}?`}
+                        triggerLabel={`Reserve · ${formatPrice(totalCents, "AUD")}`}
+                        title={`Reserve a seat for ${formatPrice(totalCents, "AUD")}?`}
                         body={
                           <>
+                            {hasBookingFee ? (
+                              <>
+                                That&apos;s {formatPrice(event.priceCents, "AUD")} ticket
+                                + {formatPrice(bookingFeeCents, "AUD")} booking fee.{" "}
+                              </>
+                            ) : null}
                             We&apos;ll hold your seat through Stripe checkout. If you
                             don&apos;t complete payment, the hold is released and the
                             seat returns to the pool. Cancel anytime before the
@@ -326,7 +357,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                       >
                         <EventPaymentButton
                           eventId={event.id}
-                          priceLabel={formatPrice(event.priceCents, "AUD")}
+                          priceLabel={formatPrice(totalCents, "AUD")}
                         />
                       </EventBookingDialog>
                     )

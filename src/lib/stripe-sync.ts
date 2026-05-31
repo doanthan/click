@@ -28,7 +28,7 @@ import {
   getConnectedAccountStatus,
   type ConnectAccountStatus,
 } from "./stripe-connect";
-import { updateMerchantConnectStatus } from "./event-repository";
+import { markPaymentSucceeded, updateMerchantConnectStatus } from "./event-repository";
 import { writeAuditLog } from "@/utils/admin/audit-logger";
 
 type RefundReason = "duplicate" | "fraudulent" | "requested_by_customer";
@@ -204,6 +204,44 @@ export async function syncTransactionFromStripe(
   } finally {
     client.release();
   }
+}
+
+// ---------------------------------------------------------------------------
+// Fulfill-on-return reconciliation (used by the checkout success landing)
+// ---------------------------------------------------------------------------
+
+// The Stripe webhook (`checkout.session.completed`) is the primary path that
+// flips `payment_transactions` → 'paid' and the attendee row → 'confirmed'. But
+// in any environment where the webhook isn't delivered — local dev without
+// `stripe listen`, a delayed delivery, or a missed event — the buyer lands back
+// on the app with their seat still 'pending_payment': the event keeps prompting
+// for payment, the seat count stays 0, and it never reaches the dashboard or
+// calendar. The checkout `success_url` carries the Checkout Session id, so here
+// we retrieve the session and, if Stripe reports it paid, run the SAME
+// `markPaymentSucceeded` the webhook would have. Idempotent — that function
+// no-ops once the txn is already 'paid', so a later webhook delivery (or a page
+// refresh) is harmless.
+export async function reconcileCheckoutSession(
+  sessionId: string,
+): Promise<{ confirmed: boolean }> {
+  const stripe = getStripeClient();
+  if (!stripe) return { confirmed: false };
+
+  let session: Stripe.Checkout.Session;
+  try {
+    session = await stripe.checkout.sessions.retrieve(sessionId);
+  } catch {
+    // Unknown / foreign session id in the query string — ignore quietly.
+    return { confirmed: false };
+  }
+
+  if (session.payment_status !== "paid") return { confirmed: false };
+
+  const paymentTransactionId = session.metadata?.payment_transaction_id ?? null;
+  if (!paymentTransactionId) return { confirmed: false };
+
+  await markPaymentSucceeded(paymentTransactionId);
+  return { confirmed: true };
 }
 
 // ---------------------------------------------------------------------------

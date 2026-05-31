@@ -69,6 +69,42 @@ type BusinessType = (typeof BUSINESS_TYPES)[number]["value"];
 const DOC_TYPES = ["abn_certificate", "public_liability_insurance", "liquor_licence"] as const;
 type DocumentType = (typeof DOC_TYPES)[number];
 
+const SOCIAL_PLATFORMS = [
+  { value: "instagram", label: "Instagram" },
+  { value: "tiktok", label: "TikTok" },
+  { value: "facebook", label: "Facebook" },
+] as const;
+type SocialPlatform = (typeof SOCIAL_PLATFORMS)[number]["value"];
+
+// Greater Sydney postcode ranges — the area covered by the launch pilot. Used to
+// show out-of-area hosts the waitlist notice. Kept deliberately inclusive so we
+// don't tell a genuine Sydney host they're outside the pilot.
+const SYDNEY_POSTCODE_RANGES: ReadonlyArray<readonly [number, number]> = [
+  [2000, 2249], // metro core + eastern/inner/northern/southern suburbs
+  [2555, 2574], // Macarthur (Camden, Campbelltown)
+  [2740, 2786], // Penrith, Blue Mountains, western fringe
+];
+
+function isSydneyPostcode(postcode: string): boolean {
+  if (!/^\d{4}$/.test(postcode)) return false;
+  const n = Number(postcode);
+  return SYDNEY_POSTCODE_RANGES.some(([lo, hi]) => n >= lo && n <= hi);
+}
+
+// Client-side postcode → state lookup via the bundled AU table (the table
+// itself is server-only, so we hit its API route). Returns "" on any miss.
+async function lookupStateForPostcode(postcode: string): Promise<string> {
+  if (!/^\d{4}$/.test(postcode)) return "";
+  try {
+    const res = await fetch(`/api/geo/postcode?code=${postcode}`);
+    if (!res.ok) return "";
+    const body = (await res.json()) as { state?: string };
+    return body.state ?? "";
+  } catch {
+    return "";
+  }
+}
+
 type CategoryOption = { id: string; name: string; slug: string };
 type ExistingDoc = { documentType: DocumentType; fileName: string };
 
@@ -103,6 +139,7 @@ type State = {
   phone: string;
   websiteUrl: string;
   socialHandle: string;
+  socialPlatform: SocialPlatform | "";
   addressStreet: string;
   addressSuburb: string;
   addressState: AuState | "";
@@ -183,6 +220,7 @@ function initialState(props: {
     phone: "",
     websiteUrl: "",
     socialHandle: "",
+    socialPlatform: "",
     addressStreet: "",
     addressSuburb: "",
     addressState: "",
@@ -319,6 +357,7 @@ export function WizardShell({
       phone: state.phone.replace(/\s+/g, ""),
       websiteUrl: state.websiteUrl.trim(),
       socialHandle: state.socialHandle.trim(),
+      socialPlatform: state.socialHandle.trim() ? state.socialPlatform : "",
       addressStreet: state.addressStreet.trim(),
       addressSuburb: state.addressSuburb.trim(),
       addressState: state.addressState,
@@ -762,16 +801,48 @@ export function ContactSection() {
   const { state, dispatch } = useWizard();
 
   // Picking a Mapbox suggestion fills street + suburb/state/postcode in one go.
-  function handlePick(place: MapboxPlace) {
+  // Mapbox occasionally omits the region/state on an address feature, which left
+  // the State picker blank ("the correct state doesn't populate"). When that
+  // happens but we got a postcode, derive the state from the AU postcode table
+  // so it's filled in deterministically.
+  async function handlePick(place: MapboxPlace) {
     dispatch({ type: "field", key: "addressStreet", value: place.street || place.name });
     if (place.suburb) dispatch({ type: "field", key: "addressSuburb", value: place.suburb });
-    if ((AU_STATES as readonly string[]).includes(place.state)) {
-      dispatch({ type: "field", key: "addressState", value: place.state });
+
+    const mapboxState = (AU_STATES as readonly string[]).includes(place.state)
+      ? place.state
+      : "";
+    if (mapboxState) {
+      dispatch({ type: "field", key: "addressState", value: mapboxState });
     }
     if (/^[0-9]{4}$/.test(place.postcode)) {
       dispatch({ type: "field", key: "addressPostcode", value: place.postcode });
+      if (!mapboxState) {
+        const fallbackState = await lookupStateForPostcode(place.postcode);
+        if (fallbackState) {
+          dispatch({ type: "field", key: "addressState", value: fallbackState });
+        }
+      }
     }
   }
+
+  // Manual postcode entry: once it's a full 4 digits, fill the state from the AU
+  // table so users typing an address by hand don't have to pick the state too.
+  async function handlePostcodeChange(raw: string) {
+    const postcode = raw.replace(/\D/g, "").slice(0, 4);
+    dispatch({ type: "field", key: "addressPostcode", value: postcode });
+    if (postcode.length === 4) {
+      const fallbackState = await lookupStateForPostcode(postcode);
+      if (fallbackState) {
+        dispatch({ type: "field", key: "addressState", value: fallbackState });
+      }
+    }
+  }
+
+  // Show the waitlist notice once the host has entered an out-of-Sydney area.
+  const postcode = state.addressPostcode.trim();
+  const outsidePilot = /^\d{4}$/.test(postcode) && !isSydneyPostcode(postcode);
+  const areaLabel = state.addressSuburb.trim() || "That area";
 
   return (
     <div className="grid gap-5">
@@ -810,17 +881,46 @@ export function ContactSection() {
         />
       </label>
 
-      <label className="grid gap-2">
-        <FieldLabel>Facebook or Instagram handle (optional)</FieldLabel>
-        <TextInput
-          value={state.socialHandle}
-          onChange={(e) => dispatch({ type: "field", key: "socialHandle", value: e.target.value })}
-          placeholder="@yourbusiness"
-        />
+      <div className="grid gap-2">
+        <FieldLabel>Social handle (optional)</FieldLabel>
+        <div className="grid gap-2 sm:grid-cols-[auto_1fr] sm:items-stretch">
+          <div className="flex flex-wrap gap-1.5">
+            {SOCIAL_PLATFORMS.map((opt) => {
+              const selected = state.socialPlatform === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() =>
+                    dispatch({
+                      type: "field",
+                      key: "socialPlatform",
+                      // Toggle off if re-clicking the active platform.
+                      value: selected ? "" : opt.value,
+                    })
+                  }
+                  className={`rounded-xl border-2 border-[color:var(--line)] px-3 py-2.5 text-sm font-bold ${
+                    selected
+                      ? "bg-[color:var(--rose)] text-[color:var(--surface-deep)]"
+                      : "bg-[color:var(--champagne)] text-[color:var(--ink)] hover:bg-[color:var(--cream)]"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+          <TextInput
+            value={state.socialHandle}
+            onChange={(e) => dispatch({ type: "field", key: "socialHandle", value: e.target.value })}
+            placeholder="@yourbusiness"
+          />
+        </div>
         <span className="text-xs font-medium text-[color:var(--mauve)]">
-          Handy for verifying hosts who don&apos;t have formal documents yet.
+          Pick the network, then add the handle — handy for verifying hosts who don&apos;t have formal documents yet.
         </span>
-      </label>
+      </div>
 
       <label className="grid gap-2">
         <FieldLabel>Street address *</FieldLabel>
@@ -858,12 +958,22 @@ export function ContactSection() {
             value={state.addressPostcode}
             inputMode="numeric"
             maxLength={4}
-            onChange={(e) => dispatch({ type: "field", key: "addressPostcode", value: e.target.value.replace(/\D/g, "") })}
+            onChange={(e) => handlePostcodeChange(e.target.value)}
             placeholder="2010"
             required
           />
         </label>
       </div>
+
+      {outsidePilot ? (
+        <p
+          role="status"
+          className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-4 py-3 text-sm font-semibold leading-6 text-[color:var(--surface-deep)]"
+        >
+          <span className="font-bold">{areaLabel} is outside our Sydney pilot.</span>{" "}
+          You can still apply — we&apos;ll add you to the waitlist and email you the moment we launch in your area.
+        </p>
+      ) : null}
     </div>
   );
 }

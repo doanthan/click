@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { AdminEventQueue } from "@/components/admin-event-queue";
 import { getAdminEvents } from "@/lib/event-repository";
 
@@ -10,7 +11,11 @@ export default async function AdminEventsPage() {
 
   return (
     <div className="space-y-8 py-10">
-      <AdminEventQueue events={events} />
+      {/* AdminEventQueue reads filters from the query string via useSearchParams,
+          which Next requires to sit under a Suspense boundary. */}
+      <Suspense fallback={null}>
+        <AdminEventQueue events={events} />
+      </Suspense>
     </div>
   );
 }

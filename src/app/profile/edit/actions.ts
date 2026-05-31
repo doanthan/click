@@ -32,6 +32,12 @@ export async function saveProfileEditAction(formData: FormData) {
     .filter((v): v is string => typeof v === "string")
     .filter((v) => VALID_INTENTS.has(v));
 
+  // Curated tag slugs from the interest / music pickers. The repository matches
+  // these against existing admin tags (unknown slugs are dropped) and replaces
+  // the user's tags of each type, so an empty array clears that group.
+  const strList = (key: string) =>
+    formData.getAll(key).filter((v): v is string => typeof v === "string" && v.trim() !== "");
+
   const ageRaw = strField(formData, "age").trim();
   const ageParsed = ageRaw ? Number.parseInt(ageRaw, 10) : null;
 
@@ -42,6 +48,8 @@ export async function saveProfileEditAction(formData: FormData) {
     photoUrl: strField(formData, "photo_url"),
     age: Number.isFinite(ageParsed as number) && (ageParsed as number) >= 18 ? ageParsed : null,
     intents,
+    interestTags: strList("interest_tag"),
+    musicTags: strList("music_tag"),
   });
 
   revalidatePath("/profile");

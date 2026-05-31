@@ -17,6 +17,19 @@ const nextConfig: NextConfig = {
         protocol: "https",
         hostname: "images.unsplash.com",
       },
+      // Placeholder images used by seed / sample event data.
+      {
+        protocol: "https",
+        hostname: "placehold.co",
+      },
+      // Supabase Storage public buckets (avatars + event/gallery images). Any
+      // Supabase project host, scoped to the public object path. See CLAUDE.md →
+      // "File storage".
+      {
+        protocol: "https",
+        hostname: "*.supabase.co",
+        pathname: "/storage/v1/object/public/**",
+      },
     ],
   },
 };

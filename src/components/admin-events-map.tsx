@@ -45,6 +45,12 @@ function hasCoords(event: AdminEventRow): event is Located {
 export function AdminEventsMap({ events }: { events: AdminEventRow[] }) {
   const mapRef = useRef<MapRef | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
+  // Gate the fit-bounds effect on the map actually being ready. On first mount
+  // (and every table→map toggle, which remounts this component) the effect runs
+  // before react-map-gl has populated mapRef, so getMap() is null and the fit
+  // is skipped — leaving every pin parked off-screen at the initial centroid.
+  // onLoad flips this true once the map exists, re-running the effect to fit.
+  const [mapReady, setMapReady] = useState(false);
 
   const located = useMemo(() => events.filter(hasCoords), [events]);
 
@@ -60,6 +66,7 @@ export function AdminEventsMap({ events }: { events: AdminEventRow[] }) {
   // Re-fit the viewport whenever the located set changes (filters in the queue
   // flow straight through to here), so every visible pin stays in frame.
   useEffect(() => {
+    if (!mapReady) return;
     const map = mapRef.current?.getMap();
     if (!map || located.length === 0) return;
     if (located.length === 1) {
@@ -77,7 +84,7 @@ export function AdminEventsMap({ events }: { events: AdminEventRow[] }) {
       [[minLng, minLat], [maxLng, maxLat]],
       { padding: 56, maxZoom: 15, duration: 500 },
     );
-  }, [located]);
+  }, [located, mapReady]);
 
   const activeEvent = activeId ? located.find((e) => e.id === activeId) ?? null : null;
   const missing = events.length - located.length;
@@ -102,6 +109,7 @@ export function AdminEventsMap({ events }: { events: AdminEventRow[] }) {
             initialViewState={{ longitude: center.lng, latitude: center.lat, zoom: 12 }}
             style={{ width: "100%", height: "100%" }}
             attributionControl={false}
+            onLoad={() => setMapReady(true)}
           >
             <NavigationControl position="top-right" showCompass={false} />
 
