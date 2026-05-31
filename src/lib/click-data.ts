@@ -132,6 +132,15 @@ export const animatedPrompts = [
 
 export const starterPrompts = animatedPrompts.slice(0, 4);
 
+// Mirrors the public rows of the DB `tag_categories` table (internal_only =
+// false). The DB is the source of truth — the `/categories` index reads it
+// live via getEventCategories() — but this static list still drives the
+// `/categories/<slug>` landing pages (generateStaticParams + categoryFromSlug)
+// and the discover rail ordering, so it must stay in sync or events in a
+// missing category get dropped / their landing page 404s. The internal-only
+// `Life` and `Music` categories are matching signals, not browsable event
+// lanes, so they're intentionally excluded. When an admin adds a public
+// category, add it here too.
 export const categories = [
   "All",
   "Social",
@@ -141,6 +150,14 @@ export const categories = [
   "Creative",
   "Career",
   "Community",
+  "Family",
+  "Games",
+  "Learning",
+  "Nightlife",
+  "Outdoors",
+  "Sports",
+  "Travel",
+  "Wellness",
 ];
 
 // URL slug <-> display name for category browse pages (/categories/<slug>).

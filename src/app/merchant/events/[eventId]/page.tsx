@@ -126,6 +126,36 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
           </div>
         </div>
 
+        {event.images.length > 0 ? (
+          <div className="mt-8 grid gap-3 sm:grid-cols-[2fr_1fr]">
+            <div className="overflow-hidden rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] hard-shadow-sm">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={event.images[0]}
+                alt={event.imageAlt ?? event.title}
+                className="aspect-[16/10] w-full object-cover"
+              />
+            </div>
+            {event.images.length > 1 ? (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-1">
+                {event.images.slice(1, 5).map((src, index) => (
+                  <div
+                    key={src}
+                    className="overflow-hidden rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] hard-shadow-sm"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={src}
+                      alt={`${event.title} photo ${index + 2}`}
+                      className="aspect-[16/10] w-full object-cover sm:aspect-[3/2]"
+                    />
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
         <div className="mt-8 grid gap-3 sm:grid-cols-4">
           <MetricCard
             label="Confirmed"
@@ -255,7 +285,13 @@ function AttendeeTable({ rows }: { rows: MerchantAttendeeRow[] }) {
           key={attendee.attendeeId}
           className="grid gap-3 border-t-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-4 md:grid-cols-[1.4fr_1.4fr_0.7fr_0.7fr] md:items-center"
         >
-          <p className="text-sm font-bold text-[color:var(--ink)]">{attendee.displayName}</p>
+          <div className="flex items-center gap-3">
+            <AttendeeAvatar
+              displayName={attendee.displayName}
+              photoUrl={attendee.photoUrl}
+            />
+            <p className="text-sm font-bold text-[color:var(--ink)]">{attendee.displayName}</p>
+          </div>
           <p className="break-all font-mono text-[0.75rem] text-[color:var(--mauve)]">
             {attendee.email}
           </p>
@@ -266,5 +302,30 @@ function AttendeeTable({ rows }: { rows: MerchantAttendeeRow[] }) {
         </div>
       ))}
     </div>
+  );
+}
+
+function AttendeeAvatar({
+  displayName,
+  photoUrl,
+}: {
+  displayName: string;
+  photoUrl: string | null;
+}) {
+  const initial = displayName.trim().charAt(0).toUpperCase() || "?";
+  if (photoUrl) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={photoUrl}
+        alt={displayName}
+        className="h-9 w-9 shrink-0 rounded-full border-2 border-[color:var(--line)] object-cover"
+      />
+    );
+  }
+  return (
+    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] text-sm font-bold text-[color:var(--ink)]">
+      {initial}
+    </span>
   );
 }

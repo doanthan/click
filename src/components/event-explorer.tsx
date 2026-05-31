@@ -43,7 +43,7 @@ export function EventExplorer({
   const [locationQuery, setLocationQuery] = useState("Sydney CBD");
   const [selectedSuburb, setSelectedSuburb] = useState("All Sydney");
   const [dateWindow, setDateWindow] = useState<DateWindow>("all");
-  const [distanceKm, setDistanceKm] = useState(25);
+  const [distanceKm, setDistanceKm] = useState(MAX_DISTANCE_KM);
   const [tagFilter, setTagFilter] = useState(initialTag);
   const skipFirstSync = useRef(true);
 
@@ -103,11 +103,21 @@ export function EventExplorer({
     todayTime,
   ]);
 
-  // Group filtered events under their category. Categories with no events
-  // (after filtering) drop out so we don't render empty rails.
+  // Group filtered events under their category. We render every category that
+  // actually appears on a live event — known categories first (canonical
+  // order from click-data), then any others (e.g. admin-added categories like
+  // "Nightlife") appended alphabetically. Driving the rails off the real data
+  // instead of a hardcoded list means no live event is ever silently dropped
+  // just because its category isn't in the static list. Categories with no
+  // events (after filtering) still drop out so we don't render empty rails.
   const groupedByCategory = useMemo(() => {
-    const realCategories = categories.filter((c) => c !== "All");
-    return realCategories
+    const known = categories.filter((c) => c !== "All");
+    const present = Array.from(new Set(filteredEvents.map((event) => event.category)));
+    const orderedCategories = [
+      ...known.filter((category) => present.includes(category)),
+      ...present.filter((category) => !known.includes(category)).sort(),
+    ];
+    return orderedCategories
       .map((category) => ({
         category,
         events: filteredEvents.filter((event) => event.category === category),

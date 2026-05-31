@@ -1548,12 +1548,15 @@ export type MerchantAttendeeRow = {
   attendeeId: string;
   displayName: string;
   email: string;
+  photoUrl: string | null;
   status: "confirmed" | "pending_payment" | "waitlisted" | "cancelled" | "refunded";
   rsvpAt: string;
 };
 
 export type MerchantEventDetail = MerchantEventSummary & {
   description: string;
+  images: string[];
+  imageAlt: string | null;
   attendees: MerchantAttendeeRow[];
 };
 
@@ -1646,6 +1649,9 @@ export async function getMerchantEventDetail(
     capacity: number;
     price_cents: number;
     category: string;
+    image_url: string | null;
+    image_urls: string[] | null;
+    image_alt: string | null;
     confirmed: string;
     waitlisted: string;
   }>(
@@ -1663,6 +1669,9 @@ export async function getMerchantEventDetail(
         event.capacity,
         event.price_cents,
         event.category,
+        event.image_url,
+        event.image_urls,
+        event.image_alt,
         count(attendee.id) filter (where (attendee.status = 'confirmed' or (attendee.status = 'pending_payment' and attendee.hold_expires_at > now()))) as confirmed,
         count(attendee.id) filter (where attendee.status = 'waitlisted') as waitlisted
       from events event
@@ -1681,6 +1690,7 @@ export async function getMerchantEventDetail(
     attendee_id: string;
     display_name: string;
     email: string;
+    photo_url: string | null;
     status: string;
     created_at: Date;
   }>(
@@ -1689,6 +1699,7 @@ export async function getMerchantEventDetail(
         attendee.id::text as attendee_id,
         attendee_profile.display_name,
         attendee_profile.email::text as email,
+        attendee_profile.photo_url,
         attendee.status::text,
         attendee.created_at
       from event_attendees attendee
@@ -1723,10 +1734,18 @@ export async function getMerchantEventDetail(
     waitlisted: Number(row.waitlisted),
     priceCents: row.price_cents,
     category: row.category,
+    images:
+      row.image_urls && row.image_urls.length > 0
+        ? row.image_urls
+        : row.image_url
+          ? [row.image_url]
+          : [imageForCategory(row.category)],
+    imageAlt: row.image_alt,
     attendees: attendeeResult.rows.map((entry) => ({
       attendeeId: entry.attendee_id,
       displayName: entry.display_name,
       email: entry.email,
+      photoUrl: entry.photo_url,
       status: entry.status as MerchantAttendeeRow["status"],
       rsvpAt: entry.created_at.toISOString(),
     })),
@@ -2027,6 +2046,11 @@ export type EventDetail = EventItem & {
   address: string | null;
   endsAt: string | null;
   viewerRsvpStatus: "confirmed" | "waitlisted" | "pending_payment" | "cancelled" | null;
+  // ISO timestamp of a live waitlist promotion offer for the viewer — set only
+  // when the viewer is waitlisted, has been offered a freed seat, and the
+  // 15-minute window is still open (offered_until > now, accepted_at is null).
+  // Drives the "Confirm your spot" CTA. Null otherwise.
+  waitlistOfferExpiresAt: string | null;
   media: MediaItem[];
   // Owning merchant (null for platform-owned / fallback events). Used by the
   // detail page to let an owner preview their own not-yet-approved event while
