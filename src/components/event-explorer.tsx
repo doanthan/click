@@ -9,11 +9,17 @@ import { EventTileCard } from "./event-tile-card";
 import { FilterSelect } from "./filter-select";
 import { MapboxAutocomplete } from "./mapbox-autocomplete";
 
-// Top of the radius slider. At the max we treat it as "any distance" so people
+// Top of the radius control. At the max we treat it as "any distance" so people
 // far from the events (or who just want everything) aren't filtered to nothing.
 const MAX_DISTANCE_KM = 50;
 
+// Tap-friendly radius presets — replaces a fiddly range slider that's painful
+// on touch. The last entry maps to MAX_DISTANCE_KM ("any distance").
+const DISTANCE_OPTIONS = [2, 5, 10, 25, MAX_DISTANCE_KM] as const;
+
 type DateWindow = "7" | "30" | "all";
+type SortMode = "soonest" | "nearest" | "popular";
+type ViewMode = "rails" | "grid";
 type LocationStatus = "idle" | "requesting" | "shared" | "denied" | "unsupported";
 
 function daysUntil(startsAt: string, referenceTime: number) {
@@ -41,9 +47,12 @@ export function EventExplorer({
   // event's distance is recomputed from here instead of from Sydney CBD.
   const [userCoords, setUserCoords] = useState<LatLng | null>(null);
   const [locationQuery, setLocationQuery] = useState("Sydney CBD");
+  const [searchQuery, setSearchQuery] = useState("");
   const [selectedSuburb, setSelectedSuburb] = useState("All Sydney");
   const [dateWindow, setDateWindow] = useState<DateWindow>("all");
   const [distanceKm, setDistanceKm] = useState(MAX_DISTANCE_KM);
+  const [sortMode, setSortMode] = useState<SortMode>("nearest");
+  const [viewMode, setViewMode] = useState<ViewMode>("rails");
   const [tagFilter, setTagFilter] = useState(initialTag);
   const skipFirstSync = useRef(true);
 
@@ -69,6 +78,7 @@ export function EventExplorer({
 
   const filteredEvents = useMemo(() => {
     const normalizedTag = tagFilter.trim().toLowerCase();
+    const normalizedSearch = searchQuery.trim().toLowerCase();
 
     return locatedEvents
       .filter((event) => {
@@ -84,12 +94,27 @@ export function EventExplorer({
         const matchesTag =
           !normalizedTag ||
           event.tags.some((tag) => tag.toLowerCase() === normalizedTag);
+        const matchesSearch =
+          !normalizedSearch ||
+          [event.title, event.host, event.category, event.suburb, event.location, ...event.tags]
+            .join(" ")
+            .toLowerCase()
+            .includes(normalizedSearch);
 
-        return matchesDate && matchesSuburb && matchesDistance && matchesTag;
+        return matchesDate && matchesSuburb && matchesDistance && matchesTag && matchesSearch;
       })
       .sort((left, right) => {
-        // Nearest first, breaking ties by soonest. This keeps the category
-        // rows feeling spatially relevant without needing a sort selector.
+        if (sortMode === "popular") {
+          if (right.attendees !== left.attendees) return right.attendees - left.attendees;
+          return new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime();
+        }
+        if (sortMode === "soonest") {
+          const timeDelta =
+            new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime();
+          if (timeDelta !== 0) return timeDelta;
+          return left.distanceKm - right.distanceKm;
+        }
+        // "nearest" (default): closest first, breaking ties by soonest.
         const distanceDelta = left.distanceKm - right.distanceKm;
         if (distanceDelta !== 0) return distanceDelta;
         return new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime();
@@ -98,7 +123,9 @@ export function EventExplorer({
     dateWindow,
     distanceKm,
     locatedEvents,
+    searchQuery,
     selectedSuburb,
+    sortMode,
     tagFilter,
     todayTime,
   ]);
@@ -168,6 +195,7 @@ export function EventExplorer({
   }
 
   function resetFilters() {
+    setSearchQuery("");
     setSelectedSuburb("All Sydney");
     setDateWindow("all");
     setDistanceKm(MAX_DISTANCE_KM);
@@ -175,15 +203,39 @@ export function EventExplorer({
   }
 
   const totalCount = filteredEvents.length;
-  const distanceLabel =
-    distanceKm >= MAX_DISTANCE_KM ? "Any distance" : `${distanceKm} km`;
   const locationLabel = userCoords ? "from you" : "from Sydney CBD";
+
+  // Active, removable filter chips — gives an at-a-glance summary of what's
+  // narrowing the results, the way modern marketplaces do.
+  const activeChips: { key: string; label: string; clear: () => void }[] = [];
+  if (searchQuery.trim()) {
+    activeChips.push({ key: "search", label: `“${searchQuery.trim()}”`, clear: () => setSearchQuery("") });
+  }
+  if (selectedSuburb !== "All Sydney") {
+    activeChips.push({ key: "suburb", label: selectedSuburb, clear: () => setSelectedSuburb("All Sydney") });
+  }
+  if (dateWindow !== "all") {
+    activeChips.push({
+      key: "date",
+      label: dateWindow === "7" ? "Next 7 days" : "Next 30 days",
+      clear: () => setDateWindow("all"),
+    });
+  }
+  if (distanceKm < MAX_DISTANCE_KM) {
+    activeChips.push({
+      key: "distance",
+      label: `Within ${distanceKm} km ${locationLabel}`,
+      clear: () => setDistanceKm(MAX_DISTANCE_KM),
+    });
+  }
+  if (tagFilter.trim()) {
+    activeChips.push({ key: "tag", label: `#${tagFilter.trim()}`, clear: () => setTagFilter("") });
+  }
 
   return (
     <div className="flex flex-col gap-8">
-      {/* Compact filter bar — only suburb, date, and distance from location.
-          Right margin keeps the chrome bounded while the rails below bleed
-          to the viewport edge. */}
+      {/* Filter bar. Right margin keeps the chrome bounded while the rails
+          below bleed to the viewport edge. */}
       <section className="mr-4 rounded-2xl border border-[color:var(--line)] bg-[color:var(--cream)] p-5 shadow-sm sm:mr-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
@@ -219,17 +271,35 @@ export function EventExplorer({
                 Use Sydney CBD
               </button>
             ) : null}
-            <button
-              type="button"
-              onClick={resetFilters}
-              className="min-h-11 rounded-full border border-[color:var(--line)] bg-[color:var(--champagne)] px-4 text-sm font-bold text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
-            >
-              Reset
-            </button>
           </div>
         </div>
 
-        <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {/* Keyword search — the primary entry point people reach for first. */}
+        <div className="relative mt-5">
+          <svg
+            viewBox="0 0 24 24"
+            className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[color:var(--mauve)]"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden
+          >
+            <circle cx="11" cy="11" r="7" />
+            <path d="M21 21l-4.3-4.3" />
+          </svg>
+          <input
+            type="search"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="Search events, hosts, or interests…"
+            aria-label="Search events"
+            className="min-h-12 w-full rounded-full border border-[color:var(--line)] bg-[color:var(--champagne)] pl-12 pr-4 text-base font-semibold text-[color:var(--ink)] placeholder:font-medium placeholder:text-[color:var(--mauve)] focus:border-[color:var(--rose)] focus:outline-none focus:ring-2 focus:ring-[color:var(--rose)]/30"
+          />
+        </div>
+
+        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <label className="grid gap-1.5 text-xs font-black uppercase tracking-[0.14em] text-[color:var(--mauve)]">
             Location
             <MapboxAutocomplete
@@ -271,54 +341,137 @@ export function EventExplorer({
             />
           </div>
 
-          <label className="grid gap-1.5 text-xs font-black uppercase tracking-[0.14em] text-[color:var(--mauve)]">
-            <span className="flex items-center justify-between">
-              <span>Distance</span>
-              <span className="text-[color:var(--rose)] normal-case tracking-normal">
-                {distanceLabel}
-                <span className="ml-1 text-[10px] font-bold text-[color:var(--mauve)]">
-                  {locationLabel}
-                </span>
-              </span>
-            </span>
-            <input
-              type="range"
-              min={2}
-              max={MAX_DISTANCE_KM}
-              step={1}
-              value={distanceKm}
-              onChange={(event) => setDistanceKm(Number(event.target.value))}
-              className="mt-2 accent-[color:var(--rose)]"
+          <div className="grid gap-1.5 text-xs font-black uppercase tracking-[0.14em] text-[color:var(--mauve)]">
+            Sort by
+            <FilterSelect
+              ariaLabel="Sort events"
+              value={sortMode}
+              onChange={(next) => setSortMode(next as SortMode)}
+              options={[
+                { value: "nearest", label: "Nearest first" },
+                { value: "soonest", label: "Soonest first" },
+                { value: "popular", label: "Most popular" },
+              ]}
             />
-          </label>
+          </div>
         </div>
 
-        {tagFilter ? (
-          <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-2 text-sm font-bold text-[color:var(--ink)]">
-            <span className="font-mono text-[0.65rem] uppercase tracking-[0.16em] text-[color:var(--mauve)]">
-              Tag filter
-            </span>
-            <span>#{tagFilter}</span>
-            <button
-              type="button"
-              onClick={() => setTagFilter("")}
-              className="ml-auto rounded-full border border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-0.5 text-xs font-bold uppercase tracking-wide text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
-            >
-              Clear
-            </button>
+        {/* Distance presets — tap targets beat a slider on touch. */}
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <span className="mr-1 text-xs font-black uppercase tracking-[0.14em] text-[color:var(--mauve)]">
+            Distance {locationLabel}
+          </span>
+          {DISTANCE_OPTIONS.map((option) => {
+            const active = distanceKm === option;
+            const label = option >= MAX_DISTANCE_KM ? "Any" : `${option} km`;
+            return (
+              <button
+                key={option}
+                type="button"
+                aria-pressed={active}
+                onClick={() => setDistanceKm(option)}
+                className={`min-h-9 rounded-full border px-4 text-sm font-bold transition ${
+                  active
+                    ? "border-[color:var(--rose)] bg-[color:var(--rose)] text-[color:var(--on-deep)]"
+                    : "border-[color:var(--line)] bg-[color:var(--champagne)] text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+                }`}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Active filter chips + view toggle (always shown — the toggle lives here). */}
+        <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-[color:var(--line-soft)] pt-4">
+            {activeChips.length > 0 ? (
+              <>
+                {activeChips.map((chip) => (
+                  <button
+                    key={chip.key}
+                    type="button"
+                    onClick={chip.clear}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-[color:var(--line)] bg-[color:var(--champagne)] py-1.5 pl-3 pr-2 text-sm font-bold text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+                  >
+                    {chip.label}
+                    <span aria-hidden className="text-[color:var(--mauve)]">×</span>
+                    <span className="sr-only">Remove filter</span>
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={resetFilters}
+                  className="rounded-full px-3 py-1.5 text-sm font-bold text-[color:var(--rose)] underline-offset-2 hover:underline"
+                >
+                  Clear all
+                </button>
+              </>
+            ) : (
+              <span className="text-sm font-semibold text-[color:var(--mauve)]">
+                No filters applied — showing everything nearby.
+              </span>
+            )}
+
+            {/* View toggle: category rails vs a flat grid of all matches. */}
+            <div className="ml-auto inline-flex rounded-full border border-[color:var(--line)] bg-[color:var(--champagne)] p-1">
+              {(
+                [
+                  { value: "rails", label: "By category" },
+                  { value: "grid", label: "All events" },
+                ] as const
+              ).map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  aria-pressed={viewMode === option.value}
+                  onClick={() => setViewMode(option.value)}
+                  className={`min-h-8 rounded-full px-3 text-xs font-black uppercase tracking-[0.1em] transition ${
+                    viewMode === option.value
+                      ? "bg-[color:var(--surface-deep)] text-[color:var(--on-deep)]"
+                      : "text-[color:var(--mauve)] hover:text-[color:var(--ink)]"
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
           </div>
-        ) : null}
       </section>
 
-      {/* Category sections — one horizontal-scroll rail per category that has
-          matching events. Hidden scrollbar keeps the rails feeling like
-          ClassBento/Airbnb browse rows. */}
-      {groupedByCategory.length > 0 ? (
+      {totalCount === 0 ? (
+        <div className="mr-4 rounded-2xl border border-[color:var(--line)] bg-[color:var(--champagne)] p-8 text-center shadow-sm sm:mr-6">
+          <p className="text-3xl font-black leading-none text-[color:var(--ink)]">
+            No events match those filters.
+          </p>
+          <p className="mt-3 text-sm font-bold text-[color:var(--mauve)]">
+            Try a wider distance, all Sydney, or the next 30 days.
+          </p>
+          <button
+            type="button"
+            onClick={resetFilters}
+            className="mt-5 rounded-full bg-[color:var(--surface-deep)] px-5 py-3 text-sm font-black text-[color:var(--on-deep)] hover:opacity-90"
+          >
+            Reset filters
+          </button>
+        </div>
+      ) : viewMode === "grid" ? (
+        // Flat responsive grid of every match — ClassBento-style browse.
+        <div className="mr-4 grid grid-cols-1 gap-x-5 gap-y-8 sm:mr-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {filteredEvents.map((event) => (
+            <EventTileCard
+              key={event.id}
+              event={event}
+              bookmarked={bookmarkedSet.has(event.id)}
+              fluid
+            />
+          ))}
+        </div>
+      ) : (
+        // Category sections — one horizontal-scroll rail per category that has
+        // matching events. Cards peek off the right edge to signal more.
         <div className="flex flex-col gap-10">
           {groupedByCategory.map(({ category, events: categoryEvents }) => (
             <section key={category}>
-              {/* Heading row stays bounded — mirrors the filter card's right margin.
-                  The title links to the dedicated /categories/<slug> browse page. */}
               <div className="mr-4 flex items-baseline justify-between gap-3 sm:mr-6">
                 <Link
                   href={`/categories/${categorySlug(category)}`}
@@ -336,8 +489,6 @@ export function EventExplorer({
                   {categoryEvents.length} {categoryEvents.length === 1 ? "event" : "events"}
                 </span>
               </div>
-              {/* Horizontal rail bleeds to the right viewport edge so cards
-                  peek off-screen — signals "more inventory" instantly. */}
               <div className="mt-4 flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2 pr-4 [scrollbar-width:thin] sm:pr-6">
                 {categoryEvents.map((event) => (
                   <div key={event.id} className="shrink-0 snap-start">
@@ -350,22 +501,6 @@ export function EventExplorer({
               </div>
             </section>
           ))}
-        </div>
-      ) : (
-        <div className="mr-4 rounded-2xl border border-[color:var(--line)] bg-[color:var(--champagne)] p-8 text-center shadow-sm sm:mr-6">
-          <p className="text-3xl font-black leading-none text-[color:var(--ink)]">
-            No events match those filters.
-          </p>
-          <p className="mt-3 text-sm font-bold text-[color:var(--mauve)]">
-            Try a wider distance, all Sydney, or the next 30 days.
-          </p>
-          <button
-            type="button"
-            onClick={resetFilters}
-            className="mt-5 rounded-full bg-[color:var(--surface-deep)] px-5 py-3 text-sm font-black text-[color:var(--on-deep)] hover:opacity-90"
-          >
-            Reset filters
-          </button>
         </div>
       )}
     </div>

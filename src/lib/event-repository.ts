@@ -1,4 +1,5 @@
 import type { Session } from "next-auth";
+import type { PoolClient } from "pg";
 import { mkdir, readFile, writeFile } from "fs/promises";
 import os from "os";
 import path from "path";
@@ -22,6 +23,10 @@ import { logEmailEvent, sendTransactionalEmail } from "./email";
 import { regionForEvent, type Region } from "./geo";
 import { getPostgresPool } from "./postgres";
 import { toTitleCase } from "./text-format";
+import {
+  quoteCancellationRefund,
+  type RefundTier,
+} from "./refund-policy";
 import { writeAuditLog } from "@/utils/admin/audit-logger";
 
 type EventRow = {
@@ -929,6 +934,9 @@ async function logRsvpCancelledEmails(
   pool: NonNullable<ReturnType<typeof getPostgresPool>>,
   eventDbId: string,
   attendeeProfileId: string,
+  // Pre-rendered refund sentence for the attendee email (empty for free events
+  // or no-refund cancellations). Stored as the `refundLine` template var.
+  refundLine = "",
 ) {
   try {
     const result = await pool.query<{
@@ -1004,6 +1012,7 @@ async function logRsvpCancelledEmails(
         eventTitle: row.event_title,
         eventLongDate: dates.eventLongDate,
         eventStartTime: dates.eventStartTime,
+        refundLine,
         discoverUrl: `${origin}/discover`,
         supportEmail: "hello@click.app",
         unsubscribeUrl: `${origin}/account-settings`,
@@ -2048,9 +2057,12 @@ export type EventDetail = EventItem & {
   viewerRsvpStatus: "confirmed" | "waitlisted" | "pending_payment" | "cancelled" | null;
   // ISO timestamp of a live waitlist promotion offer for the viewer — set only
   // when the viewer is waitlisted, has been offered a freed seat, and the
-  // 15-minute window is still open (offered_until > now, accepted_at is null).
+  // 30-minute window is still open (offered_until > now, accepted_at is null).
   // Drives the "Confirm your spot" CTA. Null otherwise.
   waitlistOfferExpiresAt: string | null;
+  // 1-based queue position when the viewer is on the waitlist (e.g. "#3"),
+  // counting only people still ahead of them. Null when not waitlisted.
+  waitlistPosition: number | null;
   media: MediaItem[];
   // Owning merchant (null for platform-owned / fallback events). Used by the
   // detail page to let an owner preview their own not-yet-approved event while
@@ -2075,6 +2087,8 @@ export async function getEventBySlug(
       address: null,
       endsAt: null,
       viewerRsvpStatus: null,
+      waitlistOfferExpiresAt: null,
+      waitlistPosition: null,
       merchantProfileId: null,
       media: buildEventMediaGallery({
         slug,
@@ -2147,6 +2161,8 @@ export async function getEventBySlug(
         address: null,
         endsAt: null,
         viewerRsvpStatus: null,
+        waitlistOfferExpiresAt: null,
+        waitlistPosition: null,
         merchantProfileId: null,
         media: buildEventMediaGallery({
           slug,
@@ -2158,21 +2174,51 @@ export async function getEventBySlug(
 
     const base = eventFromRow(row);
     let viewerRsvpStatus: EventDetail["viewerRsvpStatus"] = null;
+    let waitlistOfferExpiresAt: string | null = null;
+    let waitlistPosition: number | null = null;
     const email = getSessionEmail(session);
 
     if (email) {
-      const rsvpResult = await pool.query<{ status: string }>(
+      const rsvpResult = await pool.query<{
+        status: string;
+        offered_until: Date | null;
+        accepted_at: Date | null;
+        waitlist_position: string | null;
+      }>(
         `
-          select attendee.status::text
+          select
+            attendee.status::text as status,
+            waitlist.offered_until,
+            waitlist.accepted_at,
+            case
+              when attendee.status = 'waitlisted' and waitlist.id is not null then (
+                select count(*) + 1
+                from event_waitlists ahead
+                join event_attendees aa
+                  on aa.event_id = ahead.event_id and aa.profile_id = ahead.profile_id
+                 and aa.status = 'waitlisted'
+                where ahead.event_id = waitlist.event_id
+                  and ahead.accepted_at is null
+                  and ahead.created_at < waitlist.created_at
+              )
+              else null
+            end as waitlist_position
           from event_attendees attendee
           join profiles profile on profile.id = attendee.profile_id
           join events event on event.id = attendee.event_id
+          left join event_waitlists waitlist
+            on waitlist.event_id = attendee.event_id
+           and waitlist.profile_id = attendee.profile_id
           where profile.email = $1 and event.slug = $2
           limit 1
         `,
         [email, slug],
       );
-      const status = rsvpResult.rows[0]?.status;
+      const row = rsvpResult.rows[0];
+      const status = row?.status;
+      if (status === "waitlisted" && row?.waitlist_position != null) {
+        waitlistPosition = Number(row.waitlist_position);
+      }
       if (
         status === "confirmed" ||
         status === "waitlisted" ||
@@ -2180,6 +2226,17 @@ export async function getEventBySlug(
         status === "cancelled"
       ) {
         viewerRsvpStatus = status;
+      }
+      // Surface a live promotion offer only while it's actually claimable: the
+      // viewer is waitlisted, was offered the seat, hasn't accepted, and the
+      // 30-minute window is still open.
+      if (
+        status === "waitlisted" &&
+        row?.offered_until &&
+        !row.accepted_at &&
+        row.offered_until.getTime() > Date.now()
+      ) {
+        waitlistOfferExpiresAt = row.offered_until.toISOString();
       }
     }
 
@@ -2189,6 +2246,8 @@ export async function getEventBySlug(
       address: row.address,
       endsAt: row.ends_at ? row.ends_at.toISOString() : null,
       viewerRsvpStatus,
+      waitlistOfferExpiresAt,
+      waitlistPosition,
       merchantProfileId: row.merchant_profile_id ?? null,
       media: buildEventMediaGallery({
         slug,
@@ -2208,6 +2267,8 @@ export async function getEventBySlug(
         address: null,
         endsAt: null,
         viewerRsvpStatus: null,
+        waitlistOfferExpiresAt: null,
+        waitlistPosition: null,
         merchantProfileId: null,
         media: buildEventMediaGallery({
           slug,
@@ -2356,6 +2417,169 @@ export async function registerForEvent(eventId: string, session: Session | null)
     }
 
     throw error;
+  }
+}
+
+/**
+ * Claim a waitlist promotion offer made by `cancelRegistration`. When a confirmed
+ * attendee cancels, the next waitlister is offered the freed seat for 30 minutes
+ * (`event_waitlists.offered_until`). This is the accept side of that handshake:
+ *
+ *  - Free events: flips the viewer's RSVP `waitlisted → confirmed`, stamps
+ *    `event_waitlists.accepted_at`, and logs the confirmation emails.
+ *  - Paid events: there's no seat to confirm without payment, so we surface a
+ *    `PaymentRequiredError` carrying the slug — the client routes to the normal
+ *    Stripe checkout, which takes the freed seat via `createPaymentHold`.
+ *
+ * Throws if the offer has expired, was already taken, or the seat filled in the
+ * meantime, so a stale "Confirm your spot" click can't double-book.
+ */
+export async function acceptWaitlistOffer(eventId: string, session: Session | null) {
+  const pool = getPostgresPool();
+  const email = getSessionEmail(session);
+
+  if (!email) throw authError();
+  if (!pool) throw databaseUnavailableError();
+
+  const profile = await ensureProfileForSession(session);
+  const client = await pool.connect();
+
+  try {
+    await client.query("begin");
+
+    const eventResult = await client.query<{
+      id: string;
+      slug: string;
+      title: string;
+      capacity: number;
+      price_cents: number;
+      confirmed_attendees: string;
+    }>(
+      `
+        select
+          event.id::text,
+          event.slug,
+          event.title,
+          event.capacity,
+          event.price_cents,
+          (
+            select count(*)
+            from event_attendees attendee
+            where attendee.event_id = event.id
+              and (attendee.status = 'confirmed' or (attendee.status = 'pending_payment' and attendee.hold_expires_at > now()))
+          ) as confirmed_attendees
+        from events event
+        where event.slug = $1
+        for update of event
+      `,
+      [eventId],
+    );
+
+    const event = eventResult.rows[0];
+    if (!event) {
+      const error = new Error("Event not found.");
+      error.name = "NotFoundError";
+      throw error;
+    }
+
+    // Lock the viewer's waitlist + attendee rows and verify a live offer exists.
+    const offerResult = await client.query<{
+      waitlist_id: string;
+      offered_until: Date | null;
+      accepted_at: Date | null;
+    }>(
+      `
+        select
+          waitlist.id::text as waitlist_id,
+          waitlist.offered_until,
+          waitlist.accepted_at
+        from event_waitlists waitlist
+        join event_attendees attendee
+          on attendee.event_id = waitlist.event_id
+         and attendee.profile_id = waitlist.profile_id
+         and attendee.status = 'waitlisted'
+        where waitlist.event_id = $1::uuid
+          and waitlist.profile_id = $2::uuid
+        for update of waitlist, attendee
+      `,
+      [event.id, profile.id],
+    );
+
+    const offer = offerResult.rows[0];
+    if (!offer) {
+      const error = new Error("You don't have a waitlist spot to confirm for this event.");
+      error.name = "NotFoundError";
+      throw error;
+    }
+    if (offer.accepted_at) {
+      const error = new Error("You've already confirmed this spot.");
+      error.name = "ConflictError";
+      throw error;
+    }
+    if (!offer.offered_until || offer.offered_until.getTime() <= Date.now()) {
+      const error = new Error("This offer has expired. The seat was reopened to the queue.");
+      error.name = "ConflictError";
+      throw error;
+    }
+    if (Number(event.confirmed_attendees) >= event.capacity) {
+      const error = new Error("This event just filled up. Your spot on the waitlist is kept.");
+      error.name = "ConflictError";
+      throw error;
+    }
+
+    // Paid events: the seat is only secured once payment completes. Hand off to
+    // the existing Stripe checkout flow rather than confirming here.
+    if (event.price_cents > 0) {
+      const error = new Error(
+        "This event requires payment. Open the event to reserve and pay.",
+      );
+      error.name = "PaymentRequiredError";
+      (error as Error & { eventSlug?: string }).eventSlug = event.slug;
+      throw error;
+    }
+
+    await client.query(
+      `
+        update event_attendees
+        set status = 'confirmed', updated_at = now()
+        where event_id = $1::uuid and profile_id = $2::uuid
+      `,
+      [event.id, profile.id],
+    );
+
+    await client.query(
+      `
+        update event_waitlists
+        set accepted_at = now()
+        where id = $1::uuid
+      `,
+      [offer.waitlist_id],
+    );
+
+    await client.query(
+      `
+        insert into notifications (profile_id, title, body, action_url)
+        values ($1::uuid, $2, $3, $4)
+      `,
+      [
+        profile.id,
+        "RSVP confirmed",
+        `You're confirmed for ${event.title}. See you there!`,
+        `/events/${event.slug}`,
+      ],
+    );
+
+    await client.query("commit");
+
+    // Confirmed off the waitlist → same emails as a fresh confirmed RSVP.
+    void logRsvpEmails(pool, event.id, profile.id);
+
+    return { eventTitle: event.title, status: "confirmed" as const };
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
   }
 }
 
@@ -5537,6 +5761,131 @@ export async function createUserClickForSession(
   }
 }
 
+type WaitlistPromotion = {
+  email: string;
+  displayName: string;
+  eventTitle: string;
+  eventSlug: string;
+  offeredUntil: Date;
+};
+
+// How long a freed seat is held for the next person in the queue before it
+// rolls on (spec §3.2). Kept as a const so the notification/email copy and the
+// expiry cron all agree on the window.
+const WAITLIST_OFFER_MINUTES = 30;
+
+/**
+ * Offer a freed seat to the next eligible waitlister — oldest first, skipping
+ * anyone who already holds a live or accepted offer. Sets a 30-minute hold +
+ * an in-app notification. Returns the promotion (for the email) or null when
+ * the queue is empty. MUST run inside an open transaction (`client`).
+ */
+async function promoteNextWaitlister(
+  client: PoolClient,
+  eventId: string,
+  eventTitle: string,
+  eventSlug: string,
+): Promise<WaitlistPromotion | null> {
+  const waitlistResult = await client.query<{
+    waitlist_id: string;
+    profile_id: string;
+    display_name: string;
+    email: string;
+  }>(
+    `
+      select
+        waitlist.id::text as waitlist_id,
+        waitlist.profile_id::text,
+        waitlist_profile.display_name,
+        waitlist_profile.email::text as email
+      from event_waitlists waitlist
+      join profiles waitlist_profile on waitlist_profile.id = waitlist.profile_id
+      join event_attendees attendee
+        on attendee.event_id = waitlist.event_id
+       and attendee.profile_id = waitlist.profile_id
+       and attendee.status = 'waitlisted'
+      where waitlist.event_id = $1::uuid
+        and waitlist.accepted_at is null
+        and (waitlist.offered_until is null or waitlist.offered_until <= now())
+      order by (waitlist.last_offer_expired_at is not null) asc, waitlist.created_at asc
+      limit 1
+      for update of waitlist skip locked
+    `,
+    [eventId],
+  );
+
+  const nextInLine = waitlistResult.rows[0];
+  if (!nextInLine) return null;
+
+  const offerResult = await client.query<{ offered_until: Date }>(
+    `
+      update event_waitlists
+      set offered_until = now() + ($2 || ' minutes')::interval
+      where id = $1::uuid
+      returning offered_until
+    `,
+    [nextInLine.waitlist_id, String(WAITLIST_OFFER_MINUTES)],
+  );
+
+  await client.query(
+    `
+      insert into notifications (profile_id, title, body, action_url)
+      values ($1::uuid, $2, $3, $4)
+    `,
+    [
+      nextInLine.profile_id,
+      "Spot available",
+      `A spot opened for ${eventTitle}. Confirm within ${WAITLIST_OFFER_MINUTES} minutes.`,
+      `/events/${eventSlug}`,
+    ],
+  );
+
+  return {
+    email: nextInLine.email,
+    displayName: nextInLine.display_name,
+    eventTitle,
+    eventSlug,
+    offeredUntil: offerResult.rows[0].offered_until,
+  };
+}
+
+function formatAud(cents: number, currency = "AUD"): string {
+  return new Intl.NumberFormat("en-AU", {
+    style: "currency",
+    currency,
+  }).format(cents / 100);
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+// Renders the "Events you might enjoy" block injected into the cancellation
+// email via the {{suggestedEvents}} placeholder. Returns a full <tr> (the
+// placeholder sits between table rows) or "" when there are no suggestions.
+function renderSuggestedEventsBlock(
+  items: { url: string; title: string; line: string }[],
+): string {
+  if (items.length === 0) return "";
+  const rows = items
+    .map(
+      (it) => `
+      <p class="sans" style="margin:0 0 10px 0;font-family:'Inter',Helvetica,Arial,sans-serif;font-size:14px;line-height:1.4;">
+        <a href="${escapeHtml(it.url)}" style="color:#340068;text-decoration:none;font-weight:600;">${escapeHtml(it.title)}</a><br>
+        <span style="color:#6D435A;">${escapeHtml(it.line)}</span>
+      </p>`,
+    )
+    .join("");
+  return `<tr><td class="px-gutter" style="padding:24px 40px 0 40px;">
+    <p class="sans" style="margin:0 0 12px 0;font-family:'Inter',Helvetica,Arial,sans-serif;font-size:13px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#6D435A;">Events you might enjoy</p>
+    ${rows}
+  </td></tr>`;
+}
+
 export async function cancelRegistration(eventId: string, session: Session | null) {
   const pool = getPostgresPool();
   const email = getSessionEmail(session);
@@ -5546,168 +5895,338 @@ export async function cancelRegistration(eventId: string, session: Session | nul
 
   const profile = await ensureProfileForSession(session);
   const client = await pool.connect();
-  let promotion:
-    | {
-        email: string;
-        displayName: string;
-        eventTitle: string;
-        eventSlug: string;
-        offeredUntil: Date;
-      }
+
+  let promotion: WaitlistPromotion | null = null;
+  // Refund to actually initiate after commit (paid confirmed cancels with a
+  // non-zero policy refund). Stripe + ledger work happens via issueRefund.
+  let refundPlan:
+    | { paymentTransactionId: string; refundCents: number; tier: RefundTier; currency: string }
     | null = null;
+  // True when the booking was paid but the policy gives $0 back (< 24h) — drives
+  // the "no refund" copy without initiating a Stripe call.
+  let paidZeroRefund = false;
+  let cancelledEventId = "";
+  let cancelledTitle = "";
 
   try {
     await client.query("begin");
 
     const result = await client.query<{
+      attendee_id: string;
+      previous_status: string;
       event_id: string;
       title: string;
       slug: string;
-      previous_status: string;
+      starts_at: Date;
+      price_cents: number;
+      offered_until: Date | null;
+      txn_id: string | null;
+      txn_amount_cents: number | null;
+      txn_currency: string | null;
+      txn_status: string | null;
     }>(
       `
-        with target as (
-          select
-            attendee.id,
-            attendee.event_id,
-            attendee.status,
-            event.title,
-            event.slug
-          from event_attendees attendee
-          join events event on event.id = attendee.event_id
-          where event.slug = $1
-            and attendee.profile_id = $2::uuid
-            and attendee.status in ('confirmed', 'waitlisted')
-          for update of attendee
-        )
-        update event_attendees attendee
-        set status = 'cancelled', updated_at = now()
-        from target
-        where attendee.id = target.id
-        returning
-          target.event_id::text,
-          target.title,
-          target.slug,
-          target.status::text as previous_status
+        select
+          attendee.id::text as attendee_id,
+          attendee.status::text as previous_status,
+          event.id::text as event_id,
+          event.title,
+          event.slug,
+          event.starts_at,
+          event.price_cents,
+          waitlist.offered_until,
+          pt.id::text as txn_id,
+          pt.amount_cents as txn_amount_cents,
+          pt.currency::text as txn_currency,
+          pt.status::text as txn_status
+        from event_attendees attendee
+        join events event on event.id = attendee.event_id
+        left join event_waitlists waitlist
+          on waitlist.event_id = attendee.event_id
+         and waitlist.profile_id = attendee.profile_id
+        left join payment_transactions pt
+          on pt.id = attendee.payment_transaction_id
+        where event.slug = $1
+          and attendee.profile_id = $2::uuid
+          and attendee.status in ('confirmed', 'waitlisted')
+        for update of attendee
       `,
       [eventId, profile.id],
     );
 
-    if (result.rows.length === 0) {
+    const row = result.rows[0];
+    if (!row) {
       const error = new Error("You are not currently registered for that event.");
       error.name = "NotFoundError";
       throw error;
     }
 
-    const cancelled = result.rows[0];
+    cancelledEventId = row.event_id;
+    cancelledTitle = row.title;
 
-    if (cancelled.previous_status === "waitlisted") {
+    await client.query(
+      `update event_attendees set status = 'cancelled', updated_at = now() where id = $1::uuid`,
+      [row.attendee_id],
+    );
+
+    if (row.previous_status === "waitlisted") {
+      // Drop them off the waitlist. If they were holding a LIVE promotion offer,
+      // the seat they were sitting on rolls to the next person (spec §3.5).
+      const hadLiveOffer = !!row.offered_until && row.offered_until.getTime() > Date.now();
       await client.query(
-        `
-          delete from event_waitlists
-          where event_id = $1::uuid and profile_id = $2::uuid
-        `,
-        [cancelled.event_id, profile.id],
+        `delete from event_waitlists where event_id = $1::uuid and profile_id = $2::uuid`,
+        [row.event_id, profile.id],
       );
-    }
+      if (hadLiveOffer) {
+        promotion = await promoteNextWaitlister(client, row.event_id, row.title, row.slug);
+      }
+    } else {
+      // A confirmed seat just freed — offer it to the queue (spec §3 Principle 3).
+      promotion = await promoteNextWaitlister(client, row.event_id, row.title, row.slug);
 
-    if (cancelled.previous_status === "confirmed") {
-      const waitlistResult = await client.query<{
-        waitlist_id: string;
-        profile_id: string;
-        display_name: string;
-        email: string;
-      }>(
-        `
-          select
-            waitlist.id::text as waitlist_id,
-            waitlist.profile_id::text,
-            waitlist_profile.display_name,
-            waitlist_profile.email::text as email
-          from event_waitlists waitlist
-          join profiles waitlist_profile on waitlist_profile.id = waitlist.profile_id
-          join event_attendees attendee
-            on attendee.event_id = waitlist.event_id
-           and attendee.profile_id = waitlist.profile_id
-           and attendee.status = 'waitlisted'
-          where waitlist.event_id = $1::uuid
-            and waitlist.accepted_at is null
-          order by waitlist.created_at asc
-          limit 1
-          for update of waitlist skip locked
-        `,
-        [cancelled.event_id],
-      );
-
-      const nextInLine = waitlistResult.rows[0];
-      if (nextInLine) {
-        const offerResult = await client.query<{ offered_until: Date }>(
-          `
-            update event_waitlists
-            set offered_until = now() + interval '15 minutes'
-            where id = $1::uuid
-            returning offered_until
-          `,
-          [nextInLine.waitlist_id],
-        );
-
-        const offeredUntil = offerResult.rows[0].offered_until;
-
-        await client.query(
-          `
-            insert into notifications (profile_id, title, body, action_url)
-            values ($1::uuid, $2, $3, $4)
-          `,
-          [
-            nextInLine.profile_id,
-            "Spot available",
-            `A spot opened for ${cancelled.title}. Confirm within 15 minutes.`,
-            `/events/${cancelled.slug}`,
-          ],
-        );
-
-        promotion = {
-          email: nextInLine.email,
-          displayName: nextInLine.display_name,
-          eventTitle: cancelled.title,
-          eventSlug: cancelled.slug,
-          offeredUntil,
-        };
+      // Paid booking → compute the tiered policy refund. Only refundable txns
+      // (paid / partially_refunded) qualify; the actual Stripe call runs after
+      // commit so a network hiccup can't roll back the cancellation.
+      if (
+        row.price_cents > 0 &&
+        row.txn_id &&
+        row.txn_amount_cents != null &&
+        (row.txn_status === "paid" || row.txn_status === "partially_refunded")
+      ) {
+        const quote = quoteCancellationRefund(row.txn_amount_cents, row.starts_at);
+        if (quote.refundCents > 0) {
+          refundPlan = {
+            paymentTransactionId: row.txn_id,
+            refundCents: quote.refundCents,
+            tier: quote.tier,
+            currency: row.txn_currency || "AUD",
+          };
+        } else {
+          paidZeroRefund = true;
+        }
       }
     }
 
     await client.query("commit");
-
-    // Log rsvp-cancelled-attendee (+ rsvp-cancelled-merchant) for the attendee
-    // who just bailed. Post-commit + fire-and-forget so a template hiccup can't
-    // roll back the cancellation.
-    void logRsvpCancelledEmails(pool, cancelled.event_id, profile.id);
-
-    if (promotion) {
-      await sendWorkflowEmail({
-        to: promotion.email,
-        subject: `A spot opened for ${promotion.eventTitle}`,
-        text: [
-          `Hi ${promotion.displayName},`,
-          `A spot opened for ${promotion.eventTitle}.`,
-          `Your offer is held until ${promotion.offeredUntil.toLocaleString("en-AU", {
-            timeZone: "Australia/Sydney",
-          })}.`,
-          `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3001"}/events/${promotion.eventSlug}`,
-        ].join("\n\n"),
-      });
-    }
-
-    return {
-      eventTitle: result.rows[0].title,
-      promotedWaitlist: !!promotion,
-    };
   } catch (error) {
     await client.query("rollback");
     throw error;
   } finally {
     client.release();
   }
+
+  // ---------- post-commit side effects (fire-and-forget) ----------
+  let refund: { refundCents: number; tier: RefundTier; failed: boolean } | null = null;
+  let refundLine = "";
+
+  if (refundPlan) {
+    const dollars = formatAud(refundPlan.refundCents, refundPlan.currency);
+    try {
+      // Lazy import avoids a static cycle (stripe-sync imports from this module).
+      const { issueRefund } = await import("./stripe-sync");
+      await issueRefund({
+        paymentTransactionId: refundPlan.paymentTransactionId,
+        amountCents: refundPlan.refundCents,
+        reason: "requested_by_customer",
+        adminProfileId: null,
+      });
+      refund = { refundCents: refundPlan.refundCents, tier: refundPlan.tier, failed: false };
+      refundLine = `A refund of ${dollars} will appear on your statement in 3–5 business days.`;
+      await pool
+        .query(
+          `insert into notifications (profile_id, title, body, action_url) values ($1::uuid, $2, $3, $4)`,
+          [
+            profile.id,
+            "Refund on the way",
+            `Your ${dollars} refund for ${cancelledTitle} is processing (3–5 business days).`,
+            "/dashboard",
+          ],
+        )
+        .catch(() => {});
+    } catch (err) {
+      // Cancellation stands; the refund just didn't initiate. Log to the admin
+      // queue and tell the user we're on it (spec §5 "refund fails").
+      refund = { refundCents: refundPlan.refundCents, tier: refundPlan.tier, failed: true };
+      refundLine =
+        "We're processing your refund — if you don't see it within 7 days, contact hello@click.app.";
+      await pool
+        .query(
+          `insert into refund_failures (payment_transaction_id, event_id, profile_id, amount_cents, currency, error_message)
+           values ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6)`,
+          [
+            refundPlan.paymentTransactionId,
+            cancelledEventId,
+            profile.id,
+            refundPlan.refundCents,
+            refundPlan.currency,
+            err instanceof Error ? err.message : String(err),
+          ],
+        )
+        .catch(() => {});
+    }
+  } else if (paidZeroRefund) {
+    refundLine =
+      "No refund — you cancelled within 24 hours of the event, per our cancellation policy.";
+  }
+
+  // Log rsvp-cancelled-attendee (+ rsvp-cancelled-merchant). Post-commit +
+  // fire-and-forget so a template hiccup can't roll back the cancellation.
+  void logRsvpCancelledEmails(pool, cancelledEventId, profile.id, refundLine);
+
+  if (promotion) {
+    await sendWorkflowEmail({
+      to: promotion.email,
+      subject: `A spot opened for ${promotion.eventTitle}`,
+      text: [
+        `Hi ${promotion.displayName},`,
+        `A spot opened for ${promotion.eventTitle}.`,
+        `Your offer is held until ${promotion.offeredUntil.toLocaleString("en-AU", {
+          timeZone: "Australia/Sydney",
+        })} (about ${WAITLIST_OFFER_MINUTES} minutes).`,
+        `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3001"}/events/${promotion.eventSlug}`,
+      ].join("\n\n"),
+    });
+  }
+
+  return {
+    eventTitle: cancelledTitle,
+    promotedWaitlist: !!promotion,
+    refund,
+  };
+}
+
+/**
+ * Sweep lapsed waitlist promotion offers (the 30-minute window passed without
+ * the user confirming). For each: stamp `last_offer_expired_at`, tell the user
+ * they're back on the list at their position, and roll the freed seat to the
+ * next eligible person (spec §3.4). Idempotent + safe to run concurrently —
+ * each row is re-locked and re-checked. Driven by /api/cron/waitlist-expiry.
+ */
+export async function expireWaitlistOffers(): Promise<{ expired: number; reoffered: number }> {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+
+  const lapsed = await pool.query<{
+    waitlist_id: string;
+    event_id: string;
+    profile_id: string;
+    title: string;
+    slug: string;
+  }>(
+    `
+      select
+        w.id::text as waitlist_id,
+        w.event_id::text,
+        w.profile_id::text,
+        e.title,
+        e.slug
+      from event_waitlists w
+      join events e on e.id = w.event_id
+      join event_attendees a
+        on a.event_id = w.event_id and a.profile_id = w.profile_id and a.status = 'waitlisted'
+      where w.accepted_at is null
+        and w.offered_until is not null
+        and w.offered_until <= now()
+      order by w.offered_until asc
+    `,
+  );
+
+  let expired = 0;
+  let reoffered = 0;
+  const promotions: WaitlistPromotion[] = [];
+
+  for (const row of lapsed.rows) {
+    const client = await pool.connect();
+    try {
+      await client.query("begin");
+
+      // Re-lock + re-check — an accept or another sweep may have moved it.
+      const recheck = await client.query(
+        `
+          select created_at from event_waitlists
+          where id = $1::uuid and accepted_at is null
+            and offered_until is not null and offered_until <= now()
+          for update
+        `,
+        [row.waitlist_id],
+      );
+      if (recheck.rows.length === 0) {
+        await client.query("rollback");
+        continue;
+      }
+
+      await client.query(
+        `
+          update event_waitlists
+          set last_offer_expired_at = offered_until, offered_until = null
+          where id = $1::uuid
+        `,
+        [row.waitlist_id],
+      );
+
+      // Position they fall back to (waitlisters still ahead by created_at).
+      const posResult = await client.query<{ pos: string }>(
+        `
+          select (count(*) + 1)::text as pos
+          from event_waitlists ahead
+          join event_attendees a
+            on a.event_id = ahead.event_id and a.profile_id = ahead.profile_id
+           and a.status = 'waitlisted'
+          where ahead.event_id = $1::uuid
+            and ahead.accepted_at is null
+            and ahead.id <> $2::uuid
+            and ahead.created_at < $3::timestamptz
+        `,
+        [row.event_id, row.waitlist_id, recheck.rows[0].created_at],
+      );
+      const pos = Number(posResult.rows[0]?.pos ?? 1);
+
+      await client.query(
+        `
+          insert into notifications (profile_id, title, body, action_url)
+          values ($1::uuid, $2, $3, $4)
+        `,
+        [
+          row.profile_id,
+          "Offer expired",
+          `Your spot offer for ${row.title} expired. You're back at #${pos} on the waitlist.`,
+          `/events/${row.slug}`,
+        ],
+      );
+
+      // Roll the seat on — the just-expired user is now deprioritised.
+      const promo = await promoteNextWaitlister(client, row.event_id, row.title, row.slug);
+      await client.query("commit");
+
+      expired += 1;
+      if (promo) {
+        reoffered += 1;
+        promotions.push(promo);
+      }
+    } catch {
+      await client.query("rollback").catch(() => {});
+    } finally {
+      client.release();
+    }
+  }
+
+  // Email the newly-offered users outside any transaction.
+  for (const promo of promotions) {
+    await sendWorkflowEmail({
+      to: promo.email,
+      subject: `A spot opened for ${promo.eventTitle}`,
+      text: [
+        `Hi ${promo.displayName},`,
+        `A spot opened for ${promo.eventTitle}.`,
+        `Your offer is held until ${promo.offeredUntil.toLocaleString("en-AU", {
+          timeZone: "Australia/Sydney",
+        })} (about ${WAITLIST_OFFER_MINUTES} minutes).`,
+        `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3001"}/events/${promo.eventSlug}`,
+      ].join("\n\n"),
+    }).catch(() => {});
+  }
+
+  return { expired, reoffered };
 }
 
 export async function cancelMerchantEvent(eventId: string, session: Session | null) {
@@ -5731,6 +6250,11 @@ export async function cancelMerchantEvent(eventId: string, session: Session | nu
     profileId: string;
     email: string;
     displayName: string;
+    // Refundable balance (cents) on this attendee's paid booking; 0 for free /
+    // waitlisted / unpaid. The actual Stripe refund runs post-commit.
+    paymentTransactionId: string | null;
+    refundableCents: number;
+    currency: string;
   }[] = [];
 
   try {
@@ -5764,32 +6288,53 @@ export async function cancelMerchantEvent(eventId: string, session: Session | nu
 
     if (event.status === "cancelled") {
       await client.query("commit");
-      return { eventTitle: event.title, notified: 0, alreadyCancelled: true };
+      return { eventTitle: event.title, notified: 0, refunded: 0, alreadyCancelled: true };
     }
 
     const attendeeResult = await client.query<{
       profile_id: string;
       display_name: string;
       email: string;
+      txn_id: string | null;
+      txn_amount_cents: number | null;
+      refunded_amount_cents: number | null;
+      txn_currency: string | null;
+      txn_status: string | null;
     }>(
       `
         select
           attendee.profile_id::text,
           attendee_profile.display_name,
-          attendee_profile.email::text as email
+          attendee_profile.email::text as email,
+          pt.id::text as txn_id,
+          pt.amount_cents as txn_amount_cents,
+          pt.refunded_amount_cents,
+          pt.currency::text as txn_currency,
+          pt.status::text as txn_status
         from event_attendees attendee
         join profiles attendee_profile on attendee_profile.id = attendee.profile_id
+        left join payment_transactions pt on pt.id = attendee.payment_transaction_id
         where attendee.event_id = $1::uuid
           and attendee.status in ('confirmed', 'waitlisted', 'pending_payment')
       `,
       [event.id],
     );
 
-    affectedProfiles = attendeeResult.rows.map((row) => ({
-      profileId: row.profile_id,
-      email: row.email,
-      displayName: row.display_name,
-    }));
+    affectedProfiles = attendeeResult.rows.map((row) => {
+      const refundable =
+        (row.txn_status === "paid" || row.txn_status === "partially_refunded") &&
+        row.txn_amount_cents != null
+          ? row.txn_amount_cents - (row.refunded_amount_cents ?? 0)
+          : 0;
+      return {
+        profileId: row.profile_id,
+        email: row.email,
+        displayName: row.display_name,
+        paymentTransactionId: row.txn_id,
+        refundableCents: Math.max(0, refundable),
+        currency: row.txn_currency || "AUD",
+      };
+    });
 
     await client.query(
       `
@@ -5828,47 +6373,127 @@ export async function cancelMerchantEvent(eventId: string, session: Session | nu
 
     await client.query("commit");
 
+    // Up to 3 upcoming, still-bookable alternatives to soften the cancellation.
+    // A user whose event was just cancelled is primed to book something else
+    // (spec §5). Shared across all recipients — generic (not per-user) for now.
+    const suggestedResult = await client.query<{
+      slug: string;
+      title: string;
+      starts_at: Date;
+      timezone: string;
+      suburb: string | null;
+    }>(
+      `
+        select e.slug, e.title, e.starts_at, e.timezone, e.suburb
+        from events e
+        where e.status in ('live', 'featured')
+          and e.starts_at > now()
+          and e.id <> $1::uuid
+          and (
+            select count(*) from event_attendees a
+            where a.event_id = e.id and a.status = 'confirmed'
+          ) < e.capacity
+        order by e.starts_at asc
+        limit 3
+      `,
+      [event.id],
+    );
+
+    const origin = emailOrigin();
+    const dates = formatEmailDates(event.starts_at, event.ends_at, event.timezone);
+    const suggestions = suggestedResult.rows.map((s) => {
+      const d = formatEmailDates(s.starts_at, null, s.timezone);
+      return {
+        url: `${origin}/events/${s.slug}`,
+        title: s.title,
+        line: [d.eventLongDate, s.suburb].filter(Boolean).join(" · "),
+      };
+    });
+    const suggestedEventsHtml = renderSuggestedEventsBlock(suggestions);
+    const suggestedEventsText = suggestions.length
+      ? "Events you might enjoy:\n" +
+        suggestions.map((s) => `• ${s.title} — ${s.line}\n  ${s.url}`).join("\n")
+      : "";
+
+    // Per attendee: issue the 100% refund (full remaining balance), then email.
+    // Each refund is isolated — a Stripe failure logs to refund_failures and the
+    // cancellation/notice still goes out (spec §5 "refund fails during bulk").
+    let refundedCount = 0;
     await Promise.all(
-      affectedProfiles.map((attendee) =>
-        sendWorkflowEmail({
+      affectedProfiles.map(async (attendee) => {
+        let refundLabel = "You were not charged.";
+
+        if (attendee.refundableCents > 0 && attendee.paymentTransactionId) {
+          const dollars = formatAud(attendee.refundableCents, attendee.currency);
+          try {
+            const { issueRefund } = await import("./stripe-sync");
+            await issueRefund({
+              paymentTransactionId: attendee.paymentTransactionId,
+              reason: "requested_by_customer",
+              adminProfileId: null,
+            });
+            refundedCount += 1;
+            refundLabel = `A full refund of ${dollars} is on the way (3–5 business days).`;
+          } catch (err) {
+            refundLabel =
+              "We're processing your full refund — if it hasn't arrived within 7 days, contact hello@click.app.";
+            await pool
+              .query(
+                `insert into refund_failures (payment_transaction_id, event_id, profile_id, amount_cents, currency, error_message)
+                 values ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6)`,
+                [
+                  attendee.paymentTransactionId,
+                  event.id,
+                  attendee.profileId,
+                  attendee.refundableCents,
+                  attendee.currency,
+                  err instanceof Error ? err.message : String(err),
+                ],
+              )
+              .catch(() => {});
+          }
+        }
+
+        await sendWorkflowEmail({
           to: attendee.email,
           subject: `${event.title} has been cancelled`,
           text: [
             `Hi ${attendee.displayName},`,
             `${event.title} has been cancelled by the host.`,
-            "Any payment/refund handling will follow the merchant policy for this event.",
-          ].join("\n\n"),
-        }),
-      ),
-    );
+            refundLabel,
+            suggestedEventsText,
+          ]
+            .filter(Boolean)
+            .join("\n\n"),
+        });
 
-    // Mirror the fan-out into email_events so each cancellation notice is in
-    // the dev log. Fire-and-forget — post-commit, never blocks the response.
-    const origin = emailOrigin();
-    const dates = formatEmailDates(event.starts_at, event.ends_at, event.timezone);
-    for (const attendee of affectedProfiles) {
-      void logEmailEvent({
-        template: "event-cancelled-attendee",
-        toEmail: attendee.email,
-        toProfileId: attendee.profileId,
-        vars: {
-          firstName: (attendee.displayName || "").split(/\s+/)[0] || "there",
-          eventTitle: event.title,
-          eventLongDate: dates.eventLongDate,
-          eventStartTime: dates.eventStartTime,
-          eventHostName: event.host_name,
-          cancellationReason: "",
-          refundLabel: "",
-          discoverUrl: `${origin}/discover`,
-          supportEmail: "hello@click.app",
-          unsubscribeUrl: `${origin}/account-settings`,
-        },
-      });
-    }
+        // Mirror into email_events (dev log) with the real refund label +
+        // suggestions. Fire-and-forget — never blocks the response.
+        void logEmailEvent({
+          template: "event-cancelled-attendee",
+          toEmail: attendee.email,
+          toProfileId: attendee.profileId,
+          vars: {
+            firstName: (attendee.displayName || "").split(/\s+/)[0] || "there",
+            eventTitle: event.title,
+            eventLongDate: dates.eventLongDate,
+            eventStartTime: dates.eventStartTime,
+            eventHostName: event.host_name,
+            cancellationReason: "",
+            refundLabel,
+            suggestedEvents: suggestedEventsHtml,
+            discoverUrl: `${origin}/discover`,
+            supportEmail: "hello@click.app",
+            unsubscribeUrl: `${origin}/account-settings`,
+          },
+        });
+      }),
+    );
 
     return {
       eventTitle: event.title,
       notified: affectedProfiles.length,
+      refunded: refundedCount,
       alreadyCancelled: false,
     };
   } catch (error) {
@@ -6314,6 +6939,10 @@ export type OwnProfile = PublicProfile & {
   // chips. `interests` (on PublicProfile) stays the full label list for display.
   interestSlugs: string[];
   musicSlugs: string[];
+  // Discovery/privacy switches (migration 005). Owner-only, so they live here
+  // rather than on PublicProfile.
+  datingVisible: boolean;
+  flexibleDiscovery: boolean;
 };
 
 export async function getOwnProfile(session: Session | null): Promise<OwnProfile | null> {
@@ -6336,10 +6965,13 @@ export async function getOwnProfile(session: Session | null): Promise<OwnProfile
         photo_url: string | null;
         age: number | null;
         connection_intents: string[];
+        dating_visible: boolean;
+        flexible_discovery: boolean;
       }>(
         `
           select id::text, display_name, email::text, role::text, city, suburb, bio, photo_url, age,
-                 connection_intents::text[] as connection_intents
+                 connection_intents::text[] as connection_intents,
+                 dating_visible, flexible_discovery
           from profiles
           where id = $1::uuid
         `,
@@ -6382,6 +7014,8 @@ export async function getOwnProfile(session: Session | null): Promise<OwnProfile
       interests: tagsResult.rows.map((t) => ({ slug: t.slug, label: t.label })),
       interestSlugs: tagsResult.rows.filter((t) => t.tag_type === "interest").map((t) => t.slug),
       musicSlugs: tagsResult.rows.filter((t) => t.tag_type === "music").map((t) => t.slug),
+      datingVisible: row.dating_visible,
+      flexibleDiscovery: row.flexible_discovery,
       attendedCount: Number(attendedResult.rows[0]?.count ?? 0),
     };
   } catch (error) {
@@ -6469,6 +7103,9 @@ export type ProfileUpdateInput = {
   // alone. Slugs must already exist in `tags`; unknown ones are dropped.
   interestTags?: string[];
   musicTags?: string[];
+  // Discovery/privacy switches (migration 005). Undefined = leave unchanged.
+  datingVisible?: boolean;
+  flexibleDiscovery?: boolean;
 };
 
 // Replaces every `user_tags` row of one tag_type for a profile with the given
@@ -6550,6 +7187,14 @@ export async function updateOwnProfile(
   if (input.intents !== undefined && input.intents.length > 0) {
     updates.push(`connection_intents = $${i++}::connection_intent[]`);
     params.push(input.intents);
+  }
+  if (input.datingVisible !== undefined) {
+    updates.push(`dating_visible = $${i++}`);
+    params.push(input.datingVisible);
+  }
+  if (input.flexibleDiscovery !== undefined) {
+    updates.push(`flexible_discovery = $${i++}`);
+    params.push(input.flexibleDiscovery);
   }
 
   const syncsInterests = input.interestTags !== undefined;

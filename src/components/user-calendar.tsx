@@ -75,6 +75,17 @@ function dayOfWeekIndexMondayFirst(date: Date) {
   return (jsDay + 6) % 7;
 }
 
+// Comparable month index (year * 12 + monthIndex) for an event, computed in the
+// Sydney calendar so it lines up with the grid's day buckets.
+function eventMonthIndex(event: EventItem) {
+  const [yearStr, monthStr] = isoDateInSydney(new Date(event.startsAt)).split("-");
+  return Number(yearStr) * 12 + (Number(monthStr) - 1);
+}
+
+function anchorMonthIndex(monthAnchor: Date) {
+  return monthAnchor.getUTCFullYear() * 12 + monthAnchor.getUTCMonth();
+}
+
 function buildCells(monthAnchor: Date, events: EventItem[], todayIso: string): CalendarCell[] {
   const firstDay = new Date(Date.UTC(monthAnchor.getUTCFullYear(), monthAnchor.getUTCMonth(), 1));
   const lastDay = new Date(Date.UTC(monthAnchor.getUTCFullYear(), monthAnchor.getUTCMonth() + 1, 0));
@@ -137,14 +148,20 @@ export function UserCalendar({
   const monthSeparator = basePath.includes("?") ? "&" : "?";
   const monthHref = (month: string) => `${basePath}${monthSeparator}month=${month}`;
 
-  const monthEvents = events.filter((event) => {
-    const key = isoDateInSydney(new Date(event.startsAt));
-    const [yearStr, monthStr] = key.split("-");
-    return (
-      Number(yearStr) === monthAnchor.getUTCFullYear() &&
-      Number(monthStr) === monthAnchor.getUTCMonth() + 1
-    );
-  });
+  const currentMonthIndex = anchorMonthIndex(monthAnchor);
+  const monthEvents = events.filter(
+    (event) => eventMonthIndex(event) === currentMonthIndex,
+  );
+  // A month grid only renders one month, so RSVPs in other months (e.g. one you
+  // just booked further out than your soonest event) are off-screen. Count them
+  // per direction so the prev/next arrows can signal there's more to page to —
+  // otherwise the event looks like it never landed on the calendar.
+  const eventsBeforeCount = events.filter(
+    (event) => eventMonthIndex(event) < currentMonthIndex,
+  ).length;
+  const eventsAfterCount = events.filter(
+    (event) => eventMonthIndex(event) > currentMonthIndex,
+  ).length;
 
   const bookedEvent = bookedSlug ? events.find((event) => event.id === bookedSlug) : null;
 
@@ -173,10 +190,15 @@ export function UserCalendar({
           <div className="flex items-center gap-1.5">
             <Link
               href={monthHref(prevMonth)}
-              aria-label="Previous month"
-              className="grid size-9 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] text-sm font-bold text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+              aria-label={
+                eventsBeforeCount > 0
+                  ? `Previous month (${eventsBeforeCount} earlier event${eventsBeforeCount === 1 ? "" : "s"})`
+                  : "Previous month"
+              }
+              className="relative grid size-9 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] text-sm font-bold text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
             >
               ←
+              {eventsBeforeCount > 0 ? <MonthEventDot count={eventsBeforeCount} /> : null}
             </Link>
             <Link
               href={basePath}
@@ -186,10 +208,15 @@ export function UserCalendar({
             </Link>
             <Link
               href={monthHref(nextMonth)}
-              aria-label="Next month"
-              className="grid size-9 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] text-sm font-bold text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+              aria-label={
+                eventsAfterCount > 0
+                  ? `Next month (${eventsAfterCount} later event${eventsAfterCount === 1 ? "" : "s"})`
+                  : "Next month"
+              }
+              className="relative grid size-9 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] text-sm font-bold text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
             >
               →
+              {eventsAfterCount > 0 ? <MonthEventDot count={eventsAfterCount} /> : null}
             </Link>
           </div>
         </div>
@@ -212,6 +239,19 @@ export function UserCalendar({
         ))}
       </div>
     </article>
+  );
+}
+
+// Small count badge pinned to a month-nav arrow, flagging that this many RSVPs
+// live in months you'd have to page to.
+function MonthEventDot({ count }: { count: number }) {
+  return (
+    <span
+      aria-hidden
+      className="absolute -right-1 -top-1 grid min-w-4 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-1 font-mono text-[0.55rem] font-bold leading-none text-[color:var(--surface-deep)]"
+    >
+      {count > 9 ? "9+" : count}
+    </span>
   );
 }
 

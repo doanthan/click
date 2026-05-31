@@ -29,6 +29,8 @@ export function EventCard({
       : seatsLeft <= 8
         ? "Almost full"
         : `${seatsLeft} seats left`;
+  // Tone reads as a traffic light: peach = open, rose = limited/waitlist/full,
+  // ink = locked. A sold-out "Full" event must never wear the positive peach.
   const statusTone =
     isWaitlistEvent
       ? "bg-[color:var(--rose)] text-[color:var(--surface-deep)]"
@@ -78,7 +80,20 @@ export function EventCard({
         <p className="mt-1 text-sm font-semibold text-[color:var(--mauve)]">
           {isLockedEvent ? (
             <span className="inline-flex items-center gap-1.5 text-[color:var(--ink)]">
-              <span aria-hidden>🔒</span> RSVP to unlock the venue
+              <svg
+                viewBox="0 0 24 24"
+                className="h-3.5 w-3.5 shrink-0"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden
+              >
+                <rect x="4" y="11" width="16" height="9" rx="2" />
+                <path d="M8 11V8a4 4 0 018 0v3" />
+              </svg>
+              RSVP to unlock the venue
             </span>
           ) : (
             event.location

@@ -41,6 +41,13 @@ export async function saveProfileEditAction(formData: FormData) {
   const ageRaw = strField(formData, "age").trim();
   const ageParsed = ageRaw ? Number.parseInt(ageRaw, 10) : null;
 
+  // Discovery toggles submit a hidden "true"/"false" field each. Absent field
+  // (e.g. dating toggle hidden because dating isn't selected) → leave unchanged.
+  const boolField = (key: string) => {
+    const v = formData.get(key);
+    return typeof v === "string" ? v === "true" : undefined;
+  };
+
   await updateOwnProfile(session, {
     displayName: strField(formData, "display_name"),
     suburb: strField(formData, "suburb"),
@@ -50,6 +57,8 @@ export async function saveProfileEditAction(formData: FormData) {
     intents,
     interestTags: strList("interest_tag"),
     musicTags: strList("music_tag"),
+    datingVisible: boolField("dating_visible"),
+    flexibleDiscovery: boolField("flexible_discovery"),
   });
 
   revalidatePath("/profile");

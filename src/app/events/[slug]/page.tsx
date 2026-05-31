@@ -15,6 +15,7 @@ import {
   getSystemSettings,
 } from "@/lib/event-repository";
 import { reconcileCheckoutSession } from "@/lib/stripe-sync";
+import { quoteCancellationRefund, refundQuoteLabel } from "@/lib/refund-policy";
 
 type PageProps = {
   params: Promise<{ slug: string }>;
@@ -130,6 +131,9 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
 
   const isRegistered = event.viewerRsvpStatus === "confirmed";
   const isWaitlisted = event.viewerRsvpStatus === "waitlisted";
+  // A freed seat was offered to this waitlisted viewer and the 15-min hold is
+  // still open — drives the "Confirm your spot" CTA.
+  const waitlistOfferExpiresAt = isWaitlisted ? event.waitlistOfferExpiresAt : null;
   const isPendingPayment = event.viewerRsvpStatus === "pending_payment";
   const isFull = event.attendees >= event.capacity;
   const isWaitlistMode = event.status === "Waitlist" || isFull;
@@ -146,6 +150,12 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
     : 0;
   const totalCents = event.priceCents + bookingFeeCents;
   const hasBookingFee = bookingFeeCents > 0;
+  // Exact refund the viewer would get if they cancel their paid booking now —
+  // shown in the cancel confirmation so the number matches what we refund.
+  const cancelRefundLabel =
+    isPaid && isRegistered
+      ? refundQuoteLabel(quoteCancellationRefund(totalCents, event.startsAt), "AUD")
+      : null;
   const bookmarked = profileStatus?.bookmarkedEventIds.includes(event.id) ?? false;
   const showStripeUnavailableHint = isPaid && !process.env.STRIPE_SECRET_KEY;
   const isAuthenticated = Boolean(session?.user);
@@ -327,12 +337,49 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                     </p>
                   ) : null}
 
+                  {isWaitlisted && !waitlistOfferExpiresAt && event.waitlistPosition ? (
+                    <p className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-3 text-xs font-bold text-[color:var(--surface-deep)] hard-shadow-sm">
+                      You&apos;re #{event.waitlistPosition} on the waitlist. We&apos;ll
+                      notify you the moment a spot opens.
+                    </p>
+                  ) : null}
+
                   {isRegistered || isWaitlisted ? (
-                    <EventRegistrationButton
-                      eventId={event.id}
-                      initiallyRegistered
-                      isWaitlist={isWaitlisted}
-                    />
+                    waitlistOfferExpiresAt && isPaid ? (
+                      // Paid promotion: a seat opened — secure it through Stripe
+                      // checkout, with "Leave waitlist" still available below.
+                      <div className="grid gap-2">
+                        <div className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-3 text-xs font-bold text-[color:var(--surface-deep)] hard-shadow-sm">
+                          🎉 A seat opened up! Reserve &amp; pay to claim it before
+                          your hold expires.
+                        </div>
+                        {showStripeUnavailableHint ? (
+                          <p className="rounded-xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--rose)]/30 p-3 text-xs font-bold">
+                            Stripe isn&apos;t configured on this server — set
+                            STRIPE_SECRET_KEY in .env.local to enable paid bookings.
+                          </p>
+                        ) : (
+                          <EventPaymentButton
+                            eventId={event.id}
+                            priceLabel={formatPrice(totalCents, "AUD")}
+                          />
+                        )}
+                        <EventRegistrationButton
+                          eventId={event.id}
+                          initiallyRegistered
+                          isWaitlist
+                        />
+                      </div>
+                    ) : (
+                      <EventRegistrationButton
+                        eventId={event.id}
+                        initiallyRegistered
+                        isWaitlist={isWaitlisted}
+                        offerExpiresAt={waitlistOfferExpiresAt}
+                        cancelRefundLabel={cancelRefundLabel}
+                        successDetails={successDetails}
+                      />
+                    )
                   ) : isWaitlistMode ? (
                     <EventBookingDialog
                       triggerLabel="Join the waitlist"
@@ -409,6 +456,19 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                     initiallySaved={bookmarked}
                   />
                 </div>
+
+                {isPaid ? (
+                  <div className="mt-4 rounded-xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--champagne)]/60 p-3">
+                    <p className="font-mono text-[0.6rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+                      Cancellation policy
+                    </p>
+                    <ul className="mt-1.5 space-y-1 text-xs font-medium text-[color:var(--surface-deep)]">
+                      <li>✅ Full refund if cancelled 48+ hours before the event</li>
+                      <li>⚠️ 50% refund if cancelled 24–48 hours before</li>
+                      <li>❌ No refund if cancelled within 24 hours</li>
+                    </ul>
+                  </div>
+                ) : null}
               </div>
 
               <div className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--ink)] p-4 text-[color:var(--on-deep)] hard-shadow-sm">

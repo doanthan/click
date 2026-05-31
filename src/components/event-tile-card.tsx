@@ -1,39 +1,28 @@
 import Image from "next/image";
 import Link from "next/link";
-import type { EventItem } from "@/lib/click-data";
+import { type EventItem, formatEventTimeRange } from "@/lib/click-data";
 import { EventBookmarkButton } from "./event-bookmark-button";
 
-// Deterministic pseudo-rating until rated reviews exist on the EventItem.
-// 4.6 – 5.0 range, single-decimal, with a review count seeded from the id and
-// nudged up for events with higher attendance so popular things look popular.
-function ratingFor(event: EventItem) {
-  let hash = 0;
-  for (let i = 0; i < event.id.length; i++) {
-    hash = (hash * 31 + event.id.charCodeAt(i)) >>> 0;
-  }
-  const rating = 4.6 + ((hash % 5) / 10); // 4.6, 4.7, 4.8, 4.9, 5.0
-  const reviews = 60 + (hash % 1800) + event.attendees * 7;
-  return { rating: rating.toFixed(1), reviews };
-}
+// Compact "SAT, 14 JUN" date label, formatted in Sydney time so it lines up
+// with the server-rendered time string already on the item.
+const dateBadgeFormatter = new Intl.DateTimeFormat("en-AU", {
+  weekday: "short",
+  day: "numeric",
+  month: "short",
+  timeZone: "Australia/Sydney",
+});
 
-function StarIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className="h-4 w-4 shrink-0 text-[color:var(--ink)]"
-      fill="currentColor"
-      aria-hidden
-    >
-      <path d="M12 2.5l2.81 6.07 6.69.61-5.03 4.51 1.5 6.55L12 16.9l-5.97 3.34 1.5-6.55-5.03-4.51 6.69-.61L12 2.5z" />
-    </svg>
-  );
+function formatDateBadge(event: EventItem) {
+  const start = new Date(event.startsAt);
+  if (Number.isNaN(start.getTime())) return event.date;
+  return dateBadgeFormatter.format(start).toUpperCase();
 }
 
 function CalendarIcon() {
   return (
     <svg
       viewBox="0 0 24 24"
-      className="h-4 w-4 shrink-0 text-[color:var(--ink)]"
+      className="h-4 w-4 shrink-0 text-[color:var(--mauve)]"
       fill="none"
       stroke="currentColor"
       strokeWidth={2}
@@ -51,7 +40,7 @@ function PinIcon() {
   return (
     <svg
       viewBox="0 0 24 24"
-      className="h-4 w-4 shrink-0 text-[color:var(--ink)]"
+      className="h-4 w-4 shrink-0 text-[color:var(--mauve)]"
       fill="none"
       stroke="currentColor"
       strokeWidth={2}
@@ -65,11 +54,11 @@ function PinIcon() {
   );
 }
 
-function TicketIcon() {
+function UsersIcon() {
   return (
     <svg
       viewBox="0 0 24 24"
-      className="h-4 w-4 shrink-0 text-[color:var(--ink)]"
+      className="h-4 w-4 shrink-0 text-[color:var(--mauve)]"
       fill="none"
       stroke="currentColor"
       strokeWidth={2}
@@ -77,8 +66,9 @@ function TicketIcon() {
       strokeLinejoin="round"
       aria-hidden
     >
-      <path d="M3 8a2 2 0 012-2h14a2 2 0 012 2v2a2 2 0 100 4v2a2 2 0 01-2 2H5a2 2 0 01-2-2v-2a2 2 0 100-4V8z" />
-      <path d="M13 6v12" strokeDasharray="2 2" />
+      <path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M22 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" />
     </svg>
   );
 }
@@ -86,23 +76,39 @@ function TicketIcon() {
 export function EventTileCard({
   event,
   bookmarked = false,
+  fluid = false,
 }: {
   event: EventItem;
   bookmarked?: boolean;
+  // Fluid cards fill their grid cell; the default fixed width is for the
+  // horizontal scroll rails on /discover where cards peek off-screen.
+  fluid?: boolean;
 }) {
-  const { rating, reviews } = ratingFor(event);
   const seatsLeft = Math.max(0, event.capacity - event.attendees);
   const isFull = seatsLeft === 0;
-  // "Runs regularly" mirrors the ClassBento style; we show it for any non-full
-  // event so the cadence feels familiar even though the data is per-event.
-  const cadence = isFull
-    ? event.status === "Waitlist"
-      ? "Waitlist open"
-      : "Currently full"
-    : "Runs regularly";
+  const isWaitlist = event.status === "Waitlist";
+
+  // Honest availability signal — no invented ratings. Drives the corner badge
+  // on the image, mirroring how Meetup/ClassBento surface urgency + capacity.
+  const availability = isFull
+    ? { label: isWaitlist ? "Waitlist open" : "Sold out", tone: "full" as const }
+    : seatsLeft <= 3
+      ? { label: `${seatsLeft} spot${seatsLeft === 1 ? "" : "s"} left`, tone: "low" as const }
+      : seatsLeft <= 8
+        ? { label: "Almost full", tone: "low" as const }
+        : null;
+
+  const availabilityClass =
+    availability?.tone === "full"
+      ? "bg-[color:var(--ink)] text-[color:var(--champagne)]"
+      : "bg-[color:var(--rose)] text-[color:var(--on-deep)]";
 
   return (
-    <article className="group relative flex w-[18rem] shrink-0 flex-col gap-3 sm:w-[20rem]">
+    <article
+      className={`group relative flex shrink-0 flex-col gap-3 ${
+        fluid ? "w-full" : "w-[18rem] sm:w-[20rem]"
+      }`}
+    >
       <Link
         href={`/events/${event.id}`}
         className="relative block aspect-[4/5] w-full overflow-hidden rounded-2xl border border-[color:var(--line-soft)] bg-[color:var(--champagne-deep)]"
@@ -111,9 +117,23 @@ export function EventTileCard({
           src={event.image}
           alt={event.imageAlt}
           fill
-          sizes="(min-width: 640px) 20rem, 18rem"
+          sizes={fluid ? "(min-width: 1024px) 24rem, (min-width: 640px) 45vw, 90vw" : "(min-width: 640px) 20rem, 18rem"}
           className="object-cover transition duration-500 group-hover:scale-[1.03]"
         />
+        <div className="absolute inset-0 bg-gradient-to-t from-[color:var(--ink)]/35 via-transparent to-transparent" />
+
+        {/* Date chip — the single most-scanned datum on an event card. */}
+        <span className="absolute left-3 top-3 rounded-full bg-[color:var(--champagne)]/95 px-3 py-1 font-mono text-[0.62rem] font-bold uppercase tracking-[0.12em] text-[color:var(--ink)] shadow-sm backdrop-blur">
+          {formatDateBadge(event)}
+        </span>
+
+        {availability ? (
+          <span
+            className={`absolute bottom-3 left-3 rounded-full px-3 py-1 text-[0.62rem] font-black uppercase tracking-[0.1em] shadow-sm ${availabilityClass}`}
+          >
+            {availability.label}
+          </span>
+        ) : null}
       </Link>
 
       <div className="absolute right-3 top-3 z-10">
@@ -131,16 +151,11 @@ export function EventTileCard({
           </Link>
         </h3>
 
-        <div className="flex items-center gap-1.5 text-sm font-bold text-[color:var(--ink)]">
-          <StarIcon />
-          <span>
-            {rating} <span className="font-semibold text-[color:var(--mauve)]">({reviews.toLocaleString()})</span>
-          </span>
-        </div>
-
         <div className="flex items-center gap-1.5 text-sm font-semibold text-[color:var(--ink)]/85">
           <CalendarIcon />
-          <span className="truncate">{cadence}</span>
+          <span className="truncate">
+            {formatDateBadge(event)} · {formatEventTimeRange(event)}
+          </span>
         </div>
 
         <div className="flex items-center gap-1.5 text-sm font-semibold text-[color:var(--ink)]/85">
@@ -151,9 +166,13 @@ export function EventTileCard({
           </span>
         </div>
 
-        <div className="flex items-center gap-1.5 text-sm font-bold text-[color:var(--ink)]">
-          <TicketIcon />
-          <span className="truncate">{event.price}</span>
+        {/* Price + real "going" count — the two numbers people decide on. */}
+        <div className="mt-0.5 flex items-center justify-between gap-2 text-sm">
+          <span className="font-black text-[color:var(--ink)]">{event.price}</span>
+          <span className="inline-flex items-center gap-1.5 font-semibold text-[color:var(--mauve)]">
+            <UsersIcon />
+            {event.attendees} going
+          </span>
         </div>
       </div>
     </article>

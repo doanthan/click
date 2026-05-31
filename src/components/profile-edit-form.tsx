@@ -59,6 +59,10 @@ export function ProfileEditForm({ profile }: { profile: OwnProfile }) {
   const [intents, setIntents] = useState<Set<string>>(new Set(profile.intents));
   const [interests, setInterests] = useState<Set<string>>(new Set(profile.interestSlugs));
   const [music, setMusic] = useState<Set<string>>(new Set(profile.musicSlugs));
+  const [datingVisible, setDatingVisible] = useState(profile.datingVisible);
+  const [flexibleDiscovery, setFlexibleDiscovery] = useState(profile.flexibleDiscovery);
+
+  const datingSelected = intents.has("dating");
 
   // Suburb is stored as a name; legacy rows (and onboarding) store a 4-digit
   // postcode in the same column. Detect that so the field round-trips sensibly.
@@ -250,6 +254,37 @@ export function ProfileEditForm({ profile }: { profile: OwnProfile }) {
         ))}
       </Fieldset>
 
+      {/* ----- Discovery / privacy ----- */}
+      <Fieldset
+        legend="Discovery"
+        hint="Control who finds you and how broad your event recommendations are."
+      >
+        <div className="grid gap-2">
+          {datingSelected ? (
+            <Toggle
+              label="Dating discovery"
+              description="Let people on Click who are dating-minded see you on profiles and Click Radar. Turn this off to keep dating in your event feed without being shown to other daters."
+              checked={datingVisible}
+              onChange={setDatingVisible}
+            />
+          ) : (
+            <p className="rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--champagne)] p-4 text-xs font-semibold leading-5 text-[color:var(--mauve)]">
+              Add the <span className="font-bold text-[color:var(--ink)]">Dating</span> intent above to control dating discovery.
+            </p>
+          )}
+          <Toggle
+            label="Flexible discovery"
+            description="Show me cross-intent events (e.g. friendship-tagged events even if my main intent is dating)."
+            checked={flexibleDiscovery}
+            onChange={setFlexibleDiscovery}
+          />
+        </div>
+        {/* Always submit current state so it round-trips even while the dating
+            toggle is hidden (no dating intent selected). */}
+        <input type="hidden" name="dating_visible" value={datingVisible ? "true" : "false"} />
+        <input type="hidden" name="flexible_discovery" value={flexibleDiscovery ? "true" : "false"} />
+      </Fieldset>
+
       {/* ----- Interest tags ----- */}
       <Fieldset
         legend="Interest tags"
@@ -352,6 +387,47 @@ function Fieldset({
       ) : null}
       {children}
     </fieldset>
+  );
+}
+
+function Toggle({
+  label,
+  description,
+  checked,
+  onChange,
+}: {
+  label: string;
+  description: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className={`flex items-start justify-between gap-3 rounded-2xl border-2 px-4 py-4 text-left transition ${
+        checked
+          ? "border-[color:var(--rose)] bg-[color:var(--peach)]"
+          : "border-[color:var(--line)] bg-[color:var(--cream)]"
+      }`}
+    >
+      <span className="grid gap-1">
+        <span className="text-base font-bold">{label}</span>
+        <span className="text-xs font-semibold leading-5 text-[color:var(--mauve)]">
+          {description}
+        </span>
+      </span>
+      <span
+        aria-hidden="true"
+        className={`mt-0.5 inline-flex h-7 w-12 shrink-0 items-center rounded-full border-2 border-[color:var(--line)] p-0.5 transition ${
+          checked ? "bg-[color:var(--rose)] justify-end" : "bg-[color:var(--champagne)] justify-start"
+        }`}
+      >
+        <span className="block size-5 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)]" />
+      </span>
+    </button>
   );
 }
 

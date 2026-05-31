@@ -3,6 +3,10 @@
     {
       "path": "/api/bsc/cleanup",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/waitlist-expiry",
+      "schedule": "*/5 * * * *"
     }
   ]
 }
