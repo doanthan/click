@@ -16,6 +16,7 @@ import {
   getProfileStatus,
   type MerchantFinancesSummary,
 } from "@/lib/event-repository";
+import { reconcilePendingTransactionsForMerchant } from "@/lib/stripe-sync";
 
 export const metadata = {
   title: "Merchant Portal | Click",
@@ -688,6 +689,10 @@ async function FinancesTabAsync({
 }: {
   session: Session | null;
 }) {
+  // Self-heal any pending rows whose Stripe session is actually paid/expired
+  // before reading the summary — the webhook is the primary path, but this keeps
+  // the tab correct when it's missed. Best-effort; never block the page on it.
+  await reconcilePendingTransactionsForMerchant(session).catch(() => null);
   const finances = await getMerchantFinancesSummary(session);
 
   return (

@@ -17,6 +17,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
 import { MapboxAutocomplete, type MapboxPlace } from "./mapbox-autocomplete";
+import { toTitleCase } from "@/lib/text-format";
 
 // Create-event — multi-step wizard. Each step has its own URL so users can
 // bookmark, link to, and browser-back through them:
@@ -267,6 +268,11 @@ type WizardContextValue = {
   set: <K extends keyof WizardValues>(key: K, value: WizardValues[K]) => void;
   categoryOptions: string[];
   tagOptions: string[];
+  // Suggestions for the Basics step's group/host-name combobox and the Location
+  // step's venue combobox — derived server-side from the merchant's profile and
+  // past events. Both fields stay freetext; these just save retyping.
+  hostNameOptions: string[];
+  venueOptions: string[];
   stepError: string | null;
   setStepError: Dispatch<SetStateAction<string | null>>;
   submitting: boolean;
@@ -288,10 +294,14 @@ function useWizard(): WizardContextValue {
 export function EventCreateProvider({
   categoryOptions,
   tagOptions = [],
+  hostNameOptions = [],
+  venueOptions = [],
   children,
 }: {
   categoryOptions: string[];
   tagOptions?: string[];
+  hostNameOptions?: string[];
+  venueOptions?: string[];
   children: React.ReactNode;
 }) {
   const [values, setValues] = useState<WizardValues>(() => ({
@@ -343,6 +353,8 @@ export function EventCreateProvider({
         set,
         categoryOptions,
         tagOptions,
+        hostNameOptions,
+        venueOptions,
         stepError,
         setStepError,
         submitting,
@@ -777,8 +789,78 @@ function TagPicker({
   );
 }
 
+// Single-value text input with a suggestion dropdown. Unlike TagPicker, freetext
+// is allowed — `options` are no-retyping conveniences (the merchant's host names
+// / past venues), not a closed list. Picking a suggestion fills the field; the
+// merchant can still type anything. `transform` lets callers normalise input as
+// it's typed (e.g. title-casing), applied to typed text but not to picked options.
+function Combobox({
+  value,
+  options,
+  onChange,
+  placeholder,
+  required,
+  transform,
+}: {
+  value: string;
+  options: string[];
+  onChange: (next: string) => void;
+  placeholder?: string;
+  required?: boolean;
+  transform?: (s: string) => string;
+}) {
+  const [open, setOpen] = useState(false);
+
+  const suggestions = useMemo(() => {
+    const q = value.trim().toLowerCase();
+    return options
+      .filter((opt) => opt.toLowerCase() !== q)
+      .filter((opt) => (q ? opt.toLowerCase().includes(q) : true))
+      .slice(0, 8);
+  }, [options, value]);
+
+  return (
+    <div className="relative">
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => {
+          onChange(transform ? transform(e.target.value) : e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 120)}
+        placeholder={placeholder}
+        className={inputClass()}
+        required={required}
+      />
+      {open && suggestions.length > 0 ? (
+        <ul className="absolute left-0 right-0 top-full z-20 mt-1 max-h-56 overflow-auto rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] py-1 hard-shadow-sm">
+          {suggestions.map((opt) => (
+            <li key={opt}>
+              <button
+                type="button"
+                // onMouseDown (not onClick) so the pick lands before onBlur
+                // closes the dropdown.
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  onChange(opt);
+                  setOpen(false);
+                }}
+                className="block w-full px-4 py-2 text-left text-sm font-semibold text-[color:var(--ink)] hover:bg-[color:var(--champagne)]"
+              >
+                {opt}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
 export function BasicsSection() {
-  const { values, set, categoryOptions, tagOptions } = useWizard();
+  const { values, set, categoryOptions, tagOptions, hostNameOptions } = useWizard();
   return (
     <div className="space-y-5">
       <header>
@@ -790,21 +872,24 @@ export function BasicsSection() {
         </h2>
       </header>
       <div className="grid gap-4 md:grid-cols-2">
-        <Field label="Event title">
+        <Field label="Event title" hint="Auto-capitalised as you type.">
           <input
             value={values.title}
-            onChange={(e) => set("title", e.target.value)}
+            onChange={(e) => set("title", toTitleCase(e.target.value))}
             placeholder="Restaurant Meetup: Table for Eight"
             className={inputClass()}
             required
           />
         </Field>
-        <Field label="Group / host name">
-          <input
+        <Field
+          label="Group / host name"
+          hint="Pick a saved name or type a new one."
+        >
+          <Combobox
             value={values.groupName}
-            onChange={(e) => set("groupName", e.target.value)}
+            options={hostNameOptions}
+            onChange={(next) => set("groupName", next)}
             placeholder="Sydney Table Friends"
-            className={inputClass()}
             required
           />
         </Field>
@@ -1264,17 +1349,35 @@ function RecurrencePicker({
 }
 
 export function LocationSection() {
-  const { values, set } = useWizard();
-  // The search box is its own field — a throwaway query used only to locate
-  // the address and pin the map. It is intentionally NOT bound to the venue
-  // name: picking a place fills the address details below (suburb + pinned
-  // coordinates) and leaves the merchant free to type their own venue name.
+  const { values, set, venueOptions } = useWizard();
+  // The search box is its own field — a throwaway query used to locate the
+  // address, pin the map, and (when Mapbox returns a named place) suggest the
+  // venue name below. The venue field stays editable freetext either way.
   const [query, setQuery] = useState("");
+  // Remember the last value we auto-filled into the venue field so re-picking a
+  // different address updates it, but a name the merchant typed/edited is never
+  // clobbered.
+  const autoFilledVenue = useRef<string>("");
 
   function handlePick(place: MapboxPlace) {
     if (place.suburb) set("suburb", place.suburb);
     set("latitude", place.lat);
     set("longitude", place.lng);
+
+    // Auto-fill the venue name from the POI name (e.g. "Fortress"), but only
+    // when Mapbox returned a real place name distinct from the bare street
+    // line — a plain street address shouldn't become the venue name. Respect a
+    // name the merchant has already typed.
+    const poi = place.name?.trim() ?? "";
+    const isNamedPlace =
+      poi.length > 0 &&
+      poi.toLowerCase() !== place.street?.trim().toLowerCase() &&
+      poi.toLowerCase() !== place.address?.trim().toLowerCase();
+    const current = values.locationName.trim();
+    if (isNamedPlace && (current === "" || current === autoFilledVenue.current)) {
+      set("locationName", poi);
+      autoFilledVenue.current = poi;
+    }
   }
 
   const pinned = values.latitude !== null && values.longitude !== null;
@@ -1289,14 +1392,14 @@ export function LocationSection() {
           Where in Sydney?
         </h2>
         <p className="mt-1 text-sm font-bold text-[color:var(--mauve)]">
-          Search a street address to fill the suburb and pin it on the map,
-          then name your venue below.
+          Search a street address to fill the suburb, pin it on the map, and
+          auto-fill the venue name — edit it below if needed.
         </p>
       </header>
 
       <Field
         label="Find address"
-        hint="Powered by Mapbox. Bias is Australia; pick a suggestion to fill the suburb and capture exact coordinates. Your venue name is set separately below."
+        hint="Powered by Mapbox. Bias is Australia; pick a suggestion to fill the suburb, capture exact coordinates, and suggest a venue name."
       >
         <MapboxAutocomplete
           value={query}
@@ -1307,12 +1410,12 @@ export function LocationSection() {
       </Field>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <Field label="Venue name">
-          <input
+        <Field label="Venue name" hint="Pick a saved venue or type a new one.">
+          <Combobox
             value={values.locationName}
-            onChange={(e) => set("locationName", e.target.value)}
+            options={venueOptions}
+            onChange={(next) => set("locationName", next)}
             placeholder="Bar Lucia"
-            className={inputClass()}
             required
           />
         </Field>

@@ -1,10 +1,9 @@
 import type { Metadata } from "next";
 import {
-  Caveat,
+  Archivo,
   Fraunces,
+  Hanken_Grotesk,
   IBM_Plex_Mono,
-  Manrope,
-  Shrikhand,
 } from "next/font/google";
 import { Toaster } from "sonner";
 import DevSupabaseDrawer from "@/components/dev-supabase-drawer";
@@ -14,12 +13,14 @@ import { SiteFooter, SiteHeader } from "@/components/site-chrome";
 import { auth } from "@/auth";
 import "./globals.css";
 
-const manrope = Manrope({
+// Body / UI grotesque — stand-in for River's Faktum / American Grotesk.
+const hanken = Hanken_Grotesk({
   variable: "--font-click-body",
   subsets: ["latin"],
   display: "swap",
 });
 
+// Editorial high-contrast display serif — stand-in for River's Copernicus.
 const fraunces = Fraunces({
   variable: "--font-click-display",
   subsets: ["latin"],
@@ -27,24 +28,19 @@ const fraunces = Fraunces({
   axes: ["opsz", "SOFT"],
 });
 
+// Condensed grotesque for eyebrows / labels / stat numerals — stand-in for
+// River's American Grotesk Condensed.
+const archivo = Archivo({
+  variable: "--font-click-condensed",
+  subsets: ["latin"],
+  display: "swap",
+  axes: ["wdth"],
+});
+
 const plexMono = IBM_Plex_Mono({
   variable: "--font-click-mono",
   subsets: ["latin"],
-  weight: ["500", "700"],
-  display: "swap",
-});
-
-const caveat = Caveat({
-  variable: "--font-click-script",
-  subsets: ["latin"],
-  weight: ["500", "700"],
-  display: "swap",
-});
-
-const shrikhand = Shrikhand({
-  variable: "--font-click-brand",
-  subsets: ["latin"],
-  weight: ["400"],
+  weight: ["400", "500", "700"],
   display: "swap",
 });
 
@@ -68,7 +64,7 @@ export default async function RootLayout({
     <html
       lang="en"
       data-scroll-behavior="smooth"
-      className={`${manrope.variable} ${fraunces.variable} ${plexMono.variable} ${caveat.variable} ${shrikhand.variable} h-full antialiased`}
+      className={`${hanken.variable} ${fraunces.variable} ${archivo.variable} ${plexMono.variable} h-full antialiased`}
     >
       {/* suppressHydrationWarning: browser extensions (e.g. ColorZilla's
           cz-shortcut-listen, Grammarly) inject attributes onto <body> before

@@ -83,9 +83,9 @@ export function MetricCard({ label, value, tone = "peach" }: { label: string; va
           : "bg-[color:var(--peach)] text-[color:var(--surface-deep)] border-[color:var(--line)]";
 
   return (
-    <article className={`rounded-2xl border-2 ${palette} hard-shadow-sm p-5`}>
-      <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] opacity-80">{label}</p>
-      <p className="font-display mt-2 text-5xl font-light leading-none">{value}</p>
+    <article className={`rounded-2xl border ${palette} hard-shadow-sm p-5`}>
+      <p className="font-condensed text-[0.72rem] font-semibold uppercase tracking-[0.16em] opacity-70">{label}</p>
+      <p className="font-display mt-2 text-5xl font-light leading-none tracking-[-0.02em]">{value}</p>
     </article>
   );
 }
@@ -115,13 +115,13 @@ export function InfoCard({
           : "bg-[color:var(--peach)]";
 
   return (
-    <article className="group relative rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-6 transition-transform duration-300 hover:-translate-y-1 hover:rotate-[-0.6deg] hard-shadow-sm hover:hard-shadow">
-      <span className={`block h-2 w-14 rounded-full ${accentBar}`} />
+    <article className="group relative rounded-2xl border border-[color:var(--line)] bg-[color:var(--cream)] p-6 transition-all duration-300 hover:-translate-y-1 hard-shadow-sm hover:hard-shadow">
+      <span className={`block h-1.5 w-12 rounded-full ${accentBar}`} />
       {eyebrow ? <p className="eyebrow mt-5">{eyebrow}</p> : null}
-      <h3 className="font-display mt-3 text-3xl font-light leading-[1.04] text-[color:var(--ink)]">
+      <h3 className="font-display mt-3 text-3xl font-light leading-[1.04] tracking-[-0.02em] text-[color:var(--ink)]">
         {title}
       </h3>
-      <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--mauve)]">{body}</p>
+      <p className="mt-3 text-[0.95rem] leading-7 text-[color:var(--mauve)]">{body}</p>
     </article>
   );
 }
@@ -148,13 +148,13 @@ export function Pill({
           ? "bg-[color:var(--peach)] text-[color:var(--surface-deep)]"
           : "bg-[color:var(--cream)] text-[color:var(--ink)]";
 
-  const base = `inline-flex max-w-full min-w-0 items-center whitespace-normal break-words rounded-full border-2 border-[color:var(--line)] ${palette} px-3 py-1 text-left text-[0.7rem] font-bold uppercase tracking-wider`;
+  const base = `inline-flex max-w-full min-w-0 items-center whitespace-normal break-words rounded-full border border-[color:var(--line)] ${palette} px-3.5 py-1.5 text-left font-condensed text-[0.72rem] font-semibold uppercase tracking-[0.12em]`;
 
   if (href) {
     return (
       <Link
         href={href}
-        className={`${base} transition-transform hover:-translate-x-[1px] hover:-translate-y-[1px] hover:border-[color:var(--rose)] hover:[box-shadow:2px_2px_0_0_var(--shadow-ink)]`}
+        className={`${base} transition-all duration-200 hover:-translate-y-0.5 hover:border-[color:var(--ink)]`}
       >
         {children}
       </Link>
@@ -173,19 +173,21 @@ export function LinkButton({
   children: ReactNode;
   variant?: "primary" | "secondary" | "light" | "ink";
 }) {
+  // River button voice: solid near-black primary, ghost secondary, electric
+  // lime as the "pop" CTA (great on dark bands). Sentence-case, soft lift.
   const className =
     variant === "secondary"
-      ? "border-2 border-[color:var(--line)] bg-[color:var(--champagne)] text-[color:var(--ink)] hover:bg-[color:var(--cream)]"
+      ? "border border-[color:var(--line-strong)] bg-transparent text-[color:var(--ink)] hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)] hover:border-transparent"
       : variant === "light"
-        ? "border-2 border-[color:var(--line)] bg-[color:var(--peach)] text-[color:var(--surface-deep)] hover:bg-[color:var(--peach-soft)]"
+        ? "bg-[color:var(--peach)] text-[color:var(--surface-deep)] hover:brightness-95 shadow-[0_1px_2px_rgba(22,24,29,0.06)]"
         : variant === "ink"
-          ? "border-2 border-[color:var(--line)] bg-[color:var(--ink)] text-[color:var(--champagne)] hover:bg-[color:var(--ink-deep)]"
-          : "border-2 border-[color:var(--line)] bg-[color:var(--rose)] text-[color:var(--surface-deep)] hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)]";
+          ? "bg-[color:var(--surface-deep)] text-[color:var(--on-deep)] hover:bg-black shadow-[0_1px_2px_rgba(22,24,29,0.06)]"
+          : "bg-[color:var(--surface-deep)] text-[color:var(--on-deep)] hover:bg-black shadow-[0_1px_2px_rgba(22,24,29,0.06)]";
 
   return (
     <Link
       href={href}
-      className={`group/btn inline-flex min-h-12 items-center gap-2 rounded-full px-6 text-sm font-bold tracking-wide hard-shadow-sm hover:-translate-x-[2px] hover:-translate-y-[2px] hover:[box-shadow:5px_5px_0_0_var(--shadow-ink)] ${className}`}
+      className={`group/btn inline-flex min-h-12 items-center gap-2 rounded-full px-6 text-[0.95rem] font-semibold tracking-[-0.005em] transition-all duration-200 hover:-translate-y-0.5 ${className}`}
     >
       {children}
       <span aria-hidden className="inline-block text-base transition-transform duration-300 group-hover/btn:translate-x-1">→</span>

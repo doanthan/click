@@ -95,6 +95,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ url });
   } catch (error) {
     console.error("event image upload failed", error);
-    return NextResponse.json({ error: "Upload failed." }, { status: 500 });
+    // Surface the underlying reason outside production so a local "Upload
+    // failed." toast actually says what broke (Supabase Storage error, sharp,
+    // etc.) instead of a generic message. Production stays opaque.
+    const detail =
+      process.env.NODE_ENV === "production"
+        ? "Upload failed."
+        : error instanceof Error
+          ? error.message
+          : "Upload failed.";
+    return NextResponse.json({ error: detail }, { status: 500 });
   }
 }

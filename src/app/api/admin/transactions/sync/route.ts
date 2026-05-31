@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { auth, isAdminEmail } from "@/auth";
 import {
+  reconcilePendingPayments,
   syncAllConnectAccounts,
   syncPayoutsForAllMerchants,
   syncRecentCharges,
@@ -54,6 +55,7 @@ export async function POST(request: Request) {
       payoutsUpserted: 0,
       accountsUpdated: 0,
       accountsScanned: 0,
+      bookingsReconciled: 0,
     };
 
     if (scope === "charges" || scope === "all") {
@@ -61,6 +63,11 @@ export async function POST(request: Request) {
       counts.chargesSeen = r.chargesSeen;
       counts.transactionsUpdated = r.transactionsUpdated;
       counts.refundsUpserted += r.refundsUpserted;
+      // Promote any paid-but-stuck seats (missed checkout webhooks). Charges-only
+      // sync is PI-keyed and can miss rows that never stored a payment intent, so
+      // this session-metadata sweep is the catch-all that confirms the attendee.
+      const recon = await reconcilePendingPayments({ sinceHours: sinceDays * 24 });
+      counts.bookingsReconciled = recon.reconciled;
     }
     if (scope === "payouts" || scope === "all") {
       const r = await syncPayoutsForAllMerchants({ sinceDays });

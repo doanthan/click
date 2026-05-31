@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { EventCreateProvider } from "@/components/event-create-wizard";
 import {
   getMerchantCategoryOptions,
+  getMerchantEventCreateOptions,
   getMerchantTagOptions,
   getProfileStatus,
 } from "@/lib/event-repository";
@@ -54,9 +55,10 @@ export default async function CreateEventLayout({
     );
   }
 
-  const [categoryRows, tagOptions] = await Promise.all([
+  const [categoryRows, tagOptions, createOptions] = await Promise.all([
     getMerchantCategoryOptions(),
     getMerchantTagOptions(),
+    getMerchantEventCreateOptions(status.merchantProfile.id),
   ]);
   const categoryOptions = categoryRows.map((c) => c.name);
 
@@ -67,6 +69,8 @@ export default async function CreateEventLayout({
           <EventCreateProvider
             categoryOptions={categoryOptions}
             tagOptions={tagOptions}
+            hostNameOptions={createOptions.hostNames}
+            venueOptions={createOptions.venues}
           >
             {children}
           </EventCreateProvider>

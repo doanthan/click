@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import {
+  attachCheckoutSession,
   attachPaymentIntent,
   createPaymentHold,
   markPaymentFailed,
@@ -149,6 +150,11 @@ export async function POST(_request: Request, context: RouteContext) {
       },
     });
 
+    // The session id is always present at creation and is our durable Stripe
+    // handle for reconciliation. The PaymentIntent is usually null here (Stripe
+    // creates it lazily on payment), so attach it only when present — the
+    // webhook / reconcile path backfills it once the buyer pays.
+    await attachCheckoutSession(hold.paymentTransactionId, checkoutSession.id);
     if (typeof checkoutSession.payment_intent === "string") {
       await attachPaymentIntent(hold.paymentTransactionId, checkoutSession.payment_intent);
     }

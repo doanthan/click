@@ -183,6 +183,7 @@ export function AdminTransactionsTable({
             payoutsUpserted: number;
             accountsUpdated: number;
             accountsScanned: number;
+            bookingsReconciled?: number;
           };
           error?: string;
         };
@@ -197,9 +198,10 @@ export function AdminTransactionsTable({
           payoutsUpserted: 0,
           accountsUpdated: 0,
           accountsScanned: 0,
+          bookingsReconciled: 0,
         };
         setSyncMessage(
-          `Synced: ${c.chargesSeen} charges seen · ${c.transactionsUpdated} txns updated · ${c.refundsUpserted} refunds · ${c.payoutsUpserted} payouts · ${c.accountsUpdated}/${c.accountsScanned} accounts`,
+          `Synced: ${c.chargesSeen} charges seen · ${c.transactionsUpdated} txns updated · ${c.refundsUpserted} refunds · ${c.payoutsUpserted} payouts · ${c.accountsUpdated}/${c.accountsScanned} accounts · ${c.bookingsReconciled ?? 0} bookings confirmed`,
         );
         router.refresh();
       } catch (error) {

@@ -1,37 +1,45 @@
 @import "tailwindcss";
 
 :root {
-  /* Click — Event-first palette from design.md */
-  --ink: #340068;          /* Indigo Ink — brand anchor, headings, borders */
-  --ink-deep: #240048;     /* Deeper variant for hover/contrast */
-  --rose: #FF6978;         /* Bubblegum Pink — CTA, primary actions */
-  --rose-soft: #ff9aa4;    /* Lighter bubblegum for hovers */
-  --champagne: #FFFCF9;    /* Porcelain — page background */
-  --champagne-deep: #f5edf4;
-  --peach: #B1EDE8;        /* Icy Aqua — legacy accent token */
-  --peach-soft: #d8f7f4;
-  --mauve: #6D435A;        /* Mauve Shadow — secondary text, overlays */
-  --cream: #fff6f7;        /* Subtle elevated surface */
-  --punch: #ffd84d;        /* Ticket-stub accent */
+  /* Click — "River"-style editorial palette: warm cream + near-black ink,
+     one electric-lime accent, a warm coral secondary, cool-gray support.
+     Token NAMES are kept stable so the whole app re-skins coherently; only
+     their VALUES change. (--peach is always paired with dark text in the
+     codebase, so it's the safe home for the bright lime; --rose stays a
+     mid-luminance accent because it's used both as text and as a fill.) */
+  --ink: #16181D;          /* Near-black ink — headings, body, primary */
+  --ink-deep: #000000;     /* Pure black for hover/contrast */
+  --rose: #FF5A3C;         /* Warm coral — secondary accent / emphasis */
+  --rose-soft: #ff8369;    /* Lighter coral for hovers */
+  --champagne: #F4F1EA;    /* Warm cream — page background */
+  --champagne-deep: #ECE7DD;
+  --peach: #E2FF05;        /* ELECTRIC LIME — the signature accent */
+  --peach-soft: #EEFFA0;   /* Pale lime wash */
+  --mauve: #5C616B;        /* Cool gray — secondary text */
+  --cream: #FBF9F4;        /* Subtle elevated surface (cards on cream) */
+  --punch: #E2FF05;        /* Accent → folds into the lime */
 
   /* Tokens that retain their meaning across modes */
-  --noise-dot-a: rgba(52, 0, 104, 0.08);
-  --noise-dot-b: rgba(255, 105, 120, 0.05);
-  --grid-line: rgba(52, 0, 104, 0.06);
-  --hairline: rgba(52, 0, 104, 0.20);
+  --noise-dot-a: rgba(22, 24, 29, 0.05);
+  --noise-dot-b: rgba(22, 24, 29, 0.03);
+  --grid-line: rgba(22, 24, 29, 0.05);
+  --hairline: rgba(22, 24, 29, 0.12);
 
-  /* "Anchor dark" — sections that always read as dramatic dark
-     bands (marquee strip, "Join once", footer). */
-  --surface-deep: #340068;     /* Indigo Ink in light, deeper in dark */
-  --surface-deep-2: #240048;   /* elevated card on deep surface */
-  --on-deep: #FFF8EE;          /* foreground on deep surface */
-  --on-deep-soft: rgba(255, 248, 238, 0.72);
+  /* "Anchor dark" — sections that always read as dramatic near-black bands
+     (category strip, "Join once", footer). */
+  --surface-deep: #16181D;     /* Near-black band + dark text on lime/coral */
+  --surface-deep-2: #202329;   /* elevated card on deep surface */
+  --on-deep: #F4F1EA;          /* foreground on deep surface */
+  --on-deep-soft: rgba(244, 241, 234, 0.70);
 
-  /* Border + shadow tokens that flip to softer values in dark mode
-     (in light mode they ARE --ink). */
-  --line: var(--ink);          /* default 2px borders */
-  --line-soft: rgba(52, 0, 104, 0.18);
-  --shadow-ink: var(--ink);    /* hard offset shadow color */
+  /* Borders: River uses quiet hairlines, not heavy frames. --line is a soft
+     warm hairline so existing `border-2 border-line` reads as refined, not
+     zine-y. --shadow-ink is a faint translucent dark for any inline offset
+     shadows that still reference it. */
+  --line: rgba(22, 24, 29, 0.14);
+  --line-strong: rgba(22, 24, 29, 0.55);
+  --line-soft: rgba(22, 24, 29, 0.08);
+  --shadow-ink: rgba(22, 24, 29, 0.12);
 
   --background: var(--champagne);
   --foreground: var(--ink);
@@ -42,31 +50,32 @@
 @media (prefers-color-scheme: dark) {
   :root {
     /* Keep the event marketplace light even for users in system dark mode. */
-    --ink: #340068;
-    --ink-deep: #240048;
-    --rose: #FF6978;
-    --rose-soft: #ff9aa4;
-    --champagne: #FFFCF9;
-    --champagne-deep: #f5edf4;
-    --peach: #B1EDE8;
-    --peach-soft: #d8f7f4;
-    --mauve: #6D435A;
-    --cream: #fff6f7;
-    --punch: #ffd84d;
+    --ink: #16181D;
+    --ink-deep: #000000;
+    --rose: #FF5A3C;
+    --rose-soft: #ff8369;
+    --champagne: #F4F1EA;
+    --champagne-deep: #ECE7DD;
+    --peach: #E2FF05;
+    --peach-soft: #EEFFA0;
+    --mauve: #5C616B;
+    --cream: #FBF9F4;
+    --punch: #E2FF05;
 
-    --noise-dot-a: rgba(52, 0, 104, 0.08);
-    --noise-dot-b: rgba(255, 105, 120, 0.05);
-    --grid-line: rgba(52, 0, 104, 0.06);
-    --hairline: rgba(52, 0, 104, 0.20);
+    --noise-dot-a: rgba(22, 24, 29, 0.05);
+    --noise-dot-b: rgba(22, 24, 29, 0.03);
+    --grid-line: rgba(22, 24, 29, 0.05);
+    --hairline: rgba(22, 24, 29, 0.12);
 
-    --surface-deep: #340068;
-    --surface-deep-2: #240048;
-    --on-deep: #FFFCF9;
-    --on-deep-soft: rgba(255, 252, 249, 0.72);
+    --surface-deep: #16181D;
+    --surface-deep-2: #202329;
+    --on-deep: #F4F1EA;
+    --on-deep-soft: rgba(244, 241, 234, 0.70);
 
-    --line: var(--ink);
-    --line-soft: rgba(52, 0, 104, 0.18);
-    --shadow-ink: var(--ink);
+    --line: rgba(22, 24, 29, 0.14);
+    --line-strong: rgba(22, 24, 29, 0.55);
+    --line-soft: rgba(22, 24, 29, 0.08);
+    --shadow-ink: rgba(22, 24, 29, 0.12);
 
     color-scheme: light;
   }
@@ -90,12 +99,16 @@
   --color-surface-deep-2: var(--surface-deep-2);
   --color-on-deep: var(--on-deep);
   --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
   --color-line-soft: var(--line-soft);
   --font-sans: var(--font-click-body);
   --font-mono: var(--font-click-mono);
   --font-display: var(--font-click-display);
-  --font-script: var(--font-click-script);
-  --font-brand: var(--font-click-brand);
+  --font-condensed: var(--font-click-condensed);
+  /* Legacy aliases — `font-script` / `font-brand` now resolve to the
+     editorial serif so the 7 files still using them stay coherent. */
+  --font-script: var(--font-click-display);
+  --font-brand: var(--font-click-display);
 }
 
 html {
@@ -106,11 +119,11 @@ html {
 body {
   background: var(--champagne);
   color: var(--ink);
-  font-family: var(--font-click-body), sans-serif;
-  font-feature-settings: "ss01", "ss02", "cv11";
+  font-family: var(--font-click-body), system-ui, sans-serif;
   overflow-x: clip;
   cursor: default;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -118,40 +131,55 @@ body {
 .fit-viewport, .fit-viewport * { min-width: 0; }
 .fit-viewport { max-width: 100vw; }
 
-::selection { background: var(--peach); color: var(--ink); }
+::selection { background: var(--peach); color: var(--surface-deep); }
 
-/* ---------- Typography helpers ---------- */
-.font-display { font-family: var(--font-click-display), serif; }
-.font-script  { font-family: var(--font-click-script), cursive; }
-.font-mono    { font-family: var(--font-click-mono), monospace; }
-.font-brand   { font-family: var(--font-click-brand), "Fraunces", serif; font-weight: 400; }
+/* ---------- Typography helpers ----------
+   Display = high-contrast editorial serif (Copernicus stand-in). Used big
+   and tight: the redesign sets these inline, but the defaults below keep the
+   serif looking intentional wherever .font-display is applied. */
+.font-display {
+  font-family: var(--font-click-display), Georgia, serif;
+  font-optical-sizing: auto;
+  letter-spacing: -0.02em;
+}
+/* Legacy "script"/"brand" → resolve to the same editorial serif, italic, so
+   the few pages still using them read as refined accents, not handwriting. */
+.font-script  { font-family: var(--font-click-display), Georgia, serif; font-style: italic; }
+.font-brand   { font-family: var(--font-click-display), Georgia, serif; font-weight: 500; letter-spacing: -0.02em; }
+.font-mono    { font-family: var(--font-click-mono), ui-monospace, monospace; }
+/* Condensed grotesque for labels / numerals (American Grotesk Cond stand-in). */
+.font-condensed {
+  font-family: var(--font-click-condensed), var(--font-click-body), sans-serif;
+  font-stretch: 82%;
+}
 
 .click-wordmark {
-  font-family: var(--font-click-brand), "Fraunces", serif;
-  font-weight: 400;
-  letter-spacing: -0.025em;
+  font-family: var(--font-click-display), Georgia, serif;
+  font-weight: 600;
+  letter-spacing: -0.04em;
   line-height: 0.9;
   display: inline-flex;
   align-items: baseline;
 }
 .click-wordmark__period {
   display: inline-block;
-  width: 0.34em;
-  height: 0.34em;
-  margin-left: 0.06em;
+  width: 0.26em;
+  height: 0.26em;
+  margin-left: 0.04em;
   border-radius: 999px;
   background: var(--peach);
-  border: 2px solid var(--line);
   align-self: flex-end;
-  margin-bottom: 0.18em;
+  margin-bottom: 0.14em;
 }
 
+/* Eyebrow — condensed grotesque, wide-tracked uppercase (River's label voice). */
 .eyebrow {
-  font-family: var(--font-click-mono), monospace;
-  font-weight: 700;
-  letter-spacing: 0.22em;
+  font-family: var(--font-click-condensed), var(--font-click-body), sans-serif;
+  font-weight: 600;
+  font-stretch: 82%;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
-  font-size: 0.72rem;
+  font-size: 0.74rem;
   color: var(--mauve);
 }
 
@@ -222,55 +250,54 @@ body {
 }
 
 /* ---------- Shadows ----------
-   Light: solid offset in --ink (the editorial-zine signature).
-   Dark : same offset shape but cast as a deep purple-black behind the
-          card — gives depth instead of glare. */
+   River uses quiet, realistic elevation — soft, vertically-biased shadows
+   rather than the old hard zine offset. These class names are reused
+   app-wide, so redefining them here re-skins every surface at once. */
 .hard-shadow {
-  box-shadow: 6px 6px 0 0 var(--shadow-ink);
+  box-shadow: 0 1px 2px rgba(22, 24, 29, 0.04), 0 12px 28px -10px rgba(22, 24, 29, 0.16);
 }
 .hard-shadow-rose {
-  box-shadow: 6px 6px 0 0 var(--rose);
+  box-shadow: 0 1px 2px rgba(22, 24, 29, 0.04), 0 12px 28px -10px rgba(255, 90, 60, 0.30);
 }
 .hard-shadow-peach {
-  box-shadow: 6px 6px 0 0 var(--peach);
+  box-shadow: 0 1px 2px rgba(22, 24, 29, 0.04), 0 12px 28px -10px rgba(146, 168, 0, 0.35);
 }
 .hard-shadow-sm {
-  box-shadow: 3px 3px 0 0 var(--shadow-ink);
+  box-shadow: 0 1px 2px rgba(22, 24, 29, 0.05), 0 6px 16px -8px rgba(22, 24, 29, 0.14);
 }
 .hard-shadow-lg {
-  box-shadow: 10px 10px 0 0 var(--shadow-ink);
+  box-shadow: 0 2px 6px rgba(22, 24, 29, 0.05), 0 28px 60px -18px rgba(22, 24, 29, 0.22);
 }
 .hard-shadow-deep {
-  box-shadow: 6px 6px 0 0 var(--surface-deep-2);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18), 0 28px 60px -18px rgba(0, 0, 0, 0.45);
 }
 .hard-shadow-deep-sm {
-  box-shadow: 3px 3px 0 0 var(--surface-deep-2);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.20), 0 10px 24px -10px rgba(0, 0, 0, 0.35);
 }
 
-/* ---------- Sticker / pill ---------- */
+/* ---------- Sticker / pill ----------
+   Refined to a quiet capsule: hairline border, soft tint, no rotate-wiggle. */
 .sticker {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.45rem 0.95rem;
+  gap: 0.45rem;
+  padding: 0.42rem 0.9rem;
   border-radius: 999px;
-  border: 2px solid var(--line);
-  background: var(--champagne);
-  font-weight: 800;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--cream) 86%, transparent);
+  font-weight: 600;
   font-size: 0.78rem;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.01em;
   color: var(--ink);
-  box-shadow: 3px 3px 0 0 var(--shadow-ink);
-  transition: transform 200ms cubic-bezier(.34,1.56,.64,1), box-shadow 200ms ease;
+  box-shadow: 0 1px 2px rgba(22, 24, 29, 0.05);
+  transition: transform 200ms ease, box-shadow 200ms ease, background-color 200ms ease;
 }
-.sticker:hover { transform: translate(-2px, -2px) rotate(-2deg); box-shadow: 5px 5px 0 0 var(--shadow-ink); }
-.sticker--rose { background: var(--rose); color: var(--champagne); }
-/* --peach stays a light-orange in BOTH modes, so the sticker text must be
-   a fixed dark. --surface-deep is #340068 in light and #160930 in dark —
-   both give ≥10:1 against peach. (--cream flips to a dark plum in dark
-   mode, so cream stickers correctly inherit --ink which also flips.) */
-.sticker--peach { background: var(--peach); color: var(--surface-deep); }
-.sticker--ink { background: var(--ink); color: var(--champagne); }
+.sticker:hover { transform: translateY(-1px); box-shadow: 0 6px 16px -8px rgba(22, 24, 29, 0.22); }
+.sticker--rose { background: var(--rose); color: #fff; border-color: transparent; }
+/* --peach is the electric lime in both modes; pair it with the near-black
+   --surface-deep so text stays legible on the bright accent. */
+.sticker--peach { background: var(--peach); color: var(--surface-deep); border-color: transparent; }
+.sticker--ink { background: var(--surface-deep); color: var(--on-deep); border-color: transparent; }
 .sticker--cream { background: var(--cream); }
 
 /* ---------- Tilt / wiggle ---------- */
@@ -393,7 +420,7 @@ button:focus-visible, a:focus-visible, select:focus-visible, textarea:focus-visi
 
 /* ---------- Squiggle underline (decorative) ---------- */
 .squiggle {
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='80' height='10' viewBox='0 0 80 10'><path d='M0 5 Q 10 0 20 5 T 40 5 T 60 5 T 80 5' stroke='%23FF6978' stroke-width='2.4' fill='none' stroke-linecap='round'/></svg>");
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='80' height='10' viewBox='0 0 80 10'><path d='M0 5 Q 10 0 20 5 T 40 5 T 60 5 T 80 5' stroke='%23FF5A3C' stroke-width='2.4' fill='none' stroke-linecap='round'/></svg>");
   background-repeat: repeat-x;
   background-position: 0 100%;
   background-size: 80px 10px;

@@ -56,6 +56,7 @@ function formatPrice(cents: number) {
 
 function attendeeRowTone(status: MerchantAttendeeRow["status"]) {
   if (status === "confirmed") return "cream" as const;
+  if (status === "pending_payment") return "rose" as const;
   if (status === "waitlisted") return "peach" as const;
   return "ink" as const;
 }
@@ -82,6 +83,13 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
   const filledPercent = Math.min((event.confirmed / event.capacity) * 100, 100);
   const confirmedAttendees = event.attendees.filter(
     (attendee) => attendee.status === "confirmed",
+  );
+  // Live (unexpired) payment holds. They occupy a seat and so are already
+  // counted in `event.confirmed`, but they're not yet paid — surfacing them as
+  // their own group is what makes the "Confirmed X / capacity" metric reconcile
+  // with the named attendee list below.
+  const awaitingPaymentAttendees = event.attendees.filter(
+    (attendee) => attendee.status === "pending_payment",
   );
   const waitlistedAttendees = event.attendees.filter(
     (attendee) => attendee.status === "waitlisted",
@@ -178,6 +186,30 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
             </p>
           )}
         </section>
+
+        {awaitingPaymentAttendees.length > 0 ? (
+          <section className="mt-10">
+            <div className="flex items-end justify-between gap-4">
+              <div>
+                <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
+                  Awaiting payment
+                </p>
+                <h2 className="font-display mt-2 text-3xl font-light leading-tight">
+                  {awaitingPaymentAttendees.length}{" "}
+                  {awaitingPaymentAttendees.length === 1 ? "seat" : "seats"}{" "}
+                  reserved, payment in progress
+                </h2>
+                <p className="mt-2 text-sm font-semibold text-[color:var(--mauve)]">
+                  These seats count toward your capacity while the buyer
+                  completes checkout. They confirm automatically once payment
+                  clears, or free up if the hold expires.
+                </p>
+              </div>
+              <Pill tone="rose">{awaitingPaymentAttendees.length}</Pill>
+            </div>
+            <AttendeeTable rows={awaitingPaymentAttendees} />
+          </section>
+        ) : null}
 
         {waitlistedAttendees.length > 0 ? (
           <section className="mt-10">

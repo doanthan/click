@@ -28,8 +28,16 @@ import {
   getConnectedAccountStatus,
   type ConnectAccountStatus,
 } from "./stripe-connect";
-import { markPaymentSucceeded, updateMerchantConnectStatus } from "./event-repository";
+import {
+  attachPaymentIntent,
+  ensureProfileForSession,
+  getMerchantProfile,
+  markPaymentFailed,
+  markPaymentSucceeded,
+  updateMerchantConnectStatus,
+} from "./event-repository";
 import { writeAuditLog } from "@/utils/admin/audit-logger";
+import type { Session } from "next-auth";
 
 type RefundReason = "duplicate" | "fraudulent" | "requested_by_customer";
 
@@ -197,6 +205,24 @@ export async function syncTransactionFromStripe(
     }
 
     await client.query("commit");
+
+    // If this charge is a clean success, make sure the seat is promoted too.
+    // syncTransactionFromStripe only enriches the ledger row; on its own it
+    // would leave a buyer's `event_attendees` stuck on 'pending_payment' when
+    // the original `checkout.session.completed` webhook was missed (the case
+    // the admin "Sync from Stripe" button exists to recover). markPaymentSucceeded
+    // is idempotent — it no-ops the email/notification when nothing actually
+    // flipped — so calling it for every already-confirmed paid charge is safe.
+    if (derivedStatus === "paid") {
+      try {
+        await markPaymentSucceeded(txnId);
+      } catch (error) {
+        if (process.env.CLICK_DB_DEBUG === "true") {
+          console.warn(`seat promotion failed for txn ${txnId}`, error);
+        }
+      }
+    }
+
     return { updated: true, refundsUpserted };
   } catch (error) {
     await client.query("rollback");
@@ -240,8 +266,122 @@ export async function reconcileCheckoutSession(
   const paymentTransactionId = session.metadata?.payment_transaction_id ?? null;
   if (!paymentTransactionId) return { confirmed: false };
 
+  // Backfill the PaymentIntent (null at session creation) so the PI-keyed
+  // refund/admin sync paths can find this row later. No-op if already set.
+  if (typeof session.payment_intent === "string") {
+    await attachPaymentIntent(paymentTransactionId, session.payment_intent);
+  }
   await markPaymentSucceeded(paymentTransactionId);
   return { confirmed: true };
+}
+
+// Per-merchant self-heal used by the Finances tab. The webhook
+// (`checkout.session.completed`) is the primary path that flips a transaction to
+// 'paid'/'failed'; this is the backstop for when it never arrives. Rather than
+// scan every recent Stripe session (what reconcilePendingPayments does for the
+// admin button), it retrieves only THIS merchant's pending rows by the
+// `stripe_checkout_session_id` we now stamp at checkout — a handful of cheap
+// per-row retrieves — and flips each to paid (session paid) or failed (session
+// expired). markPaymentSucceeded / markPaymentFailed are idempotent, so this is
+// safe to run on every page load and races harmlessly with the webhook.
+export async function reconcilePendingTransactionsForMerchant(
+  session: Session | null,
+  { limit = 25 }: { limit?: number } = {},
+): Promise<{ checked: number; paid: number; failed: number }> {
+  const stripe = getStripeClient();
+  const pool = getPostgresPool();
+  if (!stripe || !pool || !session) return { checked: 0, paid: 0, failed: 0 };
+
+  let merchantId: string;
+  try {
+    const profile = await ensureProfileForSession(session);
+    const merchant = await getMerchantProfile(pool, profile.id);
+    if (!merchant) return { checked: 0, paid: 0, failed: 0 };
+    merchantId = merchant.id;
+  } catch {
+    return { checked: 0, paid: 0, failed: 0 };
+  }
+
+  const pending = await pool.query<{ id: string; session_id: string }>(
+    `
+      select id::text, stripe_checkout_session_id as session_id
+      from payment_transactions
+      where merchant_profile_id = $1::uuid
+        and status = 'pending'
+        and stripe_checkout_session_id is not null
+      order by created_at desc
+      limit $2
+    `,
+    [merchantId, limit],
+  );
+
+  let checked = 0;
+  let paid = 0;
+  let failed = 0;
+  for (const row of pending.rows) {
+    checked += 1;
+    try {
+      const s = await stripe.checkout.sessions.retrieve(row.session_id);
+      if (s.payment_status === "paid") {
+        if (typeof s.payment_intent === "string") {
+          await attachPaymentIntent(row.id, s.payment_intent);
+        }
+        await markPaymentSucceeded(row.id);
+        paid += 1;
+      } else if (s.status === "expired") {
+        await markPaymentFailed(row.id);
+        failed += 1;
+      }
+    } catch (error) {
+      if (process.env.CLICK_DB_DEBUG === "true") {
+        console.warn(`reconcile failed for txn ${row.id}`, error);
+      }
+    }
+  }
+
+  return { checked, paid, failed };
+}
+
+// Server-side backstop sweep for paid-but-stuck bookings. Where
+// `reconcileCheckoutSession` depends on the buyer landing back on the success
+// URL (browser-driven, fragile), this walks recent Checkout Sessions Stripe
+// reports as `paid` and promotes any whose seat never confirmed — covering
+// missed webhooks AND closed-tab returns. It keys off the
+// `payment_transaction_id` we stamp into the session metadata in the checkout
+// route, so it recovers rows that have no `stripe_payment_intent_id` yet (which
+// `syncTransactionFromStripe`, being PI-keyed, cannot match). markPaymentSucceeded
+// is idempotent, so already-confirmed sessions are cheap no-ops.
+export async function reconcilePendingPayments(
+  { sinceHours = 72 }: { sinceHours?: number } = {},
+): Promise<{ sessionsScanned: number; reconciled: number }> {
+  const stripe = getStripeClient();
+  if (!stripe) stripeNotConfigured();
+  const pool = getPostgresPool();
+  if (!pool) databaseUnavailable();
+
+  const gte = Math.floor((Date.now() - sinceHours * HOUR_MS) / 1000);
+  let sessionsScanned = 0;
+  let reconciled = 0;
+
+  for await (const session of stripe.checkout.sessions.list({
+    limit: 100,
+    created: { gte },
+  })) {
+    sessionsScanned += 1;
+    if (session.payment_status !== "paid") continue;
+    const paymentTransactionId = session.metadata?.payment_transaction_id ?? null;
+    if (!paymentTransactionId) continue;
+    try {
+      await markPaymentSucceeded(paymentTransactionId);
+      reconciled += 1;
+    } catch (error) {
+      if (process.env.CLICK_DB_DEBUG === "true") {
+        console.warn(`reconcile failed for txn ${paymentTransactionId}`, error);
+      }
+    }
+  }
+
+  return { sessionsScanned, reconciled };
 }
 
 // ---------------------------------------------------------------------------

@@ -21,6 +21,7 @@ import { buildEventMediaGallery, type MediaItem } from "./event-media";
 import { logEmailEvent, sendTransactionalEmail } from "./email";
 import { regionForEvent, type Region } from "./geo";
 import { getPostgresPool } from "./postgres";
+import { toTitleCase } from "./text-format";
 import { writeAuditLog } from "@/utils/admin/audit-logger";
 
 type EventRow = {
@@ -1389,7 +1390,7 @@ async function registerLocallyForEvent(eventId: string, session: Session | null)
   };
 }
 
-async function ensureProfileForSession(session: Session | null) {
+export async function ensureProfileForSession(session: Session | null) {
   const pool = getPostgresPool();
   const email = getSessionEmail(session);
 
@@ -1492,7 +1493,7 @@ async function backfillAvatarFromRemote(profileId: string, sourceUrl: string) {
   }
 }
 
-async function getMerchantProfile(pool: ReturnType<typeof getPostgresPool>, profileId: string) {
+export async function getMerchantProfile(pool: ReturnType<typeof getPostgresPool>, profileId: string) {
   if (!pool) return null;
   const result = await pool.query<MerchantProfileRow>(
     `
@@ -1548,7 +1549,7 @@ export type MerchantAttendeeRow = {
   attendeeId: string;
   displayName: string;
   email: string;
-  status: "confirmed" | "waitlisted" | "cancelled" | "refunded";
+  status: "confirmed" | "pending_payment" | "waitlisted" | "cancelled" | "refunded";
   rsvpAt: string;
 };
 
@@ -1694,9 +1695,16 @@ export async function getMerchantEventDetail(
       from event_attendees attendee
       join profiles attendee_profile on attendee_profile.id = attendee.profile_id
       where attendee.event_id = $1::uuid
-        and attendee.status in ('confirmed', 'waitlisted')
+        and (
+          attendee.status in ('confirmed', 'waitlisted')
+          or (attendee.status = 'pending_payment' and attendee.hold_expires_at > now())
+        )
       order by
-        case attendee.status when 'confirmed' then 0 else 1 end,
+        case attendee.status
+          when 'confirmed' then 0
+          when 'pending_payment' then 1
+          else 2
+        end,
         attendee.created_at asc
     `,
     [row.id],
@@ -2351,7 +2359,10 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
     // to 'live'. New/untrusted merchants still land in 'pending' for manual review.
     const autoApprove = merchantProfile.auto_approve_events === true;
     const eventStatus = autoApprove ? "live" : "pending";
-    const title = input.title.trim();
+    // Event titles are always title-cased ("table for eight" → "Table for
+    // Eight"). The wizard does this live as the merchant types; we redo it here
+    // so titles from any other path (or a bypassed client) stay consistent.
+    const title = toTitleCase(input.title.trim());
     const description = input.description.trim();
     const startsAt = new Date(input.startsAt);
     const capacity = Math.max(input.capacity, 1);
@@ -4822,6 +4833,66 @@ export async function getMerchantTagOptions(): Promise<string[]> {
   return result.rows.map((r) => r.label);
 }
 
+export type MerchantEventCreateOptions = {
+  // Host names the merchant can pick instead of retyping every event: their
+  // business / trading name plus any group_name they've used before.
+  hostNames: string[];
+  // Venue names reused from their past events, for the location step's combobox.
+  venues: string[];
+};
+
+/**
+ * Dropdown options for the event-create wizard, scoped to one merchant. We don't
+ * keep a separate "host names" or "venues" table — instead we derive the lists
+ * from the merchant's profile and the events they've already created, so the
+ * dropdowns fill themselves in as they host more. Both are still freetext in the
+ * UI; these are just no-retyping suggestions.
+ */
+export async function getMerchantEventCreateOptions(
+  merchantProfileId: string,
+): Promise<MerchantEventCreateOptions> {
+  const pool = getPostgresPool();
+  if (!pool) return { hostNames: [], venues: [] };
+  const result = await pool.query<{
+    host_names: string[] | null;
+    venues: string[] | null;
+  }>(
+    `
+      with mp as (
+        select business_name, nullif(trading_name, '') as trading_name
+        from merchant_profiles
+        where id = $1::uuid
+      ),
+      host_names as (
+        select business_name as name from mp
+        union
+        select trading_name from mp where trading_name is not null
+        union
+        select distinct group_name
+          from events
+         where merchant_profile_id = $1::uuid
+           and coalesce(group_name, '') <> ''
+      ),
+      venue_names as (
+        select distinct location_name as name
+          from events
+         where merchant_profile_id = $1::uuid
+           and coalesce(location_name, '') <> ''
+      )
+      select
+        (select array_agg(name order by name)
+           from host_names where coalesce(name, '') <> '') as host_names,
+        (select array_agg(name order by name) from venue_names) as venues
+    `,
+    [merchantProfileId],
+  );
+  const row = result.rows[0];
+  return {
+    hostNames: row?.host_names ?? [],
+    venues: row?.venues ?? [],
+  };
+}
+
 export type MerchantDocumentType =
   | "abn_certificate"
   | "public_liability_insurance"
@@ -5966,13 +6037,35 @@ export async function attachPaymentIntent(
   const pool = getPostgresPool();
   if (!pool || !stripePaymentIntentId) return;
 
+  // Only set the PI once — don't clobber an id a later sync already wrote.
   await pool.query(
     `
       update payment_transactions
       set stripe_payment_intent_id = $2, updated_at = now()
-      where id = $1::uuid
+      where id = $1::uuid and stripe_payment_intent_id is null
     `,
     [paymentTransactionId, stripePaymentIntentId],
+  );
+}
+
+// Persists the Stripe Checkout Session id captured at session creation. Unlike
+// the PaymentIntent (null until the buyer pays), the session id is available
+// immediately, so this is the durable Stripe handle we reconcile pending rows
+// against later — see reconcilePendingTransactions in stripe-sync.ts.
+export async function attachCheckoutSession(
+  paymentTransactionId: string,
+  stripeCheckoutSessionId: string | null,
+) {
+  const pool = getPostgresPool();
+  if (!pool || !stripeCheckoutSessionId) return;
+
+  await pool.query(
+    `
+      update payment_transactions
+      set stripe_checkout_session_id = $2, updated_at = now()
+      where id = $1::uuid and stripe_checkout_session_id is null
+    `,
+    [paymentTransactionId, stripeCheckoutSessionId],
   );
 }
 
@@ -5984,6 +6077,12 @@ export async function markPaymentSucceeded(paymentTransactionId: string) {
   try {
     await client.query("begin");
 
+    // Load + lock the payment row. We deliberately do NOT gate the lookup on
+    // `status <> 'paid'`: another path (a missed-webhook backstop, or
+    // syncTransactionFromStripe enriching the ledger) may have already flipped
+    // the txn to 'paid' while leaving the seat stuck on 'pending_payment'. The
+    // `for update` lock serialises concurrent webhook/reconcile/sync callers so
+    // the side effects below fire exactly once.
     const paymentResult = await client.query<{
       id: string;
       event_id: string;
@@ -5997,10 +6096,7 @@ export async function markPaymentSucceeded(paymentTransactionId: string) {
       profile_email: string;
     }>(
       `
-        update payment_transactions
-        set status = 'paid', updated_at = now()
-        where id = $1::uuid and status <> 'paid'
-        returning
+        select
           id::text,
           event_id::text,
           profile_id::text,
@@ -6011,52 +6107,75 @@ export async function markPaymentSucceeded(paymentTransactionId: string) {
           (select slug from events where id = payment_transactions.event_id) as event_slug,
           (select display_name from profiles where id = payment_transactions.profile_id) as display_name,
           (select email::text from profiles where id = payment_transactions.profile_id) as profile_email
+        from payment_transactions
+        where id = $1::uuid
+        for update
       `,
       [paymentTransactionId],
     );
     const payment = paymentResult.rows[0];
     if (!payment) {
-      // Already paid (webhook retry) — exit cleanly.
+      // Unknown txn id (foreign Stripe session / dev data) — exit cleanly.
       await client.query("rollback");
       return;
     }
 
-    await client.query(
+    // Flip the ledger forward. Track whether THIS call did it so a retry that
+    // finds it already 'paid' doesn't re-send the receipt.
+    const txnFlipped = payment.status !== "paid";
+    if (txnFlipped) {
+      await client.query(
+        `update payment_transactions set status = 'paid', updated_at = now() where id = $1::uuid`,
+        [paymentTransactionId],
+      );
+    }
+
+    // Always promote the seat idempotently — independent of the ledger flip —
+    // so a row left 'pending_payment' by a ledger-only path still self-heals.
+    const attendeeUpdate = await client.query(
       `
         update event_attendees
         set status = 'confirmed', hold_expires_at = null, updated_at = now()
-        where event_id = $1::uuid and profile_id = $2::uuid
+        where event_id = $1::uuid and profile_id = $2::uuid and status <> 'confirmed'
       `,
       [payment.event_id, payment.profile_id],
     );
+    const attendeeFlipped = (attendeeUpdate.rowCount ?? 0) > 0;
 
-    await client.query(
-      `
-        insert into notifications (profile_id, title, body, action_url)
-        values ($1::uuid, $2, $3, $4)
-      `,
-      [
-        payment.profile_id,
-        "Payment confirmed",
-        `${payment.event_title} is booked for ${payment.display_name}.`,
-        "/dashboard/calendar",
-      ],
-    );
+    // Notify/email only on a genuine first transition (ledger OR seat just
+    // flipped). Webhook retries and backstop re-runs are no-ops past this point.
+    const firstTransition = txnFlipped || attendeeFlipped;
+    if (firstTransition) {
+      await client.query(
+        `
+          insert into notifications (profile_id, title, body, action_url)
+          values ($1::uuid, $2, $3, $4)
+        `,
+        [
+          payment.profile_id,
+          "Payment confirmed",
+          `${payment.event_title} is booked for ${payment.display_name}.`,
+          "/dashboard/calendar",
+        ],
+      );
+    }
 
     await client.query("commit");
 
-    // Use the same templated rsvp-attendee / rsvp-merchant flow that free RSVPs
-    // already trigger via registerForEvent, passing the receipt so the price
-    // slot shows "$25 · Paid" instead of the event's listed price. Fire-and-
-    // forget — failures inside logRsvpEmails warn-log and never throw, so a
-    // template/email hiccup can't roll back the booking.
-    void logRsvpEmails(pool, payment.event_id, payment.profile_id, {
-      amountPaidCents: payment.amount_cents,
-      currency: payment.currency,
-    });
+    if (firstTransition) {
+      // Use the same templated rsvp-attendee / rsvp-merchant flow that free
+      // RSVPs already trigger via registerForEvent, passing the receipt so the
+      // price slot shows "$25 · Paid" instead of the event's listed price.
+      // Fire-and-forget — failures inside logRsvpEmails warn-log and never
+      // throw, so a template/email hiccup can't roll back the booking.
+      void logRsvpEmails(pool, payment.event_id, payment.profile_id, {
+        amountPaidCents: payment.amount_cents,
+        currency: payment.currency,
+      });
 
-    // Plus the GST tax receipt for the charged amount. Fire-and-forget.
-    void logPaymentReceiptEmail(pool, payment.id);
+      // Plus the GST tax receipt for the charged amount. Fire-and-forget.
+      void logPaymentReceiptEmail(pool, payment.id);
+    }
   } catch (error) {
     await client.query("rollback");
     throw error;

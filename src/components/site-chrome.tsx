@@ -42,48 +42,48 @@ export async function SiteHeader() {
   }
 
   return (
-    <header className="sticky top-0 z-50 border-b-2 border-[color:var(--line)] bg-[color:var(--champagne)]/95 backdrop-blur-xl">
-      <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
+    <header className="sticky top-0 z-50 border-b border-[color:var(--line)] bg-[color:var(--champagne)]/85 backdrop-blur-xl">
+      <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3.5 sm:px-6">
         <Link
           href="/"
-          className="group flex items-center gap-2 transition-transform duration-300 hover:-rotate-2"
+          className="group flex items-center gap-2"
           aria-label="Click home"
         >
           <Image
             src="/click_blob_mascot.svg"
             alt=""
-            width={48}
-            height={48}
+            width={44}
+            height={44}
             aria-hidden
-            className="h-11 w-11 shrink-0 transition-transform duration-300 group-hover:rotate-[8deg] sm:h-12 sm:w-12"
+            className="h-9 w-9 shrink-0 transition-transform duration-300 group-hover:rotate-6 sm:h-10 sm:w-10"
           />
-          <span className="click-wordmark text-3xl text-[color:var(--ink)] sm:text-[2.1rem]">
+          <span className="click-wordmark text-[1.7rem] text-[color:var(--ink)] sm:text-[1.85rem]">
             Click
             <span className="click-wordmark__period" aria-hidden />
           </span>
         </Link>
 
-        <nav className="hidden items-center gap-7 text-sm font-bold uppercase tracking-wider text-[color:var(--mauve)] lg:flex">
+        <nav className="hidden items-center gap-8 text-[0.95rem] font-medium text-[color:var(--mauve)] lg:flex">
           {navItems.map((item) => (
             <Link
               key={item.href}
               href={item.href}
-              className="relative py-1 transition hover:text-[color:var(--ink)] hover:[text-shadow:0_0_0_currentColor]"
+              className="group/nav relative py-1 transition-colors hover:text-[color:var(--ink)]"
             >
               <span className="relative z-10">{item.label}</span>
-              <span className="absolute inset-x-0 bottom-0 h-2 origin-left scale-x-0 bg-[color:var(--peach)] transition-transform duration-300 hover:scale-x-100" />
+              <span className="absolute inset-x-0 -bottom-0.5 h-[3px] origin-left scale-x-0 rounded-full bg-[color:var(--peach)] transition-transform duration-300 group-hover/nav:scale-x-100" />
             </Link>
           ))}
         </nav>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
           {/* Host entry — shown to logged-out visitors and attendees (anyone
               who isn't already a host). Routes through login when needed and
               brings them back to register as a host. */}
           {!hasMerchantProfile && (
             <Link
               href="/merchant/signup"
-              className="hidden rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-4 py-2 text-sm font-bold text-[color:var(--surface-deep)] hard-shadow-sm hover:-translate-x-[1px] hover:-translate-y-[1px] hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)] sm:block"
+              className="hidden rounded-full border border-[color:var(--line-strong)] px-4 py-2 text-sm font-semibold text-[color:var(--ink)] transition-all duration-200 hover:-translate-y-0.5 hover:border-transparent hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)] sm:block"
             >
               Host an event
             </Link>
@@ -95,12 +95,13 @@ export async function SiteHeader() {
             </>
           ) : (
             <>
-              <LoginTrigger className="hidden rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-2 text-sm font-bold text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)] sm:block" />
+              <LoginTrigger className="hidden rounded-full px-4 py-2 text-sm font-semibold text-[color:var(--ink)] transition-colors hover:text-[color:var(--rose)] sm:block" />
               <Link
                 href="/signup"
-                className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-4 py-2 text-sm font-bold text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)]"
+                className="inline-flex items-center gap-1.5 rounded-full bg-[color:var(--surface-deep)] px-4 py-2 text-sm font-semibold text-[color:var(--on-deep)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-black"
               >
-                Sign up →
+                Sign up
+                <span aria-hidden>→</span>
               </Link>
             </>
           )}
@@ -124,35 +125,35 @@ export async function SiteFooter() {
   ];
 
   return (
-    <footer className="relative overflow-hidden border-t-2 border-[color:var(--surface-deep)] bg-[color:var(--surface-deep)] text-[color:var(--on-deep)]">
-      <div className="diagonal-stripes h-3 w-full" />
-      <div className="mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:px-6 md:grid-cols-[1.4fr_0.8fr_0.8fr_0.8fr_0.8fr]">
+    <footer className="relative overflow-hidden bg-[color:var(--surface-deep)] text-[color:var(--on-deep)]">
+      <div className="h-1 w-full bg-[color:var(--peach)]" />
+      <div className="mx-auto grid max-w-7xl gap-10 px-4 py-16 sm:px-6 md:grid-cols-[1.5fr_0.8fr_0.8fr_0.8fr_0.8fr]">
         <div>
-          <span className="click-wordmark text-6xl text-[color:var(--peach)]">
+          <span className="click-wordmark text-5xl text-[color:var(--on-deep)]">
             Click
             <span
               className="click-wordmark__period"
               aria-hidden
-              style={{ background: "var(--rose)", borderColor: "var(--peach)" }}
+              style={{ background: "var(--peach)" }}
             />
           </span>
-          <p className="mt-4 max-w-sm text-sm font-medium leading-6 text-[color:var(--on-deep)]/72">
+          <p className="mt-5 max-w-sm text-[0.95rem] leading-7 text-[color:var(--on-deep)]/65">
             An event-first people platform for friendship, dating, local groups,
             and shared-interest discovery in Sydney.
           </p>
-          <p className="font-script mt-6 text-2xl text-[color:var(--peach)]">
-            see you out there ✷
+          <p className="font-display mt-7 text-2xl italic text-[color:var(--peach)]">
+            See you out there.
           </p>
         </div>
         {footerGroups.map(([title, ...items]) => (
           <div key={title}>
-            <p className="eyebrow !text-[color:var(--peach)]">{title}</p>
-            <div className="mt-3 grid gap-2 text-sm font-semibold text-[color:var(--on-deep)]/72">
+            <p className="eyebrow text-[color:var(--on-deep)]/45">{title}</p>
+            <div className="mt-4 grid gap-2.5 text-[0.95rem] text-[color:var(--on-deep)]/65">
               {items.map((item) => (
                 <Link
                   href={linkForFooterItem(item)}
                   key={item}
-                  className="w-fit transition hover:text-[color:var(--peach)]"
+                  className="w-fit transition-colors hover:text-[color:var(--peach)]"
                 >
                   {item}
                 </Link>
@@ -161,8 +162,8 @@ export async function SiteFooter() {
           </div>
         ))}
       </div>
-      <div className="border-t border-[color:var(--on-deep)]/15">
-        <div className="mx-auto flex max-w-7xl flex-col items-start justify-between gap-2 px-4 py-5 text-xs font-mono uppercase tracking-[0.2em] text-[color:var(--on-deep)]/60 sm:flex-row sm:items-center sm:px-6">
+      <div className="border-t border-[color:var(--on-deep)]/12">
+        <div className="mx-auto flex max-w-7xl flex-col items-start justify-between gap-2 px-4 py-6 font-condensed text-xs uppercase tracking-[0.18em] text-[color:var(--on-deep)]/45 sm:flex-row sm:items-center sm:px-6">
           <span>Made in Sydney · Click {new Date().getFullYear()}</span>
           <span>People → Events → Familiar Faces</span>
         </div>
