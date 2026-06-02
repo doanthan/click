@@ -244,49 +244,57 @@ export default function SupportWidget() {
   async function submit() {
     if (!message.trim() || submitting) return;
     setSubmitting(true);
-    try {
-      const form = new FormData();
-      form.set("type", "bug");
-      form.set("message", message.trim());
-      if (expected.trim()) form.set("expected", expected.trim());
-      if (shot) {
-        const baked = await bakeAnnotations(shot, annotations);
-        form.set("screenshot", baked, "screenshot.jpg");
-        form.set("annotations", JSON.stringify(annotations.map(({ x, y, w, h, label }) => ({ x, y, w, h, label }))));
-      }
-      form.set(
-        "client_metadata",
-        JSON.stringify({
-          ...parseBrowserMetadata(),
-          url: pageUrl(),
-          fullUrl: window.location.origin + pageUrl(),
-        }),
-      );
-      if (includeConsole) form.set("console_logs", JSON.stringify(getConsoleLogs()));
-      if (includeNetwork) form.set("network_errors", JSON.stringify(getNetworkErrors()));
 
-      const res = await fetch("/api/support/ticket", { method: "POST", body: form });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || "Submit failed");
-
-      try {
-        const confetti = (await import("canvas-confetti")).default;
-        confetti({ particleCount: 80, spread: 70, origin: { y: 0.7 } });
-      } catch {
-        /* confetti is optional */
-      }
-      toast.success(`Bug reported — ${data.ticketId}`);
-      setMessage("");
-      setExpected("");
-      setAnnotations([]);
-      await capture();
-      await loadBugs();
-      setTab("list");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't submit the bug.");
-    } finally {
-      setSubmitting(false);
+    // Build the payload from the current form state before we reset it. The
+    // screenshot bake is local canvas work (fast); the network POST is the slow
+    // part, so we fire that off in the background below.
+    const form = new FormData();
+    form.set("type", "bug");
+    form.set("message", message.trim());
+    if (expected.trim()) form.set("expected", expected.trim());
+    if (shot) {
+      const baked = await bakeAnnotations(shot, annotations);
+      form.set("screenshot", baked, "screenshot.jpg");
+      form.set("annotations", JSON.stringify(annotations.map(({ x, y, w, h, label }) => ({ x, y, w, h, label }))));
     }
+    form.set(
+      "client_metadata",
+      JSON.stringify({
+        ...parseBrowserMetadata(),
+        url: pageUrl(),
+        fullUrl: window.location.origin + pageUrl(),
+      }),
+    );
+    if (includeConsole) form.set("console_logs", JSON.stringify(getConsoleLogs()));
+    if (includeNetwork) form.set("network_errors", JSON.stringify(getNetworkErrors()));
+
+    // Optimistic: confirm and reset right away so the user never waits on the
+    // round-trip. The POST keeps running in the background and only surfaces a
+    // toast if it actually fails.
+    setMessage("");
+    setExpected("");
+    setAnnotations([]);
+    setSubmitting(false);
+    setTab("list");
+    void capture();
+    try {
+      const confetti = (await import("canvas-confetti")).default;
+      confetti({ particleCount: 80, spread: 70, origin: { y: 0.7 } });
+    } catch {
+      /* confetti is optional */
+    }
+    toast.success("Bug reported");
+
+    void (async () => {
+      try {
+        const res = await fetch("/api/support/ticket", { method: "POST", body: form });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "Submit failed");
+        await loadBugs();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Couldn't submit the bug — please try again.");
+      }
+    })();
   }
 
   async function markFixed(ticketRef: string) {
@@ -467,7 +475,7 @@ export default function SupportWidget() {
                     </div>
 
                     {/* Inline label editor for the selected annotation */}
-                    {editing && (
+                    {editing && annotations.some((a) => a.id === editing) && (
                       <AnnotationEditor
                         annotation={annotations.find((a) => a.id === editing)!}
                         onSave={(label) => {

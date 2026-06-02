@@ -5,21 +5,87 @@ import { getScreenshotUrl } from "@/lib/support-repository";
 export const runtime = "nodejs";
 
 // GET /api/support/ticket/<ticketRef>/screenshot
-// Public redirect → the stored (already public) screenshot. Gives the Google
-// Sheet a stable letsclick.app link instead of exposing the raw storage URL.
+//
+// This link lives in the Google Sheet triage board, so it gets opened by a
+// HUMAN in a browser — not fetched by code. The happy path is a 302 straight to
+// the stored (already-public) screenshot, which keeps the Sheet pointing at a
+// stable letsclick.app URL instead of a raw Supabase Storage path.
+//
+// Every other path therefore renders a small, readable HTML page that explains
+// what happened, rather than a raw JSON blob that looks broken in a browser.
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ ticketRef: string }> },
 ) {
   const { ticketRef } = await params;
+
   try {
     const url = await getScreenshotUrl(ticketRef);
-    if (!url) {
-      return NextResponse.json({ error: "No screenshot for this ticket." }, { status: 404 });
+    if (url) {
+      return NextResponse.redirect(url, 302);
     }
-    return NextResponse.redirect(url, 302);
+    return htmlPage({
+      status: 404,
+      title: "No screenshot for this ticket",
+      body: `Ticket <code>${escapeHtml(ticketRef)}</code> exists in the queue but didn't include a screenshot — the reporter either skipped capture or it failed to upload.`,
+    });
   } catch (error) {
     console.error("[support] screenshot redirect failed:", error);
-    return NextResponse.json({ error: "Lookup failed." }, { status: 500 });
+    return htmlPage({
+      status: 500,
+      title: "Couldn't load that screenshot",
+      body: `Something went wrong looking up ticket <code>${escapeHtml(ticketRef)}</code>. Try again in a moment.`,
+    });
   }
+}
+
+function htmlPage({ status, title, body }: { status: number; title: string; body: string }) {
+  const html = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>${escapeHtml(title)} · Click support</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-items: center;
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #0b0b0f; color: #e7e7ea; padding: 24px;
+  }
+  .card {
+    max-width: 420px; width: 100%; text-align: center;
+    background: #16161d; border: 1px solid #26262e; border-radius: 16px;
+    padding: 40px 32px; box-shadow: 0 20px 60px rgba(0,0,0,.4);
+  }
+  .badge {
+    display: inline-block; font-size: 12px; font-weight: 600; letter-spacing: .04em;
+    color: #a1a1aa; text-transform: uppercase; margin-bottom: 12px;
+  }
+  h1 { font-size: 20px; margin: 0 0 12px; }
+  p { margin: 0; color: #b4b4bd; }
+  code { background: #26262e; padding: 2px 6px; border-radius: 6px; font-size: 13px; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="badge">Click · Support ${status}</div>
+    <h1>${escapeHtml(title)}</h1>
+    <p>${body}</p>
+  </div>
+</body>
+</html>`;
+  return new NextResponse(html, {
+    status,
+    headers: { "Content-Type": "text/html; charset=utf-8" },
+  });
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
