@@ -145,7 +145,6 @@ export default function SupportWidget() {
   // --- checklist state ------------------------------------------------------
   const [bugs, setBugs] = useState<OpenBug[]>([]);
   const [loadingBugs, setLoadingBugs] = useState(false);
-  const [fixing, setFixing] = useState<string | null>(null);
 
   const loadBugs = useCallback(async () => {
     setLoadingBugs(true);
@@ -270,13 +269,14 @@ export default function SupportWidget() {
 
     // Optimistic: confirm and reset right away so the user never waits on the
     // round-trip. The POST keeps running in the background and only surfaces a
-    // toast if it actually fails.
+    // toast if it actually fails. Close the drawer and reset to the default
+    // (Report) tab so the widget is back to normal for the next open.
     setMessage("");
     setExpected("");
     setAnnotations([]);
     setSubmitting(false);
-    setTab("list");
-    void capture();
+    setTab("report");
+    setOpen(false);
     try {
       const confetti = (await import("canvas-confetti")).default;
       confetti({ particleCount: 80, spread: 70, origin: { y: 0.7 } });
@@ -297,22 +297,38 @@ export default function SupportWidget() {
     })();
   }
 
-  async function markFixed(ticketRef: string) {
-    setFixing(ticketRef);
-    try {
-      const res = await fetch(`/api/support/ticket/${encodeURIComponent(ticketRef)}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "fixed" }),
-      });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Update failed");
-      setBugs((prev) => prev.filter((b) => b.ticketRef !== ticketRef));
-      toast.success("Marked fixed — Sheet row turned green.");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't update the bug.");
-    } finally {
-      setFixing(null);
-    }
+  function markFixed(ticketRef: string) {
+    // Optimistic: drop the bug from the list the instant it's ticked, so there's
+    // zero lag. The PATCH runs in the background — only if it fails do we slot the
+    // bug back exactly where it was and surface an error.
+    let removed: { bug: OpenBug; index: number } | null = null;
+    setBugs((prev) => {
+      const index = prev.findIndex((b) => b.ticketRef === ticketRef);
+      if (index === -1) return prev;
+      removed = { bug: prev[index], index };
+      return prev.filter((b) => b.ticketRef !== ticketRef);
+    });
+    if (!removed) return;
+    const snapshot = removed;
+
+    void (async () => {
+      try {
+        const res = await fetch(`/api/support/ticket/${encodeURIComponent(ticketRef)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "fixed" }),
+        });
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Update failed");
+      } catch (err) {
+        setBugs((prev) => {
+          if (prev.some((b) => b.ticketRef === ticketRef)) return prev; // already back
+          const next = [...prev];
+          next.splice(Math.min(snapshot.index, next.length), 0, snapshot.bug);
+          return next;
+        });
+        toast.error(err instanceof Error ? err.message : "Couldn't update the bug.");
+      }
+    })();
   }
 
   return (
@@ -518,10 +534,9 @@ export default function SupportWidget() {
                     <div key={b.ticketRef} className="flex gap-3 rounded-md border border-red-200 bg-red-50 p-3">
                       <button
                         type="button"
-                        disabled={fixing === b.ticketRef}
-                        onClick={() => void markFixed(b.ticketRef)}
+                        onClick={() => markFixed(b.ticketRef)}
                         title="Mark fixed"
-                        className="mt-0.5 h-5 w-5 shrink-0 rounded border-2 border-red-400 bg-white transition hover:bg-green-100 disabled:opacity-50"
+                        className="mt-0.5 h-5 w-5 shrink-0 rounded border-2 border-red-400 bg-white transition hover:bg-green-100"
                       />
                       <div className="min-w-0 flex-1">
                         <p className="break-words text-sm font-medium text-gray-800">{b.message}</p>
