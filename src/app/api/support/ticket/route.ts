@@ -1,0 +1,110 @@
+import { NextResponse } from "next/server";
+
+import { auth } from "@/auth";
+import {
+  createSupportTicket,
+  listOpenBugsForUrl,
+  type Annotation,
+  type ConsoleEntry,
+  type NetworkEntry,
+} from "@/lib/support-repository";
+
+export const runtime = "nodejs";
+
+function clientIp(request: Request): string | null {
+  const fwd = request.headers.get("x-forwarded-for");
+  return fwd ? fwd.split(",")[0].trim() : null;
+}
+
+function safeParse<T>(value: FormDataEntryValue | null, fallback: T): T {
+  if (typeof value !== "string" || !value) return fallback;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+// POST /api/support/ticket — file a bug (multipart FormData from SupportPanel).
+export async function POST(request: Request) {
+  const session = await auth();
+  if (!session?.user?.email) {
+    return NextResponse.json({ error: "Sign in to report a bug." }, { status: 401 });
+  }
+
+  let form: FormData;
+  try {
+    form = await request.formData();
+  } catch {
+    return NextResponse.json({ error: "Expected multipart form data." }, { status: 400 });
+  }
+
+  const message = (form.get("message") as string | null)?.trim() ?? "";
+  if (!message) {
+    return NextResponse.json({ error: "Describe the bug first." }, { status: 400 });
+  }
+  const expected = (form.get("expected") as string | null)?.trim() || null;
+
+  // Page URL: prefer the explicit field from the client, fall back to referer.
+  const metadata = safeParse<Record<string, unknown>>(form.get("client_metadata"), {});
+  const url =
+    (typeof metadata.url === "string" && metadata.url) ||
+    request.headers.get("referer") ||
+    null;
+  if (typeof metadata.url !== "string" && url) metadata.url = url;
+  // Absolute URL (incl. origin) for the clickable Sheet link.
+  const fullUrl =
+    (typeof metadata.fullUrl === "string" && metadata.fullUrl) ||
+    request.headers.get("referer") ||
+    url;
+
+  const screenshotEntry = form.get("screenshot");
+  let screenshot: Buffer | null = null;
+  if (screenshotEntry && typeof screenshotEntry !== "string") {
+    const ab = await screenshotEntry.arrayBuffer();
+    screenshot = Buffer.from(ab);
+  }
+
+  try {
+    const result = await createSupportTicket(
+      {
+        message,
+        expected,
+        url,
+        fullUrl,
+        screenshot,
+        consoleLogs: safeParse<ConsoleEntry[]>(form.get("console_logs"), []),
+        networkErrors: safeParse<NetworkEntry[]>(form.get("network_errors"), []),
+        annotations: safeParse<Annotation[]>(form.get("annotations"), []),
+        clientMetadata: metadata,
+        ipAddress: clientIp(request),
+      },
+      session,
+    );
+    return NextResponse.json({ success: true, ticketId: result.ticketRef });
+  } catch (error) {
+    console.error("[support] create ticket failed:", error);
+    return NextResponse.json({ error: "Couldn't save the report." }, { status: 500 });
+  }
+}
+
+// GET /api/support/ticket?url=<pathname> — open bugs for a page (the checklist).
+export async function GET(request: Request) {
+  const session = await auth();
+  if (!session?.user?.email) {
+    return NextResponse.json({ error: "Sign in to view bugs." }, { status: 401 });
+  }
+
+  const url = new URL(request.url).searchParams.get("url");
+  if (!url) {
+    return NextResponse.json({ bugs: [] });
+  }
+
+  try {
+    const bugs = await listOpenBugsForUrl(url);
+    return NextResponse.json({ bugs });
+  } catch (error) {
+    console.error("[support] list bugs failed:", error);
+    return NextResponse.json({ error: "Couldn't load bugs." }, { status: 500 });
+  }
+}

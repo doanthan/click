@@ -84,6 +84,18 @@ function parseFlexible(input: string): string | null {
   return toIso(date);
 }
 
+// Live input mask. Strips everything but digits, caps at 8 (ddmmyyyy), then
+// regroups as "dd / mm / yyyy" — so the separators appear automatically as the
+// user types numbers and they never need to press "/". Adds no trailing
+// separator, so backspace deletes a digit cleanly instead of getting stuck on
+// a " / ".
+function maskInput(raw: string): string {
+  const digits = raw.replace(/\D/g, "").slice(0, 8);
+  return [digits.slice(0, 2), digits.slice(2, 4), digits.slice(4, 8)]
+    .filter(Boolean)
+    .join(" / ");
+}
+
 function fmtDisplay(d: Date | null): string {
   if (!d) return "";
   const day = String(d.getDate()).padStart(2, "0");
@@ -359,7 +371,7 @@ export function BirthDatePicker({
           aria-describedby={describedBy}
           aria-labelledby={labelledBy}
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => setText(maskInput(e.target.value))}
           onFocus={() => setFocused(true)}
           onBlur={() => {
             setFocused(false);

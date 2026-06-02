@@ -7,6 +7,7 @@ import {
 } from "next/font/google";
 import { Toaster } from "sonner";
 import DevSupabaseDrawer from "@/components/dev-supabase-drawer";
+import SupportWidget from "@/components/support/support-widget";
 import { TestAccountSwitcher } from "@/components/test-account-switcher";
 import { LoginModalHost } from "@/components/login-modal-host";
 import { SiteFooter, SiteHeader } from "@/components/site-chrome";
@@ -81,6 +82,7 @@ export default async function RootLayout({
         />
         <Toaster position="top-right" richColors closeButton />
         <DevSupabaseDrawer />
+        {session?.user ? <SupportWidget /> : null}
         <TestAccountSwitcher currentEmail={session?.user?.email ?? null} />
       </body>
     </html>
