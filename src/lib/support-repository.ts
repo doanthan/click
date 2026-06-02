@@ -15,7 +15,7 @@ import type { Session } from "next-auth";
 
 import { getPostgresPool } from "./postgres";
 import { uploadScreenshot } from "./support-storage";
-import { appendBugRow, markBugRowUserFixed } from "./support-sheets";
+import { appendBugRow, markBugRowUserFixed, markBugRowNotFixed, updateBugRowContent } from "./support-sheets";
 
 export type OpenBug = {
   ticketRef: string;
@@ -25,6 +25,20 @@ export type OpenBug = {
   createdAt: string;
   reporterName: string | null;
   screenshotUrl: string | null;
+  aiFixed: boolean;
+};
+
+// The four reporter-facing states a bug can be moved to from the edit form. Each
+// maps to a fixed combination of the underlying status / ai_fixed / is_issue
+// columns (and the Sheet's colour rules): open=red, ai_fixed=amber, fixed=green,
+// not_issue=gray.
+export type BugStatus = "open" | "ai_fixed" | "fixed" | "not_issue";
+
+const BUG_STATE: Record<BugStatus, { status: string; aiFixed: boolean; isIssue: boolean }> = {
+  open: { status: "open", aiFixed: false, isIssue: true },
+  ai_fixed: { status: "open", aiFixed: true, isIssue: true },
+  fixed: { status: "fixed", aiFixed: false, isIssue: true },
+  not_issue: { status: "open", aiFixed: false, isIssue: false },
 };
 
 export type ConsoleEntry = { level: string; message: string; timestamp: string };
@@ -181,11 +195,12 @@ export async function listOpenBugsForUrl(url: string): Promise<OpenBug[]> {
     created_at: string;
     reporter_name: string | null;
     screenshot_url: string | null;
+    ai_fixed: boolean;
   }>(
     `
       select ticket_ref, subject, message, expected_behavior,
              to_char(created_at, 'YYYY-MM-DD"T"HH24:MI:SSOF') as created_at,
-             reporter_name, screenshot_url
+             reporter_name, screenshot_url, ai_fixed
         from support_tickets
        where url = $1 and status = 'open' and is_issue = true
        order by created_at desc
@@ -202,6 +217,7 @@ export async function listOpenBugsForUrl(url: string): Promise<OpenBug[]> {
     createdAt: r.created_at,
     reporterName: r.reporter_name,
     screenshotUrl: r.screenshot_url,
+    aiFixed: r.ai_fixed,
   }));
 }
 
@@ -234,6 +250,117 @@ export async function markTicketFixed(
   if (result.rowCount === 0) return false; // already fixed or unknown ref
 
   await markBugRowUserFixed(result.rows[0]?.sheet_row ?? null);
+  return true;
+}
+
+/** "YYYY-MM-DD HH:MM" stamp for a reopen note appended to the bug's description. */
+function reopenStamp(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/**
+ * Reopen a bug the user reports is still broken: clear `ai_fixed`, append the
+ * tester's note to the description, and recolour the Sheet row red so the AI
+ * fixer picks it up again. Idempotent-ish — always appends a fresh note. Returns
+ * true if a matching, non-fixed ticket was updated.
+ */
+export async function reopenTicketForRefix(
+  ticketRef: string,
+  note: string,
+  session: Session | null,
+): Promise<boolean> {
+  const pool = getPostgresPool();
+  if (!pool) throw dbUnavailable();
+
+  await resolveReporter(session); // ensures the caller is a known/guest reporter; no-op otherwise
+
+  const appended = `\n\n[Still not fixed · ${reopenStamp(new Date())}] ${note}`;
+
+  const result = await pool.query<{ sheet_row: number | null; message: string }>(
+    `
+      update support_tickets
+         set status = 'open',
+             ai_fixed = false,
+             fixed_at = null,
+             fixed_by_profile_id = null,
+             message = message || $2,
+             updated_at = now()
+       where ticket_ref = $1 and is_issue = true
+      returning sheet_row, message
+    `,
+    [ticketRef, appended],
+  );
+
+  if (result.rowCount === 0) return false; // unknown ref or triaged not-an-issue
+
+  await markBugRowNotFixed(result.rows[0]?.sheet_row ?? null, result.rows[0]?.message ?? "");
+  return true;
+}
+
+/**
+ * Edit an open bug's description: "what is wrong" (message) and the optional
+ * "what it should be" (expected_behavior), keeping the subject in sync. When a
+ * `status` is supplied, the bug is also moved to that state (status / ai_fixed /
+ * is_issue columns + fixed_at stamp). Mirrors everything into the Sheet. Returns
+ * true if a matching, still-an-issue ticket was updated.
+ */
+export async function editTicket(
+  ticketRef: string,
+  fields: { message: string; expected: string | null; status?: BugStatus },
+  session: Session | null,
+): Promise<boolean> {
+  const pool = getPostgresPool();
+  if (!pool) throw dbUnavailable();
+
+  const reporter = await resolveReporter(session); // ensures the caller is a known/guest reporter
+
+  const message = fields.message.trim();
+  const expected = fields.expected?.trim() || null;
+  const subject = `Bug: ${message.slice(0, 120)}`;
+  const state = fields.status ? BUG_STATE[fields.status] : null;
+
+  // Only listed bugs (open + is_issue) are editable; the WHERE matches on the
+  // pre-update row, so moving a bug to fixed/not_issue still applies here.
+  const result = state
+    ? await pool.query<{ sheet_row: number | null }>(
+        `
+          update support_tickets
+             set message = $2,
+                 expected_behavior = $3,
+                 subject = $4,
+                 status = $5,
+                 ai_fixed = $6,
+                 is_issue = $7,
+                 fixed_at = case when $5 = 'fixed' then now() else null end,
+                 fixed_by_profile_id = case when $5 = 'fixed' then $8::uuid else null end,
+                 updated_at = now()
+           where ticket_ref = $1 and is_issue = true
+          returning sheet_row
+        `,
+        [ticketRef, message, expected, subject, state.status, state.aiFixed, state.isIssue, reporter.profileId],
+      )
+    : await pool.query<{ sheet_row: number | null }>(
+        `
+          update support_tickets
+             set message = $2,
+                 expected_behavior = $3,
+                 subject = $4,
+                 updated_at = now()
+           where ticket_ref = $1 and is_issue = true
+          returning sheet_row
+        `,
+        [ticketRef, message, expected, subject],
+      );
+
+  if (result.rowCount === 0) return false; // unknown ref or triaged not-an-issue
+
+  await updateBugRowContent(
+    result.rows[0]?.sheet_row ?? null,
+    message,
+    expected ?? "",
+    state ? { isIssue: state.isIssue, aiFixed: state.aiFixed, status: state.status } : undefined,
+  );
   return true;
 }
 

@@ -335,3 +335,68 @@ export async function markBugRowUserFixed(rowNumber: number | null | undefined):
     console.warn("[support-sheets] markBugRowUserFixed failed:", err);
   }
 }
+
+/**
+ * Refresh a row after the reporter edits the bug: "What is wrong" (C) and "What
+ * it should be" (D). When `state` is supplied (the reporter also changed the
+ * status), the triage cells are rewritten too — Is issue (E), AI fixed (F),
+ * Status (G) — and conditional formatting recolours the row. No-op if
+ * unconfigured.
+ */
+export async function updateBugRowContent(
+  rowNumber: number | null | undefined,
+  whatIsWrong: string,
+  expected: string,
+  state?: { isIssue: boolean; aiFixed: boolean; status: string },
+): Promise<void> {
+  if (!isSheetsConfigured() || !rowNumber) return;
+  try {
+    const sheets = getClient();
+    await ensureSheet(sheets);
+    const data: sheets_v4.Schema$ValueRange[] = [
+      { range: `${TAB}!C${rowNumber}:D${rowNumber}`, values: [[whatIsWrong, expected]] },
+    ];
+    if (state) {
+      data.push({
+        range: `${TAB}!E${rowNumber}:G${rowNumber}`,
+        values: [[state.isIssue, state.aiFixed, state.status]],
+      });
+    }
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: spreadsheetId(),
+      requestBody: { valueInputOption: "USER_ENTERED", data },
+    });
+  } catch (err) {
+    console.warn("[support-sheets] updateBugRowContent failed:", err);
+  }
+}
+
+/**
+ * Send a row back to the AI fixer: un-tick "AI fixed" (F), reset Status (G) to
+ * "open", and refresh the "What is wrong" cell (C) with the appended note.
+ * Conditional formatting turns the row red again so the AI picks it up. No-op if
+ * unconfigured.
+ */
+export async function markBugRowNotFixed(
+  rowNumber: number | null | undefined,
+  message: string,
+): Promise<void> {
+  if (!isSheetsConfigured() || !rowNumber) return;
+  try {
+    const sheets = getClient();
+    await ensureSheet(sheets);
+    // C = What is wrong; F = AI fixed → FALSE; G = Status → "open".
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: spreadsheetId(),
+      requestBody: {
+        valueInputOption: "USER_ENTERED",
+        data: [
+          { range: `${TAB}!C${rowNumber}`, values: [[message]] },
+          { range: `${TAB}!F${rowNumber}:G${rowNumber}`, values: [[false, "open"]] },
+        ],
+      },
+    });
+  } catch (err) {
+    console.warn("[support-sheets] markBugRowNotFixed failed:", err);
+  }
+}

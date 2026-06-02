@@ -24,7 +24,24 @@ import { captureViewport } from "@/lib/support-screenshot";
 const ACCENT = "#7c6df2"; // lavender — bug brand
 const ANNOTATION = "#B03824"; // brand red stroke
 
+type Rect = { x: number; y: number; w: number; h: number };
 type Annotation = { id: string; x: number; y: number; w: number; h: number; label: string };
+type BugStatus = "open" | "ai_fixed" | "fixed" | "not_issue";
+const BUG_STATUS_OPTIONS: { value: BugStatus; label: string }[] = [
+  { value: "open", label: "Open — needs fixing" },
+  { value: "ai_fixed", label: "AI fixed — verify" },
+  { value: "fixed", label: "Fixed" },
+  { value: "not_issue", label: "Not an issue" },
+];
+
+/** Build a bounds-clamped rect from two opposite corner points (handles flips). */
+function rectFromCorners(ax: number, ay: number, bx: number, by: number, maxW: number, maxH: number): Rect {
+  const x = Math.max(0, Math.min(ax, bx));
+  const y = Math.max(0, Math.min(ay, by));
+  const right = Math.min(maxW, Math.max(ax, bx));
+  const bottom = Math.min(maxH, Math.max(ay, by));
+  return { x, y, w: right - x, h: bottom - y };
+}
 type Shot = { blob: Blob; objectUrl: string; width: number; height: number };
 type OpenBug = {
   ticketRef: string;
@@ -34,6 +51,7 @@ type OpenBug = {
   createdAt: string;
   reporterName: string | null;
   screenshotUrl: string | null;
+  aiFixed: boolean;
 };
 
 function pageUrl(): string {
@@ -127,14 +145,23 @@ export default function SupportWidget() {
   const [submitting, setSubmitting] = useState(false);
 
   // --- annotation state -----------------------------------------------------
-  const [annotations, setAnnotations] = useState<Annotation[]>([]);
-  const [draft, setDraft] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
-  const [editing, setEditing] = useState<string | null>(null);
+  // Exactly one highlight box at a time. Drawing a fresh box replaces it; it can
+  // be moved (drag the body) or resized (drag a corner handle).
+  const [annotation, setAnnotation] = useState<Annotation | null>(null);
+  const [draft, setDraft] = useState<Rect | null>(null);
+  const [editing, setEditing] = useState(false); // label input focused — suppresses draw + Escape-close
   // Displayed-vs-natural scale for the screenshot — measured from the <img>, kept
   // in state (never read ref.current during render).
   const [dispScale, setDispScale] = useState(1);
   const imgRef = useRef<HTMLImageElement | null>(null);
-  const dragStart = useRef<{ x: number; y: number } | null>(null);
+  // Active pointer drag. `draw` and `resize` track an anchor (opposite corner);
+  // `move` tracks the grab point + the box geometry at grab time.
+  const dragRef = useRef<
+    | { kind: "draw"; ax: number; ay: number }
+    | { kind: "resize"; ax: number; ay: number }
+    | { kind: "move"; px: number; py: number; orig: Rect }
+    | null
+  >(null);
 
   const measure = useCallback(() => {
     const el = imgRef.current;
@@ -145,6 +172,16 @@ export default function SupportWidget() {
   // --- checklist state ------------------------------------------------------
   const [bugs, setBugs] = useState<OpenBug[]>([]);
   const [loadingBugs, setLoadingBugs] = useState(false);
+  // The bug whose "Not fixed" note editor is open, plus its draft + in-flight flag.
+  const [reopening, setReopening] = useState<string | null>(null);
+  const [reopenNote, setReopenNote] = useState("");
+  const [reopenSubmitting, setReopenSubmitting] = useState(false);
+  // The bug whose inline edit form is open, plus its drafts + in-flight flag.
+  const [editingBug, setEditingBug] = useState<string | null>(null);
+  const [editMessage, setEditMessage] = useState("");
+  const [editExpected, setEditExpected] = useState("");
+  const [editStatus, setEditStatus] = useState<BugStatus>("open");
+  const [editSubmitting, setEditSubmitting] = useState(false);
 
   const loadBugs = useCallback(async () => {
     setLoadingBugs(true);
@@ -160,7 +197,7 @@ export default function SupportWidget() {
 
   const capture = useCallback(async () => {
     setCapturing(true);
-    setAnnotations([]);
+    setAnnotation(null);
     try {
       const s = await captureViewport();
       setShot((prev) => {
@@ -218,26 +255,58 @@ export default function SupportWidget() {
     };
   }
 
-  function onPointerDown(e: React.PointerEvent) {
-    if (editing) return;
+  // Pointer down on empty canvas → start drawing a new box. (Grabs on the box body
+  // or a corner handle set dragRef first, via their own handlers below, so this
+  // bails out and doesn't start a competing draw.)
+  function onPointerDown(e: React.PointerEvent<SVGSVGElement>) {
+    if (editing || !shot) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    if (dragRef.current) return; // a handle/body grab already claimed this drag
     const p = toImageCoords(e.clientX, e.clientY);
-    dragStart.current = p;
+    dragRef.current = { kind: "draw", ax: p.x, ay: p.y };
     setDraft({ x: p.x, y: p.y, w: 0, h: 0 });
   }
   function onPointerMove(e: React.PointerEvent) {
-    if (!dragStart.current) return;
+    const d = dragRef.current;
+    if (!d || !shot) return;
     const p = toImageCoords(e.clientX, e.clientY);
-    const s = dragStart.current;
-    setDraft({ x: Math.min(s.x, p.x), y: Math.min(s.y, p.y), w: Math.abs(p.x - s.x), h: Math.abs(p.y - s.y) });
+    if (d.kind === "draw") {
+      setDraft(rectFromCorners(d.ax, d.ay, p.x, p.y, shot.width, shot.height));
+    } else if (d.kind === "resize") {
+      const r = rectFromCorners(d.ax, d.ay, p.x, p.y, shot.width, shot.height);
+      setAnnotation((a) => (a ? { ...a, ...r } : a));
+    } else {
+      const nx = Math.max(0, Math.min(shot.width - d.orig.w, d.orig.x + (p.x - d.px)));
+      const ny = Math.max(0, Math.min(shot.height - d.orig.h, d.orig.y + (p.y - d.py)));
+      setAnnotation((a) => (a ? { ...a, x: nx, y: ny } : a));
+    }
   }
   function onPointerUp() {
-    const d = draft;
-    dragStart.current = null;
+    const d = dragRef.current;
+    dragRef.current = null;
+    if (d?.kind !== "draw") return;
+    const r = draft;
     setDraft(null);
-    if (!d || d.w < 8 || d.h < 8) return; // ignore tiny boxes
-    const id = `a${annotations.length + 1}_${d.x | 0}`;
-    setAnnotations((prev) => [...prev, { id, ...d, label: "" }]);
-    setEditing(id);
+    if (!r || r.w < 8 || r.h < 8) return; // ignore tiny boxes — keep any existing one
+    setAnnotation({ id: "box", ...r, label: "" });
+    setEditing(true);
+  }
+
+  // Begin resizing from a corner handle: the anchor is the opposite corner.
+  function startResize(anchorX: number, anchorY: number) {
+    if (editing) return;
+    dragRef.current = { kind: "resize", ax: anchorX, ay: anchorY };
+  }
+  // Begin moving the whole box.
+  function startMove(e: React.PointerEvent) {
+    if (editing || !annotation) return;
+    const p = toImageCoords(e.clientX, e.clientY);
+    dragRef.current = {
+      kind: "move",
+      px: p.x,
+      py: p.y,
+      orig: { x: annotation.x, y: annotation.y, w: annotation.w, h: annotation.h },
+    };
   }
 
   async function submit() {
@@ -252,9 +321,10 @@ export default function SupportWidget() {
     form.set("message", message.trim());
     if (expected.trim()) form.set("expected", expected.trim());
     if (shot) {
-      const baked = await bakeAnnotations(shot, annotations);
+      const list = annotation ? [annotation] : [];
+      const baked = await bakeAnnotations(shot, list);
       form.set("screenshot", baked, "screenshot.jpg");
-      form.set("annotations", JSON.stringify(annotations.map(({ x, y, w, h, label }) => ({ x, y, w, h, label }))));
+      form.set("annotations", JSON.stringify(list.map(({ x, y, w, h, label }) => ({ x, y, w, h, label }))));
     }
     form.set(
       "client_metadata",
@@ -273,7 +343,7 @@ export default function SupportWidget() {
     // (Report) tab so the widget is back to normal for the next open.
     setMessage("");
     setExpected("");
-    setAnnotations([]);
+    setAnnotation(null);
     setSubmitting(false);
     setTab("report");
     setOpen(false);
@@ -301,15 +371,10 @@ export default function SupportWidget() {
     // Optimistic: drop the bug from the list the instant it's ticked, so there's
     // zero lag. The PATCH runs in the background — only if it fails do we slot the
     // bug back exactly where it was and surface an error.
-    let removed: { bug: OpenBug; index: number } | null = null;
-    setBugs((prev) => {
-      const index = prev.findIndex((b) => b.ticketRef === ticketRef);
-      if (index === -1) return prev;
-      removed = { bug: prev[index], index };
-      return prev.filter((b) => b.ticketRef !== ticketRef);
-    });
-    if (!removed) return;
-    const snapshot = removed;
+    const index = bugs.findIndex((b) => b.ticketRef === ticketRef);
+    if (index === -1) return;
+    const bug = bugs[index];
+    setBugs((prev) => prev.filter((b) => b.ticketRef !== ticketRef));
 
     void (async () => {
       try {
@@ -323,12 +388,70 @@ export default function SupportWidget() {
         setBugs((prev) => {
           if (prev.some((b) => b.ticketRef === ticketRef)) return prev; // already back
           const next = [...prev];
-          next.splice(Math.min(snapshot.index, next.length), 0, snapshot.bug);
+          next.splice(Math.min(index, next.length), 0, bug);
           return next;
         });
         toast.error(err instanceof Error ? err.message : "Couldn't update the bug.");
       }
     })();
+  }
+
+  function openReopen(ticketRef: string) {
+    setEditingBug(null);
+    setReopening((cur) => (cur === ticketRef ? null : ticketRef));
+    setReopenNote("");
+  }
+
+  function openEdit(bug: OpenBug) {
+    setReopening(null);
+    setEditingBug((cur) => (cur === bug.ticketRef ? null : bug.ticketRef));
+    setEditMessage(bug.message);
+    setEditExpected(bug.expected ?? "");
+    // Listed bugs are always open; aiFixed just means "AI says fixed — verify".
+    setEditStatus(bug.aiFixed ? "ai_fixed" : "open");
+  }
+
+  async function submitEdit(ticketRef: string) {
+    const message = editMessage.trim();
+    if (!message || editSubmitting) return;
+    setEditSubmitting(true);
+    try {
+      const res = await fetch(`/api/support/ticket/${encodeURIComponent(ticketRef)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "edit", message, expected: editExpected.trim(), bugStatus: editStatus }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Update failed");
+      setEditingBug(null);
+      toast.success("Bug updated");
+      await loadBugs();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't update the bug.");
+    } finally {
+      setEditSubmitting(false);
+    }
+  }
+
+  async function submitNotFixed(ticketRef: string) {
+    const note = reopenNote.trim();
+    if (!note || reopenSubmitting) return;
+    setReopenSubmitting(true);
+    try {
+      const res = await fetch(`/api/support/ticket/${encodeURIComponent(ticketRef)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "open", note }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Update failed");
+      setReopening(null);
+      setReopenNote("");
+      toast.success("Sent back to the AI fixer");
+      await loadBugs();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't update the bug.");
+    } finally {
+      setReopenSubmitting(false);
+    }
   }
 
   return (
@@ -424,8 +547,9 @@ export default function SupportWidget() {
                       </button>
                     </div>
                     <p className="mb-2 text-xs text-gray-500">
-                      Click and drag on the screenshot to highlight an area · {annotations.length} annotation
-                      {annotations.length === 1 ? "" : "s"}
+                      {annotation
+                        ? "Drag a corner to resize, or drag the box to move it. Draw again to start over."
+                        : "Click and drag on the screenshot to highlight one area."}
                     </p>
 
                     <div className="relative select-none overflow-hidden rounded-md border border-gray-200 bg-gray-50">
@@ -450,26 +574,55 @@ export default function SupportWidget() {
                             onPointerMove={onPointerMove}
                             onPointerUp={onPointerUp}
                           >
-                            {annotations.map((a) => (
-                              <g key={a.id}>
+                            {/* Committed box (hidden while drafting a replacement) */}
+                            {!draft && annotation && (
+                              <g>
                                 <rect
-                                  x={a.x * dispScale}
-                                  y={a.y * dispScale}
-                                  width={a.w * dispScale}
-                                  height={a.h * dispScale}
-                                  fill="transparent"
+                                  x={annotation.x * dispScale}
+                                  y={annotation.y * dispScale}
+                                  width={annotation.w * dispScale}
+                                  height={annotation.h * dispScale}
+                                  fill={`${ANNOTATION}1a`}
                                   stroke={ANNOTATION}
                                   strokeWidth={2}
-                                  className="cursor-pointer"
-                                  onPointerDown={(e) => { e.stopPropagation(); setEditing(a.id); }}
+                                  className="cursor-move"
+                                  onPointerDown={startMove}
                                 />
-                                {a.label && (
-                                  <text x={a.x * dispScale + 2} y={a.y * dispScale - 4} fill={ANNOTATION} fontSize={11} fontWeight={600}>
-                                    {a.label}
+                                {annotation.label && (
+                                  <text
+                                    x={annotation.x * dispScale + 2}
+                                    y={annotation.y * dispScale - 4}
+                                    fill={ANNOTATION}
+                                    fontSize={11}
+                                    fontWeight={600}
+                                  >
+                                    {annotation.label}
                                   </text>
                                 )}
+                                {/* Corner resize handles — anchor is the opposite corner */}
+                                {(
+                                  [
+                                    ["nw", annotation.x, annotation.y, annotation.x + annotation.w, annotation.y + annotation.h, "nwse-resize"],
+                                    ["ne", annotation.x + annotation.w, annotation.y, annotation.x, annotation.y + annotation.h, "nesw-resize"],
+                                    ["sw", annotation.x, annotation.y + annotation.h, annotation.x + annotation.w, annotation.y, "nesw-resize"],
+                                    ["se", annotation.x + annotation.w, annotation.y + annotation.h, annotation.x, annotation.y, "nwse-resize"],
+                                  ] as const
+                                ).map(([key, hx, hy, ax, ay, cursor]) => (
+                                  <rect
+                                    key={key}
+                                    x={hx * dispScale - 5}
+                                    y={hy * dispScale - 5}
+                                    width={10}
+                                    height={10}
+                                    fill="#ffffff"
+                                    stroke={ANNOTATION}
+                                    strokeWidth={2}
+                                    style={{ cursor }}
+                                    onPointerDown={() => startResize(ax, ay)}
+                                  />
+                                ))}
                               </g>
-                            ))}
+                            )}
                             {draft && (
                               <rect
                                 x={draft.x * dispScale}
@@ -490,19 +643,14 @@ export default function SupportWidget() {
                       )}
                     </div>
 
-                    {/* Inline label editor for the selected annotation */}
-                    {editing && annotations.some((a) => a.id === editing) && (
+                    {/* Inline label editor for the box */}
+                    {annotation && (
                       <AnnotationEditor
-                        annotation={annotations.find((a) => a.id === editing)!}
-                        onSave={(label) => {
-                          setAnnotations((prev) => prev.map((a) => (a.id === editing ? { ...a, label } : a)));
-                          setEditing(null);
-                        }}
-                        onDelete={() => {
-                          setAnnotations((prev) => prev.filter((a) => a.id !== editing));
-                          setEditing(null);
-                        }}
-                        onCancel={() => setEditing(null)}
+                        value={annotation.label}
+                        onChange={(label) => setAnnotation((a) => (a ? { ...a, label } : a))}
+                        onDelete={() => { setAnnotation(null); setEditing(false); }}
+                        onFocus={() => setEditing(true)}
+                        onBlur={() => setEditing(false)}
                       />
                     )}
                   </div>
@@ -525,7 +673,7 @@ export default function SupportWidget() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  <p className="text-xs text-gray-500">Open bugs reported on <code className="rounded bg-gray-100 px-1">{pageUrl()}</code>. Tick one off when it&apos;s fixed.</p>
+                  <p className="text-xs text-gray-500">Open bugs reported on <code className="rounded bg-gray-100 px-1">{pageUrl()}</code>. Tick one off when it&apos;s fixed, <span className="font-medium">Edit</span> to refine it, or hit <span className="font-medium">Not fixed</span> to send it back to the AI.</p>
                   {loadingBugs && <p className="text-sm text-gray-400">Loading…</p>}
                   {!loadingBugs && bugs.length === 0 && (
                     <p className="rounded-md bg-green-50 p-3 text-sm text-green-700">No open bugs on this page. 🎉</p>
@@ -539,19 +687,138 @@ export default function SupportWidget() {
                         className="mt-0.5 h-5 w-5 shrink-0 rounded border-2 border-red-400 bg-white transition hover:bg-green-100"
                       />
                       <div className="min-w-0 flex-1">
-                        <p className="break-words text-sm font-medium text-gray-800">{b.message}</p>
-                        {b.expected && (
-                          <p className="mt-0.5 break-words text-xs text-gray-600">
-                            <span className="font-medium">Should:</span> {b.expected}
-                          </p>
+                        {b.aiFixed && (
+                          <span className="mb-1 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+                            AI says fixed — verify
+                          </span>
+                        )}
+                        {editingBug !== b.ticketRef && (
+                          <>
+                            <p className="whitespace-pre-wrap break-words text-sm font-medium text-gray-800">{b.message}</p>
+                            {b.expected && (
+                              <p className="mt-0.5 break-words text-xs text-gray-600">
+                                <span className="font-medium">Should:</span> {b.expected}
+                              </p>
+                            )}
+                          </>
                         )}
                         <p className="mt-1 text-xs text-gray-500">
                           {b.ticketRef}{b.reporterName ? ` · ${b.reporterName}` : ""}
                         </p>
-                        {b.screenshotUrl && (
-                          <a href={b.screenshotUrl} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs underline" style={{ color: ACCENT }}>
-                            View screenshot
-                          </a>
+                        <div className="mt-1 flex items-center gap-3">
+                          {b.screenshotUrl && (
+                            <a href={b.screenshotUrl} target="_blank" rel="noreferrer" className="inline-block text-xs underline" style={{ color: ACCENT }}>
+                              View screenshot
+                            </a>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => openEdit(b)}
+                            className="text-xs font-medium underline hover:opacity-80"
+                            style={{ color: ACCENT }}
+                          >
+                            {editingBug === b.ticketRef ? "Cancel" : "Edit"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openReopen(b.ticketRef)}
+                            className="text-xs font-medium text-red-600 underline hover:text-red-800"
+                          >
+                            {reopening === b.ticketRef ? "Cancel" : "Not fixed →"}
+                          </button>
+                        </div>
+
+                        {editingBug === b.ticketRef && (
+                          <div className="mt-2 space-y-2 rounded-md border border-gray-200 bg-white p-2">
+                            <div>
+                              <label className="mb-1 block text-xs font-medium text-gray-700">What is wrong?</label>
+                              <textarea
+                                autoFocus
+                                value={editMessage}
+                                onChange={(e) => setEditMessage(e.target.value)}
+                                maxLength={5000}
+                                rows={3}
+                                className="w-full resize-y rounded-md border border-gray-300 p-2 text-sm outline-none focus:border-gray-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="mb-1 block text-xs font-medium text-gray-700">
+                                What should it do instead? <span className="font-normal text-gray-400">(optional)</span>
+                              </label>
+                              <textarea
+                                value={editExpected}
+                                onChange={(e) => setEditExpected(e.target.value)}
+                                maxLength={5000}
+                                rows={2}
+                                className="w-full resize-y rounded-md border border-gray-300 p-2 text-sm outline-none focus:border-gray-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="mb-1 block text-xs font-medium text-gray-700">Status</label>
+                              <select
+                                value={editStatus}
+                                onChange={(e) => setEditStatus(e.target.value as BugStatus)}
+                                className="w-full rounded-md border border-gray-300 bg-white p-2 text-sm outline-none focus:border-gray-500"
+                              >
+                                {BUG_STATUS_OPTIONS.map((o) => (
+                                  <option key={o.value} value={o.value}>{o.label}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setEditingBug(null)}
+                                className="rounded px-2 py-1 text-xs font-medium text-gray-500 hover:text-gray-800"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                type="button"
+                                disabled={!editMessage.trim() || editSubmitting}
+                                onClick={() => void submitEdit(b.ticketRef)}
+                                className="rounded px-3 py-1 text-xs font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-50"
+                                style={{ backgroundColor: ACCENT }}
+                              >
+                                {editSubmitting ? "Saving…" : "Save changes"}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {reopening === b.ticketRef && (
+                          <div className="mt-2 rounded-md border border-red-200 bg-white p-2">
+                            <label className="mb-1 block text-xs font-medium text-gray-700">
+                              What&apos;s still wrong? <span className="font-normal text-gray-400">— the AI will pick it up again</span>
+                            </label>
+                            <textarea
+                              autoFocus
+                              value={reopenNote}
+                              onChange={(e) => setReopenNote(e.target.value)}
+                              maxLength={5000}
+                              rows={3}
+                              placeholder="Describe what still doesn't work, so the AI fixer knows what to retry."
+                              className="w-full resize-y rounded-md border border-gray-300 p-2 text-sm outline-none focus:border-gray-500"
+                            />
+                            <div className="mt-2 flex items-center justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() => openReopen(b.ticketRef)}
+                                className="rounded px-2 py-1 text-xs font-medium text-gray-500 hover:text-gray-800"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                type="button"
+                                disabled={!reopenNote.trim() || reopenSubmitting}
+                                onClick={() => void submitNotFixed(b.ticketRef)}
+                                className="rounded px-3 py-1 text-xs font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-50"
+                                style={{ backgroundColor: "#B03824" }}
+                              >
+                                {reopenSubmitting ? "Sending…" : "Send back to AI"}
+                              </button>
+                            </div>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -589,34 +856,30 @@ function Checkbox({ checked, onChange, label }: { checked: boolean; onChange: (v
 }
 
 function AnnotationEditor({
-  annotation,
-  onSave,
+  value,
+  onChange,
   onDelete,
-  onCancel,
+  onFocus,
+  onBlur,
 }: {
-  annotation: Annotation;
-  onSave: (label: string) => void;
+  value: string;
+  onChange: (label: string) => void;
   onDelete: () => void;
-  onCancel: () => void;
+  onFocus: () => void;
+  onBlur: () => void;
 }) {
-  const [value, setValue] = useState(annotation.label);
   return (
     <div className="mt-2 flex items-center gap-2 rounded-md border border-gray-200 bg-white p-2">
       <input
-        autoFocus
         value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") onSave(value);
-          if (e.key === "Escape") onCancel();
-        }}
-        placeholder="Label this area (optional)"
+        onChange={(e) => onChange(e.target.value)}
+        onFocus={onFocus}
+        onBlur={onBlur}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur(); }}
+        placeholder="Label this box (optional)"
         className="flex-1 rounded border border-gray-300 px-2 py-1 text-sm outline-none focus:border-gray-500"
       />
-      <button type="button" onClick={() => onSave(value)} className="rounded px-2 py-1 text-xs font-semibold text-white" style={{ backgroundColor: ACCENT }}>
-        Save
-      </button>
-      <button type="button" onClick={onDelete} aria-label="Delete annotation" className="rounded px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50">
+      <button type="button" onClick={onDelete} aria-label="Delete box" className="rounded px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50">
         Delete
       </button>
     </div>
