@@ -1,8 +1,20 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AdminMerchantAutoApprove } from "@/components/admin-merchant-auto-approve";
-import { getAdminMerchantDetail } from "@/lib/event-repository";
-import type { AdminMerchantDetailEvent } from "@/lib/event-repository";
+import {
+  getAdminMerchantDetail,
+  getMerchantDocumentsForAdmin,
+} from "@/lib/event-repository";
+import type {
+  AdminMerchantDetailEvent,
+  AdminMerchantDocument,
+} from "@/lib/event-repository";
+
+const DOCUMENT_LABELS: Record<string, string> = {
+  abn_certificate: "ABN certificate",
+  public_liability_insurance: "Public liability insurance",
+  liquor_licence: "Liquor licence",
+};
 
 export const metadata = {
   title: "Merchant Profile | Admin",
@@ -124,6 +136,8 @@ export default async function AdminMerchantDetailPage({
   const merchant = await getAdminMerchantDetail(merchantId);
   if (!merchant) notFound();
 
+  const documents = await getMerchantDocumentsForAdmin(merchant.id);
+
   const address = fullAddress(merchant);
   const socials = Object.entries(merchant.socials ?? {})
     .filter(([, handle]) => handle)
@@ -225,10 +239,6 @@ export default async function AdminMerchantDetailPage({
           />
           <Stat label="ACN" value={merchant.acn ?? "—"} />
           <Stat
-            label="Business type"
-            value={merchant.businessType ? titleCase(merchant.businessType) : "—"}
-          />
-          <Stat
             label="Socials"
             value={socials.length ? socials.map((s) => s.label).join(" · ") : "—"}
           />
@@ -323,6 +333,20 @@ export default async function AdminMerchantDetailPage({
           </div>
         </Card>
       </section>
+
+      <Card title={`Documents (${documents.length})`}>
+        {documents.length === 0 ? (
+          <p className="text-sm font-medium text-[color:var(--mauve)]">
+            No documents uploaded.
+          </p>
+        ) : (
+          <ul className="divide-y divide-[color:var(--line-soft)]">
+            {documents.map((doc) => (
+              <DocumentRow key={doc.id} doc={doc} />
+            ))}
+          </ul>
+        )}
+      </Card>
 
       <section className="grid gap-6 lg:grid-cols-2">
         <Card title={`Upcoming events (${merchant.upcomingEvents.length})`}>
@@ -419,6 +443,34 @@ export default async function AdminMerchantDetailPage({
         )}
       </Card>
     </div>
+  );
+}
+
+function DocumentRow({ doc }: { doc: AdminMerchantDocument }) {
+  const label = DOCUMENT_LABELS[doc.document_type] ?? titleCase(doc.document_type);
+  return (
+    <li className="flex items-center justify-between gap-3 py-3">
+      <div className="min-w-0">
+        <p className="font-bold text-[color:var(--ink)]">{label}</p>
+        <p className="mt-1 truncate font-mono text-[0.65rem] font-bold uppercase tracking-wider text-[color:var(--mauve)]">
+          {doc.file_name} · {dateFormatter.format(new Date(doc.uploaded_at))}
+        </p>
+      </div>
+      {doc.signedUrl ? (
+        <a
+          href={doc.signedUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="shrink-0 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-3 py-1 text-[0.65rem] font-bold uppercase tracking-wider text-[color:var(--surface-deep)] hover:bg-[color:var(--rose)]"
+        >
+          View ↗
+        </a>
+      ) : (
+        <span className="shrink-0 font-mono text-[0.6rem] font-bold uppercase tracking-wider text-[color:var(--mauve)]">
+          Storage off
+        </span>
+      )}
+    </li>
   );
 }
 

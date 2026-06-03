@@ -20,7 +20,10 @@ export function EventCard({
   const seatsLeft = Math.max(0, event.capacity - event.attendees);
   const isFull = seatsLeft === 0;
   const isWaitlistEvent = event.status === "Waitlist" || isFull;
-  const isLockedEvent = event.status === "Locked" && !registered;
+  // Venue is private until the viewer RSVPs — show only the suburb otherwise
+  // (the precise venue name lives behind the RSVP, same gate as the address +
+  // map on the event detail page).
+  const venueHidden = !registered;
   const statusLabel = isFull && event.status === "Live" ? "Full" : event.status;
   const availabilityLabel = isFull
     ? "Sold out"
@@ -78,7 +81,7 @@ export function EventCard({
           </Link>
         </h3>
         <p className="mt-1 text-sm font-semibold text-[color:var(--mauve)]">
-          {isLockedEvent ? (
+          {venueHidden ? (
             <span className="inline-flex items-center gap-1.5 text-[color:var(--ink)]">
               <svg
                 viewBox="0 0 24 24"
@@ -93,7 +96,7 @@ export function EventCard({
                 <rect x="4" y="11" width="16" height="9" rx="2" />
                 <path d="M8 11V8a4 4 0 018 0v3" />
               </svg>
-              RSVP to unlock the venue
+              {event.suburb} · RSVP to unlock venue
             </span>
           ) : (
             event.location

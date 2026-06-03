@@ -6,6 +6,7 @@ import { ClickWithSomeoneUserCard } from "@/components/click-with-someone-user-c
 import { Pill } from "@/components/click-ui";
 import {
   getMutualClicksForSession,
+  getPersonalizedDiscovery,
   getSuggestedPeople,
 } from "@/lib/event-repository";
 
@@ -26,9 +27,10 @@ export default async function PeoplePage() {
     redirect("/login?callbackUrl=/people");
   }
 
-  const [suggested, mutuals] = await Promise.all([
+  const [suggested, mutuals, personalized] = await Promise.all([
     getSuggestedPeople(session),
     getMutualClicksForSession(session),
+    getPersonalizedDiscovery(session),
   ]);
 
   return (
@@ -124,7 +126,7 @@ export default async function PeoplePage() {
               </p>
             )}
           </div>
-          <ClickRadar people={suggested} />
+          <ClickRadar events={personalized?.events ?? []} />
         </div>
       </section>
     </main>

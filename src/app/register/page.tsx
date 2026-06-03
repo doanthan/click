@@ -52,9 +52,9 @@ export default async function RegisterPage({ searchParams }: RegisterPageProps) 
           </h1>
 
           <p className="mt-6 max-w-xl text-base font-medium leading-7 text-[color:var(--mauve)] sm:text-lg">
-            Tell us your name and what you&apos;re here for, share your location
-            so we can surface the right rooms, then continue with Google,
-            Facebook, or Email.
+            Tell us your name and continue with Google, Facebook, or Email.
+            We&apos;ll set up what you&apos;re here for and where you are in the
+            next step.
           </p>
 
           <ul className="mt-8 grid gap-3 text-sm font-semibold text-[color:var(--mauve)]">

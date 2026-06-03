@@ -662,6 +662,9 @@ function inputClass() {
 // createEventForMerchant so the UI can't promise more than the backend keeps.
 const MAX_TAGS = 8;
 
+// How many browse-chips to show before the "show all" toggle.
+const BROWSE_LIMIT = 18;
+
 function parseTags(value: string): string[] {
   return value
     .split(",")
@@ -686,7 +689,7 @@ function TagPicker({
   onChange: (next: string) => void;
 }) {
   const [query, setQuery] = useState("");
-  const [open, setOpen] = useState(false);
+  const [showAll, setShowAll] = useState(false);
 
   const selected = useMemo(() => parseTags(value), [value]);
   const selectedKeys = useMemo(
@@ -702,13 +705,18 @@ function TagPicker({
   }, [options]);
   const atLimit = selected.length >= MAX_TAGS;
 
-  const suggestions = useMemo(() => {
+  // All available (unselected) tags matching the search box — rendered as a
+  // browsable, clickable chip cloud so merchants can discover existing tags
+  // without having to guess search terms.
+  const browsable = useMemo(() => {
     const q = query.trim().toLowerCase();
     return options
       .filter((opt) => !selectedKeys.has(opt.toLowerCase()))
-      .filter((opt) => (q ? opt.toLowerCase().includes(q) : true))
-      .slice(0, 8);
+      .filter((opt) => (q ? opt.toLowerCase().includes(q) : true));
   }, [options, selectedKeys, query]);
+
+  const suggestions = browsable;
+  const visibleBrowsable = showAll ? browsable : browsable.slice(0, BROWSE_LIMIT);
 
   const commit = (next: string[]) => onChange(next.join(", "));
 
@@ -761,44 +769,48 @@ function TagPicker({
         </ul>
       ) : null}
 
-      <div className="relative">
-        <input
-          type="text"
-          value={query}
-          disabled={atLimit}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setOpen(true);
-          }}
-          onFocus={() => setOpen(true)}
-          onBlur={() => setTimeout(() => setOpen(false), 120)}
-          onKeyDown={handleKeyDown}
-          placeholder={
-            atLimit ? `Tag limit reached (${MAX_TAGS})` : "Search tags…"
-          }
-          className={`${inputClass()} h-12 w-full disabled:cursor-not-allowed disabled:opacity-60`}
-        />
-        {open && !atLimit && suggestions.length > 0 ? (
-          <ul className="absolute left-0 right-0 top-full z-20 mt-1 max-h-56 overflow-auto rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] py-1 hard-shadow-sm">
-            {suggestions.map((opt) => (
+      <input
+        type="text"
+        value={query}
+        disabled={atLimit}
+        onChange={(e) => setQuery(e.target.value)}
+        onKeyDown={handleKeyDown}
+        placeholder={
+          atLimit ? `Tag limit reached (${MAX_TAGS})` : "Search tags…"
+        }
+        className={`${inputClass()} h-12 w-full disabled:cursor-not-allowed disabled:opacity-60`}
+      />
+
+      {/* Browsable chip cloud — click to add, no typing required. */}
+      {!atLimit && browsable.length > 0 ? (
+        <div className="mt-1">
+          <p className="mb-2 font-mono text-[0.6rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+            {query.trim() ? `Matching tags (${browsable.length})` : "Tap to add"}
+          </p>
+          <ul className="flex flex-wrap gap-2">
+            {visibleBrowsable.map((opt) => (
               <li key={opt}>
                 <button
                   type="button"
-                  // onMouseDown (not onClick) so the option is added before the
-                  // input's onBlur closes the dropdown.
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    addTag(opt);
-                  }}
-                  className="block w-full px-4 py-2 text-left text-sm font-semibold text-[color:var(--ink)] hover:bg-[color:var(--champagne)]"
+                  onClick={() => addTag(opt)}
+                  className="inline-flex items-center gap-1 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
                 >
-                  {opt}
+                  <span aria-hidden className="text-[color:var(--mauve)]">+</span> {opt}
                 </button>
               </li>
             ))}
           </ul>
-        ) : null}
-      </div>
+          {!showAll && browsable.length > BROWSE_LIMIT ? (
+            <button
+              type="button"
+              onClick={() => setShowAll(true)}
+              className="mt-2 text-xs font-bold uppercase tracking-wide text-[color:var(--ink)] underline decoration-2 underline-offset-4 hover:text-[color:var(--rose)]"
+            >
+              Show all {browsable.length}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

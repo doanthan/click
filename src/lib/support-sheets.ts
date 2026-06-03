@@ -41,6 +41,9 @@ const HEADER = [
   "Screenshot",
   "Date added",
   "Ticket",
+  // The AI fixer's summary of what it changed (col K). Filled when ai_fixed flips
+  // true; mirrors support_tickets.ai_comment. Empty on a fresh report.
+  "AI Comment",
 ];
 const COL_COUNT = HEADER.length;
 const LAST_COL = String.fromCharCode(64 + COL_COUNT); // e.g. 10 -> "J"
@@ -133,7 +136,10 @@ async function ensureSheet(sheets: sheets_v4.Sheets): Promise<number> {
   const looksRight =
     existing.length >= 4 &&
     firstRange?.startRowIndex === 1 &&
-    (firstRange?.endRowIndex ?? 0) >= GRID_ROWS;
+    (firstRange?.endRowIndex ?? 0) >= GRID_ROWS &&
+    // Self-heal when a column is added (e.g. "AI Comment") so the row colour
+    // rules widen to cover it instead of stopping at the old last column.
+    (firstRange?.endColumnIndex ?? 0) >= COL_COUNT;
   if (!looksRight) {
     await applyFormatting(sheets, sheetId, existing.length);
   }
@@ -303,6 +309,7 @@ export async function appendBugRow(input: SheetRowInput): Promise<number | null>
             screenshotCell, // H
             input.dateAdded, // I Date added
             input.ticketRef, // J
+            "", // K AI Comment — filled by the AI fixer pass, empty on report
           ],
         ],
       },

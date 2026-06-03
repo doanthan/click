@@ -8,6 +8,7 @@ import { ClickRadar } from "@/components/click-radar";
 import { ClickWithSomeoneUserCard } from "@/components/click-with-someone-user-card";
 import {
   getDashboardData,
+  getPersonalizedDiscovery,
   getPostEventClickPrompts,
   getProfileCompletion,
   getProfileStatus,
@@ -26,13 +27,14 @@ export default async function DashboardPage() {
     redirect("/login?callbackUrl=/dashboard");
   }
 
-  const [dashboard, profileStatus, postEventPrompts, completion, suggestedPeople] =
+  const [dashboard, profileStatus, postEventPrompts, completion, suggestedPeople, personalized] =
     await Promise.all([
       getDashboardData(session),
       getProfileStatus(session),
       getPostEventClickPrompts(session),
       getProfileCompletion(session),
       getSuggestedPeople(session),
+      getPersonalizedDiscovery(session),
     ]);
 
   const activePrompts = postEventPrompts.filter((p) =>
@@ -327,7 +329,7 @@ export default async function DashboardPage() {
               </div>
             )}
           </div>
-          <ClickRadar people={suggestedPeople} />
+          <ClickRadar events={personalized?.events ?? []} />
         </div>
       </section>
     </main>

@@ -1,44 +1,47 @@
 import Link from "next/link";
-import type { SuggestedPerson } from "@/lib/event-repository";
+import type { EventItem } from "@/lib/click-data";
 
-export function ClickRadar({ people }: { people: SuggestedPerson[] }) {
-  const top = people.slice(0, 4);
+// Click Radar surfaces EVENTS the viewer is likely to click with — RSVP'ing is
+// the on-ramp to meeting people (you can only Click someone after a shared
+// event), so the radar points at events, not people. Per 04_MATCHING_ALGORITHM_V2.md
+// §5.2 (`event_radar`), the suggestions are the personalised event candidates.
+export function ClickRadar({ events }: { events: EventItem[] }) {
+  const top = events.slice(0, 4);
   return (
     <aside className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--ink)] p-5 text-[color:var(--on-deep)] hard-shadow">
       <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--peach)]">
         Click Radar
       </span>
       <h3 className="font-display mt-3 text-2xl font-light leading-tight">
-        People with overlapping tags.
+        Events on your radar.
       </h3>
       <p className="mt-2 text-sm font-medium leading-6 opacity-80">
-        Quietly suggested. Nothing happens unless you both Click.
+        Picked from your interests and intent. RSVP — that&apos;s how you meet the
+        people you&apos;ll click with.
       </p>
       {top.length > 0 ? (
         <ul className="mt-5 space-y-3">
-          {top.map((person) => (
+          {top.map((event) => (
             <li
-              key={person.id}
+              key={event.id}
               className="rounded-2xl border-2 border-[color:var(--peach)] bg-[color:var(--surface-deep)] p-3"
             >
               <Link
-                href={`/profile/${person.id}`}
+                href={`/events/${event.id}`}
                 className="block text-sm font-bold text-[color:var(--on-deep)] hover:text-[color:var(--peach)]"
               >
-                {person.displayName}
+                {event.title}
               </Link>
               <p className="mt-1 text-xs font-medium text-[color:var(--peach)]">
-                {person.suburb ?? "Sydney"}
-                {person.sharedInterests.length > 0
-                  ? ` · ${person.sharedInterests.slice(0, 2).join(", ")}`
-                  : ""}
+                {event.date}
+                {event.suburb ? ` · ${event.suburb}` : ""}
               </p>
             </li>
           ))}
         </ul>
       ) : (
         <p className="mt-5 rounded-2xl border-2 border-dashed border-[color:var(--peach)] p-3 text-xs font-medium opacity-80">
-          Pick a few interests in onboarding to light up your radar.
+          Add a few interests in onboarding to light up your radar.
         </p>
       )}
     </aside>

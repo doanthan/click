@@ -60,6 +60,43 @@ export function EventMediaGallery({ items, statusLabel, categoryLabel }: EventMe
   const extraCount = Math.max(0, items.length - visible.length);
   const [m1, m2, m3, m4, m5] = visible;
 
+  // Single upload → one honest full-width hero (no sparse mosaic, no "view all").
+  if (items.length === 1) {
+    return (
+      <section aria-label="Event photos" className="relative">
+        {(statusLabel || categoryLabel) && (
+          <div className="pointer-events-none absolute left-4 right-4 top-4 z-10 flex items-start justify-between gap-3">
+            {statusLabel ? (
+              <span className="pointer-events-auto rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-3 py-1.5 text-[0.7rem] font-bold uppercase tracking-wider text-[color:var(--surface-deep)] hard-shadow-sm">
+                {statusLabel}
+              </span>
+            ) : <span />}
+            {categoryLabel ? (
+              <span className="pointer-events-auto rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-1.5 text-[0.7rem] font-bold uppercase tracking-wider hard-shadow-sm">
+                {categoryLabel}
+              </span>
+            ) : null}
+          </div>
+        )}
+        <Tile
+          item={m1}
+          onOpen={() => setLightboxIndex(0)}
+          priority
+          className="aspect-[4/5] w-full sm:aspect-[16/9]"
+        />
+        {lightboxIndex !== null ? (
+          <Lightbox
+            items={items}
+            index={lightboxIndex}
+            onClose={close}
+            onNext={next}
+            onPrev={prev}
+          />
+        ) : null}
+      </section>
+    );
+  }
+
   return (
     <section aria-label="Event photos and videos" className="relative">
       {/* Floating chips overlay the gallery top-row */}

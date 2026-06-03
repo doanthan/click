@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
@@ -21,21 +22,44 @@ export default async function OwnProfilePage() {
     redirect("/onboarding");
   }
 
+  const initials = profile.displayName
+    .split(" ")
+    .map((part) => part[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+
   return (
     <main className="paper-noise min-h-screen bg-[color:var(--champagne)] px-4 py-12 text-[color:var(--ink)] sm:px-6">
       <section className="mx-auto max-w-4xl">
         <div className="flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <span className="sticker sticker--peach tilt-l-2 inline-flex">
-              <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
-              Your profile
-            </span>
-            <h1 className="mt-6 font-display text-5xl font-light leading-[0.96] tracking-tight sm:text-6xl">
-              {profile.displayName}
-            </h1>
-            <p className="mt-3 text-sm font-mono font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-              {profile.email}
-            </p>
+          <div className="flex items-end gap-5">
+            {profile.photoUrl ? (
+              <Image
+                src={profile.photoUrl}
+                alt={profile.displayName}
+                width={96}
+                height={96}
+                className="size-20 shrink-0 rounded-2xl border-2 border-[color:var(--line)] object-cover hard-shadow-sm sm:size-24"
+              />
+            ) : (
+              <span className="grid size-20 shrink-0 place-items-center rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--peach)] font-display text-2xl font-bold text-[color:var(--surface-deep)] hard-shadow-sm sm:size-24">
+                {initials || "·"}
+              </span>
+            )}
+            <div>
+              <span className="sticker sticker--peach tilt-l-2 inline-flex">
+                <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
+                Your profile
+              </span>
+              <h1 className="mt-6 font-display text-5xl font-light leading-[0.96] tracking-tight sm:text-6xl">
+                {profile.displayName}
+              </h1>
+              <p className="mt-3 text-sm font-mono font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+                {profile.email}
+              </p>
+            </div>
           </div>
           <LinkButton href="/profile/edit">Edit profile</LinkButton>
         </div>
@@ -49,7 +73,6 @@ export default async function OwnProfilePage() {
               <Row label="Suburb" value={profile.suburb ?? "—"} />
               <Row label="City" value={profile.city} />
               <Row label="Age" value={profile.age?.toString() ?? "—"} />
-              <Row label="Role" value={profile.role} />
               <Row label="Attended" value={`${profile.attendedCount} events`} />
             </dl>
           </div>

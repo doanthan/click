@@ -137,7 +137,9 @@ export function OnboardingForm({ initialName }: OnboardingFormProps) {
           }
           if (typeof draft.datingVisible === "boolean") setDatingVisible(draft.datingVisible);
           if (typeof draft.flexibleDiscovery === "boolean") setFlexibleDiscovery(draft.flexibleDiscovery);
-          if (Array.isArray(draft.tags)) setTags(new Set(draft.tags));
+          // Intentionally NOT restoring `draft.tags`: interests are optional and
+          // restoring them silently makes the picker look pre-filled on a fresh
+          // visit ("I haven't touched anything"). Interests always start empty.
           if (typeof draft.bio === "string") setBio(draft.bio);
         }
       }
@@ -231,7 +233,9 @@ export function OnboardingForm({ initialName }: OnboardingFormProps) {
           intents: Array.from(intents),
           tags: Array.from(tags),
           birthDate: birthDate || undefined,
-          datingVisible,
+          // Only persist dating visibility for people who actually picked Dating;
+          // the toggle is hidden for everyone else, so its state is meaningless.
+          datingVisible: intents.has("dating") ? datingVisible : false,
           flexibleDiscovery,
         }),
       });
@@ -395,14 +399,19 @@ export function OnboardingForm({ initialName }: OnboardingFormProps) {
           <Section
             eyebrow="Visibility"
             title="Who can see you?"
-            subtitle="Off by default for dating. Flip what you're comfortable with — you can change either of these later from settings."
+            subtitle="Flip what you're comfortable with — you can change these later from settings."
           >
-            <Toggle
-              label="Dating visibility"
-              description="Let people on Click who are dating-minded see you on profiles and Click Radar."
-              checked={datingVisible}
-              onChange={setDatingVisible}
-            />
+            {/* Dating visibility is only meaningful to people who picked Dating —
+                hide it entirely otherwise so non-dating users aren't asked about
+                a dating-only setting. */}
+            {intents.has("dating") ? (
+              <Toggle
+                label="Dating visibility"
+                description="Let people on Click who are dating-minded see you on profiles and Click Radar."
+                checked={datingVisible}
+                onChange={setDatingVisible}
+              />
+            ) : null}
             <Toggle
               label="Flexible discovery"
               description="Show me cross-intent events (e.g. friendship-tagged events even if my main intent is dating)."

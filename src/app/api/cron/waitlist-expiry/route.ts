@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { expireWaitlistOffers } from "@/lib/event-repository";
+import { expirePaymentHolds, expireWaitlistOffers } from "@/lib/event-repository";
 
 export const runtime = "nodejs";
 // Never cache — this mutates state every run.
@@ -31,8 +31,15 @@ async function handle(request: Request) {
   }
 
   try {
-    const result = await expireWaitlistOffers();
-    return NextResponse.json({ ok: true, ...result });
+    // Release abandoned checkout holds first (frees seats + re-offers them),
+    // then sweep lapsed waitlist offers and roll those seats on too.
+    const holds = await expirePaymentHolds();
+    const offers = await expireWaitlistOffers();
+    return NextResponse.json({
+      ok: true,
+      paymentHolds: holds,
+      waitlistOffers: offers,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Waitlist sweep failed.";
     return NextResponse.json({ error: message }, { status: 500 });

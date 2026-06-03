@@ -5,6 +5,7 @@ import { Pill } from "@/components/click-ui";
 import { EventAttendeePreview } from "@/components/event-attendee-preview";
 import { EventBookingDialog } from "@/components/event-booking-dialog";
 import { EventMediaGallery } from "@/components/event-media-gallery";
+import { EventVenueMap } from "@/components/event-venue-map";
 import { EventPaymentButton } from "@/components/event-payment-button";
 import { EventRegistrationButton } from "@/components/event-registration-button";
 import { EventBookmarkButton } from "@/components/event-bookmark-button";
@@ -102,7 +103,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
   const [event, profileStatus, attendeePreview, systemSettings] = await Promise.all([
     getEventBySlug(slug, session),
     session?.user ? getProfileStatus(session) : null,
-    getEventAttendeePreview(slug, 8),
+    getEventAttendeePreview(slug, session, 8),
     getSystemSettings(),
   ]);
 
@@ -156,6 +157,12 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
     isPaid && isRegistered
       ? refundQuoteLabel(quoteCancellationRefund(totalCents, event.startsAt), "AUD")
       : null;
+  // The venue map unlocks for people who've confirmed their seat (or who manage
+  // the event) — the "paid & confirmed" unlocked state the venue/map live in.
+  const venueUnlocked = isRegistered || isAdmin || isOwner;
+  const venueMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+    [event.location, event.address, event.suburb].filter(Boolean).join(", "),
+  )}`;
   const bookmarked = profileStatus?.bookmarkedEventIds.includes(event.id) ?? false;
   const showStripeUnavailableHint = isPaid && !process.env.STRIPE_SECRET_KEY;
   const isAuthenticated = Boolean(session?.user);
@@ -313,6 +320,19 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                       <p className="text-sm font-medium text-[color:var(--mauve)]">
                         {event.suburb}
                       </p>
+                      {/* Map is a confirmed-attendee perk: once you've paid &
+                          confirmed (or you're admin/owner), the venue unlocks
+                          with a pin you can open in Maps. */}
+                      {venueUnlocked && event.lat && event.lng ? (
+                        <EventVenueMap
+                          lat={event.lat}
+                          lng={event.lng}
+                          label={[event.location, event.address, event.suburb]
+                            .filter(Boolean)
+                            .join(", ")}
+                          mapsUrl={venueMapsUrl}
+                        />
+                      ) : null}
                     </>
                   )}
                 </div>

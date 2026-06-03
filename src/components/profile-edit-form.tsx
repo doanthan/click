@@ -19,8 +19,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { AvatarUploader } from "@/components/avatar-uploader";
-import { interestTagCategories, musicTags } from "@/lib/click-data";
-import type { OwnProfile } from "@/lib/event-repository";
+import type { OwnProfile, ProfileTagOptions } from "@/lib/event-repository";
 
 // Local copy so this client bundle never imports src/lib/postcode.ts (which
 // pulls in the ~300 KB postcode table — that stays server-side).
@@ -38,16 +37,6 @@ const INTENT_OPTIONS: { value: string; label: string; body: string }[] = [
   { value: "exploring",   label: "Exploring",   body: "Just curious — show me a bit of everything." },
 ];
 
-// Mirrors the slug the DB matcher derives from a label
-// (see database/026_curate_interest_tags.sql).
-function interestSlug(label: string): string {
-  return label
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
-
 function toggle(set: Set<string>, value: string): Set<string> {
   const next = new Set(set);
   if (next.has(value)) next.delete(value);
@@ -55,7 +44,13 @@ function toggle(set: Set<string>, value: string): Set<string> {
   return next;
 }
 
-export function ProfileEditForm({ profile }: { profile: OwnProfile }) {
+export function ProfileEditForm({
+  profile,
+  tagOptions,
+}: {
+  profile: OwnProfile;
+  tagOptions: ProfileTagOptions;
+}) {
   const [intents, setIntents] = useState<Set<string>>(new Set(profile.intents));
   const [interests, setInterests] = useState<Set<string>>(new Set(profile.interestSlugs));
   const [music, setMusic] = useState<Set<string>>(new Set(profile.musicSlugs));
@@ -291,23 +286,20 @@ export function ProfileEditForm({ profile }: { profile: OwnProfile }) {
         hint="Shape your recommendations — pick the activities you're into."
       >
         <div className="grid gap-4">
-          {interestTagCategories.map(([category, ...tagList]) => (
+          {tagOptions.interestCategories.map(({ category, tags }) => (
             <div key={category} className="grid gap-2">
               <span className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
                 {category}
               </span>
               <div className="flex flex-wrap gap-2">
-                {tagList.map((label) => {
-                  const slug = interestSlug(label);
-                  return (
-                    <Chip
-                      key={slug}
-                      label={label}
-                      selected={interests.has(slug)}
-                      onClick={() => setInterests((s) => toggle(s, slug))}
-                    />
-                  );
-                })}
+                {tags.map((tag) => (
+                  <Chip
+                    key={tag.slug}
+                    label={tag.label}
+                    selected={interests.has(tag.slug)}
+                    onClick={() => setInterests((s) => toggle(s, tag.slug))}
+                  />
+                ))}
               </div>
             </div>
           ))}
@@ -320,7 +312,7 @@ export function ProfileEditForm({ profile }: { profile: OwnProfile }) {
       {/* ----- Music tags ----- */}
       <Fieldset legend="Music tags" hint="Music taste is used as a subtle matching signal.">
         <div className="flex flex-wrap gap-2">
-          {musicTags.map((tag) => (
+          {tagOptions.musicTags.map((tag) => (
             <Chip
               key={tag.slug}
               label={tag.label}
@@ -337,15 +329,22 @@ export function ProfileEditForm({ profile }: { profile: OwnProfile }) {
       {/* ----- Click quiz ----- */}
       <Fieldset legend="Click quiz">
         <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--champagne)] p-5">
-          <p className="max-w-md text-sm font-semibold leading-6 text-[color:var(--mauve)]">
-            The Life Quiz tunes your matches — life stage, social energy, availability, and mood.
-            Takes about two minutes.
-          </p>
+          <div className="max-w-md">
+            {profile.lifeQuizCompleted ? (
+              <p className="text-sm font-bold uppercase tracking-wide text-[color:var(--ink)]">
+                <span className="text-[color:var(--rose)]">✓</span> Life Quiz completed
+              </p>
+            ) : null}
+            <p className="mt-1 text-sm font-semibold leading-6 text-[color:var(--mauve)]">
+              The Life Quiz tunes your matches — life stage, social energy, availability, and mood.
+              Takes about two minutes.
+            </p>
+          </div>
           <Link
             href="/quiz/life"
             className="shrink-0 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)]"
           >
-            Take the Life Quiz
+            {profile.lifeQuizCompleted ? "Retake quiz" : "Take the Life Quiz"}
           </Link>
         </div>
       </Fieldset>

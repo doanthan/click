@@ -12,26 +12,16 @@ type Intent =
   | "wellness"
   | "community"
   | "new_in_town";
-type LocationStatus = "idle" | "requesting" | "shared" | "denied" | "unsupported";
-
-const intentOptions: Array<{ value: Intent; label: string; body: string }> = [
-  { value: "friendship",  label: "Friendship",  body: "Low-pressure plans to make new friends." },
-  { value: "dating",      label: "Dating",      body: "Slow dating tables and relationship-minded events." },
-  { value: "networking",  label: "Networking",  body: "Career switchers, founders, and peer support." },
-  { value: "hobbies",     label: "Hobbies",     body: "Find people who share your craft — creative, sport, gaming, books." },
-  { value: "wellness",    label: "Wellness",    body: "Slow mornings, mindful movement, sober-friendly nights." },
-  { value: "community",   label: "Community",   body: "Local meetups, volunteering, neighbourhood vibes." },
-  { value: "new_in_town", label: "New in town", body: "Just relocated — looking to plug into Sydney fast." },
-  { value: "exploring",   label: "Exploring",   body: "Just curious — show me a bit of everything." },
-];
-
 export const REGISTER_PREFILL_KEY = "click:register-prefill";
 
 export type RegisterPrefill = {
   displayName: string;
-  intent: Intent;
-  latitude: number | null;
-  longitude: number | null;
+  // Register now only captures the name — intent + location are collected once on
+  // onboarding (the next page) instead of being asked twice. Kept optional so any
+  // older prefill stash still parses cleanly.
+  intent?: Intent;
+  latitude?: number | null;
+  longitude?: number | null;
   capturedAt: string;
 };
 
@@ -49,39 +39,11 @@ export function RegisterForm({
   metaConfigured,
 }: RegisterFormProps) {
   const [displayName, setDisplayName] = useState("");
-  const [intent, setIntent] = useState<Intent>("friendship");
-  const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [locationStatus, setLocationStatus] = useState<LocationStatus>("idle");
-
-  function requestLocation() {
-    if (typeof navigator === "undefined" || !("geolocation" in navigator)) {
-      setLocationStatus("unsupported");
-      return;
-    }
-
-    setLocationStatus("requesting");
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setCoords({
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-        });
-        setLocationStatus("shared");
-      },
-      () => {
-        setLocationStatus("denied");
-      },
-      { enableHighAccuracy: true, timeout: 8000, maximumAge: 60_000 },
-    );
-  }
 
   function stashPrefill() {
     if (typeof window === "undefined") return;
     const prefill: RegisterPrefill = {
       displayName: displayName.trim(),
-      intent,
-      latitude: coords?.latitude ?? null,
-      longitude: coords?.longitude ?? null,
       capturedAt: new Date().toISOString(),
     };
     try {
@@ -90,23 +52,6 @@ export function RegisterForm({
       // sessionStorage can be unavailable in private mode — ignore.
     }
   }
-
-  const locationCopy = (() => {
-    switch (locationStatus) {
-      case "requesting":
-        return "Asking your browser…";
-      case "shared":
-        return coords
-          ? `Got it · ${coords.latitude.toFixed(3)}, ${coords.longitude.toFixed(3)}`
-          : "Location shared.";
-      case "denied":
-        return "Permission denied. You can still register and set your suburb later.";
-      case "unsupported":
-        return "Your browser does not support geolocation. Skip this step.";
-      default:
-        return "Optional — helps us surface events near you on day one.";
-    }
-  })();
 
   return (
     <div className="grid gap-6 p-6 sm:p-7">
@@ -124,63 +69,6 @@ export function RegisterForm({
             placeholder="Jordan Lee"
           />
         </label>
-      </div>
-
-      <fieldset className="grid gap-3">
-        <legend className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-          Why are you joining?
-        </legend>
-        <div className="grid gap-2 sm:grid-cols-2">
-          {intentOptions.map((option) => {
-            const selected = intent === option.value;
-            return (
-              <label
-                key={option.value}
-                className={`cursor-pointer rounded-xl border-2 px-4 py-3 transition ${
-                  selected
-                    ? "border-[color:var(--rose)] bg-[color:var(--peach)]"
-                    : "border-[color:var(--line)] bg-[color:var(--cream)] hover:bg-[color:var(--champagne)]"
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="register-intent"
-                  value={option.value}
-                  checked={selected}
-                  onChange={() => setIntent(option.value)}
-                  className="sr-only"
-                />
-                <span className="block text-sm font-bold text-[color:var(--ink)]">
-                  {option.label}
-                </span>
-                <span className="mt-1 block text-xs font-semibold leading-5 text-[color:var(--mauve)]">
-                  {option.body}
-                </span>
-              </label>
-            );
-          })}
-        </div>
-      </fieldset>
-
-      <div className="grid gap-3 rounded-xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
-              Share your location
-            </p>
-            <p className="mt-2 text-sm font-semibold text-[color:var(--ink)]">
-              {locationCopy}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={requestLocation}
-            disabled={locationStatus === "requesting" || locationStatus === "shared"}
-            className="shrink-0 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-2 text-xs font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm hover:-translate-x-[2px] hover:-translate-y-[2px] hover:[box-shadow:5px_5px_0_0_var(--shadow-ink)] hover:bg-[color:var(--peach)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-x-0 disabled:hover:translate-y-0"
-          >
-            {locationStatus === "shared" ? "Shared ✓" : "Use my location"}
-          </button>
-        </div>
       </div>
 
       <div className="grid gap-3">

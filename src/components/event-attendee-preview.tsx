@@ -94,10 +94,13 @@ export function EventAttendeePreview({
             .join("")
             .toUpperCase();
           return (
-            <li key={p.profileId}>
+            <li
+              key={p.profileId}
+              className="flex flex-col gap-2 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-3 hard-shadow-sm"
+            >
               <Link
                 href={`/profile/${p.profileId}`}
-                className="group flex items-center gap-2 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] py-1 pl-1 pr-3 text-xs font-bold text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)]"
+                className="group flex items-center gap-2 text-xs font-bold text-[color:var(--ink)]"
                 title={p.displayName}
               >
                 {p.photoUrl ? (
@@ -116,12 +119,28 @@ export function EventAttendeePreview({
                 <span className="font-mono text-[0.7rem] uppercase tracking-wide group-hover:underline">
                   {p.displayName.split(" ")[0]}
                 </span>
+                {p.datingMinded ? (
+                  <span
+                    title="Open to dating"
+                    className="ml-auto rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-2 py-0.5 text-[0.6rem] font-bold uppercase tracking-wide text-[color:var(--surface-deep)]"
+                  >
+                    ✷ Dating
+                  </span>
+                ) : null}
               </Link>
+              {p.sharedInterests.length > 0 ? (
+                <p className="text-[0.7rem] font-semibold leading-4 text-[color:var(--mauve)]">
+                  <span className="font-mono uppercase tracking-wide text-[color:var(--rose)]">
+                    Shared·{" "}
+                  </span>
+                  {p.sharedInterests.slice(0, 4).join(" · ")}
+                </p>
+              ) : null}
             </li>
           );
         })}
         {remaining > 0 ? (
-          <li className="grid size-9 place-items-center rounded-full border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] text-xs font-bold text-[color:var(--mauve)]">
+          <li className="grid size-12 place-items-center rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] text-xs font-bold text-[color:var(--mauve)]">
             +{remaining}
           </li>
         ) : null}

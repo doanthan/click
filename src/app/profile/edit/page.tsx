@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { ProfileEditForm } from "@/components/profile-edit-form";
-import { getOwnProfile } from "@/lib/event-repository";
+import { getOwnProfile, getProfileTagOptions } from "@/lib/event-repository";
 
 export const metadata = {
   title: "Edit profile | Click",
@@ -19,6 +19,8 @@ export default async function EditProfilePage() {
     redirect("/onboarding");
   }
 
+  const tagOptions = await getProfileTagOptions();
+
   return (
     <main className="paper-noise min-h-screen bg-[color:var(--champagne)] px-4 py-8 text-[color:var(--ink)] sm:px-6">
       <section className="mx-auto max-w-4xl">
@@ -27,7 +29,7 @@ export default async function EditProfilePage() {
           Edit profile
         </span>
 
-        <ProfileEditForm profile={profile} />
+        <ProfileEditForm profile={profile} tagOptions={tagOptions} />
       </section>
     </main>
   );

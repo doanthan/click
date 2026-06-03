@@ -17,6 +17,28 @@ const MAX_DISTANCE_KM = 50;
 // on touch. The last entry maps to MAX_DISTANCE_KM ("any distance").
 const DISTANCE_OPTIONS = [2, 5, 10, 25, MAX_DISTANCE_KM] as const;
 
+// Emoji glyphs for the top category nav. Keys match the canonical category
+// names in click-data; unmapped (e.g. admin-added) categories fall back to a
+// neutral pin so the bar never renders a blank chip.
+const CATEGORY_ICONS: Record<string, string> = {
+  Social: "🎉",
+  Fitness: "🏋️",
+  Relationships: "💞",
+  Food: "🍽️",
+  Creative: "🎨",
+  Career: "💼",
+  Community: "🤝",
+  Family: "🧸",
+  Games: "🎲",
+  Learning: "📚",
+  Nightlife: "🌃",
+  Outdoors: "🏞️",
+  Sports: "⚽",
+  Travel: "✈️",
+  Wellness: "🧘",
+};
+const CATEGORY_ICON_FALLBACK = "📍";
+
 type DateWindow = "7" | "30" | "all";
 type SortMode = "soonest" | "nearest" | "popular";
 type ViewMode = "rails" | "grid";
@@ -41,6 +63,7 @@ export function EventExplorer({
   const pathname = usePathname();
   const urlParams = useSearchParams();
   const initialTag = urlParams?.get("tag") ?? "";
+  const initialCategory = urlParams?.get("category") ?? "";
 
   const [locationStatus, setLocationStatus] = useState<LocationStatus>("idle");
   // The user's real coordinates once they share location. When set, every
@@ -54,6 +77,7 @@ export function EventExplorer({
   const [sortMode, setSortMode] = useState<SortMode>("nearest");
   const [viewMode, setViewMode] = useState<ViewMode>("rails");
   const [tagFilter, setTagFilter] = useState(initialTag);
+  const [categoryFilter, setCategoryFilter] = useState(initialCategory);
   const skipFirstSync = useRef(true);
 
   const todayTime = useMemo(() => {
@@ -94,6 +118,7 @@ export function EventExplorer({
         const matchesTag =
           !normalizedTag ||
           event.tags.some((tag) => tag.toLowerCase() === normalizedTag);
+        const matchesCategory = !categoryFilter || event.category === categoryFilter;
         const matchesSearch =
           !normalizedSearch ||
           [event.title, event.host, event.category, event.suburb, event.location, ...event.tags]
@@ -101,7 +126,14 @@ export function EventExplorer({
             .toLowerCase()
             .includes(normalizedSearch);
 
-        return matchesDate && matchesSuburb && matchesDistance && matchesTag && matchesSearch;
+        return (
+          matchesDate &&
+          matchesSuburb &&
+          matchesDistance &&
+          matchesTag &&
+          matchesCategory &&
+          matchesSearch
+        );
       })
       .sort((left, right) => {
         if (sortMode === "popular") {
@@ -120,6 +152,7 @@ export function EventExplorer({
         return new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime();
       });
   }, [
+    categoryFilter,
     dateWindow,
     distanceKm,
     locatedEvents,
@@ -129,6 +162,18 @@ export function EventExplorer({
     tagFilter,
     todayTime,
   ]);
+
+  // Predefined categories that actually have events (computed from the full
+  // set so the bar stays stable as other filters change), in canonical order,
+  // with any admin-added categories appended. Powers the icon nav at the top.
+  const availableCategories = useMemo(() => {
+    const present = new Set(events.map((event) => event.category));
+    const known = categories.filter((c) => c !== "All" && present.has(c));
+    const extra = Array.from(present)
+      .filter((c) => !categories.includes(c))
+      .sort();
+    return [...known, ...extra];
+  }, [events]);
 
   // Group filtered events under their category. We render every category that
   // actually appears on a live event — known categories first (canonical
@@ -160,9 +205,10 @@ export function EventExplorer({
     }
     const next = new URLSearchParams();
     if (tagFilter.trim()) next.set("tag", tagFilter.trim());
+    if (categoryFilter) next.set("category", categoryFilter);
     const queryString = next.toString();
     router.replace(queryString ? `${pathname}?${queryString}` : pathname, { scroll: false });
-  }, [tagFilter, router, pathname]);
+  }, [tagFilter, categoryFilter, router, pathname]);
 
   function requestLocation() {
     if (!("geolocation" in navigator)) {
@@ -200,6 +246,7 @@ export function EventExplorer({
     setDateWindow("all");
     setDistanceKm(MAX_DISTANCE_KM);
     setTagFilter("");
+    setCategoryFilter("");
   }
 
   const totalCount = filteredEvents.length;
@@ -231,9 +278,55 @@ export function EventExplorer({
   if (tagFilter.trim()) {
     activeChips.push({ key: "tag", label: `#${tagFilter.trim()}`, clear: () => setTagFilter("") });
   }
+  if (categoryFilter) {
+    activeChips.push({ key: "category", label: categoryFilter, clear: () => setCategoryFilter("") });
+  }
 
   return (
     <div className="flex flex-col gap-8">
+      {/* Category quick-nav — predefined categories with icons. Horizontal
+          scroll on narrow screens; each chip toggles a category filter. */}
+      {availableCategories.length > 0 ? (
+        <nav aria-label="Browse by category" className="mr-4 sm:mr-6">
+          <ul className="flex gap-2 overflow-x-auto pb-2 [scrollbar-width:thin]">
+            <li>
+              <button
+                type="button"
+                aria-pressed={categoryFilter === ""}
+                onClick={() => setCategoryFilter("")}
+                className={`inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-full border-2 px-4 text-sm font-bold transition ${
+                  categoryFilter === ""
+                    ? "border-[color:var(--rose)] bg-[color:var(--rose)] text-[color:var(--on-deep)]"
+                    : "border-[color:var(--line)] bg-[color:var(--cream)] text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+                }`}
+              >
+                <span aria-hidden>✨</span> All
+              </button>
+            </li>
+            {availableCategories.map((category) => {
+              const active = categoryFilter === category;
+              return (
+                <li key={category}>
+                  <button
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => setCategoryFilter(active ? "" : category)}
+                    className={`inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-full border-2 px-4 text-sm font-bold transition ${
+                      active
+                        ? "border-[color:var(--rose)] bg-[color:var(--rose)] text-[color:var(--on-deep)]"
+                        : "border-[color:var(--line)] bg-[color:var(--cream)] text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+                    }`}
+                  >
+                    <span aria-hidden>{CATEGORY_ICONS[category] ?? CATEGORY_ICON_FALLBACK}</span>
+                    {category}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </nav>
+      ) : null}
+
       {/* Filter bar. Right margin keeps the chrome bounded while the rails
           below bleed to the viewport edge. */}
       <section className="mr-4 rounded-2xl border border-[color:var(--line)] bg-[color:var(--cream)] p-5 shadow-sm sm:mr-6">

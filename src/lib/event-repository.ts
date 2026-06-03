@@ -9,7 +9,13 @@ import {
   validateOptionalAbn,
   validateOptionalAcn,
 } from "./abn";
-import { clickEvents, type EventItem, type EventStatus } from "./click-data";
+import {
+  clickEvents,
+  interestTagCategories,
+  musicTags as staticMusicTags,
+  type EventItem,
+  type EventStatus,
+} from "./click-data";
 import {
   DEFAULT_MATCHING_WEIGHTS,
   type MatchingWeights,
@@ -22,6 +28,7 @@ import { buildEventMediaGallery, type MediaItem } from "./event-media";
 import { logEmailEvent, sendTransactionalEmail } from "./email";
 import { regionForEvent, type Region } from "./geo";
 import { getPostgresPool } from "./postgres";
+import { getSupabaseAdmin } from "@/utils/supabase/admin";
 import { toTitleCase } from "./text-format";
 import {
   quoteCancellationRefund,
@@ -90,7 +97,10 @@ export type MerchantWizardInput = {
   tradingName: string;
   abn: string;
   acn: string;
-  businessType: "sole_trader" | "company" | "partnership" | "trust";
+  // Optional — the signup wizard no longer collects business type. Kept on the
+  // type (nullable) so the Stripe Connect entity-type mapping still reads it for
+  // merchants that have one, and older callers keep compiling.
+  businessType?: "sole_trader" | "company" | "partnership" | "trust" | null;
   eventCategoryIds: string[];
   contactEmail: string;
   phone: string;
@@ -2091,15 +2101,14 @@ export async function getEventBySlug(
       waitlistPosition: null,
       merchantProfileId: null,
       media: buildEventMediaGallery({
-        slug,
-        primaryImage: fallback.image,
+        images: [fallback.image],
         primaryAlt: fallback.imageAlt,
       }),
     };
   }
 
   try {
-    const result = await pool.query<EventRow & { price_cents: number; address: string | null; ends_at: Date | null; merchant_profile_id: string | null }>(
+    const result = await pool.query<EventRow & { price_cents: number; address: string | null; ends_at: Date | null; merchant_profile_id: string | null; image_urls: string[] | null }>(
       `
         select
           event.slug,
@@ -2120,6 +2129,7 @@ export async function getEventBySlug(
           event.price_cents,
           event.capacity,
           event.image_url,
+          event.image_urls,
           event.image_alt,
           event.description,
           event.relationship_goal,
@@ -2165,8 +2175,7 @@ export async function getEventBySlug(
         waitlistPosition: null,
         merchantProfileId: null,
         media: buildEventMediaGallery({
-          slug,
-          primaryImage: fallback.image,
+          images: [fallback.image],
           primaryAlt: fallback.imageAlt,
         }),
       };
@@ -2250,8 +2259,12 @@ export async function getEventBySlug(
       waitlistPosition,
       merchantProfileId: row.merchant_profile_id ?? null,
       media: buildEventMediaGallery({
-        slug,
-        primaryImage: base.image,
+        // Real uploads only: the image_urls[] array when set, else the single
+        // image_url. No synthetic stock fillers.
+        images:
+          row.image_urls && row.image_urls.length > 0
+            ? row.image_urls
+            : [base.image],
         primaryAlt: base.imageAlt,
       }),
     };
@@ -2271,8 +2284,7 @@ export async function getEventBySlug(
         waitlistPosition: null,
         merchantProfileId: null,
         media: buildEventMediaGallery({
-          slug,
-          primaryImage: fallback.image,
+          images: [fallback.image],
           primaryAlt: fallback.imageAlt,
         }),
       };
@@ -4003,6 +4015,86 @@ export async function getAdminTags(): Promise<AdminTagRow[]> {
   }
 }
 
+export type ProfileTagOption = { slug: string; label: string };
+export type ProfileTagOptions = {
+  interestCategories: { category: string; tags: ProfileTagOption[] }[];
+  musicTags: ProfileTagOption[];
+};
+
+// Slugify a label the same way the curated tag seeds do
+// (database/026_curate_interest_tags.sql) so fallback slugs round-trip.
+function tagSlugFromLabel(label: string): string {
+  return label
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function fallbackProfileTagOptions(): ProfileTagOptions {
+  return {
+    interestCategories: interestTagCategories.map(([category, ...labels]) => ({
+      category,
+      tags: labels.map((label) => ({ slug: tagSlugFromLabel(label), label })),
+    })),
+    musicTags: staticMusicTags.map((t) => ({ slug: t.slug, label: t.label })),
+  };
+}
+
+// Interest + music tags the profile-edit picker offers, sourced live from the
+// `tags` table so admin-created tags (POST /api/admin/tags) show up without a
+// code change. Falls back to the static curated list when the DB is empty or
+// unavailable.
+export async function getProfileTagOptions(): Promise<ProfileTagOptions> {
+  const pool = getPostgresPool();
+  if (!pool) return fallbackProfileTagOptions();
+
+  try {
+    const result = await pool.query<{
+      slug: string;
+      label: string;
+      tag_type: string;
+      category_name: string | null;
+    }>(`
+      select tag.slug, tag.label, tag.tag_type, category.name as category_name
+      from tags tag
+      left join tag_categories category on category.id = tag.category_id
+      where tag.tag_type in ('interest', 'music')
+      order by category.name asc nulls last, tag.label asc
+    `);
+
+    if (result.rows.length === 0) return fallbackProfileTagOptions();
+
+    const musicTags = result.rows
+      .filter((r) => r.tag_type === "music")
+      .map((r) => ({ slug: r.slug, label: r.label }));
+
+    const byCategory = new Map<string, ProfileTagOption[]>();
+    for (const row of result.rows) {
+      if (row.tag_type !== "interest") continue;
+      const category = row.category_name ?? "Other";
+      const list = byCategory.get(category) ?? [];
+      list.push({ slug: row.slug, label: row.label });
+      byCategory.set(category, list);
+    }
+
+    const interestCategories = [...byCategory.entries()].map(([category, tags]) => ({
+      category,
+      tags,
+    }));
+
+    return {
+      interestCategories: interestCategories.length > 0 ? interestCategories : fallbackProfileTagOptions().interestCategories,
+      musicTags: musicTags.length > 0 ? musicTags : fallbackProfileTagOptions().musicTags,
+    };
+  } catch (error) {
+    if (process.env.CLICK_DB_DEBUG === "true") {
+      console.warn("getProfileTagOptions fallback", error);
+    }
+    return fallbackProfileTagOptions();
+  }
+}
+
 export async function createTagForAdmin(
   input: {
     label: string;
@@ -4997,7 +5089,6 @@ export async function registerMerchantProfile(input: MerchantSignupInput, sessio
 }
 
 const AU_STATES = ["NSW", "VIC", "QLD", "WA", "SA", "TAS", "ACT", "NT"] as const;
-const BUSINESS_TYPES = ["sole_trader", "company", "partnership", "trust"] as const;
 const MERCHANT_SOCIAL_PLATFORMS = [
   "instagram",
   "tiktok",
@@ -5227,6 +5318,63 @@ export async function listMerchantDocuments(
   return result.rows;
 }
 
+export type AdminMerchantDocument = MerchantDocumentRow & {
+  // Short-lived signed URL into the private merchant-documents bucket, or null
+  // when storage is unconfigured / signing failed. Never expose the raw path.
+  signedUrl: string | null;
+};
+
+/**
+ * Admin read path for a merchant's KYC documents. Looks them up by the owning
+ * profile (merchant_profile_id can be null for docs uploaded before the merchant
+ * row existed — see the back-fill note above) and mints a short-TTL signed URL
+ * for each so the admin can open them without the object paths leaking to the
+ * browser. The page (an admin-gated server component) is the auth boundary.
+ */
+export async function getMerchantDocumentsForAdmin(
+  merchantProfileId: string,
+): Promise<AdminMerchantDocument[]> {
+  const pool = getPostgresPool();
+  if (!pool) return [];
+
+  const result = await pool.query<MerchantDocumentRow>(
+    `
+      select d.id::text, d.document_type, d.file_path, d.file_name, d.uploaded_at::text
+      from merchant_documents d
+      where d.merchant_profile_id = $1::uuid
+         or d.profile_id = (select profile_id from merchant_profiles where id = $1::uuid)
+      order by d.uploaded_at desc
+    `,
+    [merchantProfileId],
+  );
+
+  // Sign each path (5-minute TTL). Best-effort: if storage isn't configured we
+  // still return the metadata so the admin sees what was uploaded.
+  let admin: ReturnType<typeof getSupabaseAdmin> | null = null;
+  try {
+    admin = getSupabaseAdmin();
+  } catch {
+    admin = null;
+  }
+
+  return Promise.all(
+    result.rows.map(async (row) => {
+      let signedUrl: string | null = null;
+      if (admin) {
+        try {
+          const { data } = await admin.storage
+            .from("merchant-documents")
+            .createSignedUrl(row.file_path, 300);
+          signedUrl = data?.signedUrl ?? null;
+        } catch {
+          signedUrl = null;
+        }
+      }
+      return { ...row, signedUrl };
+    }),
+  );
+}
+
 export async function registerMerchantWizardSubmit(
   input: MerchantWizardInput,
   session: Session | null,
@@ -5256,10 +5404,6 @@ export async function registerMerchantWizardSubmit(
   const acnError = validateOptionalAcn(input.acn);
   if (acnError) throw validationError(acnError);
   const acn = normalizeAcn(input.acn);
-
-  if (!BUSINESS_TYPES.includes(input.businessType)) {
-    throw validationError("Pick a business type.");
-  }
 
   if (!AU_STATES.includes(input.addressState)) {
     throw validationError("Pick an Australian state.");
@@ -5339,7 +5483,7 @@ export async function registerMerchantWizardSubmit(
         tradingName,
         abn,
         acn,
-        input.businessType,
+        input.businessType ?? null,
         phoneDigits,
         contactEmail,
         input.websiteUrl.trim(),
@@ -6229,6 +6373,164 @@ export async function expireWaitlistOffers(): Promise<{ expired: number; reoffer
   return { expired, reoffered };
 }
 
+/**
+ * Sweep abandoned checkout holds. A `pending_payment` attendee row that's past
+ * its `hold_expires_at` is a checkout that was started but never paid (the
+ * person closed the Stripe tab, etc.). The seat-count predicates already stop
+ * counting an expired hold (`hold_expires_at > now()`), so the seat *displays*
+ * as free — but the row lingers as `pending_payment` forever and, crucially,
+ * the freed seat is never re-offered to the waitlist. This converts each lapsed
+ * hold to `cancelled` and, when that drops a full event below capacity, rolls
+ * the seat to the next waitlister (offer + notification + email), mirroring
+ * what `cancelRegistration` does for a real cancellation.
+ */
+export async function expirePaymentHolds(): Promise<{ expired: number; reoffered: number }> {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+
+  const lapsed = await pool.query<{
+    attendee_id: string;
+    event_id: string;
+    profile_id: string;
+    title: string;
+    slug: string;
+    txn_id: string | null;
+  }>(
+    `
+      select
+        a.id::text as attendee_id,
+        a.event_id::text,
+        a.profile_id::text,
+        e.title,
+        e.slug,
+        a.payment_transaction_id::text as txn_id
+      from event_attendees a
+      join events e on e.id = a.event_id
+      where a.status = 'pending_payment'
+        and a.hold_expires_at is not null
+        and a.hold_expires_at <= now()
+      order by a.hold_expires_at asc
+    `,
+  );
+
+  let expired = 0;
+  let reoffered = 0;
+  const promotions: WaitlistPromotion[] = [];
+
+  for (const row of lapsed.rows) {
+    const client = await pool.connect();
+    try {
+      await client.query("begin");
+
+      // Re-lock + re-check — a webhook/return reconcile may have just confirmed
+      // it, or another sweep may have grabbed it.
+      const recheck = await client.query(
+        `
+          select id from event_attendees
+          where id = $1::uuid and status = 'pending_payment'
+            and hold_expires_at is not null and hold_expires_at <= now()
+          for update
+        `,
+        [row.attendee_id],
+      );
+      if (recheck.rows.length === 0) {
+        await client.query("rollback");
+        continue;
+      }
+
+      await client.query(
+        `update event_attendees set status = 'cancelled', hold_expires_at = null, updated_at = now() where id = $1::uuid`,
+        [row.attendee_id],
+      );
+
+      // Tidy the orphaned checkout transaction so it doesn't sit "pending" forever.
+      if (row.txn_id) {
+        await client.query(
+          `update payment_transactions set status = 'failed', updated_at = now()
+             where id = $1::uuid and status = 'pending'`,
+          [row.txn_id],
+        );
+      }
+
+      // Notify the lapsed holder so they understand the seat was released.
+      await client.query(
+        `
+          insert into notifications (profile_id, title, body, action_url)
+          values ($1::uuid, $2, $3, $4)
+        `,
+        [
+          row.profile_id,
+          "Checkout expired",
+          `Your checkout for ${row.title} expired and the seat was released. You can reserve again any time.`,
+          `/events/${row.slug}`,
+        ],
+      );
+
+      // Re-offer the freed seat only if the event is genuinely full once you
+      // account for live offers already reserving a slot — otherwise we'd
+      // over-offer beyond capacity.
+      const roomResult = await client.query<{ available: string }>(
+        `
+          -- count(distinct …) on both joined tables: the two left joins form a
+          -- cartesian product, so a plain count would multiply attendees by the
+          -- number of waitlist rows (and vice-versa).
+          select (
+            e.capacity
+            - count(distinct a.id) filter (
+                where a.status = 'confirmed'
+                   or (a.status = 'pending_payment' and a.hold_expires_at > now())
+              )
+            - count(distinct w.id) filter (
+                where w.accepted_at is null and w.offered_until is not null and w.offered_until > now()
+              )
+          )::text as available
+          from events e
+          left join event_attendees a on a.event_id = e.id
+          left join event_waitlists w on w.event_id = e.id
+          where e.id = $1::uuid
+          group by e.capacity
+        `,
+        [row.event_id],
+      );
+      const available = Number(roomResult.rows[0]?.available ?? 0);
+
+      let promo: WaitlistPromotion | null = null;
+      if (available > 0) {
+        promo = await promoteNextWaitlister(client, row.event_id, row.title, row.slug);
+      }
+      await client.query("commit");
+
+      expired += 1;
+      if (promo) {
+        reoffered += 1;
+        promotions.push(promo);
+      }
+    } catch {
+      await client.query("rollback").catch(() => {});
+    } finally {
+      client.release();
+    }
+  }
+
+  // Email the newly-offered users outside any transaction.
+  for (const promo of promotions) {
+    await sendWorkflowEmail({
+      to: promo.email,
+      subject: `A spot opened for ${promo.eventTitle}`,
+      text: [
+        `Hi ${promo.displayName},`,
+        `A spot opened for ${promo.eventTitle}.`,
+        `Your offer is held until ${promo.offeredUntil.toLocaleString("en-AU", {
+          timeZone: "Australia/Sydney",
+        })} (about ${WAITLIST_OFFER_MINUTES} minutes).`,
+        `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3001"}/events/${promo.eventSlug}`,
+      ].join("\n\n"),
+    }).catch(() => {});
+  }
+
+  return { expired, reoffered };
+}
+
 export async function cancelMerchantEvent(eventId: string, session: Session | null) {
   const pool = getPostgresPool();
   const email = getSessionEmail(session);
@@ -6943,6 +7245,9 @@ export type OwnProfile = PublicProfile & {
   // rather than on PublicProfile.
   datingVisible: boolean;
   flexibleDiscovery: boolean;
+  // True once the user has saved Life Quiz answers (any user_tags row with
+  // source='quiz'). Drives the "Take" vs "Retake" copy on /profile/edit.
+  lifeQuizCompleted: boolean;
 };
 
 export async function getOwnProfile(session: Session | null): Promise<OwnProfile | null> {
@@ -6977,9 +7282,9 @@ export async function getOwnProfile(session: Session | null): Promise<OwnProfile
         `,
         [profile.id],
       ),
-      pool.query<{ slug: string; label: string; tag_type: string }>(
+      pool.query<{ slug: string; label: string; tag_type: string; source: string | null }>(
         `
-          select tag.slug, tag.label, tag.tag_type
+          select tag.slug, tag.label, tag.tag_type, ut.source
           from user_tags ut
           join tags tag on tag.id = ut.tag_id
           where ut.profile_id = $1::uuid
@@ -7016,6 +7321,7 @@ export async function getOwnProfile(session: Session | null): Promise<OwnProfile
       musicSlugs: tagsResult.rows.filter((t) => t.tag_type === "music").map((t) => t.slug),
       datingVisible: row.dating_visible,
       flexibleDiscovery: row.flexible_discovery,
+      lifeQuizCompleted: tagsResult.rows.some((t) => t.source === "quiz"),
       attendedCount: Number(attendedResult.rows[0]?.count ?? 0),
     };
   } catch (error) {
@@ -8823,14 +9129,32 @@ export type EventAttendeePreviewRow = {
   displayName: string;
   photoUrl: string | null;
   suburb: string | null;
+  // Interest tags this attendee shares with the viewer (empty for the viewer's
+  // own row / anonymous viewers).
+  sharedInterests: string[];
+  // True when this attendee is dating-minded AND has opted into dating
+  // visibility — gated so we never out someone who keeps dating private.
+  datingMinded: boolean;
 };
 
 export async function getEventAttendeePreview(
   eventSlug: string,
+  session: Session | null,
   limit = 8,
 ): Promise<{ items: EventAttendeePreviewRow[]; totalConfirmed: number }> {
   const pool = getPostgresPool();
   if (!pool) return { items: [], totalConfirmed: 0 };
+
+  // Resolve the viewer so we can highlight interests they share with each
+  // attendee. Best-effort: anonymous viewers (or a hiccup) just get no overlap.
+  let viewerProfileId: string | null = null;
+  if (getSessionEmail(session)) {
+    try {
+      viewerProfileId = (await ensureProfileForSession(session)).id;
+    } catch {
+      viewerProfileId = null;
+    }
+  }
 
   try {
     const [previewResult, countResult] = await Promise.all([
@@ -8839,15 +9163,33 @@ export async function getEventAttendeePreview(
         display_name: string;
         photo_url: string | null;
         suburb: string | null;
+        dating_minded: boolean;
+        shared: string[];
       }>(
         `
           select profile.id::text as profile_id,
                  profile.display_name,
                  profile.photo_url,
-                 profile.suburb
+                 profile.suburb,
+                 (profile.dating_visible
+                    and 'dating' = any(profile.connection_intents::text[])) as dating_minded,
+                 coalesce(
+                   array_agg(distinct shared_tag.label)
+                     filter (where shared_tag.label is not null),
+                   '{}'
+                 ) as shared
           from event_attendees attendee
           join events event on event.id = attendee.event_id
           join profiles profile on profile.id = attendee.profile_id
+          -- Shared-interest overlap with the viewer (skipped for the viewer's own
+          -- row so we don't show "you share everything with yourself").
+          left join user_tags ut
+            on ut.profile_id = profile.id
+           and $3::uuid is not null
+           and profile.id <> $3::uuid
+          left join tags shared_tag
+            on shared_tag.id = ut.tag_id
+           and shared_tag.id in (select tag_id from user_tags where profile_id = $3::uuid)
           where event.slug = $1
             -- Match the seat-count predicate used in getEventBySlug: a live
             -- (non-expired) pending_payment hold occupies a seat, so the person
@@ -8857,10 +9199,11 @@ export async function getEventAttendeePreview(
               attendee.status = 'confirmed'
               or (attendee.status = 'pending_payment' and attendee.hold_expires_at > now())
             )
-          order by attendee.created_at asc
+          group by profile.id
+          order by min(attendee.created_at) asc
           limit $2
         `,
-        [eventSlug, limit],
+        [eventSlug, limit, viewerProfileId],
       ),
       pool.query<{ count: string }>(
         `
@@ -8883,6 +9226,8 @@ export async function getEventAttendeePreview(
         displayName: row.display_name,
         photoUrl: row.photo_url,
         suburb: row.suburb,
+        sharedInterests: row.shared ?? [],
+        datingMinded: Boolean(row.dating_minded),
       })),
       totalConfirmed: Number(countResult.rows[0]?.count ?? 0),
     };

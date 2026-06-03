@@ -58,13 +58,6 @@ const AU_STATE_NAMES: Record<AuState, string> = {
   NT: "Northern Territory",
 };
 
-const BUSINESS_TYPES = [
-  { value: "sole_trader", label: "Sole trader" },
-  { value: "company", label: "Company (Pty Ltd)" },
-  { value: "partnership", label: "Partnership" },
-  { value: "trust", label: "Trust" },
-] as const;
-type BusinessType = (typeof BUSINESS_TYPES)[number]["value"];
 
 const DOC_TYPES = ["abn_certificate", "public_liability_insurance", "liquor_licence"] as const;
 type DocumentType = (typeof DOC_TYPES)[number];
@@ -134,7 +127,6 @@ type State = {
   tradingName: string;
   abn: string;
   acn: string;
-  businessType: BusinessType | "";
   eventCategoryIds: string[];
   // Contact & address
   contactEmail: string;
@@ -223,7 +215,6 @@ function initialState(props: {
     tradingName: "",
     abn: "",
     acn: "",
-    businessType: "",
     eventCategoryIds: [],
     contactEmail: props.sessionEmail,
     phone: "",
@@ -282,6 +273,22 @@ export function MerchantSignupProvider({
 
 // ---------- step validation ----------
 
+// Accepts AU mobiles AND landlines, in the formats people actually type:
+//   0412 345 678 · 02 9646 8888 · (02) 9646 8888 · +61 2 9646 8888 · 9646 8888
+// Strips spaces/brackets/dashes, normalises a +61 / 61 country code to a
+// leading 0, then accepts a 10-digit national number (mobile or landline) or a
+// bare 8-digit local landline (no area code).
+function normalizeAuPhone(raw: string): string {
+  let digits = raw.replace(/[^\d]/g, "");
+  if (digits.startsWith("61")) digits = "0" + digits.slice(2);
+  return digits;
+}
+
+function isValidAuPhone(raw: string): boolean {
+  const digits = normalizeAuPhone(raw);
+  return /^0[2-9]\d{8}$/.test(digits) || /^\d{8}$/.test(digits);
+}
+
 function validateStep(step: StepIndex, state: State): string | null {
   if (step === 0) {
     const name = state.businessName.trim();
@@ -292,15 +299,14 @@ function validateStep(step: StepIndex, state: State): string | null {
     if (abnError) return abnError;
     const acnError = validateOptionalAcn(state.acn);
     if (acnError) return acnError;
-    if (!state.businessType) return "Pick a business type.";
     if (state.eventCategoryIds.length === 0)
       return "Pick at least one event category.";
     return null;
   }
   if (step === 1) {
     if (!state.contactEmail.includes("@")) return "Enter a valid contact email.";
-    if (!/^(?:\+?61|0)\d{9}$/.test(state.phone.replace(/\s+/g, ""))) {
-      return "Phone must be a valid Australian number (e.g. 0412 345 678).";
+    if (!isValidAuPhone(state.phone)) {
+      return "Phone must be a valid Australian mobile or landline (e.g. 0412 345 678 or 02 9646 8888).";
     }
     if (!state.addressStreet.trim()) return "Street address is required.";
     if (!state.addressSuburb.trim()) return "Suburb is required.";
@@ -361,10 +367,9 @@ export function WizardShell({
       tradingName: state.tradingName.trim(),
       abn: normalizeAbn(state.abn),
       acn: normalizeAcn(state.acn),
-      businessType: state.businessType,
       eventCategoryIds: state.eventCategoryIds,
       contactEmail: state.contactEmail.trim().toLowerCase(),
-      phone: state.phone.replace(/\s+/g, ""),
+      phone: normalizeAuPhone(state.phone),
       websiteUrl: state.websiteUrl.trim(),
       // Only send platforms the host actually filled in.
       socials: Object.fromEntries(
@@ -688,29 +693,6 @@ export function BusinessSection() {
         </label>
       </div>
 
-      <fieldset className="grid gap-3">
-        <legend className="mb-1"><FieldLabel>Business type *</FieldLabel></legend>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {BUSINESS_TYPES.map((opt) => {
-            const selected = state.businessType === opt.value;
-            return (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => dispatch({ type: "field", key: "businessType", value: opt.value })}
-                className={`rounded-xl border-2 border-[color:var(--line)] px-3 py-2.5 text-sm font-bold ${
-                  selected
-                    ? "bg-[color:var(--rose)] text-[color:var(--surface-deep)]"
-                    : "bg-[color:var(--champagne)] text-[color:var(--ink)] hover:bg-[color:var(--cream)]"
-                }`}
-              >
-                {opt.label}
-              </button>
-            );
-          })}
-        </div>
-      </fieldset>
-
       <CategoryPicker
         categories={categories}
         selectedIds={state.eventCategoryIds}
@@ -879,7 +861,7 @@ export function ContactSection() {
             type="tel"
             value={state.phone}
             onChange={(e) => dispatch({ type: "field", key: "phone", value: e.target.value })}
-            placeholder="0412 345 678"
+            placeholder="0412 345 678 or 02 9646 8888"
             required
           />
         </label>
