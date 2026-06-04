@@ -122,9 +122,13 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
 
   const startsAtMs = new Date(event.startsAt).getTime();
   // eslint-disable-next-line react-hooks/purity -- async server component, evaluated once per request
-  const daysUntilStart = Math.ceil((startsAtMs - Date.now()) / 86_400_000);
-  const countdownLabel =
-    daysUntilStart <= 0
+  const nowMs = Date.now();
+  const endsAtMs = new Date(event.endsAt ?? event.startsAt).getTime();
+  const eventHasEnded = endsAtMs <= nowMs;
+  const daysUntilStart = Math.ceil((startsAtMs - nowMs) / 86_400_000);
+  const countdownLabel = eventHasEnded
+    ? "Ended"
+    : daysUntilStart <= 0
       ? "Starting soon"
       : daysUntilStart === 1
         ? "Tomorrow"
@@ -138,11 +142,10 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
   const isPendingPayment = event.viewerRsvpStatus === "pending_payment";
   const isFull = event.attendees >= event.capacity;
   const isWaitlistMode = event.status === "Waitlist" || isFull;
-  // Admins and the owning merchant always see the real venue — the "Open event"
-  // action in the admin queue needs the unlocked listing, not the RSVP-gated one.
-  const isLockedEvent =
-    event.status === "Locked" && !isRegistered && !isAdmin && !isOwner;
   const isPaid = event.priceCents > 0;
+  // Past events are closed: once the end time (or start, if no end) has passed
+  // we hide every RSVP/pay/waitlist CTA and show an "ended" notice instead.
+  const hasEnded = eventHasEnded;
   // Booking fee mirrors the checkout calc (createPaymentHold): a % of the ticket,
   // charged on top, kept by the platform. Shown to the buyer before they reserve
   // so the price they see equals the price Stripe charges.
@@ -305,7 +308,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                   <p className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
                     Location
                   </p>
-                  {isLockedEvent ? (
+                  {!venueUnlocked ? (
                     <p className="mt-1 text-sm font-bold leading-6">
                       🔒 {event.suburb} — exact venue revealed after RSVP.
                     </p>
@@ -350,13 +353,15 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                 </div>
 
                 <div className="mt-6 grid gap-2">
-                  {isPendingPayment ? (
-                    <p className="rounded-xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--champagne)] p-3 text-xs font-bold text-[color:var(--mauve)]">
-                      A previous checkout is still pending. Try again or wait
-                      for it to expire.
-                    </p>
-                  ) : null}
-
+                  {hasEnded ? (
+                    <div className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-3 text-xs font-bold text-[color:var(--surface-deep)] hard-shadow-sm">
+                      This event has ended.{" "}
+                      <Link href="/discover" className="underline decoration-2 underline-offset-2">
+                        Find an upcoming event →
+                      </Link>
+                    </div>
+                  ) : (
+                  <>
                   {isWaitlisted && !waitlistOfferExpiresAt && event.waitlistPosition ? (
                     <p className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-3 text-xs font-bold text-[color:var(--surface-deep)] hard-shadow-sm">
                       You&apos;re #{event.waitlistPosition} on the waitlist. We&apos;ll
@@ -364,7 +369,30 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                     </p>
                   ) : null}
 
-                  {isRegistered || isWaitlisted ? (
+                  {isPendingPayment && isPaid ? (
+                    // The buyer already holds this seat from a checkout that
+                    // didn't complete (closed tab / failed card). Let them finish
+                    // paying right here instead of dead-ending on the "full"
+                    // waitlist CTA — their own hold is what makes it look full.
+                    // createPaymentHold reuses the existing hold on retry.
+                    <div className="grid gap-2">
+                      <div className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-3 text-xs font-bold text-[color:var(--surface-deep)] hard-shadow-sm">
+                        Your seat is held while your previous checkout finishes.
+                        Complete payment to lock it in.
+                      </div>
+                      {showStripeUnavailableHint ? (
+                        <p className="rounded-xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--rose)]/30 p-3 text-xs font-bold">
+                          Stripe isn&apos;t configured on this server — set
+                          STRIPE_SECRET_KEY in .env.local to enable paid bookings.
+                        </p>
+                      ) : (
+                        <EventPaymentButton
+                          eventId={event.id}
+                          priceLabel={formatPrice(totalCents, "AUD")}
+                        />
+                      )}
+                    </div>
+                  ) : isRegistered || isWaitlisted ? (
                     waitlistOfferExpiresAt && isPaid ? (
                       // Paid promotion: a seat opened — secure it through Stripe
                       // checkout, with "Leave waitlist" still available below.
@@ -475,6 +503,8 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                     eventId={event.id}
                     initiallySaved={bookmarked}
                   />
+                  </>
+                  )}
                 </div>
 
                 {isPaid ? (

@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { categories, categorySlug, type EventItem } from "@/lib/click-data";
 import { haversineKm, roundKm, type LatLng } from "@/lib/geo";
-import { EventTileCard } from "./event-tile-card";
+import { EventCard } from "./event-card";
 import { FilterSelect } from "./filter-select";
 import { MapboxAutocomplete } from "./mapbox-autocomplete";
 
@@ -53,12 +53,14 @@ function daysUntil(startsAt: string, referenceTime: number) {
 export function EventExplorer({
   events,
   bookmarkedEventIds = [],
+  registeredEventIds = [],
 }: {
   events: EventItem[];
   bookmarkedEventIds?: string[];
   registeredEventIds?: string[];
 }) {
   const bookmarkedSet = useMemo(() => new Set(bookmarkedEventIds), [bookmarkedEventIds]);
+  const registeredSet = useMemo(() => new Set(registeredEventIds), [registeredEventIds]);
   const router = useRouter();
   const pathname = usePathname();
   const urlParams = useSearchParams();
@@ -166,9 +168,12 @@ export function EventExplorer({
   // Predefined categories that actually have events (computed from the full
   // set so the bar stays stable as other filters change), in canonical order,
   // with any admin-added categories appended. Powers the icon nav at the top.
+  // Top category nav shows the full predefined set (with icons) so people can
+  // always browse by category, even categories that currently have no live
+  // event — plus any admin-added categories that do appear on events.
   const availableCategories = useMemo(() => {
     const present = new Set(events.map((event) => event.category));
-    const known = categories.filter((c) => c !== "All" && present.has(c));
+    const known = categories.filter((c) => c !== "All");
     const extra = Array.from(present)
       .filter((c) => !categories.includes(c))
       .sort();
@@ -551,11 +556,12 @@ export function EventExplorer({
         // Flat responsive grid of every match — ClassBento-style browse.
         <div className="mr-4 grid grid-cols-1 gap-x-5 gap-y-8 sm:mr-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {filteredEvents.map((event) => (
-            <EventTileCard
+            <EventCard
               key={event.id}
               event={event}
+              compact
               bookmarked={bookmarkedSet.has(event.id)}
-              fluid
+              registered={registeredSet.has(event.id)}
             />
           ))}
         </div>
@@ -584,10 +590,12 @@ export function EventExplorer({
               </div>
               <div className="mt-4 flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2 pr-4 [scrollbar-width:thin] sm:pr-6">
                 {categoryEvents.map((event) => (
-                  <div key={event.id} className="shrink-0 snap-start">
-                    <EventTileCard
+                  <div key={event.id} className="w-[19rem] shrink-0 snap-start sm:w-[21rem]">
+                    <EventCard
                       event={event}
+                      compact
                       bookmarked={bookmarkedSet.has(event.id)}
+                      registered={registeredSet.has(event.id)}
                     />
                   </div>
                 ))}

@@ -1,10 +1,21 @@
 import { NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import {
   createTagForAdmin,
   deleteTagForAdmin,
   updateTagForAdmin,
 } from "@/lib/event-repository";
+
+// Surfaces that render the tag taxonomy. /profile/edit + /onboarding are
+// dynamic (cookie-gated) so they refresh on their own, but the public browse
+// pages can be cached — revalidate them all so an admin-added tag shows up
+// everywhere immediately instead of only after the next deploy.
+function revalidateTagSurfaces() {
+  for (const path of ["/admin/tags", "/profile/edit", "/onboarding", "/categories", "/discover"]) {
+    revalidatePath(path);
+  }
+}
 
 const allowedTagTypes = new Set(["interest", "music", "vibe"]);
 
@@ -54,6 +65,7 @@ export async function POST(request: Request) {
       session,
     );
 
+    revalidateTagSurfaces();
     return NextResponse.json({ ok: true, tag });
   } catch (error) {
     return errorResponse(error);
@@ -87,6 +99,7 @@ export async function PATCH(request: Request) {
       session,
     );
 
+    revalidateTagSurfaces();
     return NextResponse.json({ ok: true, tag });
   } catch (error) {
     return errorResponse(error);
@@ -103,6 +116,7 @@ export async function DELETE(request: Request) {
 
   try {
     const result = await deleteTagForAdmin(id, session);
+    revalidateTagSurfaces();
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
     return errorResponse(error);

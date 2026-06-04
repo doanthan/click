@@ -30,6 +30,21 @@ const nextConfig: NextConfig = {
         hostname: "*.supabase.co",
         pathname: "/storage/v1/object/public/**",
       },
+      // OAuth provider profile photos (Google / Facebook) — used as the avatar
+      // fallback on /profile and /profile/[userId] until we rehost to the
+      // avatars bucket.
+      {
+        protocol: "https",
+        hostname: "lh3.googleusercontent.com",
+      },
+      {
+        protocol: "https",
+        hostname: "platform-lookaside.fbsbx.com",
+      },
+      {
+        protocol: "https",
+        hostname: "*.fbcdn.net",
+      },
     ],
   },
 };

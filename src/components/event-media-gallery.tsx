@@ -56,64 +56,101 @@ export function EventMediaGallery({ items, statusLabel, categoryLabel }: EventMe
 
   if (items.length === 0) return null;
 
+  const count = items.length;
   const visible = items.slice(0, 5);
-  const extraCount = Math.max(0, items.length - visible.length);
+  const extraCount = Math.max(0, count - 5);
   const [m1, m2, m3, m4, m5] = visible;
+  const open = (index: number) => () => setLightboxIndex(index);
 
-  // Single upload → one honest full-width hero (no sparse mosaic, no "view all").
-  if (items.length === 1) {
+  // Shared chrome so every count-specific layout gets the same chips overlay
+  // and lightbox without duplicating the markup.
+  const chips =
+    statusLabel || categoryLabel ? (
+      <div className="pointer-events-none absolute left-4 right-4 top-4 z-10 flex items-start justify-between gap-3">
+        {statusLabel ? (
+          <span className="pointer-events-auto rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-3 py-1.5 text-[0.7rem] font-bold uppercase tracking-wider text-[color:var(--surface-deep)] hard-shadow-sm">
+            {statusLabel}
+          </span>
+        ) : (
+          <span />
+        )}
+        {categoryLabel ? (
+          <span className="pointer-events-auto rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-1.5 text-[0.7rem] font-bold uppercase tracking-wider hard-shadow-sm">
+            {categoryLabel}
+          </span>
+        ) : null}
+      </div>
+    ) : null;
+
+  const lightbox =
+    lightboxIndex !== null ? (
+      <Lightbox items={items} index={lightboxIndex} onClose={close} onNext={next} onPrev={prev} />
+    ) : null;
+
+  // Layout adapts to how many photos the merchant actually uploaded — no sparse
+  // mosaic with empty hero slots when there are only 2–4, no stock fillers.
+
+  // 1 → one honest full-width hero (no "view all").
+  if (count === 1) {
     return (
       <section aria-label="Event photos" className="relative">
-        {(statusLabel || categoryLabel) && (
-          <div className="pointer-events-none absolute left-4 right-4 top-4 z-10 flex items-start justify-between gap-3">
-            {statusLabel ? (
-              <span className="pointer-events-auto rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-3 py-1.5 text-[0.7rem] font-bold uppercase tracking-wider text-[color:var(--surface-deep)] hard-shadow-sm">
-                {statusLabel}
-              </span>
-            ) : <span />}
-            {categoryLabel ? (
-              <span className="pointer-events-auto rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-1.5 text-[0.7rem] font-bold uppercase tracking-wider hard-shadow-sm">
-                {categoryLabel}
-              </span>
-            ) : null}
-          </div>
-        )}
-        <Tile
-          item={m1}
-          onOpen={() => setLightboxIndex(0)}
-          priority
-          className="aspect-[4/5] w-full sm:aspect-[16/9]"
-        />
-        {lightboxIndex !== null ? (
-          <Lightbox
-            items={items}
-            index={lightboxIndex}
-            onClose={close}
-            onNext={next}
-            onPrev={prev}
-          />
-        ) : null}
+        {chips}
+        <Tile item={m1} onOpen={open(0)} priority className="aspect-[4/5] w-full sm:aspect-[16/9]" />
+        {lightbox}
       </section>
     );
   }
 
+  // 2 → side-by-side pair (stacks on mobile).
+  if (count === 2) {
+    return (
+      <section aria-label="Event photos" className="relative">
+        {chips}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Tile item={m1} onOpen={open(0)} priority className="aspect-[4/3]" />
+          <Tile item={m2} onOpen={open(1)} priority className="aspect-[4/3]" />
+        </div>
+        {lightbox}
+      </section>
+    );
+  }
+
+  // 3 → three equal columns (stacks on mobile).
+  if (count === 3) {
+    return (
+      <section aria-label="Event photos" className="relative">
+        {chips}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <Tile item={m1} onOpen={open(0)} priority className="aspect-[4/5] sm:aspect-[3/4]" />
+          <Tile item={m2} onOpen={open(1)} priority className="aspect-[4/5] sm:aspect-[3/4]" />
+          <Tile item={m3} onOpen={open(2)} className="aspect-[4/5] sm:aspect-[3/4]" />
+        </div>
+        {lightbox}
+      </section>
+    );
+  }
+
+  // 4 → even 2×2 grid.
+  if (count === 4) {
+    return (
+      <section aria-label="Event photos" className="relative">
+        {chips}
+        <div className="grid grid-cols-2 gap-3">
+          <Tile item={m1} onOpen={open(0)} priority className="aspect-square" />
+          <Tile item={m2} onOpen={open(1)} priority className="aspect-square" />
+          <Tile item={m3} onOpen={open(2)} className="aspect-square" />
+          <Tile item={m4} onOpen={open(3)} className="aspect-square" />
+        </div>
+        {lightbox}
+      </section>
+    );
+  }
+
+  // 5+ → editorial mosaic with a "view all" pill for the overflow.
   return (
     <section aria-label="Event photos and videos" className="relative">
       {/* Floating chips overlay the gallery top-row */}
-      {(statusLabel || categoryLabel) && (
-        <div className="pointer-events-none absolute left-4 right-4 top-4 z-10 flex items-start justify-between gap-3">
-          {statusLabel ? (
-            <span className="pointer-events-auto rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-3 py-1.5 text-[0.7rem] font-bold uppercase tracking-wider text-[color:var(--surface-deep)] hard-shadow-sm">
-              {statusLabel}
-            </span>
-          ) : <span />}
-          {categoryLabel ? (
-            <span className="pointer-events-auto rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-1.5 text-[0.7rem] font-bold uppercase tracking-wider hard-shadow-sm">
-              {categoryLabel}
-            </span>
-          ) : null}
-        </div>
-      )}
+      {chips}
 
       {/* Desktop mosaic: 4 cols × 2 rows, hero spans center 2×2 */}
       <div className="hidden gap-3 lg:grid lg:grid-cols-4 lg:grid-rows-2">

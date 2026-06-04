@@ -141,19 +141,7 @@ export default async function DashboardPage() {
           </div>
         ) : null}
 
-        {!profileStatus.merchantProfile ? (
-          <div className="mt-4 flex flex-col gap-3 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--peach)] p-5 hard-shadow-sm sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-                Host events?
-              </p>
-              <p className="mt-2 text-base font-bold leading-6 text-[color:var(--ink)]">
-                Become a host to create events. Free, takes about a minute.
-              </p>
-            </div>
-            <LinkButton href="/merchant/signup">Become a host</LinkButton>
-          </div>
-        ) : (
+        {profileStatus.merchantProfile ? (
           <div className="mt-4 flex flex-col gap-3 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-5 hard-shadow-sm sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
@@ -168,7 +156,7 @@ export default async function DashboardPage() {
               <LinkButton href="/merchant" variant="light">Open merchant portal</LinkButton>
             </div>
           </div>
-        )}
+        ) : null}
 
         {isAdmin ? (
           <div className="mt-4 flex flex-col gap-3 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--ink)] p-5 text-[color:var(--on-deep)] hard-shadow-sm sm:flex-row sm:items-center sm:justify-between">

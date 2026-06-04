@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { auth } from "@/auth";
-import { EventTileCard } from "@/components/event-tile-card";
+import { EventCard } from "@/components/event-card";
 import { categories, categoryFromSlug, categorySlug } from "@/lib/click-data";
 import { getEventsForExplore, getProfileStatus } from "@/lib/event-repository";
 
@@ -45,6 +45,7 @@ export default async function CategoryPage({
 
   const categoryEvents = events.filter((event) => event.category === category);
   const bookmarkedSet = new Set(profileStatus?.bookmarkedEventIds ?? []);
+  const registeredSet = new Set(profileStatus?.registeredEventIds ?? []);
 
   return (
     <main className="paper-noise min-h-screen bg-[color:var(--champagne)] text-[color:var(--ink)]">
@@ -67,12 +68,14 @@ export default async function CategoryPage({
           </div>
 
           {categoryEvents.length > 0 ? (
-            <div className="mt-8 flex flex-wrap gap-6">
+            <div className="mt-8 grid grid-cols-1 gap-x-5 gap-y-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {categoryEvents.map((event) => (
-                <EventTileCard
+                <EventCard
                   key={event.id}
                   event={event}
+                  compact
                   bookmarked={bookmarkedSet.has(event.id)}
+                  registered={registeredSet.has(event.id)}
                 />
               ))}
             </div>

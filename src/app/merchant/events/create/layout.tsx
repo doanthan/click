@@ -55,6 +55,36 @@ export default async function CreateEventLayout({
     );
   }
 
+  // Payments must be connected before a merchant can create events: every event
+  // can sell tickets, so we require Stripe Connect onboarding (charges_enabled)
+  // to be finished first. Sends them to the payout step rather than dead-ending.
+  if (!status.merchantProfile.charges_enabled) {
+    return (
+      <main className="min-h-screen bg-[color:var(--champagne)] px-4 py-12 text-[color:var(--ink)] sm:px-6">
+        <section className="mx-auto max-w-3xl">
+          <span className="sticker sticker--peach tilt-l-2 inline-flex">
+            <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
+            Connect payments first
+          </span>
+          <h1 className="mt-6 font-display text-5xl font-light leading-[0.96] tracking-tight sm:text-6xl">
+            Set up payouts before you create events.
+          </h1>
+          <p className="mt-4 text-base font-medium leading-7 text-[color:var(--mauve)]">
+            We collect ticket payments through Stripe and pay them out to your
+            connected account. Finish Stripe onboarding and you can publish your
+            first event right after.
+          </p>
+          <a
+            href="/merchant/onboarding/payouts"
+            className="mt-8 inline-flex items-center gap-2 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-6 py-3 text-sm font-bold uppercase tracking-wider text-[color:var(--on-deep)] hard-shadow-sm transition hover:-translate-y-0.5"
+          >
+            Set up payouts →
+          </a>
+        </section>
+      </main>
+    );
+  }
+
   const [categoryRows, tagOptions, createOptions] = await Promise.all([
     getMerchantCategoryOptions(),
     getMerchantTagOptions(),

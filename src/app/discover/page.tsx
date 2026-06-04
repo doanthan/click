@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { auth } from "@/auth";
 import { EventExplorer } from "@/components/event-explorer";
-import { EventTileCard } from "@/components/event-tile-card";
+import { EventCard } from "@/components/event-card";
 import {
   getEventsForExplore,
   getPersonalizedDiscovery,
@@ -22,6 +22,7 @@ export default async function DiscoverPage() {
   ]);
 
   const bookmarkedSet = new Set(profileStatus?.bookmarkedEventIds ?? []);
+  const registeredSet = new Set(profileStatus?.registeredEventIds ?? []);
 
   return (
     <main className="paper-noise fit-viewport min-h-screen bg-[color:var(--champagne)] text-[color:var(--ink)]">
@@ -53,10 +54,12 @@ export default async function DiscoverPage() {
           </div>
           <div className="mt-6 flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2 pr-4 [scrollbar-width:thin] sm:pr-6">
             {personalized.events.map((event) => (
-              <div key={event.id} className="shrink-0 snap-start">
-                <EventTileCard
+              <div key={event.id} className="w-[19rem] shrink-0 snap-start sm:w-[21rem]">
+                <EventCard
                   event={event}
+                  compact
                   bookmarked={bookmarkedSet.has(event.id)}
+                  registered={registeredSet.has(event.id)}
                 />
               </div>
             ))}

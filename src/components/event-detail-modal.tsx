@@ -96,7 +96,9 @@ export function EventDetailModal({
   const isRegistered = data.viewerRsvpStatus === "confirmed";
   const isWaitlisted = data.viewerRsvpStatus === "waitlisted";
   const isWaitlistMode = data.status === "Waitlist" || isFull;
-  const isLockedEvent = data.status === "Locked" && !isRegistered;
+  // Venue stays private until the viewer confirms their RSVP — only the suburb
+  // is shown beforehand, matching the event detail page's venue gate.
+  const isLockedEvent = !isRegistered;
   const isPaid = data.priceCents > 0;
 
   return (

@@ -89,6 +89,7 @@ export default async function MerchantPage({ searchParams }: MerchantPageProps) 
   // it), so there's no "pending host" branch to render anymore.
   const businessName = status.merchantProfile.business_name;
   const payoutsEnabled = status.merchantProfile.payouts_enabled;
+  const chargesEnabled = status.merchantProfile.charges_enabled;
 
   return (
     <main className="min-h-screen bg-[color:var(--champagne)] px-4 py-8 text-[color:var(--ink)] sm:px-6 lg:py-10">
@@ -105,6 +106,7 @@ export default async function MerchantPage({ searchParams }: MerchantPageProps) 
               monthParam={params.month}
               businessName={businessName}
               payoutsEnabled={payoutsEnabled}
+              chargesEnabled={chargesEnabled}
             />
           ) : null}
           {tab === "events" ? <EventsTab events={merchantEvents} /> : null}
@@ -158,11 +160,13 @@ function DashboardTab({
   monthParam,
   businessName,
   payoutsEnabled,
+  chargesEnabled,
 }: {
   merchantEvents: Awaited<ReturnType<typeof getMerchantEvents>>;
   monthParam?: string;
   businessName: string;
   payoutsEnabled: boolean;
+  chargesEnabled: boolean;
 }) {
   // eslint-disable-next-line react-hooks/purity -- async server component, evaluated once per request
   const now = Date.now();
@@ -187,7 +191,11 @@ function DashboardTab({
 
   return (
     <div className="space-y-8 py-10">
-      {!payoutsEnabled ? <PayoutSetupBanner /> : null}
+      <SetupProgress
+        chargesEnabled={chargesEnabled}
+        payoutsEnabled={payoutsEnabled}
+        hasEvents={merchantEvents.length > 0}
+      />
       {showWelcome ? <WelcomeToClick businessName={businessName} /> : null}
 
       <TabHeader
@@ -325,22 +333,91 @@ function ConfirmedRsvpChart({
   );
 }
 
-// Persistent nudge shown on the dashboard until the merchant finishes Stripe
-// payout onboarding. Until payouts are enabled they can still create free
-// events, but paid events can't pay out — so we keep the path one click away.
-function PayoutSetupBanner() {
+// Setup-completion bar shown on the dashboard until the merchant has finished
+// onboarding: approved → payments connected → first event created. It disappears
+// once all three are done. The "Connect payments" step is required before event
+// creation (the create wizard + createEventForMerchant both gate on it), so this
+// is the merchant's one-glance "what's left before I can publish" tracker.
+function SetupProgress({
+  chargesEnabled,
+  payoutsEnabled,
+  hasEvents,
+}: {
+  chargesEnabled: boolean;
+  payoutsEnabled: boolean;
+  hasEvents: boolean;
+}) {
+  const steps = [
+    { label: "Business approved", done: true, href: undefined as string | undefined },
+    {
+      label: payoutsEnabled
+        ? "Payments connected"
+        : chargesEnabled
+          ? "Finish payout setup"
+          : "Connect payments",
+      done: chargesEnabled,
+      href: "/merchant/onboarding/payouts",
+    },
+    {
+      label: "Create your first event",
+      done: hasEvents,
+      href: chargesEnabled ? "/merchant/events/create" : undefined,
+    },
+  ];
+
+  const completed = steps.filter((s) => s.done).length;
+  if (completed === steps.length) return null;
+
+  const pct = Math.round((completed / steps.length) * 100);
+  // The next thing to action — first incomplete step that has somewhere to go.
+  const nextStep = steps.find((s) => !s.done && s.href);
+
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-4 py-3 hard-shadow-sm">
-      <p className="text-sm font-bold text-[color:var(--surface-deep)]">
-        ✷ Connect your bank to take payments — finish payout setup to publish paid events.
-      </p>
-      <Link
-        href="/merchant/onboarding/payouts"
-        className="inline-flex shrink-0 rounded-full border-2 border-[color:var(--surface-deep)] bg-[color:var(--champagne)] px-4 py-1.5 text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--cream)]"
-      >
-        Finish payout setup →
-      </Link>
-    </div>
+    <section className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--peach-soft)] p-5 hard-shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
+            ✷ Finish setting up · {completed}/{steps.length}
+          </p>
+          <p className="mt-1 text-sm font-bold text-[color:var(--ink)]">
+            {chargesEnabled
+              ? "You're nearly there — create your first event."
+              : "Connect payments to start publishing events."}
+          </p>
+        </div>
+        {nextStep ? (
+          <Link
+            href={nextStep.href!}
+            className="inline-flex shrink-0 rounded-full border-2 border-[color:var(--surface-deep)] bg-[color:var(--rose)] px-4 py-1.5 text-xs font-bold uppercase tracking-wide text-[color:var(--on-deep)] hard-shadow-sm hover:bg-[color:var(--ink)]"
+          >
+            {nextStep.label} →
+          </Link>
+        ) : null}
+      </div>
+
+      <div className="mt-4 h-2 w-full rounded-full bg-[color:var(--champagne)]">
+        <div
+          className="h-2 rounded-full bg-[color:var(--rose)] transition-all"
+          style={{ width: `${Math.max(pct, 6)}%` }}
+        />
+      </div>
+
+      <ol className="mt-4 grid gap-2 sm:grid-cols-3">
+        {steps.map((step) => (
+          <li
+            key={step.label}
+            className={`flex items-center gap-2 rounded-xl border-2 px-3 py-2 text-xs font-bold ${
+              step.done
+                ? "border-[color:var(--line)] bg-[color:var(--champagne)] text-[color:var(--ink)]"
+                : "border-dashed border-[color:var(--line)] bg-transparent text-[color:var(--mauve)]"
+            }`}
+          >
+            <span aria-hidden>{step.done ? "✓" : "○"}</span>
+            <span className="truncate">{step.label}</span>
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }
 

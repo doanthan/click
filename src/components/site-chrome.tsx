@@ -116,18 +116,17 @@ export async function SiteFooter() {
   const isAdmin = !!session?.user && isAdminEmail(session.user.email);
 
   const footerGroups: Array<[string, ...string[]]> = [
-    ["Product", "Discover", "Categories", "Dashboard", "Onboarding"],
+    ["Product", "Discover", "Dashboard"],
     isAdmin
-      ? ["Platform", "Host events", "Admin", "Scale", "Privacy", "Matching"]
-      : ["Platform", "Host events", "Privacy", "Matching"],
-    ["Modes", "Friendship", "Dating", "Networking", "Exploring"],
+      ? ["Platform", "Host events", "Admin", "Scale"]
+      : ["Platform", "Host events"],
     ["Legal", "Terms", "Privacy", "Refunds", "Safety"],
   ];
 
   return (
     <footer className="relative overflow-hidden bg-[color:var(--surface-deep)] text-[color:var(--on-deep)]">
       <div className="h-1 w-full bg-[color:var(--peach)]" />
-      <div className="mx-auto grid max-w-7xl gap-10 px-4 py-16 sm:px-6 md:grid-cols-[1.5fr_0.8fr_0.8fr_0.8fr_0.8fr]">
+      <div className="mx-auto grid max-w-7xl gap-10 px-4 py-16 sm:px-6 md:grid-cols-[1.5fr_0.8fr_0.8fr_0.8fr]">
         <div>
           <span className="click-wordmark text-5xl text-[color:var(--on-deep)]">
             Click

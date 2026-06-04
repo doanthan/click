@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { LinkButton, Pill } from "@/components/click-ui";
+import { AccountSettingToggle } from "@/components/account-setting-toggle";
 import { getOwnProfile } from "@/lib/event-repository";
 
 export const metadata = {
@@ -30,14 +31,19 @@ export default async function OwnProfilePage() {
     .join("")
     .toUpperCase();
 
+  // Fall back to the OAuth provider photo (same source the header uses) when we
+  // haven't rehosted an avatar yet — otherwise a user with a Google/Facebook
+  // picture sees initials here while the header shows their real photo.
+  const avatarUrl = profile.photoUrl ?? session.user.image ?? null;
+
   return (
     <main className="paper-noise min-h-screen bg-[color:var(--champagne)] px-4 py-12 text-[color:var(--ink)] sm:px-6">
       <section className="mx-auto max-w-4xl">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="flex items-end gap-5">
-            {profile.photoUrl ? (
+            {avatarUrl ? (
               <Image
-                src={profile.photoUrl}
+                src={avatarUrl}
                 alt={profile.displayName}
                 width={96}
                 height={96}
@@ -56,9 +62,6 @@ export default async function OwnProfilePage() {
               <h1 className="mt-6 font-display text-5xl font-light leading-[0.96] tracking-tight sm:text-6xl">
                 {profile.displayName}
               </h1>
-              <p className="mt-3 text-sm font-mono font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-                {profile.email}
-              </p>
             </div>
           </div>
           <LinkButton href="/profile/edit">Edit profile</LinkButton>
@@ -75,6 +78,13 @@ export default async function OwnProfilePage() {
               <Row label="Age" value={profile.age?.toString() ?? "—"} />
               <Row label="Attended" value={`${profile.attendedCount} events`} />
             </dl>
+            <div className="mt-4 border-t border-dashed border-[color:var(--line-soft)] pt-4">
+              <AccountSettingToggle
+                settingKey="showSuburb"
+                label="Show my suburb to others"
+                initialOn={profile.settings.showSuburb}
+              />
+            </div>
           </div>
 
           <div className="space-y-5">

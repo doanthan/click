@@ -513,7 +513,10 @@ function eventFromRow(row: EventRow): EventItem {
     price: formatPrice(row.price_cents),
     attendees: Number(row.confirmed_attendees),
     capacity: row.capacity,
-    image: row.image_url ?? "/media/open-yoga.jpg",
+    // When a merchant hasn't uploaded a cover, fall back to a category-relevant
+    // stock image rather than a single generic yoga photo (which read as a
+    // "random" unrelated pic on, e.g., a floral or food event).
+    image: row.image_url ?? imageForCategory(row.category),
     imageAlt: row.image_alt ?? "Click event",
     description: row.description,
     tags: row.tags ?? [],
@@ -1817,6 +1820,10 @@ export async function getEventsForExplore() {
       left join merchant_profiles merchant on merchant.id = event.merchant_profile_id
       where event.status in ('live', 'featured', 'locked', 'waitlist')
         and coalesce(merchant.verification_status, 'approved') <> 'suspended'
+        -- Hide events that have already finished: once an event's end time
+        -- (or its start, when no end is set) is in the past it's no longer
+        -- discoverable and can't be RSVP'd to. Keeps "starting soon" honest.
+        and coalesce(event.ends_at, event.starts_at) > now()
       group by event.id
       order by event.starts_at asc
     `);
@@ -2313,6 +2320,7 @@ export async function registerForEvent(eventId: string, session: Session | null)
         status: string;
         price_cents: number;
         confirmed_attendees: string;
+        has_ended: boolean;
       }>(
         `
           select
@@ -2322,6 +2330,7 @@ export async function registerForEvent(eventId: string, session: Session | null)
             event.capacity,
             event.status::text,
             event.price_cents,
+            (coalesce(event.ends_at, event.starts_at) <= now()) as has_ended,
             (
               select count(*)
               from event_attendees attendee
@@ -2339,6 +2348,13 @@ export async function registerForEvent(eventId: string, session: Session | null)
       if (!event) {
         const error = new Error("Event not found.");
         error.name = "NotFoundError";
+        throw error;
+      }
+
+      // Past events are closed: no new RSVPs once the event has ended.
+      if (event.has_ended) {
+        const error = new Error("This event has already ended.");
+        error.name = "ValidationError";
         throw error;
       }
 
@@ -2611,6 +2627,14 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
     if (merchantProfile.verification_status !== "approved") {
       const error = new Error("Admin approval is required before creating Click events.");
       error.name = "MerchantApprovalRequiredError";
+      throw error;
+    }
+    // Payments must be connected first: events sell tickets, so block creation
+    // until Stripe Connect onboarding is complete (charges_enabled). The wizard
+    // gates on this too — this is the server-side backstop.
+    if (!merchantProfile.charges_enabled) {
+      const error = new Error("Connect Stripe payouts before creating events.");
+      error.name = "ValidationError";
       throw error;
     }
     // Trusted merchants (an admin has approved at least one of their events, see
@@ -5715,7 +5739,7 @@ export async function createUserClickForSession(
 
     if (!sourceEventId) {
       const error = new Error(
-        "You can only Click someone after an event you both attended has ended (12 hours later).",
+        "The Click window opens 12 hours after an event you both attended ends. Once it's been long enough since a shared event, you'll be able to Click the people you met there.",
       );
       error.name = "ValidationError";
       throw error;
@@ -6395,6 +6419,7 @@ export async function expirePaymentHolds(): Promise<{ expired: number; reoffered
     title: string;
     slug: string;
     txn_id: string | null;
+    checkout_session_id: string | null;
   }>(
     `
       select
@@ -6403,9 +6428,11 @@ export async function expirePaymentHolds(): Promise<{ expired: number; reoffered
         a.profile_id::text,
         e.title,
         e.slug,
-        a.payment_transaction_id::text as txn_id
+        a.payment_transaction_id::text as txn_id,
+        pt.stripe_checkout_session_id as checkout_session_id
       from event_attendees a
       join events e on e.id = a.event_id
+      left join payment_transactions pt on pt.id = a.payment_transaction_id
       where a.status = 'pending_payment'
         and a.hold_expires_at is not null
         and a.hold_expires_at <= now()
@@ -6418,6 +6445,23 @@ export async function expirePaymentHolds(): Promise<{ expired: number; reoffered
   const promotions: WaitlistPromotion[] = [];
 
   for (const row of lapsed.rows) {
+    // Before releasing the seat, double-check Stripe: the buyer may have paid
+    // but the confirmation never landed (missed webhook AND a closed tab that
+    // skipped the success-URL reconcile). Cancelling such a hold is the
+    // "I paid but it says join the waitlist" bug — so reconcile first and, if
+    // Stripe reports the session paid, markPaymentSucceeded promotes the seat.
+    // The recheck below then finds it no longer 'pending_payment' and skips it.
+    if (row.checkout_session_id) {
+      try {
+        const { reconcileCheckoutSession } = await import("./stripe-sync");
+        await reconcileCheckoutSession(row.checkout_session_id);
+      } catch (error) {
+        if (process.env.CLICK_DB_DEBUG === "true") {
+          console.warn(`hold reconcile failed for txn ${row.txn_id}`, error);
+        }
+      }
+    }
+
     const client = await pool.connect();
     try {
       await client.query("begin");
@@ -6852,6 +6896,7 @@ export async function createPaymentHold(
       merchant_stripe_account_id: string | null;
       merchant_charges_enabled: boolean | null;
       confirmed_attendees: string;
+      has_ended: boolean;
     }>(
       `
         select
@@ -6865,10 +6910,17 @@ export async function createPaymentHold(
           event.merchant_profile_id::text,
           merchant.stripe_connect_account_id as merchant_stripe_account_id,
           merchant.charges_enabled as merchant_charges_enabled,
+          (coalesce(event.ends_at, event.starts_at) <= now()) as has_ended,
           (
             select count(*)
             from event_attendees attendee
             where attendee.event_id = event.id
+              -- Exclude THIS buyer's own seat: a returning buyer who already
+              -- holds a pending_payment seat (a failed/abandoned first attempt)
+              -- must not be counted against capacity by their own hold, or the
+              -- retry throws "Event is full" about a seat that is theirs. The
+              -- hold is reused via the on-conflict upsert below.
+              and attendee.profile_id <> $2::uuid
               and (attendee.status = 'confirmed' or (attendee.status = 'pending_payment' and attendee.hold_expires_at > now()))
           ) as confirmed_attendees
         from events event
@@ -6876,7 +6928,7 @@ export async function createPaymentHold(
         where event.slug = $1
         for update of event
       `,
-      [eventSlug],
+      [eventSlug, profile.id],
     );
 
     const event = eventResult.rows[0];
@@ -6887,6 +6939,12 @@ export async function createPaymentHold(
     }
     if (event.price_cents <= 0) {
       const error = new Error("This event is free — use the Register button instead.");
+      error.name = "ValidationError";
+      throw error;
+    }
+    // Past events are closed: no new checkout holds once the event has ended.
+    if (event.has_ended) {
+      const error = new Error("This event has already ended.");
       error.name = "ValidationError";
       throw error;
     }
@@ -7248,7 +7306,36 @@ export type OwnProfile = PublicProfile & {
   // True once the user has saved Life Quiz answers (any user_tags row with
   // source='quiz'). Drives the "Take" vs "Retake" copy on /profile/edit.
   lifeQuizCompleted: boolean;
+  // Persisted notification + privacy preferences (migration 040). Drive the
+  // /account-settings toggles and the public-profile visibility gates.
+  settings: AccountSettings;
 };
+
+export type NotificationPrefs = {
+  eventReminders: boolean;
+  waitlistOffers: boolean;
+  mutualClick: boolean;
+  weeklyRecap: boolean;
+  productUpdates: boolean;
+};
+
+export type AccountSettings = {
+  notifications: NotificationPrefs;
+  showSuburb: boolean;
+  showAttendanceCount: boolean;
+  allowMerchantMessages: boolean;
+};
+
+function coerceNotificationPrefs(value: unknown): NotificationPrefs {
+  const raw = (value ?? {}) as Record<string, unknown>;
+  return {
+    eventReminders: raw.eventReminders !== false,
+    waitlistOffers: raw.waitlistOffers !== false,
+    mutualClick: raw.mutualClick !== false,
+    weeklyRecap: raw.weeklyRecap === true,
+    productUpdates: raw.productUpdates === true,
+  };
+}
 
 export async function getOwnProfile(session: Session | null): Promise<OwnProfile | null> {
   const pool = getPostgresPool();
@@ -7272,11 +7359,16 @@ export async function getOwnProfile(session: Session | null): Promise<OwnProfile
         connection_intents: string[];
         dating_visible: boolean;
         flexible_discovery: boolean;
+        notification_prefs: unknown;
+        show_suburb: boolean;
+        show_attendance_count: boolean;
+        allow_merchant_messages: boolean;
       }>(
         `
           select id::text, display_name, email::text, role::text, city, suburb, bio, photo_url, age,
                  connection_intents::text[] as connection_intents,
-                 dating_visible, flexible_discovery
+                 dating_visible, flexible_discovery,
+                 notification_prefs, show_suburb, show_attendance_count, allow_merchant_messages
           from profiles
           where id = $1::uuid
         `,
@@ -7316,12 +7408,23 @@ export async function getOwnProfile(session: Session | null): Promise<OwnProfile
       photoUrl: row.photo_url,
       age: row.age,
       intents: row.connection_intents ?? [],
-      interests: tagsResult.rows.map((t) => ({ slug: t.slug, label: t.label })),
+      // Only interest-type tags surface as "Interests" on /profile so the chips
+      // line up exactly with the editable Interest section on /profile/edit.
+      // (Life/vibe quiz tags + music are separate signals, edited elsewhere.)
+      interests: tagsResult.rows
+        .filter((t) => t.tag_type === "interest")
+        .map((t) => ({ slug: t.slug, label: t.label })),
       interestSlugs: tagsResult.rows.filter((t) => t.tag_type === "interest").map((t) => t.slug),
       musicSlugs: tagsResult.rows.filter((t) => t.tag_type === "music").map((t) => t.slug),
       datingVisible: row.dating_visible,
       flexibleDiscovery: row.flexible_discovery,
       lifeQuizCompleted: tagsResult.rows.some((t) => t.source === "quiz"),
+      settings: {
+        notifications: coerceNotificationPrefs(row.notification_prefs),
+        showSuburb: row.show_suburb,
+        showAttendanceCount: row.show_attendance_count,
+        allowMerchantMessages: row.allow_merchant_messages,
+      },
       attendedCount: Number(attendedResult.rows[0]?.count ?? 0),
     };
   } catch (error) {
@@ -7347,10 +7450,13 @@ export async function getPublicProfileById(profileId: string): Promise<PublicPro
         photo_url: string | null;
         age: number | null;
         connection_intents: string[];
+        show_suburb: boolean;
+        show_attendance_count: boolean;
       }>(
         `
           select id::text, display_name, city, suburb, bio, photo_url, age,
-                 connection_intents::text[] as connection_intents
+                 connection_intents::text[] as connection_intents,
+                 show_suburb, show_attendance_count
           from profiles
           where id = $1::uuid
         `,
@@ -7383,13 +7489,17 @@ export async function getPublicProfileById(profileId: string): Promise<PublicPro
       id: row.id,
       displayName: row.display_name,
       city: row.city,
-      suburb: row.suburb,
+      // Suburb + attendance count are privacy-gated (migration 040): when the
+      // owner has hidden them, other viewers see them as withheld.
+      suburb: row.show_suburb ? row.suburb : null,
       bio: row.bio,
       photoUrl: row.photo_url,
       age: row.age,
       intents: row.connection_intents ?? [],
       interests: tagsResult.rows.map((t) => ({ slug: t.slug, label: t.label })),
-      attendedCount: Number(attendedResult.rows[0]?.count ?? 0),
+      attendedCount: row.show_attendance_count
+        ? Number(attendedResult.rows[0]?.count ?? 0)
+        : 0,
     };
   } catch {
     return null;
@@ -7533,6 +7643,64 @@ export async function updateOwnProfile(
   } finally {
     client.release();
   }
+}
+
+// Persist a single account-settings toggle. `key` is a stable identifier from
+// the settings UI; each maps to either a column or a field inside the
+// notification_prefs jsonb. Returns the new boolean so the client can confirm.
+export type AccountSettingKey =
+  | "notify.eventReminders"
+  | "notify.waitlistOffers"
+  | "notify.mutualClick"
+  | "notify.weeklyRecap"
+  | "notify.productUpdates"
+  | "showSuburb"
+  | "showAttendanceCount"
+  | "allowMerchantMessages";
+
+export async function updateAccountSetting(
+  session: Session | null,
+  key: AccountSettingKey,
+  value: boolean,
+) {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+  const email = getSessionEmail(session);
+  if (!email) throw authError();
+
+  const profile = await ensureProfileForSession(session);
+
+  const columnByKey: Partial<Record<AccountSettingKey, string>> = {
+    showSuburb: "show_suburb",
+    showAttendanceCount: "show_attendance_count",
+    allowMerchantMessages: "allow_merchant_messages",
+  };
+
+  if (key in columnByKey) {
+    const column = columnByKey[key]!;
+    await pool.query(
+      `update profiles set ${column} = $2, updated_at = now() where id = $1::uuid`,
+      [profile.id, value],
+    );
+    return value;
+  }
+
+  if (key.startsWith("notify.")) {
+    const field = key.slice("notify.".length);
+    // jsonb_set merges the single field, leaving the rest of the blob intact.
+    await pool.query(
+      `update profiles
+         set notification_prefs = jsonb_set(coalesce(notification_prefs, '{}'::jsonb), $2::text[], $3::jsonb, true),
+             updated_at = now()
+       where id = $1::uuid`,
+      [profile.id, `{${field}}`, JSON.stringify(value)],
+    );
+    return value;
+  }
+
+  const error = new Error("Unknown setting.");
+  error.name = "ValidationError";
+  throw error;
 }
 
 export type NotificationRow = {
@@ -8620,6 +8788,23 @@ export async function saveLifeQuizTags(
   if (tagSlugs.length === 0) return;
 
   const profile = await ensureProfileForSession(session);
+
+  // The Life Quiz defines its own taxonomy (life-stage / availability /
+  // event-style / energy). Historically those slugs were NOT seeded into
+  // `tags`, so the old "link by existing slug" insert matched nothing and the
+  // quiz never registered as completed. Create any missing slugs first (as
+  // 'life' tags, label titleised from the slug), then link — so every answer
+  // persists and `lifeQuizCompleted` flips true. Two statements because a
+  // data-modifying CTE's inserts aren't visible to a SELECT in the same query.
+  await pool.query(
+    `
+      insert into tags (label, slug, tag_type, admin_managed)
+      select initcap(replace(slug, '-', ' ')), slug, 'life', false
+      from unnest($1::text[]) as slug
+      on conflict (slug) do nothing
+    `,
+    [tagSlugs],
+  );
   await pool.query(
     `
       insert into user_tags (profile_id, tag_id, source)

@@ -1,9 +1,23 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
-import { LinkButton, Pill } from "@/components/click-ui";
+import { LinkButton } from "@/components/click-ui";
+import { AccountSettingToggle } from "@/components/account-setting-toggle";
 import { signOutOfClick } from "@/app/login/actions";
-import { getOwnProfile } from "@/lib/event-repository";
+import { getOwnProfile, type AccountSettings } from "@/lib/event-repository";
+
+const DEFAULT_SETTINGS: AccountSettings = {
+  notifications: {
+    eventReminders: true,
+    waitlistOffers: true,
+    mutualClick: true,
+    weeklyRecap: false,
+    productUpdates: false,
+  },
+  showSuburb: true,
+  showAttendanceCount: true,
+  allowMerchantMessages: false,
+};
 
 export const metadata = {
   title: "Account settings | Click",
@@ -34,6 +48,7 @@ export default async function AccountSettingsPage({ searchParams }: AccountSetti
   const tab: TabKey = TABS.some((t) => t.key === tabKey) ? tabKey : "account";
 
   const profile = await getOwnProfile(session);
+  const settings = profile?.settings ?? DEFAULT_SETTINGS;
 
   return (
     <main className="paper-noise min-h-screen bg-[color:var(--champagne)] px-4 py-12 text-[color:var(--ink)] sm:px-6">
@@ -75,11 +90,10 @@ export default async function AccountSettingsPage({ searchParams }: AccountSetti
               displayName={profile?.displayName ?? "—"}
               email={profile?.email ?? session.user.email ?? "—"}
               suburb={profile?.suburb ?? "—"}
-              role={profile?.role ?? "attendee"}
             />
           ) : null}
-          {tab === "notifications" ? <NotificationsTab /> : null}
-          {tab === "privacy" ? <PrivacyTab /> : null}
+          {tab === "notifications" ? <NotificationsTab settings={settings} /> : null}
+          {tab === "privacy" ? <PrivacyTab settings={settings} /> : null}
           {tab === "payments" ? <PaymentsTab /> : null}
           {tab === "security" ? <SecurityTab email={profile?.email ?? session.user.email ?? "—"} /> : null}
         </div>
@@ -92,12 +106,10 @@ function AccountTab({
   displayName,
   email,
   suburb,
-  role,
 }: {
   displayName: string;
   email: string;
   suburb: string;
-  role: string;
 }) {
   return (
     <div className="space-y-6">
@@ -110,7 +122,6 @@ function AccountTab({
         <Row label="Display name" value={displayName} />
         <Row label="Email" value={email} />
         <Row label="Suburb" value={suburb} />
-        <Row label="Role" value={role} />
       </dl>
       <div className="flex flex-wrap gap-3 pt-2">
         <LinkButton href="/profile/edit">Edit profile</LinkButton>
@@ -125,7 +136,8 @@ function AccountTab({
   );
 }
 
-function NotificationsTab() {
+function NotificationsTab({ settings }: { settings: AccountSettings }) {
+  const n = settings.notifications;
   return (
     <div className="space-y-6">
       <SectionHeading
@@ -134,15 +146,14 @@ function NotificationsTab() {
         body="Manage how often we send you reminders, mutual Click alerts, and weekly recap emails."
       />
       <div className="space-y-3">
-        <ToggleRow label="Event reminders (24h before)" defaultOn />
-        <ToggleRow label="Waitlist offers" defaultOn />
-        <ToggleRow label="Mutual Click alerts" defaultOn />
-        <ToggleRow label="Weekly recap email" defaultOn={false} />
-        <ToggleRow label="Product updates" defaultOn={false} />
+        <AccountSettingToggle settingKey="notify.eventReminders" label="Event reminders (24h before)" initialOn={n.eventReminders} />
+        <AccountSettingToggle settingKey="notify.waitlistOffers" label="Waitlist offers" initialOn={n.waitlistOffers} />
+        <AccountSettingToggle settingKey="notify.mutualClick" label="Mutual Click alerts" initialOn={n.mutualClick} />
+        <AccountSettingToggle settingKey="notify.weeklyRecap" label="Weekly recap email" initialOn={n.weeklyRecap} />
+        <AccountSettingToggle settingKey="notify.productUpdates" label="Product updates" initialOn={n.productUpdates} />
       </div>
       <p className="rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--champagne)] p-4 text-sm font-medium leading-6 text-[color:var(--mauve)]">
-        Toggle persistence ships with the notification-preferences migration —
-        in the meantime, your in-app inbox lives at{" "}
+        Your in-app inbox lives at{" "}
         <Link
           href="/notifications"
           className="font-bold text-[color:var(--ink)] underline decoration-2 underline-offset-4 hover:text-[color:var(--rose)]"
@@ -155,7 +166,7 @@ function NotificationsTab() {
   );
 }
 
-function PrivacyTab() {
+function PrivacyTab({ settings }: { settings: AccountSettings }) {
   return (
     <div className="space-y-6">
       <SectionHeading
@@ -164,14 +175,10 @@ function PrivacyTab() {
         body="Click is private by default. Mutual interest unlocks suggestions, not chat."
       />
       <div className="space-y-3">
-        <ToggleRow label="Visible to dating intent users" defaultOn />
-        <ToggleRow label="Flexible discovery (show me cross-intent events)" defaultOn />
-        <ToggleRow label="Show my attendance count on my public profile" defaultOn />
-        <ToggleRow label="Allow merchants I’ve RSVPd to message me" defaultOn={false} />
+        <AccountSettingToggle settingKey="showSuburb" label="Show my suburb on my public profile" initialOn={settings.showSuburb} />
+        <AccountSettingToggle settingKey="showAttendanceCount" label="Show my attendance count on my public profile" initialOn={settings.showAttendanceCount} />
+        <AccountSettingToggle settingKey="allowMerchantMessages" label="Allow merchants I’ve RSVPd to message me" initialOn={settings.allowMerchantMessages} />
       </div>
-      <p className="rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--champagne)] p-4 text-sm font-medium leading-6 text-[color:var(--mauve)]">
-        Persisted privacy toggles land with the upcoming onboarding migration.
-      </p>
     </div>
   );
 }
@@ -267,19 +274,3 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ToggleRow({ label, defaultOn }: { label: string; defaultOn: boolean }) {
-  return (
-    <label className="flex cursor-pointer items-center justify-between gap-3 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 hard-shadow-sm">
-      <span className="text-sm font-bold text-[color:var(--ink)]">{label}</span>
-      <span className="flex items-center gap-2">
-        <Pill tone={defaultOn ? "peach" : "cream"}>{defaultOn ? "On" : "Off"}</Pill>
-        <input
-          type="checkbox"
-          defaultChecked={defaultOn}
-          disabled
-          className="size-5 accent-[color:var(--rose)] cursor-not-allowed opacity-60"
-        />
-      </span>
-    </label>
-  );
-}
