@@ -176,6 +176,7 @@ The post-approval onboarding (`/merchant/onboarding/*`) is a one-time walkthroug
 | `/admin/reports` | `src/app/admin/reports/page.tsx` | Safety Reports |
 | `/admin/tags` | `src/app/admin/tags/page.tsx` | Tags & Categories |
 | `/admin/matching` | `src/app/admin/matching/page.tsx` | Matching Formula |
+| `/admin/matching-lab` | `src/app/admin/matching-lab/page.tsx` | Matching Lab (v2 Stage 6 — eval snapshot, per-cohort training readiness, and the curated-pair labeling tool → `curated_match_labels`; backed by `getCuratedPairToLabel`/`saveCuratedMatchLabel`/`getMatchingLabStats`. The ML fitting job itself is an external worker, not built) |
 | `/admin/audit` | `src/app/admin/audit/page.tsx` | Audit Log |
 | `/admin/system` | `src/app/admin/system/page.tsx` | System |
 
@@ -187,7 +188,7 @@ Admin layout: `src/app/admin/layout.tsx`. Sidebar nav: `src/components/admin-sid
 | --- | --- |
 | `/tables` | `src/app/tables/page.tsx` |
 | `/test` | `src/app/test/page.tsx` |
-| `/algo` | `src/app/algo/page.tsx` (Matching v2 inspector — server-rendered; pick a member → cohort, feature vector, active per-cohort weights, and live people/event candidates with per-feature score breakdowns. Runs the real `src/lib/matching/` engine on the `user_features` store. Also hosts the admin **v2 kill-switch** (`system_settings.matching_v2_enabled`, default off): when on, `getSuggestedPeople` + `getPersonalizedDiscovery` re-rank their existing candidate pools with v2 (`scorePair` / `scoreUserEvent`), falling back to v1 per-member when the feature store has no row. Toggle action in `src/app/algo/actions.ts`. See `context/04_MATCHING_ALGORITHM_V2.md`) |
+| `/algo` | `src/app/algo/page.tsx` (Matching v2 inspector — server-rendered; pick a member → cohort, feature vector, active per-cohort weights, and live people/event candidates with per-feature score breakdowns. Runs the real `src/lib/matching/` engine on the `user_features` store. Also hosts the admin **v2 kill-switch** (`system_settings.matching_v2_enabled`, **default ON** — v2 is the live engine; only an explicit `false` row reverts to v1): when on, `getSuggestedPeople` + `getPersonalizedDiscovery` re-rank their existing candidate pools with v2 (`scorePair` / `scoreUserEvent`), falling back to v1 per-member when the feature store has no row. Toggle action in `src/app/algo/actions.ts`. See `context/04_MATCHING_ALGORITHM_V2.md`) |
 | `/business` | `src/app/business/page.tsx` (founder forecasting + VC reality-check dashboard; modelled off `context/BUSINESS_CASE.md`, not in public nav) |
 
 ## API routes

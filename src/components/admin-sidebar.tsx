@@ -14,6 +14,7 @@ export type AdminTabKey =
   | "reports"
   | "tags"
   | "matching"
+  | "matching-lab"
   | "audit"
   | "system";
 
@@ -28,6 +29,7 @@ type IconName =
   | "reports"
   | "contents"
   | "matching"
+  | "lab"
   | "audit"
   | "system";
 
@@ -47,6 +49,7 @@ const NAV_PRIMARY: NavItem[] = [
   { key: "reports", label: "Safety Reports", icon: "reports", href: "/admin/reports" },
   { key: "tags", label: "Tags & Categories", icon: "contents", href: "/admin/tags" },
   { key: "matching", label: "Matching Formula", icon: "matching", href: "/admin/matching" },
+  { key: "matching-lab", label: "Matching Lab", icon: "lab", href: "/admin/matching-lab" },
 ];
 
 const NAV_SECONDARY: NavItem[] = [
@@ -114,6 +117,13 @@ const ICON_PATHS: Record<IconName, ReactNode> = {
     <>
       <polyline points="22 7 13.5 15.5 8.5 10.5 2 17" />
       <polyline points="16 7 22 7 22 13" />
+    </>
+  ),
+  lab: (
+    <>
+      <path d="M9 2h6" />
+      <path d="M10 2v6.3a2 2 0 0 1-.4 1.2L4.5 16a2 2 0 0 0 1.6 3.2h11.8a2 2 0 0 0 1.6-3.2l-5.1-6.5a2 2 0 0 1-.4-1.2V2" />
+      <path d="M7 14h10" />
     </>
   ),
   audit: (

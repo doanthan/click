@@ -266,7 +266,7 @@ export default async function AlgoPage({
           <V2Toggle enabled={matchingV2Enabled} />
         </div>
         <p className="mt-3 border-t-2 border-[color:var(--line)]/40 pt-2 font-mono text-[0.58rem] uppercase tracking-wide text-[color:var(--mauve)]">
-          Flag: system_settings.matching_v2_enabled · admin-flippable · default off
+          Flag: system_settings.matching_v2_enabled · admin-flippable · default ON (v2)
         </p>
       </section>
 

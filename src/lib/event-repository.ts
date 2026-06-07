@@ -28,10 +28,13 @@ import { buildEventMediaGallery, type MediaItem } from "./event-media";
 import { deriveEventSubTagsBySlug } from "./matching/feature-store";
 import {
   generateEventCandidates,
+  generatePeopleCandidates,
   loadManyUserFeatures,
   loadUserFeatures,
 } from "./matching/candidates";
-import { scorePair } from "./matching/score";
+import { buildPairFeatures, scorePair } from "./matching/score";
+import { MODEL_VERSION } from "./matching/weights";
+import type { UserFeatures } from "./matching/types";
 import { logEmailEvent, sendTransactionalEmail } from "./email";
 import { regionForEvent, type Region } from "./geo";
 import { getPostgresPool } from "./postgres";
@@ -9785,7 +9788,7 @@ export async function getSystemSettings(): Promise<SystemSettings> {
     bookingFeeBps: 0,
     marketingBanner: "",
     matchingWeights: DEFAULT_MATCHING_WEIGHTS,
-    matchingV2Enabled: false,
+    matchingV2Enabled: true,
   };
 
   const pool = getPostgresPool();
@@ -9802,7 +9805,11 @@ export async function getSystemSettings(): Promise<SystemSettings> {
       bookingFeeBps: Number(map.get("booking_fee_bps") ?? 0),
       marketingBanner: String(map.get("marketing_banner") ?? "").trim(),
       matchingWeights: parseMatchingWeights(map.get("matching_weights")),
-      matchingV2Enabled: Boolean(map.get("matching_v2_enabled")),
+      // v2 is the default engine. Only an explicit `false` row (set by the /algo
+      // toggle) reverts to v1; absence of the row means v2.
+      matchingV2Enabled: map.has("matching_v2_enabled")
+        ? Boolean(map.get("matching_v2_enabled"))
+        : true,
     };
   } catch {
     return fallback;
@@ -9882,6 +9889,193 @@ export async function updateSystemSettingsAsAdmin(
     entityId: null,
     metadata: input as Record<string, unknown>,
   });
+}
+
+// ===========================================================================
+// Matching v2 — Stage 6: cold-start curation + training/eval surface.
+// Backs /admin/matching-lab. The curated-labels tool (spec §4) keeps matching
+// "active" at zero behavioural data by routing candidate pairs through human
+// judgment; those labels + observed mutual clicks become the training set that
+// replaces the hand-curated weights (spec §4.3).
+// ===========================================================================
+
+export type LabelMember = {
+  id: string;
+  displayName: string;
+  cohort: string | null;
+  suburb: string | null;
+  age: number | null;
+  socialEnergy: string | null;
+  interests: number;
+  lifeTags: string[];
+  intents: string[];
+};
+
+export type LabelPair = {
+  a: LabelMember; // the viewer (whose cohort scores the pair)
+  b: LabelMember;
+  score: number;
+  features: Record<string, number>;
+};
+
+// Find a candidate pair the admin hasn't judged yet. Tries a handful of random
+// viewers (so the queue doesn't fixate on one person) and returns the first
+// viewer→candidate pair with no existing label. null when nothing is left.
+export async function getCuratedPairToLabel(session: Session | null): Promise<LabelPair | null> {
+  const pool = getPostgresPool();
+  if (!pool) return null;
+  await requireAdminProfile(session);
+
+  const viewers = await pool.query<{ id: string }>(
+    `select profile_id::text as id from user_features where cohort_id is not null order by random() limit 8`,
+  );
+
+  for (const v of viewers.rows) {
+    const cands = await generatePeopleCandidates(pool, v.id, 10);
+    if (cands.length === 0) continue;
+
+    const labeled = await pool.query<{ other: string }>(
+      `select case when profile_a = $1::uuid then profile_b::text else profile_a::text end as other
+         from curated_match_labels
+        where profile_a = $1::uuid or profile_b = $1::uuid`,
+      [v.id],
+    );
+    const seen = new Set(labeled.rows.map((r) => r.other));
+    const pick = cands.find((c) => !seen.has(c.profileId));
+    if (!pick) continue;
+
+    const [viewer, cand] = await Promise.all([
+      loadUserFeatures(pool, v.id),
+      loadUserFeatures(pool, pick.profileId),
+    ]);
+    if (!viewer || !cand) continue;
+
+    const features = buildPairFeatures(viewer, cand);
+    const score = scorePair(viewer, cand).score;
+    const names = await pool.query<{ id: string; display_name: string }>(
+      `select id::text, display_name from profiles where id = any($1::uuid[])`,
+      [[v.id, pick.profileId]],
+    );
+    const nameMap = new Map(names.rows.map((r) => [r.id, r.display_name]));
+    const toMember = (uf: UserFeatures): LabelMember => ({
+      id: uf.profileId,
+      displayName: nameMap.get(uf.profileId) ?? uf.profileId.slice(0, 8),
+      cohort: uf.cohortId,
+      suburb: uf.suburb,
+      age: uf.age,
+      socialEnergy: uf.socialEnergy,
+      interests: uf.interestTagIds.length,
+      lifeTags: uf.lifeTags,
+      intents: uf.intents,
+    });
+    return { a: toMember(viewer), b: toMember(cand), score, features };
+  }
+  return null;
+}
+
+// Persist one human judgment. features_snapshot captures the pair vector + score
+// AT label time so later feature drift can't corrupt the training row (spec §4.1).
+export async function saveCuratedMatchLabel(
+  session: Session | null,
+  input: {
+    profileA: string;
+    profileB: string;
+    judgment: string;
+    reason?: string;
+    featuresSnapshot: unknown;
+    score?: number;
+  },
+): Promise<void> {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+  const actor = await requireAdminProfile(session);
+
+  const judgment = ["strong_fit", "maybe", "not_a_fit"].includes(input.judgment)
+    ? input.judgment
+    : "maybe";
+
+  await pool.query(
+    `
+      insert into curated_match_labels
+        (profile_a, profile_b, judgment, reason, labeler_profile_id, features_snapshot)
+      values ($1::uuid, $2::uuid, $3, $4, $5::uuid, $6::jsonb)
+    `,
+    [
+      input.profileA,
+      input.profileB,
+      judgment,
+      input.reason?.slice(0, 500) || null,
+      actor.id,
+      JSON.stringify({
+        features: input.featuresSnapshot,
+        score: input.score ?? null,
+        model_version: MODEL_VERSION,
+      }),
+    ],
+  );
+}
+
+export type MatchingLabStats = {
+  totalLabels: number;
+  strongFit: number;
+  maybe: number;
+  notFit: number;
+  clicksMade: number;
+  mutualClicks: number;
+  mutualRate: number;
+  impressions: number;
+  cohorts: { cohort: string; members: number }[];
+  labelThreshold: number;
+  mutualThreshold: number;
+};
+
+// Eval snapshot (spec §7.1) + training readiness (spec §4.3). Read-only; the
+// /admin layout already gates admin access.
+export async function getMatchingLabStats(): Promise<MatchingLabStats | null> {
+  const pool = getPostgresPool();
+  if (!pool) return null;
+
+  const row = (
+    await pool.query<{
+      total_labels: number;
+      strong_fit: number;
+      maybe: number;
+      not_fit: number;
+      clicks_made: number;
+      mutual_clicks: number;
+      impressions: number;
+    }>(`
+      select
+        (select count(*) from curated_match_labels)::int as total_labels,
+        (select count(*) from curated_match_labels where judgment='strong_fit')::int as strong_fit,
+        (select count(*) from curated_match_labels where judgment='maybe')::int as maybe,
+        (select count(*) from curated_match_labels where judgment='not_a_fit')::int as not_fit,
+        (select count(*) from user_clicks)::int as clicks_made,
+        (select count(*) from mutual_clicks)::int as mutual_clicks,
+        (select count(*) from match_impressions)::int as impressions
+    `)
+  ).rows[0];
+
+  const cohorts = (
+    await pool.query<{ cohort_id: string; n: number }>(
+      `select cohort_id, count(*)::int as n from user_features
+        where cohort_id is not null group by cohort_id order by n desc`,
+    )
+  ).rows;
+
+  return {
+    totalLabels: row.total_labels,
+    strongFit: row.strong_fit,
+    maybe: row.maybe,
+    notFit: row.not_fit,
+    clicksMade: row.clicks_made,
+    mutualClicks: row.mutual_clicks,
+    mutualRate: row.clicks_made > 0 ? row.mutual_clicks / row.clicks_made : 0,
+    impressions: row.impressions,
+    cohorts: cohorts.map((c) => ({ cohort: c.cohort_id, members: c.n })),
+    labelThreshold: 50,
+    mutualThreshold: 50,
+  };
 }
 
 export type EventAttendeePreviewRow = {
