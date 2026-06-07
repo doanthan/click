@@ -42,10 +42,18 @@ const INTENT_CATEGORY: Record<string, string[]> = {
   exploring: ["Creative", "Food", "Fitness"],
 };
 
+// The five tunable signals (everything in MatchingWeights except the readiness
+// gate, which decides personalised-vs-fallback rather than contributing points).
+export type SignalKey = "tagOverlap" | "intentMatch" | "personaBoost" | "momentum" | "featured";
+
 export type ScoredEvent = {
   event: EventItem;
   score: number;
   reasons: string[];
+  // Per-signal point contribution to `score`. Sums to `score`. Surfaced so UIs
+  // (e.g. /algo) can show *why* an event ranked where it did, from the same
+  // source of truth that produces the score.
+  contributions: Record<SignalKey, number>;
 };
 
 export function scorePersonalizedEvent(
@@ -54,13 +62,19 @@ export function scorePersonalizedEvent(
   weights: MatchingWeights,
 ): ScoredEvent {
   const reasons: string[] = [];
-  let score = 0;
+  const contributions: Record<SignalKey, number> = {
+    tagOverlap: 0,
+    intentMatch: 0,
+    personaBoost: 0,
+    momentum: 0,
+    featured: 0,
+  };
 
   // Tag overlap — the primary signal.
   const userTags = new Set(ctx.tagSlugs.map((t) => t.toLowerCase()));
   const shared = event.tags.filter((t) => userTags.has(t.toLowerCase()));
   if (shared.length > 0) {
-    score += shared.length * weights.tagOverlap;
+    contributions.tagOverlap = shared.length * weights.tagOverlap;
     reasons.push(`${shared.length} shared interest${shared.length > 1 ? "s" : ""}`);
   }
 
@@ -69,7 +83,7 @@ export function scorePersonalizedEvent(
     (INTENT_CATEGORY[intent] ?? []).includes(event.category),
   );
   if (intentMatched) {
-    score += weights.intentMatch;
+    contributions.intentMatch = weights.intentMatch;
     reasons.push(`fits your ${ctx.intents.join("/")} intent`);
   }
 
@@ -79,23 +93,30 @@ export function scorePersonalizedEvent(
     const outgoing =
       ctx.persona.openness !== "cautious" && ctx.persona.socialEnergy !== "introvert";
     if (outgoing && fill >= 0.5) {
-      score += weights.personaBoost;
+      contributions.personaBoost = weights.personaBoost;
       reasons.push("matches your social energy");
     } else if (!outgoing && fill < 0.5) {
-      score += weights.personaBoost;
+      contributions.personaBoost = weights.personaBoost;
       reasons.push("an intimate room");
     }
   }
 
   // Momentum + featured.
   if (event.capacity > 0) {
-    score += (event.attendees / event.capacity) * weights.momentum;
+    contributions.momentum = (event.attendees / event.capacity) * weights.momentum;
   }
   if (event.status === "Featured") {
-    score += weights.featured;
+    contributions.featured = weights.featured;
   }
 
-  return { event, score, reasons };
+  const score =
+    contributions.tagOverlap +
+    contributions.intentMatch +
+    contributions.personaBoost +
+    contributions.momentum +
+    contributions.featured;
+
+  return { event, score, reasons, contributions };
 }
 
 // Profile readiness 0–100. Drives the editorial fallback feed: a cold-start

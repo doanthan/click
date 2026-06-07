@@ -25,6 +25,13 @@ import {
   scorePersonalizedEvent,
 } from "./personalized-matching";
 import { buildEventMediaGallery, type MediaItem } from "./event-media";
+import { deriveEventSubTagsBySlug } from "./matching/feature-store";
+import {
+  generateEventCandidates,
+  loadManyUserFeatures,
+  loadUserFeatures,
+} from "./matching/candidates";
+import { scorePair } from "./matching/score";
 import { logEmailEvent, sendTransactionalEmail } from "./email";
 import { regionForEvent, type Region } from "./geo";
 import { getPostgresPool } from "./postgres";
@@ -2027,6 +2034,28 @@ export async function getPersonalizedDiscovery(
     const readiness = readinessScore(ctx, attendedCount);
     const fallback = readiness < weights.readinessThreshold || ctx.tagSlugs.length === 0;
 
+    // Matching v2 (flagged): re-rank candidates with the cohort-aware user↔event
+    // model. EventItem.id is the slug, which is what generateEventCandidates
+    // keys on. Falls through to v1 when the viewer has no features yet.
+    if (settings.matchingV2Enabled) {
+      const v2 = await generateEventCandidates(pool, profile.id, 50).catch(() => []);
+      if (v2.length > 0) {
+        const order = new Map(v2.map((c, i) => [c.slug, i] as const));
+        const v2ranked = [...candidateEvents].sort(
+          (a, b) =>
+            (order.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
+            (order.get(b.id) ?? Number.MAX_SAFE_INTEGER),
+        );
+        return {
+          events: v2ranked.slice(0, limit),
+          readiness,
+          fallback: false,
+          heading: "Picked for you",
+          blurb: "Ranked by the v2 cohort model.",
+        };
+      }
+    }
+
     const ranked = fallback
       ? rankEditorialFallback(candidateEvents)
       : candidateEvents
@@ -2976,6 +3005,12 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
         [slug, rawTags],
       );
     }
+
+    // Matching v2: derive behavioural sub-tags for the event from its title +
+    // description, scoped to its interest tags (events.sub_tags). Fire-and-forget
+    // after the tag attach so it can't roll back the event; the nightly batch
+    // recomputes anyway. See src/lib/matching/feature-store.ts.
+    void deriveEventSubTagsBySlug(pool, slug).catch(() => {});
 
     // Log event-created-merchant to email_events. Everything the template
     // needs is already in scope here, so no second SELECT. Fire-and-forget.
@@ -8389,7 +8424,28 @@ export async function getSuggestedPeople(session: Session | null): Promise<Sugge
       [profile.id],
     );
 
-    return result.rows.map((row) => ({
+    let rows = result.rows;
+
+    // Matching v2 (flagged): keep this surface's candidate selection + profile-
+    // completeness rules, but re-rank by the cohort-aware pair model instead of
+    // raw shared-tag count. Falls back to the original order when the viewer or
+    // candidates aren't in the feature store yet.
+    const { matchingV2Enabled } = await getSystemSettings();
+    if (matchingV2Enabled) {
+      const viewer = await loadUserFeatures(pool, profile.id);
+      if (viewer) {
+        const features = await loadManyUserFeatures(pool, rows.map((r) => r.id));
+        rows = [...rows]
+          .map((row) => {
+            const cand = features.get(row.id);
+            return { row, score: cand ? scorePair(viewer, cand).score : -1 };
+          })
+          .sort((a, b) => b.score - a.score)
+          .map((s) => s.row);
+      }
+    }
+
+    return rows.map((row) => ({
       id: row.id,
       displayName: row.display_name,
       suburb: row.suburb,
@@ -9702,6 +9758,10 @@ export type SystemSettings = {
   bookingFeeBps: number;
   marketingBanner: string;
   matchingWeights: MatchingWeights;
+  // Matching v2 kill-switch. When false (default) the people + discovery surfaces
+  // rank with the v1 engine; when true they re-rank with the cohort-aware v2
+  // model (src/lib/matching/). Flip from /algo. See 04_MATCHING_ALGORITHM_V2.md.
+  matchingV2Enabled: boolean;
 };
 
 function parseMatchingWeights(value: unknown): MatchingWeights {
@@ -9725,6 +9785,7 @@ export async function getSystemSettings(): Promise<SystemSettings> {
     bookingFeeBps: 0,
     marketingBanner: "",
     matchingWeights: DEFAULT_MATCHING_WEIGHTS,
+    matchingV2Enabled: false,
   };
 
   const pool = getPostgresPool();
@@ -9741,6 +9802,7 @@ export async function getSystemSettings(): Promise<SystemSettings> {
       bookingFeeBps: Number(map.get("booking_fee_bps") ?? 0),
       marketingBanner: String(map.get("marketing_banner") ?? "").trim(),
       matchingWeights: parseMatchingWeights(map.get("matching_weights")),
+      matchingV2Enabled: Boolean(map.get("matching_v2_enabled")),
     };
   } catch {
     return fallback;
@@ -9758,6 +9820,9 @@ export async function updateSystemSettingsAsAdmin(
   const writes: { key: string; value: string }[] = [];
   if (typeof input.maintenanceMode === "boolean") {
     writes.push({ key: "maintenance_mode", value: JSON.stringify(input.maintenanceMode) });
+  }
+  if (typeof input.matchingV2Enabled === "boolean") {
+    writes.push({ key: "matching_v2_enabled", value: JSON.stringify(input.matchingV2Enabled) });
   }
   if (typeof input.commissionRateBps === "number" && Number.isFinite(input.commissionRateBps)) {
     writes.push({
