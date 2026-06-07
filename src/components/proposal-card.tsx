@@ -1,9 +1,33 @@
 "use client";
 
-import { useState } from "react";
+import { useActionState, useState } from "react";
+import { useFormStatus } from "react-dom";
 import Link from "next/link";
-import { confirmProposalAction, proposeAlternativeAction } from "@/app/proposals/actions";
+import {
+  confirmProposalAction,
+  proposeAlternativeAction,
+  type ProposalActionState,
+} from "@/app/proposals/actions";
 import type { ProposalCatalogueEvent, ProposalEntry } from "@/lib/event-repository";
+
+const INITIAL_ACTION_STATE: ProposalActionState = { ok: false, error: null };
+
+function SubmitButton({
+  className,
+  children,
+  disabled,
+}: {
+  className: string;
+  children: React.ReactNode;
+  disabled?: boolean;
+}) {
+  const { pending } = useFormStatus();
+  return (
+    <button type="submit" disabled={pending || disabled} className={className}>
+      {pending ? "Sending…" : children}
+    </button>
+  );
+}
 
 const longDate = new Intl.DateTimeFormat("en-AU", {
   weekday: "short",
@@ -19,6 +43,24 @@ export function ProposalCard({
   catalogue: ProposalCatalogueEvent[];
 }) {
   const [picking, setPicking] = useState(false);
+  const [confirmState, confirmAction] = useActionState(
+    confirmProposalAction,
+    INITIAL_ACTION_STATE,
+  );
+  const [proposeState, proposeAction] = useActionState(
+    proposeAlternativeAction,
+    INITIAL_ACTION_STATE,
+  );
+
+  // Close the catalogue picker once a suggestion lands so the updated proposal
+  // is visible. Done as a render-time adjustment (tracking the last-handled
+  // action result) rather than an effect — each submit yields a new state
+  // object, so reference identity tells us when a fresh result arrives.
+  const [handledResult, setHandledResult] = useState(proposeState);
+  if (proposeState !== handledResult) {
+    setHandledResult(proposeState);
+    if (proposeState.ok) setPicking(false);
+  }
 
   const settled = proposal.status === "confirmed" || proposal.isExpired;
 
@@ -63,15 +105,14 @@ export function ProposalCard({
       ) : (
         <>
           <div className="mt-5 flex flex-wrap items-center gap-2">
-            <form action={confirmProposalAction}>
+            <form action={confirmAction}>
               <input type="hidden" name="proposal_id" value={proposal.id} />
-              <button
-                type="submit"
+              <SubmitButton
                 disabled={!proposal.suggestedEventSlug}
                 className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-5 py-2 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Confirm this plan
-              </button>
+              </SubmitButton>
             </form>
             <button
               type="button"
@@ -86,9 +127,15 @@ export function ProposalCard({
             </span>
           </div>
 
+          {confirmState.error ? (
+            <p className="mt-3 rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-2 text-xs font-bold text-[color:var(--rose)]">
+              {confirmState.error}
+            </p>
+          ) : null}
+
           {picking ? (
             <form
-              action={proposeAlternativeAction}
+              action={proposeAction}
               className="mt-4 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-4"
             >
               <input type="hidden" name="proposal_id" value={proposal.id} />
@@ -112,12 +159,9 @@ export function ProposalCard({
                 ))}
               </select>
               <div className="mt-3 flex gap-2">
-                <button
-                  type="submit"
-                  className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-4 py-2 text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
-                >
+                <SubmitButton className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-4 py-2 text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)] disabled:cursor-not-allowed disabled:opacity-50">
                   Send suggestion
-                </button>
+                </SubmitButton>
                 <button
                   type="button"
                   onClick={() => setPicking(false)}
@@ -126,6 +170,11 @@ export function ProposalCard({
                   Cancel
                 </button>
               </div>
+              {proposeState.error ? (
+                <p className="mt-3 text-xs font-bold text-[color:var(--rose)]">
+                  {proposeState.error}
+                </p>
+              ) : null}
             </form>
           ) : null}
         </>

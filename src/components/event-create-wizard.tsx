@@ -662,9 +662,6 @@ function inputClass() {
 // createEventForMerchant so the UI can't promise more than the backend keeps.
 const MAX_TAGS = 8;
 
-// How many browse-chips to show before the "show all" toggle.
-const BROWSE_LIMIT = 18;
-
 function parseTags(value: string): string[] {
   return value
     .split(",")
@@ -689,7 +686,6 @@ function TagPicker({
   onChange: (next: string) => void;
 }) {
   const [query, setQuery] = useState("");
-  const [showAll, setShowAll] = useState(false);
 
   const selected = useMemo(() => parseTags(value), [value]);
   const selectedKeys = useMemo(
@@ -716,7 +712,6 @@ function TagPicker({
   }, [options, selectedKeys, query]);
 
   const suggestions = browsable;
-  const visibleBrowsable = showAll ? browsable : browsable.slice(0, BROWSE_LIMIT);
 
   const commit = (next: string[]) => onChange(next.join(", "));
 
@@ -781,14 +776,16 @@ function TagPicker({
         className={`${inputClass()} h-12 w-full disabled:cursor-not-allowed disabled:opacity-60`}
       />
 
-      {/* Browsable chip cloud — click to add, no typing required. */}
+      {/* Browsable chip cloud — click to add, no typing required. Capped to a
+          scrollable area so the full tag list never blows out the form; the
+          search box above narrows it for anyone who'd rather type. */}
       {!atLimit && browsable.length > 0 ? (
         <div className="mt-1">
           <p className="mb-2 font-mono text-[0.6rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
-            {query.trim() ? `Matching tags (${browsable.length})` : "Tap to add"}
+            {query.trim() ? `Matching tags (${browsable.length})` : `Tap to add · ${browsable.length}`}
           </p>
-          <ul className="flex flex-wrap gap-2">
-            {visibleBrowsable.map((opt) => (
+          <ul className="flex max-h-44 flex-wrap gap-2 overflow-y-auto rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--cream)]/40 p-2">
+            {browsable.map((opt) => (
               <li key={opt}>
                 <button
                   type="button"
@@ -800,15 +797,6 @@ function TagPicker({
               </li>
             ))}
           </ul>
-          {!showAll && browsable.length > BROWSE_LIMIT ? (
-            <button
-              type="button"
-              onClick={() => setShowAll(true)}
-              className="mt-2 text-xs font-bold uppercase tracking-wide text-[color:var(--ink)] underline decoration-2 underline-offset-4 hover:text-[color:var(--rose)]"
-            >
-              Show all {browsable.length}
-            </button>
-          ) : null}
         </div>
       ) : null}
     </div>

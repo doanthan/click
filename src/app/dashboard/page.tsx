@@ -89,7 +89,10 @@ export default async function DashboardPage() {
     const top = [...interestCounts.entries()].sort((a, b) => b[1] - a[1])[0];
     if (top) {
       fomoBySlug[rotatedRadar[0].id] = `${top[1]} going also like ${top[0]}`;
-    } else if (datingCount > 0) {
+    } else if (datingCount > 0 && profileStatus.datingVisible) {
+      // Dating is a two-way signal: only nudge "open to dating" when the viewer
+      // is also dating-visible, so we never surface it to someone who keeps
+      // dating off (and the attendee count already excludes private profiles).
       fomoBySlug[rotatedRadar[0].id] = `${datingCount} going open to dating`;
     }
   }

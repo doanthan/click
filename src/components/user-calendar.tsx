@@ -86,6 +86,30 @@ function anchorMonthIndex(monthAnchor: Date) {
   return monthAnchor.getUTCFullYear() * 12 + monthAnchor.getUTCMonth();
 }
 
+// When the user hasn't picked a month, open on the current month — unless it has
+// no events and there ARE future RSVPs. In that case jump to the soonest future
+// event's month so plans that are weeks/months out (e.g. a July RSVP viewed in
+// June) are visible immediately instead of looking like they never landed on the
+// calendar. Past-only events still leave the anchor on today (never opens in the
+// past).
+function defaultMonthAnchor(events: EventItem[]): Date {
+  const todayAnchor = parseMonthParam(undefined, new Date());
+  const todayIndex = anchorMonthIndex(todayAnchor);
+
+  const hasEventThisMonth = events.some(
+    (event) => eventMonthIndex(event) === todayIndex,
+  );
+  if (hasEventThisMonth) return todayAnchor;
+
+  const futureIndexes = events
+    .map(eventMonthIndex)
+    .filter((index) => index > todayIndex);
+  if (futureIndexes.length === 0) return todayAnchor;
+
+  const soonest = Math.min(...futureIndexes);
+  return new Date(Date.UTC(Math.floor(soonest / 12), soonest % 12, 1));
+}
+
 function buildCells(monthAnchor: Date, events: EventItem[], todayIso: string): CalendarCell[] {
   const firstDay = new Date(Date.UTC(monthAnchor.getUTCFullYear(), monthAnchor.getUTCMonth(), 1));
   const lastDay = new Date(Date.UTC(monthAnchor.getUTCFullYear(), monthAnchor.getUTCMonth() + 1, 0));
@@ -159,8 +183,11 @@ export function UserCalendar({
 }: UserCalendarProps) {
   // Default to the current month so the calendar opens on "today" rather than
   // the earliest RSVP's month (which, with past events included, could be far in
-  // the past). The prev/next arrows + count dots page to other months.
-  const monthAnchor = parseMonthParam(monthParam, new Date());
+  // the past) — but if today's month is empty and there are future RSVPs, open on
+  // the soonest one. The prev/next arrows + count dots page to other months.
+  const monthAnchor = monthParam
+    ? parseMonthParam(monthParam, new Date())
+    : defaultMonthAnchor(events);
   const todayIso = isoDateInSydney(new Date());
   const cells = buildCells(monthAnchor, events, todayIso);
   const prevMonth = formatMonthParam(addMonths(monthAnchor, -1));

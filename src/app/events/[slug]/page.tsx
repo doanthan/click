@@ -168,7 +168,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
   // the event) — the "paid & confirmed" unlocked state the venue/map live in.
   const venueUnlocked = isRegistered || isAdmin || isOwner;
   const venueMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-    [event.location, event.address, event.suburb].filter(Boolean).join(", "),
+    [event.location, event.address, event.suburb, event.city].filter(Boolean).join(", "),
   )}`;
   const bookmarked = profileStatus?.bookmarkedEventIds.includes(event.id) ?? false;
   const showStripeUnavailableHint = isPaid && !process.env.STRIPE_SECRET_KEY;
@@ -185,7 +185,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
       title: event.title,
       startsAt: event.startsAt,
       endsAt: event.endsAt,
-      location: [event.location, event.address, event.suburb]
+      location: [event.location, event.address, event.suburb, event.city]
         .filter(Boolean)
         .join(", "),
       details: `You're going to ${event.title}. See details: ${process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") || "http://localhost:3000"}/events/${event.id}`,
@@ -334,7 +334,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                         </p>
                       ) : null}
                       <p className="text-sm font-medium text-[color:var(--mauve)]">
-                        {event.suburb}
+                        {[event.suburb, event.city].filter(Boolean).join(", ")}
                       </p>
                       {/* Map is a confirmed-attendee perk: once you've paid &
                           confirmed (or you're admin/owner), the venue unlocks
@@ -343,7 +343,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                         <EventVenueMap
                           lat={event.lat}
                           lng={event.lng}
-                          label={[event.location, event.address, event.suburb]
+                          label={[event.location, event.address, event.suburb, event.city]
                             .filter(Boolean)
                             .join(", ")}
                           mapsUrl={venueMapsUrl}

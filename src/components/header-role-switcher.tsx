@@ -22,6 +22,7 @@ type AccountLink = { label: string; href: string };
 
 const ACCOUNT_LINKS: AccountLink[] = [
   { label: "Your profile", href: "/profile" },
+  { label: "People", href: "/people" },
   { label: "Your events", href: "/confirmed-events" },
   { label: "Bookmarks", href: "/bookmarks" },
   { label: "Account settings", href: "/account-settings" },

@@ -135,6 +135,10 @@ export type ProfileStatus = {
   bookmarkedEventIds: string[];
   registeredEventIds: string[];
   photoUrl: string | null;
+  // Whether the viewer has opted into dating visibility. Used to gate
+  // dating-related signals (e.g. the radar "open to dating" FOMO nudge) so they
+  // only surface when BOTH parties are dating-visible.
+  datingVisible: boolean;
 };
 
 type LocalEventStore = {
@@ -2195,6 +2199,10 @@ export async function getEventCategories(): Promise<EventCategory[]> {
 export type EventDetail = EventItem & {
   priceCents: number;
   address: string | null;
+  // City/locality, shown alongside suburb so confirmed attendees see the fullest
+  // available address (seed events have no street `address`, so suburb + city is
+  // the most complete location we can reveal post-RSVP).
+  city: string | null;
   endsAt: string | null;
   viewerRsvpStatus: "confirmed" | "waitlisted" | "pending_payment" | "cancelled" | null;
   // ISO timestamp of a live waitlist promotion offer for the viewer — set only
@@ -2232,6 +2240,7 @@ export async function getEventBySlug(
       ...fallback,
       priceCents: parsePriceCents(fallback.price),
       address: null,
+      city: null,
       endsAt: null,
       viewerRsvpStatus: null,
       waitlistOfferExpiresAt: null,
@@ -2246,7 +2255,7 @@ export async function getEventBySlug(
   }
 
   try {
-    const result = await pool.query<EventRow & { price_cents: number; address: string | null; ends_at: Date | null; merchant_profile_id: string | null; image_urls: string[] | null }>(
+    const result = await pool.query<EventRow & { price_cents: number; address: string | null; city: string | null; ends_at: Date | null; merchant_profile_id: string | null; image_urls: string[] | null }>(
       `
         select
           event.slug,
@@ -2262,6 +2271,7 @@ export async function getEventBySlug(
           event.location_name,
           event.address,
           event.suburb,
+          event.city,
           event.latitude::text,
           event.longitude::text,
           event.price_cents,
@@ -2307,6 +2317,7 @@ export async function getEventBySlug(
         ...fallback,
         priceCents: parsePriceCents(fallback.price),
         address: null,
+        city: null,
         endsAt: null,
         viewerRsvpStatus: null,
         waitlistOfferExpiresAt: null,
@@ -2424,6 +2435,7 @@ export async function getEventBySlug(
       priceCents: row.price_cents,
       viewerClashEventTitle,
       address: row.address,
+      city: row.city ?? null,
       endsAt: row.ends_at ? row.ends_at.toISOString() : null,
       viewerRsvpStatus,
       waitlistOfferExpiresAt,
@@ -2449,6 +2461,7 @@ export async function getEventBySlug(
         ...fallback,
         priceCents: parsePriceCents(fallback.price),
         address: null,
+        city: null,
         endsAt: null,
         viewerRsvpStatus: null,
         waitlistOfferExpiresAt: null,
@@ -5006,14 +5019,15 @@ export async function getProfileStatus(session: Session | null): Promise<Profile
       bookmarkedEventIds: [],
       registeredEventIds: [],
       photoUrl: null,
+      datingVisible: false,
     };
   }
 
   try {
     const profile = await ensureProfileForSession(session);
     const [statusResult, bookmarksResult, registrationsResult, merchant] = await Promise.all([
-      pool.query<{ suburb: string | null; bio: string | null; photo_url: string | null }>(
-        `select suburb, bio, photo_url from profiles where id = $1::uuid`,
+      pool.query<{ suburb: string | null; bio: string | null; photo_url: string | null; dating_visible: boolean }>(
+        `select suburb, bio, photo_url, dating_visible from profiles where id = $1::uuid`,
         [profile.id],
       ),
       pool.query<{ slug: string }>(
@@ -5049,6 +5063,7 @@ export async function getProfileStatus(session: Session | null): Promise<Profile
       bookmarkedEventIds: bookmarksResult.rows.map((entry) => entry.slug),
       registeredEventIds: registrationsResult.rows.map((entry) => entry.slug),
       photoUrl: row?.photo_url ?? null,
+      datingVisible: Boolean(row?.dating_visible),
     };
   } catch {
     return {
@@ -5059,6 +5074,7 @@ export async function getProfileStatus(session: Session | null): Promise<Profile
       bookmarkedEventIds: [],
       registeredEventIds: [],
       photoUrl: null,
+      datingVisible: false,
     };
   }
 }
@@ -6121,7 +6137,18 @@ export async function createUserClickForSession(
             where event.status in ('live', 'featured', 'waitlist')
               and event.starts_at > now()
             group by event.id
-            order by count(user_tag.tag_id) desc, event.starts_at asc
+            order by
+              -- Prefer a genuinely new shared plan: rank events that neither of
+              -- them has already RSVP'd to ahead of ones one of them is on, then
+              -- by interest overlap, then soonest.
+              (exists (
+                 select 1 from event_attendees ea
+                 where ea.event_id = event.id
+                   and ea.profile_id in ($1::uuid, $2::uuid)
+                   and ea.status in ('confirmed', 'waitlisted', 'pending_payment')
+               )) asc,
+              count(user_tag.tag_id) desc,
+              event.starts_at asc
             limit 1
           `,
           [profile.id, clickedProfile.id],
