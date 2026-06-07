@@ -166,8 +166,28 @@ export default function SupportWidget() {
   const measure = useCallback(() => {
     const el = imgRef.current;
     if (!el || !shot) return;
-    setDispScale(el.getBoundingClientRect().width / shot.width);
+    const width = el.getBoundingClientRect().width;
+    if (width > 0) setDispScale(width / shot.width);
   }, [shot]);
+
+  // Keep the displayed-vs-natural scale fresh. Measuring only on the <img>
+  // onLoad left dispScale stale when the drawer was still animating open, or
+  // when the viewport/orientation changed afterwards — the annotation box then
+  // rendered offset from the cursor and the dragger looked broken. A
+  // ResizeObserver on the image plus a window resize listener re-measure on any
+  // layout change so the drawn box always tracks the pointer.
+  useEffect(() => {
+    const el = imgRef.current;
+    if (!el || !shot) return;
+    measure();
+    const observer = new ResizeObserver(() => measure());
+    observer.observe(el);
+    window.addEventListener("resize", measure);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [shot, measure]);
 
   // --- checklist state ------------------------------------------------------
   const [bugs, setBugs] = useState<OpenBug[]>([]);

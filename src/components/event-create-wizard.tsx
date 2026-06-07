@@ -1493,6 +1493,10 @@ type PendingUpload = {
 
 const MEDIA_ACCEPTED_MIME = new Set(["image/jpeg", "image/png", "image/webp"]);
 const MEDIA_MAX_BYTES = 10 * 1024 * 1024;
+// Hard cap on event photos. Matches the event detail gallery, which only lays
+// out the first 5 images — anything beyond that never renders, so we stop the
+// merchant uploading photos that would silently be dropped.
+const MEDIA_MAX_PHOTOS = 5;
 
 function makeUploadId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -1579,7 +1583,16 @@ export function MediaSection() {
       // the (tile, file) pairing so we kick off each upload with the right
       // file. Rejected files surface a toast but never reach `pending`.
       const accepted: Array<{ tile: PendingUpload; file: File }> = [];
+      let remaining = MEDIA_MAX_PHOTOS - pending.length;
+      if (remaining <= 0) {
+        toast.error(`You can add up to ${MEDIA_MAX_PHOTOS} photos.`);
+        return;
+      }
       for (const file of files) {
+        if (remaining <= 0) {
+          toast.error(`Only the first ${MEDIA_MAX_PHOTOS} photos are kept — extras were skipped.`);
+          break;
+        }
         if (!MEDIA_ACCEPTED_MIME.has(file.type)) {
           toast.error(`${file.name || "Image"} — only JPG, PNG, or WEBP allowed.`);
           continue;
@@ -1599,6 +1612,7 @@ export function MediaSection() {
             name: file.name || "Pasted image",
           },
         });
+        remaining -= 1;
       }
       if (accepted.length === 0) return;
       setPending((prev) => [...prev, ...accepted.map((a) => a.tile)]);
@@ -1607,7 +1621,10 @@ export function MediaSection() {
         void uploadOne(file, tile.id);
       }
     },
-    [uploadOne],
+    // pending.length is read above to enforce the photo cap, so the callback
+    // must refresh when the count changes (otherwise it caps against a stale
+    // count). It's only an event handler, so re-creating it is free.
+    [uploadOne, pending.length],
   );
 
   function handleFileInputChange(event: React.ChangeEvent<HTMLInputElement>) {
@@ -1660,6 +1677,18 @@ export function MediaSection() {
     commit(next);
   }
 
+  // Promote a photo to the cover slot (index 0). Gives merchants an explicit,
+  // tap-friendly way to choose the cover instead of relying on drag-to-reorder
+  // (which is fiddly and doesn't work on touch). images[0] is the cover.
+  function makeCover(id: string) {
+    const from = pending.findIndex((p) => p.id === id);
+    if (from <= 0) return;
+    const next = [...pending];
+    const [moved] = next.splice(from, 1);
+    next.unshift(moved);
+    commit(next);
+  }
+
   function onTileDragStart(index: number) {
     return (event: ReactDragEvent<HTMLDivElement>) => {
       dragIndexRef.current = index;
@@ -1698,9 +1727,10 @@ export function MediaSection() {
           Drop in a few real photos.
         </h2>
         <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
-          The first one becomes the cover. Drag, paste from your clipboard, or
-          click to pick — drop multiple at once, and reorder by dragging the
-          tiles below.
+          Add up to {MEDIA_MAX_PHOTOS} photos. The first one is the cover — use{" "}
+          <span className="font-bold text-[color:var(--ink)]">Set cover</span> on
+          any tile (or drag to reorder) to choose it. Drop, paste, or click to
+          upload.
         </p>
       </header>
 
@@ -1731,7 +1761,7 @@ export function MediaSection() {
           Drop photos, paste, or click to upload
         </span>
         <span className="font-mono text-[0.7rem] uppercase tracking-[0.16em] text-[color:var(--mauve)]">
-          JPG · PNG · WEBP · up to 10 MB each
+          JPG · PNG · WEBP · up to 10 MB each · {pending.length}/{MEDIA_MAX_PHOTOS} added
         </span>
         <input
           ref={fileInputRef}
@@ -1787,14 +1817,26 @@ export function MediaSection() {
                   <span className="truncate font-mono text-[0.65rem] font-bold uppercase tracking-[0.14em] text-[color:var(--mauve)]">
                     {tile.name}
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => removeTile(tile.id)}
-                    className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-2 py-0.5 font-mono text-[0.65rem] font-bold uppercase tracking-[0.14em] text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--rose)] hover:text-[color:var(--surface-deep)]"
-                    aria-label={`Remove ${tile.name}`}
-                  >
-                    Remove
-                  </button>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    {!isCover && tile.status === "done" ? (
+                      <button
+                        type="button"
+                        onClick={() => makeCover(tile.id)}
+                        className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-2 py-0.5 font-mono text-[0.65rem] font-bold uppercase tracking-[0.14em] text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)]"
+                        aria-label={`Set ${tile.name} as cover`}
+                      >
+                        Set cover
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => removeTile(tile.id)}
+                      className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-2 py-0.5 font-mono text-[0.65rem] font-bold uppercase tracking-[0.14em] text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--rose)] hover:text-[color:var(--surface-deep)]"
+                      aria-label={`Remove ${tile.name}`}
+                    >
+                      Remove
+                    </button>
+                  </div>
                 </div>
               </div>
             );

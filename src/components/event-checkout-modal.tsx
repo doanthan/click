@@ -48,30 +48,54 @@ export function EventCheckoutModal({
         className="relative w-full max-w-xl rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-4 hard-shadow sm:p-6"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="mb-3 flex items-center justify-between">
-          <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-            Secure checkout
-          </span>
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div className="grid gap-2">
+            <span className="inline-flex w-fit items-center gap-1.5 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-3 py-1.5 text-[0.68rem] font-bold uppercase tracking-wider text-[color:var(--surface-deep)] hard-shadow-sm">
+              <svg
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                className="size-3.5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect x="3" y="11" width="18" height="11" rx="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
+              Secure checkout
+            </span>
+            <p className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+              Card details go straight to Stripe — never our servers
+            </p>
+          </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-1 text-xs font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)]"
+            aria-label="Close"
+            className="grid size-9 shrink-0 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)]"
           >
-            Close
+            ✕
           </button>
         </div>
         {stripePromise ? (
-          <EmbeddedCheckoutProvider
-            stripe={stripePromise}
-            options={{ clientSecret }}
-          >
-            <EmbeddedCheckout />
-          </EmbeddedCheckoutProvider>
+          <div className="overflow-hidden rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-2 sm:p-3">
+            <EmbeddedCheckoutProvider
+              stripe={stripePromise}
+              options={{ clientSecret }}
+            >
+              <EmbeddedCheckout />
+            </EmbeddedCheckoutProvider>
+          </div>
         ) : (
           <p className="p-4 text-sm font-bold text-[color:var(--rose)]">
             Payments aren&apos;t configured in this environment.
           </p>
         )}
+        <p className="mt-3 text-center font-mono text-[0.62rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+          Powered by Stripe · Press Esc to cancel
+        </p>
       </div>
     </div>
   );

@@ -23,6 +23,18 @@ export async function SiteHeader() {
   if (hasMerchantProfile) portalRoles.push("merchant");
   if (isAdmin) portalRoles.push("admin");
 
+  // Logged-in users get the logo pointed at their portal home (admin → /admin,
+  // host → /merchant, otherwise the attendee dashboard) so the wordmark is a
+  // shortcut back to where they work, not the marketing landing page. Logged-out
+  // visitors still get the public home page.
+  const logoHref = !session?.user
+    ? "/"
+    : isAdmin
+      ? "/admin"
+      : hasMerchantProfile
+        ? "/merchant"
+        : "/dashboard";
+
   const navItems: Array<{ label: string; href: string }> = [
     { label: "Discover", href: "/discover" },
   ];
@@ -45,7 +57,7 @@ export async function SiteHeader() {
     <header className="sticky top-0 z-50 border-b border-[color:var(--line)] bg-[color:var(--champagne)]/85 backdrop-blur-xl">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3.5 sm:px-6">
         <Link
-          href="/"
+          href={logoHref}
           className="group flex items-center gap-2"
           aria-label="Click home"
         >

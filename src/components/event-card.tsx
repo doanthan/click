@@ -42,7 +42,7 @@ export function EventCard({
         : "bg-[color:var(--peach)] text-[color:var(--surface-deep)]";
 
   return (
-    <article className="group relative min-w-0 overflow-hidden rounded-lg border-2 border-[color:var(--line)] bg-[color:var(--champagne)] transition-transform duration-300 hover:-translate-y-1 hard-shadow-sm hover:[box-shadow:8px_8px_0_0_var(--shadow-ink)]">
+    <article className="group relative flex h-full min-w-0 flex-col overflow-hidden rounded-lg border-2 border-[color:var(--line)] bg-[color:var(--champagne)] transition-transform duration-300 hover:-translate-y-1 hard-shadow-sm hover:[box-shadow:8px_8px_0_0_var(--shadow-ink)]">
       <Link
         href={`/events/${event.id}`}
         className={`relative block overflow-hidden border-b-2 border-[color:var(--line)] ${compact ? "h-44" : "h-60"}`}
@@ -71,11 +71,11 @@ export function EventCard({
       <div className="absolute right-3 top-3 z-10">
         <EventBookmarkButton eventId={event.id} initiallySaved={bookmarked} compact />
       </div>
-      <div className="p-5">
+      <div className="flex flex-1 flex-col p-5">
         <p className="font-mono break-words text-xs font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
           {event.suburb} · {event.category} · {event.price}
         </p>
-        <h3 className="font-display mt-2 text-[1.65rem] font-light leading-[1.04] text-[color:var(--ink)]">
+        <h3 className="font-display mt-2 line-clamp-2 text-[1.65rem] font-light leading-[1.04] text-[color:var(--ink)]">
           <Link href={`/events/${event.id}`} className="hover:underline">
             {event.title}
           </Link>
@@ -112,7 +112,7 @@ export function EventCard({
         </div>
         <p className="sr-only">{formatCapacity(event)}</p>
 
-        <div className="mt-5">
+        <div className="mt-auto pt-5">
           <EventDetailModal
             event={event}
             bookmarked={bookmarked}

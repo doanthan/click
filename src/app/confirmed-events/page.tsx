@@ -39,6 +39,11 @@ export default async function ConfirmedEventsPage({ searchParams }: ConfirmedEve
   const registeredSet = new Set(profileStatus.registeredEventIds);
   const events =
     tab === "past" ? confirmed.past : tab === "saved" ? bookmarks : confirmed.upcoming;
+  // The calendar always reflects the full picture of attended plans (upcoming +
+  // past) so users can see their history at a glance, even while the list on the
+  // left stays scoped to the active tab. Saved view shows bookmarked events.
+  const calendarEvents =
+    tab === "saved" ? bookmarks : [...confirmed.upcoming, ...confirmed.past];
 
   return (
     <main className="paper-noise min-h-screen bg-[color:var(--champagne)] px-4 py-12 text-[color:var(--ink)] sm:px-6">
@@ -127,7 +132,7 @@ export default async function ConfirmedEventsPage({ searchParams }: ConfirmedEve
             </h2>
             <div className="mt-4 lg:sticky lg:top-6">
               <UserCalendar
-                events={events}
+                events={calendarEvents}
                 monthParam={params?.month}
                 basePath={`/confirmed-events?tab=${tab}`}
               />
