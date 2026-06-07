@@ -198,6 +198,8 @@ export type AdminEventRow = {
   // event" gate. (When recurring events land, a still-repeating series should
   // stay approvable — extend this predicate then.)
   approvable: boolean;
+  // Interest tags attached to the event, editable by admins from the queue.
+  tags: { slug: string; label: string }[];
 };
 
 export type AdminMemberEventRef = {
@@ -3353,6 +3355,22 @@ export async function getAdminEvents() {
       limit 200
     `);
 
+    // Interest tags per event, in a separate query so joining the tags table
+    // doesn't multiply the attendee-count aggregation above.
+    const tagsResult = await pool.query<{ slug: string; tag_slug: string; tag_label: string }>(`
+      select event.slug, tag.slug as tag_slug, tag.label as tag_label
+      from events event
+      join event_tags et on et.event_id = event.id
+      join tags tag on tag.id = et.tag_id and tag.tag_type = 'interest'
+      order by tag.label asc
+    `);
+    const tagsBySlug = new Map<string, { slug: string; label: string }[]>();
+    for (const row of tagsResult.rows) {
+      const list = tagsBySlug.get(row.slug) ?? [];
+      list.push({ slug: row.tag_slug, label: row.tag_label });
+      tagsBySlug.set(row.slug, list);
+    }
+
     return result.rows.map((event): AdminEventRow => {
       const lat = event.latitude ? Number(event.latitude) : null;
       const lng = event.longitude ? Number(event.longitude) : null;
@@ -3378,6 +3396,7 @@ export async function getAdminEvents() {
         payoutsNotConnected:
           priceCents > 0 && event.has_merchant && !event.merchant_charges_enabled,
         approvable: event.approvable,
+        tags: tagsBySlug.get(event.slug) ?? [],
       };
     });
   } catch (error) {
@@ -4456,6 +4475,96 @@ export async function deleteTagForAdmin(id: string, session: Session | null) {
   }
 
   return { id: tagId };
+}
+
+// Replace an event's interest tags (admin-only). Other tag types (life/vibe/
+// music, e.g. quiz-derived) are left untouched. `slugs` must already exist in
+// `tags` as interest tags; unknown slugs are dropped. Identified by event slug
+// (the AdminEventRow id).
+export async function updateEventTagsForAdmin(
+  eventSlug: string,
+  slugs: string[],
+  session: Session | null,
+) {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+
+  const profile = await requireAdminProfile(session);
+
+  const cleaned = Array.from(
+    new Set(slugs.map((s) => s.trim().toLowerCase()).filter(Boolean)),
+  ).slice(0, 12);
+
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+
+    const eventResult = await client.query<{ id: string }>(
+      `select id::text from events where slug = $1 limit 1`,
+      [eventSlug],
+    );
+    const event = eventResult.rows[0];
+    if (!event) {
+      await client.query("rollback");
+      const error = new Error("Event not found.");
+      error.name = "NotFoundError";
+      throw error;
+    }
+
+    // Drop existing interest links only.
+    await client.query(
+      `
+        delete from event_tags et
+        using tags tag
+        where et.event_id = $1::uuid
+          and et.tag_id = tag.id
+          and tag.tag_type = 'interest'
+      `,
+      [event.id],
+    );
+
+    if (cleaned.length > 0) {
+      await client.query(
+        `
+          insert into event_tags (event_id, tag_id)
+          select $1::uuid, tag.id
+          from tags tag
+          where tag.tag_type = 'interest'
+            and tag.slug = any($2::text[])
+          on conflict do nothing
+        `,
+        [event.id, cleaned],
+      );
+    }
+
+    // Read back the resulting interest tags for the response.
+    const resultTags = await client.query<{ slug: string; label: string }>(
+      `
+        select tag.slug, tag.label
+        from event_tags et
+        join tags tag on tag.id = et.tag_id and tag.tag_type = 'interest'
+        where et.event_id = $1::uuid
+        order by tag.label asc
+      `,
+      [event.id],
+    );
+
+    await client.query(
+      `
+        insert into audit_logs (actor_profile_id, action, entity_table, entity_id, metadata)
+        values ($1::uuid, 'update_event_tags', 'events', $2::uuid, $3::jsonb)
+      `,
+      [profile.id, event.id, JSON.stringify({ slug: eventSlug, tags: cleaned })],
+    );
+
+    await client.query("commit");
+    return { id: eventSlug, tags: resultTags.rows };
+  } catch (error) {
+    await client.query("rollback").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function getAdminAuditLog(): Promise<AdminAuditRow[]> {
@@ -8606,6 +8715,79 @@ export async function getPostEventClickPrompts(
     return Array.from(byEvent.values());
   } catch {
     return [];
+  }
+}
+
+// Post-event click prompt for ONE event, shown on the event detail page once it
+// has ended (looser window than the dashboard rail: any time after the event
+// ends, up to 30 days). Returns null when the viewer didn't attend, the event
+// hasn't ended, or there are no clickable co-attendees.
+export async function getPostEventClickPromptForEvent(
+  slug: string,
+  session: Session | null,
+): Promise<PostEventClickPrompt | null> {
+  const pool = getPostgresPool();
+  if (!getSessionEmail(session) || !pool) return null;
+
+  try {
+    const profile = await ensureProfileForSession(session);
+    const result = await pool.query<{
+      event_slug: string;
+      event_title: string;
+      ended_at: Date;
+      other_id: string;
+      other_name: string;
+      other_suburb: string | null;
+      already_clicked: boolean;
+    }>(
+      `
+        select
+          e.slug as event_slug,
+          e.title as event_title,
+          coalesce(e.ends_at, e.starts_at) as ended_at,
+          other.id::text as other_id,
+          other.display_name as other_name,
+          other.suburb as other_suburb,
+          exists (
+            select 1 from user_clicks c
+            where c.clicker_profile_id = $1::uuid and c.clicked_profile_id = other.id
+          ) as already_clicked
+        from events e
+        join event_attendees mine on mine.event_id = e.id
+          and mine.profile_id = $1::uuid and mine.status = 'confirmed'
+        join event_attendees theirs on theirs.event_id = e.id
+          and theirs.status = 'confirmed' and theirs.profile_id <> $1::uuid
+        join profiles other on other.id = theirs.profile_id
+          and other.role = 'attendee' and other.suspended_at is null
+        where e.slug = $2
+          and coalesce(e.ends_at, e.starts_at) <= now()
+          and coalesce(e.ends_at, e.starts_at) >= now() - interval '30 days'
+          and not exists (
+            select 1 from user_blocks b
+            where (b.blocker_profile_id = $1::uuid and b.blocked_profile_id = other.id)
+               or (b.blocker_profile_id = other.id and b.blocked_profile_id = $1::uuid)
+          )
+        order by other.display_name asc
+      `,
+      [profile.id, slug],
+    );
+
+    if (result.rows.length === 0) return null;
+
+    const first = result.rows[0];
+    return {
+      eventSlug: first.event_slug,
+      eventTitle: first.event_title,
+      endedAt: first.ended_at.toISOString(),
+      coAttendees: result.rows.map((row) => ({
+        id: row.other_id,
+        displayName: row.other_name,
+        suburb: row.other_suburb,
+        alreadyClicked: row.already_clicked,
+      })),
+    };
+  } catch {
+    return null;
   }
 }
 

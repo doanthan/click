@@ -9,9 +9,11 @@ import { EventVenueMap } from "@/components/event-venue-map";
 import { EventPaymentButton } from "@/components/event-payment-button";
 import { EventRegistrationButton } from "@/components/event-registration-button";
 import { EventBookmarkButton } from "@/components/event-bookmark-button";
+import { PostEventClickCard } from "@/components/post-event-click-card";
 import {
   getEventAttendeePreview,
   getEventBySlug,
+  getPostEventClickPromptForEvent,
   getProfileStatus,
   getSystemSettings,
 } from "@/lib/event-repository";
@@ -100,12 +102,14 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
     await reconcileCheckoutSession(search.session_id).catch(() => null);
   }
 
-  const [event, profileStatus, attendeePreview, systemSettings] = await Promise.all([
-    getEventBySlug(slug, session),
-    session?.user ? getProfileStatus(session) : null,
-    getEventAttendeePreview(slug, session, 8),
-    getSystemSettings(),
-  ]);
+  const [event, profileStatus, attendeePreview, systemSettings, postEventPrompt] =
+    await Promise.all([
+      getEventBySlug(slug, session),
+      session?.user ? getProfileStatus(session) : null,
+      getEventAttendeePreview(slug, session, 8),
+      getSystemSettings(),
+      session?.user ? getPostEventClickPromptForEvent(slug, session) : null,
+    ]);
 
   if (!event) notFound();
 
@@ -281,6 +285,15 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                 viewerIsAttendee={isRegistered || isAdmin || isOwner}
                 eventSlug={event.id}
               />
+
+              {/* Post-event Click prompt: once an event you attended has ended,
+                  Click the people you'd like to see again — right here on the
+                  event page (also surfaced on the dashboard rail). */}
+              {postEventPrompt ? (
+                <div className="mt-6">
+                  <PostEventClickCard prompt={postEventPrompt} />
+                </div>
+              ) : null}
             </div>
 
             <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">

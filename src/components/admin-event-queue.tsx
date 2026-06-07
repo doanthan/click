@@ -142,7 +142,13 @@ function statusTone(status: EventStatus) {
   return "bg-[color:var(--champagne)] text-[color:var(--ink)]";
 }
 
-export function AdminEventQueue({ events }: { events: AdminEventRow[] }) {
+export function AdminEventQueue({
+  events,
+  tagOptions = [],
+}: {
+  events: AdminEventRow[];
+  tagOptions?: { slug: string; label: string }[];
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -379,6 +385,38 @@ export function AdminEventQueue({ events }: { events: AdminEventRow[] }) {
         ),
       );
       setMessage(`${payload.event?.title ?? "Event"} is now live.`);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function saveTags(eventId: string, slugs: string[]) {
+    setMessage("");
+    setBusyId(eventId);
+    try {
+      const response = await fetch(
+        `/api/admin/events/${encodeURIComponent(eventId)}/tags`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ slugs }),
+        },
+      );
+      const payload = (await response.json()) as {
+        tags?: { slug: string; label: string }[];
+        error?: string;
+      };
+      if (!response.ok) {
+        setMessage(payload.error ?? "Could not update tags.");
+        return false;
+      }
+      setRows((current) =>
+        current.map((event) =>
+          event.id === eventId ? { ...event, tags: payload.tags ?? [] } : event,
+        ),
+      );
+      setMessage("Interest tags updated.");
+      return true;
     } finally {
       setBusyId(null);
     }
@@ -656,6 +694,17 @@ export function AdminEventQueue({ events }: { events: AdminEventRow[] }) {
                         {event.locationName ? ` · ${event.locationName}` : ""}
                       </dd>
                     </div>
+                    <div className="sm:col-span-4">
+                      <dt className="opacity-60">Interest tags</dt>
+                      <dd className="mt-1.5 normal-case tracking-normal text-[color:var(--ink)]">
+                        <EventTagEditor
+                          eventTags={event.tags}
+                          options={tagOptions}
+                          disabled={busyId === event.id}
+                          onSave={(slugs) => saveTags(event.id, slugs)}
+                        />
+                      </dd>
+                    </div>
                   </dl>
                 ) : null}
               </div>
@@ -859,5 +908,155 @@ function SortHeader({
         {arrow}
       </span>
     </button>
+  );
+}
+
+// Inline interest-tag editor shown in an event's expanded admin row. Selected
+// tags render as removable chips; an add-menu lists the remaining curated
+// interest tags. Saving PUTs to /api/admin/events/[id]/tags. Click tags only —
+// admins pick from existing options, never free-text.
+function EventTagEditor({
+  eventTags,
+  options,
+  disabled,
+  onSave,
+}: {
+  eventTags: { slug: string; label: string }[];
+  options: { slug: string; label: string }[];
+  disabled: boolean;
+  onSave: (slugs: string[]) => Promise<boolean>;
+}) {
+  const [selected, setSelected] = useState<{ slug: string; label: string }[]>(eventTags);
+  const [adding, setAdding] = useState(false);
+  const [query, setQuery] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  // Re-sync if the row's tags change underneath us (e.g. after a save elsewhere)
+  // using the "adjust state during render when a value changes" pattern rather
+  // than an effect — keyed on the slug list so we don't loop on array identity.
+  const tagsKey = eventTags.map((t) => t.slug).join("|");
+  const [lastTagsKey, setLastTagsKey] = useState(tagsKey);
+  if (tagsKey !== lastTagsKey) {
+    setLastTagsKey(tagsKey);
+    setSelected(eventTags);
+  }
+
+  const selectedSlugs = useMemo(() => new Set(selected.map((t) => t.slug)), [selected]);
+  const dirty = useMemo(() => {
+    const a = [...selected.map((t) => t.slug)].sort().join("|");
+    const b = [...eventTags.map((t) => t.slug)].sort().join("|");
+    return a !== b;
+  }, [selected, eventTags]);
+
+  const available = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return options
+      .filter((o) => !selectedSlugs.has(o.slug))
+      .filter((o) => !q || o.label.toLowerCase().includes(q))
+      .slice(0, 24);
+  }, [options, selectedSlugs, query]);
+
+  const remove = (slug: string) =>
+    setSelected((prev) => prev.filter((t) => t.slug !== slug));
+  const add = (tag: { slug: string; label: string }) => {
+    setSelected((prev) =>
+      prev.some((t) => t.slug === tag.slug) ? prev : [...prev, tag],
+    );
+    setQuery("");
+  };
+
+  async function save() {
+    setSaving(true);
+    try {
+      await onSave(selected.map((t) => t.slug));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <ul className="flex flex-wrap items-center gap-1.5">
+        {selected.length === 0 ? (
+          <li className="text-xs font-semibold text-[color:var(--mauve)]">No interest tags yet.</li>
+        ) : (
+          selected.map((tag) => (
+            <li key={tag.slug}>
+              <span className="inline-flex items-center gap-1 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-2.5 py-0.5 text-xs font-bold text-[color:var(--surface-deep)]">
+                {tag.label}
+                <button
+                  type="button"
+                  onClick={() => remove(tag.slug)}
+                  aria-label={`Remove ${tag.label}`}
+                  className="leading-none hover:text-[color:var(--ink)]"
+                >
+                  ×
+                </button>
+              </span>
+            </li>
+          ))
+        )}
+        <li>
+          <button
+            type="button"
+            onClick={() => setAdding((v) => !v)}
+            className="rounded-full border-2 border-dashed border-[color:var(--line)] bg-[color:var(--champagne)] px-2.5 py-0.5 text-xs font-bold text-[color:var(--ink)] hover:bg-[color:var(--cream)]"
+          >
+            {adding ? "Done adding" : "+ Add tag"}
+          </button>
+        </li>
+      </ul>
+
+      {adding ? (
+        <div className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-2">
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search interest tags…"
+            className="mb-2 w-full rounded-lg border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-2.5 py-1.5 text-xs font-semibold text-[color:var(--ink)] focus:outline-none focus:ring-2 focus:ring-[color:var(--rose)]"
+          />
+          <div className="flex max-h-40 flex-wrap gap-1.5 overflow-y-auto">
+            {available.length === 0 ? (
+              <span className="text-xs font-semibold text-[color:var(--mauve)]">
+                No matching tags.
+              </span>
+            ) : (
+              available.map((tag) => (
+                <button
+                  key={tag.slug}
+                  type="button"
+                  onClick={() => add(tag)}
+                  className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-2.5 py-0.5 text-xs font-bold text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+                >
+                  + {tag.label}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      ) : null}
+
+      {dirty ? (
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={save}
+            disabled={disabled || saving}
+            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-3 py-1 text-xs font-black uppercase tracking-wider text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {saving ? "Saving…" : "Save tags"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelected(eventTags)}
+            disabled={saving}
+            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-1 text-xs font-black uppercase tracking-wider text-[color:var(--ink)] hover:bg-[color:var(--cream)]"
+          >
+            Reset
+          </button>
+        </div>
+      ) : null}
+    </div>
   );
 }
