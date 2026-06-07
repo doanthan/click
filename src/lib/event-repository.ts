@@ -1585,6 +1585,8 @@ export type MerchantEventDetail = MerchantEventSummary & {
   images: string[];
   imageAlt: string | null;
   attendees: MerchantAttendeeRow[];
+  // Interest tags currently attached, so the merchant edit form can pre-fill.
+  tags: { slug: string; label: string }[];
 };
 
 export async function getMerchantEvents(session: Session | null): Promise<MerchantEventSummary[]> {
@@ -1747,10 +1749,22 @@ export async function getMerchantEventDetail(
     [row.id],
   );
 
+  const tagResult = await pool.query<{ slug: string; label: string }>(
+    `
+      select tag.slug, tag.label
+      from event_tags et
+      join tags tag on tag.id = et.tag_id and tag.tag_type = 'interest'
+      where et.event_id = $1::uuid
+      order by tag.label asc
+    `,
+    [row.id],
+  );
+
   return {
     slug: row.slug,
     title: row.title,
     description: row.description,
+    tags: tagResult.rows.map((t) => ({ slug: t.slug, label: t.label })),
     startsAt: row.starts_at.toISOString(),
     endsAt: row.ends_at ? row.ends_at.toISOString() : null,
     status: eventStatusFromDb(row.status),
@@ -1777,6 +1791,99 @@ export async function getMerchantEventDetail(
       rsvpAt: entry.created_at.toISOString(),
     })),
   };
+}
+
+// Merchant self-service edit of an event's SAFE fields: title, description,
+// relationship goal, and interest tags. Deliberately excludes price, time,
+// location and capacity — those materially change a booking people may have paid
+// for, so they stay locked here (the UI directs merchants to request a review).
+// Ownership-scoped: only the owning merchant can edit, and only their own event.
+export async function updateMerchantEventDetails(
+  eventSlug: string,
+  input: { title: string; description: string; relationshipGoal?: string; tagSlugs: string[] },
+  session: Session | null,
+): Promise<MerchantEventDetail | null> {
+  const pool = getPostgresPool();
+  const email = getSessionEmail(session);
+  if (!email) throw authError();
+  if (!pool) throw databaseUnavailableError();
+
+  const profile = await ensureProfileForSession(session);
+  const merchant = await getMerchantProfile(pool, profile.id);
+  if (!merchant) throw authError("Merchant profile required.");
+
+  const title = input.title.trim();
+  if (!title) {
+    const error = new Error("Event title is required.");
+    error.name = "ValidationError";
+    throw error;
+  }
+
+  const cleanedSlugs = Array.from(
+    new Set(input.tagSlugs.map((s) => s.trim().toLowerCase()).filter(Boolean)),
+  ).slice(0, 12);
+
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+
+    const eventResult = await client.query<{ id: string }>(
+      `select id::text from events where slug = $1 and merchant_profile_id = $2::uuid limit 1`,
+      [eventSlug, merchant.id],
+    );
+    const event = eventResult.rows[0];
+    if (!event) {
+      await client.query("rollback");
+      const error = new Error("Event not found.");
+      error.name = "NotFoundError";
+      throw error;
+    }
+
+    await client.query(
+      `
+        update events
+        set title = $2,
+            description = $3,
+            relationship_goal = coalesce($4, relationship_goal),
+            updated_at = now()
+        where id = $1::uuid
+      `,
+      [event.id, title, input.description ?? "", input.relationshipGoal?.trim() || null],
+    );
+
+    // Replace interest tags only (leave life/vibe/music alone).
+    await client.query(
+      `
+        delete from event_tags et
+        using tags tag
+        where et.event_id = $1::uuid
+          and et.tag_id = tag.id
+          and tag.tag_type = 'interest'
+      `,
+      [event.id],
+    );
+    if (cleanedSlugs.length > 0) {
+      await client.query(
+        `
+          insert into event_tags (event_id, tag_id)
+          select $1::uuid, tag.id
+          from tags tag
+          where tag.tag_type = 'interest' and tag.slug = any($2::text[])
+          on conflict do nothing
+        `,
+        [event.id, cleanedSlugs],
+      );
+    }
+
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  return getMerchantEventDetail(eventSlug, session);
 }
 
 export async function getEventsForExplore() {

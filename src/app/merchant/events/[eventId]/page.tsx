@@ -3,9 +3,11 @@ import { notFound, redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { LinkButton, MetricCard, Pill } from "@/components/click-ui";
 import { MerchantEventCancelButton } from "@/components/merchant-event-cancel-button";
+import { MerchantEventEditForm } from "@/components/merchant-event-edit-form";
 import {
   getMerchantEventDetail,
   getProfileStatus,
+  getProfileTagOptions,
   type MerchantAttendeeRow,
 } from "@/lib/event-repository";
 
@@ -74,10 +76,17 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
     redirect("/merchant/signup");
   }
 
-  const event = await getMerchantEventDetail(eventId, session);
+  const [event, tagOptions] = await Promise.all([
+    getMerchantEventDetail(eventId, session),
+    getProfileTagOptions(),
+  ]);
   if (!event) {
     notFound();
   }
+
+  const interestTagOptions = tagOptions.interestCategories
+    .flatMap((category) => category.tags)
+    .sort((a, b) => a.label.localeCompare(b.label));
 
   const isFull = event.confirmed >= event.capacity;
   const filledPercent = Math.min((event.confirmed / event.capacity) * 100, 100);
@@ -265,7 +274,24 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
             Description
           </p>
           <p className="mt-3 text-base font-medium leading-7">{event.description}</p>
+          {event.tags.length > 0 ? (
+            <div className="mt-4 flex flex-wrap gap-1.5">
+              {event.tags.map((tag) => (
+                <Pill key={tag.slug} tone="cream">
+                  {tag.label}
+                </Pill>
+              ))}
+            </div>
+          ) : null}
         </section>
+
+        <MerchantEventEditForm
+          eventSlug={event.slug}
+          initialTitle={event.title}
+          initialDescription={event.description}
+          initialTags={event.tags}
+          tagOptions={interestTagOptions}
+        />
       </section>
     </main>
   );

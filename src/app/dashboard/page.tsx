@@ -8,6 +8,7 @@ import { ClickRadar } from "@/components/click-radar";
 import { ClickWithSomeoneUserCard } from "@/components/click-with-someone-user-card";
 import {
   getDashboardData,
+  getMutualClicksForSession,
   getPersonalizedDiscovery,
   getPostEventClickPrompts,
   getProfileCompletion,
@@ -27,15 +28,23 @@ export default async function DashboardPage() {
     redirect("/login?callbackUrl=/dashboard");
   }
 
-  const [dashboard, profileStatus, postEventPrompts, completion, suggestedPeople, personalized] =
-    await Promise.all([
-      getDashboardData(session),
-      getProfileStatus(session),
-      getPostEventClickPrompts(session),
-      getProfileCompletion(session),
-      getSuggestedPeople(session),
-      getPersonalizedDiscovery(session),
-    ]);
+  const [
+    dashboard,
+    profileStatus,
+    postEventPrompts,
+    completion,
+    suggestedPeople,
+    personalized,
+    mutualClicks,
+  ] = await Promise.all([
+    getDashboardData(session),
+    getProfileStatus(session),
+    getPostEventClickPrompts(session),
+    getProfileCompletion(session),
+    getSuggestedPeople(session),
+    getPersonalizedDiscovery(session),
+    getMutualClicksForSession(session),
+  ]);
 
   const activePrompts = postEventPrompts.filter((p) =>
     p.coAttendees.some((c) => !c.alreadyClicked),
@@ -354,6 +363,65 @@ export default async function DashboardPage() {
               />
             ))}
           </div>
+        </section>
+      ) : null}
+
+      {mutualClicks.length > 0 ? (
+        <section className="mx-auto mt-12 max-w-6xl">
+          <div className="flex items-end justify-between gap-4">
+            <div>
+              <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
+                Mutual Click
+              </p>
+              <h2 className="font-display mt-2 text-3xl font-light leading-tight sm:text-4xl">
+                You both tapped.
+              </h2>
+              <p className="mt-1 max-w-xl text-sm font-semibold leading-6 text-[color:var(--mauve)]">
+                When two people click each other we suggest one event you can both
+                go to next. Confirm a plan from your proposals.
+              </p>
+            </div>
+            <Link
+              href="/proposals"
+              className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-4 py-2 text-xs font-bold text-[color:var(--surface-deep)] hover:bg-[color:var(--rose)]"
+            >
+              Open proposals
+            </Link>
+          </div>
+          <ul className="mt-6 grid gap-4 md:grid-cols-2">
+            {mutualClicks.map((m) => (
+              <li
+                key={m.otherProfileId}
+                className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--rose)] p-4 text-[color:var(--surface-deep)] hard-shadow-sm"
+              >
+                <Link
+                  href={`/profile/${m.otherProfileId}`}
+                  className="font-display text-2xl font-light leading-tight hover:underline"
+                >
+                  You + {m.otherDisplayName}
+                </Link>
+                {m.suggestedEventSlug ? (
+                  <p className="mt-2 text-sm font-bold leading-6">
+                    Suggested for you both:{" "}
+                    <Link
+                      href={`/events/${m.suggestedEventSlug}`}
+                      className="underline decoration-2 underline-offset-4 hover:opacity-80"
+                    >
+                      {m.suggestedEventTitle ?? "an event"}
+                    </Link>
+                  </p>
+                ) : (
+                  <p className="mt-2 text-sm font-semibold leading-6">
+                    Pick a plan together from your{" "}
+                    <Link href="/proposals" className="underline decoration-2 underline-offset-4">
+                      proposals
+                    </Link>
+                    .
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
         </section>
       ) : null}
 
