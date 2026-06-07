@@ -8,6 +8,7 @@ import { ClickRadar } from "@/components/click-radar";
 import { ClickWithSomeoneUserCard } from "@/components/click-with-someone-user-card";
 import {
   getDashboardData,
+  getEventAttendeePreview,
   getMutualClicksForSession,
   getPersonalizedDiscovery,
   getPostEventClickPrompts,
@@ -58,8 +59,10 @@ export default async function DashboardPage() {
   //  • one person to click with, rotating 4×/day (every 6 hours)
   //  • one radar event, rotating hourly
   // Deterministic index off the clock so it's stable within each window.
-  const sixHourIndex = Math.floor(Date.now() / (6 * 3_600_000));
-  const hourIndex = Math.floor(Date.now() / 3_600_000);
+  // eslint-disable-next-line react-hooks/purity -- async server component, evaluated once per request
+  const nowForRotation = Date.now();
+  const sixHourIndex = Math.floor(nowForRotation / (6 * 3_600_000));
+  const hourIndex = Math.floor(nowForRotation / 3_600_000);
   const rotatedPeople =
     suggestedPeople.length > 0
       ? [suggestedPeople[sixHourIndex % suggestedPeople.length]]
@@ -67,6 +70,30 @@ export default async function DashboardPage() {
   const radarPool = personalized?.events ?? [];
   const rotatedRadar =
     radarPool.length > 0 ? [radarPool[hourIndex % radarPool.length]] : [];
+
+  // FOMO signal for the one radar event: how many people going share the
+  // viewer's interests / are open to dating — the "1 user attending also likes
+  // hiking" nudge. Computed from the same attendee-overlap data the event page
+  // uses, only for the single surfaced event so it's one cheap query.
+  const fomoBySlug: Record<string, string> = {};
+  if (rotatedRadar[0]) {
+    const preview = await getEventAttendeePreview(rotatedRadar[0].id, session, 8);
+    const interestCounts = new Map<string, number>();
+    let datingCount = 0;
+    for (const p of preview.items) {
+      if (p.datingMinded) datingCount += 1;
+      for (const interest of p.sharedInterests) {
+        interestCounts.set(interest, (interestCounts.get(interest) ?? 0) + 1);
+      }
+    }
+    const top = [...interestCounts.entries()].sort((a, b) => b[1] - a[1])[0];
+    if (top) {
+      fomoBySlug[rotatedRadar[0].id] = `${top[1]} going also like ${top[0]}`;
+    } else if (datingCount > 0) {
+      fomoBySlug[rotatedRadar[0].id] = `${datingCount} going open to dating`;
+    }
+  }
+
   const upcoming = dashboard.upcomingEvents;
   const saved = dashboard.savedEvents;
   const bookmarkSet = new Set(profileStatus.bookmarkedEventIds);
@@ -472,7 +499,7 @@ export default async function DashboardPage() {
               </div>
             )}
           </div>
-          <ClickRadar events={rotatedRadar} />
+          <ClickRadar events={rotatedRadar} fomoBySlug={fomoBySlug} />
         </div>
       </section>
     </main>

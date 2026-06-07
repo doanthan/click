@@ -5,7 +5,15 @@ import type { EventItem } from "@/lib/click-data";
 // the on-ramp to meeting people (you can only Click someone after a shared
 // event), so the radar points at events, not people. Per 04_MATCHING_ALGORITHM_V2.md
 // §5.2 (`event_radar`), the suggestions are the personalised event candidates.
-export function ClickRadar({ events }: { events: EventItem[] }) {
+export function ClickRadar({
+  events,
+  fomoBySlug = {},
+}: {
+  events: EventItem[];
+  // Optional per-event FOMO signal (e.g. "2 going also like Hiking"), keyed by
+  // event id/slug. Surfaced under each event when present.
+  fomoBySlug?: Record<string, string>;
+}) {
   const top = events.slice(0, 4);
   return (
     <aside className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--ink)] p-5 text-[color:var(--on-deep)] hard-shadow">
@@ -36,6 +44,11 @@ export function ClickRadar({ events }: { events: EventItem[] }) {
                 {event.date}
                 {event.suburb ? ` · ${event.suburb}` : ""}
               </p>
+              {fomoBySlug[event.id] ? (
+                <p className="mt-2 inline-flex rounded-full border-2 border-[color:var(--peach)] bg-[color:var(--ink)] px-2 py-0.5 text-[0.65rem] font-bold text-[color:var(--peach)]">
+                  ✷ {fomoBySlug[event.id]}
+                </p>
+              ) : null}
             </li>
           ))}
         </ul>
