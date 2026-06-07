@@ -58,13 +58,16 @@ export function AdminTrendChart({ buckets }: { buckets: AdminTrendBucket[] }) {
                 const v = b[m.key];
                 const pct = Math.max(Math.round((v / max) * 100), v > 0 ? 6 : 2);
                 return (
+                  // Full-height, bottom-aligned column so the bar's percentage
+                  // height resolves against a definite parent height (otherwise
+                  // the bars collapse to zero and the chart looks empty).
                   <div
                     key={`${m.key}-${b.week}`}
-                    className="group relative flex-1"
+                    className="group relative flex h-full flex-1 items-end"
                     title={`${dateFormatter.format(new Date(b.week))} · ${m.format(v)}`}
                   >
                     <div
-                      className={`mx-auto w-full rounded-t-md border border-[color:var(--line)] ${m.bar}`}
+                      className={`w-full rounded-t-md border border-[color:var(--line)] ${m.bar}`}
                       style={{ height: `${pct}%` }}
                     />
                   </div>

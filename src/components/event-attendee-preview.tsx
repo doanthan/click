@@ -46,9 +46,25 @@ export function EventAttendeePreview({
     );
   }
 
-  // Signed in but not going yet — the roster is reserved for people who've
-  // actually clicked in. Show the count + an RSVP nudge, not the people.
+  // Signed in but not going yet — the roster (identities) is reserved for people
+  // who've actually clicked in, but we DO surface anonymous FOMO signals
+  // (shared interests + dating-minded counts) to entice an RSVP without outing
+  // anyone. Derived from the per-attendee overlap already computed vs the viewer.
   if (!viewerIsAttendee) {
+    // Tally how many of the shown attendees share each interest with the viewer.
+    const interestCounts = new Map<string, number>();
+    let datingCount = 0;
+    for (const p of items) {
+      if (p.datingMinded) datingCount += 1;
+      for (const interest of p.sharedInterests) {
+        interestCounts.set(interest, (interestCounts.get(interest) ?? 0) + 1);
+      }
+    }
+    const topShared = Array.from(interestCounts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3);
+    const hasSignals = topShared.length > 0 || datingCount > 0;
+
     return (
       <section className="mt-6 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-5">
         <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
@@ -59,6 +75,25 @@ export function EventAttendeePreview({
             ? `${totalConfirmed} ${totalConfirmed === 1 ? "person has" : "people have"} clicked into this event. RSVP to see who's going.`
             : "No one has clicked in yet. RSVP to be the first."}
         </p>
+        {hasSignals ? (
+          <ul className="mt-3 flex flex-wrap gap-2">
+            {topShared.map(([interest, count]) => (
+              <li
+                key={interest}
+                className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-3 py-1 text-[0.72rem] font-bold text-[color:var(--surface-deep)]"
+              >
+                ✷ {count} {count === 1 ? "person" : "people"} going also like{" "}
+                {interest}
+              </li>
+            ))}
+            {datingCount > 0 ? (
+              <li className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-3 py-1 text-[0.72rem] font-bold text-[color:var(--surface-deep)]">
+                ✷ {datingCount} {datingCount === 1 ? "person" : "people"} here open
+                to dating
+              </li>
+            ) : null}
+          </ul>
+        ) : null}
       </section>
     );
   }

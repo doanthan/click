@@ -411,6 +411,9 @@ export type AdminMetrics = {
 export type DashboardData = {
   userName: string;
   upcomingEvents: EventItem[];
+  // Events the member is waitlisted for — kept separate from confirmed
+  // "upcoming plans" so a waitlist seat isn't presented as a confirmed RSVP.
+  waitlistedEvents: EventItem[];
   savedEvents: EventItem[];
   stats: {
     upcoming: number;
@@ -1862,7 +1865,7 @@ export async function getPersonalizedDiscovery(
     const [allEvents, settings] = await Promise.all([getEventsForExplore(), getSystemSettings()]);
     if (allEvents.length === 0) return null;
 
-    const [tagsResult, profileResult, personaResult, attendedResult] = await Promise.all([
+    const [tagsResult, profileResult, personaResult, attendedResult, registeredResult] = await Promise.all([
       pool.query<{ slug: string }>(
         `select t.slug from user_tags ut join tags t on t.id = ut.tag_id where ut.profile_id = $1::uuid`,
         [profile.id],
@@ -1879,7 +1882,20 @@ export async function getPersonalizedDiscovery(
         `select count(*)::text as count from event_attendees where profile_id = $1::uuid and status = 'confirmed'`,
         [profile.id],
       ),
+      // Slugs of events the member is already on (confirmed/waitlisted/holding a
+      // seat) so we never suggest something they've already committed to.
+      pool.query<{ slug: string }>(
+        `select event.slug
+           from event_attendees attendee
+           join events event on event.id = attendee.event_id
+          where attendee.profile_id = $1::uuid
+            and attendee.status in ('confirmed', 'waitlisted', 'pending_payment')`,
+        [profile.id],
+      ),
     ]);
+
+    const registeredSlugs = new Set(registeredResult.rows.map((r) => r.slug));
+    const candidateEvents = allEvents.filter((event) => !registeredSlugs.has(event.id));
 
     const personaRow = personaResult.rows[0];
     const ctx: UserMatchContext = {
@@ -1899,8 +1915,8 @@ export async function getPersonalizedDiscovery(
     const fallback = readiness < weights.readinessThreshold || ctx.tagSlugs.length === 0;
 
     const ranked = fallback
-      ? rankEditorialFallback(allEvents)
-      : allEvents
+      ? rankEditorialFallback(candidateEvents)
+      : candidateEvents
           .map((event) => scorePersonalizedEvent(event, ctx, weights))
           .sort((a, b) => b.score - a.score)
           .map((scored) => scored.event);
@@ -4646,6 +4662,7 @@ export async function getDashboardData(session: Session | null): Promise<Dashboa
     return {
       userName,
       upcomingEvents: [],
+      waitlistedEvents: [],
       savedEvents: [],
       stats: {
         upcoming: 0,
@@ -4659,7 +4676,7 @@ export async function getDashboardData(session: Session | null): Promise<Dashboa
   try {
     const profile = await ensureProfileForSession(session);
 
-    const [upcomingResult, savedResult, clickResult] = await Promise.all([
+    const [upcomingResult, waitlistedResult, savedResult, clickResult] = await Promise.all([
       pool.query<EventRow>(
         `
           select ${eventSelectColumns}
@@ -4669,7 +4686,24 @@ export async function getDashboardData(session: Session | null): Promise<Dashboa
           left join event_tags event_tag on event_tag.event_id = event.id
           left join tags tag on tag.id = event_tag.tag_id
           where own_attendee.profile_id = $1::uuid
-            and own_attendee.status in ('confirmed', 'waitlisted')
+            and own_attendee.status = 'confirmed'
+            and event.status <> 'cancelled'
+            and coalesce(event.ends_at, event.starts_at) > now()
+          group by event.id
+          order by event.starts_at asc
+        `,
+        [profile.id],
+      ),
+      pool.query<EventRow>(
+        `
+          select ${eventSelectColumns}
+          from event_attendees own_attendee
+          join events event on event.id = own_attendee.event_id
+          left join event_attendees attendee_count on attendee_count.event_id = event.id
+          left join event_tags event_tag on event_tag.event_id = event.id
+          left join tags tag on tag.id = event_tag.tag_id
+          where own_attendee.profile_id = $1::uuid
+            and own_attendee.status = 'waitlisted'
             and event.status <> 'cancelled'
             and coalesce(event.ends_at, event.starts_at) > now()
           group by event.id
@@ -4705,11 +4739,13 @@ export async function getDashboardData(session: Session | null): Promise<Dashboa
     ]);
 
     const upcomingEvents = upcomingResult.rows.map(eventFromRow);
+    const waitlistedEvents = waitlistedResult.rows.map(eventFromRow);
     const savedEvents = savedResult.rows.map(eventFromRow);
 
     return {
       userName: profile.display_name,
       upcomingEvents,
+      waitlistedEvents,
       savedEvents,
       stats: {
         upcoming: upcomingEvents.length,
@@ -4729,6 +4765,7 @@ export async function getDashboardData(session: Session | null): Promise<Dashboa
     return {
       userName,
       upcomingEvents: [],
+      waitlistedEvents: [],
       savedEvents: [],
       stats: {
         upcoming: 0,
@@ -7957,26 +7994,66 @@ export async function getNotificationEmailForSession(
   const notif = notifResult.rows[0];
   if (!notif) return null;
 
-  const emailResult = await pool.query<{
-    id: string;
-    template: string;
-    subject: string;
-    html: string;
-    to_email: string;
-    created_at: Date;
-  }>(
-    `
-      select id::text, template, subject, html, to_email::text as to_email,
-             created_at
-      from email_events
-      where to_profile_id = $1::uuid
-        and created_at between $2::timestamptz - interval '10 minutes'
-                          and $2::timestamptz + interval '10 minutes'
-      order by abs(extract(epoch from (created_at - $2::timestamptz))) asc
-      limit 1
-    `,
-    [profile.id, notif.created_at],
-  );
+  // Match the email by the TEMPLATE that corresponds to this notification, not
+  // just "nearest email in time" — otherwise a waitlist "Spot available" or
+  // mutual-click notification grabbed whatever unrelated email happened to be
+  // logged closest to it (e.g. the canceller's cancellation receipt), showing
+  // the wrong email. We derive template patterns from the notification's title
+  // + body and only surface an email whose template actually matches.
+  const haystack = `${notif.title} ${notif.body}`.toLowerCase();
+  const templatePatterns: string[] = [];
+  if (haystack.includes("mutual") || haystack.includes("clicked")) {
+    templatePatterns.push("%mutual-click%");
+  }
+  if (haystack.includes("spot") || haystack.includes("waitlist")) {
+    templatePatterns.push("%waitlist%");
+  }
+  if (haystack.includes("payment") || haystack.includes("receipt") || haystack.includes("paid")) {
+    templatePatterns.push("%payment%");
+  }
+  if (haystack.includes("cancel")) {
+    templatePatterns.push("%cancelled%");
+  }
+  if (haystack.includes("rsvp") || haystack.includes("confirmed") || haystack.includes("you're in")) {
+    templatePatterns.push("%rsvp%");
+  }
+  if (haystack.includes("approved") || haystack.includes("review")) {
+    templatePatterns.push("%event-approved%", "%event-rejected%");
+  }
+
+  // No recognised template for this notification → show the notification alone
+  // rather than risk surfacing an unrelated email.
+  const emailResult =
+    templatePatterns.length === 0
+      ? { rows: [] as Array<{
+          id: string;
+          template: string;
+          subject: string;
+          html: string;
+          to_email: string;
+          created_at: Date;
+        }> }
+      : await pool.query<{
+          id: string;
+          template: string;
+          subject: string;
+          html: string;
+          to_email: string;
+          created_at: Date;
+        }>(
+          `
+            select id::text, template, subject, html, to_email::text as to_email,
+                   created_at
+            from email_events
+            where to_profile_id = $1::uuid
+              and template ilike any($3::text[])
+              and created_at between $2::timestamptz - interval '30 minutes'
+                                and $2::timestamptz + interval '30 minutes'
+            order by abs(extract(epoch from (created_at - $2::timestamptz))) asc
+            limit 1
+          `,
+          [profile.id, notif.created_at, templatePatterns],
+        );
 
   const emailRow = emailResult.rows[0];
 
@@ -8047,6 +8124,11 @@ export async function getSuggestedPeople(session: Session | null): Promise<Sugge
         where p.id <> $1::uuid
           and p.role = 'attendee'
           and p.suspended_at is null
+          -- Only surface people who've actually set up an attendee profile.
+          -- Merchant accounts (and half-finished signups) shouldn't appear in
+          -- "click with someone" until they've completed a real profile.
+          and p.suburb is not null
+          and p.bio is not null
           and not exists (
             select 1 from user_blocks b
             where (b.blocker_profile_id = $1::uuid and b.blocked_profile_id = p.id)

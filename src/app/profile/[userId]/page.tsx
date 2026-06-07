@@ -42,12 +42,34 @@ export default async function PublicProfilePage({ params }: PublicProfilePagePro
           <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
           Profile
         </span>
-        <h1 className="mt-6 font-display text-5xl font-light leading-[0.96] tracking-tight sm:text-6xl">
-          {profile.displayName}
-        </h1>
-        <p className="mt-3 text-sm font-mono font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-          {profile.suburb ?? profile.city}
-        </p>
+        <div className="mt-6 flex items-center gap-5">
+          {profile.photoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={profile.photoUrl}
+              alt={profile.displayName}
+              className="size-24 shrink-0 rounded-full border-2 border-[color:var(--line)] object-cover hard-shadow-sm sm:size-28"
+            />
+          ) : (
+            <div className="grid size-24 shrink-0 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] font-display text-4xl font-light text-[color:var(--surface-deep)] hard-shadow-sm sm:size-28">
+              {profile.displayName
+                .split(/\s+/)
+                .map((w) => w[0])
+                .filter(Boolean)
+                .slice(0, 2)
+                .join("")
+                .toUpperCase() || "·"}
+            </div>
+          )}
+          <div className="min-w-0">
+            <h1 className="font-display text-5xl font-light leading-[0.96] tracking-tight sm:text-6xl">
+              {profile.displayName}
+            </h1>
+            <p className="mt-3 text-sm font-mono font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+              {profile.suburb ?? profile.city}
+            </p>
+          </div>
+        </div>
 
         {isOwnProfile ? (
           <Link

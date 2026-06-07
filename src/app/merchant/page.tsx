@@ -8,6 +8,7 @@ import { MerchantCalendar } from "@/components/merchant-calendar";
 import { MerchantEventsPanel } from "@/components/merchant-events-panel";
 import { MerchantAttendeesPanel } from "@/components/merchant-attendees-panel";
 import { MerchantSidebar, type MerchantTabKey } from "@/components/merchant-sidebar";
+import { MerchantFinancesExport } from "@/components/merchant-finances-export";
 import { StripeDashboardButton } from "@/components/stripe-dashboard-button";
 import {
   getMerchantAllAttendees,
@@ -524,7 +525,7 @@ function EventsTab({
         action={<CreateEventButton />}
       />
 
-      <MerchantEventsPanel events={events} />
+      <MerchantEventsPanel events={events} filterable />
 
       <section>
         <p className="eyebrow">Venues</p>
@@ -778,6 +779,7 @@ async function FinancesTabAsync({
         eyebrow="Finances"
         title="Payouts + revenue."
         body="Click-managed paid events route through Stripe. Free events don’t appear here."
+        action={<MerchantFinancesExport transactions={finances.recentTransactions} />}
       />
       <PayoutStatusCard connect={finances.connect} />
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

@@ -102,14 +102,14 @@ export default async function PeoplePage() {
         <div className="mt-12 grid gap-8 lg:grid-cols-[2fr_1fr]">
           <div>
             <h2 className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
-              Suggested · {suggested.length}
+              Suggested · {Math.min(suggested.length, 6)}
             </h2>
             <h3 className="mt-2 font-display text-3xl font-light leading-tight sm:text-4xl">
               People sorted by overlap.
             </h3>
             {suggested.length > 0 ? (
               <div className="mt-6 grid gap-5 md:grid-cols-2">
-                {suggested.map((person) => (
+                {suggested.slice(0, 6).map((person) => (
                   <ClickWithSomeoneUserCard key={person.id} person={person} />
                 ))}
               </div>

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { UserCalendar } from "@/components/user-calendar";
-import { getDashboardData } from "@/lib/event-repository";
+import { getConfirmedEvents } from "@/lib/event-repository";
 import { reconcileCheckoutSession } from "@/lib/stripe-sync";
 
 export const metadata = {
@@ -31,7 +31,11 @@ export default async function CalendarPage({ searchParams }: PageProps) {
     await reconcileCheckoutSession(search.session_id).catch(() => null);
   }
 
-  const dashboard = await getDashboardData(session);
+  // The calendar shows the FULL history — upcoming RSVPs plus past events
+  // (rendered as "Ended" chips) — so members can look back at where they've
+  // been, not just what's coming up.
+  const confirmed = await getConfirmedEvents(session);
+  const calendarEvents = [...confirmed.upcoming, ...confirmed.past];
 
   return (
     <main className="paper-noise min-h-screen bg-[color:var(--champagne)] px-4 py-12 text-[color:var(--ink)] sm:px-6">
@@ -68,13 +72,13 @@ export default async function CalendarPage({ searchParams }: PageProps) {
 
         <div className="mt-10">
           <UserCalendar
-            events={dashboard.upcomingEvents}
+            events={calendarEvents}
             monthParam={search?.month}
             bookedSlug={search?.booked}
           />
         </div>
 
-        {dashboard.upcomingEvents.length === 0 ? (
+        {calendarEvents.length === 0 ? (
           <div className="mt-6 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-6">
             <p className="text-base font-bold">No bookings yet.</p>
             <p className="mt-2 text-sm font-semibold leading-6 text-[color:var(--mauve)]">

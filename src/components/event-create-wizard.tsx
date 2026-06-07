@@ -885,8 +885,50 @@ function Combobox({
   );
 }
 
+// Mirrors the connection intents members pick in onboarding, so a merchant can
+// quickly say who an event is for instead of writing the goal sentence by hand.
+const EVENT_INTENTS: { label: string; emoji: string; phrase: string }[] = [
+  { label: "Make friends", emoji: "🫶", phrase: "make new friends" },
+  { label: "Dating", emoji: "🌹", phrase: "meet someone in a relaxed setting" },
+  { label: "Networking", emoji: "💼", phrase: "network with like-minded people" },
+  { label: "Hobbies", emoji: "🎨", phrase: "connect over a shared hobby" },
+  { label: "Wellness", emoji: "🧘", phrase: "unwind and look after themselves" },
+  { label: "Community", emoji: "🏘️", phrase: "feel part of the local community" },
+  { label: "New in town", emoji: "🧭", phrase: "settle into Sydney" },
+];
+
+function composeGoalFromIntents(labels: string[]): string {
+  const phrases = EVENT_INTENTS.filter((i) => labels.includes(i.label)).map((i) => i.phrase);
+  if (phrases.length === 0) return "";
+  const joined =
+    phrases.length === 1
+      ? phrases[0]
+      : `${phrases.slice(0, -1).join(", ")} and ${phrases[phrases.length - 1]}`;
+  return `Great for people who want to ${joined}.`;
+}
+
 export function BasicsSection() {
   const { values, set, categoryOptions, tagOptions, hostNameOptions } = useWizard();
+  const [selectedIntents, setSelectedIntents] = useState<string[]>([]);
+
+  function toggleIntent(label: string) {
+    setSelectedIntents((prev) => {
+      const next = prev.includes(label)
+        ? prev.filter((l) => l !== label)
+        : [...prev, label];
+      const generated = composeGoalFromIntents(next);
+      // Only manage the goal text while it's empty or a phrasing we generated —
+      // never clobber a sentence the merchant wrote themselves.
+      if (
+        values.relationshipGoal.trim() === "" ||
+        values.relationshipGoal === composeGoalFromIntents(prev)
+      ) {
+        set("relationshipGoal", generated);
+      }
+      return next;
+    });
+  }
+
   return (
     <div className="space-y-5">
       <header>
@@ -943,6 +985,31 @@ export function BasicsSection() {
           />
         </Field>
       </div>
+      <Field
+        label="Who's this event for? (intent)"
+        hint="Pick one or more — we'll draft the goal line below, which you can edit."
+      >
+        <div className="flex flex-wrap gap-2">
+          {EVENT_INTENTS.map((intent) => {
+            const active = selectedIntents.includes(intent.label);
+            return (
+              <button
+                key={intent.label}
+                type="button"
+                aria-pressed={active}
+                onClick={() => toggleIntent(intent.label)}
+                className={`min-h-9 rounded-full border-2 px-3 text-sm font-bold transition ${
+                  active
+                    ? "border-[color:var(--rose)] bg-[color:var(--rose)] text-[color:var(--on-deep)]"
+                    : "border-[color:var(--line)] bg-[color:var(--champagne)] text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+                }`}
+              >
+                {intent.emoji} {intent.label}
+              </button>
+            );
+          })}
+        </div>
+      </Field>
       <Field label="Why should people come? (relationship goal)">
         <input
           value={values.relationshipGoal}
@@ -1408,6 +1475,27 @@ export function LocationSection() {
 
   const pinned = values.latitude !== null && values.longitude !== null;
 
+  // Pilot area = greater Sydney. Warn (don't block) when the pinned venue is far
+  // from the Sydney CBD so merchants know we're not active there yet. Haversine
+  // distance in km from -33.8688, 151.2093.
+  const SYDNEY_LAT = -33.8688;
+  const SYDNEY_LNG = 151.2093;
+  const PILOT_RADIUS_KM = 75;
+  let distanceFromSydneyKm: number | null = null;
+  if (pinned) {
+    const toRad = (deg: number) => (deg * Math.PI) / 180;
+    const dLat = toRad(values.latitude! - SYDNEY_LAT);
+    const dLng = toRad(values.longitude! - SYDNEY_LNG);
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(toRad(SYDNEY_LAT)) *
+        Math.cos(toRad(values.latitude!)) *
+        Math.sin(dLng / 2) ** 2;
+    distanceFromSydneyKm = 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+  const outsidePilotArea =
+    distanceFromSydneyKm !== null && distanceFromSydneyKm > PILOT_RADIUS_KM;
+
   return (
     <div className="space-y-5">
       <header>
@@ -1465,6 +1553,16 @@ export function LocationSection() {
           ? `Pinned at ${values.latitude!.toFixed(5)}, ${values.longitude!.toFixed(5)}`
           : "No coordinates yet — picking a suggestion will pin this on the map."}
       </p>
+
+      {outsidePilotArea ? (
+        <div className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--peach)] p-4 text-sm font-bold leading-6 text-[color:var(--surface-deep)] hard-shadow-sm">
+          ⚠️ Heads up — this venue is about {Math.round(distanceFromSydneyKm!)} km
+          from Sydney. Click is currently piloting in <strong>greater Sydney
+          only</strong>, so events outside this area may get little to no
+          discovery. You can still publish, but reach will be limited until we
+          launch in your city.
+        </div>
+      ) : null}
     </div>
   );
 }

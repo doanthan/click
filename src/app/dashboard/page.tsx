@@ -43,6 +43,21 @@ export default async function DashboardPage() {
 
   const userName = dashboard.userName || session.user.email || "there";
   const isAdmin = isAdminEmail(session.user.email);
+
+  // Dashboard suggestions are deliberately rationed + rotated so the page stays
+  // a focused "one thing to act on" rather than an endless list:
+  //  • one person to click with, rotating 4×/day (every 6 hours)
+  //  • one radar event, rotating hourly
+  // Deterministic index off the clock so it's stable within each window.
+  const sixHourIndex = Math.floor(Date.now() / (6 * 3_600_000));
+  const hourIndex = Math.floor(Date.now() / 3_600_000);
+  const rotatedPeople =
+    suggestedPeople.length > 0
+      ? [suggestedPeople[sixHourIndex % suggestedPeople.length]]
+      : [];
+  const radarPool = personalized?.events ?? [];
+  const rotatedRadar =
+    radarPool.length > 0 ? [radarPool[hourIndex % radarPool.length]] : [];
   const upcoming = dashboard.upcomingEvents;
   const saved = dashboard.savedEvents;
   const bookmarkSet = new Set(profileStatus.bookmarkedEventIds);
@@ -240,6 +255,36 @@ export default async function DashboardPage() {
         )}
       </section>
 
+      {dashboard.waitlistedEvents.length > 0 ? (
+        <section className="mx-auto mt-12 max-w-6xl">
+          <div className="flex items-end justify-between gap-4">
+            <div>
+              <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
+                Waitlisted
+              </p>
+              <h2 className="font-display mt-2 text-3xl font-light leading-tight sm:text-4xl">
+                On the waitlist.
+              </h2>
+              <p className="mt-1 max-w-xl text-sm font-semibold leading-6 text-[color:var(--mauve)]">
+                Not confirmed plans yet — we&rsquo;ll notify you if a spot opens up.
+              </p>
+            </div>
+            <Pill tone="rose">{dashboard.waitlistedEvents.length}</Pill>
+          </div>
+          <div className="mt-6 grid gap-6 lg:grid-cols-2">
+            {dashboard.waitlistedEvents.map((event) => (
+              <EventCard
+                key={event.id}
+                event={event}
+                compact
+                bookmarked={bookmarkSet.has(event.id)}
+                registered={registeredSet.has(event.id)}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       <section className="mx-auto mt-12 max-w-6xl">
         <div className="flex items-end justify-between gap-4">
           <div>
@@ -323,7 +368,8 @@ export default async function DashboardPage() {
             </h2>
             <p className="mt-2 max-w-xl text-sm font-semibold leading-6 text-[color:var(--mauve)]">
               🔒 Clicking is anonymous — we&rsquo;ll only show you if it&rsquo;s mutual.
-              Suggestions change daily based on your interests.
+              We surface one person at a time, refreshed through the day. See
+              everyone on the People page.
             </p>
           </div>
           <Link
@@ -336,9 +382,9 @@ export default async function DashboardPage() {
 
         <div className="mt-6 grid gap-8 lg:grid-cols-[2fr_1fr]">
           <div>
-            {suggestedPeople.length > 0 ? (
-              <div className="grid gap-5 md:grid-cols-2">
-                {suggestedPeople.slice(0, 4).map((person) => (
+            {rotatedPeople.length > 0 ? (
+              <div className="grid gap-5">
+                {rotatedPeople.map((person) => (
                   <ClickWithSomeoneUserCard key={person.id} person={person} />
                 ))}
               </div>
@@ -358,7 +404,7 @@ export default async function DashboardPage() {
               </div>
             )}
           </div>
-          <ClickRadar events={personalized?.events ?? []} />
+          <ClickRadar events={rotatedRadar} />
         </div>
       </section>
     </main>

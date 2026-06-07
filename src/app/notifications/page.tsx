@@ -97,14 +97,13 @@ function NotificationItem({
   id,
   title,
   body,
+  actionUrl,
   createdAt,
   unread,
 }: {
   id: string;
   title: string;
   body: string;
-  // actionUrl is still on NotificationRow but unused here — the secondary
-  // "Take action" link lives on /notifications/[id]/email instead.
   actionUrl: string | null;
   createdAt: string;
   unread: boolean;
@@ -129,13 +128,26 @@ function NotificationItem({
           </p>
         </div>
         <div className="flex flex-col items-end gap-2 shrink-0">
-          {/* "Open" renders the email that fired this notification (with the
-              notification's `action_url` available as a "Take action" button
-              on that page). Falls back to a notification-only view when no
-              email_events row was logged. */}
+          {/* Primary action takes the user straight to the relevant page in-app
+              (e.g. the event for a waitlist "spot available" notification). The
+              email view is the secondary action. */}
+          {actionUrl ? (
+            <Link
+              href={actionUrl}
+              className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
+            >
+              View
+            </Link>
+          ) : null}
+          {/* "Open" renders the email that fired this notification. Falls back to
+              a notification-only view when no email_events row was logged. */}
           <Link
             href={`/notifications/${id}/email`}
-            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
+            className={`rounded-full border-2 border-[color:var(--line)] px-3 py-1.5 text-xs font-bold uppercase tracking-wide hard-shadow-sm ${
+              actionUrl
+                ? "bg-[color:var(--cream)] text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+                : "bg-[color:var(--rose)] text-[color:var(--surface-deep)] hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
+            }`}
           >
             Open
           </Link>

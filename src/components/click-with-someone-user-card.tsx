@@ -22,9 +22,18 @@ export function ClickWithSomeoneUserCard({ person }: { person: SuggestedPerson }
   return (
     <article className="flex flex-col rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-5 hard-shadow-sm">
       <div className="flex items-start gap-4">
-        <div className="grid size-14 shrink-0 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] font-bold text-[color:var(--surface-deep)]">
-          {initials || "·"}
-        </div>
+        {person.photoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={person.photoUrl}
+            alt={person.displayName}
+            className="size-14 shrink-0 rounded-full border-2 border-[color:var(--line)] object-cover"
+          />
+        ) : (
+          <div className="grid size-14 shrink-0 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] font-bold text-[color:var(--surface-deep)]">
+            {initials || "·"}
+          </div>
+        )}
         <div className="min-w-0 flex-1">
           <Link
             href={`/profile/${person.id}`}

@@ -111,8 +111,17 @@ function buildCells(monthAnchor: Date, events: MerchantEventSummary[], todayIso:
   return cells;
 }
 
+function isPastEvent(event: MerchantEventSummary) {
+  return new Date(event.endsAt ?? event.startsAt).getTime() < Date.now();
+}
+
 function statusBadgeClass(event: MerchantEventSummary) {
   const isFull = event.confirmed >= event.capacity;
+  if (event.status === "Cancelled")
+    return "bg-[color:var(--cream)] text-[color:var(--mauve)] line-through opacity-80";
+  // Past events read as muted "Ended" chips so the merchant can still see their
+  // history on the calendar without it competing with live/upcoming events.
+  if (isPastEvent(event)) return "bg-[color:var(--cream)] text-[color:var(--mauve)] opacity-90";
   if (event.status === "Pending") return "bg-[color:var(--rose)] text-[color:var(--surface-deep)]";
   if (isFull || event.status === "Waitlist")
     return "bg-[color:var(--ink)] text-[color:var(--champagne)]";
@@ -121,8 +130,11 @@ function statusBadgeClass(event: MerchantEventSummary) {
 }
 
 export function MerchantCalendar({ events, monthParam }: MerchantCalendarProps) {
-  const earliestEvent = events[0] ? new Date(events[0].startsAt) : new Date();
-  const monthAnchor = parseMonthParam(monthParam, earliestEvent);
+  // Default to the CURRENT month (not the earliest event) so the calendar always
+  // opens on "today" — otherwise a merchant with old past events lands months in
+  // the past and thinks an upcoming event "isn't on the calendar". Month arrows
+  // page from there.
+  const monthAnchor = parseMonthParam(monthParam, new Date());
   const todayIso = isoDateInSydney(new Date());
   const cells = buildCells(monthAnchor, events, todayIso);
   const prevMonth = formatMonthParam(addMonths(monthAnchor, -1));
@@ -252,7 +264,14 @@ function CalendarDayCell({ cell }: { cell: CalendarCell }) {
 
 function CalendarEventChip({ event }: { event: MerchantEventSummary }) {
   const isFull = event.confirmed >= event.capacity;
-  const display = isFull && event.status === "Live" ? "Full" : event.status;
+  const display =
+    event.status === "Cancelled"
+      ? "Cancelled"
+      : isPastEvent(event)
+        ? "Ended"
+        : isFull && event.status === "Live"
+          ? "Full"
+          : event.status;
 
   return (
     <Link

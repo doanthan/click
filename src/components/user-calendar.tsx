@@ -124,12 +124,31 @@ function buildCells(monthAnchor: Date, events: EventItem[], todayIso: string): C
   return cells;
 }
 
-function chipStyle(event: EventItem) {
+function chipMeta(event: EventItem): { label: string; className: string } {
   const isFull = event.attendees >= event.capacity;
+  const end = new Date(event.endsAt ?? event.startsAt);
+  const isPast = end.getTime() < Date.now();
+
+  // Cancelled events stay visible on the calendar (so a member isn't left
+  // wondering where their RSVP went) but are clearly struck out, never shown as
+  // "Waitlist"/"Confirmed".
+  if (event.status === "Cancelled")
+    return {
+      label: "Cancelled",
+      className:
+        "bg-[color:var(--cream)] text-[color:var(--mauve)] line-through opacity-80",
+    };
+  // Past events are archived in-place as "Ended" so history reads clearly.
+  if (isPast)
+    return {
+      label: "Ended",
+      className: "bg-[color:var(--cream)] text-[color:var(--mauve)] opacity-90",
+    };
   if (event.status === "Waitlist" || isFull)
-    return "bg-[color:var(--ink)] text-[color:var(--champagne)]";
-  if (event.status === "Locked") return "bg-[color:var(--ink)] text-[color:var(--champagne)]";
-  return "bg-[color:var(--peach)] text-[color:var(--surface-deep)]";
+    return { label: "Waitlist", className: "bg-[color:var(--ink)] text-[color:var(--champagne)]" };
+  if (event.status === "Locked")
+    return { label: "Locked", className: "bg-[color:var(--ink)] text-[color:var(--champagne)]" };
+  return { label: "Confirmed", className: "bg-[color:var(--peach)] text-[color:var(--surface-deep)]" };
 }
 
 export function UserCalendar({
@@ -138,8 +157,10 @@ export function UserCalendar({
   bookedSlug,
   basePath = "/dashboard/calendar",
 }: UserCalendarProps) {
-  const earliestEvent = events[0] ? new Date(events[0].startsAt) : new Date();
-  const monthAnchor = parseMonthParam(monthParam, earliestEvent);
+  // Default to the current month so the calendar opens on "today" rather than
+  // the earliest RSVP's month (which, with past events included, could be far in
+  // the past). The prev/next arrows + count dots page to other months.
+  const monthAnchor = parseMonthParam(monthParam, new Date());
   const todayIso = isoDateInSydney(new Date());
   const cells = buildCells(monthAnchor, events, todayIso);
   const prevMonth = formatMonthParam(addMonths(monthAnchor, -1));
@@ -303,13 +324,12 @@ function CalendarDayCell({ cell }: { cell: CalendarCell }) {
 }
 
 function CalendarEventChip({ event }: { event: EventItem }) {
-  const isFull = event.attendees >= event.capacity;
-  const label = event.status === "Waitlist" || isFull ? "Waitlist" : "Confirmed";
+  const { label, className } = chipMeta(event);
 
   return (
     <Link
       href={`/events/${event.id}`}
-      className={`block rounded-md border-2 border-[color:var(--line)] px-1.5 py-1 hard-shadow-sm transition hover:-translate-y-[1px] hover:[box-shadow:3px_3px_0_0_var(--shadow-ink)] ${chipStyle(event)}`}
+      className={`block rounded-md border-2 border-[color:var(--line)] px-1.5 py-1 hard-shadow-sm transition hover:-translate-y-[1px] hover:[box-shadow:3px_3px_0_0_var(--shadow-ink)] ${className}`}
     >
       <p className="line-clamp-1 text-[0.7rem] font-bold leading-tight">{event.title}</p>
       <p className="mt-0.5 font-mono text-[0.6rem] font-bold uppercase tracking-[0.16em] opacity-80">

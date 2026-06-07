@@ -3,8 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { LinkButton, Pill } from "@/components/click-ui";
-import { AccountSettingToggle } from "@/components/account-setting-toggle";
-import { getOwnProfile } from "@/lib/event-repository";
+import { getConfirmedEvents, getOwnProfile } from "@/lib/event-repository";
 
 export const metadata = {
   title: "Your profile | Click",
@@ -17,11 +16,16 @@ export default async function OwnProfilePage() {
     redirect("/login?callbackUrl=/profile");
   }
 
-  const profile = await getOwnProfile(session);
+  const [profile, confirmed] = await Promise.all([
+    getOwnProfile(session),
+    getConfirmedEvents(session),
+  ]);
 
   if (!profile) {
     redirect("/onboarding");
   }
+
+  const pastEvents = confirmed.past;
 
   const initials = profile.displayName
     .split(" ")
@@ -85,15 +89,16 @@ export default async function OwnProfilePage() {
               Privacy
             </span>
             <p className="mt-2 text-xs font-semibold leading-5 text-[color:var(--mauve)]">
-              Control what other Click members can see about you.
+              Control what other Click members can see about you — suburb,
+              attendance count and more — from{" "}
+              <Link
+                href="/account-settings?tab=privacy"
+                className="font-bold text-[color:var(--ink)] underline decoration-2 underline-offset-4 hover:text-[color:var(--rose)]"
+              >
+                Privacy settings
+              </Link>
+              .
             </p>
-            <div className="mt-4 border-t border-dashed border-[color:var(--line-soft)] pt-4">
-              <AccountSettingToggle
-                settingKey="showSuburb"
-                label="Show my suburb to others"
-                initialOn={profile.settings.showSuburb}
-              />
-            </div>
           </div>
 
           <div className="space-y-5">
@@ -150,6 +155,42 @@ export default async function OwnProfilePage() {
               </div>
             </div>
           </div>
+        </div>
+
+        <div className="mt-10">
+          <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
+            Event history
+          </span>
+          <h2 className="mt-2 font-display text-3xl font-light leading-tight">
+            Events you’ve been to.
+          </h2>
+          {pastEvents.length > 0 ? (
+            <ul className="mt-4 grid gap-3 sm:grid-cols-2">
+              {pastEvents.map((event) => (
+                <li key={event.id}>
+                  <Link
+                    href={`/events/${event.id}`}
+                    className="flex items-center justify-between gap-3 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-4 hard-shadow-sm hover:bg-[color:var(--peach)]"
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate font-display text-xl font-light leading-tight text-[color:var(--ink)]">
+                        {event.title}
+                      </span>
+                      <span className="mt-1 block font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+                        {event.date} · {event.suburb ?? event.location}
+                      </span>
+                    </span>
+                    <Pill tone="cream">Attended</Pill>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-4 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-6 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+              No past events yet. Once you’ve been to a Click event it’ll show up
+              here as part of your history.
+            </p>
+          )}
         </div>
       </section>
     </main>

@@ -20,6 +20,8 @@ type EventDetailData = EventItem & {
     | "pending_payment"
     | "cancelled"
     | null;
+  // ISO timestamp of a live waitlist promotion offer for the viewer, if any.
+  waitlistOfferExpiresAt?: string | null;
 };
 
 function priceToCents(price: string) {
@@ -81,13 +83,20 @@ export function EventDetailModal({
   }, [open, event.id]);
 
   // Show the card data immediately, then merge in the richer Supabase record.
+  // The `registered` prop conflates confirmed + waitlisted (both live in the
+  // dashboard's registered set), so before the live record loads we infer
+  // waitlist from the card's own full/waitlist state — otherwise a waitlisted
+  // member briefly sees the confirmed "Cancel RSVP" action.
+  const fallbackWaitlist =
+    event.status === "Waitlist" || event.attendees >= event.capacity;
   const data: EventDetailData =
     detail ?? {
       ...event,
       priceCents: priceToCents(event.price),
       address: null,
       endsAt: null,
-      viewerRsvpStatus: registered ? "confirmed" : null,
+      viewerRsvpStatus: registered ? (fallbackWaitlist ? "waitlisted" : "confirmed") : null,
+      waitlistOfferExpiresAt: null,
     };
 
   const seatsLeft = Math.max(0, data.capacity - data.attendees);
@@ -254,6 +263,7 @@ export function EventDetailModal({
                     eventId={data.id}
                     initiallyRegistered
                     isWaitlist={isWaitlisted}
+                    offerExpiresAt={data.waitlistOfferExpiresAt ?? null}
                   />
                 ) : isPaid && !isWaitlistMode ? (
                   <EventPaymentButton eventId={data.id} priceLabel={data.price} />

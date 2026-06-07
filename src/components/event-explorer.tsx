@@ -39,8 +39,9 @@ const CATEGORY_ICONS: Record<string, string> = {
 };
 const CATEGORY_ICON_FALLBACK = "📍";
 
-type DateWindow = "7" | "30" | "all";
+type DateWindow = "today" | "tomorrow" | "weekend" | "7" | "30" | "all";
 type SortMode = "soonest" | "nearest" | "popular";
+type TimeOfDay = "all" | "day" | "night";
 type ViewMode = "rails" | "grid";
 type LocationStatus = "idle" | "requesting" | "shared" | "denied" | "unsupported";
 
@@ -48,6 +49,34 @@ function daysUntil(startsAt: string, referenceTime: number) {
   const eventDate = new Date(startsAt);
   const milliseconds = eventDate.getTime() - referenceTime;
   return Math.ceil(milliseconds / 86_400_000);
+}
+
+// Whether an event falls within the selected date window. "weekend" = the
+// upcoming Sat/Sun (today counts if it's already the weekend).
+function matchesDateWindow(startsAt: string, dateWindow: DateWindow, todayTime: number) {
+  if (dateWindow === "all") return true;
+  const eventDays = daysUntil(startsAt, todayTime);
+  if (eventDays < 0) return false;
+  if (dateWindow === "7") return eventDays <= 7;
+  if (dateWindow === "30") return eventDays <= 30;
+  if (dateWindow === "today") return eventDays === 0;
+  if (dateWindow === "tomorrow") return eventDays === 1;
+  if (dateWindow === "weekend") {
+    const day = new Date(startsAt).getDay(); // 0 Sun … 6 Sat
+    const isWeekendDay = day === 6 || day === 0;
+    // Within the next 7 days and lands on Sat/Sun.
+    return isWeekendDay && eventDays <= 7;
+  }
+  return true;
+}
+
+// Day vs night by local start hour. Evening (5pm+) reads as "night time".
+function isNightEvent(startsAt: string) {
+  return new Date(startsAt).getHours() >= 17;
+}
+
+function isFreeEvent(event: EventItem) {
+  return !event.price || event.price.trim().toLowerCase() === "free";
 }
 
 export function EventExplorer({
@@ -75,6 +104,8 @@ export function EventExplorer({
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedSuburb, setSelectedSuburb] = useState("All Sydney");
   const [dateWindow, setDateWindow] = useState<DateWindow>("all");
+  const [timeOfDay, setTimeOfDay] = useState<TimeOfDay>("all");
+  const [freeOnly, setFreeOnly] = useState(false);
   const [distanceKm, setDistanceKm] = useState(MAX_DISTANCE_KM);
   const [sortMode, setSortMode] = useState<SortMode>("nearest");
   const [viewMode, setViewMode] = useState<ViewMode>("rails");
@@ -108,11 +139,11 @@ export function EventExplorer({
 
     return locatedEvents
       .filter((event) => {
-        const eventDays = daysUntil(event.startsAt, todayTime);
-        const matchesDate =
-          dateWindow === "all" ||
-          (dateWindow === "7" && eventDays >= 0 && eventDays <= 7) ||
-          (dateWindow === "30" && eventDays >= 0 && eventDays <= 30);
+        const matchesDate = matchesDateWindow(event.startsAt, dateWindow, todayTime);
+        const matchesTime =
+          timeOfDay === "all" ||
+          (timeOfDay === "night" ? isNightEvent(event.startsAt) : !isNightEvent(event.startsAt));
+        const matchesFree = !freeOnly || isFreeEvent(event);
         const matchesSuburb =
           selectedSuburb === "All Sydney" || event.suburb === selectedSuburb;
         const matchesDistance =
@@ -130,6 +161,8 @@ export function EventExplorer({
 
         return (
           matchesDate &&
+          matchesTime &&
+          matchesFree &&
           matchesSuburb &&
           matchesDistance &&
           matchesTag &&
@@ -156,6 +189,8 @@ export function EventExplorer({
   }, [
     categoryFilter,
     dateWindow,
+    timeOfDay,
+    freeOnly,
     distanceKm,
     locatedEvents,
     searchQuery,
@@ -267,11 +302,28 @@ export function EventExplorer({
     activeChips.push({ key: "suburb", label: selectedSuburb, clear: () => setSelectedSuburb("All Sydney") });
   }
   if (dateWindow !== "all") {
+    const dateLabels: Record<Exclude<DateWindow, "all">, string> = {
+      today: "Today",
+      tomorrow: "Tomorrow",
+      weekend: "This weekend",
+      "7": "Next 7 days",
+      "30": "Next 30 days",
+    };
     activeChips.push({
       key: "date",
-      label: dateWindow === "7" ? "Next 7 days" : "Next 30 days",
+      label: dateLabels[dateWindow],
       clear: () => setDateWindow("all"),
     });
+  }
+  if (timeOfDay !== "all") {
+    activeChips.push({
+      key: "time",
+      label: timeOfDay === "night" ? "Night time" : "Daytime",
+      clear: () => setTimeOfDay("all"),
+    });
+  }
+  if (freeOnly) {
+    activeChips.push({ key: "free", label: "Free only", clear: () => setFreeOnly(false) });
   }
   if (distanceKm < MAX_DISTANCE_KM) {
     activeChips.push({
@@ -432,9 +484,26 @@ export function EventExplorer({
               value={dateWindow}
               onChange={(next) => setDateWindow(next as DateWindow)}
               options={[
+                { value: "today", label: "Today" },
+                { value: "tomorrow", label: "Tomorrow" },
+                { value: "weekend", label: "This weekend" },
                 { value: "7", label: "Next 7 days" },
                 { value: "30", label: "Next 30 days" },
                 { value: "all", label: "Any upcoming date" },
+              ]}
+            />
+          </div>
+
+          <div className="grid gap-1.5 text-xs font-black uppercase tracking-[0.14em] text-[color:var(--mauve)]">
+            Time
+            <FilterSelect
+              ariaLabel="Filter by time of day"
+              value={timeOfDay}
+              onChange={(next) => setTimeOfDay(next as TimeOfDay)}
+              options={[
+                { value: "all", label: "Any time" },
+                { value: "day", label: "Daytime" },
+                { value: "night", label: "Night time" },
               ]}
             />
           </div>
@@ -448,10 +517,38 @@ export function EventExplorer({
               options={[
                 { value: "nearest", label: "Nearest first" },
                 { value: "soonest", label: "Soonest first" },
-                { value: "popular", label: "Most popular" },
+                { value: "popular", label: "Trending (most popular)" },
               ]}
             />
           </div>
+        </div>
+
+        {/* Quick toggles — free events + trending shortcut. */}
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            aria-pressed={freeOnly}
+            onClick={() => setFreeOnly((v) => !v)}
+            className={`min-h-9 rounded-full border px-4 text-sm font-bold transition ${
+              freeOnly
+                ? "border-[color:var(--rose)] bg-[color:var(--rose)] text-[color:var(--on-deep)]"
+                : "border-[color:var(--line)] bg-[color:var(--champagne)] text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+            }`}
+          >
+            Free only
+          </button>
+          <button
+            type="button"
+            aria-pressed={sortMode === "popular"}
+            onClick={() => setSortMode((s) => (s === "popular" ? "nearest" : "popular"))}
+            className={`min-h-9 rounded-full border px-4 text-sm font-bold transition ${
+              sortMode === "popular"
+                ? "border-[color:var(--rose)] bg-[color:var(--rose)] text-[color:var(--on-deep)]"
+                : "border-[color:var(--line)] bg-[color:var(--champagne)] text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+            }`}
+          >
+            🔥 Trending
+          </button>
         </div>
 
         {/* Distance presets — tap targets beat a slider on touch. */}
