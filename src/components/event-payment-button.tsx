@@ -3,8 +3,9 @@
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { openLoginModal } from "./login-modal-host";
+import { EventCheckoutModal } from "./event-checkout-modal";
 
-type PaymentState = "idle" | "submitting" | "redirecting" | "error";
+type PaymentState = "idle" | "submitting" | "redirecting" | "paying" | "error";
 
 export function EventPaymentButton({
   eventId,
@@ -15,6 +16,7 @@ export function EventPaymentButton({
 }) {
   const [state, setState] = useState<PaymentState>("idle");
   const [message, setMessage] = useState("");
+  const [clientSecret, setClientSecret] = useState<string | null>(null);
   const pathname = usePathname();
 
   async function startCheckout() {
@@ -32,19 +34,39 @@ export function EventPaymentButton({
       return;
     }
 
-    const payload = (await response.json()) as { url?: string; error?: string };
+    const payload = (await response.json()) as {
+      url?: string;
+      clientSecret?: string;
+      error?: string;
+    };
 
-    if (!response.ok || !payload.url) {
+    if (!response.ok || (!payload.url && !payload.clientSecret)) {
       setState("error");
       setMessage(payload.error ?? "Could not start checkout.");
       return;
     }
 
+    // Embedded checkout: open the Stripe payment form in a modal on this page.
+    if (payload.clientSecret) {
+      setClientSecret(payload.clientSecret);
+      setState("paying");
+      return;
+    }
+
+    // Hosted fallback (no publishable key configured): full-page redirect.
     setState("redirecting");
-    window.location.href = payload.url;
+    window.location.href = payload.url!;
   }
 
-  const disabled = state === "submitting" || state === "redirecting";
+  function closeModal() {
+    // The held seat expires on its own; reset so they can retry if they backed
+    // out without paying.
+    setClientSecret(null);
+    setState("idle");
+  }
+
+  const disabled =
+    state === "submitting" || state === "redirecting" || state === "paying";
 
   return (
     <div className="grid gap-1">
@@ -58,10 +80,15 @@ export function EventPaymentButton({
           ? "Reserving seat…"
           : state === "redirecting"
             ? "Redirecting to Stripe…"
-            : `Reserve & pay ${priceLabel}`}
+            : state === "paying"
+              ? "Opening checkout…"
+              : `Reserve & pay ${priceLabel}`}
       </button>
       {message ? (
         <p className="text-xs font-bold text-[color:var(--rose)]">{message}</p>
+      ) : null}
+      {clientSecret ? (
+        <EventCheckoutModal clientSecret={clientSecret} onClose={closeModal} />
       ) : null}
     </div>
   );

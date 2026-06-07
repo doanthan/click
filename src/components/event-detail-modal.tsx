@@ -101,6 +101,18 @@ export function EventDetailModal({
   const isLockedEvent = !isRegistered;
   const isPaid = data.priceCents > 0;
 
+  // Card-level CTA label. Reads as an RSVP action (not a vague "Details") so
+  // every event card carries a clear booking entry point; the modal itself
+  // still handles the free / paid / waitlist branches once opened.
+  const priceIsFree = !event.price || event.price.trim().toLowerCase() === "free";
+  const triggerLabel = registered
+    ? "View your booking"
+    : isWaitlistMode
+      ? "Join waitlist"
+      : priceIsFree
+        ? "RSVP — it’s free"
+        : `RSVP · ${event.price}`;
+
   return (
     <>
       <button
@@ -111,10 +123,10 @@ export function EventDetailModal({
         }}
         className={
           className ??
-          "rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 text-center text-sm font-bold text-[color:var(--ink)] hover:bg-[color:var(--peach)] hover:text-[color:var(--surface-deep)]"
+          "w-full rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-4 py-3 text-center text-sm font-bold text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
         }
       >
-        Details
+        {triggerLabel}
       </button>
 
       {open && mounted

@@ -2085,6 +2085,11 @@ export type EventDetail = EventItem & {
   // detail page to let an owner preview their own not-yet-approved event while
   // keeping pending/rejected events out of public reach.
   merchantProfileId: string | null;
+  // Title of another event the viewer is already attending whose time window
+  // overlaps this one — drives a non-blocking "schedule clash" warning on the
+  // RSVP CTA. Null when there's no clash (or the viewer isn't signed in / is
+  // already on this event).
+  viewerClashEventTitle: string | null;
 };
 
 export async function getEventBySlug(
@@ -2107,6 +2112,7 @@ export async function getEventBySlug(
       waitlistOfferExpiresAt: null,
       waitlistPosition: null,
       merchantProfileId: null,
+      viewerClashEventTitle: null,
       media: buildEventMediaGallery({
         images: [fallback.image],
         primaryAlt: fallback.imageAlt,
@@ -2181,6 +2187,7 @@ export async function getEventBySlug(
         waitlistOfferExpiresAt: null,
         waitlistPosition: null,
         merchantProfileId: null,
+        viewerClashEventTitle: null,
         media: buildEventMediaGallery({
           images: [fallback.image],
           primaryAlt: fallback.imageAlt,
@@ -2189,9 +2196,14 @@ export async function getEventBySlug(
     }
 
     const base = eventFromRow(row);
+    // Capture this event's window before `row` is shadowed inside the viewer
+    // block below — the clash query needs the event's own start/end.
+    const eventStartsAt = row.starts_at;
+    const eventEndsAt = row.ends_at;
     let viewerRsvpStatus: EventDetail["viewerRsvpStatus"] = null;
     let waitlistOfferExpiresAt: string | null = null;
     let waitlistPosition: number | null = null;
+    let viewerClashEventTitle: string | null = null;
     const email = getSessionEmail(session);
 
     if (email) {
@@ -2254,11 +2266,38 @@ export async function getEventBySlug(
       ) {
         waitlistOfferExpiresAt = row.offered_until.toISOString();
       }
+
+      // Schedule-clash check: warn the viewer if they already hold a spot at
+      // another event whose time window overlaps this one. Only relevant when
+      // they aren't already committed to THIS event. Two windows overlap when
+      // start_a < end_b AND start_b < end_a; a null ends_at collapses to its
+      // start. Non-blocking — just surfaces a heads-up on the RSVP CTA.
+      if (status !== "confirmed" && status !== "waitlisted" && status !== "pending_payment") {
+        const clashResult = await pool.query<{ title: string }>(
+          `
+            select other_event.title
+            from event_attendees attendee
+            join profiles profile on profile.id = attendee.profile_id
+            join events other_event on other_event.id = attendee.event_id
+            where profile.email = $1
+              and other_event.slug <> $2
+              and attendee.status in ('confirmed', 'waitlisted', 'pending_payment')
+              and other_event.status <> 'cancelled'
+              and other_event.starts_at < coalesce(($4)::timestamptz, ($3)::timestamptz)
+              and coalesce(other_event.ends_at, other_event.starts_at) > ($3)::timestamptz
+            order by other_event.starts_at asc
+            limit 1
+          `,
+          [email, slug, eventStartsAt, eventEndsAt],
+        );
+        viewerClashEventTitle = clashResult.rows[0]?.title ?? null;
+      }
     }
 
     return {
       ...base,
       priceCents: row.price_cents,
+      viewerClashEventTitle,
       address: row.address,
       endsAt: row.ends_at ? row.ends_at.toISOString() : null,
       viewerRsvpStatus,
@@ -2290,6 +2329,7 @@ export async function getEventBySlug(
         waitlistOfferExpiresAt: null,
         waitlistPosition: null,
         merchantProfileId: null,
+        viewerClashEventTitle: null,
         media: buildEventMediaGallery({
           images: [fallback.image],
           primaryAlt: fallback.imageAlt,
@@ -4630,6 +4670,8 @@ export async function getDashboardData(session: Session | null): Promise<Dashboa
           left join tags tag on tag.id = event_tag.tag_id
           where own_attendee.profile_id = $1::uuid
             and own_attendee.status in ('confirmed', 'waitlisted')
+            and event.status <> 'cancelled'
+            and coalesce(event.ends_at, event.starts_at) > now()
           group by event.id
           order by event.starts_at asc
         `,
@@ -4644,6 +4686,8 @@ export async function getDashboardData(session: Session | null): Promise<Dashboa
           left join event_tags event_tag on event_tag.event_id = event.id
           left join tags tag on tag.id = event_tag.tag_id
           where bookmark.profile_id = $1::uuid
+            and event.status <> 'cancelled'
+            and coalesce(event.ends_at, event.starts_at) > now()
           group by event.id, bookmark.created_at
           order by bookmark.created_at desc
           limit 12
@@ -5677,9 +5721,10 @@ export async function createUserClickForSession(
     const clickedResult = await client.query<{
       id: string;
       display_name: string;
+      email: string | null;
     }>(
       `
-        select id::text, display_name
+        select id::text, display_name, email::text
         from profiles
         where id = $1::uuid
         limit 1
@@ -5783,6 +5828,12 @@ export async function createUserClickForSession(
     if (reciprocalClick) {
       const preferredEventId = sourceEventId ?? reciprocalClick.source_event_id;
       if (preferredEventId) {
+        // The "preferred" event is the one they both attended that unlocked the
+        // Click — which is ALWAYS in the past (clicking is gated to 12h after an
+        // event ends). Only reuse it as the suggestion if it somehow still lies
+        // in the future and is bookable; otherwise fall through to the
+        // shared-interest future-event query below so we never suggest an event
+        // that has already happened.
         const preferredResult = await client.query<{
           id: string;
           slug: string;
@@ -5792,6 +5843,8 @@ export async function createUserClickForSession(
             select id::text, slug, title
             from events
             where id = $1::uuid
+              and status in ('live', 'featured', 'waitlist')
+              and starts_at > now()
             limit 1
           `,
           [preferredEventId],
@@ -5910,6 +5963,51 @@ export async function createUserClickForSession(
     }
 
     await client.query("commit");
+
+    // Mutual click → log the "it's mutual" email for BOTH sides. Fire-and-forget
+    // after commit (per the email-events contract) so a render hiccup can't roll
+    // back the click. Previously no email was logged here, so the in-app
+    // notification's "view email" viewer fell back to an unrelated email_events
+    // row matched purely by timestamp — that's the "wrong email" bug.
+    if (reciprocalClick) {
+      const origin = emailOrigin();
+      const proposalsUrl = `${origin}/proposals`;
+      const suggestionLine = suggestedEvent
+        ? `We even spotted an event you could go to together: ${suggestedEvent.title}. Open your proposal to lock in a time.`
+        : "Open your proposal to pick an upcoming event and plan your first hangout — no awkward back-and-forth.";
+      const firstNameOf = (name: string | null) =>
+        (name || "").split(/\s+/)[0] || "there";
+      if (profile.email) {
+        void logEmailEvent({
+          template: "mutual-click-attendee",
+          toEmail: profile.email,
+          toProfileId: profile.id,
+          vars: {
+            firstName: firstNameOf(profile.display_name),
+            otherName: clickedProfile.display_name,
+            suggestionLine,
+            proposalsUrl,
+            supportEmail: "hello@click.app",
+            unsubscribeUrl: `${origin}/account-settings`,
+          },
+        });
+      }
+      if (clickedProfile.email) {
+        void logEmailEvent({
+          template: "mutual-click-attendee",
+          toEmail: clickedProfile.email,
+          toProfileId: clickedProfile.id,
+          vars: {
+            firstName: firstNameOf(clickedProfile.display_name),
+            otherName: profile.display_name,
+            suggestionLine,
+            proposalsUrl,
+            supportEmail: "hello@click.app",
+            unsubscribeUrl: `${origin}/account-settings`,
+          },
+        });
+      }
+    }
 
     return {
       clickedProfileName: clickedProfile.display_name,
@@ -7209,6 +7307,8 @@ export async function getBookmarkedEvents(session: Session | null): Promise<Even
         left join event_tags event_tag on event_tag.event_id = event.id
         left join tags tag on tag.id = event_tag.tag_id
         where bookmark.profile_id = $1::uuid
+          and event.status <> 'cancelled'
+          and coalesce(event.ends_at, event.starts_at) > now()
         group by event.id, bookmark.created_at
         order by bookmark.created_at desc
       `,
@@ -8014,7 +8114,14 @@ export async function getMutualClicksForSession(session: Session | null): Promis
         join profiles other on other.id = (
           case when m.profile_a_id = $1::uuid then m.profile_b_id else m.profile_a_id end
         )
-        left join events event on event.id = m.suggested_event_id
+        -- Only surface the stored suggestion if it's still a bookable future
+        -- event. Older mutual-click rows may point at an event that has since
+        -- passed; those resolve to null here so the UI shows the proposal CTA
+        -- instead of a dead, in-the-past suggestion.
+        left join events event
+          on event.id = m.suggested_event_id
+         and event.starts_at > now()
+         and event.status in ('live', 'featured', 'waitlist')
         where m.profile_a_id = $1::uuid or m.profile_b_id = $1::uuid
         order by m.created_at desc
         limit 12
@@ -8471,7 +8578,12 @@ export async function getProposalsForSession(session: Session | null): Promise<P
         join profiles other on other.id = (
           case when m.profile_a_id = $1::uuid then m.profile_b_id else m.profile_a_id end
         )
-        left join events e on e.id = p.suggested_event_id
+        -- Only attach the suggested event if it's still upcoming + bookable, so a
+        -- proposal never surfaces an event that has already happened.
+        left join events e
+          on e.id = p.suggested_event_id
+         and e.starts_at > now()
+         and e.status in ('live', 'featured', 'waitlist')
         where m.profile_a_id = $1::uuid or m.profile_b_id = $1::uuid
         order by (p.status = 'pending' and p.expires_at > now()) desc, p.updated_at desc
         limit 50

@@ -362,6 +362,16 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                     </div>
                   ) : (
                   <>
+                  {event.viewerClashEventTitle ? (
+                    <p className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--peach)] p-3 text-xs font-bold text-[color:var(--surface-deep)] hard-shadow-sm">
+                      ⚠️ Heads up — this clashes with{" "}
+                      <span className="underline decoration-2 underline-offset-2">
+                        {event.viewerClashEventTitle}
+                      </span>
+                      , which you&apos;re already going to. You can still book both.
+                    </p>
+                  ) : null}
+
                   {isWaitlisted && !waitlistOfferExpiresAt && event.waitlistPosition ? (
                     <p className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-3 text-xs font-bold text-[color:var(--surface-deep)] hard-shadow-sm">
                       You&apos;re #{event.waitlistPosition} on the waitlist. We&apos;ll

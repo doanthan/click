@@ -141,6 +141,11 @@ export function ProfileEditForm({
     >
       <AvatarUploader initialUrl={profile.photoUrl} displayName={profile.displayName} />
 
+      <p className="-mt-2 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 text-xs font-semibold leading-5 text-[color:var(--mauve)]">
+        📸 Use a real, clear photo of your face. It helps the people you meet
+        recognise you at events — profiles with a real photo get far more Clicks.
+      </p>
+
       <div className="grid gap-5 sm:grid-cols-2">
         <Field label="Display name" name="display_name" defaultValue={profile.displayName} required />
         <Field

@@ -275,6 +275,43 @@ export default async function DashboardPage() {
         )}
       </section>
 
+      {personalized && personalized.events.length > 0 ? (
+        <section className="mx-auto mt-12 max-w-6xl">
+          <div className="flex items-end justify-between gap-4">
+            <div>
+              <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
+                {personalized.fallback ? "Editorial picks" : "For you"}
+              </p>
+              <h2 className="font-display mt-2 text-3xl font-light leading-tight sm:text-4xl">
+                Suggested events.
+              </h2>
+              <p className="mt-1 max-w-xl text-sm font-semibold leading-6 text-[color:var(--mauve)]">
+                {personalized.fallback
+                  ? "Popular right now. Add interest tags to your profile to personalise these."
+                  : "Picked from your interests, intent, and persona."}
+              </p>
+            </div>
+            <Link
+              href="/discover"
+              className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-4 py-2 text-xs font-bold text-[color:var(--surface-deep)] hover:bg-[color:var(--rose)]"
+            >
+              Explore all
+            </Link>
+          </div>
+          <div className="mt-6 grid gap-6 lg:grid-cols-2">
+            {personalized.events.map((event) => (
+              <EventCard
+                key={event.id}
+                event={event}
+                compact
+                bookmarked={bookmarkSet.has(event.id)}
+                registered={registeredSet.has(event.id)}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       <section className="mx-auto mt-12 max-w-6xl">
         <div className="flex items-end justify-between gap-4">
           <div>
@@ -284,6 +321,10 @@ export default async function DashboardPage() {
             <h2 className="font-display mt-2 text-3xl font-light leading-tight sm:text-4xl">
               People you might click with.
             </h2>
+            <p className="mt-2 max-w-xl text-sm font-semibold leading-6 text-[color:var(--mauve)]">
+              🔒 Clicking is anonymous — we&rsquo;ll only show you if it&rsquo;s mutual.
+              Suggestions change daily based on your interests.
+            </p>
           </div>
           <Link
             href="/people"

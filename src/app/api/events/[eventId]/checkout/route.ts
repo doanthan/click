@@ -68,6 +68,27 @@ export async function POST(_request: Request, context: RouteContext) {
     hold = await createPaymentHold(eventId, session);
 
     const appUrl = getAppUrl();
+    const returnPath = `/events/${encodeURIComponent(hold.eventSlug)}`;
+
+    // Embedded Checkout renders Stripe's payment form in a modal on the event
+    // page instead of redirecting away. It needs a publishable key on the
+    // client, so we only use it when NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY is set;
+    // otherwise we fall back to the hosted full-page redirect. Both reconcile
+    // through the same `?booked=1&session_id=` return — `{CHECKOUT_SESSION_ID}`
+    // is a Stripe template literal substituted on return (leave the braces raw).
+    const useEmbedded = Boolean(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY);
+    const uiModeParams = useEmbedded
+      ? {
+          // This pinned Stripe API version (2026-05-27.dahlia) names the
+          // on-page mode "embedded_page" (was "embedded" in older versions);
+          // its client_secret initializes Stripe.js embedded checkout.
+          ui_mode: "embedded_page" as const,
+          return_url: `${appUrl}${returnPath}?booked=1&session_id={CHECKOUT_SESSION_ID}`,
+        }
+      : {
+          success_url: `${appUrl}${returnPath}?booked=1&session_id={CHECKOUT_SESSION_ID}`,
+          cancel_url: `${appUrl}${returnPath}?canceled=1`,
+        };
 
     const checkoutSession = await stripe.checkout.sessions.create({
       mode: "payment",
@@ -103,12 +124,11 @@ export async function POST(_request: Request, context: RouteContext) {
             ]
           : []),
       ],
-      // `{CHECKOUT_SESSION_ID}` is a Stripe template literal it substitutes on
-      // redirect — leave the braces unencoded. The landing page uses it to
-      // reconcile the payment (fulfill-on-return) so confirmation doesn't depend
-      // solely on webhook delivery. See reconcileCheckoutSession in stripe-sync.
-      success_url: `${appUrl}/events/${encodeURIComponent(hold.eventSlug)}?booked=1&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${appUrl}/events/${encodeURIComponent(hold.eventSlug)}?canceled=1`,
+      // Hosted vs embedded redirect/return URLs (see uiModeParams above). The
+      // landing page reconciles the payment on return (fulfill-on-return) so
+      // confirmation doesn't depend solely on webhook delivery. See
+      // reconcileCheckoutSession in stripe-sync.
+      ...uiModeParams,
       // Matches the `hold_expires_at` set in createPaymentHold so the reserved
       // seat and the Stripe session expire together — no ghost seats, and no
       // chance of a payment landing after the seat was freed and resold.
@@ -157,6 +177,13 @@ export async function POST(_request: Request, context: RouteContext) {
     await attachCheckoutSession(hold.paymentTransactionId, checkoutSession.id);
     if (typeof checkoutSession.payment_intent === "string") {
       await attachPaymentIntent(hold.paymentTransactionId, checkoutSession.payment_intent);
+    }
+
+    if (useEmbedded) {
+      if (!checkoutSession.client_secret) {
+        throw new Error("Stripe did not return a client secret for embedded checkout.");
+      }
+      return NextResponse.json({ clientSecret: checkoutSession.client_secret });
     }
 
     if (!checkoutSession.url) {

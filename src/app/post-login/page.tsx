@@ -11,6 +11,10 @@ const KNOWN_PORTAL_ROOTS = ["/dashboard", "/admin", "/merchant", "/onboarding"];
 function safeNext(value: string | undefined | null) {
   if (!value) return null;
   if (!value.startsWith("/") || value.startsWith("//")) return null;
+  // The marketing home page is never a meaningful post-login destination —
+  // logging in from "/" should hand off to the role dispatch below (dashboard /
+  // merchant / admin) rather than bouncing the user straight back to home.
+  if (value === "/") return null;
   if (KNOWN_PORTAL_ROOTS.some((root) => value === root)) return null;
   return value;
 }

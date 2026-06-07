@@ -78,6 +78,15 @@ export default async function OwnProfilePage() {
               <Row label="Age" value={profile.age?.toString() ?? "—"} />
               <Row label="Attended" value={`${profile.attendedCount} events`} />
             </dl>
+          </div>
+
+          <div className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-5 hard-shadow-sm md:col-start-1">
+            <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
+              Privacy
+            </span>
+            <p className="mt-2 text-xs font-semibold leading-5 text-[color:var(--mauve)]">
+              Control what other Click members can see about you.
+            </p>
             <div className="mt-4 border-t border-dashed border-[color:var(--line-soft)] pt-4">
               <AccountSettingToggle
                 settingKey="showSuburb"
