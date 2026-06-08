@@ -95,9 +95,23 @@ export function ProposalCard({
       ) : null}
 
       {proposal.status === "confirmed" ? (
-        <p className="mt-4 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--peach)] p-3 text-sm font-bold text-[color:var(--ink)]">
-          Plan confirmed — see you there. 🎉
-        </p>
+        <div className="mt-4 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--peach)] p-3">
+          <p className="text-sm font-bold text-[color:var(--ink)]">
+            Plan confirmed — see you there. 🎉
+          </p>
+          <p className="mt-1 text-sm font-medium text-[color:var(--ink)]/80">
+            Last step: you <em>both</em> need to RSVP to the event so your seats
+            are locked in.
+          </p>
+          {proposal.suggestedEventSlug ? (
+            <Link
+              href={`/events/${proposal.suggestedEventSlug}`}
+              className="mt-3 inline-flex rounded-full border-2 border-[color:var(--surface-deep)] bg-[color:var(--rose)] px-4 py-2 text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
+            >
+              RSVP to {proposal.suggestedEventTitle ?? "the event"} →
+            </Link>
+          ) : null}
+        </div>
       ) : proposal.isExpired ? (
         <p className="mt-4 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-3 text-sm font-medium text-[color:var(--mauve)]">
           This proposal expired. Click again at a future event to reopen it.

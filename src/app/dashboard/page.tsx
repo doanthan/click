@@ -334,7 +334,15 @@ export default async function DashboardPage() {
               Plans you bookmarked.
             </h2>
           </div>
-          <Pill tone="peach">{saved.length}</Pill>
+          <div className="flex items-center gap-3">
+            <Pill tone="peach">{saved.length}</Pill>
+            <Link
+              href="/bookmarks"
+              className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-4 py-2 text-xs font-bold text-[color:var(--surface-deep)] hover:bg-[color:var(--rose)]"
+            >
+              See all
+            </Link>
+          </div>
         </div>
 
         {saved.length > 0 ? (

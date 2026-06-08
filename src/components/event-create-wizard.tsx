@@ -49,6 +49,10 @@ type WizardValues = {
   capacity: string;
   locationName: string;
   suburb: string;
+  // Full street address (e.g. "Unit 6/29 Bridge Rd, Stanmore NSW 2048"), shown
+  // to confirmed attendees on the event page. Auto-filled from the Mapbox pick
+  // but freely editable (units / level numbers Mapbox can't infer).
+  address: string;
   // Captured from the Mapbox address autocomplete in the location step and
   // serialized alongside the rest of the form on submit.
   latitude: number | null;
@@ -98,6 +102,7 @@ const initial: WizardValues = {
   capacity: "12",
   locationName: "",
   suburb: "",
+  address: "",
   latitude: null,
   longitude: null,
   price: "0",
@@ -453,6 +458,7 @@ export function WizardShell({
         form.set("capacity", values.capacity);
         form.set("locationName", values.locationName);
         form.set("suburb", values.suburb);
+        form.set("address", values.address);
         if (values.latitude !== null && values.longitude !== null) {
           form.set("latitude", String(values.latitude));
           form.set("longitude", String(values.longitude));
@@ -1444,6 +1450,9 @@ export function LocationSection() {
     if (place.suburb) set("suburb", place.suburb);
     set("latitude", place.lat);
     set("longitude", place.lng);
+    // Auto-fill the full street address from the pick (editable below).
+    const picked = place.address?.trim() || place.street?.trim() || "";
+    if (picked) set("address", picked);
 
     // Auto-fill the venue name from the POI name (e.g. "Fortress"), but only
     // when Mapbox returned a real place name distinct from the bare street
@@ -1531,6 +1540,18 @@ export function LocationSection() {
           />
         </Field>
       </div>
+
+      <Field
+        label="Street address"
+        hint="Shown to confirmed attendees. Add a unit / level number if the search missed it."
+      >
+        <input
+          value={values.address}
+          onChange={(e) => set("address", e.target.value)}
+          placeholder="Unit 6/29 Bridge Rd, Stanmore NSW 2048"
+          className={inputClass()}
+        />
+      </Field>
 
       <p
         className={`font-mono text-[0.7rem] uppercase tracking-[0.14em] ${

@@ -40,6 +40,7 @@ import { regionForEvent, type Region } from "./geo";
 import { getPostgresPool } from "./postgres";
 import { getSupabaseAdmin } from "@/utils/supabase/admin";
 import { toTitleCase } from "./text-format";
+import { parseEventStart } from "./datetime";
 import {
   quoteCancellationRefund,
   type RefundTier,
@@ -166,6 +167,9 @@ export type CreateEventInput = {
   durationMinutes?: number;
   locationName: string;
   suburb: string;
+  // Full street address shown to confirmed attendees on the event page.
+  // Optional — falls back to venue + suburb when absent.
+  address?: string;
   // Captured from the Mapbox address autocomplete in the create wizard. When
   // null we fall back to the Sydney CBD reference point used elsewhere.
   latitude: number | null;
@@ -1254,7 +1258,8 @@ function eventItemFromInput(input: CreateEventInput, session: Session | null): E
   const localProfile = requireLocalSession(session);
   const title = input.title.trim();
   const description = input.description.trim();
-  const startsAt = new Date(input.startsAt);
+  // datetime-local strings are Sydney wall time, not server/UTC time.
+  const startsAt = parseEventStart(input.startsAt);
   const category = input.category.trim() || "Social";
   const capacity = Math.max(input.capacity, 1);
 
@@ -1596,6 +1601,8 @@ export type MerchantAttendeeRow = {
 
 export type MerchantEventDetail = MerchantEventSummary & {
   description: string;
+  // Full street address (nullable), editable from the merchant edit form.
+  address: string | null;
   images: string[];
   imageAlt: string | null;
   attendees: MerchantAttendeeRow[];
@@ -1689,6 +1696,7 @@ export async function getMerchantEventDetail(
     status: string;
     location_name: string;
     suburb: string;
+    address: string | null;
     capacity: number;
     price_cents: number;
     category: string;
@@ -1709,6 +1717,7 @@ export async function getMerchantEventDetail(
         event.status::text,
         event.location_name,
         event.suburb,
+        event.address,
         event.capacity,
         event.price_cents,
         event.category,
@@ -1784,6 +1793,7 @@ export async function getMerchantEventDetail(
     status: eventStatusFromDb(row.status),
     locationName: row.location_name,
     suburb: row.suburb,
+    address: row.address,
     capacity: row.capacity,
     confirmed: Number(row.confirmed),
     waitlisted: Number(row.waitlisted),
@@ -1814,7 +1824,18 @@ export async function getMerchantEventDetail(
 // Ownership-scoped: only the owning merchant can edit, and only their own event.
 export async function updateMerchantEventDetails(
   eventSlug: string,
-  input: { title: string; description: string; relationshipGoal?: string; tagSlugs: string[] },
+  input: {
+    title: string;
+    description: string;
+    relationshipGoal?: string;
+    tagSlugs: string[];
+    // Street address is safe to change after bookings (it doesn't affect price /
+    // time / capacity), so merchants can self-edit it. undefined → leave as-is.
+    address?: string;
+    // Ordered event photo gallery (public URLs, max 5). images[0] becomes the
+    // cover (mirrored to image_url). undefined → leave as-is.
+    images?: string[];
+  },
   session: Session | null,
 ): Promise<MerchantEventDetail | null> {
   const pool = getPostgresPool();
@@ -1836,6 +1857,15 @@ export async function updateMerchantEventDetails(
   const cleanedSlugs = Array.from(
     new Set(input.tagSlugs.map((s) => s.trim().toLowerCase()).filter(Boolean)),
   ).slice(0, 12);
+
+  // Normalise the gallery the same way createEventForMerchant does: trim,
+  // de-dupe, cap at 5. images[0] is the cover. When the merchant clears all
+  // photos we keep image_urls null and leave image_url for the readers that
+  // fall back to a category placeholder.
+  const cleanedImages =
+    input.images !== undefined
+      ? Array.from(new Set(input.images.map((u) => u.trim()).filter(Boolean))).slice(0, 5)
+      : undefined;
 
   const client = await pool.connect();
   try {
@@ -1859,10 +1889,25 @@ export async function updateMerchantEventDetails(
         set title = $2,
             description = $3,
             relationship_goal = coalesce($4, relationship_goal),
+            address = case when $5::boolean then $6 else address end,
+            image_urls = case when $7::boolean then $8::text[] else image_urls end,
+            image_url = case
+              when $7::boolean and array_length($8::text[], 1) >= 1 then ($8::text[])[1]
+              else image_url
+            end,
             updated_at = now()
         where id = $1::uuid
       `,
-      [event.id, title, input.description ?? "", input.relationshipGoal?.trim() || null],
+      [
+        event.id,
+        title,
+        input.description ?? "",
+        input.relationshipGoal?.trim() || null,
+        input.address !== undefined,
+        input.address?.trim() || null,
+        cleanedImages !== undefined,
+        cleanedImages && cleanedImages.length > 0 ? cleanedImages : null,
+      ],
     );
 
     // Replace interest tags only (leave life/vibe/music alone).
@@ -2542,16 +2587,35 @@ export async function registerForEvent(eventId: string, session: Session | null)
             event.price_cents,
             (coalesce(event.ends_at, event.starts_at) <= now()) as has_ended,
             (
-              select count(*)
-              from event_attendees attendee
-              where attendee.event_id = event.id
-                and (attendee.status = 'confirmed' or (attendee.status = 'pending_payment' and attendee.hold_expires_at > now()))
+              (
+                select count(*)
+                from event_attendees attendee
+                where attendee.event_id = event.id
+                  and (attendee.status = 'confirmed' or (attendee.status = 'pending_payment' and attendee.hold_expires_at > now()))
+              )
+              +
+              -- Live waitlist offers held by OTHER people reserve their seat for
+              -- the 30-min window so a stranger can't RSVP into a seat that was
+              -- just offered to the next in line (bug board #114). The viewer's
+              -- own offer is excluded (they claim via acceptWaitlistOffer).
+              (
+                select count(*)
+                from event_waitlists w
+                join event_attendees wa
+                  on wa.event_id = w.event_id
+                 and wa.profile_id = w.profile_id
+                 and wa.status = 'waitlisted'
+                where w.event_id = event.id
+                  and w.accepted_at is null
+                  and w.offered_until > now()
+                  and w.profile_id <> $2::uuid
+              )
             ) as confirmed_attendees
           from events event
           where event.slug = $1
           for update of event
         `,
-        [eventId],
+        [eventId, profile.id],
       );
 
       const event = eventResult.rows[0];
@@ -2637,6 +2701,9 @@ export async function registerForEvent(eventId: string, session: Session | null)
         // we don't pollute the in-txn block above with email-shaped data.
         // Fire-and-forget — failures never bubble into the API response.
         void logRsvpEmails(pool, event.id, profile.id);
+        // If this event is the suggested plan from a mutual-click proposal,
+        // nudge the other person that their match has RSVP'd (bug board #107).
+        void notifyProposalPartnerOfRsvp(pool, event.id, profile.id);
       }
 
       return {
@@ -2656,6 +2723,105 @@ export async function registerForEvent(eventId: string, session: Session | null)
 
     throw error;
   }
+}
+
+// Notify a mutual-click partner when the viewer RSVPs to the proposal's
+// suggested event, so they know to RSVP too ("your match RSVP'd — your turn").
+// Idempotent per (partner, event) via the action_url marker. Best-effort:
+// swallows its own errors so it can be called void-style after a commit.
+async function notifyProposalPartnerOfRsvp(
+  pool: NonNullable<ReturnType<typeof getPostgresPool>>,
+  eventId: string,
+  rsvperProfileId: string,
+): Promise<void> {
+  try {
+    await pool.query(
+      `
+        insert into notifications (profile_id, title, body, action_url)
+        select
+          case when mc.profile_a_id = $2::uuid then mc.profile_b_id else mc.profile_a_id end,
+          'Your match RSVP''d — your turn',
+          rsvper.display_name || ' just RSVP''d to ' || e.title ||
+            '. RSVP too so your plan is locked in.',
+          '/events/' || e.slug || '?from=proposal-partner-rsvp'
+        from event_proposals ep
+        join mutual_clicks mc on mc.id = ep.mutual_click_id
+        join events e on e.id = ep.suggested_event_id
+        join profiles rsvper on rsvper.id = $2::uuid
+        where ep.suggested_event_id = $1::uuid
+          and ep.status <> 'expired'
+          and (mc.profile_a_id = $2::uuid or mc.profile_b_id = $2::uuid)
+          and not exists (
+            select 1 from notifications n
+            where n.profile_id = (
+                case when mc.profile_a_id = $2::uuid then mc.profile_b_id else mc.profile_a_id end
+              )
+              and n.action_url = '/events/' || e.slug || '?from=proposal-partner-rsvp'
+          )
+      `,
+      [eventId, rsvperProfileId],
+    );
+  } catch (error) {
+    if (process.env.CLICK_DB_DEBUG === "true") {
+      console.warn("notifyProposalPartnerOfRsvp failed", error);
+    }
+  }
+}
+
+// Send a one-time reminder to each proposal participant who still hasn't RSVP'd
+// to the suggested event 24h+ after the proposal was created (and while it's
+// still pending + the event is upcoming). Idempotent per (participant, event)
+// via the action_url marker. Returns the count of reminders created.
+// (Bug board #107 — the 24h RSVP reminder.)
+export async function remindProposalRsvps(): Promise<number> {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+
+  const result = await pool.query(
+    `
+      with participants as (
+        select ep.id as proposal_id, e.id as event_id, e.slug, e.title,
+               mc.profile_a_id as participant
+        from event_proposals ep
+        join mutual_clicks mc on mc.id = ep.mutual_click_id
+        join events e on e.id = ep.suggested_event_id
+        where ep.status = 'pending'
+          and ep.created_at <= now() - interval '24 hours'
+          and coalesce(e.ends_at, e.starts_at) > now()
+        union all
+        select ep.id, e.id, e.slug, e.title, mc.profile_b_id
+        from event_proposals ep
+        join mutual_clicks mc on mc.id = ep.mutual_click_id
+        join events e on e.id = ep.suggested_event_id
+        where ep.status = 'pending'
+          and ep.created_at <= now() - interval '24 hours'
+          and coalesce(e.ends_at, e.starts_at) > now()
+      )
+      insert into notifications (profile_id, title, body, action_url)
+      select
+        p.participant,
+        'Don''t forget to RSVP',
+        'You matched on a plan for ' || p.title ||
+          '. RSVP to lock in your spot before it fills up.',
+        '/events/' || p.slug || '?from=proposal-rsvp-reminder'
+      from participants p
+      where p.participant is not null
+        -- Hasn't RSVP'd to the suggested event yet.
+        and not exists (
+          select 1 from event_attendees a
+          where a.event_id = p.event_id
+            and a.profile_id = p.participant
+            and a.status in ('confirmed', 'waitlisted', 'pending_payment')
+        )
+        -- One reminder per (participant, event).
+        and not exists (
+          select 1 from notifications n
+          where n.profile_id = p.participant
+            and n.action_url = '/events/' || p.slug || '?from=proposal-rsvp-reminder'
+        )
+    `,
+  );
+  return result.rowCount ?? 0;
 }
 
 /**
@@ -2857,7 +3023,8 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
     // so titles from any other path (or a bypassed client) stay consistent.
     const title = toTitleCase(input.title.trim());
     const description = input.description.trim();
-    const startsAt = new Date(input.startsAt);
+    // datetime-local strings are Sydney wall time, not server/UTC time.
+    const startsAt = parseEventStart(input.startsAt);
     const capacity = Math.max(input.capacity, 1);
 
     if (!title || !description || Number.isNaN(startsAt.getTime())) {
@@ -2921,7 +3088,8 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
           image_urls,
           image_alt,
           relationship_goal,
-          fomo
+          fomo,
+          address
         )
         values (
           $1,
@@ -2946,7 +3114,8 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
           $18,
           $19,
           $20,
-          $21
+          $21,
+          $23
         )
         returning slug, title
       `,
@@ -2975,6 +3144,7 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
           ? "Now live for members to discover."
           : "Pending admin review before being promoted to members.",
         eventStatus,
+        input.address?.trim() || null,
       ],
     );
 
@@ -5091,7 +5261,10 @@ export async function getProfileStatus(session: Session | null): Promise<Profile
     ]);
 
     const row = statusResult.rows[0];
-    const onboardingComplete = !!(row?.suburb && row?.bio);
+    // Onboarding only requires the fields saveOnboarding enforces (name +
+    // suburb). Bio was made an OPTIONAL final step, so gating completion on it
+    // bounced anyone who skipped their bio back to /onboarding on every login.
+    const onboardingComplete = !!row?.suburb;
 
     return {
       exists: true,
@@ -6148,10 +6321,16 @@ export async function createUserClickForSession(
         }>(
           `
             select id::text, slug, title
-            from events
+            from events event
             where id = $1::uuid
               and status in ('live', 'featured', 'waitlist')
               and starts_at > now()
+              -- Never reuse a booked-out event as the suggestion.
+              and (
+                select count(*) from event_attendees full_count
+                where full_count.event_id = event.id
+                  and full_count.status = 'confirmed'
+              ) < event.capacity
             limit 1
           `,
           [preferredEventId],
@@ -6168,12 +6347,22 @@ export async function createUserClickForSession(
           `
             select event.id::text, event.slug, event.title
             from events event
-            left join event_tags event_tag on event_tag.event_id = event.id
-            left join user_tags user_tag
-              on user_tag.tag_id = event_tag.tag_id
+            -- INNER joins: only suggest events that share at least one INTEREST
+            -- tag with one of the two members (per bug report: "only suggest
+            -- future events with similar interest tags").
+            join event_tags event_tag on event_tag.event_id = event.id
+            join tags tag on tag.id = event_tag.tag_id and tag.tag_type = 'interest'
+            join user_tags user_tag
+              on user_tag.tag_id = tag.id
              and user_tag.profile_id in ($1::uuid, $2::uuid)
             where event.status in ('live', 'featured', 'waitlist')
               and event.starts_at > now()
+              -- Never suggest a booked-out event.
+              and (
+                select count(*) from event_attendees full_count
+                where full_count.event_id = event.id
+                  and full_count.status = 'confirmed'
+              ) < event.capacity
             group by event.id
             order by
               -- Prefer a genuinely new shared plan: rank events that neither of
@@ -6185,7 +6374,7 @@ export async function createUserClickForSession(
                    and ea.profile_id in ($1::uuid, $2::uuid)
                    and ea.status in ('confirmed', 'waitlisted', 'pending_payment')
                )) asc,
-              count(user_tag.tag_id) desc,
+              count(distinct user_tag.tag_id) desc,
               event.starts_at asc
             limit 1
           `,
@@ -7328,16 +7517,35 @@ export async function createPaymentHold(
           merchant.charges_enabled as merchant_charges_enabled,
           (coalesce(event.ends_at, event.starts_at) <= now()) as has_ended,
           (
-            select count(*)
-            from event_attendees attendee
-            where attendee.event_id = event.id
-              -- Exclude THIS buyer's own seat: a returning buyer who already
-              -- holds a pending_payment seat (a failed/abandoned first attempt)
-              -- must not be counted against capacity by their own hold, or the
-              -- retry throws "Event is full" about a seat that is theirs. The
-              -- hold is reused via the on-conflict upsert below.
-              and attendee.profile_id <> $2::uuid
-              and (attendee.status = 'confirmed' or (attendee.status = 'pending_payment' and attendee.hold_expires_at > now()))
+            (
+              select count(*)
+              from event_attendees attendee
+              where attendee.event_id = event.id
+                -- Exclude THIS buyer's own seat: a returning buyer who already
+                -- holds a pending_payment seat (a failed/abandoned first attempt)
+                -- must not be counted against capacity by their own hold, or the
+                -- retry throws "Event is full" about a seat that is theirs. The
+                -- hold is reused via the on-conflict upsert below.
+                and attendee.profile_id <> $2::uuid
+                and (attendee.status = 'confirmed' or (attendee.status = 'pending_payment' and attendee.hold_expires_at > now()))
+            )
+            +
+            -- A live waitlist offer held by SOMEONE ELSE reserves their seat for
+            -- the 30-min window, so a stranger can't pay for a seat that was just
+            -- offered to the next person in line (bug board #114). The buyer's own
+            -- offer is excluded so the offered person can actually claim + pay.
+            (
+              select count(*)
+              from event_waitlists w
+              join event_attendees wa
+                on wa.event_id = w.event_id
+               and wa.profile_id = w.profile_id
+               and wa.status = 'waitlisted'
+              where w.event_id = event.id
+                and w.accepted_at is null
+                and w.offered_until > now()
+                and w.profile_id <> $2::uuid
+            )
           ) as confirmed_attendees
         from events event
         left join merchant_profiles merchant on merchant.id = event.merchant_profile_id
@@ -7594,6 +7802,9 @@ export async function markPaymentSucceeded(paymentTransactionId: string) {
 
       // Plus the GST tax receipt for the charged amount. Fire-and-forget.
       void logPaymentReceiptEmail(pool, payment.id);
+
+      // Paid RSVP can also be a proposal's suggested event — nudge the match.
+      void notifyProposalPartnerOfRsvp(pool, payment.event_id, payment.profile_id);
     }
   } catch (error) {
     await client.query("rollback");
@@ -8369,6 +8580,10 @@ export type SuggestedPerson = {
   age: number | null;
   sharedInterests: string[];
   intents: string[];
+  // True when the viewer has already sent this person a (still-active) Click
+  // that hasn't gone mutual yet. Lets the card show a persistent "Click sent —
+  // waiting" state instead of resetting to "Click privately" on every reload.
+  alreadyClicked: boolean;
 };
 
 export async function getSuggestedPeople(session: Session | null): Promise<SuggestedPerson[]> {
@@ -8387,6 +8602,7 @@ export async function getSuggestedPeople(session: Session | null): Promise<Sugge
       age: number | null;
       shared: string[];
       intents: string[];
+      already_clicked: boolean;
     }>(
       `
         select p.id::text, p.display_name, p.suburb, p.photo_url, p.age,
@@ -8395,7 +8611,13 @@ export async function getSuggestedPeople(session: Session | null): Promise<Sugge
                    filter (where shared_tag.label is not null),
                  '{}'
                ) as shared,
-               p.connection_intents::text[] as intents
+               p.connection_intents::text[] as intents,
+               exists (
+                 select 1 from user_clicks uc
+                 where uc.clicker_profile_id = $1::uuid
+                   and uc.clicked_profile_id = p.id
+                   and uc.expires_at > now()
+               ) as already_clicked
         from profiles p
         left join user_tags shared_user_tag on shared_user_tag.profile_id = p.id
         left join tags shared_tag on shared_tag.id = shared_user_tag.tag_id
@@ -8456,6 +8678,7 @@ export async function getSuggestedPeople(session: Session | null): Promise<Sugge
       age: row.age,
       sharedInterests: row.shared ?? [],
       intents: row.intents ?? [],
+      alreadyClicked: Boolean(row.already_clicked),
     }));
   } catch {
     return [];
@@ -8982,6 +9205,58 @@ export async function getPostEventClickPromptForEvent(
   } catch {
     return null;
   }
+}
+
+// Push the post-event "did you click with anyone?" prompt as a notification,
+// once per (attendee, event), for events that have crossed the 12-hour Click
+// window in the last 7 days and where the attendee still has un-clicked
+// co-attendees. Idempotent: the action_url marker doubles as the dedupe key, so
+// running the cron every few minutes never double-notifies. Returns the count
+// of notifications created. (Bug board #85 — the pull-based card already exists
+// on the dashboard + event page; this is the missing push.)
+export async function notifyPostEventClickPrompts(): Promise<number> {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+
+  const result = await pool.query(
+    `
+      insert into notifications (profile_id, title, body, action_url)
+      select
+        mine.profile_id,
+        'Did you click with anyone?',
+        'You went to ' || e.title || '. Tap anyone you''d like to see again — it''s completely private.',
+        '/events/' || e.slug || '?from=post-event-click'
+      from events e
+      join event_attendees mine on mine.event_id = e.id and mine.status = 'confirmed'
+      where coalesce(e.ends_at, e.starts_at) + interval '12 hours' <= now()
+        and coalesce(e.ends_at, e.starts_at) >= now() - interval '7 days'
+        and exists (
+          select 1
+          from event_attendees theirs
+          join profiles other on other.id = theirs.profile_id
+            and other.role = 'attendee' and other.suspended_at is null
+          where theirs.event_id = e.id
+            and theirs.status = 'confirmed'
+            and theirs.profile_id <> mine.profile_id
+            and not exists (
+              select 1 from user_clicks c
+              where c.clicker_profile_id = mine.profile_id
+                and c.clicked_profile_id = other.id
+            )
+            and not exists (
+              select 1 from user_blocks b
+              where (b.blocker_profile_id = mine.profile_id and b.blocked_profile_id = other.id)
+                 or (b.blocker_profile_id = other.id and b.blocked_profile_id = mine.profile_id)
+            )
+        )
+        and not exists (
+          select 1 from notifications n
+          where n.profile_id = mine.profile_id
+            and n.action_url = '/events/' || e.slug || '?from=post-event-click'
+        )
+    `,
+  );
+  return result.rowCount ?? 0;
 }
 
 export type ProposalEntry = {

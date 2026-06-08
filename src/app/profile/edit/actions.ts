@@ -61,6 +61,11 @@ export async function saveProfileEditAction(formData: FormData) {
     flexibleDiscovery: boolField("flexible_discovery"),
   });
 
+  // Revalidate every surface that reflects profile completeness — not just
+  // /profile. The dashboard's "profile completion %" reads bio/suburb/photo, so
+  // without busting it the saved bio looks like it "hasn't been updated yet".
   revalidatePath("/profile");
+  revalidatePath("/profile/edit");
+  revalidatePath("/dashboard");
   redirect("/profile");
 }

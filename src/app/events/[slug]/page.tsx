@@ -140,7 +140,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
 
   const isRegistered = event.viewerRsvpStatus === "confirmed";
   const isWaitlisted = event.viewerRsvpStatus === "waitlisted";
-  // A freed seat was offered to this waitlisted viewer and the 15-min hold is
+  // A freed seat was offered to this waitlisted viewer and the 30-min hold is
   // still open — drives the "Confirm your spot" CTA.
   const waitlistOfferExpiresAt = isWaitlisted ? event.waitlistOfferExpiresAt : null;
   const isPendingPayment = event.viewerRsvpStatus === "pending_payment";
@@ -234,6 +234,25 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
               <p className="font-mono text-xs font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
                 {formatLongDate(event.startsAt)} · {formatTimeRange(event.startsAt, event.endsAt)}
               </p>
+              {/* Native add-to-calendar — Google for Google users, .ics for
+                  Apple Calendar / Outlook / everyone else. Available to anyone
+                  viewing the event (the .ics only carries suburb-level location). */}
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <a
+                  href={`/api/events/${event.id}/ics`}
+                  className="inline-flex items-center gap-1.5 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-1.5 text-[0.7rem] font-bold uppercase tracking-wide text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+                >
+                  ＋ Add to calendar (.ics)
+                </a>
+                <a
+                  href={successDetails.calendarUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-1.5 text-[0.7rem] font-bold uppercase tracking-wide text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+                >
+                  ＋ Google Calendar
+                </a>
+              </div>
               <h1 className="font-display mt-3 text-4xl font-light leading-[1.05] sm:text-5xl">
                 {event.title}
               </h1>

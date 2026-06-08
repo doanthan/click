@@ -45,6 +45,8 @@ export async function PUT(request: Request, context: RouteContext) {
       description?: unknown;
       relationshipGoal?: unknown;
       tagSlugs?: unknown;
+      address?: unknown;
+      images?: unknown;
     } | null;
 
     const title = typeof body?.title === "string" ? body.title : "";
@@ -54,10 +56,14 @@ export async function PUT(request: Request, context: RouteContext) {
     const tagSlugs = Array.isArray(body?.tagSlugs)
       ? body!.tagSlugs.filter((s): s is string => typeof s === "string")
       : [];
+    const address = typeof body?.address === "string" ? body.address : undefined;
+    const images = Array.isArray(body?.images)
+      ? body!.images.filter((u): u is string => typeof u === "string")
+      : undefined;
 
     const event = await updateMerchantEventDetails(
       eventId,
-      { title, description, relationshipGoal, tagSlugs },
+      { title, description, relationshipGoal, tagSlugs, address, images },
       session,
     );
     return NextResponse.json({ ok: true, event });

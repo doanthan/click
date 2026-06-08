@@ -73,6 +73,7 @@ export async function POST(request: Request) {
       Number.parseInt(getString(formData.get("durationMinutes")), 10) || undefined,
     locationName: getString(formData.get("locationName")),
     suburb: getString(formData.get("suburb")),
+    address: getString(formData.get("address")) || undefined,
     latitude: getCoord(formData.get("latitude"), -90, 90),
     longitude: getCoord(formData.get("longitude"), -180, 180),
     price: getString(formData.get("price")),

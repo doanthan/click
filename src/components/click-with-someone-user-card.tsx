@@ -17,7 +17,10 @@ export function ClickWithSomeoneUserCard({ person }: { person: SuggestedPerson }
     .join("")
     .toUpperCase();
 
-  const sent = state?.ok === true;
+  // "sent" persists across reloads via person.alreadyClicked (a pending click
+  // already recorded server-side), and also flips immediately after a fresh
+  // successful submit in this session.
+  const sent = state?.ok === true || person.alreadyClicked;
 
   return (
     <article className="flex flex-col rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-5 hard-shadow-sm">
@@ -72,7 +75,11 @@ export function ClickWithSomeoneUserCard({ person }: { person: SuggestedPerson }
           disabled={pending || sent}
           className="flex-1 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-4 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)] disabled:cursor-not-allowed disabled:opacity-70 disabled:hover:bg-[color:var(--rose)] disabled:hover:text-[color:var(--surface-deep)]"
         >
-          {sent ? "Click sent ✓" : pending ? "Sending…" : "Click privately"}
+          {sent
+            ? "Clicked ✓ — waiting for them"
+            : pending
+              ? "Sending…"
+              : "Click privately"}
         </button>
         <Link
           href={`/profile/${person.id}`}

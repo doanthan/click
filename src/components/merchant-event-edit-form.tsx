@@ -6,19 +6,24 @@ import { useRouter } from "next/navigation";
 type Tag = { slug: string; label: string };
 
 // Merchant self-service editor for an event's SAFE fields (title, description,
-// interest tags). Price / time / location / capacity are intentionally NOT
+// street address, interest tags). Price / time / capacity are intentionally NOT
 // editable here — changing them after people have booked needs a review, so the
-// form shows a note directing merchants to request one.
+// form shows a note directing merchants to request one. The street address is
+// safe to edit (it doesn't change what someone paid for) so it lives here.
 export function MerchantEventEditForm({
   eventSlug,
   initialTitle,
   initialDescription,
+  initialAddress,
+  initialImages,
   initialTags,
   tagOptions,
 }: {
   eventSlug: string;
   initialTitle: string;
   initialDescription: string;
+  initialAddress: string;
+  initialImages: string[];
   initialTags: Tag[];
   tagOptions: Tag[];
 }) {
@@ -26,7 +31,44 @@ export function MerchantEventEditForm({
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState(initialTitle);
   const [description, setDescription] = useState(initialDescription);
+  const [address, setAddress] = useState(initialAddress);
+  const [images, setImages] = useState<string[]>(initialImages);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [tags, setTags] = useState<Tag[]>(initialTags);
+
+  const MAX_PHOTOS = 5;
+
+  async function handleFiles(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    setUploadError(null);
+    const room = MAX_PHOTOS - images.length;
+    if (room <= 0) {
+      setUploadError(`You can have at most ${MAX_PHOTOS} photos.`);
+      return;
+    }
+    const toUpload = Array.from(files).slice(0, room);
+    setUploading(true);
+    try {
+      for (const file of toUpload) {
+        const form = new FormData();
+        form.set("file", file);
+        const res = await fetch("/api/upload/event-image", { method: "POST", body: form });
+        const payload = (await res.json()) as { url?: string; error?: string };
+        if (!res.ok || !payload.url) {
+          setUploadError(payload.error ?? "Upload failed.");
+          break;
+        }
+        setImages((prev) => (prev.length < MAX_PHOTOS ? [...prev, payload.url!] : prev));
+      }
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function removeImage(url: string) {
+    setImages((prev) => prev.filter((u) => u !== url));
+  }
   const [query, setQuery] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
@@ -60,6 +102,8 @@ export function MerchantEventEditForm({
           body: JSON.stringify({
             title,
             description,
+            address,
+            images,
             tagSlugs: tags.map((t) => t.slug),
           }),
         },
@@ -84,7 +128,7 @@ export function MerchantEventEditForm({
             Edit event
           </p>
           <p className="mt-1 text-sm font-semibold text-[color:var(--mauve)]">
-            Update the title, description and interest tags.
+            Update the title, description, street address, photos and interest tags.
           </p>
         </div>
         <button
@@ -120,6 +164,79 @@ export function MerchantEventEditForm({
               className="mt-1.5 w-full rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-2 text-sm font-medium leading-6 text-[color:var(--ink)] focus:outline-none focus:ring-2 focus:ring-[color:var(--rose)]"
             />
           </label>
+
+          <label className="block">
+            <span className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+              Street address
+            </span>
+            <input
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              placeholder="Unit 6/29 Bridge Rd, Stanmore NSW 2048"
+              className="mt-1.5 w-full rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-2 text-sm font-semibold text-[color:var(--ink)] focus:outline-none focus:ring-2 focus:ring-[color:var(--rose)]"
+            />
+            <span className="mt-1 block text-xs font-medium text-[color:var(--mauve)]">
+              Shown to confirmed attendees on the event page.
+            </span>
+          </label>
+
+          <div>
+            <span className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+              Photos ({images.length}/{MAX_PHOTOS})
+            </span>
+            <p className="mt-1 text-xs font-medium text-[color:var(--mauve)]">
+              First photo is the cover. JPG / PNG / WEBP, up to {MAX_PHOTOS}.
+            </p>
+            <ul className="mt-2 flex flex-wrap gap-2">
+              {images.map((url, idx) => (
+                <li key={url} className="relative">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={url}
+                    alt={`Event photo ${idx + 1}`}
+                    className="size-20 rounded-xl border-2 border-[color:var(--line)] object-cover"
+                  />
+                  {idx === 0 ? (
+                    <span className="absolute left-1 top-1 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-1.5 text-[0.55rem] font-bold uppercase text-[color:var(--surface-deep)]">
+                      Cover
+                    </span>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => removeImage(url)}
+                    aria-label={`Remove photo ${idx + 1}`}
+                    className="absolute -right-1.5 -top-1.5 grid size-6 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] text-xs font-bold text-[color:var(--ink)] hover:bg-[color:var(--rose)]"
+                  >
+                    ×
+                  </button>
+                </li>
+              ))}
+              {images.length < MAX_PHOTOS ? (
+                <li>
+                  <label
+                    className={`grid size-20 cursor-pointer place-items-center rounded-xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--champagne)] text-center text-[0.6rem] font-bold uppercase text-[color:var(--mauve)] hover:bg-[color:var(--peach)] ${
+                      uploading ? "pointer-events-none opacity-60" : ""
+                    }`}
+                  >
+                    {uploading ? "Uploading…" : "+ Add"}
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      multiple
+                      className="sr-only"
+                      onChange={(e) => {
+                        handleFiles(e.target.files);
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                </li>
+              ) : null}
+            </ul>
+            {uploadError ? (
+              <p className="mt-2 text-xs font-bold text-[color:var(--rose)]">{uploadError}</p>
+            ) : null}
+          </div>
 
           <div>
             <span className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
@@ -176,16 +293,16 @@ export function MerchantEventEditForm({
           </div>
 
           <p className="rounded-xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--champagne)] p-3 text-xs font-semibold leading-5 text-[color:var(--mauve)]">
-            Changing the price, date/time, location or capacity affects people who
-            may have already booked — those need a review. Email
-            support@click.local to request a change.
+            Changing the price, date/time or capacity affects people who may have
+            already booked — those need a review. Email support@click.local to
+            request a change.
           </p>
 
           <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={save}
-              disabled={saving || !title.trim()}
+              disabled={saving || uploading || !title.trim()}
               className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-5 py-2 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {saving ? "Saving…" : "Save changes"}

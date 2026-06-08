@@ -275,9 +275,142 @@ function DashboardTab({
       </section>
 
       {merchantEvents.length > 0 ? (
+        <MerchantTrends merchantEvents={merchantEvents} />
+      ) : null}
+
+      {merchantEvents.length > 0 ? (
         <ConfirmedRsvpChart merchantEvents={merchantEvents} />
       ) : null}
     </div>
+  );
+}
+
+// Trend + pattern visualisations folded into the dashboard: monthly revenue &
+// bookings over time (so a merchant can see whether they're growing) and a
+// category mix breakdown. Computed from the already-loaded merchantEvents — no
+// extra query. Months are bucketed in Sydney time to line up with the calendar.
+function MerchantTrends({
+  merchantEvents,
+}: {
+  merchantEvents: Awaited<ReturnType<typeof getMerchantEvents>>;
+}) {
+  const monthKeyFormatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Australia/Sydney",
+    year: "numeric",
+    month: "2-digit",
+  });
+  const monthLabelFormatter = new Intl.DateTimeFormat("en-AU", {
+    timeZone: "Australia/Sydney",
+    month: "short",
+    year: "2-digit",
+  });
+
+  // Bucket events by Sydney month.
+  const byMonth = new Map<
+    string,
+    { label: string; revenueCents: number; confirmed: number; events: number; sort: number }
+  >();
+  for (const e of merchantEvents) {
+    const d = new Date(e.startsAt);
+    const key = monthKeyFormatter.format(d); // e.g. "2026-06"
+    const entry =
+      byMonth.get(key) ??
+      {
+        label: monthLabelFormatter.format(d),
+        revenueCents: 0,
+        confirmed: 0,
+        events: 0,
+        sort: Number(key.replace("-", "")),
+      };
+    entry.revenueCents += e.priceCents * e.confirmed;
+    entry.confirmed += e.confirmed;
+    entry.events += 1;
+    byMonth.set(key, entry);
+  }
+  // Most recent 6 months that have events, chronological.
+  const months = Array.from(byMonth.values())
+    .sort((a, b) => a.sort - b.sort)
+    .slice(-6);
+  const maxRevenue = Math.max(...months.map((m) => m.revenueCents), 1);
+  const maxConfirmed = Math.max(...months.map((m) => m.confirmed), 1);
+
+  // Category mix.
+  const byCategory = new Map<string, number>();
+  for (const e of merchantEvents) {
+    byCategory.set(e.category, (byCategory.get(e.category) ?? 0) + e.confirmed);
+  }
+  const categories = Array.from(byCategory.entries())
+    .map(([category, confirmed]) => ({ category, confirmed }))
+    .sort((a, b) => b.confirmed - a.confirmed)
+    .slice(0, 6);
+  const maxCategory = Math.max(...categories.map((c) => c.confirmed), 1);
+
+  return (
+    <section className="grid gap-6 lg:grid-cols-2">
+      {/* Monthly revenue + bookings trend */}
+      <div className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-5 hard-shadow-sm">
+        <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
+          Revenue & bookings by month
+        </span>
+        <div className="mt-5 flex items-end justify-between gap-2" style={{ height: "160px" }}>
+          {months.map((m) => (
+            <div key={m.label} className="flex min-w-0 flex-1 flex-col items-center justify-end gap-1">
+              <span className="font-mono text-[0.6rem] font-bold text-[color:var(--ink)]">
+                {formatPrice(m.revenueCents)}
+              </span>
+              <div className="flex h-full w-full items-end justify-center gap-1">
+                <div
+                  className="w-1/2 rounded-t bg-[color:var(--rose)]"
+                  style={{ height: `${Math.max((m.revenueCents / maxRevenue) * 100, 3)}%` }}
+                  title={`${formatPrice(m.revenueCents)} revenue`}
+                />
+                <div
+                  className="w-1/2 rounded-t bg-[color:var(--ink)]"
+                  style={{ height: `${Math.max((m.confirmed / maxConfirmed) * 100, 3)}%` }}
+                  title={`${m.confirmed} bookings`}
+                />
+              </div>
+              <span className="font-mono text-[0.6rem] font-bold uppercase tracking-[0.1em] text-[color:var(--mauve)]">
+                {m.label}
+              </span>
+            </div>
+          ))}
+        </div>
+        <div className="mt-4 flex items-center gap-4 font-mono text-[0.6rem] font-bold uppercase tracking-[0.14em] text-[color:var(--mauve)]">
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block size-2.5 rounded-sm bg-[color:var(--rose)]" /> Revenue
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block size-2.5 rounded-sm bg-[color:var(--ink)]" /> Bookings
+          </span>
+        </div>
+      </div>
+
+      {/* Category mix */}
+      <div className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-5 hard-shadow-sm">
+        <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
+          Bookings by category
+        </span>
+        <ul className="mt-5 space-y-3">
+          {categories.map((c) => (
+            <li key={c.category}>
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="truncate font-bold text-[color:var(--ink)]">{c.category}</span>
+                <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+                  {c.confirmed}
+                </span>
+              </div>
+              <div className="mt-1 h-2 w-full rounded-full bg-[color:var(--peach-soft)]">
+                <div
+                  className="h-2 rounded-full bg-[color:var(--rose)]"
+                  style={{ width: `${Math.max((c.confirmed / maxCategory) * 100, 4)}%` }}
+                />
+              </div>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
   );
 }
 

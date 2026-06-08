@@ -67,6 +67,24 @@ export default async function ConfirmedEventsPage({ searchParams }: ConfirmedEve
               : "RSVPs and active waitlists. Cancel from the event page if your plans change."}
         </p>
 
+        {/* Nudge attendees who've RSVP'd but have no profile photo — people are
+            far more likely to actually meet up when they can recognise each
+            other. Only shown when there's at least one confirmed/active RSVP. */}
+        {!profileStatus.photoUrl && confirmed.upcoming.length > 0 ? (
+          <div className="mt-8 flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--peach-soft)] px-5 py-4 hard-shadow-sm">
+            <p className="text-sm font-bold leading-6 text-[color:var(--ink)]">
+              ✷ You&apos;re going to an event — add a profile photo so people can
+              recognise you when you meet.
+            </p>
+            <Link
+              href="/profile/edit"
+              className="inline-flex shrink-0 rounded-full border-2 border-[color:var(--surface-deep)] bg-[color:var(--rose)] px-4 py-2 text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
+            >
+              Add a photo →
+            </Link>
+          </div>
+        ) : null}
+
         <div className="mt-8 flex flex-wrap gap-2">
           <TabLink active={tab === "upcoming"} href="/confirmed-events?tab=upcoming">
             Upcoming

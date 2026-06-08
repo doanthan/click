@@ -289,6 +289,8 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
           eventSlug={event.slug}
           initialTitle={event.title}
           initialDescription={event.description}
+          initialAddress={event.address ?? ""}
+          initialImages={event.images}
           initialTags={event.tags}
           tagOptions={interestTagOptions}
         />
