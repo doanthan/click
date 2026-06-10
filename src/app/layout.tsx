@@ -9,6 +9,7 @@ import { Toaster } from "sonner";
 import DevSupabaseDrawer from "@/components/dev-supabase-drawer";
 import SupportWidget from "@/components/support/support-widget";
 import { TestAccountSwitcher } from "@/components/test-account-switcher";
+import { SessionFreshness } from "@/components/session-freshness";
 import { LoginModalHost } from "@/components/login-modal-host";
 import { SiteFooter, SiteHeader } from "@/components/site-chrome";
 import { auth } from "@/auth";
@@ -81,6 +82,7 @@ export default async function RootLayout({
           showDemoCredentials={showDemoCredentials}
         />
         <Toaster position="top-right" richColors closeButton />
+        <SessionFreshness />
         <DevSupabaseDrawer />
         {session?.user ? <SupportWidget /> : null}
         <TestAccountSwitcher currentEmail={session?.user?.email ?? null} />

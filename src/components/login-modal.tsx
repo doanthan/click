@@ -108,12 +108,16 @@ export function LoginModal({
 
   if (!open) return null;
 
+  // z-[200] sits above every other modal (event quick-view, checkout, etc. all
+  // use z-[100]). The login gate is opened FROM those modals on a 401, so it must
+  // stack on top — otherwise it renders hidden behind the event popup that
+  // triggered it (reported on /discover RSVP while signed out).
   return (
     <div
       role="dialog"
       aria-modal="true"
       aria-labelledby="login-modal-title"
-      className="fixed inset-0 z-[100] flex items-center justify-center px-4 py-8"
+      className="fixed inset-0 z-[200] flex items-center justify-center px-4 py-8"
     >
       <button
         type="button"

@@ -660,7 +660,7 @@ export function BusinessSection() {
 
       <div className="grid gap-5 sm:grid-cols-2">
         <label className="grid gap-2">
-          <FieldLabel>ABN (optional, 11 digits, checksum-validated)</FieldLabel>
+          <FieldLabel>ABN (optional · real registered ABN, e.g. 51 824 753 556)</FieldLabel>
           <TextInput
             value={state.abn}
             inputMode="numeric"

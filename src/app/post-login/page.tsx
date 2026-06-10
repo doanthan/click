@@ -20,7 +20,7 @@ function safeNext(value: string | undefined | null) {
 }
 
 type PostLoginPageProps = {
-  searchParams?: Promise<{ next?: string }>;
+  searchParams?: Promise<{ next?: string; portal?: string }>;
 };
 
 export default async function PostLoginPage({ searchParams }: PostLoginPageProps) {
@@ -44,11 +44,18 @@ export default async function PostLoginPage({ searchParams }: PostLoginPageProps
     redirect(explicitNext);
   }
 
-  const status = await getProfileStatus(session);
-
-  if (status.merchantProfile) {
+  // Logins that started on the merchant surface (/merchant/login passes
+  // ?portal=merchant) land on the host portal — /merchant itself gates
+  // pending/non-merchants onto the right holding page. Main-surface logins
+  // always land on the ATTENDEE side, even for users who also hold a merchant
+  // profile: routing every merchant-capable account to /merchant surprised
+  // dual-role users who logged in from the customer page expecting their
+  // attendee dashboard (they can still switch portals from the header menu).
+  if (params?.portal === "merchant") {
     redirect("/merchant");
   }
+
+  const status = await getProfileStatus(session);
 
   if (!status.onboardingComplete) {
     redirect("/onboarding");

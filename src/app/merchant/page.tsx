@@ -729,6 +729,10 @@ async function BookingsTabAsync({
               const confirmed = list.filter((a) => a.status === "confirmed").length;
               const waitlisted = list.filter((a) => a.status === "waitlisted").length;
               const cancelled = list.filter((a) => a.status === "cancelled").length;
+              // Past events stay in the bookings list (no time filter on the
+              // query) so a merchant can always review who attended — flag them
+              // "Ended" so it's clear the door list is historical, not live.
+              const hasEnded = new Date(list[0].eventStartsAt).getTime() < Date.now();
               return (
                 <li
                   key={slug}
@@ -737,7 +741,7 @@ async function BookingsTabAsync({
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
-                        Event
+                        Event {hasEnded ? "· Ended" : ""}
                       </span>
                       <Link
                         href={`/merchant/events/${slug}`}
@@ -747,6 +751,7 @@ async function BookingsTabAsync({
                       </Link>
                     </div>
                     <div className="flex flex-wrap gap-2">
+                      {hasEnded ? <Pill tone="cream">Ended</Pill> : null}
                       <Pill tone="peach">{confirmed} confirmed</Pill>
                       <Pill tone="rose">{waitlisted} waitlist</Pill>
                       <Pill tone="cream">{cancelled} cancelled</Pill>

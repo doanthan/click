@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { UserCalendar } from "@/components/user-calendar";
+import { EventAgendaList } from "@/components/event-agenda-list";
 import { getConfirmedEvents } from "@/lib/event-repository";
 import { reconcileCheckoutSession } from "@/lib/stripe-sync";
 
@@ -85,7 +86,12 @@ export default async function CalendarPage({ searchParams }: PageProps) {
               Browse events and reserve a spot — they&apos;ll show up here.
             </p>
           </div>
-        ) : null}
+        ) : (
+          // Full chronological list so every plan is visible at once — the month
+          // grid above only shows one month, so events in other months would
+          // otherwise sit behind the prev/next arrows.
+          <EventAgendaList upcoming={confirmed.upcoming} past={confirmed.past} />
+        )}
       </section>
     </main>
   );

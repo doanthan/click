@@ -10,6 +10,7 @@ import { EventPaymentButton } from "@/components/event-payment-button";
 import { EventRegistrationButton } from "@/components/event-registration-button";
 import { EventBookmarkButton } from "@/components/event-bookmark-button";
 import { PostEventClickCard } from "@/components/post-event-click-card";
+import { ShareEventButton } from "@/components/share-event-button";
 import {
   getEventAttendeePreview,
   getEventBySlug,
@@ -234,25 +235,34 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
               <p className="font-mono text-xs font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
                 {formatLongDate(event.startsAt)} · {formatTimeRange(event.startsAt, event.endsAt)}
               </p>
-              {/* Native add-to-calendar — Google for Google users, .ics for
-                  Apple Calendar / Outlook / everyone else. Available to anyone
-                  viewing the event (the .ics only carries suburb-level location). */}
+              {/* Share is available on every event (locked or unlocked) — the
+                  listing URL never leaks the RSVP-gated venue. */}
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                <a
-                  href={`/api/events/${event.id}/ics`}
-                  className="inline-flex items-center gap-1.5 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-1.5 text-[0.7rem] font-bold uppercase tracking-wide text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
-                >
-                  ＋ Add to calendar (.ics)
-                </a>
-                <a
-                  href={successDetails.calendarUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-1.5 text-[0.7rem] font-bold uppercase tracking-wide text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
-                >
-                  ＋ Google Calendar
-                </a>
+                <ShareEventButton title={event.title} slug={event.id} />
               </div>
+              {/* Native add-to-calendar — Google for Google users, .ics for
+                  Apple Calendar / Outlook / everyone else. Only shown once the
+                  viewer has unlocked the event by RSVPing (or manages it): a
+                  calendar entry is only meaningful once you're actually going,
+                  and the .ics/Google links carry the now-unlocked venue. */}
+              {venueUnlocked ? (
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <a
+                    href={`/api/events/${event.id}/ics`}
+                    className="inline-flex items-center gap-1.5 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-1.5 text-[0.7rem] font-bold uppercase tracking-wide text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+                  >
+                    ＋ Add to calendar (.ics)
+                  </a>
+                  <a
+                    href={successDetails.calendarUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-1.5 text-[0.7rem] font-bold uppercase tracking-wide text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+                  >
+                    ＋ Google Calendar
+                  </a>
+                </div>
+              ) : null}
               <h1 className="font-display mt-3 text-4xl font-light leading-[1.05] sm:text-5xl">
                 {event.title}
               </h1>
@@ -304,6 +314,23 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                 viewerIsAttendee={isRegistered || isAdmin || isOwner}
                 eventSlug={event.id}
               />
+
+              {/* Photo nudge: people are far more likely to actually meet up
+                  when they can recognise each other. Shown to signed-in
+                  attendees who haven't added a photo yet. */}
+              {isAuthenticated && profileStatus && !profileStatus.photoUrl ? (
+                <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--peach-soft)] px-5 py-4 hard-shadow-sm">
+                  <p className="text-sm font-bold leading-6 text-[color:var(--ink)]">
+                    ✷ Add a profile photo so people can recognise you at this event.
+                  </p>
+                  <Link
+                    href="/profile/edit"
+                    className="inline-flex shrink-0 rounded-full border-2 border-[color:var(--surface-deep)] bg-[color:var(--rose)] px-4 py-2 text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
+                  >
+                    Add a photo →
+                  </Link>
+                </div>
+              ) : null}
 
               {/* Post-event Click prompt: once an event you attended has ended,
                   Click the people you'd like to see again — right here on the

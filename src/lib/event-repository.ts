@@ -3447,7 +3447,20 @@ export async function updateMerchantVerificationForAdmin(
   }>(
     `
       update merchant_profiles merchant
-      set verification_status = $2, updated_at = now()
+      set verification_status = $2,
+          -- Approving a merchant's business (KYC) also trusts them to publish
+          -- events without per-event admin review. Previously trust was only
+          -- granted the first time an admin approved one of their EVENTS, so a
+          -- freshly-verified merchant's first event still hit the review queue —
+          -- admins asked "why am I approving every event?" for businesses
+          -- they'd already vetted. Verifying the business now grants it directly.
+          -- (A suspend/reject revokes auto-approval.)
+          auto_approve_events = case
+            when $2 = 'approved' then true
+            when $2 in ('rejected', 'suspended') then false
+            else merchant.auto_approve_events
+          end,
+          updated_at = now()
       from profiles owner
       where merchant.id = $1::uuid
         and owner.id = merchant.profile_id
@@ -6325,11 +6338,15 @@ export async function createUserClickForSession(
             where id = $1::uuid
               and status in ('live', 'featured', 'waitlist')
               and starts_at > now()
-              -- Never reuse a booked-out event as the suggestion.
+              -- Never reuse a booked-out event as the suggestion (confirmed +
+              -- live payment holds count toward capacity).
               and (
                 select count(*) from event_attendees full_count
                 where full_count.event_id = event.id
-                  and full_count.status = 'confirmed'
+                  and (
+                    full_count.status = 'confirmed'
+                    or (full_count.status = 'pending_payment' and full_count.hold_expires_at > now())
+                  )
               ) < event.capacity
             limit 1
           `,
@@ -6357,11 +6374,15 @@ export async function createUserClickForSession(
              and user_tag.profile_id in ($1::uuid, $2::uuid)
             where event.status in ('live', 'featured', 'waitlist')
               and event.starts_at > now()
-              -- Never suggest a booked-out event.
+              -- Never suggest a booked-out event (confirmed + live payment holds
+              -- count toward capacity).
               and (
                 select count(*) from event_attendees full_count
                 where full_count.event_id = event.id
-                  and full_count.status = 'confirmed'
+                  and (
+                    full_count.status = 'confirmed'
+                    or (full_count.status = 'pending_payment' and full_count.hold_expires_at > now())
+                  )
               ) < event.capacity
             group by event.id
             order by
@@ -6580,6 +6601,20 @@ async function promoteNextWaitlister(
       where waitlist.event_id = $1::uuid
         and waitlist.accepted_at is null
         and (waitlist.offered_until is null or waitlist.offered_until <= now())
+        -- Never offer a freed seat to someone who already holds a confirmed seat
+        -- (or a live payment hold) for this event. Test/edge data can leave a
+        -- person with BOTH a confirmed and a waitlisted attendee row; without
+        -- this guard the offer is wasted on someone already in, and the genuine
+        -- next-in-line waitlister is starved.
+        and not exists (
+          select 1 from event_attendees confirmed_seat
+          where confirmed_seat.event_id = waitlist.event_id
+            and confirmed_seat.profile_id = waitlist.profile_id
+            and (
+              confirmed_seat.status = 'confirmed'
+              or (confirmed_seat.status = 'pending_payment' and confirmed_seat.hold_expires_at > now())
+            )
+        )
       order by (waitlist.last_offer_expired_at is not null) asc, waitlist.created_at asc
       limit 1
       for update of waitlist skip locked
@@ -9311,11 +9346,22 @@ export async function getProposalsForSession(session: Session | null): Promise<P
           case when m.profile_a_id = $1::uuid then m.profile_b_id else m.profile_a_id end
         )
         -- Only attach the suggested event if it's still upcoming + bookable, so a
-        -- proposal never surfaces an event that has already happened.
+        -- proposal never surfaces an event that has already happened OR has since
+        -- sold out (confirmed RSVPs + live payment holds at/above capacity). A
+        -- booked-out event drops to null here and the card shows "find another
+        -- plan" instead of pointing both people at an event they can't join.
         left join events e
           on e.id = p.suggested_event_id
          and e.starts_at > now()
          and e.status in ('live', 'featured', 'waitlist')
+         and (
+           select count(*) from event_attendees seat
+           where seat.event_id = e.id
+             and (
+               seat.status = 'confirmed'
+               or (seat.status = 'pending_payment' and seat.hold_expires_at > now())
+             )
+         ) < e.capacity
         where m.profile_a_id = $1::uuid or m.profile_b_id = $1::uuid
         order by (p.status = 'pending' and p.expires_at > now()) desc, p.updated_at desc
         limit 50
@@ -9518,10 +9564,21 @@ export async function getProposalCatalogue(): Promise<ProposalCatalogueEvent[]> 
       suburb: string;
     }>(
       `
-        select slug, title, starts_at, suburb
-        from events
-        where status in ('live', 'featured', 'waitlist') and starts_at > now()
-        order by starts_at asc
+        select event.slug, event.title, event.starts_at, event.suburb
+        from events event
+        where event.status in ('live', 'featured', 'waitlist')
+          and event.starts_at > now()
+          -- Don't offer a sold-out event as an alternative plan (confirmed RSVPs
+          -- + live payment holds must be below capacity).
+          and (
+            select count(*) from event_attendees seat
+            where seat.event_id = event.id
+              and (
+                seat.status = 'confirmed'
+                or (seat.status = 'pending_payment' and seat.hold_expires_at > now())
+              )
+          ) < event.capacity
+        order by event.starts_at asc
         limit 60
       `,
     );

@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { auth } from "@/auth";
 import { RegisterForm } from "@/components/register-form";
 
 export const metadata = {
@@ -28,6 +30,19 @@ function safeCallbackUrl(value: string | undefined) {
 export default async function RegisterPage({ searchParams }: RegisterPageProps) {
   const params = await searchParams;
   const callbackUrl = safeCallbackUrl(params?.callbackUrl);
+
+  // Already signed in? Skip the signup form entirely — route through
+  // /post-login like the /login page does, so an authed visit never dead-ends
+  // on an auth form.
+  const session = await auth();
+  if (session?.user) {
+    redirect(
+      callbackUrl === "/post-login"
+        ? "/post-login"
+        : `/post-login?next=${encodeURIComponent(callbackUrl)}`,
+    );
+  }
+
   const errorMessage = params?.error ? errorCopy[params.error] ?? "Sign up failed." : "";
   const googleConfigured = !!(process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET);
   const metaConfigured = !!(process.env.AUTH_FACEBOOK_ID && process.env.AUTH_FACEBOOK_SECRET);

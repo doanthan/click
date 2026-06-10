@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { auth } from "@/auth";
 import {
   signInWithEmail,
   signInWithGoogle,
@@ -32,6 +34,20 @@ function safeCallbackUrl(value: string | undefined) {
 export default async function LoginPage({ searchParams }: LoginPageProps) {
   const params = await searchParams;
   const callbackUrl = safeCallbackUrl(params?.callbackUrl);
+
+  // Already signed in? Never show the login form — hand off to /post-login
+  // (preserving any deep-link target) so the user lands where their session
+  // would have taken them. Without this, a signed-in user opening /login saw
+  // the form again and assumed their login "didn't work".
+  const session = await auth();
+  if (session?.user) {
+    redirect(
+      callbackUrl === "/post-login"
+        ? "/post-login"
+        : `/post-login?next=${encodeURIComponent(callbackUrl)}`,
+    );
+  }
+
   const errorMessage = params?.error ? errorCopy[params.error] ?? "Login failed." : "";
   const googleConfigured = !!(process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET);
   const metaConfigured = !!(process.env.AUTH_FACEBOOK_ID && process.env.AUTH_FACEBOOK_SECRET);

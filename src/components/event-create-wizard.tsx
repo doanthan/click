@@ -143,6 +143,11 @@ function validateStep(step: StepIndex, v: WizardValues): string | null {
   if (step === 2) {
     if (!v.locationName.trim()) return "Venue name is required.";
     if (!v.suburb.trim()) return "Suburb is required.";
+    // Require the full street address so confirmed attendees always get a
+    // complete address (number, street, state, postcode) once the venue
+    // unlocks — not just a suburb. Picking a Mapbox suggestion fills this with
+    // the full formatted line; merchants can append a unit/level number.
+    if (!v.address.trim()) return "Street address is required.";
   }
   if (step === 3) {
     // Media step is optional — when the merchant skips uploads we fall back
@@ -1543,13 +1548,14 @@ export function LocationSection() {
 
       <Field
         label="Street address"
-        hint="Shown to confirmed attendees. Add a unit / level number if the search missed it."
+        hint="Shown to confirmed attendees once they RSVP. Include the unit / level number, street, state and postcode."
       >
         <input
           value={values.address}
           onChange={(e) => set("address", e.target.value)}
           placeholder="Unit 6/29 Bridge Rd, Stanmore NSW 2048"
           className={inputClass()}
+          required
         />
       </Field>
 

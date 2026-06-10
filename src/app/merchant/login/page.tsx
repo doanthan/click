@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { auth } from "@/auth";
 import {
   signInWithEmail,
   signInWithGoogle,
@@ -34,13 +36,31 @@ const errorCopy: Record<string, string> = {
 function safeMerchantCallbackUrl(value: string | undefined) {
   // Restrict callbacks to /merchant* — a merchant logging in via this surface
   // should always land back in the merchant area, never on a customer page.
-  if (value?.startsWith("/merchant") && !value.startsWith("//")) return value;
-  return "/merchant";
+  // Deep links (e.g. /merchant/events/create) ride through as ?next=; the bare
+  // portal root rides as ?portal=merchant because /post-login deliberately
+  // ignores portal roots in ?next= (it owns the role dispatch) — without the
+  // portal hint, a merchant-surface login landed on the attendee side.
+  if (
+    value?.startsWith("/merchant") &&
+    !value.startsWith("//") &&
+    value !== "/merchant"
+  ) {
+    return `/post-login?next=${encodeURIComponent(value)}`;
+  }
+  return "/post-login?portal=merchant";
 }
 
 export default async function MerchantLoginPage({ searchParams }: LoginPageProps) {
   const params = await searchParams;
   const callbackUrl = safeMerchantCallbackUrl(params?.callbackUrl);
+
+  // Already signed in? Go straight to the host portal instead of re-showing
+  // the login form.
+  const session = await auth();
+  if (session?.user) {
+    redirect(callbackUrl);
+  }
+
   const errorMessage = params?.error ? errorCopy[params.error] ?? "Login failed." : "";
   const googleConfigured = !!(process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET);
   const metaConfigured = !!(process.env.AUTH_FACEBOOK_ID && process.env.AUTH_FACEBOOK_SECRET);
