@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
+import { AuthedRedirect } from "@/components/authed-redirect";
 import {
   signInWithEmail,
   signInWithGoogle,
@@ -55,6 +56,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
 
   return (
     <main className="paper-noise relative min-h-screen overflow-hidden px-4 py-12 text-[color:var(--ink)] sm:px-6">
+      <AuthedRedirect />
       <div className="confetti-field absolute inset-0 opacity-25" aria-hidden />
 
       <section className="relative z-10 mx-auto grid max-w-7xl gap-10 lg:grid-cols-[0.85fr_1.15fr] lg:items-center">

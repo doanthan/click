@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { signInWithEmail, signInWithGoogle, signInWithMeta } from "@/app/login/actions";
 
 type Intent =
@@ -39,6 +39,23 @@ export function RegisterForm({
   metaConfigured,
 }: RegisterFormProps) {
   const [displayName, setDisplayName] = useState("");
+  // The name lives OUTSIDE the email <form> (it's shared with the OAuth
+  // buttons), so native `required` validation never fires for it. Without an
+  // explicit check the submit button used to be silently disabled — reported
+  // as "why can't I create an account". Validate on submit instead and say why.
+  const [nameError, setNameError] = useState("");
+  const nameInputRef = useRef<HTMLInputElement>(null);
+
+  function handleEmailSubmit(event: React.FormEvent<HTMLFormElement>) {
+    if (!displayName.trim()) {
+      event.preventDefault();
+      setNameError("Please tell us your name first — fill in the field at the top.");
+      nameInputRef.current?.focus();
+      return;
+    }
+    setNameError("");
+    stashPrefill();
+  }
 
   function stashPrefill() {
     if (typeof window === "undefined") return;
@@ -61,13 +78,25 @@ export function RegisterForm({
             What should we call you?
           </span>
           <input
+            ref={nameInputRef}
             value={displayName}
-            onChange={(event) => setDisplayName(event.target.value)}
+            onChange={(event) => {
+              setDisplayName(event.target.value);
+              if (event.target.value.trim()) setNameError("");
+            }}
             autoComplete="name"
             required
-            className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 text-base font-semibold text-[color:var(--ink)] placeholder:text-[color:var(--mauve)]/55 outline-none focus:bg-[color:var(--cream)]"
-            placeholder="Jordan Lee"
+            aria-invalid={!!nameError}
+            className={`rounded-xl border-2 bg-[color:var(--champagne)] px-4 py-3 text-base font-semibold text-[color:var(--ink)] placeholder:text-[color:var(--mauve)]/55 outline-none focus:bg-[color:var(--cream)] ${
+              nameError ? "border-[color:var(--rose)]" : "border-[color:var(--line)]"
+            }`}
+            placeholder="e.g. Jordan Lee"
           />
+          {nameError ? (
+            <p role="alert" className="text-sm font-bold text-[color:var(--rose)]">
+              {nameError}
+            </p>
+          ) : null}
         </label>
       </div>
 
@@ -111,7 +140,7 @@ export function RegisterForm({
         <span className="h-[2px] flex-1 bg-[color:var(--line-soft)]" />
       </div>
 
-      <form action={signInWithEmail} onSubmit={stashPrefill} className="grid gap-4">
+      <form action={signInWithEmail} onSubmit={handleEmailSubmit} className="grid gap-4">
         <input type="hidden" name="callbackUrl" value={callbackUrl} />
 
         <label className="grid gap-2 text-sm font-bold text-[color:var(--ink)]">
@@ -139,8 +168,7 @@ export function RegisterForm({
 
         <button
           type="submit"
-          disabled={!displayName.trim()}
-          className="group/cta inline-flex min-h-[52px] items-center justify-center gap-2 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-6 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:-translate-x-[2px] hover:-translate-y-[2px] hover:[box-shadow:5px_5px_0_0_var(--shadow-ink)] hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-x-0 disabled:hover:translate-y-0"
+          className="group/cta inline-flex min-h-[52px] items-center justify-center gap-2 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-6 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:-translate-x-[2px] hover:-translate-y-[2px] hover:[box-shadow:5px_5px_0_0_var(--shadow-ink)] hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)]"
         >
           Create my account
           <span aria-hidden className="transition-transform group-hover/cta:translate-x-1">→</span>
