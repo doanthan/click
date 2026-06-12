@@ -1,57 +1,52 @@
 "use client";
 
-import { toast } from "sonner";
-import type { MerchantFinancesSummary } from "@/lib/event-repository";
+import { useState } from "react";
 
-function csvEscape(value: string) {
-  if (value.includes(",") || value.includes('"') || value.includes("\n")) {
-    return `"${value.replace(/"/g, '""')}"`;
-  }
-  return value;
-}
+// CSV export of the merchant's transactions with a period filter. The actual
+// query + CSV is built server-side by /api/merchant/finances/export (so the
+// export is the FULL set, not just the 20-row preview the Finances tab shows);
+// this control just picks the period and triggers the download.
+type Period = "all" | "year" | "month";
 
-// Client-side CSV export of the merchant's recent transactions. Mirrors the
-// door-list export in MerchantAttendeesPanel (same csvEscape + Blob download).
-export function MerchantFinancesExport({
-  transactions,
-}: {
-  transactions: MerchantFinancesSummary["recentTransactions"];
-}) {
+export function MerchantFinancesExport() {
+  const [period, setPeriod] = useState<Period>("month");
+
   function exportCsv() {
-    if (transactions.length === 0) {
-      toast.error("No transactions to export yet.");
-      return;
+    const now = new Date();
+    const params = new URLSearchParams();
+    if (period === "year") {
+      params.set("year", String(now.getFullYear()));
+    } else if (period === "month") {
+      params.set("year", String(now.getFullYear()));
+      params.set("month", String(now.getMonth() + 1));
     }
-    const header = ["Event", "Date", "Status", "Amount (AUD)"].join(",");
-    const lines = transactions.map((t) =>
-      [
-        csvEscape(t.eventTitle),
-        csvEscape(new Date(t.createdAt).toISOString()),
-        csvEscape(t.status),
-        csvEscape((t.amountCents / 100).toFixed(2)),
-      ].join(","),
-    );
-    const blob = new Blob([[header, ...lines].join("\n")], {
-      type: "text/csv;charset=utf-8;",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `click-transactions-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success(
-      `Exported ${transactions.length} transaction${transactions.length === 1 ? "" : "s"}.`,
-    );
+    const qs = params.toString();
+    // Navigating to the route triggers a file download via Content-Disposition.
+    window.location.href = `/api/merchant/finances/export${qs ? `?${qs}` : ""}`;
   }
 
   return (
-    <button
-      type="button"
-      onClick={exportCsv}
-      className="inline-flex shrink-0 items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-2 text-xs font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)]"
-    >
-      Export CSV
-    </button>
+    <div className="flex shrink-0 items-center gap-2">
+      <label className="sr-only" htmlFor="finances-export-period">
+        Export period
+      </label>
+      <select
+        id="finances-export-period"
+        value={period}
+        onChange={(e) => setPeriod(e.target.value as Period)}
+        className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-2 text-xs font-bold text-[color:var(--ink)] hard-shadow-sm focus:outline-none"
+      >
+        <option value="month">This month</option>
+        <option value="year">This year</option>
+        <option value="all">All time</option>
+      </select>
+      <button
+        type="button"
+        onClick={exportCsv}
+        className="inline-flex shrink-0 items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-2 text-xs font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)]"
+      >
+        Export CSV
+      </button>
+    </div>
   );
 }

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { MerchantEventSummary } from "@/lib/event-repository";
+import { MerchantCalendarJump } from "./merchant-calendar-jump";
 
 const SYDNEY_TZ = "Australia/Sydney";
 const WEEK_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -196,6 +197,10 @@ export function MerchantCalendar({ events, monthParam }: MerchantCalendarProps) 
             {monthEvents.length} event{monthEvents.length === 1 ? "" : "s"} ·{" "}
             {monthConfirmed}/{monthCapacity} booked
           </span>
+          <MerchantCalendarJump
+            month={monthAnchor.getUTCMonth() + 1}
+            year={monthAnchor.getUTCFullYear()}
+          />
           <div className="flex items-center gap-1.5">
             <Link
               href={`/merchant?month=${prevMonth}`}

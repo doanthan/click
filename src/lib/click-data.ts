@@ -27,6 +27,10 @@ export type EventItem = {
   lng: number;
   price: string;
   attendees: number;
+  // Up to 3 avatar URLs of confirmed attendees, for the "who's going" social-
+  // proof preview on event cards. Optional: only DB-backed events populate it
+  // (the bundled demo catalogue below predates it).
+  attendeeAvatars?: string[];
   capacity: number;
   image: string;
   imageAlt: string;

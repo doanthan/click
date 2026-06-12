@@ -1498,6 +1498,28 @@ export function LocationSection() {
   const outsidePilotArea =
     distanceFromSydneyKm !== null && distanceFromSydneyKm > PILOT_RADIUS_KM;
 
+  const [waitlistState, setWaitlistState] = useState<"idle" | "saving" | "done" | "error">(
+    "idle",
+  );
+  async function joinLocationWaitlist() {
+    setWaitlistState("saving");
+    try {
+      const response = await fetch("/api/merchant/location-waitlist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          address: values.address || null,
+          suburb: values.suburb || null,
+          latitude: values.latitude,
+          longitude: values.longitude,
+        }),
+      });
+      setWaitlistState(response.ok ? "done" : "error");
+    } catch {
+      setWaitlistState("error");
+    }
+  }
+
   return (
     <div className="space-y-5">
       <header>
@@ -1570,12 +1592,35 @@ export function LocationSection() {
       </p>
 
       {outsidePilotArea ? (
-        <div className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--peach)] p-4 text-sm font-bold leading-6 text-[color:var(--surface-deep)] hard-shadow-sm">
-          ⚠️ Heads up — this venue is about {Math.round(distanceFromSydneyKm!)} km
-          from Sydney. Click is currently piloting in <strong>greater Sydney
-          only</strong>, so events outside this area may get little to no
-          discovery. You can still publish, but reach will be limited until we
-          launch in your city.
+        <div className="space-y-3 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--peach)] p-4 text-sm font-bold leading-6 text-[color:var(--surface-deep)] hard-shadow-sm">
+          <p>
+            ⚠️ Heads up — this venue is about {Math.round(distanceFromSydneyKm!)} km
+            from Sydney. Click is currently piloting in <strong>greater Sydney
+            only</strong>. You can still publish, but reach will be limited until
+            we launch in your area.
+          </p>
+          {waitlistState === "done" ? (
+            <p className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-2 text-[color:var(--ink)]">
+              🎉 Thanks — you’re on the waitlist. We’ll email you the moment Click
+              launches near this venue.
+            </p>
+          ) : (
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => void joinLocationWaitlist()}
+                disabled={waitlistState === "saving"}
+                className="inline-flex shrink-0 items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--ink)] px-4 py-2 text-xs font-bold uppercase tracking-wide text-[color:var(--champagne)] hard-shadow-sm hover:bg-[color:var(--rose)] hover:text-[color:var(--surface-deep)] disabled:opacity-60"
+              >
+                {waitlistState === "saving" ? "Adding…" : "Notify me when you launch here"}
+              </button>
+              {waitlistState === "error" ? (
+                <span className="text-xs text-[color:var(--surface-deep)]">
+                  Couldn’t save that — try again.
+                </span>
+              ) : null}
+            </div>
+          )}
         </div>
       ) : null}
     </div>

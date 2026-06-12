@@ -117,6 +117,25 @@ export function EventCard({
         </div>
         <p className="sr-only">{formatCapacity(event)}</p>
 
+        {event.attendees > 2 && (event.attendeeAvatars?.length ?? 0) > 0 ? (
+          <div className="mt-4 flex items-center gap-2">
+            <div className="flex -space-x-2">
+              {event.attendeeAvatars!.slice(0, 3).map((url, i) => (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  key={`${url}-${i}`}
+                  src={url}
+                  alt=""
+                  className="h-7 w-7 rounded-full border-2 border-[color:var(--champagne)] object-cover hard-shadow-sm"
+                />
+              ))}
+            </div>
+            <span className="text-xs font-bold text-[color:var(--mauve)]">
+              {event.attendees} going
+            </span>
+          </div>
+        ) : null}
+
         <div className="mt-auto pt-5">
           <EventDetailModal
             event={event}

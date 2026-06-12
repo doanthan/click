@@ -52,6 +52,33 @@ function isPast(event: MerchantEventSummary) {
   return new Date(event.endsAt ?? event.startsAt).getTime() < Date.now();
 }
 
+// "YYYY-MM" for the event start, computed in the same Australia/Sydney timezone
+// the calendar grid uses — otherwise a late-night event slips into the wrong
+// month relative to what the merchant sees on the calendar.
+function monthKeyInSydney(startsAt: string) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Australia/Sydney",
+    year: "numeric",
+    month: "2-digit",
+  }).formatToParts(new Date(startsAt));
+  const year = parts.find((part) => part.type === "year")?.value;
+  const month = parts.find((part) => part.type === "month")?.value;
+  return `${year}-${month}`;
+}
+
+const monthLabelFormatter = new Intl.DateTimeFormat("en-AU", {
+  month: "long",
+  year: "numeric",
+  timeZone: "Australia/Sydney",
+});
+
+function monthKeyLabel(monthKey: string) {
+  const [year, month] = monthKey.split("-").map(Number);
+  // Anchor mid-month at noon UTC so the Sydney-formatted label can't drift to an
+  // adjacent month.
+  return monthLabelFormatter.format(new Date(Date.UTC(year, month - 1, 15, 12)));
+}
+
 type StatusFilter = "all" | "live" | "pending" | "cancelled" | "past";
 type SortKey = "date-asc" | "date-desc";
 
@@ -65,6 +92,15 @@ export function MerchantEventsPanel({
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [sort, setSort] = useState<SortKey>("date-asc");
+  const [monthFilter, setMonthFilter] = useState<string>("all");
+
+  // Distinct YYYY-MM keys actually present in the events, newest first, so the
+  // dropdown only ever offers months the merchant really has events in.
+  const monthOptions = useMemo(() => {
+    const keys = new Set<string>();
+    for (const event of events) keys.add(monthKeyInSydney(event.startsAt));
+    return [...keys].sort((a, b) => b.localeCompare(a));
+  }, [events]);
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -73,6 +109,7 @@ export function MerchantEventsPanel({
       if (statusFilter === "live" && (event.status !== "Live" || isPast(event))) return false;
       if (statusFilter === "pending" && event.status !== "Pending") return false;
       if (statusFilter === "cancelled" && event.status !== "Cancelled") return false;
+      if (monthFilter !== "all" && monthKeyInSydney(event.startsAt) !== monthFilter) return false;
       if (!q) return true;
       return (
         event.title.toLowerCase().includes(q) ||
@@ -86,7 +123,7 @@ export function MerchantEventsPanel({
       return sort === "date-asc" ? diff : -diff;
     });
     return list;
-  }, [events, query, statusFilter, sort]);
+  }, [events, query, statusFilter, sort, monthFilter]);
 
   if (events.length === 0) {
     return (
@@ -135,6 +172,23 @@ export function MerchantEventsPanel({
               </button>
             ))}
           </div>
+          <label className="sr-only" htmlFor="merchant-events-month">
+            Filter by month
+          </label>
+          <select
+            id="merchant-events-month"
+            aria-label="Filter by month"
+            value={monthFilter}
+            onChange={(e) => setMonthFilter(e.target.value)}
+            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)] focus:outline-none focus:ring-2 focus:ring-[color:var(--rose)]"
+          >
+            <option value="all">All months</option>
+            {monthOptions.map((key) => (
+              <option key={key} value={key}>
+                {monthKeyLabel(key)}
+              </option>
+            ))}
+          </select>
           <button
             type="button"
             onClick={() => setSort((s) => (s === "date-asc" ? "date-desc" : "date-asc"))}

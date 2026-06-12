@@ -1,0 +1,97 @@
+import type { MerchantFinancesSummary } from "@/lib/event-repository";
+
+const MONTH_SHORT = new Intl.DateTimeFormat("en-AU", {
+  month: "short",
+  timeZone: "Australia/Sydney",
+});
+
+function monthLabel(key: string) {
+  const [year, month] = key.split("-").map(Number);
+  // Anchor mid-month at noon UTC so the Sydney-formatted short month never
+  // drifts to the neighbouring month.
+  return MONTH_SHORT.format(new Date(Date.UTC(year, month - 1, 15, 12)));
+}
+
+function dollars(cents: number) {
+  return `$${(cents / 100).toLocaleString("en-AU", { maximumFractionDigits: 0 })}`;
+}
+
+// Last 6 calendar months ending this month (Australia/Sydney), as "YYYY-MM".
+function lastSixMonthKeys(): string[] {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Australia/Sydney",
+    year: "numeric",
+    month: "2-digit",
+  }).formatToParts(new Date());
+  const year = Number(parts.find((p) => p.type === "year")?.value);
+  const month = Number(parts.find((p) => p.type === "month")?.value);
+  const keys: string[] = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(Date.UTC(year, month - 1 - i, 1));
+    keys.push(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`);
+  }
+  return keys;
+}
+
+// Revenue-by-month bar chart for the Finances tab. Pure server component — a
+// CSS-height bar per month, no chart library. Renders the last 6 months so the
+// axis stays readable even for merchants with a long history.
+export function MerchantFinancesAnalytics({
+  monthlyRevenue,
+}: {
+  monthlyRevenue: MerchantFinancesSummary["monthlyRevenue"];
+}) {
+  const paidByMonth = new Map(monthlyRevenue.map((m) => [m.month, m.paidCents]));
+  const months = lastSixMonthKeys().map((key) => ({
+    key,
+    label: monthLabel(key),
+    paidCents: paidByMonth.get(key) ?? 0,
+  }));
+  const peak = Math.max(1, ...months.map((m) => m.paidCents));
+  const total = months.reduce((sum, m) => sum + m.paidCents, 0);
+
+  return (
+    <div className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] hard-shadow-sm">
+      <div className="flex items-center justify-between gap-3 border-b-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-3">
+        <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
+          Revenue · last 6 months
+        </span>
+        <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+          {dollars(total)} paid
+        </span>
+      </div>
+
+      {total === 0 ? (
+        <p className="p-6 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+          No paid revenue in the last 6 months yet. Paid-event sales show up here.
+        </p>
+      ) : (
+        <div className="flex items-end justify-between gap-2 px-5 pb-4 pt-6 sm:gap-4">
+          {months.map((m) => {
+            const heightPct = Math.round((m.paidCents / peak) * 100);
+            return (
+              <div key={m.key} className="flex flex-1 flex-col items-center gap-2">
+                <span className="font-mono text-[0.6rem] font-bold text-[color:var(--ink)]">
+                  {m.paidCents > 0 ? dollars(m.paidCents) : ""}
+                </span>
+                <div
+                  className="flex w-full items-end rounded-t-md"
+                  style={{ height: "120px" }}
+                  title={`${m.label}: ${dollars(m.paidCents)} paid`}
+                >
+                  <div
+                    className="w-full rounded-t-md border-2 border-[color:var(--line)] bg-[color:var(--peach)]"
+                    style={{ height: `${Math.max(heightPct, m.paidCents > 0 ? 6 : 0)}%` }}
+                  />
+                </div>
+                <span className="font-mono text-[0.62rem] font-bold uppercase tracking-[0.12em] text-[color:var(--mauve)]">
+                  {m.label}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}

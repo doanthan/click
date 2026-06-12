@@ -60,7 +60,7 @@ export function HeaderRoleSwitcher({
   const showPortalSwitcher = roles.length > 1;
 
   return (
-    <div className="relative hidden sm:block" ref={ref}>
+    <div className="relative block" ref={ref}>
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -81,11 +81,11 @@ export function HeaderRoleSwitcher({
           </span>
         )}
         {showPortalSwitcher ? (
-          <span className="font-mono text-[0.65rem] uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+          <span className="hidden font-mono text-[0.65rem] uppercase tracking-[0.16em] text-[color:var(--mauve)] sm:inline">
             {PORTAL_LABEL[currentRole]}
           </span>
         ) : null}
-        <span className="truncate">{userLabel}</span>
+        <span className="hidden truncate sm:inline">{userLabel}</span>
         <span aria-hidden className="text-[color:var(--mauve)]">▾</span>
       </button>
 

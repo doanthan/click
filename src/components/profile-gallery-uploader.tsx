@@ -41,12 +41,21 @@ export function ProfileGalleryUploader({ initialUrls }: { initialUrls: string[] 
     body.set("file", file);
 
     setPending(true);
+    // Guard against a silent hang: a stalled upload used to leave the spinner
+    // spinning forever with no feedback (bug board: "pending icon and nothing
+    // happened"). Abort after 30s so the user gets a retry-able error instead.
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30_000);
     try {
-      const response = await fetch("/api/upload/gallery", { method: "POST", body });
+      const response = await fetch("/api/upload/gallery", {
+        method: "POST",
+        body,
+        signal: controller.signal,
+      });
       const payload = (await response.json().catch(() => null)) as
         | { urls?: string[]; error?: string }
         | null;
-      if (!response.ok || !payload?.urls) {
+      if (!response.ok || !Array.isArray(payload?.urls)) {
         setError(
           response.status === 503
             ? "Photo uploads aren’t available right now — your other changes will still save."
@@ -59,6 +68,7 @@ export function ProfileGalleryUploader({ initialUrls }: { initialUrls: string[] 
     } catch {
       setError("Upload failed. Check your connection and try again.");
     } finally {
+      clearTimeout(timeout);
       setPending(false);
     }
   }
@@ -75,7 +85,7 @@ export function ProfileGalleryUploader({ initialUrls }: { initialUrls: string[] 
       const payload = (await response.json().catch(() => null)) as
         | { urls?: string[]; error?: string }
         | null;
-      if (!response.ok || !payload?.urls) {
+      if (!response.ok || !Array.isArray(payload?.urls)) {
         setError(payload?.error ?? "Could not remove that photo. Try again.");
         return;
       }

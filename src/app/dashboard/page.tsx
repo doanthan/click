@@ -64,9 +64,13 @@ export default async function DashboardPage() {
   const nowForRotation = Date.now();
   const sixHourIndex = Math.floor(nowForRotation / (6 * 3_600_000));
   const hourIndex = Math.floor(nowForRotation / 3_600_000);
+  // Drop anyone the viewer has already clicked: an active click shouldn't keep
+  // resurfacing as a "click with X" suggestion (bug board: already clicked with
+  // someone, still prompted to click them on the dashboard).
+  const clickablePeople = suggestedPeople.filter((p) => !p.alreadyClicked);
   const rotatedPeople =
-    suggestedPeople.length > 0
-      ? [suggestedPeople[sixHourIndex % suggestedPeople.length]]
+    clickablePeople.length > 0
+      ? [clickablePeople[sixHourIndex % clickablePeople.length]]
       : [];
   const radarPool = personalized?.events ?? [];
   const rotatedRadar =
@@ -145,8 +149,13 @@ export default async function DashboardPage() {
 
         {/* Booked but faceless: keep nudging for a profile photo after an RSVP
             (bug board #111) — people actually meet up when they can recognise
-            each other. Disappears as soon as a photo is set. */}
-        {!profileStatus.photoUrl && registeredSet.size > 0 ? (
+            each other. Stands down once they have ANY recognisable photo: an
+            uploaded avatar, an OAuth provider photo, or a gallery photo — so it
+            no longer nags while a photo is already showing on the dashboard. */}
+        {!profileStatus.photoUrl &&
+        !profileStatus.hasGalleryPhotos &&
+        !session.user.image &&
+        registeredSet.size > 0 ? (
           <div className="mt-8">
             <ProfilePhotoNudge />
           </div>

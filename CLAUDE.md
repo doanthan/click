@@ -171,6 +171,7 @@ The post-approval onboarding (`/merchant/onboarding/*`) is a one-time walkthroug
 | `/admin` | `src/app/admin/page.tsx` | Dashboard |
 | `/admin/events` | `src/app/admin/events/page.tsx` | Events Management |
 | `/admin/merchants` | `src/app/admin/merchants/page.tsx` | Merchants Management |
+| `/admin/location-waitlist` | `src/app/admin/location-waitlist/page.tsx` | Location Waitlist (non-Sydney merchant demand captured by the event-create pilot gate; `getAdminLocationWaitlist`) |
 | `/admin/members` | `src/app/admin/members/page.tsx` | Attendees Management |
 | `/admin/transactions` | `src/app/admin/transactions/page.tsx` | Transactions Management |
 | `/admin/reports` | `src/app/admin/reports/page.tsx` | Safety Reports |
@@ -201,6 +202,8 @@ Mounted under `src/app/api/**`. Notable groups:
   **Trusted-merchant auto-approval:** `merchant_profiles.auto_approve_events` (migration `database/031_merchant_auto_approve_events.sql`) gates whether `createEventForMerchant` inserts an event as `pending` (untrusted → admin reviews, all admins get a "Event awaiting review" notification) or `live` (trusted → no review). The first time an admin approves any one of a merchant's events, the flag turns on automatically; admins can revoke it from the merchant detail page.
 - `api/events`, `api/events/[eventId]`, `api/events/[eventId]/{bookmark,checkout,register}`, `api/events/[eventId]/waitlist/accept` (POST — a waitlisted attendee claims a promotion offer created by `cancelRegistration`; free events confirm in place + stamp `event_waitlists.accepted_at`, paid events return 402 → Stripe checkout)
 - `api/merchant/events`, `api/merchant/events/[eventId]/cancel`
+- `api/merchant/finances/export` (GET `?year=&month=` → streams a `text/csv` attachment of the merchant's full transaction set, optionally scoped to a calendar year or month in Australia/Sydney; backs the Finances-tab "Export CSV" period picker via `getMerchantTransactionsForExport`)
+- `api/merchant/location-waitlist` (POST `{ address?, suburb?, latitude?, longitude?, note? }` → records a merchant's interest in a non-Sydney location via `addMerchantLocationWaitlist`; powers the Sydney-only pilot gate on the event-create location step, surfaced in `/admin/location-waitlist`)
 - `api/merchant/stripe/connect` (creates the Connect account + returns a hosted-onboarding URL; approved merchants only), `api/merchant/onboarding/complete` (marks the walkthrough done)
 - `api/tables`, `api/tables/[table]/rows` — generic admin table CRUD
 - `api/test/cases`, `api/test/cases/[id]/comments`, `api/test/comments/[id]`

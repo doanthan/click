@@ -75,6 +75,7 @@ type EventRow = {
   relationship_goal: string | null;
   fomo: string | null;
   confirmed_attendees: string | number;
+  attendee_avatars: string[] | null;
   tags: string[] | null;
   life_signals: string[] | null;
 };
@@ -156,6 +157,10 @@ export type ProfileStatus = {
   // them apart without a second query.
   waitlistedEventIds: string[];
   photoUrl: string | null;
+  // Whether the viewer has at least one gallery photo. Lets the "add a photo"
+  // nudge stand down for someone who already has a recognisable photo even
+  // without an avatar set (bug board: nudge persisted with a photo on screen).
+  hasGalleryPhotos: boolean;
   // Whether the viewer has opted into dating visibility. Used to gate
   // dating-related signals (e.g. the radar "open to dating" FOMO nudge) so they
   // only surface when BOTH parties are dating-visible.
@@ -549,6 +554,7 @@ function eventFromRow(row: EventRow): EventItem {
     lng,
     price: formatPrice(row.price_cents),
     attendees: Number(row.confirmed_attendees),
+    attendeeAvatars: row.attendee_avatars ?? [],
     capacity: row.capacity,
     // When a merchant hasn't uploaded a cover, fall back to a category-relevant
     // stock image rather than a single generic yoga photo (which read as a
@@ -2019,6 +2025,20 @@ export async function getEventsForExplore() {
         event.relationship_goal,
         event.fomo,
         count(distinct attendee.id) filter (where (attendee.status = 'confirmed' or (attendee.status = 'pending_payment' and attendee.hold_expires_at > now()))) as confirmed_attendees,
+        (
+          -- Up to 3 confirmed-attendee avatars for the "who's going" preview.
+          select coalesce(array_agg(preview.photo_url order by preview.joined_at), '{}')
+          from (
+            select profile.photo_url, ea.created_at as joined_at
+            from event_attendees ea
+            join profiles profile on profile.id = ea.profile_id
+            where ea.event_id = event.id
+              and ea.status = 'confirmed'
+              and profile.photo_url is not null
+            order by ea.created_at asc
+            limit 3
+          ) preview
+        ) as attendee_avatars,
         coalesce(
           array_agg(distinct tag.slug)
             filter (where tag.tag_type in ('interest', 'vibe', 'music')),
@@ -5165,6 +5185,21 @@ const eventSelectColumns = `
         event.relationship_goal,
         event.fomo,
         count(distinct attendee_count.id) filter (where (attendee_count.status = 'confirmed' or (attendee_count.status = 'pending_payment' and attendee_count.hold_expires_at > now()))) as confirmed_attendees,
+        (
+          -- Up to 3 confirmed-attendee avatars for the "who's going" preview.
+          -- Correlated subquery so it stays correct under the GROUP BY above.
+          select coalesce(array_agg(preview.photo_url order by preview.joined_at), '{}')
+          from (
+            select profile.photo_url, ea.created_at as joined_at
+            from event_attendees ea
+            join profiles profile on profile.id = ea.profile_id
+            where ea.event_id = event.id
+              and ea.status = 'confirmed'
+              and profile.photo_url is not null
+            order by ea.created_at asc
+            limit 3
+          ) preview
+        ) as attendee_avatars,
         coalesce(
           array_agg(distinct tag.slug)
             filter (where tag.tag_type in ('interest', 'vibe', 'music')),
@@ -5324,6 +5359,7 @@ async function getProfileStatusUncached(session: Session | null): Promise<Profil
       registeredEventIds: [],
       waitlistedEventIds: [],
       photoUrl: null,
+      hasGalleryPhotos: false,
       datingVisible: false,
     };
   }
@@ -5331,8 +5367,8 @@ async function getProfileStatusUncached(session: Session | null): Promise<Profil
   try {
     const profile = await ensureProfileForSession(session);
     const [statusResult, bookmarksResult, registrationsResult, merchant] = await Promise.all([
-      pool.query<{ suburb: string | null; bio: string | null; photo_url: string | null; dating_visible: boolean }>(
-        `select suburb, bio, photo_url, dating_visible from profiles where id = $1::uuid`,
+      pool.query<{ suburb: string | null; bio: string | null; photo_url: string | null; dating_visible: boolean; has_gallery: boolean }>(
+        `select suburb, bio, photo_url, dating_visible, cardinality(gallery_photos) > 0 as has_gallery from profiles where id = $1::uuid`,
         [profile.id],
       ),
       pool.query<{ slug: string }>(
@@ -5377,6 +5413,7 @@ async function getProfileStatusUncached(session: Session | null): Promise<Profil
         .filter((entry) => entry.status === "waitlisted")
         .map((entry) => entry.slug),
       photoUrl: row?.photo_url ?? null,
+      hasGalleryPhotos: Boolean(row?.has_gallery),
       datingVisible: Boolean(row?.dating_visible),
     };
   } catch {
@@ -5389,6 +5426,7 @@ async function getProfileStatusUncached(session: Session | null): Promise<Profil
       registeredEventIds: [],
       waitlistedEventIds: [],
       photoUrl: null,
+      hasGalleryPhotos: false,
       datingVisible: false,
     };
   }
@@ -6516,13 +6554,17 @@ export async function createUserClickForSession(
             order by
               -- Prefer a genuinely new shared plan: rank events that neither of
               -- them has already RSVP'd to ahead of ones one of them is on, then
-              -- by interest overlap, then soonest.
+              -- events that align with BOTH members' interests (bug board: a
+              -- mutual-click suggestion should hit shared interests where it
+              -- can — falls back to a single-member match when none align with
+              -- both), then by interest overlap, then soonest.
               (exists (
                  select 1 from event_attendees ea
                  where ea.event_id = event.id
                    and ea.profile_id in ($1::uuid, $2::uuid)
                    and ea.status in ('confirmed', 'waitlisted', 'pending_payment')
                )) asc,
+              (count(distinct user_tag.profile_id) = 2) desc,
               count(distinct user_tag.tag_id) desc,
               event.starts_at asc
             limit 1
@@ -10046,6 +10088,13 @@ export type MerchantFinancesSummary = {
     arrivalDate: string | null;
     bankLast4: string | null;
   }[];
+  // Paid + gross revenue grouped by calendar month (Australia/Sydney), most
+  // recent ~12 months. Feeds the Finances tab revenue bar chart.
+  monthlyRevenue: {
+    month: string; // "YYYY-MM"
+    paidCents: number;
+    grossCents: number;
+  }[];
 };
 
 export async function getMerchantFinancesSummary(
@@ -10064,6 +10113,7 @@ export async function getMerchantFinancesSummary(
       detailsSubmitted: false,
     },
     recentPayouts: [],
+    monthlyRevenue: [],
   };
 
   const pool = getPostgresPool();
@@ -10075,7 +10125,7 @@ export async function getMerchantFinancesSummary(
     const merchant = await getMerchantProfile(pool, profile.id);
     if (!merchant) return empty;
 
-    const [aggResult, recentResult, payoutsResult] = await Promise.all([
+    const [aggResult, recentResult, payoutsResult, monthlyResult] = await Promise.all([
       pool.query<{
         total: string;
         paid: string;
@@ -10131,6 +10181,22 @@ export async function getMerchantFinancesSummary(
         `,
         [merchant.id],
       ),
+      // Revenue grouped by calendar month (Sydney), last ~12 months, for the
+      // Finances revenue chart.
+      pool.query<{ month: string; paid: string; gross: string }>(
+        `
+          select
+            to_char(date_trunc('month', created_at at time zone 'Australia/Sydney'), 'YYYY-MM') as month,
+            coalesce(sum(amount_cents) filter (where status = 'paid'), 0)::text as paid,
+            coalesce(sum(amount_cents), 0)::text as gross
+          from payment_transactions
+          where merchant_profile_id = $1::uuid
+            and created_at >= now() - interval '12 months'
+          group by 1
+          order by 1
+        `,
+        [merchant.id],
+      ),
     ]);
 
     const row = aggResult.rows[0];
@@ -10160,9 +10226,192 @@ export async function getMerchantFinancesSummary(
         arrivalDate: p.arrival_date ? p.arrival_date.toISOString() : null,
         bankLast4: p.bank_last4,
       })),
+      monthlyRevenue: monthlyResult.rows.map((m) => ({
+        month: m.month,
+        paidCents: Number(m.paid),
+        grossCents: Number(m.gross),
+      })),
     };
   } catch {
     return empty;
+  }
+}
+
+export type MerchantTransactionExportRow = {
+  eventTitle: string;
+  createdAt: string;
+  status: string;
+  amountCents: number;
+};
+
+// Full transaction list for CSV export, optionally narrowed to a calendar year
+// or a specific month (Australia/Sydney). Unlike the dashboard summary's
+// 20-row preview, this returns every matching transaction so the exported CSV
+// is complete. Returns [] when signed out / not a merchant.
+export async function getMerchantTransactionsForExport(
+  session: Session | null,
+  opts: { year?: number; month?: number } = {},
+): Promise<MerchantTransactionExportRow[]> {
+  const pool = getPostgresPool();
+  const email = getSessionEmail(session);
+  if (!pool || !email) return [];
+
+  try {
+    const profile = await ensureProfileForSession(session);
+    const merchant = await getMerchantProfile(pool, profile.id);
+    if (!merchant) return [];
+
+    const conditions = ["pt.merchant_profile_id = $1::uuid"];
+    const params: unknown[] = [merchant.id];
+    if (opts.year && Number.isFinite(opts.year)) {
+      params.push(opts.year);
+      conditions.push(
+        `extract(year from pt.created_at at time zone 'Australia/Sydney') = $${params.length}`,
+      );
+    }
+    if (opts.month && opts.month >= 1 && opts.month <= 12) {
+      params.push(opts.month);
+      conditions.push(
+        `extract(month from pt.created_at at time zone 'Australia/Sydney') = $${params.length}`,
+      );
+    }
+
+    const result = await pool.query<{
+      title: string;
+      created_at: Date;
+      status: string;
+      amount_cents: number;
+    }>(
+      `
+        select event.title, pt.created_at, pt.status::text, pt.amount_cents
+        from payment_transactions pt
+        join events event on event.id = pt.event_id
+        where ${conditions.join(" and ")}
+        order by pt.created_at desc
+      `,
+      params,
+    );
+
+    return result.rows.map((r) => ({
+      eventTitle: r.title,
+      createdAt: r.created_at.toISOString(),
+      status: r.status,
+      amountCents: r.amount_cents,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Merchant location waitlist (Sydney-only pilot gate)
+// ---------------------------------------------------------------------------
+
+export type MerchantLocationWaitlistInput = {
+  address: string | null;
+  suburb: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  note?: string | null;
+};
+
+// Records a merchant's interest in a location outside the greater-Sydney pilot
+// area. Resolves the merchant server-side from the session, derives the region
+// bucket, and inserts a waitlist row. Throws an auth error if the caller isn't
+// a merchant. Returns the region it bucketed the location into.
+export async function addMerchantLocationWaitlist(
+  session: Session | null,
+  input: MerchantLocationWaitlistInput,
+): Promise<{ region: Region }> {
+  const pool = getPostgresPool();
+  if (!pool) throw new Error("Database unavailable.");
+
+  const profile = await ensureProfileForSession(session);
+  const merchant = await getMerchantProfile(pool, profile.id);
+  if (!merchant) throw authError("Only merchants can join the location waitlist.");
+
+  const region = regionForEvent({
+    lat: input.latitude,
+    lng: input.longitude,
+    suburb: input.suburb,
+  });
+
+  await pool.query(
+    `
+      insert into merchant_location_waitlist
+        (merchant_profile_id, address, suburb, latitude, longitude, region, note)
+      values ($1::uuid, $2, $3, $4, $5, $6, $7)
+    `,
+    [
+      merchant.id,
+      input.address,
+      input.suburb,
+      input.latitude,
+      input.longitude,
+      region,
+      input.note ?? null,
+    ],
+  );
+
+  return { region };
+}
+
+export type AdminLocationWaitlistRow = {
+  id: string;
+  businessName: string | null;
+  contactEmail: string | null;
+  address: string | null;
+  suburb: string | null;
+  region: string | null;
+  note: string | null;
+  createdAt: string;
+};
+
+// Every location-waitlist entry, newest first, joined to the merchant's
+// business name + contact email for the admin Location Waitlist page.
+export async function getAdminLocationWaitlist(): Promise<AdminLocationWaitlistRow[]> {
+  const pool = getPostgresPool();
+  if (!pool) return [];
+
+  try {
+    const result = await pool.query<{
+      id: string;
+      business_name: string | null;
+      contact_email: string | null;
+      address: string | null;
+      suburb: string | null;
+      region: string | null;
+      note: string | null;
+      created_at: Date;
+    }>(
+      `
+        select
+          w.id::text,
+          merchant.business_name,
+          merchant.contact_email::text as contact_email,
+          w.address,
+          w.suburb,
+          w.region,
+          w.note,
+          w.created_at
+        from merchant_location_waitlist w
+        join merchant_profiles merchant on merchant.id = w.merchant_profile_id
+        order by w.created_at desc
+      `,
+    );
+
+    return result.rows.map((r) => ({
+      id: r.id,
+      businessName: r.business_name,
+      contactEmail: r.contact_email,
+      address: r.address,
+      suburb: r.suburb,
+      region: r.region,
+      note: r.note,
+      createdAt: r.created_at.toISOString(),
+    }));
+  } catch {
+    return [];
   }
 }
 

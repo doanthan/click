@@ -9,6 +9,7 @@ import { MerchantEventsPanel } from "@/components/merchant-events-panel";
 import { MerchantAttendeesPanel } from "@/components/merchant-attendees-panel";
 import { MerchantSidebar, type MerchantTabKey } from "@/components/merchant-sidebar";
 import { MerchantFinancesExport } from "@/components/merchant-finances-export";
+import { MerchantFinancesAnalytics } from "@/components/merchant-finances-analytics";
 import { StripeDashboardButton } from "@/components/stripe-dashboard-button";
 import {
   getMerchantAllAttendees,
@@ -950,7 +951,7 @@ async function FinancesTabAsync({
         eyebrow="Finances"
         title="Payouts + revenue."
         body="Click-managed paid events route through Stripe. Free events don’t appear here."
-        action={<MerchantFinancesExport transactions={finances.recentTransactions} />}
+        action={<MerchantFinancesExport />}
       />
       <PayoutStatusCard connect={finances.connect} />
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -959,6 +960,7 @@ async function FinancesTabAsync({
         <MetricCard label="Pending" value={formatPrice(finances.pendingRevenueCents)} tone="white" />
         <MetricCard label="Refunded" value={formatPrice(finances.refundedRevenueCents)} tone="white" />
       </div>
+      <MerchantFinancesAnalytics monthlyRevenue={finances.monthlyRevenue} />
       <RecentPayoutsCard payouts={finances.recentPayouts} />
       <div className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] hard-shadow-sm">
         <div className="border-b-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-3">
