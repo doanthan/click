@@ -37,6 +37,16 @@ export default async function ConfirmedEventsPage({ searchParams }: ConfirmedEve
   ]);
   const bookmarkSet = new Set(profileStatus.bookmarkedEventIds);
   const registeredSet = new Set(profileStatus.registeredEventIds);
+  const waitlistedSet = new Set(profileStatus.waitlistedEventIds);
+  // Pass the viewer's real seat state to each card — without it the booking
+  // modal infers "waitlisted" from event fullness, so a confirmed attendee of
+  // a sold-out event saw waitlist copy when opening "View your booking".
+  const bookingStatusFor = (id: string): "confirmed" | "waitlisted" | undefined =>
+    registeredSet.has(id)
+      ? waitlistedSet.has(id)
+        ? "waitlisted"
+        : "confirmed"
+      : undefined;
   const events =
     tab === "past" ? confirmed.past : tab === "saved" ? bookmarks : confirmed.upcoming;
   // The calendar always reflects the full picture of attended plans (upcoming +
@@ -114,6 +124,7 @@ export default async function ConfirmedEventsPage({ searchParams }: ConfirmedEve
                     event={event}
                     bookmarked={tab === "saved" ? true : bookmarkSet.has(event.id)}
                     registered={tab === "saved" ? registeredSet.has(event.id) : true}
+                    bookingStatus={bookingStatusFor(event.id)}
                   />
                 ))}
               </div>

@@ -292,6 +292,23 @@ function normalizeAuPhone(raw: string): string {
   return digits;
 }
 
+// Pinpoints WHY a number fails so the inline error is actionable (bug board
+// #144: a tester typed a 9-digit landline and only saw a generic "doesn't look
+// like an AU number", which read as a bug rather than a typo).
+function auPhoneHint(raw: string): string {
+  const digits = normalizeAuPhone(raw);
+  if (/^0[2378]/.test(digits) && digits.length !== 10) {
+    return `Landlines need 10 digits including the area code — you've entered ${digits.length}. e.g. 02 9646 8888.`;
+  }
+  if (/^04/.test(digits) && digits.length !== 10) {
+    return `Mobiles need 10 digits — you've entered ${digits.length}. e.g. 0412 345 678.`;
+  }
+  if (/^1[38]00/.test(digits) && digits.length !== 10) {
+    return `1300/1800 numbers need 10 digits — you've entered ${digits.length}. e.g. 1300 123 456.`;
+  }
+  return "That doesn’t look like an AU number yet — try 0412 345 678, 02 9646 8888 or 1300 123 456.";
+}
+
 function isValidAuPhone(raw: string): boolean {
   const digits = normalizeAuPhone(raw);
   return (
@@ -890,7 +907,7 @@ export function ContactSection() {
             </p>
           ) : (
             <p className="text-[0.7rem] font-bold leading-5 text-[color:var(--punch)]">
-              That doesn’t look like an AU number yet — try 0412 345 678 or 02 9646 8888.
+              {auPhoneHint(state.phone)}
             </p>
           )}
         </label>

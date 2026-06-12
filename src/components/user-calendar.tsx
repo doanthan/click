@@ -35,11 +35,15 @@ type UserCalendarProps = {
 };
 
 function isoDateInSydney(date: Date) {
+  // day MUST be "2-digit": with "numeric" the part comes back unpadded ("1"),
+  // so the key "2026-07-1" never matched the grid cell's "2026-07-01" and any
+  // event on the 1st–9th of a month silently vanished from the calendar grid
+  // (bug board #80/#88 — "July events not showing", "Korean BBQ 4 June missing").
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: SYDNEY_TZ,
     year: "numeric",
     month: "2-digit",
-    day: "numeric",
+    day: "2-digit",
   }).formatToParts(date);
   const year = parts.find((part) => part.type === "year")?.value;
   const month = parts.find((part) => part.type === "month")?.value;

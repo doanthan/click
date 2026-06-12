@@ -4,6 +4,7 @@ import { auth, isAdminEmail } from "@/auth";
 import { EventCard } from "@/components/event-card";
 import { LinkButton, MetricCard, Pill } from "@/components/click-ui";
 import { PostEventClickCard } from "@/components/post-event-click-card";
+import { ProfilePhotoNudge } from "@/components/profile-photo-nudge";
 import { ClickRadar } from "@/components/click-radar";
 import { ClickWithSomeoneUserCard } from "@/components/click-with-someone-user-card";
 import {
@@ -139,6 +140,15 @@ export default async function DashboardPage() {
             <LinkButton href="/quiz/life" variant="light">
               Start the quiz
             </LinkButton>
+          </div>
+        ) : null}
+
+        {/* Booked but faceless: keep nudging for a profile photo after an RSVP
+            (bug board #111) — people actually meet up when they can recognise
+            each other. Disappears as soon as a photo is set. */}
+        {!profileStatus.photoUrl && registeredSet.size > 0 ? (
+          <div className="mt-8">
+            <ProfilePhotoNudge />
           </div>
         ) : null}
 

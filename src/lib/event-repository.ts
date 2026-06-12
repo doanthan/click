@@ -240,6 +240,9 @@ export type AdminMemberRow = {
   email: string;
   role: "attendee" | "merchant" | "admin";
   suburb: string | null;
+  // False for profiles that entered an email but never finished onboarding —
+  // they're listed (so admins can nudge them) but not counted as attendees.
+  onboardingComplete: boolean;
   intents: string[];
   bookmarks: number;
   registrations: number;
@@ -1656,7 +1659,7 @@ export async function getMerchantEvents(session: Session | null): Promise<Mercha
         event.capacity,
         event.price_cents,
         event.category,
-        count(attendee.id) filter (where (attendee.status = 'confirmed' or (attendee.status = 'pending_payment' and attendee.hold_expires_at > now()))) as confirmed,
+        count(attendee.id) filter (where attendee.status = 'confirmed') as confirmed,
         count(attendee.id) filter (where attendee.status = 'waitlisted') as waitlisted
       from events event
       left join event_attendees attendee on attendee.event_id = event.id
@@ -1734,7 +1737,7 @@ export async function getMerchantEventDetail(
         event.image_url,
         event.image_urls,
         event.image_alt,
-        count(attendee.id) filter (where (attendee.status = 'confirmed' or (attendee.status = 'pending_payment' and attendee.hold_expires_at > now()))) as confirmed,
+        count(attendee.id) filter (where attendee.status = 'confirmed') as confirmed,
         count(attendee.id) filter (where attendee.status = 'waitlisted') as waitlisted
       from events event
       left join event_attendees attendee on attendee.event_id = event.id
@@ -3713,7 +3716,7 @@ export async function getAdminEvents() {
         bool_or(merchant.id is not null) as has_merchant,
         bool_or(merchant.charges_enabled) as merchant_charges_enabled,
         (coalesce(event.ends_at, event.starts_at) >= now()) as approvable,
-        count(attendee.id) filter (where (attendee.status = 'confirmed' or (attendee.status = 'pending_payment' and attendee.hold_expires_at > now()))) as confirmed_attendees
+        count(attendee.id) filter (where attendee.status = 'confirmed') as confirmed_attendees
       from events event
       left join event_attendees attendee on attendee.event_id = event.id
       left join merchant_profiles merchant on merchant.id = event.merchant_profile_id
@@ -3836,10 +3839,12 @@ export async function getAdminMembers(): Promise<AdminMemberRow[]> {
         profile.suburb,
         profile.connection_intents::text[] as intents,
         coalesce(count(distinct bookmark.event_id), 0) as bookmarks,
-        coalesce(count(distinct attendee.id) filter (where attendee.status in ('confirmed', 'waitlisted')), 0) as registrations,
+        -- Confirmed seats only (bug board #161): a waitlist spot or an unpaid
+        -- checkout hold is not attendance, so it must not show as an RSVP here.
+        coalesce(count(distinct attendee.id) filter (where attendee.status = 'confirmed'), 0) as registrations,
         coalesce(
           jsonb_agg(distinct jsonb_build_object('slug', event.slug, 'title', event.title))
-            filter (where attendee.status in ('confirmed', 'waitlisted') and event.id is not null),
+            filter (where attendee.status = 'confirmed' and event.id is not null),
           '[]'::jsonb
         ) as events,
         profile.email_verified_at,
@@ -3862,6 +3867,10 @@ export async function getAdminMembers(): Promise<AdminMemberRow[]> {
       email: row.email,
       role: (row.role as AdminMemberRow["role"]) ?? "attendee",
       suburb: row.suburb,
+      // Mirrors getProfileStatus's onboardingComplete: suburb is the field
+      // saveOnboarding enforces. An email-only signup (bug board #164) is not
+      // a countable attendee until they finish onboarding.
+      onboardingComplete: !!row.suburb,
       intents: row.intents ?? [],
       bookmarks: Number(row.bookmarks),
       registrations: Number(row.registrations),
@@ -5012,7 +5021,7 @@ export async function getAdminSidebarCounts(): Promise<AdminSidebarCounts> {
       reports: string;
     }>(`
       select
-        (select count(*) from profiles) as members,
+        (select count(*) from profiles where suburb is not null) as members,
         (select count(*) from events) as events,
         (select count(*) from merchant_profiles) as merchants,
         (select count(*) from tags) as tags,
@@ -5056,6 +5065,11 @@ export async function getAdminMetrics(events: AdminEventRow[]): Promise<AdminMet
           count(*) as total,
           count(*) filter (where created_at > now() - interval '7 days') as recent
         from profiles
+        -- Only onboarded members count as attendees (bug board #164): an
+        -- email-only signup — including a merchant who never completed the
+        -- attendee side — hasn't joined yet. suburb is the field onboarding
+        -- enforces (same rule as getProfileStatus.onboardingComplete).
+        where suburb is not null
       `),
       pool.query<{ total: string; pending: string }>(`
         select
@@ -10645,14 +10659,12 @@ export async function getEventAttendeePreview(
             on shared_tag.id = ut.tag_id
            and shared_tag.id in (select tag_id from user_tags where profile_id = $3::uuid)
           where event.slug = $1
-            -- Match the seat-count predicate used in getEventBySlug: a live
-            -- (non-expired) pending_payment hold occupies a seat, so the person
-            -- holding it should show in the attending list and count too.
-            -- Otherwise a "fully booked" event reads "0 of N seats taken".
-            and (
-              attendee.status = 'confirmed'
-              or (attendee.status = 'pending_payment' and attendee.hold_expires_at > now())
-            )
+            -- Only paid-and-confirmed attendees are shown by name (bug board
+            -- #161/#162: a pending_payment hold — e.g. a failed/abandoned
+            -- checkout — must never display a person as "attending"). Live
+            -- holds still occupy seats for capacity math elsewhere; they just
+            -- don't appear in the who's-going list or its count.
+            and attendee.status = 'confirmed'
           group by profile.id
           order by min(attendee.created_at) asc
           limit $2
@@ -10665,10 +10677,7 @@ export async function getEventAttendeePreview(
           from event_attendees attendee
           join events event on event.id = attendee.event_id
           where event.slug = $1
-            and (
-              attendee.status = 'confirmed'
-              or (attendee.status = 'pending_payment' and attendee.hold_expires_at > now())
-            )
+            and attendee.status = 'confirmed'
         `,
         [eventSlug],
       ),

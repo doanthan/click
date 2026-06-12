@@ -295,6 +295,11 @@ function MemberRow({
           </Link>
         )}
         <p className="text-xs font-medium text-[color:var(--mauve)]">{member.email}</p>
+        {!member.onboardingComplete ? (
+          <p className="mt-1 text-[0.7rem] font-bold uppercase tracking-wider text-[color:var(--rose)]">
+            Onboarding incomplete — not counted as attendee
+          </p>
+        ) : null}
         {member.intents.length > 0 ? (
           <p className="mt-1 text-[0.7rem] font-bold uppercase tracking-wider text-[color:var(--mauve)]/80">
             {member.intents.join(" · ")}

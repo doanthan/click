@@ -234,6 +234,29 @@ function DashboardTab({
         </section>
       ) : null}
 
+      {/* Hosts are people too — nudge them onto the attendee side. Sits high
+          on the dashboard (bug board #147: it used to hide at the very bottom
+          and went unnoticed). Always shown while they haven't finished attendee
+          onboarding; once onboarded it stays until their first booking. */}
+      {!attendeeOnboarded || attendingCount === 0 ? (
+        <section className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--peach)]/40 p-6 hard-shadow-sm">
+          <div>
+            <p className="eyebrow">Want to attend events too?</p>
+            <p className="mt-2 max-w-xl text-sm font-medium leading-6 text-[color:var(--mauve)]">
+              {attendeeOnboarded
+                ? "Your host account can also book and attend events on Click. Browse what’s on near you."
+                : "Set up your attendee profile in a couple of minutes to start booking events as a guest."}
+            </p>
+          </div>
+          <Link
+            href={attendeeOnboarded ? "/discover" : "/onboarding"}
+            className="inline-flex shrink-0 items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--ink)] px-5 py-2.5 text-xs font-bold uppercase tracking-wide text-[color:var(--champagne)] hard-shadow-sm hover:bg-[color:var(--rose)] hover:text-[color:var(--surface-deep)]"
+          >
+            {attendeeOnboarded ? "Browse events →" : "Set up attendee profile →"}
+          </Link>
+        </section>
+      ) : null}
+
       {/* Your events — quick list of what's coming up, with a create CTA. This
           is the primary working surface, so it sits above the calendar. */}
       {merchantEvents.length > 0 ? (
@@ -279,28 +302,6 @@ function DashboardTab({
           <MerchantCalendar events={merchantEvents} monthParam={monthParam} />
         </div>
       </section>
-
-      {/* Hosts are people too — nudge them onto the attendee side. If they
-          haven't set up an attendee profile, send them through onboarding;
-          otherwise point them at Discover to book events of their own. */}
-      {attendingCount === 0 ? (
-        <section className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--peach)]/40 p-6 hard-shadow-sm">
-          <div>
-            <p className="eyebrow">Want to attend events too?</p>
-            <p className="mt-2 max-w-xl text-sm font-medium leading-6 text-[color:var(--mauve)]">
-              {attendeeOnboarded
-                ? "Your host account can also book and attend events on Click. Browse what’s on near you."
-                : "Set up your attendee profile in a couple of minutes to start booking events as a guest."}
-            </p>
-          </div>
-          <Link
-            href={attendeeOnboarded ? "/discover" : "/onboarding"}
-            className="inline-flex shrink-0 items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--ink)] px-5 py-2.5 text-xs font-bold uppercase tracking-wide text-[color:var(--champagne)] hard-shadow-sm hover:bg-[color:var(--rose)] hover:text-[color:var(--surface-deep)]"
-          >
-            {attendeeOnboarded ? "Browse events →" : "Set up attendee profile →"}
-          </Link>
-        </section>
-      ) : null}
 
       {merchantEvents.length > 0 ? (
         <MerchantTrends merchantEvents={merchantEvents} />
@@ -380,13 +381,17 @@ function MerchantTrends({
         <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
           Revenue & bookings by month
         </span>
-        <div className="mt-5 flex items-end justify-between gap-2" style={{ height: "160px" }}>
+        {/* Columns must STRETCH to the 160px row (no items-end here): the bar
+            wrapper is flex-1 of the column, and the bars' % heights resolve
+            against it. With items-end the columns collapsed to label height
+            and every bar rendered 0px tall (bug board #158). */}
+        <div className="mt-5 flex items-stretch justify-between gap-2" style={{ height: "160px" }}>
           {months.map((m) => (
             <div key={m.label} className="flex min-w-0 flex-1 flex-col items-center justify-end gap-1">
               <span className="font-mono text-[0.6rem] font-bold text-[color:var(--ink)]">
-                {formatPrice(m.revenueCents)}
+                {m.revenueCents === 0 ? "$0" : formatPrice(m.revenueCents)}
               </span>
-              <div className="flex h-full w-full items-end justify-center gap-1">
+              <div className="flex w-full flex-1 items-end justify-center gap-1">
                 <div
                   className="w-1/2 rounded-t bg-[color:var(--rose)]"
                   style={{ height: `${Math.max((m.revenueCents / maxRevenue) * 100, 3)}%` }}

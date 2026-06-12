@@ -33,11 +33,14 @@ type MerchantCalendarProps = {
 };
 
 function isoDateInSydney(date: Date) {
+  // day MUST be "2-digit": "numeric" comes back unpadded ("1"), so the key
+  // "2026-07-1" never matches the grid cell's "2026-07-01" and events on the
+  // 1st–9th of a month vanish from the grid (same bug as user-calendar, #88).
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: SYDNEY_TZ,
     year: "numeric",
     month: "2-digit",
-    day: "numeric",
+    day: "2-digit",
   }).formatToParts(date);
   const year = parts.find((part) => part.type === "year")?.value;
   const month = parts.find((part) => part.type === "month")?.value;

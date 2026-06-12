@@ -129,8 +129,12 @@ export function EventDetailModal({
   // details + venue) rather than back into the booking modal — they've already
   // RSVP'd. Waitlisted/unregistered viewers still open the modal.
   const isConfirmedBooking = fallbackStatus === "confirmed";
+  // A waitlisted member hasn't got a booking to view — say so (bug board
+  // #159). "View your booking" is reserved for confirmed seats.
   const triggerLabel = registered
-    ? "View your booking"
+    ? fallbackStatus === "waitlisted"
+      ? "On the waitlist"
+      : "View your booking"
     : isWaitlistMode
       ? "Join waitlist"
       : priceIsFree
