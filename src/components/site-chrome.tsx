@@ -9,6 +9,34 @@ import { HeaderNotificationsBell } from "./header-notifications-bell";
 import { HeaderRoleSwitcher, type PortalRole } from "./header-role-switcher";
 import { LoginTrigger } from "./login-trigger";
 
+// Static placeholder streamed while the real SiteHeader awaits its session +
+// profile queries. Mirrors the header chrome (same sticky bar, same logo
+// height) so there is no layout shift when the live header swaps in — only
+// the nav links and the action cluster pop in.
+export function SiteHeaderShell() {
+  return (
+    <header className="sticky top-0 z-50 border-b border-[color:var(--line)] bg-[color:var(--champagne)]/85 backdrop-blur-xl">
+      <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3.5 sm:px-6">
+        <div className="flex items-center gap-2">
+          <Image
+            src="/click_blob_mascot.svg"
+            alt=""
+            width={44}
+            height={44}
+            aria-hidden
+            className="h-9 w-9 shrink-0 sm:h-10 sm:w-10"
+          />
+          <span className="click-wordmark text-[1.7rem] text-[color:var(--ink)] sm:text-[1.85rem]">
+            Click
+            <span className="click-wordmark__period" aria-hidden />
+          </span>
+        </div>
+        <div className="h-9 sm:h-10" aria-hidden />
+      </div>
+    </header>
+  );
+}
+
 export async function SiteHeader() {
   const session = await auth();
   const userLabel = session?.user?.name ?? session?.user?.email ?? "Account";

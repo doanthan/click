@@ -1,3 +1,4 @@
+import { cache } from "react";
 import type { Session } from "next-auth";
 import type { PoolClient } from "pg";
 import { mkdir, readFile, writeFile } from "fs/promises";
@@ -1193,6 +1194,31 @@ function getSessionEmail(session: Session | null) {
   return session?.user?.email?.trim().toLowerCase() ?? "";
 }
 
+// Per-request memo for session-scoped reads. A single page render calls
+// ensureProfileForSession / getProfileStatus many times (layout header + page
+// + every repository function), and each call used to be its own DB
+// round-trip. React's cache() keys object arguments by REFERENCE and every
+// auth() call returns a fresh Session object, so caching on the session
+// itself would never hit — key on the session email (a string) instead and
+// store the in-flight promise so concurrent Promise.all callers share one
+// query. Outside a React request scope (route handlers, crons) cache() calls
+// straight through uncached, which matches the previous behaviour.
+const sessionMemoSlot = cache((_scope: string, _email: string) => ({
+  promise: undefined as Promise<unknown> | undefined,
+}));
+
+function memoizeBySessionEmail<T>(
+  scope: string,
+  session: Session | null,
+  compute: () => Promise<T>,
+): Promise<T> {
+  const email = getSessionEmail(session);
+  if (!email) return compute();
+  const slot = sessionMemoSlot(scope, email);
+  if (!slot.promise) slot.promise = compute();
+  return slot.promise as Promise<T>;
+}
+
 function getSessionName(session: Session | null) {
   return session?.user?.name?.trim() || getSessionEmail(session) || "Click member";
 }
@@ -1448,7 +1474,13 @@ async function registerLocallyForEvent(eventId: string, session: Session | null)
   };
 }
 
-export async function ensureProfileForSession(session: Session | null) {
+export function ensureProfileForSession(session: Session | null) {
+  return memoizeBySessionEmail("ensureProfile", session, () =>
+    ensureProfileForSessionUncached(session),
+  );
+}
+
+async function ensureProfileForSessionUncached(session: Session | null) {
   const pool = getPostgresPool();
   const email = getSessionEmail(session);
 
@@ -5272,7 +5304,13 @@ export async function getDashboardData(session: Session | null): Promise<Dashboa
   }
 }
 
-export async function getProfileStatus(session: Session | null): Promise<ProfileStatus> {
+export function getProfileStatus(session: Session | null): Promise<ProfileStatus> {
+  return memoizeBySessionEmail("profileStatus", session, () =>
+    getProfileStatusUncached(session),
+  );
+}
+
+async function getProfileStatusUncached(session: Session | null): Promise<ProfileStatus> {
   const pool = getPostgresPool();
   const email = getSessionEmail(session);
 
@@ -8571,7 +8609,13 @@ export async function getNotificationsForSession(session: Session | null): Promi
   }
 }
 
-export async function getUnreadNotificationCount(session: Session | null): Promise<number> {
+export function getUnreadNotificationCount(session: Session | null): Promise<number> {
+  return memoizeBySessionEmail("unreadNotifications", session, () =>
+    getUnreadNotificationCountUncached(session),
+  );
+}
+
+async function getUnreadNotificationCountUncached(session: Session | null): Promise<number> {
   const pool = getPostgresPool();
   const email = getSessionEmail(session);
 

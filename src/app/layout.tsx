@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import {
   Archivo,
   Fraunces,
@@ -11,7 +12,7 @@ import SupportWidget from "@/components/support/support-widget";
 import { TestAccountSwitcher } from "@/components/test-account-switcher";
 import { SessionFreshness } from "@/components/session-freshness";
 import { LoginModalHost } from "@/components/login-modal-host";
-import { SiteFooter, SiteHeader } from "@/components/site-chrome";
+import { SiteFooter, SiteHeader, SiteHeaderShell } from "@/components/site-chrome";
 import { auth } from "@/auth";
 import "./globals.css";
 
@@ -73,7 +74,12 @@ export default async function RootLayout({
           React hydrates. This suppresses only body's own attribute mismatch,
           not mismatches inside the component tree. */}
       <body className="min-h-full flex flex-col" suppressHydrationWarning>
-        <SiteHeader />
+        {/* The live header awaits the session profile + notification queries;
+            stream it so those round-trips never block first paint of the page
+            body. The shell keeps the bar's height so nothing shifts. */}
+        <Suspense fallback={<SiteHeaderShell />}>
+          <SiteHeader />
+        </Suspense>
         {children}
         <SiteFooter />
         <LoginModalHost
