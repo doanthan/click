@@ -35,7 +35,10 @@ function errorResponse(error: unknown) {
 export async function POST(request: Request, context: RouteContext) {
   const { merchantId } = await context.params;
   const session = await auth();
-  const body = (await request.json().catch(() => ({}))) as { status?: string };
+  const body = (await request.json().catch(() => ({}))) as {
+    status?: string;
+    reason?: string;
+  };
 
   if (!body.status || !allowedStatuses.has(body.status)) {
     return NextResponse.json({ error: "Valid status is required." }, { status: 400 });
@@ -46,6 +49,7 @@ export async function POST(request: Request, context: RouteContext) {
       merchantId,
       body.status as "pending" | "approved" | "rejected" | "suspended",
       session,
+      typeof body.reason === "string" ? body.reason : undefined,
     );
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {

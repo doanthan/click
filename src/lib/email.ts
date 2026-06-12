@@ -100,6 +100,7 @@ export type EmailTemplate =
   | "event-rejected-merchant"
   | "event-cancelled-attendee"
   | "merchant-application-received"
+  | "merchant-waitlisted-merchant"
   | "merchant-verified-merchant"
   | "merchant-rejected-merchant"
   | "password-reset"
@@ -137,6 +138,8 @@ const SUBJECTS: Record<EmailTemplate, (vars: Record<string, string>) => string> 
     `${v.eventTitle ?? "Your event"} has been cancelled`,
   "merchant-application-received": (v) =>
     `We've got your application — ${v.businessName ?? "your business"}`,
+  "merchant-waitlisted-merchant": (v) =>
+    `You're on the Click waitlist — ${v.suburb ?? "your area"} is coming soon`,
   "merchant-verified-merchant": (v) =>
     `${v.businessName ?? "You're"} verified — post your first event`,
   "merchant-rejected-merchant": (v) =>

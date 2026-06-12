@@ -273,20 +273,33 @@ export function MerchantSignupProvider({
 
 // ---------- step validation ----------
 
-// Accepts AU mobiles AND landlines, in the formats people actually type:
-//   0412 345 678 · 02 9646 8888 · (02) 9646 8888 · +61 2 9646 8888 · 9646 8888
-// Strips spaces/brackets/dashes, normalises a +61 / 61 country code to a
-// leading 0, then accepts a 10-digit national number (mobile or landline) or a
-// bare 8-digit local landline (no area code).
+// Accepts AU mobiles, landlines AND business numbers, in the formats people
+// actually type:
+//   0412 345 678 · 412 345 678 · 02 9646 8888 · (02) 9646 8888 ·
+//   +61 2 9646 8888 · 9646 8888 · 1300 123 456 · 1800 123 456 · 13 12 34
+// Strips spaces/brackets/dashes, normalises a +61 / 61 country code and a
+// 9-digit mobile (missing leading 0) to a leading 0, then accepts national
+// numbers, bare local landlines, and 13/1300/1800 business lines. Kept
+// deliberately permissive — a false rejection on a real number is worse than
+// letting an oddly-formatted one through (admins see it during verification).
 function normalizeAuPhone(raw: string): string {
   let digits = raw.replace(/[^\d]/g, "");
-  if (digits.startsWith("61")) digits = "0" + digits.slice(2);
+  // +61 / 0061 country code → leading 0.
+  if (digits.startsWith("0061")) digits = "0" + digits.slice(4);
+  else if (digits.startsWith("61") && digits.length >= 10) digits = "0" + digits.slice(2);
+  // Mobile typed without the leading 0 ("412 345 678") → add it back.
+  if (/^4\d{8}$/.test(digits)) digits = "0" + digits;
   return digits;
 }
 
 function isValidAuPhone(raw: string): boolean {
   const digits = normalizeAuPhone(raw);
-  return /^0[2-9]\d{8}$/.test(digits) || /^\d{8}$/.test(digits);
+  return (
+    /^0[2-9]\d{8}$/.test(digits) || // 10-digit mobile or area-code landline
+    /^\d{8}$/.test(digits) || // bare 8-digit local landline (no area code)
+    /^1[38]00\d{6}$/.test(digits) || // 1300 / 1800 business line
+    /^13\d{4}$/.test(digits) // 13 xx xx short business line
+  );
 }
 
 function validateStep(step: StepIndex, state: State): string | null {
@@ -859,11 +872,27 @@ export function ContactSection() {
           <FieldLabel>Phone * (AU)</FieldLabel>
           <TextInput
             type="tel"
+            inputMode="tel"
+            autoComplete="tel"
             value={state.phone}
             onChange={(e) => dispatch({ type: "field", key: "phone", value: e.target.value })}
-            placeholder="0412 345 678 or 02 9646 8888"
+            placeholder="0412 345 678"
+            aria-invalid={state.phone.trim() !== "" && !isValidAuPhone(state.phone)}
             required
           />
+          {state.phone.trim() === "" ? (
+            <p className="text-[0.7rem] font-medium leading-5 text-[color:var(--mauve)]">
+              Mobile, landline or business line — e.g. 0412 345 678, 02 9646 8888 or 1300 123 456. Spaces, brackets and +61 are fine.
+            </p>
+          ) : isValidAuPhone(state.phone) ? (
+            <p className="text-[0.7rem] font-bold leading-5 text-[color:var(--rose)]">
+              ✓ Looks good.
+            </p>
+          ) : (
+            <p className="text-[0.7rem] font-bold leading-5 text-[color:var(--punch)]">
+              That doesn’t look like an AU number yet — try 0412 345 678 or 02 9646 8888.
+            </p>
+          )}
         </label>
       </div>
 

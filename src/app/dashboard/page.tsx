@@ -101,6 +101,14 @@ export default async function DashboardPage() {
   const saved = dashboard.savedEvents;
   const bookmarkSet = new Set(profileStatus.bookmarkedEventIds);
   const registeredSet = new Set(profileStatus.registeredEventIds);
+  const waitlistedSet = new Set(profileStatus.waitlistedEventIds);
+  // Confirmed when the viewer is registered but NOT on the waitlist for it.
+  const bookingStatusFor = (id: string): "confirmed" | "waitlisted" | undefined =>
+    registeredSet.has(id)
+      ? waitlistedSet.has(id)
+        ? "waitlisted"
+        : "confirmed"
+      : undefined;
 
   return (
     <main className="paper-noise min-h-screen bg-[color:var(--champagne)] px-4 py-12 text-[color:var(--ink)] sm:px-6">
@@ -275,6 +283,7 @@ export default async function DashboardPage() {
                 compact
                 bookmarked={bookmarkSet.has(event.id)}
                 registered={registeredSet.has(event.id)}
+                bookingStatus={bookingStatusFor(event.id)}
               />
             ))}
           </div>
@@ -318,6 +327,7 @@ export default async function DashboardPage() {
                 compact
                 bookmarked={bookmarkSet.has(event.id)}
                 registered={registeredSet.has(event.id)}
+                bookingStatus={bookingStatusFor(event.id)}
               />
             ))}
           </div>
@@ -354,6 +364,7 @@ export default async function DashboardPage() {
                 compact
                 bookmarked
                 registered={registeredSet.has(event.id)}
+                bookingStatus={bookingStatusFor(event.id)}
               />
             ))}
           </div>
@@ -398,6 +409,7 @@ export default async function DashboardPage() {
                 compact
                 bookmarked={bookmarkSet.has(event.id)}
                 registered={registeredSet.has(event.id)}
+                bookingStatus={bookingStatusFor(event.id)}
               />
             ))}
           </div>

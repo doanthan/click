@@ -36,6 +36,11 @@ import { buildPairFeatures, scorePair } from "./matching/score";
 import { MODEL_VERSION } from "./matching/weights";
 import type { UserFeatures } from "./matching/types";
 import { logEmailEvent, sendTransactionalEmail } from "./email";
+import {
+  resolveProfilePrompts,
+  sanitizeProfilePrompts,
+  type ProfilePromptAnswer,
+} from "./profile-prompts";
 import { regionForEvent, type Region } from "./geo";
 import { getPostgresPool } from "./postgres";
 import { getSupabaseAdmin } from "@/utils/supabase/admin";
@@ -145,6 +150,10 @@ export type ProfileStatus = {
   merchantProfile: MerchantProfileRow | null;
   bookmarkedEventIds: string[];
   registeredEventIds: string[];
+  // Subset of registeredEventIds that are waitlist-only (status='waitlisted').
+  // registeredEventIds conflates confirmed + waitlisted; this lets callers tell
+  // them apart without a second query.
+  waitlistedEventIds: string[];
   photoUrl: string | null;
   // Whether the viewer has opted into dating visibility. Used to gate
   // dating-related signals (e.g. the radar "open to dating" FOMO nudge) so they
@@ -320,6 +329,7 @@ export type AdminMerchantRow = {
   ownerEmail: string;
   eventsHosted: number;
   createdAt: string;
+  autoApproveEvents: boolean;
 };
 
 export type AdminMerchantDetailEvent = {
@@ -3016,8 +3026,16 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
     // Trusted merchants (an admin has approved at least one of their events, see
     // approveEventForAdmin) skip the pending queue — their events publish straight
     // to 'live'. New/untrusted merchants still land in 'pending' for manual review.
+    // BUT we never push an event live until the merchant has fully finished Stripe
+    // Connect (both charges AND payouts enabled). A half-finished payout setup
+    // means we can't actually pay them out, so the event stays 'pending' (visible
+    // to the merchant, hidden from Discover) until they complete setup — they get
+    // the "finish payout setup" banner on /merchant in the meantime.
     const autoApprove = merchantProfile.auto_approve_events === true;
-    const eventStatus = autoApprove ? "live" : "pending";
+    const stripeReady =
+      merchantProfile.charges_enabled === true &&
+      merchantProfile.payouts_enabled === true;
+    const eventStatus = autoApprove && stripeReady ? "live" : "pending";
     // Event titles are always title-cased ("table for eight" → "Table for
     // Eight"). The wizard does this live as the merchant types; we redo it here
     // so titles from any other path (or a bypassed client) stay consistent.
@@ -3430,12 +3448,16 @@ export async function updateMerchantVerificationForAdmin(
   merchantId: string,
   status: "pending" | "approved" | "rejected" | "suspended",
   session: Session | null,
+  reason?: string,
 ) {
   const pool = getPostgresPool();
 
   if (!pool) throw databaseUnavailableError();
 
   const profile = await requireAdminProfile(session);
+  // Admin's free-text "why" for a rejection — rides through to the merchant
+  // email + audit log so they know what to fix or resubmit.
+  const trimmedReason = (reason ?? "").trim().slice(0, 1000);
   const result = await pool.query<{
     id: string;
     business_name: string;
@@ -3495,6 +3517,7 @@ export async function updateMerchantVerificationForAdmin(
       JSON.stringify({
         business: merchant.business_name,
         contactEmail: merchant.contact_email,
+        ...(trimmedReason ? { reason: trimmedReason } : {}),
       }),
     ],
   );
@@ -3517,7 +3540,9 @@ export async function updateMerchantVerificationForAdmin(
         ? `${merchant.business_name} is approved to host Click events. Finish a quick setup to start taking payments.`
         : status === "suspended"
           ? `${merchant.business_name} has been suspended. Your events are hidden from Discover until an admin reinstates the account.`
-          : `${merchant.business_name} is now marked ${status}.`,
+          : status === "rejected" && trimmedReason
+            ? `${merchant.business_name} needs another look: ${trimmedReason}`
+            : `${merchant.business_name} is now marked ${status}.`,
       // Approved merchants land in the post-approval onboarding (walkthrough +
       // Stripe payout setup); other statuses go to the portal/holding page.
       status === "approved" ? "/merchant/onboarding" : "/merchant",
@@ -3538,7 +3563,9 @@ export async function updateMerchantVerificationForAdmin(
         ? `${merchant.business_name} is approved to create and manage events on Click. Finish a quick setup to learn the ropes and connect payouts.`
         : status === "suspended"
           ? `${merchant.business_name} has been suspended. Your events are hidden from Discover until an admin reinstates the account.`
-          : `${merchant.business_name} is now marked ${status}.`,
+          : status === "rejected" && trimmedReason
+            ? `${merchant.business_name} needs another look before we can approve it:\n\n${trimmedReason}\n\nReply to this email or update your application and resubmit.`
+            : `${merchant.business_name} is now marked ${status}.`,
       `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3001"}${status === "approved" ? "/merchant/onboarding" : "/merchant"}`,
     ].join("\n\n"),
   });
@@ -3572,6 +3599,7 @@ export async function updateMerchantVerificationForAdmin(
         businessName: merchant.business_name,
         merchantFirstName,
         rejectionReason:
+          trimmedReason ||
           "Our reviewer flagged something in your application. Reply to this email and we'll walk you through it.",
         resubmitUrl: `${origin}/merchant/signup/documents`,
         supportEmail: "hello@click.app",
@@ -4088,6 +4116,7 @@ export async function getAdminMerchants(): Promise<AdminMerchantRow[]> {
       owner_email: string;
       events_hosted: string;
       created_at: Date;
+      auto_approve_events: boolean;
     }>(`
       select
         merchant.id::text,
@@ -4099,7 +4128,8 @@ export async function getAdminMerchants(): Promise<AdminMerchantRow[]> {
         owner.display_name as owner_name,
         owner.email::text as owner_email,
         coalesce(count(distinct event.id), 0) as events_hosted,
-        merchant.created_at
+        merchant.created_at,
+        coalesce(merchant.auto_approve_events, false) as auto_approve_events
       from merchant_profiles merchant
       join profiles owner on owner.id = merchant.profile_id
       left join events event on event.merchant_profile_id = merchant.id
@@ -4119,6 +4149,7 @@ export async function getAdminMerchants(): Promise<AdminMerchantRow[]> {
       ownerEmail: row.owner_email,
       eventsHosted: Number(row.events_hosted),
       createdAt: row.created_at.toISOString(),
+      autoApproveEvents: Boolean(row.auto_approve_events),
     }));
   } catch (error) {
     if (process.env.CLICK_DB_DEBUG === "true") {
@@ -5239,6 +5270,7 @@ export async function getProfileStatus(session: Session | null): Promise<Profile
       merchantProfile: null,
       bookmarkedEventIds: [],
       registeredEventIds: [],
+      waitlistedEventIds: [],
       photoUrl: null,
       datingVisible: false,
     };
@@ -5260,9 +5292,9 @@ export async function getProfileStatus(session: Session | null): Promise<Profile
         `,
         [profile.id],
       ),
-      pool.query<{ slug: string }>(
+      pool.query<{ slug: string; status: string }>(
         `
-          select event.slug
+          select event.slug, attendee.status::text as status
           from event_attendees attendee
           join events event on event.id = attendee.event_id
           where attendee.profile_id = $1::uuid
@@ -5286,6 +5318,12 @@ export async function getProfileStatus(session: Session | null): Promise<Profile
       merchantProfile: merchant,
       bookmarkedEventIds: bookmarksResult.rows.map((entry) => entry.slug),
       registeredEventIds: registrationsResult.rows.map((entry) => entry.slug),
+      // Split out so callers can tell a confirmed booking from a waitlist spot
+      // (registeredEventIds conflates both). Lets cards/modals show the right
+      // "View your booking" vs "On the waitlist" state without re-querying.
+      waitlistedEventIds: registrationsResult.rows
+        .filter((entry) => entry.status === "waitlisted")
+        .map((entry) => entry.slug),
       photoUrl: row?.photo_url ?? null,
       datingVisible: Boolean(row?.dating_visible),
     };
@@ -5297,6 +5335,7 @@ export async function getProfileStatus(session: Session | null): Promise<Profile
       merchantProfile: null,
       bookmarkedEventIds: [],
       registeredEventIds: [],
+      waitlistedEventIds: [],
       photoUrl: null,
       datingVisible: false,
     };
@@ -5660,6 +5699,18 @@ const MERCHANT_SOCIAL_PLATFORMS = [
 const AU_POSTCODE_RE = /^[0-9]{4}$/;
 // Accepts +61412345678, 0412345678, or with spacing — we strip to digits before checking.
 const AU_PHONE_RE = /^(?:\+?61|0)\d{9}$/;
+
+// Launch pilot is Greater Sydney. A merchant whose venue is outside this area
+// is parked on the host waitlist (emailed, not auto-rejected) until we open
+// their region — see registerMerchantWizardSubmit. Sydney metro postcodes are
+// NSW 2000–2234 (city + suburbs) plus the 1xxx business-district PO range.
+const PILOT_AREA_LABEL = "Greater Sydney";
+function isWithinPilotArea(state: string, postcode: string): boolean {
+  if (state !== "NSW") return false;
+  const code = Number(postcode);
+  if (!Number.isFinite(code)) return false;
+  return (code >= 2000 && code <= 2234) || (code >= 1000 && code <= 1999);
+}
 
 function validationError(message: string): Error {
   const error = new Error(message);
@@ -6107,19 +6158,40 @@ export async function registerMerchantWizardSubmit(
         year: "numeric",
         timeZone: "Australia/Sydney",
       }).format(new Date());
-      void logEmailEvent({
-        template: "merchant-application-received",
-        toEmail: contactEmail,
-        toProfileId: profile.id,
-        vars: {
-          merchantFirstName,
-          businessName,
-          submittedDate,
-          merchantDashboardUrl: `${origin}/merchant`,
-          supportEmail: "hello@click.app",
-          unsubscribeUrl: `${origin}/account-settings`,
-        },
-      });
+      // Outside the launch pilot (Greater Sydney): the venue can't go live yet,
+      // so we park the host on the waitlist and email them rather than running
+      // them through verification for a region we don't serve. The email_events
+      // row IS the waitlist record (the dev/staging inbox + audit trail).
+      const withinPilot = isWithinPilotArea(input.addressState, postcode);
+      if (!withinPilot) {
+        void logEmailEvent({
+          template: "merchant-waitlisted-merchant",
+          toEmail: contactEmail,
+          toProfileId: profile.id,
+          vars: {
+            merchantFirstName,
+            businessName,
+            suburb: suburb || input.addressState,
+            pilotArea: PILOT_AREA_LABEL,
+            supportEmail: "hello@click.app",
+            unsubscribeUrl: `${origin}/account-settings`,
+          },
+        });
+      } else {
+        void logEmailEvent({
+          template: "merchant-application-received",
+          toEmail: contactEmail,
+          toProfileId: profile.id,
+          vars: {
+            merchantFirstName,
+            businessName,
+            submittedDate,
+            merchantDashboardUrl: `${origin}/merchant`,
+            supportEmail: "hello@click.app",
+            unsubscribeUrl: `${origin}/account-settings`,
+          },
+        });
+      }
 
       // Notify every admin that a new merchant is awaiting verification, so the
       // verification queue surfaces in their bell without polling /admin/merchants.
@@ -6133,8 +6205,12 @@ export async function registerMerchantWizardSubmit(
             where role = 'admin'
           `,
           [
-            "New merchant awaiting verification",
-            `${businessName} just signed up and is waiting for verification.`,
+            withinPilot
+              ? "New merchant awaiting verification"
+              : "New merchant on the waitlist (outside pilot)",
+            withinPilot
+              ? `${businessName} just signed up and is waiting for verification.`
+              : `${businessName} signed up from ${suburb || input.addressState}, outside the ${PILOT_AREA_LABEL} pilot — parked on the host waitlist.`,
             "/admin/merchants",
           ],
         )
@@ -7643,6 +7719,40 @@ export async function createPaymentHold(
       throw error;
     }
 
+    // Self-heal the "I paid but it says pay again" case (bug board #135): the
+    // buyer's first checkout succeeded at Stripe, but the webhook / return
+    // reconciliation never flipped their seat to confirmed (a crash mid-flow,
+    // a dropped webhook). They land back here and we'd otherwise charge them a
+    // SECOND time. If ANY of their transactions for this event is already
+    // 'paid', the money is in — promote the seat in place and stop, rather than
+    // opening a new checkout. markPaymentSucceeded stays the primary path; this
+    // is the backstop that prevents a double charge.
+    const paidTxn = await client.query<{ id: string }>(
+      `
+        select id::text
+        from payment_transactions
+        where event_id = $1::uuid and profile_id = $2::uuid and status = 'paid'
+        limit 1
+      `,
+      [event.id, profile.id],
+    );
+    if (paidTxn.rows[0]) {
+      await client.query(
+        `
+          update event_attendees
+          set status = 'confirmed', hold_expires_at = null, updated_at = now()
+          where event_id = $1::uuid and profile_id = $2::uuid and status <> 'confirmed'
+        `,
+        [event.id, profile.id],
+      );
+      await client.query("commit");
+      const error = new Error(
+        "You've already paid for this event — your spot is confirmed. Refresh the page to see your booking.",
+      );
+      error.name = "ConflictError";
+      throw error;
+    }
+
     // Booking fee is charged on top of the ticket and kept by the platform.
     // Snapshot it at hold time so a later admin change to the rate can't alter an
     // in-flight checkout. amount_cents stores the full buyer charge (ticket + fee).
@@ -7954,6 +8064,12 @@ export type PublicProfile = {
   intents: string[];
   interests: { slug: string; label: string }[];
   attendedCount: number;
+  // Up to 5 extra photos (migration 042), public `avatars` bucket gallery/ prefix.
+  galleryPhotos: string[];
+  // Answered profile prompts with labels resolved from the curated catalogue.
+  prompts: { id: string; label: string; answer: string }[];
+  // The "tick" — true once an admin has stamped photo_verified_at.
+  verified: boolean;
 };
 
 export type OwnProfile = PublicProfile & {
@@ -8027,12 +8143,16 @@ export async function getOwnProfile(session: Session | null): Promise<OwnProfile
         show_suburb: boolean;
         show_attendance_count: boolean;
         allow_merchant_messages: boolean;
+        gallery_photos: string[];
+        prompts: unknown;
+        photo_verified_at: Date | null;
       }>(
         `
           select id::text, display_name, email::text, role::text, city, suburb, bio, photo_url, age,
                  connection_intents::text[] as connection_intents,
                  dating_visible, flexible_discovery,
-                 notification_prefs, show_suburb, show_attendance_count, allow_merchant_messages
+                 notification_prefs, show_suburb, show_attendance_count, allow_merchant_messages,
+                 gallery_photos, prompts, photo_verified_at
           from profiles
           where id = $1::uuid
         `,
@@ -8080,6 +8200,9 @@ export async function getOwnProfile(session: Session | null): Promise<OwnProfile
         .map((t) => ({ slug: t.slug, label: t.label })),
       interestSlugs: tagsResult.rows.filter((t) => t.tag_type === "interest").map((t) => t.slug),
       musicSlugs: tagsResult.rows.filter((t) => t.tag_type === "music").map((t) => t.slug),
+      galleryPhotos: row.gallery_photos ?? [],
+      prompts: resolveProfilePrompts(row.prompts),
+      verified: !!row.photo_verified_at,
       datingVisible: row.dating_visible,
       flexibleDiscovery: row.flexible_discovery,
       lifeQuizCompleted: tagsResult.rows.some((t) => t.source === "quiz"),
@@ -8116,11 +8239,15 @@ export async function getPublicProfileById(profileId: string): Promise<PublicPro
         connection_intents: string[];
         show_suburb: boolean;
         show_attendance_count: boolean;
+        gallery_photos: string[];
+        prompts: unknown;
+        photo_verified_at: Date | null;
       }>(
         `
           select id::text, display_name, city, suburb, bio, photo_url, age,
                  connection_intents::text[] as connection_intents,
-                 show_suburb, show_attendance_count
+                 show_suburb, show_attendance_count,
+                 gallery_photos, prompts, photo_verified_at
           from profiles
           where id = $1::uuid
         `,
@@ -8164,6 +8291,9 @@ export async function getPublicProfileById(profileId: string): Promise<PublicPro
       attendedCount: row.show_attendance_count
         ? Number(attendedResult.rows[0]?.count ?? 0)
         : 0,
+      galleryPhotos: row.gallery_photos ?? [],
+      prompts: resolveProfilePrompts(row.prompts),
+      verified: !!row.photo_verified_at,
     };
   } catch {
     return null;
@@ -8186,6 +8316,10 @@ export type ProfileUpdateInput = {
   // Discovery/privacy switches (migration 005). Undefined = leave unchanged.
   datingVisible?: boolean;
   flexibleDiscovery?: boolean;
+  // Answered profile prompts (migration 042). When provided, the stored set is
+  // fully replaced — pass `[]` to clear. Re-sanitised here so the invariants
+  // (known ids, ≤3, answer length) hold no matter the caller.
+  prompts?: ProfilePromptAnswer[];
 };
 
 // Replaces every `user_tags` row of one tag_type for a profile with the given
@@ -8275,6 +8409,10 @@ export async function updateOwnProfile(
   if (input.flexibleDiscovery !== undefined) {
     updates.push(`flexible_discovery = $${i++}`);
     params.push(input.flexibleDiscovery);
+  }
+  if (input.prompts !== undefined) {
+    updates.push(`prompts = $${i++}::jsonb`);
+    params.push(JSON.stringify(sanitizeProfilePrompts(input.prompts)));
   }
 
   const syncsInterests = input.interestTags !== undefined;
@@ -10082,6 +10220,36 @@ export async function unsuspendMemberAsAdmin(
   await writeAuditLog({
     actorProfileId: actor.id,
     action: "unsuspend_member",
+    entityTable: "profiles",
+    entityId: targetProfileId,
+  });
+}
+
+// Stamp/clear the verification tick (profiles.photo_verified_at). Verified
+// members get a "✓" next to their name on profile surfaces; only admins can
+// grant it (manual review for now — an automated selfie check can land later
+// without changing this write path).
+export async function setMemberVerifiedAsAdmin(
+  session: Session | null,
+  targetProfileId: string,
+  verified: boolean,
+) {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+  const actor = await requireAdminProfile(session);
+
+  await pool.query(
+    `
+      update profiles
+      set photo_verified_at = ${verified ? "now()" : "null"}
+      where id = $1::uuid
+    `,
+    [targetProfileId],
+  );
+
+  await writeAuditLog({
+    actorProfileId: actor.id,
+    action: verified ? "verify_member" : "unverify_member",
     entityTable: "profiles",
     entityId: targetProfileId,
   });

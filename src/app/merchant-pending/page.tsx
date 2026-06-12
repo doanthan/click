@@ -14,7 +14,16 @@ export const metadata = {
     "Your Click host application is being reviewed. Here's what to prepare while you wait.",
 };
 
-function AccessDenied({ reason }: { reason: string }) {
+function AccessDenied({
+  reason,
+  showHostCta,
+}: {
+  reason: string;
+  // When the visitor has no application on file, point them INTO the host
+  // onboarding funnel instead of leaving "Back to Click" as the only exit —
+  // "Host an event" should always lead to merchant onboarding, never a dead end.
+  showHostCta?: boolean;
+}) {
   return (
     <main className="paper-noise grid min-h-screen place-items-center bg-[color:var(--champagne)] px-4 py-12 text-[color:var(--ink)] sm:px-6">
       <section className="mx-auto w-full max-w-xl rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-8 text-center hard-shadow sm:p-10">
@@ -23,12 +32,20 @@ function AccessDenied({ reason }: { reason: string }) {
           No access
         </span>
         <h1 className="font-display mt-6 text-4xl font-light leading-[0.98] tracking-tight sm:text-5xl">
-          You don’t have access to this page.
+          {showHostCta ? "Want to host on Click?" : "You don’t have access to this page."}
         </h1>
         <p className="mt-5 text-base font-medium leading-7 text-[color:var(--mauve)]">
           {reason}
         </p>
         <div className="mt-8 flex flex-wrap justify-center gap-3">
+          {showHostCta ? (
+            <Link
+              href="/merchant/signup"
+              className="inline-flex items-center gap-2 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)]"
+            >
+              Start hosting →
+            </Link>
+          ) : null}
           <Link
             href="/"
             className="inline-flex items-center gap-2 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-2.5 text-sm font-bold text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--cream)]"
@@ -52,18 +69,21 @@ export default async function MerchantPendingPage() {
       merchantProfile.verification_status !== "rejected")
   ) {
     let reason: string;
+    let showHostCta = false;
     if (!session?.user) {
       reason =
-        "This page is only for merchants reviewing their application status. Sign in with your merchant account to view it.";
+        "This page is only for merchants reviewing their application status. Sign in, then start a host application to get going.";
+      showHostCta = true;
     } else if (!merchantProfile) {
       reason =
-        "You haven’t submitted a host application yet, so there’s nothing pending to show here.";
+        "You haven’t submitted a host application yet. Start the quick onboarding to list your first event.";
+      showHostCta = true;
     } else {
       // verification_status === "approved"
       reason =
         "Your merchant application is already approved — your portal is live, so there’s no pending status to show.";
     }
-    return <AccessDenied reason={reason} />;
+    return <AccessDenied reason={reason} showHostCta={showHostCta} />;
   }
 
   const rejected = merchantProfile.verification_status === "rejected";

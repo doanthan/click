@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { LinkButton, Pill } from "@/components/click-ui";
+import { VerifiedTick } from "@/components/verified-tick";
 import { getConfirmedEvents, getOwnProfile } from "@/lib/event-repository";
 
 export const metadata = {
@@ -65,6 +66,7 @@ export default async function OwnProfilePage() {
               </span>
               <h1 className="mt-6 font-display text-5xl font-light leading-[0.96] tracking-tight sm:text-6xl">
                 {profile.displayName}
+                {profile.verified ? <VerifiedTick className="ml-3 text-3xl sm:text-4xl" /> : null}
               </h1>
             </div>
           </div>
@@ -111,6 +113,20 @@ export default async function OwnProfilePage() {
               </p>
             </div>
 
+            {profile.prompts.map((prompt) => (
+              <div
+                key={prompt.id}
+                className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-5 hard-shadow-sm"
+              >
+                <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
+                  {prompt.label}…
+                </span>
+                <p className="mt-3 font-display text-2xl font-light leading-snug text-[color:var(--ink)]">
+                  {prompt.answer}
+                </p>
+              </div>
+            ))}
+
             <div className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-5 hard-shadow-sm">
               <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
                 Intents
@@ -155,6 +171,36 @@ export default async function OwnProfilePage() {
               </div>
             </div>
           </div>
+        </div>
+
+        <div className="mt-10">
+          <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
+            Photos
+          </span>
+          {profile.galleryPhotos.length > 0 ? (
+            <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+              {profile.galleryPhotos.map((url) => (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  key={url}
+                  src={url}
+                  alt=""
+                  className="aspect-[4/5] w-full rounded-2xl border-2 border-[color:var(--line)] object-cover hard-shadow-sm"
+                />
+              ))}
+            </div>
+          ) : (
+            <p className="mt-3 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-6 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+              Add up to 5 photos from{" "}
+              <Link
+                href="/profile/edit"
+                className="font-bold text-[color:var(--ink)] underline decoration-2 underline-offset-4 hover:text-[color:var(--rose)]"
+              >
+                Edit profile
+              </Link>{" "}
+              — profiles with photos get far more Clicks.
+            </p>
+          )}
         </div>
 
         <div className="mt-10">

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import {
+  setMemberVerifiedAsAdmin,
   suspendMemberAsAdmin,
   unsuspendMemberAsAdmin,
   updateSystemSettingsAsAdmin,
@@ -32,6 +33,19 @@ export async function unsuspendMemberAction(formData: FormData) {
 
   await unsuspendMemberAsAdmin(session, id);
   revalidatePath("/admin");
+}
+
+// Grant/revoke the profile verification tick (profiles.photo_verified_at).
+export async function setMemberVerifiedAction(formData: FormData) {
+  const session = await auth();
+  if (!session?.user) redirect("/login?callbackUrl=/admin");
+
+  const id = formData.get("profile_id");
+  if (typeof id !== "string" || !UUID_RE.test(id)) return;
+
+  await setMemberVerifiedAsAdmin(session, id, formData.get("verified") === "true");
+  revalidatePath("/admin");
+  revalidatePath("/admin/members");
 }
 
 export async function updateSystemSettingsAction(formData: FormData) {

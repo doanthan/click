@@ -35,11 +35,15 @@ export function EventDetailModal({
   event,
   bookmarked = false,
   registered = false,
+  bookingStatus,
   className,
 }: {
   event: EventItem;
   bookmarked?: boolean;
   registered?: boolean;
+  // Known booking state for the viewer. When "confirmed" we never show waitlist
+  // copy and send them straight to their unlocked event page.
+  bookingStatus?: "confirmed" | "waitlisted";
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -84,18 +88,25 @@ export function EventDetailModal({
 
   // Show the card data immediately, then merge in the richer Supabase record.
   // The `registered` prop conflates confirmed + waitlisted (both live in the
-  // dashboard's registered set), so before the live record loads we infer
-  // waitlist from the card's own full/waitlist state — otherwise a waitlisted
-  // member briefly sees the confirmed "Cancel RSVP" action.
-  const fallbackWaitlist =
-    event.status === "Waitlist" || event.attendees >= event.capacity;
+  // dashboard's registered set). When the caller passes the real `bookingStatus`
+  // we trust it; otherwise we fall back to inferring waitlist from the card's
+  // full/waitlist state so a waitlisted member doesn't briefly see the confirmed
+  // "Cancel RSVP" action. A confirmed viewer must NEVER be shown waitlist copy
+  // just because the event is now full.
+  const fallbackStatus: EventDetailData["viewerRsvpStatus"] = bookingStatus
+    ? bookingStatus
+    : registered
+      ? event.status === "Waitlist" || event.attendees >= event.capacity
+        ? "waitlisted"
+        : "confirmed"
+      : null;
   const data: EventDetailData =
     detail ?? {
       ...event,
       priceCents: priceToCents(event.price),
       address: null,
       endsAt: null,
-      viewerRsvpStatus: registered ? (fallbackWaitlist ? "waitlisted" : "confirmed") : null,
+      viewerRsvpStatus: fallbackStatus,
       waitlistOfferExpiresAt: null,
     };
 
@@ -114,6 +125,10 @@ export function EventDetailModal({
   // every event card carries a clear booking entry point; the modal itself
   // still handles the free / paid / waitlist branches once opened.
   const priceIsFree = !event.price || event.price.trim().toLowerCase() === "free";
+  // A confirmed attendee gets sent straight to their unlocked event page (full
+  // details + venue) rather than back into the booking modal — they've already
+  // RSVP'd. Waitlisted/unregistered viewers still open the modal.
+  const isConfirmedBooking = fallbackStatus === "confirmed";
   const triggerLabel = registered
     ? "View your booking"
     : isWaitlistMode
@@ -121,6 +136,17 @@ export function EventDetailModal({
       : priceIsFree
         ? "RSVP — it’s free"
         : `RSVP · ${event.price}`;
+  const triggerClassName =
+    className ??
+    "block w-full rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-4 py-3 text-center text-sm font-bold text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]";
+
+  if (isConfirmedBooking) {
+    return (
+      <Link href={`/events/${event.id}`} className={triggerClassName}>
+        {triggerLabel}
+      </Link>
+    );
+  }
 
   return (
     <>
@@ -130,10 +156,7 @@ export function EventDetailModal({
           setLoading(true);
           setOpen(true);
         }}
-        className={
-          className ??
-          "w-full rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-4 py-3 text-center text-sm font-bold text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
-        }
+        className={triggerClassName}
       >
         {triggerLabel}
       </button>

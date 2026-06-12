@@ -83,13 +83,24 @@ export function EventExplorer({
   events,
   bookmarkedEventIds = [],
   registeredEventIds = [],
+  waitlistedEventIds = [],
 }: {
   events: EventItem[];
   bookmarkedEventIds?: string[];
   registeredEventIds?: string[];
+  waitlistedEventIds?: string[];
 }) {
   const bookmarkedSet = useMemo(() => new Set(bookmarkedEventIds), [bookmarkedEventIds]);
   const registeredSet = useMemo(() => new Set(registeredEventIds), [registeredEventIds]);
+  const waitlistedSet = useMemo(() => new Set(waitlistedEventIds), [waitlistedEventIds]);
+  // Confirmed = registered but not waitlisted. Lets each card link a confirmed
+  // attendee to their unlocked event page instead of guessing from fullness.
+  const bookingStatusFor = (id: string): "confirmed" | "waitlisted" | undefined =>
+    registeredSet.has(id)
+      ? waitlistedSet.has(id)
+        ? "waitlisted"
+        : "confirmed"
+      : undefined;
   const router = useRouter();
   const pathname = usePathname();
   const urlParams = useSearchParams();
@@ -659,6 +670,7 @@ export function EventExplorer({
               compact
               bookmarked={bookmarkedSet.has(event.id)}
               registered={registeredSet.has(event.id)}
+              bookingStatus={bookingStatusFor(event.id)}
             />
           ))}
         </div>
@@ -693,6 +705,7 @@ export function EventExplorer({
                       compact
                       bookmarked={bookmarkedSet.has(event.id)}
                       registered={registeredSet.has(event.id)}
+                      bookingStatus={bookingStatusFor(event.id)}
                     />
                   </div>
                 ))}

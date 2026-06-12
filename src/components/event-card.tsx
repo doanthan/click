@@ -11,11 +11,16 @@ export function EventCard({
   compact = false,
   bookmarked = false,
   registered = false,
+  bookingStatus,
 }: {
   event: EventItem;
   compact?: boolean;
   bookmarked?: boolean;
   registered?: boolean;
+  // The viewer's actual booking state for this event, when known. Lets the
+  // card/modal show "View your booking" (confirmed) vs the waitlist state
+  // accurately instead of guessing from whether the event is full.
+  bookingStatus?: "confirmed" | "waitlisted";
 }) {
   const seatsLeft = Math.max(0, event.capacity - event.attendees);
   const isFull = seatsLeft === 0;
@@ -117,6 +122,7 @@ export function EventCard({
             event={event}
             bookmarked={bookmarked}
             registered={registered}
+            bookingStatus={bookingStatus}
           />
         </div>
       </div>

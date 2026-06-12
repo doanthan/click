@@ -108,6 +108,8 @@ export default async function MerchantPage({ searchParams }: MerchantPageProps) 
               businessName={businessName}
               payoutsEnabled={payoutsEnabled}
               chargesEnabled={chargesEnabled}
+              attendeeOnboarded={status.onboardingComplete}
+              attendingCount={status.registeredEventIds.length}
             />
           ) : null}
           {tab === "events" ? <EventsTab events={merchantEvents} /> : null}
@@ -162,12 +164,16 @@ function DashboardTab({
   businessName,
   payoutsEnabled,
   chargesEnabled,
+  attendeeOnboarded,
+  attendingCount,
 }: {
   merchantEvents: Awaited<ReturnType<typeof getMerchantEvents>>;
   monthParam?: string;
   businessName: string;
   payoutsEnabled: boolean;
   chargesEnabled: boolean;
+  attendeeOnboarded: boolean;
+  attendingCount: number;
 }) {
   // eslint-disable-next-line react-hooks/purity -- async server component, evaluated once per request
   const now = Date.now();
@@ -273,6 +279,28 @@ function DashboardTab({
           <MerchantCalendar events={merchantEvents} monthParam={monthParam} />
         </div>
       </section>
+
+      {/* Hosts are people too — nudge them onto the attendee side. If they
+          haven't set up an attendee profile, send them through onboarding;
+          otherwise point them at Discover to book events of their own. */}
+      {attendingCount === 0 ? (
+        <section className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--peach)]/40 p-6 hard-shadow-sm">
+          <div>
+            <p className="eyebrow">Want to attend events too?</p>
+            <p className="mt-2 max-w-xl text-sm font-medium leading-6 text-[color:var(--mauve)]">
+              {attendeeOnboarded
+                ? "Your host account can also book and attend events on Click. Browse what’s on near you."
+                : "Set up your attendee profile in a couple of minutes to start booking events as a guest."}
+            </p>
+          </div>
+          <Link
+            href={attendeeOnboarded ? "/discover" : "/onboarding"}
+            className="inline-flex shrink-0 items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--ink)] px-5 py-2.5 text-xs font-bold uppercase tracking-wide text-[color:var(--champagne)] hard-shadow-sm hover:bg-[color:var(--rose)] hover:text-[color:var(--surface-deep)]"
+          >
+            {attendeeOnboarded ? "Browse events →" : "Set up attendee profile →"}
+          </Link>
+        </section>
+      ) : null}
 
       {merchantEvents.length > 0 ? (
         <MerchantTrends merchantEvents={merchantEvents} />

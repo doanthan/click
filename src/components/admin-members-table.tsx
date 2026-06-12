@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import {
+  setMemberVerifiedAction,
   suspendMemberAction,
   unsuspendMemberAction,
 } from "@/app/admin/actions";
@@ -91,12 +92,14 @@ function MemberActions({
   isPending,
   onSuspend,
   onUnsuspend,
+  onToggleVerified,
 }: {
   member: AdminMemberRow;
   suspended: boolean;
   isPending: boolean;
   onSuspend: (reason: string) => void;
   onUnsuspend: () => void;
+  onToggleVerified: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -153,6 +156,18 @@ function MemberActions({
           >
             View profile
           </Link>
+          <button
+            type="button"
+            role="menuitem"
+            disabled={isPending}
+            onClick={() => {
+              onToggleVerified();
+              setOpen(false);
+            }}
+            className="block w-full rounded-lg px-3 py-2 text-left text-xs font-bold text-[color:var(--ink)] transition-colors hover:bg-[color:var(--cream)] disabled:opacity-60"
+          >
+            {member.photoVerified ? "Remove verified tick" : "Mark verified ✓"}
+          </button>
           {suspended ? (
             <button
               type="button"
@@ -243,6 +258,25 @@ function MemberRow({
     });
   }
 
+  function toggleVerified() {
+    const next = !member.photoVerified;
+    const form = new FormData();
+    form.set("profile_id", member.id);
+    form.set("verified", next ? "true" : "false");
+    startTransition(async () => {
+      try {
+        await setMemberVerifiedAction(form);
+        toast.success(
+          next
+            ? `${member.displayName} is now verified.`
+            : `Removed ${member.displayName}'s verified tick.`,
+        );
+      } catch {
+        toast.error("Could not update verification. Try again.");
+      }
+    });
+  }
+
   return (
     <div
       className={`grid gap-3 border-b border-[color:var(--line)] px-5 py-4 text-sm font-medium text-[color:var(--mauve)] last:border-0 md:grid-cols-[1.4fr_0.6fr_0.8fr_0.8fr_0.7fr_0.6fr_0.7fr] md:items-center ${
@@ -305,6 +339,7 @@ function MemberRow({
           isPending={isPending}
           onSuspend={suspend}
           onUnsuspend={unsuspend}
+          onToggleVerified={toggleVerified}
         />
       )}
     </div>

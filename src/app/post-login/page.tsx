@@ -46,16 +46,22 @@ export default async function PostLoginPage({ searchParams }: PostLoginPageProps
 
   // Logins that started on the merchant surface (/merchant/login passes
   // ?portal=merchant) land on the host portal — /merchant itself gates
-  // pending/non-merchants onto the right holding page. Main-surface logins
-  // always land on the ATTENDEE side, even for users who also hold a merchant
-  // profile: routing every merchant-capable account to /merchant surprised
-  // dual-role users who logged in from the customer page expecting their
-  // attendee dashboard (they can still switch portals from the header menu).
+  // pending/non-merchants onto the right holding page.
   if (params?.portal === "merchant") {
     redirect("/merchant");
   }
 
   const status = await getProfileStatus(session);
+
+  // Role-aware default (bug board #138): a user whose MAIN role is host — i.e.
+  // they hold an approved merchant profile — defaults straight to the host
+  // dashboard. /merchant runs its own onboarding/payout gating from there, and
+  // dual-role users can still switch to the attendee side from the header menu.
+  // Everyone else (attendees, and pending/rejected merchants who aren't active
+  // hosts yet) lands on the attendee dashboard after onboarding.
+  if (status.merchantProfile?.verification_status === "approved") {
+    redirect("/merchant");
+  }
 
   if (!status.onboardingComplete) {
     redirect("/onboarding");

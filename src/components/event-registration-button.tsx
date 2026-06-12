@@ -110,10 +110,18 @@ export function EventRegistrationButton({
     setMessage(
       status === "waitlisted" ? "You are on the waitlist." : "You are registered.",
     );
-    if (status !== "waitlisted" && successDetails) {
+    if (status === "waitlisted") {
+      router.refresh();
+    } else if (successDetails) {
+      // Already on the full event page — pop the confetti "You're confirmed!"
+      // overlay in place (it has all the details around it already).
       setShowSuccess(true);
     } else {
-      router.refresh();
+      // RSVP'd from a card/modal (e.g. Discover): send the now-confirmed
+      // attendee straight to their unlocked event page — full details + venue,
+      // and a "You're confirmed!" banner (+ add-a-photo nudge) keyed off ?booked=1.
+      setMessage("You're confirmed! Taking you to your event…");
+      window.location.href = `/events/${encodeURIComponent(eventId)}?booked=1`;
     }
   }
 

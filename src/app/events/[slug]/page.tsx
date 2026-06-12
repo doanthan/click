@@ -212,12 +212,23 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
 
         {search?.booked && isRegistered ? (
           <div className="mt-6 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--mint,#d7f0e0)] p-4 text-sm font-bold text-[color:var(--surface-deep)] hard-shadow-sm">
-            You&apos;re in! Payment confirmed and your seat is locked. The full
-            details are unlocked below, and it&apos;s on your{" "}
+            🎉 You&apos;re confirmed! Your seat is locked and the full details
+            are unlocked below — it&apos;s on your{" "}
             <Link href="/dashboard/calendar" className="underline">
               calendar
             </Link>
             .
+            {/* No profile photo yet → nudge them to add one so other attendees
+                can recognise them at the event (bug board #136). */}
+            {profileStatus && !profileStatus.photoUrl ? (
+              <span className="mt-2 block font-medium">
+                Add a profile photo so people can recognise you —{" "}
+                <Link href="/profile/edit" className="font-bold underline">
+                  add a pic
+                </Link>
+                .
+              </span>
+            ) : null}
           </div>
         ) : null}
 

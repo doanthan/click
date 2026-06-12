@@ -19,7 +19,14 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { AvatarUploader } from "@/components/avatar-uploader";
+import { ProfileGalleryUploader } from "@/components/profile-gallery-uploader";
+import { VerifiedTick } from "@/components/verified-tick";
 import type { OwnProfile, ProfileTagOptions } from "@/lib/event-repository";
+import {
+  MAX_PROFILE_PROMPTS,
+  MAX_PROMPT_ANSWER_LENGTH,
+  PROFILE_PROMPTS,
+} from "@/lib/profile-prompts";
 
 // Local copy so this client bundle never imports src/lib/postcode.ts (which
 // pulls in the ~300 KB postcode table — that stays server-side).
@@ -56,6 +63,9 @@ export function ProfileEditForm({
   const [music, setMusic] = useState<Set<string>>(new Set(profile.musicSlugs));
   const [datingVisible, setDatingVisible] = useState(profile.datingVisible);
   const [flexibleDiscovery, setFlexibleDiscovery] = useState(profile.flexibleDiscovery);
+  const [prompts, setPrompts] = useState<{ id: string; answer: string }[]>(
+    profile.prompts.map((p) => ({ id: p.id, answer: p.answer })),
+  );
 
   const datingSelected = intents.has("dating");
 
@@ -146,6 +156,20 @@ export function ProfileEditForm({
         recognise you at events — profiles with a real photo get far more Clicks.
       </p>
 
+      {profile.verified ? (
+        <p className="-mt-3 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-4 py-3 text-xs font-bold leading-5 text-[color:var(--ink)]">
+          <VerifiedTick /> Your profile is verified — the tick shows next to your
+          name across Click.
+        </p>
+      ) : (
+        <p className="-mt-3 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 text-xs font-semibold leading-5 text-[color:var(--mauve)]">
+          🛡️ Photo verification is coming soon — once Click confirms your photo is
+          really you, you’ll get a verified tick next to your name.
+        </p>
+      )}
+
+      <ProfileGalleryUploader initialUrls={profile.galleryPhotos} />
+
       <div className="grid gap-5 sm:grid-cols-2">
         <Field label="Display name" name="display_name" defaultValue={profile.displayName} required />
         <Field
@@ -225,6 +249,83 @@ export function ProfileEditForm({
           placeholder="A short, friendly intro — what you’re into, what you’re here for."
         />
       </label>
+
+      {/* ----- Prompts ----- */}
+      <Fieldset
+        legend={`Prompts (optional · up to ${MAX_PROFILE_PROMPTS})`}
+        hint="Show some personality — answer a fun prompt or three. They appear on your profile."
+      >
+        <div className="grid gap-3">
+          {prompts.map((entry, index) => {
+            const usedElsewhere = new Set(
+              prompts.filter((_, i) => i !== index).map((p) => p.id),
+            );
+            return (
+              <div
+                key={entry.id}
+                className="grid gap-2 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-4"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <select
+                    value={entry.id}
+                    onChange={(e) =>
+                      setPrompts((list) =>
+                        list.map((p, i) => (i === index ? { ...p, id: e.target.value } : p)),
+                      )
+                    }
+                    className="min-w-0 flex-1 rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-2 text-sm font-bold text-[color:var(--ink)] outline-none"
+                  >
+                    {PROFILE_PROMPTS.filter((p) => !usedElsewhere.has(p.id)).map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.label}…
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => setPrompts((list) => list.filter((_, i) => i !== index))}
+                    aria-label="Remove prompt"
+                    className="grid size-8 shrink-0 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] text-xs font-bold text-[color:var(--ink)] hover:bg-[color:var(--rose)] hover:text-[color:var(--surface-deep)]"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <textarea
+                  value={entry.answer}
+                  onChange={(e) =>
+                    setPrompts((list) =>
+                      list.map((p, i) => (i === index ? { ...p, answer: e.target.value } : p)),
+                    )
+                  }
+                  rows={2}
+                  maxLength={MAX_PROMPT_ANSWER_LENGTH}
+                  placeholder="Your answer…"
+                  className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-2 text-sm font-semibold text-[color:var(--ink)] placeholder:text-[color:var(--mauve)]/55 outline-none"
+                />
+                <span className="text-right font-mono text-[0.6rem] uppercase tracking-[0.14em] text-[color:var(--mauve)]">
+                  {entry.answer.length}/{MAX_PROMPT_ANSWER_LENGTH}
+                </span>
+              </div>
+            );
+          })}
+
+          {prompts.length < MAX_PROFILE_PROMPTS ? (
+            <button
+              type="button"
+              onClick={() => {
+                const used = new Set(prompts.map((p) => p.id));
+                const next = PROFILE_PROMPTS.find((p) => !used.has(p.id));
+                if (next) setPrompts((list) => [...list, { id: next.id, answer: "" }]);
+              }}
+              className="rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 text-left text-sm font-bold text-[color:var(--mauve)] transition hover:bg-[color:var(--peach)] hover:text-[color:var(--ink)]"
+            >
+              + Add a prompt{prompts.length === 0 ? " — e.g. Two truths and a lie" : ""}
+            </button>
+          ) : null}
+        </div>
+        {/* Unanswered prompts are dropped server-side, so a blank slot never saves. */}
+        <input type="hidden" name="prompts_json" value={JSON.stringify(prompts)} />
+      </Fieldset>
 
       {/* ----- Intents ----- */}
       <Fieldset legend="Intents (pick any)">

@@ -29,7 +29,8 @@ The first four are wired through `logEmailEvent` (see "Dev log" below). The rest
 
 | File | When to send | Subject suggestion |
 | --- | --- | --- |
-| `merchant-application-received.html` | After the `/merchant/signup/documents` wizard step submits. | `We've got your application — {{businessName}}` |
+| `merchant-application-received.html` | After the `/merchant/signup/documents` wizard step submits (venue inside the pilot area). | `We've got your application — {{businessName}}` |
+| `merchant-waitlisted-merchant.html` | Same step, when the venue is outside the launch pilot (Greater Sydney) — parked on the host waitlist. | `You're on the Click waitlist — {{suburb}} is coming soon` |
 | `merchant-verified-merchant.html` | After `POST /api/admin/merchants/[merchantId]/verification` approves. | `{{businessName}} is verified — post your first event` |
 | `merchant-rejected-merchant.html` | Same route, declined. | `{{businessName}} application — one small change` |
 | `event-created-merchant.html` | After a merchant submits an event for review (`POST /api/merchant/events`). | `Your event is in review — {{eventTitle}}` |
@@ -210,6 +211,19 @@ Day-before nudge. Variables overlap heavily with `rsvp-attendee.html` so the sam
 | `businessName` |  |
 | `submittedDate` | e.g. `29 May 2026`. Local timezone of the merchant. |
 | `merchantDashboardUrl` | `/merchant`. |
+| `supportEmail` |  |
+| `unsubscribeUrl` |  |
+
+### `merchant-waitlisted-merchant.html`
+
+Sent instead of `merchant-application-received` when the signup venue is outside the launch pilot (Greater Sydney). The `email_events` row is the waitlist record.
+
+| Variable | Notes |
+| --- | --- |
+| `merchantFirstName` |  |
+| `businessName` |  |
+| `suburb` | The merchant's signup suburb (falls back to state). |
+| `pilotArea` | Human label for the live pilot region, e.g. `Greater Sydney`. |
 | `supportEmail` |  |
 | `unsubscribeUrl` |  |
 

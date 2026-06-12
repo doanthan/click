@@ -153,6 +153,29 @@ export function MerchantCalendar({ events, monthParam }: MerchantCalendarProps) 
   const monthConfirmed = monthEvents.reduce((sum, event) => sum + event.confirmed, 0);
   const monthCapacity = monthEvents.reduce((sum, event) => sum + event.capacity, 0);
 
+  // When the viewed month is empty but the merchant DOES have events elsewhere,
+  // surface a one-click jump to the month nearest to today — otherwise a host
+  // whose events all sit in another month thinks the calendar is "missing" them.
+  const anchorMs = monthAnchor.getTime();
+  const nearestEvent =
+    monthEvents.length === 0 && events.length > 0
+      ? events
+          .slice()
+          .sort(
+            (a, b) =>
+              Math.abs(new Date(a.startsAt).getTime() - anchorMs) -
+              Math.abs(new Date(b.startsAt).getTime() - anchorMs),
+          )[0]
+      : null;
+  const nearestMonthParam = nearestEvent
+    ? formatMonthParam(
+        parseMonthParam(isoDateInSydney(new Date(nearestEvent.startsAt)).slice(0, 7), new Date()),
+      )
+    : null;
+  const nearestMonthLabel = nearestEvent
+    ? MONTH_NAME_FORMATTER.format(new Date(nearestEvent.startsAt))
+    : null;
+
   return (
     <article className="overflow-hidden rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow-sm">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-[color:var(--line)] bg-[color:var(--cream)] px-5 py-4">
@@ -194,6 +217,20 @@ export function MerchantCalendar({ events, monthParam }: MerchantCalendarProps) 
           </div>
         </div>
       </header>
+
+      {nearestEvent && nearestMonthParam ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b-2 border-[color:var(--line)] bg-[color:var(--peach)]/40 px-5 py-3">
+          <p className="text-sm font-bold text-[color:var(--surface-deep)]">
+            No events in {heading}. Your nearest events are in {nearestMonthLabel}.
+          </p>
+          <Link
+            href={`/merchant?month=${nearestMonthParam}`}
+            className="inline-flex shrink-0 items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--ink)] px-4 py-1.5 text-xs font-bold uppercase tracking-wide text-[color:var(--champagne)] hover:bg-[color:var(--rose)] hover:text-[color:var(--surface-deep)]"
+          >
+            Jump to {nearestMonthLabel} →
+          </Link>
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-7 border-b-2 border-[color:var(--line)] bg-[color:var(--surface-deep)] text-[color:var(--on-deep)]">
         {WEEK_LABELS.map((label) => (

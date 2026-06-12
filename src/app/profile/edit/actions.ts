@@ -4,6 +4,10 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { updateOwnProfile } from "@/lib/event-repository";
+import {
+  sanitizeProfilePrompts,
+  type ProfilePromptAnswer,
+} from "@/lib/profile-prompts";
 
 const VALID_INTENTS = new Set([
   "friendship",
@@ -48,6 +52,18 @@ export async function saveProfileEditAction(formData: FormData) {
     return typeof v === "string" ? v === "true" : undefined;
   };
 
+  // Prompts ride in one hidden JSON field. Absent or unparseable → leave the
+  // stored prompts unchanged; present → full replace (empty array clears).
+  let prompts: ProfilePromptAnswer[] | undefined;
+  const promptsRaw = formData.get("prompts_json");
+  if (typeof promptsRaw === "string") {
+    try {
+      prompts = sanitizeProfilePrompts(JSON.parse(promptsRaw));
+    } catch {
+      prompts = undefined;
+    }
+  }
+
   await updateOwnProfile(session, {
     displayName: strField(formData, "display_name"),
     suburb: strField(formData, "suburb"),
@@ -59,6 +75,7 @@ export async function saveProfileEditAction(formData: FormData) {
     musicTags: strList("music_tag"),
     datingVisible: boolField("dating_visible"),
     flexibleDiscovery: boolField("flexible_discovery"),
+    prompts,
   });
 
   // Revalidate every surface that reflects profile completeness — not just

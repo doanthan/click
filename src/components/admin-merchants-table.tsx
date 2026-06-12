@@ -26,10 +26,12 @@ function statusTone(status: string) {
 function MerchantActions({
   merchant,
   onUpdate,
+  onToggleTrust,
   pendingMessage,
 }: {
   merchant: AdminMerchantRow;
   onUpdate: (status: VerificationStatus) => void;
+  onToggleTrust: (next: boolean) => void;
   pendingMessage?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -62,9 +64,18 @@ function MerchantActions({
   // Once approved, the deactivation path is Suspend (reversible, hides events
   // but keeps existing RSVPs valid) — not Reject.
   const canReject = status === "pending";
+  // Trusting a merchant flips on auto_approve_events so their future events
+  // publish straight to `live`, skipping the pending review queue. Only
+  // meaningful once the merchant itself is approved.
+  const canTrust = status === "approved";
 
   function run(next: VerificationStatus) {
     onUpdate(next);
+    setOpen(false);
+  }
+
+  function runTrust(next: boolean) {
+    onToggleTrust(next);
     setOpen(false);
   }
 
@@ -128,6 +139,21 @@ function MerchantActions({
               Reject merchant
             </button>
           ) : null}
+          {canTrust ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => runTrust(!merchant.autoApproveEvents)}
+              className="block w-full rounded-lg px-3 py-2 text-left text-xs font-bold text-[color:var(--ink)] transition-colors hover:bg-[color:var(--peach)]"
+            >
+              {merchant.autoApproveEvents ? "Require event review" : "Trust merchant"}
+            </button>
+          ) : null}
+          {canTrust && merchant.autoApproveEvents ? (
+            <p className="mt-1 px-3 py-1 text-[0.6rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]/80">
+              Events auto-publish (no review)
+            </p>
+          ) : null}
           {status === "suspended" ? (
             <p className="mt-1 px-3 py-1 text-[0.6rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]/80">
               Events hidden from Discover
@@ -172,12 +198,24 @@ export function AdminMerchantsTable({ merchants }: { merchants: AdminMerchantRow
   ];
 
   async function updateVerification(merchantId: string, nextStatus: VerificationStatus) {
+    // Rejection carries a free-text "why" — it rides through to the merchant's
+    // notification + email so they know what to fix and resubmit.
+    let reason: string | undefined;
+    if (nextStatus === "rejected") {
+      const entered = window.prompt(
+        "Why is this merchant being rejected? (sent to them by email — leave blank to send the generic note)",
+        "",
+      );
+      if (entered === null) return; // admin cancelled
+      reason = entered.trim() || undefined;
+    }
+
     setActionState((current) => ({ ...current, [merchantId]: "Saving..." }));
 
     const response = await fetch(`/api/admin/merchants/${merchantId}/verification`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: nextStatus }),
+      body: JSON.stringify({ status: nextStatus, ...(reason ? { reason } : {}) }),
     });
     const payload = (await response.json()) as {
       error?: string;
@@ -212,6 +250,41 @@ export function AdminMerchantsTable({ merchants }: { merchants: AdminMerchantRow
             : nextStatus === "rejected"
               ? "Rejected."
               : "Updated.",
+    }));
+  }
+
+  async function updateAutoApprove(merchantId: string, next: boolean) {
+    setActionState((current) => ({ ...current, [merchantId]: "Saving..." }));
+
+    const response = await fetch(`/api/admin/merchants/${merchantId}/auto-approve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ autoApprove: next }),
+    });
+    const payload = (await response.json().catch(() => ({}))) as {
+      error?: string;
+      autoApproveEvents?: boolean;
+    };
+
+    if (!response.ok) {
+      setActionState((current) => ({
+        ...current,
+        [merchantId]: payload.error ?? "Update failed.",
+      }));
+      return;
+    }
+
+    const applied = payload.autoApproveEvents ?? next;
+    setRows((current) =>
+      current.map((merchant) =>
+        merchant.id === merchantId
+          ? { ...merchant, autoApproveEvents: applied }
+          : merchant,
+      ),
+    );
+    setActionState((current) => ({
+      ...current,
+      [merchantId]: applied ? "Trusted — events auto-publish." : "Review required.",
     }));
   }
 
@@ -315,6 +388,7 @@ export function AdminMerchantsTable({ merchants }: { merchants: AdminMerchantRow
               <MerchantActions
                 merchant={merchant}
                 onUpdate={(next) => updateVerification(merchant.id, next)}
+                onToggleTrust={(next) => updateAutoApprove(merchant.id, next)}
                 pendingMessage={actionState[merchant.id]}
               />
             </div>
