@@ -164,6 +164,10 @@ export default async function ConfirmedEventsPage({ searchParams }: ConfirmedEve
                 events={calendarEvents}
                 monthParam={params?.month}
                 basePath={`/confirmed-events?tab=${tab}`}
+                // Saved view mixes bookmarks the user may or may not have RSVP'd
+                // to — pass the registered set so non-RSVP'd ones chip as "Saved",
+                // not "Confirmed" (bug board #173).
+                registeredEventIds={tab === "saved" ? registeredSet : undefined}
               />
             </div>
           </div>

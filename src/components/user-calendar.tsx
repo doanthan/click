@@ -32,6 +32,10 @@ type UserCalendarProps = {
   monthParam?: string;
   bookedSlug?: string;
   basePath?: string;
+  // When provided, events whose id is NOT in this set are merely saved/bookmarked
+  // (not an RSVP) and are chipped as "Saved" rather than "Confirmed". Omitted on
+  // the dashboard/upcoming calendars, whose events are all confirmed RSVPs.
+  registeredEventIds?: Set<string>;
 };
 
 function isoDateInSydney(date: Date) {
@@ -152,10 +156,18 @@ function buildCells(monthAnchor: Date, events: EventItem[], todayIso: string): C
   return cells;
 }
 
-function chipMeta(event: EventItem): { label: string; className: string } {
+function chipMeta(
+  event: EventItem,
+  registeredEventIds?: Set<string>,
+): { label: string; className: string } {
   const isFull = event.attendees >= event.capacity;
   const end = new Date(event.endsAt ?? event.startsAt);
   const isPast = end.getTime() < Date.now();
+  // Saved-but-not-RSVP'd: in the "Saved" view we pass the viewer's registered
+  // set so a bookmarked event the user hasn't actually registered for reads
+  // "Saved", not the misleading "Confirmed" (bug board #173).
+  const isSavedOnly =
+    registeredEventIds !== undefined && !registeredEventIds.has(event.id);
 
   // Cancelled events stay visible on the calendar (so a member isn't left
   // wondering where their RSVP went) but are clearly struck out, never shown as
@@ -172,6 +184,14 @@ function chipMeta(event: EventItem): { label: string; className: string } {
       label: "Ended",
       className: "bg-[color:var(--cream)] text-[color:var(--mauve)] opacity-90",
     };
+  // A bookmarked event with no RSVP isn't "Confirmed"/"Waitlist" for this user —
+  // it's just saved. Distinct cream chip so it reads as a maybe, not a booking.
+  if (isSavedOnly)
+    return {
+      label: "Saved",
+      className:
+        "bg-[color:var(--cream)] text-[color:var(--ink)] border-dashed",
+    };
   if (event.status === "Waitlist" || isFull)
     return { label: "Waitlist", className: "bg-[color:var(--ink)] text-[color:var(--champagne)]" };
   if (event.status === "Locked")
@@ -184,6 +204,7 @@ export function UserCalendar({
   monthParam,
   bookedSlug,
   basePath = "/dashboard/calendar",
+  registeredEventIds,
 }: UserCalendarProps) {
   // Default to the current month so the calendar opens on "today" rather than
   // the earliest RSVP's month (which, with past events included, could be far in
@@ -287,7 +308,11 @@ export function UserCalendar({
 
       <div className="grid grid-cols-7">
         {cells.map((cell) => (
-          <CalendarDayCell key={cell.isoDate} cell={cell} />
+          <CalendarDayCell
+            key={cell.isoDate}
+            cell={cell}
+            registeredEventIds={registeredEventIds}
+          />
         ))}
       </div>
     </article>
@@ -307,7 +332,13 @@ function MonthEventDot({ count }: { count: number }) {
   );
 }
 
-function CalendarDayCell({ cell }: { cell: CalendarCell }) {
+function CalendarDayCell({
+  cell,
+  registeredEventIds,
+}: {
+  cell: CalendarCell;
+  registeredEventIds?: Set<string>;
+}) {
   const dayNumber = DAY_LABEL_FORMATTER.format(cell.date);
   return (
     <div
@@ -342,7 +373,11 @@ function CalendarDayCell({ cell }: { cell: CalendarCell }) {
 
       <div className="mt-1.5 grid gap-1">
         {cell.events.slice(0, 3).map((event) => (
-          <CalendarEventChip key={event.id} event={event} />
+          <CalendarEventChip
+            key={event.id}
+            event={event}
+            registeredEventIds={registeredEventIds}
+          />
         ))}
         {cell.events.length > 3 ? (
           <p className="font-mono text-[0.6rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
@@ -354,8 +389,14 @@ function CalendarDayCell({ cell }: { cell: CalendarCell }) {
   );
 }
 
-function CalendarEventChip({ event }: { event: EventItem }) {
-  const { label, className } = chipMeta(event);
+function CalendarEventChip({
+  event,
+  registeredEventIds,
+}: {
+  event: EventItem;
+  registeredEventIds?: Set<string>;
+}) {
+  const { label, className } = chipMeta(event, registeredEventIds);
 
   return (
     <Link

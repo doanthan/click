@@ -84,6 +84,8 @@ export function ProposalCard({
               {proposal.suggestedEventTitle}
             </Link>
           </>
+        ) : proposal.suggestionUnavailable ? (
+          "That event filled up — pick another plan."
         ) : (
           "Pick something to do together."
         )}
@@ -91,6 +93,18 @@ export function ProposalCard({
       {proposal.suggestedEventStartsAt ? (
         <p className="mt-1 font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
           {longDate.format(new Date(proposal.suggestedEventStartsAt))}
+        </p>
+      ) : null}
+
+      {/* The suggested event sold out (or was cancelled) since it was proposed.
+          Neither person is attending it, so spell that out and steer them to
+          "Suggest alternative" rather than leaving a dead, disabled card. */}
+      {proposal.suggestionUnavailable && !settled ? (
+        <p className="mt-3 rounded-2xl border-2 border-dashed border-[color:var(--rose)] bg-[color:var(--cream)] p-3 text-sm font-medium text-[color:var(--mauve)]">
+          The event you were eyeing is now full or no longer available — you
+          aren&apos;t booked into anything. Tap{" "}
+          <span className="font-bold text-[color:var(--ink)]">Suggest alternative</span>{" "}
+          to pick a new plan together.
         </p>
       ) : null}
 

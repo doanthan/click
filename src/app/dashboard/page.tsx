@@ -92,13 +92,27 @@ export default async function DashboardPage() {
       }
     }
     const top = [...interestCounts.entries()].sort((a, b) => b[1] - a[1])[0];
-    if (top) {
-      fomoBySlug[rotatedRadar[0].id] = `${top[1]} going also like ${top[0]}`;
-    } else if (datingCount > 0 && profileStatus.datingVisible) {
-      // Dating is a two-way signal: only nudge "open to dating" when the viewer
-      // is also dating-visible, so we never surface it to someone who keeps
-      // dating off (and the attendee count already excludes private profiles).
-      fomoBySlug[rotatedRadar[0].id] = `${datingCount} going open to dating`;
+    // Stack up to two FOMO signals so the radar feels alive: a shared-interest
+    // nudge AND an "open to dating" nudge can show together, with a plain
+    // social-proof count as the floor so an event with attendees never reads as
+    // empty (bug board #172).
+    const signals: string[] = [];
+    if (top) signals.push(`${top[1]} going also like ${top[0]}`);
+    // Dating is a two-way signal: only nudge "open to dating" when the viewer is
+    // also dating-visible, so we never surface it to someone who keeps dating off
+    // (and the attendee count already excludes private profiles).
+    if (datingCount > 0 && profileStatus.datingVisible) {
+      signals.push(`${datingCount} open to dating`);
+    }
+    if (signals.length === 0 && preview.totalConfirmed > 0) {
+      signals.push(
+        preview.totalConfirmed === 1
+          ? "1 person going so far"
+          : `${preview.totalConfirmed} going so far`,
+      );
+    }
+    if (signals.length > 0) {
+      fomoBySlug[rotatedRadar[0].id] = signals.join(" · ");
     }
   }
 

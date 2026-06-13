@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { LinkButton, MetricCard, Pill } from "@/components/click-ui";
 import { MerchantEventCancelButton } from "@/components/merchant-event-cancel-button";
+import { MerchantEventDuplicateButton } from "@/components/merchant-event-duplicate-button";
 import { MerchantEventEditForm } from "@/components/merchant-event-edit-form";
 import {
   getMerchantEventDetail,
@@ -128,6 +129,7 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
             </p>
           </div>
           <div className="flex gap-2">
+            <MerchantEventDuplicateButton eventId={event.slug} />
             <MerchantEventCancelButton eventId={event.slug} status={event.status} />
             <LinkButton href="/merchant" variant="secondary">
               Back to portal
@@ -290,6 +292,8 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
           initialTitle={event.title}
           initialDescription={event.description}
           initialAddress={event.address ?? ""}
+          pendingAddress={event.pendingAddress}
+          hasAttendees={event.confirmed > 0}
           initialImages={event.images}
           initialTags={event.tags}
           tagOptions={interestTagOptions}

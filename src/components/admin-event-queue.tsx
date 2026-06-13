@@ -390,6 +390,54 @@ export function AdminEventQueue({
     }
   }
 
+  // Approve/reject a merchant's queued address change. Approve flips
+  // pendingAddress onto the live address; reject discards it. Either way we clear
+  // the banner by nulling pendingAddress on the row.
+  async function decideAddress(eventId: string, decision: "approve" | "reject") {
+    setMessage("");
+    setBusyId(eventId);
+    try {
+      const response = await fetch(
+        `/api/admin/events/${encodeURIComponent(eventId)}/address`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ decision }),
+        },
+      );
+      const payload = (await response.json()) as {
+        error?: string;
+        title?: string;
+        address?: string | null;
+      };
+      if (!response.ok) {
+        setMessage(payload.error ?? "Could not update the address change.");
+        return;
+      }
+      setRows((current) =>
+        current.map((event) =>
+          event.id === eventId
+            ? {
+                ...event,
+                pendingAddress: null,
+                address:
+                  decision === "approve" && payload.address !== undefined
+                    ? payload.address
+                    : event.address,
+              }
+            : event,
+        ),
+      );
+      setMessage(
+        decision === "approve"
+          ? `Address updated for ${payload.title ?? "the event"}.`
+          : `Address change declined for ${payload.title ?? "the event"}.`,
+      );
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function saveTags(eventId: string, slugs: string[]) {
     setMessage("");
     setBusyId(eventId);
@@ -666,6 +714,39 @@ export function AdminEventQueue({
                     onReject={() => reject(event.id)}
                   />
                 </div>
+                {event.pendingAddress ? (
+                  <div className="flex flex-col gap-3 border-t-2 border-[color:var(--line)] bg-[color:var(--peach)]/40 px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="text-xs font-bold normal-case tracking-normal text-[color:var(--ink)]">
+                      <p className="font-mono text-[0.6rem] font-black uppercase tracking-[0.18em] text-[color:var(--rose)]">
+                        Address change awaiting review
+                      </p>
+                      <p className="mt-1">
+                        <span className="text-[color:var(--mauve)] line-through">
+                          {event.address ?? "No address set"}
+                        </span>{" "}
+                        → <span className="text-[color:var(--ink)]">{event.pendingAddress}</span>
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => decideAddress(event.id, "approve")}
+                        disabled={busyId === event.id}
+                        className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-3 py-1.5 text-xs font-black uppercase tracking-wider text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)] disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Approve move
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => decideAddress(event.id, "reject")}
+                        disabled={busyId === event.id}
+                        className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-1.5 text-xs font-black uppercase tracking-wider text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--cream)] disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Decline
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
                 {isExpanded ? (
                   <dl className="grid gap-3 border-t border-dashed border-[color:var(--line)] bg-[color:var(--cream)]/40 px-5 py-4 text-xs font-bold uppercase tracking-wider text-[color:var(--mauve)] sm:grid-cols-4">
                     <div>

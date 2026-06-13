@@ -217,6 +217,10 @@ export type AdminEventRow = {
   suburb: string | null;
   locationName: string | null;
   address: string | null;
+  // A merchant-proposed new address awaiting admin review (events with attendees
+  // can't self-edit their address). Null when nothing's pending. Drives the
+  // approve/reject address banner in the admin queue.
+  pendingAddress: string | null;
   lat: number | null;
   lng: number | null;
   priceCents: number;
@@ -1654,6 +1658,9 @@ export type MerchantEventDetail = MerchantEventSummary & {
   description: string;
   // Full street address (nullable), editable from the merchant edit form.
   address: string | null;
+  // A proposed new address awaiting admin review (set when the merchant edits the
+  // address of an event that already has attendees). Null when nothing's pending.
+  pendingAddress: string | null;
   images: string[];
   imageAlt: string | null;
   attendees: MerchantAttendeeRow[];
@@ -1748,6 +1755,7 @@ export async function getMerchantEventDetail(
     location_name: string;
     suburb: string;
     address: string | null;
+    pending_address: string | null;
     capacity: number;
     price_cents: number;
     category: string;
@@ -1769,6 +1777,7 @@ export async function getMerchantEventDetail(
         event.location_name,
         event.suburb,
         event.address,
+        event.pending_address,
         event.capacity,
         event.price_cents,
         event.category,
@@ -1845,6 +1854,7 @@ export async function getMerchantEventDetail(
     locationName: row.location_name,
     suburb: row.suburb,
     address: row.address,
+    pendingAddress: row.pending_address,
     capacity: row.capacity,
     confirmed: Number(row.confirmed),
     waitlisted: Number(row.waitlisted),
@@ -1873,6 +1883,12 @@ export async function getMerchantEventDetail(
 // location and capacity — those materially change a booking people may have paid
 // for, so they stay locked here (the UI directs merchants to request a review).
 // Ownership-scoped: only the owning merchant can edit, and only their own event.
+//
+// Address is a special case: it's free to change while no one has booked, but an
+// event with attendees can't have its address silently moved out from under
+// people who planned around it. So once there's at least one confirmed (or live
+// pending_payment) attendee, an address change is parked in `pending_address`
+// for admin review instead of going live — see approveEventAddressChange.
 export async function updateMerchantEventDetails(
   eventSlug: string,
   input: {
@@ -1880,8 +1896,8 @@ export async function updateMerchantEventDetails(
     description: string;
     relationshipGoal?: string;
     tagSlugs: string[];
-    // Street address is safe to change after bookings (it doesn't affect price /
-    // time / capacity), so merchants can self-edit it. undefined → leave as-is.
+    // Street address. Free to self-edit before anyone books; once the event has
+    // attendees an edit is queued for admin review. undefined → leave as-is.
     address?: string;
     // Ordered event photo gallery (public URLs, max 5). images[0] becomes the
     // cover (mirrored to image_url). undefined → leave as-is.
@@ -1922,8 +1938,25 @@ export async function updateMerchantEventDetails(
   try {
     await client.query("begin");
 
-    const eventResult = await client.query<{ id: string }>(
-      `select id::text from events where slug = $1 and merchant_profile_id = $2::uuid limit 1`,
+    const eventResult = await client.query<{
+      id: string;
+      address: string | null;
+      attendee_count: string;
+    }>(
+      `
+        select
+          event.id::text,
+          event.address,
+          count(attendee.id) filter (
+            where attendee.status = 'confirmed'
+               or (attendee.status = 'pending_payment' and attendee.hold_expires_at > now())
+          ) as attendee_count
+        from events event
+        left join event_attendees attendee on attendee.event_id = event.id
+        where event.slug = $1 and event.merchant_profile_id = $2::uuid
+        group by event.id
+        limit 1
+      `,
       [eventSlug, merchant.id],
     );
     const event = eventResult.rows[0];
@@ -1934,6 +1967,18 @@ export async function updateMerchantEventDetails(
       throw error;
     }
 
+    // Decide how to handle the address: apply immediately, queue for review, or
+    // leave untouched. An edit only counts as a change when the trimmed value
+    // actually differs from what's stored — re-saving the form with the same
+    // address never triggers a review.
+    const newAddress = input.address?.trim() || null;
+    const currentAddress = event.address?.trim() || null;
+    const addressChanged = input.address !== undefined && newAddress !== currentAddress;
+    const hasAttendees = Number(event.attendee_count) > 0;
+    // Queue the change when people have booked; otherwise apply it directly.
+    const queueAddress = addressChanged && hasAttendees;
+    const applyAddressNow = addressChanged && !hasAttendees;
+
     await client.query(
       `
         update events
@@ -1941,6 +1986,13 @@ export async function updateMerchantEventDetails(
             description = $3,
             relationship_goal = coalesce($4, relationship_goal),
             address = case when $5::boolean then $6 else address end,
+            -- Park the proposed address for review when queued; clear any prior
+            -- pending value once a change is applied directly.
+            pending_address = case
+              when $9::boolean then $6
+              when $5::boolean then null
+              else pending_address
+            end,
             image_urls = case when $7::boolean then $8::text[] else image_urls end,
             image_url = case
               when $7::boolean and array_length($8::text[], 1) >= 1 then ($8::text[])[1]
@@ -1954,12 +2006,31 @@ export async function updateMerchantEventDetails(
         title,
         input.description ?? "",
         input.relationshipGoal?.trim() || null,
-        input.address !== undefined,
-        input.address?.trim() || null,
+        applyAddressNow,
+        newAddress,
         cleanedImages !== undefined,
         cleanedImages && cleanedImages.length > 0 ? cleanedImages : null,
+        queueAddress,
       ],
     );
+
+    // Flag every admin so a queued address change doesn't sit unseen in
+    // /admin/events. Inside the txn so it rolls back with a failed edit.
+    if (queueAddress) {
+      await client.query(
+        `
+          insert into notifications (profile_id, title, body, action_url)
+          select id, $1, $2, $3
+          from profiles
+          where role = 'admin'
+        `,
+        [
+          "Address change awaiting review",
+          `${merchant.business_name} wants to move "${title}" to ${newAddress}.`,
+          "/admin/events",
+        ],
+      );
+    }
 
     // Replace interest tags only (leave life/vibe/music alone).
     await client.query(
@@ -1994,6 +2065,114 @@ export async function updateMerchantEventDetails(
   }
 
   return getMerchantEventDetail(eventSlug, session);
+}
+
+// Admin approves a merchant's queued address change: the parked pending_address
+// becomes the live address (attendees now see the new location on the event
+// page) and the pending slot is cleared. Notifies the owning merchant. No-op,
+// reported back as { applied: false }, when nothing is actually pending.
+export async function approveEventAddressChange(
+  eventSlug: string,
+  session: Session | null,
+): Promise<{ applied: boolean; title: string; address: string | null }> {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+  await requireAdminProfile(session);
+
+  const result = await pool.query<{
+    title: string;
+    host_profile_id: string | null;
+    address: string | null;
+    applied: boolean;
+  }>(
+    `
+      update events
+      set address = pending_address,
+          pending_address = null,
+          updated_at = now()
+      where slug = $1 and pending_address is not null
+      returning title, host_profile_id::text, address, true as applied
+    `,
+    [eventSlug],
+  );
+
+  const row = result.rows[0];
+  if (!row) {
+    // Either the event doesn't exist or there's no pending change — surface the
+    // current state so the admin UI can clear the banner either way.
+    const current = await pool.query<{ title: string; address: string | null }>(
+      `select title, address from events where slug = $1 limit 1`,
+      [eventSlug],
+    );
+    return {
+      applied: false,
+      title: current.rows[0]?.title ?? "Event",
+      address: current.rows[0]?.address ?? null,
+    };
+  }
+
+  if (row.host_profile_id) {
+    void pool
+      .query(
+        `insert into notifications (profile_id, title, body, action_url) values ($1::uuid, $2, $3, $4)`,
+        [
+          row.host_profile_id,
+          "Address change approved",
+          `The new address for "${row.title}" is now live for your attendees.`,
+          `/merchant/events/${eventSlug}`,
+        ],
+      )
+      .catch(() => {});
+  }
+
+  return { applied: true, title: row.title, address: row.address };
+}
+
+// Admin rejects a queued address change: the parked pending_address is discarded
+// and the live address is left untouched. Notifies the owning merchant.
+export async function rejectEventAddressChange(
+  eventSlug: string,
+  session: Session | null,
+): Promise<{ rejected: boolean; title: string }> {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+  await requireAdminProfile(session);
+
+  const result = await pool.query<{ title: string; host_profile_id: string | null }>(
+    `
+      update events
+      set pending_address = null,
+          updated_at = now()
+      where slug = $1 and pending_address is not null
+      returning title, host_profile_id::text
+    `,
+    [eventSlug],
+  );
+
+  const row = result.rows[0];
+  if (!row) {
+    const current = await pool.query<{ title: string }>(
+      `select title from events where slug = $1 limit 1`,
+      [eventSlug],
+    );
+    return { rejected: false, title: current.rows[0]?.title ?? "Event" };
+  }
+
+  if (row.host_profile_id) {
+    void pool
+      .query(
+        `insert into notifications (profile_id, title, body, action_url) values ($1::uuid, $2, $3, $4)`,
+        [
+          row.host_profile_id,
+          "Address change declined",
+          `Your address change for "${row.title}" wasn't approved — the original address stands.`,
+          `/merchant/events/${eventSlug}`,
+        ],
+      )
+      .catch(() => {});
+  }
+
+  return { rejected: true, title: row.title };
 }
 
 export async function getEventsForExplore() {
@@ -3317,6 +3496,130 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
   }
 }
 
+// Clone an existing merchant event into a fresh draft so a merchant can re-run a
+// recurring event without re-typing everything. Copies all the content fields
+// (title, description, venue, price, capacity, gallery, tags) but NEVER the
+// attendee list — the copy starts empty — and re-dates it a week out so it isn't
+// born in the past. Reuses createEventForMerchant so the copy goes through the
+// exact same validation, trusted-merchant status logic, tag attach, sub-tag
+// derivation and "event created" email as a hand-made event. Ownership-scoped:
+// only the owning merchant can duplicate, and only their own event.
+export async function duplicateEventForMerchant(
+  sourceSlug: string,
+  session: Session | null,
+): Promise<{ slug: string; title: string }> {
+  const pool = getPostgresPool();
+  const email = getSessionEmail(session);
+  if (!email) throw authError();
+  if (!pool) throw databaseUnavailableError();
+
+  const profile = await ensureProfileForSession(session);
+  const merchant = await getMerchantProfile(pool, profile.id);
+  if (!merchant) {
+    const error = new Error("Complete merchant signup before duplicating events.");
+    error.name = "MerchantSignupRequiredError";
+    throw error;
+  }
+
+  // Pull the full source row, scoped to this merchant so a merchant can never
+  // clone another merchant's (or a platform-owned) event.
+  const sourceResult = await pool.query<{
+    title: string;
+    description: string;
+    starts_at: Date;
+    ends_at: Date | null;
+    group_name: string | null;
+    category: string;
+    location_name: string;
+    suburb: string;
+    address: string | null;
+    latitude: number | null;
+    longitude: number | null;
+    price_cents: number;
+    capacity: number;
+    image_url: string | null;
+    image_urls: string[] | null;
+    image_alt: string | null;
+    relationship_goal: string | null;
+  }>(
+    `
+      select
+        title, description, starts_at, ends_at, group_name, category,
+        location_name, suburb, address, latitude, longitude, price_cents,
+        capacity, image_url, image_urls, image_alt, relationship_goal
+      from events
+      where slug = $1 and merchant_profile_id = $2::uuid
+      limit 1
+    `,
+    [sourceSlug, merchant.id],
+  );
+
+  const source = sourceResult.rows[0];
+  if (!source) {
+    const error = new Error("Event not found.");
+    error.name = "NotFoundError";
+    throw error;
+  }
+
+  // Re-date a week from now (not from the original date, which may be in the
+  // past) at the same wall-clock time, so the copy lands in the future and the
+  // merchant just nudges the date. Keep the original duration.
+  const durationMinutes =
+    source.ends_at
+      ? Math.max(
+          30,
+          Math.round((source.ends_at.getTime() - source.starts_at.getTime()) / 60000),
+        )
+      : 120;
+  const newStart = new Date(source.starts_at);
+  while (newStart.getTime() <= Date.now()) {
+    newStart.setDate(newStart.getDate() + 7);
+  }
+
+  const gallery =
+    source.image_urls && source.image_urls.length > 0
+      ? source.image_urls
+      : source.image_url
+        ? [source.image_url]
+        : [];
+
+  // Interest tag slugs attached to the source, comma-joined for CreateEventInput.
+  const tagResult = await pool.query<{ slug: string }>(
+    `
+      select tag.slug
+      from event_tags et
+      join tags tag on tag.id = et.tag_id and tag.tag_type = 'interest'
+      where et.event_id = (select id from events where slug = $1)
+    `,
+    [sourceSlug],
+  );
+  const tags = tagResult.rows.map((t) => t.slug).join(", ");
+
+  const input: CreateEventInput = {
+    title: `Copy of ${source.title}`,
+    groupName: source.group_name ?? "",
+    category: source.category,
+    // Absolute instant (carries a Z) — parseEventStart passes it through as-is.
+    startsAt: newStart.toISOString(),
+    durationMinutes,
+    locationName: source.location_name,
+    suburb: source.suburb,
+    address: source.address ?? undefined,
+    latitude: source.latitude,
+    longitude: source.longitude,
+    price: (source.price_cents / 100).toString(),
+    capacity: source.capacity,
+    description: source.description,
+    relationshipGoal: source.relationship_goal ?? "",
+    tags,
+    imageAlt: source.image_alt ?? undefined,
+    imageUrls: gallery,
+  };
+
+  const created = await createEventForMerchant(input, session);
+  return { slug: created.slug, title: created.title };
+}
+
 export async function approveEventForAdmin(eventId: string, session: Session | null) {
   const pool = getPostgresPool();
 
@@ -3742,6 +4045,7 @@ export async function getAdminEvents() {
       suburb: string | null;
       location_name: string | null;
       address: string | null;
+      pending_address: string | null;
       latitude: string | null;
       longitude: string | null;
       price_cents: number;
@@ -3762,6 +4066,7 @@ export async function getAdminEvents() {
         event.suburb,
         event.location_name,
         event.address,
+        event.pending_address,
         event.latitude::text,
         event.longitude::text,
         event.price_cents,
@@ -3814,6 +4119,7 @@ export async function getAdminEvents() {
         suburb: event.suburb,
         locationName: event.location_name,
         address: event.address,
+        pendingAddress: event.pending_address,
         lat,
         lng,
         priceCents,
@@ -9551,6 +9857,10 @@ export type ProposalEntry = {
   suggestedEventSlug: string | null;
   suggestedEventTitle: string | null;
   suggestedEventStartsAt: string | null;
+  // True when a suggestion was made but the event is no longer joinable (it sold
+  // out, was cancelled, or has passed) — distinct from "no suggestion picked yet"
+  // so the card can explain why the plan vanished and prompt a fresh pick.
+  suggestionUnavailable: boolean;
   alternativesRemaining: number;
   expiresAt: string;
   confirmedAt: string | null;
@@ -9571,6 +9881,7 @@ export async function getProposalsForSession(session: Session | null): Promise<P
       event_slug: string | null;
       event_title: string | null;
       event_starts_at: Date | null;
+      had_suggestion: boolean;
       alternatives_count: number;
       expires_at: Date;
       confirmed_at: Date | null;
@@ -9585,6 +9896,7 @@ export async function getProposalsForSession(session: Session | null): Promise<P
           e.slug as event_slug,
           e.title as event_title,
           e.starts_at as event_starts_at,
+          (p.suggested_event_id is not null) as had_suggestion,
           p.alternatives_count,
           p.expires_at,
           p.confirmed_at
@@ -9626,6 +9938,10 @@ export async function getProposalsForSession(session: Session | null): Promise<P
       suggestedEventSlug: row.event_slug,
       suggestedEventTitle: row.event_title,
       suggestedEventStartsAt: row.event_starts_at ? row.event_starts_at.toISOString() : null,
+      // A suggestion existed (had_suggestion) but the join dropped it to null — it
+      // sold out / was cancelled / has passed. Only meaningful while still pending.
+      suggestionUnavailable:
+        row.had_suggestion && row.event_slug === null && row.status === "pending",
       alternativesRemaining: Math.max(0, 3 - row.alternatives_count),
       expiresAt: row.expires_at.toISOString(),
       confirmedAt: row.confirmed_at ? row.confirmed_at.toISOString() : null,

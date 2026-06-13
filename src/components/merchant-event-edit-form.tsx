@@ -15,6 +15,8 @@ export function MerchantEventEditForm({
   initialTitle,
   initialDescription,
   initialAddress,
+  pendingAddress,
+  hasAttendees,
   initialImages,
   initialTags,
   tagOptions,
@@ -23,6 +25,11 @@ export function MerchantEventEditForm({
   initialTitle: string;
   initialDescription: string;
   initialAddress: string;
+  // A proposed address already awaiting admin review, if any.
+  pendingAddress: string | null;
+  // Whether anyone has booked — once they have, an address change is queued for
+  // admin review instead of going live, so we tell the merchant up front.
+  hasAttendees: boolean;
   initialImages: string[];
   initialTags: Tag[];
   tagOptions: Tag[];
@@ -108,12 +115,27 @@ export function MerchantEventEditForm({
           }),
         },
       );
-      const payload = (await response.json()) as { error?: string };
+      const payload = (await response.json()) as {
+        error?: string;
+        event?: { pendingAddress?: string | null; address?: string | null };
+      };
       if (!response.ok) {
         setMessage({ kind: "error", text: payload.error ?? "Could not save changes." });
         return;
       }
-      setMessage({ kind: "ok", text: "Saved." });
+      // If the address edit got parked for review, the saved event still shows
+      // the OLD address with the new one pending — tell the merchant so they
+      // don't think the change silently failed.
+      const queuedForReview =
+        payload.event?.pendingAddress != null &&
+        payload.event.pendingAddress === address.trim() &&
+        address.trim() !== initialAddress.trim();
+      setMessage({
+        kind: "ok",
+        text: queuedForReview
+          ? "Saved. Your address change was sent to admins for review (it affects people who've booked)."
+          : "Saved.",
+      });
       router.refresh();
     } finally {
       setSaving(false);
@@ -177,7 +199,16 @@ export function MerchantEventEditForm({
             />
             <span className="mt-1 block text-xs font-medium text-[color:var(--mauve)]">
               Shown to confirmed attendees on the event page.
+              {hasAttendees
+                ? " People have already booked — changing the address needs admin review before it goes live."
+                : ""}
             </span>
+            {pendingAddress ? (
+              <span className="mt-2 block rounded-xl border-2 border-dashed border-[color:var(--rose)] bg-[color:var(--champagne)] px-3 py-2 text-xs font-bold text-[color:var(--ink)]">
+                Pending admin review: <span className="italic">{pendingAddress}</span>. The
+                current address stays live until it&apos;s approved.
+              </span>
+            ) : null}
           </label>
 
           <div>
