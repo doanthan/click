@@ -471,7 +471,9 @@ export default async function DashboardPage() {
                 </Link>
                 {m.suggestedEventSlug ? (
                   <p className="mt-2 text-sm font-bold leading-6">
-                    Suggested for you both:{" "}
+                    {m.suggestedByOther
+                      ? `${m.otherDisplayName} suggested: `
+                      : "Suggested for you both: "}
                     <Link
                       href={`/events/${m.suggestedEventSlug}`}
                       className="underline decoration-2 underline-offset-4 hover:opacity-80"

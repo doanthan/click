@@ -74,6 +74,7 @@ Public bucket = anyone with the URL can read (avatars rendered on event cards, h
 | `event-cancelled-attendee` | `cancelMerchantEvent` in `src/lib/event-repository.ts`, fan-out to every affected attendee after commit |
 | `payment-receipt-attendee` | `markPaymentSucceeded` in `src/lib/event-repository.ts`, via `logPaymentReceiptEmail` helper (GST receipt, tax = total / 11) |
 | `password-reset` | `requestPasswordReset` in `src/app/forgot-password/actions.ts`, alongside the legacy `sendTransactionalEmail` magic-link send |
+| `merchant-monthly-report` | `sendMerchantMonthlyReports` in `src/lib/event-repository.ts`, driven by the `api/cron/merchant-monthly-reports` cron — one row per approved merchant who hosted ≥1 event in the target month (events/attendees/paid-revenue/top event) |
 
 Still unwired: `event-reminder-attendee` (needs a ~24h-out cron, not a request handler). When you add that trigger site, call `logEmailEvent` — same shape as the wired ones above.
 
@@ -210,6 +211,7 @@ Mounted under `src/app/api/**`. Notable groups:
 - `api/clicks`, `api/onboarding`, `api/webhooks/stripe`
 - `api/cron/waitlist-expiry` (GET/POST — sweeps lapsed 30-min waitlist offers via `expireWaitlistOffers()`, re-offers each freed seat to the next person; guarded by `Authorization: Bearer ${CRON_SECRET}`, returns 503 until that env var is set. Wire to a scheduler, e.g. a Vercel cron every ~5 min)
 - `api/cron/reconcile-payments` (GET/POST — Stripe webhook safety net: walks recent Checkout Sessions Stripe reports paid via `reconcilePendingPayments()` and promotes any booking stuck on `pending`; idempotent, same `CRON_SECRET` bearer guard, wired in `vercel.json` every 15 min. The primary path is the snapshot webhook endpoint `we_1ThNdkJXwQuYjRDjUccyHFv4` → `https://www.letsclick.app/api/webhooks/stripe` — always the **www** host, the apex 307-redirects and Stripe won't follow it)
+- `api/cron/merchant-monthly-reports` (GET/POST — monthly merchant recap email: logs a `merchant-monthly-report` `email_events` row for every approved merchant who hosted ≥1 event in the target month, with events/attendees/paid-revenue/top-event via `sendMerchantMonthlyReports()`; defaults to the previous calendar month, override with `?year=&month=`; same `CRON_SECRET` bearer guard, wired in `vercel.json` at `0 8 1 * *`)
 - `api/cron/refresh-matching-features` (GET/POST — Matching v2 feature-population batch: rebuilds `events.sub_tags` + the `user_features` store (declared + behavioural features + cohort assignment) for every profile via `src/lib/matching/feature-store.ts`; same `CRON_SECRET` bearer guard. Intended nightly. See `context/04_MATCHING_ALGORITHM_V2.md`)
 - `api/geo/postcode?code=NNNN` — resolves a 4-digit AU postcode → `{ state, suburbs[] }` from the bundled `src/lib/postcode.ts` table (server-only `au-postcodes.json`; powers the `/profile/edit` postcode→suburb picker)
 - `api/upload/avatar` — multipart avatar upload, normalises via `sharp`, writes to the public Supabase `avatars` bucket and persists `profiles.photo_url`

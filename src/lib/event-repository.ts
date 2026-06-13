@@ -8964,6 +8964,10 @@ export type MutualClickEntry = {
   otherPhotoUrl: string | null;
   suggestedEventSlug: string | null;
   suggestedEventTitle: string | null;
+  // True when the surfaced suggestion was last proposed by the OTHER person
+  // (they picked an alternative in /proposals) — lets the UI attribute it as
+  // "Janey suggested:" instead of the generic "Suggested for you both:".
+  suggestedByOther: boolean;
   createdAt: string;
 };
 
@@ -8980,6 +8984,7 @@ export async function getMutualClicksForSession(session: Session | null): Promis
       other_photo: string | null;
       event_slug: string | null;
       event_title: string | null;
+      proposed_by: string | null;
       created_at: Date;
     }>(
       `
@@ -8989,17 +8994,21 @@ export async function getMutualClicksForSession(session: Session | null): Promis
           other.photo_url as other_photo,
           event.slug as event_slug,
           event.title as event_title,
+          p.proposed_by::text as proposed_by,
           m.created_at
         from mutual_clicks m
         join profiles other on other.id = (
           case when m.profile_a_id = $1::uuid then m.profile_b_id else m.profile_a_id end
         )
-        -- Only surface the stored suggestion if it's still a bookable future
-        -- event. Older mutual-click rows may point at an event that has since
-        -- passed; those resolve to null here so the UI shows the proposal CTA
-        -- instead of a dead, in-the-past suggestion.
+        -- The live proposal (one per mutual click) holds the CURRENT suggestion,
+        -- which either side can replace via "suggest alternative" in /proposals.
+        left join event_proposals p on p.mutual_click_id = m.id
+        -- Prefer the proposal's event (reflects an alternative someone picked);
+        -- fall back to the mutual click's original auto-suggestion. Only surface
+        -- it if it's still a bookable future event, otherwise resolve to null so
+        -- the UI shows the proposal CTA instead of a dead, in-the-past event.
         left join events event
-          on event.id = m.suggested_event_id
+          on event.id = coalesce(p.suggested_event_id, m.suggested_event_id)
          and event.starts_at > now()
          and event.status in ('live', 'featured', 'waitlist')
         where m.profile_a_id = $1::uuid or m.profile_b_id = $1::uuid
@@ -9015,6 +9024,7 @@ export async function getMutualClicksForSession(session: Session | null): Promis
       otherPhotoUrl: row.other_photo,
       suggestedEventSlug: row.event_slug,
       suggestedEventTitle: row.event_title,
+      suggestedByOther: row.proposed_by != null && row.proposed_by === row.other_id,
       createdAt: row.created_at.toISOString(),
     }));
   } catch {
@@ -10300,6 +10310,132 @@ export async function getMerchantTransactionsForExport(
     }));
   } catch {
     return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Merchant monthly email report (cron-driven)
+// ---------------------------------------------------------------------------
+
+// Logs a `merchant-monthly-report` email for every approved merchant who hosted
+// at least one event in the given month (Australia/Sydney): events hosted,
+// confirmed attendees, paid revenue, and their best-attended event. Driven by
+// the /api/cron/merchant-monthly-reports cron. Returns how many were sent vs
+// skipped (no activity / no contact email). Per the email-events convention,
+// this records rows in `email_events`; the real provider send happens in the
+// one-time provider migration.
+export async function sendMerchantMonthlyReports(opts: {
+  year: number;
+  month: number; // 1-12, the target calendar month
+}): Promise<{ sent: number; skipped: number }> {
+  const pool = getPostgresPool();
+  if (!pool) return { sent: 0, skipped: 0 };
+
+  // UTC month boundaries. Sydney is +10/+11, so this is a ~10h-shifted window vs
+  // a strict Sydney calendar month — acceptable for a monthly summary.
+  const start = new Date(Date.UTC(opts.year, opts.month - 1, 1));
+  const end = new Date(Date.UTC(opts.year, opts.month, 1));
+  const monthLabel = new Intl.DateTimeFormat("en-AU", {
+    month: "long",
+    year: "numeric",
+    timeZone: "Australia/Sydney",
+  }).format(new Date(Date.UTC(opts.year, opts.month - 1, 15, 12)));
+  const formatAud = (cents: number) =>
+    new Intl.NumberFormat("en-AU", {
+      style: "currency",
+      currency: "AUD",
+      maximumFractionDigits: 0,
+    }).format(cents / 100);
+  const origin = emailOrigin();
+
+  try {
+    // Scalar subqueries (not joins) so the per-merchant aggregates don't
+    // multiply each other into a cartesian product.
+    const result = await pool.query<{
+      contact_email: string | null;
+      business_name: string | null;
+      owner_profile_id: string;
+      owner_name: string | null;
+      events_count: string;
+      attendees_count: string;
+      paid_cents: string;
+      top_event_title: string | null;
+      top_event_attendees: string | null;
+    }>(
+      `
+        select
+          mp.contact_email::text as contact_email,
+          mp.business_name,
+          owner.id::text as owner_profile_id,
+          owner.display_name as owner_name,
+          (select count(*) from events e
+             where e.merchant_profile_id = mp.id
+               and e.starts_at >= $1 and e.starts_at < $2) as events_count,
+          (select count(*) from event_attendees a
+             join events e on e.id = a.event_id
+             where e.merchant_profile_id = mp.id
+               and a.status = 'confirmed'
+               and e.starts_at >= $1 and e.starts_at < $2) as attendees_count,
+          (select coalesce(sum(amount_cents), 0) from payment_transactions pt
+             where pt.merchant_profile_id = mp.id
+               and pt.status = 'paid'
+               and pt.created_at >= $1 and pt.created_at < $2)::text as paid_cents,
+          (select e.title from events e
+             where e.merchant_profile_id = mp.id
+               and e.starts_at >= $1 and e.starts_at < $2
+             order by (select count(*) from event_attendees a
+                         where a.event_id = e.id and a.status = 'confirmed') desc,
+                      e.starts_at desc
+             limit 1) as top_event_title,
+          (select count(*) from event_attendees a
+             where a.status = 'confirmed' and a.event_id = (
+               select e.id from events e
+                 where e.merchant_profile_id = mp.id
+                   and e.starts_at >= $1 and e.starts_at < $2
+                 order by (select count(*) from event_attendees a2
+                             where a2.event_id = e.id and a2.status = 'confirmed') desc,
+                          e.starts_at desc
+                 limit 1
+             )) as top_event_attendees
+        from merchant_profiles mp
+        join profiles owner on owner.id = mp.profile_id
+        where mp.verification_status = 'approved'
+      `,
+      [start, end],
+    );
+
+    let sent = 0;
+    let skipped = 0;
+    for (const row of result.rows) {
+      const eventsCount = Number(row.events_count);
+      if (eventsCount === 0 || !row.contact_email) {
+        skipped += 1;
+        continue;
+      }
+      await logEmailEvent({
+        template: "merchant-monthly-report",
+        toEmail: row.contact_email,
+        toProfileId: row.owner_profile_id,
+        vars: {
+          businessName: row.business_name ?? "your business",
+          merchantFirstName: (row.owner_name ?? "there").trim().split(" ")[0] || "there",
+          monthLabel,
+          eventsCount: String(eventsCount),
+          attendeesCount: String(Number(row.attendees_count)),
+          revenueLabel: formatAud(Number(row.paid_cents)),
+          topEventTitle: row.top_event_title ?? "Your events",
+          topEventAttendees: String(Number(row.top_event_attendees ?? 0)),
+          merchantDashboardUrl: `${origin}/merchant?tab=dashboard`,
+          unsubscribeUrl: `${origin}/account-settings`,
+          supportEmail: "hello@click.app",
+        },
+      });
+      sent += 1;
+    }
+    return { sent, skipped };
+  } catch (error) {
+    console.warn("sendMerchantMonthlyReports failed", error);
+    return { sent: 0, skipped: 0 };
   }
 }
 

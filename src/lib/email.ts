@@ -106,6 +106,7 @@ export type EmailTemplate =
   | "password-reset"
   | "payment-receipt-attendee"
   | "report-received-admin"
+  | "merchant-monthly-report"
   | "mutual-click-attendee";
 
 // Where the .html files live. Override with CLICK_EMAILS_DIR if Next moves
@@ -149,6 +150,8 @@ const SUBJECTS: Record<EmailTemplate, (vars: Record<string, string>) => string> 
     `Receipt — ${v.eventTitle ?? "your event"}${v.totalLabel ? ` (${v.totalLabel})` : ""}`,
   "report-received-admin": (v) =>
     `[Safety] New report — ${v.reason ?? "review needed"}`,
+  "merchant-monthly-report": (v) =>
+    `Your ${v.monthLabel ?? "monthly"} on Click — ${v.eventsCount ?? "0"} events, ${v.revenueLabel ?? "$0"}`,
   "mutual-click-attendee": (v) =>
     `It's mutual — you and ${v.otherName ?? "someone"} both clicked`,
 };
