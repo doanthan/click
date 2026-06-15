@@ -656,6 +656,7 @@ export async function issueRefund(
     status: string;
     stripe_charge_id: string | null;
     stripe_payment_intent_id: string | null;
+    merchant_profile_id: string | null;
   }>(
     `
       select id::text,
@@ -664,7 +665,8 @@ export async function issueRefund(
              currency,
              status::text,
              stripe_charge_id,
-             stripe_payment_intent_id
+             stripe_payment_intent_id,
+             merchant_profile_id::text
       from payment_transactions
       where id = $1::uuid
       limit 1
@@ -704,13 +706,23 @@ export async function issueRefund(
     );
   }
 
-  // Hit Stripe. We do NOT reverse the application fee here — by default the
-  // platform keeps its fee on partial refunds; if/when we want to optionally
-  // refund the fee, add `refund_application_fee: true`.
+  // Hit Stripe. Merchant-hosted events are destination charges (transfer_data +
+  // application_fee_amount set at checkout). For those we MUST pull the refund
+  // back from the parties that received the money: `reverse_transfer` reverses
+  // the merchant's transfer (proportionally for partial refunds) and
+  // `refund_application_fee` returns the platform's fee. Without these the
+  // refund is funded entirely from the platform balance while the merchant
+  // keeps their cut — the platform eats every cancellation. Platform-owned
+  // events have no connected account / transfer, so the flags don't apply (and
+  // `reverse_transfer` would error with no transfer to reverse).
+  const isDestinationCharge = txn.merchant_profile_id != null;
   const stripeRefund = await stripe.refunds.create({
     charge: chargeId,
     amount: requestedAmount,
     reason: input.reason,
+    ...(isDestinationCharge
+      ? { reverse_transfer: true, refund_application_fee: true }
+      : {}),
     metadata: {
       payment_transaction_id: txn.id,
       initiated_by_profile_id: input.adminProfileId ?? "",

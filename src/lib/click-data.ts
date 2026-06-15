@@ -273,7 +273,7 @@ export const lifeQuizSections = [
   },
   {
     title: "Energy and mood",
-    output: "Curious, cautious, ready, rebuilding confidence.",
+    output: "Curious, cautious, ready.",
   },
 ];
 

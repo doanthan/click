@@ -53,7 +53,6 @@ export const SECTIONS: Section[] = [
       { slug: "career-pivot", label: "Career pivot" },
       { slug: "recently-single", label: "Recently single" },
       { slug: "retiree", label: "Retiree" },
-      { slug: "rebuilding", label: "Rebuilding after a chapter" },
     ],
   },
   {
@@ -87,7 +86,6 @@ export const SECTIONS: Section[] = [
       { slug: "curious", label: "Curious" },
       { slug: "cautious", label: "Cautious" },
       { slug: "ready", label: "Ready" },
-      { slug: "rebuilding-confidence", label: "Rebuilding confidence" },
     ],
   },
 ];

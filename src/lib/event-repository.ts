@@ -43,6 +43,8 @@ import {
   type ProfilePromptAnswer,
 } from "./profile-prompts";
 import { regionForEvent, type Region } from "./geo";
+import { calculateApplicationFee } from "./stripe-connect";
+import { logBookingEvent, refundBandFromTier } from "./booking-events";
 import { getPostgresPool } from "./postgres";
 import { getSupabaseAdmin } from "@/utils/supabase/admin";
 import { toTitleCase } from "./text-format";
@@ -2818,6 +2820,7 @@ export async function registerForEvent(eventId: string, session: Session | null)
         capacity: number;
         status: string;
         price_cents: number;
+        merchant_profile_id: string | null;
         confirmed_attendees: string;
         has_ended: boolean;
       }>(
@@ -2829,6 +2832,7 @@ export async function registerForEvent(eventId: string, session: Session | null)
             event.capacity,
             event.status::text,
             event.price_cents,
+            event.merchant_profile_id::text,
             (coalesce(event.ends_at, event.starts_at) <= now()) as has_ended,
             (
               (
@@ -2891,15 +2895,32 @@ export async function registerForEvent(eventId: string, session: Session | null)
 
       const status = isFull ? "waitlisted" : "confirmed";
 
-      await client.query(
+      const rsvpRow = await client.query<{ id: string }>(
         `
           insert into event_attendees (event_id, profile_id, status)
           values ($1::uuid, $2::uuid, $3::rsvp_status)
           on conflict (event_id, profile_id) do update
           set status = excluded.status, updated_at = now()
+          returning id::text
         `,
         [event.id, profile.id, status],
       );
+
+      // Lifecycle log (spec 22 §2): a free RSVP confirming is a 'confirmed'
+      // booking event with no money attached. Waitlist joins aren't booking
+      // financial events, so they're not logged. In-txn for atomicity.
+      if (status === "confirmed") {
+        await logBookingEvent(client, {
+          bookingId: rsvpRow.rows[0].id,
+          eventId: event.id,
+          merchantId: event.merchant_profile_id,
+          userId: profile.id,
+          eventType: "confirmed",
+          amountCents: null,
+          actor: "attendee",
+          metadata: { free_rsvp: true },
+        });
+      }
 
       if (status === "waitlisted") {
         await client.query(
@@ -2970,7 +2991,7 @@ export async function registerForEvent(eventId: string, session: Session | null)
 }
 
 // Notify a mutual-click partner when the viewer RSVPs to the proposal's
-// suggested event, so they know to RSVP too ("your match RSVP'd — your turn").
+// suggested event, so they know to RSVP too ("your click RSVP'd — your turn").
 // Idempotent per (partner, event) via the action_url marker. Best-effort:
 // swallows its own errors so it can be called void-style after a commit.
 async function notifyProposalPartnerOfRsvp(
@@ -2984,7 +3005,7 @@ async function notifyProposalPartnerOfRsvp(
         insert into notifications (profile_id, title, body, action_url)
         select
           case when mc.profile_a_id = $2::uuid then mc.profile_b_id else mc.profile_a_id end,
-          'Your match RSVP''d — your turn',
+          'Your click RSVP''d — your turn',
           rsvper.display_name || ' just RSVP''d to ' || e.title ||
             '. RSVP too so your plan is locked in.',
           '/events/' || e.slug || '?from=proposal-partner-rsvp'
@@ -3632,9 +3653,17 @@ export async function approveEventForAdmin(eventId: string, session: Session | n
     // time when no end is set, is in the past). Only events still pending are
     // checked here; the update below stays the gate for not-found / wrong-status.
     // (When recurring events land, exempt a still-repeating series here.)
-    const eligibility = await pool.query<{ approvable: boolean }>(
+    const eligibility = await pool.query<{
+      approvable: boolean;
+      price_cents: number;
+      merchant_profile_id: string | null;
+      merchant_charges_enabled: boolean | null;
+    }>(
       `
-        select (coalesce(ends_at, starts_at) >= now()) as approvable
+        select (coalesce(ends_at, starts_at) >= now()) as approvable,
+               price_cents,
+               merchant_profile_id::text,
+               (select charges_enabled from merchant_profiles where id = events.merchant_profile_id) as merchant_charges_enabled
         from events
         where slug = $1 and status = 'pending'
       `,
@@ -3644,6 +3673,27 @@ export async function approveEventForAdmin(eventId: string, session: Session | n
     if ((eligibility.rowCount ?? 0) > 0 && !eligibility.rows[0].approvable) {
       const error = new Error(
         "This event has already passed and can no longer be approved.",
+      );
+      error.name = "ValidationError";
+      throw error;
+    }
+
+    // Payment-publication gate: a paid, merchant-hosted event must not go live
+    // unless the owning merchant has an active Stripe Connect account
+    // (charges_enabled). The creation + trusted-auto-approve paths already
+    // enforce this; the manual admin-approval path is the remaining hole — a
+    // paid event would otherwise reach `live` with no way to route the money,
+    // and checkout would dead-end on PayoutsNotReadyError. Platform-owned paid
+    // events (no merchant_profile_id) settle to the platform account directly,
+    // so they're exempt.
+    if (
+      (eligibility.rowCount ?? 0) > 0 &&
+      eligibility.rows[0].price_cents > 0 &&
+      eligibility.rows[0].merchant_profile_id &&
+      eligibility.rows[0].merchant_charges_enabled !== true
+    ) {
+      const error = new Error(
+        "This is a paid event, but the host hasn't finished Stripe Connect payout setup, so it can't accept payments yet. Approve it once their payouts are active.",
       );
       error.name = "ValidationError";
       throw error;
@@ -7191,6 +7241,9 @@ export async function cancelRegistration(eventId: string, session: Session | nul
   let paidZeroRefund = false;
   let cancelledEventId = "";
   let cancelledTitle = "";
+  // Hoisted for the post-commit booking_events refund log (spec 22 §2).
+  let cancelledBookingId = "";
+  let cancelledMerchantId: string | null = null;
 
   try {
     await client.query("begin");
@@ -7203,6 +7256,7 @@ export async function cancelRegistration(eventId: string, session: Session | nul
       slug: string;
       starts_at: Date;
       price_cents: number;
+      merchant_profile_id: string | null;
       offered_until: Date | null;
       txn_id: string | null;
       txn_amount_cents: number | null;
@@ -7218,6 +7272,7 @@ export async function cancelRegistration(eventId: string, session: Session | nul
           event.slug,
           event.starts_at,
           event.price_cents,
+          event.merchant_profile_id::text,
           waitlist.offered_until,
           pt.id::text as txn_id,
           pt.amount_cents as txn_amount_cents,
@@ -7247,11 +7302,28 @@ export async function cancelRegistration(eventId: string, session: Session | nul
 
     cancelledEventId = row.event_id;
     cancelledTitle = row.title;
+    cancelledBookingId = row.attendee_id;
+    cancelledMerchantId = row.merchant_profile_id;
 
     await client.query(
       `update event_attendees set status = 'cancelled', updated_at = now() where id = $1::uuid`,
       [row.attendee_id],
     );
+
+    // Lifecycle log (spec 22 §2): a confirmed seat being cancelled by its
+    // attendee. Waitlist drops aren't booking financial events. The refund leg
+    // (refunded_full/partial/refund_denied) is logged post-commit below, once
+    // the Stripe call resolves. In-txn so the cancellation + its log are atomic.
+    if (row.previous_status === "confirmed") {
+      await logBookingEvent(client, {
+        bookingId: row.attendee_id,
+        eventId: row.event_id,
+        merchantId: row.merchant_profile_id,
+        userId: profile.id,
+        eventType: "cancelled_by_attendee",
+        actor: "attendee",
+      });
+    }
 
     if (row.previous_status === "waitlisted") {
       // Drop them off the waitlist. If they were holding a LIVE promotion offer,
@@ -7308,7 +7380,7 @@ export async function cancelRegistration(eventId: string, session: Session | nul
     try {
       // Lazy import avoids a static cycle (stripe-sync imports from this module).
       const { issueRefund } = await import("./stripe-sync");
-      await issueRefund({
+      const refundResult = await issueRefund({
         paymentTransactionId: refundPlan.paymentTransactionId,
         amountCents: refundPlan.refundCents,
         reason: "requested_by_customer",
@@ -7316,6 +7388,20 @@ export async function cancelRegistration(eventId: string, session: Session | nul
       });
       refund = { refundCents: refundPlan.refundCents, tier: refundPlan.tier, failed: false };
       refundLine = `A refund of ${dollars} will appear on your statement in 3–5 business days.`;
+      // Lifecycle log: full tier → refunded_full, half tier → refunded_partial.
+      // Amount is signed negative. Best-effort, idempotent on the Stripe refund id.
+      await logBookingEvent(pool, {
+        bookingId: cancelledBookingId,
+        eventId: cancelledEventId,
+        merchantId: cancelledMerchantId,
+        userId: profile.id,
+        eventType: refundPlan.tier === "full" ? "refunded_full" : "refunded_partial",
+        amountCents: -refundPlan.refundCents,
+        currency: refundPlan.currency,
+        refundTier: refundBandFromTier(refundPlan.tier),
+        stripeObjectId: refundResult.stripeRefundId,
+        actor: "attendee",
+      }).catch(() => {});
       await pool
         .query(
           `insert into notifications (profile_id, title, body, action_url) values ($1::uuid, $2, $3, $4)`,
@@ -7351,6 +7437,16 @@ export async function cancelRegistration(eventId: string, session: Session | nul
   } else if (paidZeroRefund) {
     refundLine =
       "No refund — you cancelled within 24 hours of the event, per our cancellation policy.";
+    // Lifecycle log: a paid booking cancelled inside the no-refund window.
+    void logBookingEvent(pool, {
+      bookingId: cancelledBookingId,
+      eventId: cancelledEventId,
+      merchantId: cancelledMerchantId,
+      userId: profile.id,
+      eventType: "refund_denied",
+      refundTier: "within_24h",
+      actor: "system",
+    }).catch(() => {});
   }
 
   // Log rsvp-cancelled-attendee (+ rsvp-cancelled-merchant). Post-commit +
@@ -7534,6 +7630,7 @@ export async function expirePaymentHolds(): Promise<{ expired: number; reoffered
     profile_id: string;
     title: string;
     slug: string;
+    merchant_profile_id: string | null;
     txn_id: string | null;
     checkout_session_id: string | null;
   }>(
@@ -7544,6 +7641,7 @@ export async function expirePaymentHolds(): Promise<{ expired: number; reoffered
         a.profile_id::text,
         e.title,
         e.slug,
+        e.merchant_profile_id::text,
         a.payment_transaction_id::text as txn_id,
         pt.stripe_checkout_session_id as checkout_session_id
       from event_attendees a
@@ -7602,6 +7700,18 @@ export async function expirePaymentHolds(): Promise<{ expired: number; reoffered
         `update event_attendees set status = 'cancelled', hold_expires_at = null, updated_at = now() where id = $1::uuid`,
         [row.attendee_id],
       );
+
+      // Lifecycle log (spec 22 §2): the reservation lapsed without payment. The
+      // reserved seat (and its 'reserved' log) gives the model the negative —
+      // a hold that never converted. In-txn with the seat release.
+      await logBookingEvent(client, {
+        bookingId: row.attendee_id,
+        eventId: row.event_id,
+        merchantId: row.merchant_profile_id,
+        userId: row.profile_id,
+        eventType: "reservation_expired",
+        actor: "system",
+      });
 
       // Tidy the orphaned checkout transaction so it doesn't sit "pending" forever.
       if (row.txn_id) {
@@ -7709,6 +7819,8 @@ export async function cancelMerchantEvent(eventId: string, session: Session | nu
 
   const client = await pool.connect();
   let affectedProfiles: {
+    bookingId: string;
+    isBooking: boolean;
     profileId: string;
     email: string;
     displayName: string;
@@ -7754,6 +7866,8 @@ export async function cancelMerchantEvent(eventId: string, session: Session | nu
     }
 
     const attendeeResult = await client.query<{
+      attendee_id: string;
+      attendee_status: string;
       profile_id: string;
       display_name: string;
       email: string;
@@ -7765,6 +7879,8 @@ export async function cancelMerchantEvent(eventId: string, session: Session | nu
     }>(
       `
         select
+          attendee.id::text as attendee_id,
+          attendee.status::text as attendee_status,
           attendee.profile_id::text,
           attendee_profile.display_name,
           attendee_profile.email::text as email,
@@ -7789,6 +7905,9 @@ export async function cancelMerchantEvent(eventId: string, session: Session | nu
           ? row.txn_amount_cents - (row.refunded_amount_cents ?? 0)
           : 0;
       return {
+        bookingId: row.attendee_id,
+        // Waitlisted rows aren't bookings — exclude from the lifecycle log.
+        isBooking: row.attendee_status !== "waitlisted",
         profileId: row.profile_id,
         email: row.email,
         displayName: row.display_name,
@@ -7816,6 +7935,21 @@ export async function cancelMerchantEvent(eventId: string, session: Session | nu
       `,
       [event.id],
     );
+
+    // Lifecycle log (spec 22 §2): one cancelled_by_merchant per real booking
+    // (not waitlist rows). In-txn so the cancellation + logs commit atomically.
+    // The refunded_full leg is logged post-commit per attendee below.
+    for (const a of affectedProfiles) {
+      if (!a.isBooking) continue;
+      await logBookingEvent(client, {
+        bookingId: a.bookingId,
+        eventId: event.id,
+        merchantId: merchant.id,
+        userId: a.profileId,
+        eventType: "cancelled_by_merchant",
+        actor: "merchant",
+      });
+    }
 
     if (attendeeResult.rows.length > 0) {
       await client.query(
@@ -7889,13 +8023,26 @@ export async function cancelMerchantEvent(eventId: string, session: Session | nu
           const dollars = formatAud(attendee.refundableCents, attendee.currency);
           try {
             const { issueRefund } = await import("./stripe-sync");
-            await issueRefund({
+            const refundResult = await issueRefund({
               paymentTransactionId: attendee.paymentTransactionId,
               reason: "requested_by_customer",
               adminProfileId: null,
             });
             refundedCount += 1;
             refundLabel = `A full refund of ${dollars} is on the way (3–5 business days).`;
+            // Lifecycle log: merchant cancel always refunds 100% regardless of
+            // tier, so refund_tier is null. Best-effort; idempotent on refund id.
+            await logBookingEvent(pool, {
+              bookingId: attendee.bookingId,
+              eventId: event.id,
+              merchantId: merchant.id,
+              userId: attendee.profileId,
+              eventType: "refunded_full",
+              amountCents: -attendee.refundableCents,
+              currency: attendee.currency,
+              stripeObjectId: refundResult.stripeRefundId,
+              actor: "merchant",
+            }).catch(() => {});
           } catch (err) {
             refundLabel =
               "We're processing your full refund — if it hasn't arrived within 7 days, contact hello@click.app.";
@@ -8160,25 +8307,51 @@ export async function createPaymentHold(
     const bookingFeeCents = Math.round((event.price_cents * bookingFeeBps) / 10_000);
     const totalCents = event.price_cents + bookingFeeCents;
 
+    // Stamp the platform's cut (commission) at hold time so platform-revenue
+    // reporting has a value the moment the booking confirms — not NULL until a
+    // later Stripe sync backfills `charge.application_fee_amount`. This must
+    // equal exactly what checkout sends as `application_fee_amount` (the
+    // platform fee on the ticket PLUS the whole booking fee), so syncing the
+    // real charge later is a no-op reconciliation rather than a correction.
+    // Only merchant-hosted events are destination charges with an application
+    // fee; platform-owned events have no connected account, so leave it NULL.
+    const applicationFeeCents = event.merchant_stripe_account_id
+      ? calculateApplicationFee(event.price_cents) + bookingFeeCents
+      : null;
+
     const paymentResult = await client.query<{ id: string }>(
       `
-        insert into payment_transactions (event_id, profile_id, merchant_profile_id, amount_cents, currency, status)
-        values ($1::uuid, $2::uuid, $3::uuid, $4, $5, 'pending')
+        insert into payment_transactions (event_id, profile_id, merchant_profile_id, amount_cents, application_fee_cents, currency, status)
+        values ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, 'pending')
         returning id::text
       `,
-      [event.id, profile.id, event.merchant_profile_id, totalCents, event.currency],
+      [event.id, profile.id, event.merchant_profile_id, totalCents, applicationFeeCents, event.currency],
     );
     const paymentTransactionId = paymentResult.rows[0].id;
 
-    await client.query(
+    const attendeeRow = await client.query<{ id: string }>(
       `
         insert into event_attendees (event_id, profile_id, status, payment_transaction_id, hold_expires_at)
         values ($1::uuid, $2::uuid, 'pending_payment', $3::uuid, now() + interval '30 minutes')
         on conflict (event_id, profile_id) do update
         set status = 'pending_payment', payment_transaction_id = excluded.payment_transaction_id, hold_expires_at = now() + interval '30 minutes', updated_at = now()
+        returning id::text
       `,
       [event.id, profile.id, paymentTransactionId],
     );
+
+    // Append-only lifecycle log (spec 22 §2): the seat is reserved pending
+    // payment. In-txn so the reservation and its log commit atomically.
+    await logBookingEvent(client, {
+      bookingId: attendeeRow.rows[0].id,
+      eventId: event.id,
+      merchantId: event.merchant_profile_id,
+      userId: profile.id,
+      eventType: "reserved",
+      amountCents: totalCents,
+      currency: event.currency,
+      actor: "attendee",
+    });
 
     await client.query("commit");
 
@@ -8264,6 +8437,8 @@ export async function markPaymentSucceeded(paymentTransactionId: string) {
       currency: string;
       event_title: string;
       event_slug: string;
+      event_status: string;
+      merchant_profile_id: string | null;
       display_name: string;
       profile_email: string;
     }>(
@@ -8275,8 +8450,10 @@ export async function markPaymentSucceeded(paymentTransactionId: string) {
           status::text,
           amount_cents,
           currency::text as currency,
+          merchant_profile_id::text,
           (select title from events where id = payment_transactions.event_id) as event_title,
           (select slug from events where id = payment_transactions.event_id) as event_slug,
+          (select status::text from events where id = payment_transactions.event_id) as event_status,
           (select display_name from profiles where id = payment_transactions.profile_id) as display_name,
           (select email::text from profiles where id = payment_transactions.profile_id) as profile_email
         from payment_transactions
@@ -8292,6 +8469,95 @@ export async function markPaymentSucceeded(paymentTransactionId: string) {
       return;
     }
 
+    // Race: the buyer's checkout settled AFTER the host cancelled the event.
+    // cancelMerchantEvent only refunds seats that were paid/pending at cancel
+    // time, so a payment landing later would otherwise get *confirmed* into a
+    // dead event. The money is real (Stripe captured it), so flip the ledger to
+    // 'paid', mark the seat cancelled (never confirmed), notify the buyer, and
+    // issue a full refund out-of-band. Do NOT send the RSVP/receipt emails.
+    if (payment.event_status === "cancelled") {
+      if (payment.status !== "paid") {
+        await client.query(
+          `update payment_transactions set status = 'paid', updated_at = now() where id = $1::uuid`,
+          [paymentTransactionId],
+        );
+      }
+      const cancelledSeat = await client.query<{ id: string }>(
+        `
+          update event_attendees
+          set status = 'cancelled', hold_expires_at = null, updated_at = now()
+          where event_id = $1::uuid and profile_id = $2::uuid and status <> 'cancelled'
+          returning id::text
+        `,
+        [payment.event_id, payment.profile_id],
+      );
+      // The seat row always exists (a hold created it); fall back to a lookup if
+      // it was already cancelled so the lifecycle log still has a real booking id.
+      let cancelledBookingId = cancelledSeat.rows[0]?.id ?? null;
+      if (!cancelledBookingId) {
+        const seat = await client.query<{ id: string }>(
+          `select id::text from event_attendees where event_id = $1::uuid and profile_id = $2::uuid limit 1`,
+          [payment.event_id, payment.profile_id],
+        );
+        cancelledBookingId = seat.rows[0]?.id ?? null;
+      }
+      await client.query(
+        `
+          insert into notifications (profile_id, title, body, action_url)
+          values ($1::uuid, $2, $3, $4)
+        `,
+        [
+          payment.profile_id,
+          "Event cancelled — refund on the way",
+          `${payment.event_title} was cancelled before your payment cleared. A full refund is on the way.`,
+          `/events/${payment.event_slug}`,
+        ],
+      );
+      await client.query("commit");
+
+      // Refund the captured charge in full, out-of-band (its own txn + Stripe
+      // call). On failure, record it for the operator queue — same pattern as
+      // the bulk cancellation path.
+      try {
+        const { issueRefund } = await import("./stripe-sync");
+        const refundResult = await issueRefund({
+          paymentTransactionId: payment.id,
+          reason: "requested_by_customer",
+          adminProfileId: null,
+        });
+        // Lifecycle log: full refund of a payment that settled post-cancellation.
+        // Post-commit + best-effort; idempotent on the Stripe refund id.
+        await logBookingEvent(pool, {
+          bookingId: cancelledBookingId ?? payment.id,
+          eventId: payment.event_id,
+          merchantId: payment.merchant_profile_id,
+          userId: payment.profile_id,
+          eventType: "refunded_full",
+          amountCents: -refundResult.amountCents,
+          currency: payment.currency,
+          stripeObjectId: refundResult.stripeRefundId,
+          actor: "system",
+          metadata: { reason: "payment_settled_after_event_cancellation" },
+        }).catch(() => {});
+      } catch {
+        await pool
+          .query(
+            `insert into refund_failures (payment_transaction_id, event_id, profile_id, amount_cents, currency, error_message)
+             values ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6)`,
+            [
+              payment.id,
+              payment.event_id,
+              payment.profile_id,
+              payment.amount_cents,
+              payment.currency,
+              "Auto-refund failed: payment settled after event cancellation",
+            ],
+          )
+          .catch(() => null);
+      }
+      return;
+    }
+
     // Flip the ledger forward. Track whether THIS call did it so a retry that
     // finds it already 'paid' doesn't re-send the receipt.
     const txnFlipped = payment.status !== "paid";
@@ -8304,15 +8570,33 @@ export async function markPaymentSucceeded(paymentTransactionId: string) {
 
     // Always promote the seat idempotently — independent of the ledger flip —
     // so a row left 'pending_payment' by a ledger-only path still self-heals.
-    const attendeeUpdate = await client.query(
+    const attendeeUpdate = await client.query<{ id: string }>(
       `
         update event_attendees
         set status = 'confirmed', hold_expires_at = null, updated_at = now()
         where event_id = $1::uuid and profile_id = $2::uuid and status <> 'confirmed'
+        returning id::text
       `,
       [payment.event_id, payment.profile_id],
     );
     const attendeeFlipped = (attendeeUpdate.rowCount ?? 0) > 0;
+
+    // Lifecycle log (spec 22 §2): record 'confirmed' exactly when the seat
+    // actually transitions to confirmed. The FOR UPDATE lock on the payment row
+    // serialises webhook/reconcile/return callers, so this fires once. In-txn so
+    // the confirmation and its log commit together.
+    if (attendeeFlipped) {
+      await logBookingEvent(client, {
+        bookingId: attendeeUpdate.rows[0].id,
+        eventId: payment.event_id,
+        merchantId: payment.merchant_profile_id,
+        userId: payment.profile_id,
+        eventType: "confirmed",
+        amountCents: payment.amount_cents,
+        currency: payment.currency,
+        actor: "stripe_webhook",
+      });
+    }
 
     // Notify/email only on a genuine first transition (ledger OR seat just
     // flipped). Webhook retries and backstop re-runs are no-ops past this point.
