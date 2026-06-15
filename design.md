@@ -17,6 +17,23 @@ Click should feel like a creative civic noticeboard crossed with a modern event 
 
 The memorable idea: users land on Click and immediately feel there are real things happening nearby with real people they could meet. The AI conversation is not the brand gimmick; it is the guide that turns a human sentence like "I want to make new friends around Newtown" into specific events, group cards, and people-to-click suggestions.
 
+## Mobile-First (Foundational Principle)
+
+**~80% of Click's users are on a phone.** Mobile is the *default* design target, not a responsive afterthought. Design every screen at 375px width first, then scale *up* to tablet and desktop — never the reverse. A feature is not "done" until it has been checked on a small screen.
+
+Non-negotiable rules — apply to **every** screen, including merchant and admin:
+
+- **Single column by default.** Stack content vertically on mobile; introduce multi-column grids only at `sm:`/`md:`/`lg:` and up. Default Tailwind classes (no breakpoint prefix) describe the *mobile* layout.
+- **Touch targets ≥ 44px.** Every button, link, tab, chip, and form control must be at least 44×44px on mobile. No tiny tap targets, no hover-only affordances (mobile has no hover).
+- **Thumb-reachable primary actions.** The main action on a screen (RSVP, Book, Submit, Next) should sit within easy thumb reach — bottom of the viewport or a sticky bottom bar — not stranded at the top.
+- **Primary navigation always reachable.** The bottom tab bar (`MobileBottomNav` in `src/components/mobile-bottom-nav.tsx`) is the mobile nav; the desktop header links are `hidden lg:flex`. Never ship a screen where navigation disappears on mobile.
+- **No horizontal scroll on the page body.** Avoid fixed pixel widths that exceed the viewport. Wide, irreducible content (data tables, wizards) goes in an explicit `overflow-x-auto` container — the scroll is scoped to that element, never the whole page.
+- **Prefer bottom sheets / drawers over dropdowns** for filters and menus on mobile — they're easier to operate with a thumb.
+- **Forms and wizards must work one-handed.** Merchants create and manage events on their phones. Inputs full-width, labels above fields, large date/time pickers, sticky "Next/Save" action, no multi-column form rows on mobile.
+- **Respect safe areas.** Account for notches/home indicators with `env(safe-area-inset-*)` on anything fixed to a screen edge.
+
+How to verify: resize to 375px (or use the device toolbar) and confirm — no horizontal scroll, every action tappable, nav present, primary CTA reachable. The merchant event-create/manage flow and the attendee RSVP/booking flow are the highest-priority paths to keep mobile-perfect.
+
 ## What To Borrow From Paint It Easy
 
 Paint It Easy works because the page is operationally clear. It does not over-explain. It gives users tools to find an event quickly.

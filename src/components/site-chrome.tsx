@@ -8,6 +8,7 @@ import {
 import { HeaderNotificationsBell } from "./header-notifications-bell";
 import { HeaderRoleSwitcher, type PortalRole } from "./header-role-switcher";
 import { LoginTrigger } from "./login-trigger";
+import { MobileBottomNav, type BottomNavTab } from "./mobile-bottom-nav";
 
 // Static placeholder streamed while the real SiteHeader awaits its session +
 // profile queries. Mirrors the header chrome (same sticky bar, same logo
@@ -16,22 +17,22 @@ import { LoginTrigger } from "./login-trigger";
 export function SiteHeaderShell() {
   return (
     <header className="sticky top-0 z-50 border-b border-[color:var(--line)] bg-[color:var(--champagne)]/85 backdrop-blur-xl">
-      <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3.5 sm:px-6">
-        <div className="flex items-center gap-2">
+      <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-2 sm:px-6 sm:py-3.5">
+        <div className="flex items-center gap-1.5 sm:gap-2">
           <Image
             src="/click_blob_mascot.svg"
             alt=""
             width={44}
             height={44}
             aria-hidden
-            className="h-9 w-9 shrink-0 sm:h-10 sm:w-10"
+            className="h-8 w-8 shrink-0 sm:h-10 sm:w-10"
           />
-          <span className="click-wordmark text-[1.7rem] text-[color:var(--ink)] sm:text-[1.85rem]">
+          <span className="click-wordmark text-[1.4rem] text-[color:var(--ink)] sm:text-[1.85rem]">
             Click
             <span className="click-wordmark__period" aria-hidden />
           </span>
         </div>
-        <div className="h-9 sm:h-10" aria-hidden />
+        <div className="h-8 sm:h-10" aria-hidden />
       </div>
     </header>
   );
@@ -81,12 +82,31 @@ export async function SiteHeader() {
     navItems.push({ label: "Admin", href: "/admin" });
   }
 
+  // Mobile bottom tab bar — the thumb-reachable replacement for the desktop nav
+  // (which is `hidden lg:flex`). Four slots, role-aware. The header bell already
+  // covers notifications on mobile, so it isn't duplicated here.
+  const bottomTabs: BottomNavTab[] = [{ label: "Find", href: "/discover", icon: "find" }];
+  if (session?.user) {
+    bottomTabs.push({ label: "Calendar", href: "/dashboard/calendar", icon: "calendar" });
+    bottomTabs.push({
+      label: "Host",
+      href: hasMerchantProfile ? "/merchant" : "/merchant/signup",
+      icon: "host",
+    });
+    bottomTabs.push({ label: "You", href: "/dashboard", icon: "you" });
+  } else {
+    bottomTabs.push({ label: "How it works", href: "/how-it-works", icon: "info" });
+    bottomTabs.push({ label: "Host", href: "/merchant/signup", icon: "host" });
+    bottomTabs.push({ label: "Sign up", href: "/signup", icon: "spark" });
+  }
+
   return (
-    <header className="sticky top-0 z-50 border-b border-[color:var(--line)] bg-[color:var(--champagne)]/85 backdrop-blur-xl">
-      <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3.5 sm:px-6">
+    <>
+      <header className="sticky top-0 z-50 border-b border-[color:var(--line)] bg-[color:var(--champagne)]/85 backdrop-blur-xl">
+      <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-2 sm:px-6 sm:py-3.5">
         <Link
           href={logoHref}
-          className="group flex items-center gap-2"
+          className="group flex items-center gap-1.5 sm:gap-2"
           aria-label="Click home"
         >
           <Image
@@ -95,9 +115,9 @@ export async function SiteHeader() {
             width={44}
             height={44}
             aria-hidden
-            className="h-9 w-9 shrink-0 transition-transform duration-300 group-hover:rotate-6 sm:h-10 sm:w-10"
+            className="h-8 w-8 shrink-0 transition-transform duration-300 group-hover:rotate-6 sm:h-10 sm:w-10"
           />
-          <span className="click-wordmark text-[1.7rem] text-[color:var(--ink)] sm:text-[1.85rem]">
+          <span className="click-wordmark text-[1.4rem] text-[color:var(--ink)] sm:text-[1.85rem]">
             Click
             <span className="click-wordmark__period" aria-hidden />
           </span>
@@ -148,6 +168,8 @@ export async function SiteHeader() {
         </div>
       </div>
     </header>
+      <MobileBottomNav tabs={bottomTabs} />
+    </>
   );
 }
 

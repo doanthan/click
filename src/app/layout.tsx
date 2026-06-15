@@ -73,7 +73,13 @@ export default async function RootLayout({
           cz-shortcut-listen, Grammarly) inject attributes onto <body> before
           React hydrates. This suppresses only body's own attribute mismatch,
           not mismatches inside the component tree. */}
-      <body className="min-h-full flex flex-col" suppressHydrationWarning>
+      {/* pb on mobile reserves space for the fixed MobileBottomNav (its own
+          height + the device safe-area inset) so page + footer content is never
+          hidden behind it; cleared from lg up where the bottom bar is hidden. */}
+      <body
+        className="min-h-full flex flex-col pb-[calc(56px+env(safe-area-inset-bottom))] lg:pb-0"
+        suppressHydrationWarning
+      >
         {/* The live header awaits the session profile + notification queries;
             stream it so those round-trips never block first paint of the page
             body. The shell keeps the bar's height so nothing shifts. */}
