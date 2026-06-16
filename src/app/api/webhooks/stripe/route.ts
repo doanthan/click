@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import {
   markPaymentFailed,
   markPaymentSucceeded,
+  processGuestSpotsForSession,
   updateMerchantConnectStatus,
 } from "@/lib/event-repository";
 import { getConnectedAccountStatus } from "@/lib/stripe-connect";
@@ -65,7 +66,14 @@ export async function POST(request: Request) {
       case "checkout.session.async_payment_succeeded": {
         const session = event.data.object;
         const id = paymentIdFromMetadata(session.metadata);
-        if (id) await markPaymentSucceeded(id);
+        if (id) {
+          await markPaymentSucceeded(id);
+          // Name the reserved guest seats from session metadata (spec 19 §5).
+          await processGuestSpotsForSession({
+            paymentTransactionId: id,
+            guestDetailsJson: session.metadata?.guest_details,
+          });
+        }
         break;
       }
       case "checkout.session.expired":

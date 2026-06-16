@@ -34,6 +34,7 @@ import {
   getMerchantProfile,
   markPaymentFailed,
   markPaymentSucceeded,
+  processGuestSpotsForSession,
   updateMerchantConnectStatus,
 } from "./event-repository";
 import { writeAuditLog } from "@/utils/admin/audit-logger";
@@ -272,6 +273,15 @@ export async function reconcileCheckoutSession(
     await attachPaymentIntent(paymentTransactionId, session.payment_intent);
   }
   await markPaymentSucceeded(paymentTransactionId);
+  // Name any reserved guest seats from session metadata — covers the case where
+  // the webhook was missed and the buyer's return / cron reconcile confirms.
+  await processGuestSpotsForSession({
+    paymentTransactionId,
+    guestDetailsJson:
+      typeof session.metadata?.guest_details === "string"
+        ? session.metadata.guest_details
+        : null,
+  });
   return { confirmed: true };
 }
 

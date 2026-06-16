@@ -107,7 +107,9 @@ export type EmailTemplate =
   | "payment-receipt-attendee"
   | "report-received-admin"
   | "merchant-monthly-report"
-  | "mutual-click-attendee";
+  | "mutual-click-attendee"
+  | "guest-invite"
+  | "guest-spot-existing-user";
 
 // Where the .html files live. Override with CLICK_EMAILS_DIR if Next moves
 // cwd somewhere unexpected in your deploy; otherwise resolves from repo root.
@@ -154,6 +156,10 @@ const SUBJECTS: Record<EmailTemplate, (vars: Record<string, string>) => string> 
     `Your ${v.monthLabel ?? "monthly"} on Click — ${v.eventsCount ?? "0"} events, ${v.revenueLabel ?? "$0"}`,
   "mutual-click-attendee": (v) =>
     `It's mutual — you and ${v.otherName ?? "someone"} both clicked`,
+  "guest-invite": (v) =>
+    `${v.purchaserFirstName ?? "A friend"} saved you a spot`,
+  "guest-spot-existing-user": (v) =>
+    `${v.purchaserFirstName ?? "A friend"} saved you a spot at ${v.eventTitle ?? "an event"}`,
 };
 
 // In-process cache. .html files don't change between requests during a single

@@ -45,6 +45,17 @@ import {
 import { regionForEvent, type Region } from "./geo";
 import { calculateApplicationFee } from "./stripe-connect";
 import { logBookingEvent, refundBandFromTier } from "./booking-events";
+import {
+  type GuestDetailInput,
+  type NormalizedGuest,
+  GUEST_MAX,
+  validateGuestDetails,
+  filterSuppressedEmails,
+  liveGuestEmailsForEvent,
+  reserveUnnamedGuestSeats,
+  nameReservedGuestSeats,
+  cancelGuestSeatsForTransaction,
+} from "./guest-spots";
 import { getPostgresPool } from "./postgres";
 import { getSupabaseAdmin } from "@/utils/supabase/admin";
 import { toTitleCase } from "./text-format";
@@ -7323,6 +7334,12 @@ export async function cancelRegistration(eventId: string, session: Session | nul
         eventType: "cancelled_by_attendee",
         actor: "attendee",
       });
+      // Whole-booking cancel (spec 19 §10.3): the purchaser's guest seats cancel
+      // together with their own. The refund computed below is on the full
+      // payment_transactions.amount_cents (all seats), so the money reconciles.
+      if (row.txn_id) {
+        await cancelGuestSeatsForTransaction(client, row.txn_id);
+      }
     }
 
     if (row.previous_status === "waitlisted") {
@@ -7713,6 +7730,12 @@ export async function expirePaymentHolds(): Promise<{ expired: number; reoffered
         actor: "system",
       });
 
+      // Release any guest seats reserved on this lapsed hold (spec 19) so they
+      // stop holding capacity and don't linger as 'unnamed' orphans.
+      if (row.txn_id) {
+        await cancelGuestSeatsForTransaction(client, row.txn_id);
+      }
+
       // Tidy the orphaned checkout transaction so it doesn't sit "pending" forever.
       if (row.txn_id) {
         await client.query(
@@ -7951,6 +7974,15 @@ export async function cancelMerchantEvent(eventId: string, session: Session | nu
       });
     }
 
+    // Cancel every guest seat for this event (spec 19 §10.5) so claim links
+    // dead-end and the seats stop holding capacity. The purchasers' full-amount
+    // refunds (which already cover the guest seats they paid for) run below.
+    await client.query(
+      `update guest_spots set status = 'cancelled', updated_at = now()
+        where event_id = $1::uuid and status <> 'cancelled'`,
+      [event.id],
+    );
+
     if (attendeeResult.rows.length > 0) {
       await client.query(
         `
@@ -8123,9 +8155,15 @@ export type PaymentHold = {
   // Platform booking fee added on top of the ticket (system_settings.booking_fee_bps,
   // snapshotted at hold time). 0 when the fee is disabled.
   bookingFeeCents: number;
-  // What the buyer actually pays = priceCents + bookingFeeCents. Persisted as
-  // payment_transactions.amount_cents so receipts/refunds reconcile against it.
+  // What the buyer actually pays = (priceCents + bookingFeeCents) × seatCount.
+  // Persisted as payment_transactions.amount_cents so receipts/refunds reconcile.
   totalCents: number;
+  // Total seats on this booking: the purchaser + their named/unnamed guests
+  // (1–4). priceCents / bookingFeeCents above are PER SEAT.
+  seatCount: number;
+  // Validated, normalized guest details to carry in Stripe session metadata so
+  // the webhook can name the reserved seats. Empty for a solo booking.
+  guests: NormalizedGuest[];
   currency: string;
   profileEmail: string;
   // Connected merchant's Stripe account id when present + payouts ready.
@@ -8137,7 +8175,17 @@ export type PaymentHold = {
 export async function createPaymentHold(
   eventSlug: string,
   session: Session | null,
+  options?: { seatCount?: number; guests?: GuestDetailInput[] },
 ): Promise<PaymentHold> {
+  // Total seats = purchaser (1) + up to GUEST_MAX guests. Named guests can't
+  // exceed the extra seats. seatCount is clamped/validated against capacity below.
+  const requestedGuests = options?.guests ?? [];
+  const seatCount = Math.max(1, Math.min(1 + GUEST_MAX, Math.trunc(options?.seatCount ?? 1)));
+  if (requestedGuests.length > seatCount - 1) {
+    const error = new Error("You've named more friends than the seats you're buying.");
+    error.name = "ValidationError";
+    throw error;
+  }
   const pool = getPostgresPool();
   if (!pool) throw databaseUnavailableError();
 
@@ -8155,6 +8203,7 @@ export async function createPaymentHold(
       status: string;
       price_cents: number;
       currency: string;
+      starts_at: Date;
       merchant_profile_id: string | null;
       merchant_stripe_account_id: string | null;
       merchant_charges_enabled: boolean | null;
@@ -8170,6 +8219,7 @@ export async function createPaymentHold(
           event.status::text,
           event.price_cents,
           event.currency,
+          event.starts_at,
           event.merchant_profile_id::text,
           merchant.stripe_connect_account_id as merchant_stripe_account_id,
           merchant.charges_enabled as merchant_charges_enabled,
@@ -8186,6 +8236,21 @@ export async function createPaymentHold(
                 -- hold is reused via the on-conflict upsert below.
                 and attendee.profile_id <> $2::uuid
                 and (attendee.status = 'confirmed' or (attendee.status = 'pending_payment' and attendee.hold_expires_at > now()))
+            )
+            +
+            -- Guest seats (spec 19): each non-cancelled guest_spots row is a held
+            -- seat. Count it only while its purchaser's booking is live (confirmed
+            -- or an unexpired hold), mirroring the attendee rule above, and exclude
+            -- THIS buyer's own reserved guest seats so a retry isn't blocked by them.
+            (
+              select count(*)
+              from guest_spots gs
+              join event_attendees ga
+                on ga.payment_transaction_id = gs.payment_transaction_id
+              where gs.event_id = event.id
+                and gs.status <> 'cancelled'
+                and gs.purchaser_profile_id <> $2::uuid
+                and (ga.status = 'confirmed' or (ga.status = 'pending_payment' and ga.hold_expires_at > now()))
             )
             +
             -- A live waitlist offer held by SOMEONE ELSE reserves their seat for
@@ -8245,10 +8310,48 @@ export async function createPaymentHold(
     }
 
     const confirmedCount = Number(event.confirmed_attendees);
-    if (event.status === "waitlist" || confirmedCount >= event.capacity) {
+    const available = event.capacity - confirmedCount;
+    if (event.status === "waitlist" || available <= 0) {
       const error = new Error("Event is full — join the waitlist instead.");
       error.name = "ConflictError";
       throw error;
+    }
+    // Multi-seat (guest) bookings need the whole party to fit. The purchaser's
+    // own seat is excluded from confirmedCount above, so the party of `seatCount`
+    // must fit within `available`. We don't partial-fill a group.
+    if (seatCount > available) {
+      const error = new Error(
+        available === 1
+          ? "Only one seat is left — you can't bring guests on this one."
+          : `Only ${available} seats are left — reduce your party size.`,
+      );
+      error.name = "ConflictError";
+      throw error;
+    }
+
+    // Validate named guests under the lock (spec §13): shape + 18+ at the event
+    // date, then DB checks — suppressed emails and emails that already hold a
+    // live spot at this event are rejected here (the webhook re-checks as the
+    // final guard). Purchaser's own email is rejected by validateGuestDetails.
+    const normalizedGuests = validateGuestDetails(requestedGuests, {
+      purchaserEmail: profile.email,
+      eventDate: event.starts_at,
+    });
+    if (normalizedGuests.length > 0) {
+      const emails = normalizedGuests.map((g) => g.email);
+      const suppressed = await filterSuppressedEmails(client, emails);
+      const live = await liveGuestEmailsForEvent(client, event.id, emails);
+      const blocked = normalizedGuests.find(
+        (g) => suppressed.has(g.email) || live.has(g.email),
+      );
+      if (blocked) {
+        const reason = suppressed.has(blocked.email)
+          ? `${blocked.firstName} asked not to be invited to Click events.`
+          : `${blocked.firstName} already has a spot at this event.`;
+        const error = new Error(reason);
+        error.name = "ValidationError";
+        throw error;
+      }
     }
 
     const existing = await client.query<{ status: string }>(
@@ -8302,21 +8405,23 @@ export async function createPaymentHold(
 
     // Booking fee is charged on top of the ticket and kept by the platform.
     // Snapshot it at hold time so a later admin change to the rate can't alter an
-    // in-flight checkout. amount_cents stores the full buyer charge (ticket + fee).
+    // in-flight checkout. Per-seat figures; amount_cents stores the FULL buyer
+    // charge across all seats (ticket + fee) × seatCount.
     const { bookingFeeBps } = await getSystemSettings();
     const bookingFeeCents = Math.round((event.price_cents * bookingFeeBps) / 10_000);
-    const totalCents = event.price_cents + bookingFeeCents;
+    const perSeatCents = event.price_cents + bookingFeeCents;
+    const totalCents = perSeatCents * seatCount;
 
     // Stamp the platform's cut (commission) at hold time so platform-revenue
     // reporting has a value the moment the booking confirms — not NULL until a
     // later Stripe sync backfills `charge.application_fee_amount`. This must
     // equal exactly what checkout sends as `application_fee_amount` (the
-    // platform fee on the ticket PLUS the whole booking fee), so syncing the
-    // real charge later is a no-op reconciliation rather than a correction.
-    // Only merchant-hosted events are destination charges with an application
-    // fee; platform-owned events have no connected account, so leave it NULL.
+    // platform fee on the ticket PLUS the whole booking fee), across all seats,
+    // so syncing the real charge later is a no-op reconciliation. Only
+    // merchant-hosted events are destination charges with an application fee;
+    // platform-owned events have no connected account, so leave it NULL.
     const applicationFeeCents = event.merchant_stripe_account_id
-      ? calculateApplicationFee(event.price_cents) + bookingFeeCents
+      ? (calculateApplicationFee(event.price_cents) + bookingFeeCents) * seatCount
       : null;
 
     const paymentResult = await client.query<{ id: string }>(
@@ -8340,6 +8445,34 @@ export async function createPaymentHold(
       [event.id, profile.id, paymentTransactionId],
     );
 
+    // Reserve the friends' seats now, as unnamed placeholders (zero PII) tied to
+    // this pending booking, so a concurrent buyer can't take them while the
+    // purchaser is in Stripe Checkout. They get names at webhook time. First
+    // cancel any guest seats left over from this buyer's own earlier abandoned
+    // hold on this event so they don't accumulate as orphans.
+    if (seatCount > 1) {
+      await client.query(
+        `
+          update guest_spots gs
+          set status = 'cancelled', updated_at = now()
+          from payment_transactions pt
+          where gs.payment_transaction_id = pt.id
+            and gs.event_id = $1::uuid
+            and gs.purchaser_profile_id = $2::uuid
+            and gs.status <> 'cancelled'
+            and pt.status <> 'paid'
+            and pt.id <> $3::uuid
+        `,
+        [event.id, profile.id, paymentTransactionId],
+      );
+      await reserveUnnamedGuestSeats(client, {
+        paymentTransactionId,
+        eventId: event.id,
+        purchaserProfileId: profile.id,
+        count: seatCount - 1,
+      });
+    }
+
     // Append-only lifecycle log (spec 22 §2): the seat is reserved pending
     // payment. In-txn so the reservation and its log commit atomically.
     await logBookingEvent(client, {
@@ -8351,6 +8484,7 @@ export async function createPaymentHold(
       amountCents: totalCents,
       currency: event.currency,
       actor: "attendee",
+      metadata: seatCount > 1 ? { seat_count: seatCount } : undefined,
     });
 
     await client.query("commit");
@@ -8363,6 +8497,8 @@ export async function createPaymentHold(
       priceCents: event.price_cents,
       bookingFeeCents,
       totalCents,
+      seatCount,
+      guests: normalizedGuests,
       currency: event.currency,
       profileEmail: profile.email,
       merchantStripeAccountId: event.merchant_stripe_account_id,
@@ -8372,6 +8508,168 @@ export async function createPaymentHold(
     throw error;
   } finally {
     client.release();
+  }
+}
+
+// Names the reserved guest seats from the Stripe session's `guest_details`
+// metadata once payment is confirmed (spec 19 §5). Called from the webhook and
+// from reconcileCheckoutSession (the return/cron fallback), both of which hold
+// the session metadata. Best-effort + idempotent: re-runs skip already-named
+// guests and only fire side effects for seats named in THIS pass, so webhook
+// replays don't double-invite. Never throws into the caller.
+export async function processGuestSpotsForSession(args: {
+  paymentTransactionId: string;
+  guestDetailsJson: string | null | undefined;
+}): Promise<void> {
+  const pool = getPostgresPool();
+  if (!pool || !args.guestDetailsJson) return;
+
+  let parsed: NormalizedGuest[];
+  try {
+    const raw = JSON.parse(args.guestDetailsJson);
+    if (!Array.isArray(raw)) return;
+    parsed = raw
+      .map((g) => ({
+        firstName: String(g?.firstName ?? ""),
+        email: String(g?.email ?? "").toLowerCase(),
+        dob: String(g?.dob ?? ""),
+      }))
+      .filter((g) => g.firstName && g.email);
+  } catch {
+    return;
+  }
+  if (parsed.length === 0) return;
+
+  try {
+    // Only name guests for a confirmed (paid) booking.
+    const ctx = await pool.query<{
+      event_id: string;
+      purchaser_profile_id: string;
+      purchaser_name: string;
+      title: string;
+      slug: string;
+      starts_at: Date;
+      timezone: string;
+      suburb: string | null;
+    }>(
+      `
+        select pt.event_id::text,
+               pt.profile_id::text as purchaser_profile_id,
+               p.display_name as purchaser_name,
+               e.title, e.slug, e.starts_at, e.timezone, e.suburb
+        from payment_transactions pt
+        join profiles p on p.id = pt.profile_id
+        join events e on e.id = pt.event_id
+        where pt.id = $1::uuid and pt.status = 'paid'
+      `,
+      [args.paymentTransactionId],
+    );
+    const booking = ctx.rows[0];
+    if (!booking) return;
+
+    const client = await pool.connect();
+    let outcomes: Awaited<ReturnType<typeof nameReservedGuestSeats>> = [];
+    try {
+      await client.query("begin");
+      outcomes = await nameReservedGuestSeats(client, {
+        paymentTransactionId: args.paymentTransactionId,
+        eventId: booking.event_id,
+        guests: parsed,
+      });
+      await client.query("commit");
+    } catch (error) {
+      await client.query("rollback").catch(() => {});
+      console.warn("processGuestSpotsForSession naming failed", error);
+      return;
+    } finally {
+      client.release();
+    }
+
+    const origin = emailOrigin();
+    const purchaserFirst = (booking.purchaser_name || "").split(/\s+/)[0] || "A friend";
+    const dates = formatEmailDates(booking.starts_at, null, booking.timezone);
+    const suburb = booking.suburb ?? "";
+    const named: string[] = [];
+
+    for (const o of outcomes) {
+      if (o.kind === "invited") {
+        named.push(o.firstName);
+        void logEmailEvent({
+          template: "guest-invite",
+          toEmail: o.email,
+          vars: {
+            guestFirstName: o.firstName,
+            purchaserFirstName: purchaserFirst,
+            eventTitle: booking.title,
+            eventLongDate: dates.eventLongDate,
+            suburb,
+            claimUrl: `${origin}/claim/${o.claimToken}`,
+            releaseUrl: `${origin}/claim/${o.claimToken}?action=release`,
+            removeUrl: `${origin}/claim/${o.claimToken}?action=remove`,
+          },
+        });
+      } else if (o.kind === "claimed") {
+        named.push(o.firstName);
+        void pool
+          .query(
+            `insert into notifications (profile_id, title, body, action_url) values ($1::uuid, $2, $3, $4)`,
+            [
+              o.claimedProfileId,
+              `${purchaserFirst} saved you a spot`,
+              `${purchaserFirst} saved you a spot at ${booking.title} — it's in your Upcoming Events.`,
+              `/events/${booking.slug}`,
+            ],
+          )
+          .catch(() => {});
+        void logEmailEvent({
+          template: "guest-spot-existing-user",
+          toEmail: o.email,
+          toProfileId: o.claimedProfileId,
+          vars: {
+            purchaserFirstName: purchaserFirst,
+            eventTitle: booking.title,
+            eventLongDate: dates.eventLongDate,
+            suburb,
+            eventUrl: `${origin}/events/${booking.slug}`,
+            releaseUrl: `${origin}/events/${booking.slug}`,
+          },
+        });
+      } else {
+        // Skipped (suppressed / already-has-a-spot / no-seat): tell the
+        // purchaser the seat stays theirs as a +1 (spec §5 partial-failure rule).
+        const why =
+          o.kind === "skipped_conflict"
+            ? `${o.firstName} already has a spot at this event`
+            : `We couldn't save a named spot for ${o.firstName}`;
+        void pool
+          .query(
+            `insert into notifications (profile_id, title, body, action_url) values ($1::uuid, $2, $3, $4)`,
+            [
+              booking.purchaser_profile_id,
+              "A guest spot stayed unnamed",
+              `${why} — the seat is still yours to bring a +1.`,
+              `/events/${booking.slug}`,
+            ],
+          )
+          .catch(() => {});
+      }
+    }
+
+    if (named.length > 0) {
+      void pool
+        .query(
+          `insert into notifications (profile_id, title, body, action_url) values ($1::uuid, $2, $3, $4)`,
+          [
+            booking.purchaser_profile_id,
+            "Spots saved for your guests",
+            `Spots saved for: ${named.join(", ")}. They'll get an invite from Click.`,
+            `/events/${booking.slug}`,
+          ],
+        )
+        .catch(() => {});
+    }
+  } catch (error) {
+    console.warn("processGuestSpotsForSession failed", error);
   }
 }
 

@@ -50,7 +50,7 @@ function errorResponse(error: unknown) {
   return NextResponse.json({ error: error.message || "Checkout failed." }, { status: 500 });
 }
 
-export async function POST(_request: Request, context: RouteContext) {
+export async function POST(request: Request, context: RouteContext) {
   const { eventId } = await context.params;
   const session = await auth();
 
@@ -62,10 +62,30 @@ export async function POST(_request: Request, context: RouteContext) {
     );
   }
 
+  // Optional body: { tickets?: 1-4, guests?: [{firstName,email,dob}] } for group
+  // (guest-spot) bookings. A bare POST (no body) keeps the solo-booking behaviour.
+  let seatCount = 1;
+  let guests: { firstName: string; email: string; dob: string }[] = [];
+  try {
+    const body = await request.json();
+    if (body && typeof body === "object") {
+      if (Number.isFinite(body.tickets)) seatCount = Math.trunc(body.tickets);
+      if (Array.isArray(body.guests)) {
+        guests = body.guests.map((g: Record<string, unknown>) => ({
+          firstName: String(g?.firstName ?? ""),
+          email: String(g?.email ?? ""),
+          dob: String(g?.dob ?? ""),
+        }));
+      }
+    }
+  } catch {
+    // No/invalid JSON body — treat as a solo booking.
+  }
+
   let hold: Awaited<ReturnType<typeof createPaymentHold>> | null = null;
 
   try {
-    hold = await createPaymentHold(eventId, session);
+    hold = await createPaymentHold(eventId, session, { seatCount, guests });
 
     const appUrl = getAppUrl();
     const returnPath = `/events/${encodeURIComponent(hold.eventSlug)}`;
@@ -96,13 +116,17 @@ export async function POST(_request: Request, context: RouteContext) {
       customer_email: hold.profileEmail,
       line_items: [
         {
-          quantity: 1,
+          // One unit per seat (purchaser + guests). The purchaser pays for all.
+          quantity: hold.seatCount,
           price_data: {
             currency: hold.currency.toLowerCase(),
             unit_amount: hold.priceCents,
             product_data: {
               name: hold.eventTitle,
-              description: `Click event reservation`,
+              description:
+                hold.seatCount > 1
+                  ? `Click event reservation (${hold.seatCount} seats)`
+                  : `Click event reservation`,
             },
           },
         },
@@ -111,7 +135,8 @@ export async function POST(_request: Request, context: RouteContext) {
         ...(hold.bookingFeeCents > 0
           ? [
               {
-                quantity: 1,
+                // One booking fee per seat.
+                quantity: hold.seatCount,
                 price_data: {
                   currency: hold.currency.toLowerCase(),
                   unit_amount: hold.bookingFeeCents,
@@ -139,6 +164,12 @@ export async function POST(_request: Request, context: RouteContext) {
         payment_transaction_id: hold.paymentTransactionId,
         event_uuid: hold.eventUuid,
         event_slug: hold.eventSlug,
+        // Named guests ride here only (never persisted as PII until the webhook
+        // confirms payment — an abandoned checkout leaves zero guest data). The
+        // webhook reads this to name the reserved seats. Spec 19 §4.4/§13.
+        ...(hold.guests.length > 0
+          ? { guest_details: JSON.stringify(hold.guests) }
+          : {}),
       },
       payment_intent_data: {
         metadata: {
@@ -164,7 +195,8 @@ export async function POST(_request: Request, context: RouteContext) {
               transfer_data: { destination: hold.merchantStripeAccountId },
               on_behalf_of: hold.merchantStripeAccountId,
               application_fee_amount:
-                calculateApplicationFee(hold.priceCents) + hold.bookingFeeCents,
+                (calculateApplicationFee(hold.priceCents) + hold.bookingFeeCents) *
+                hold.seatCount,
             }
           : {}),
       },
