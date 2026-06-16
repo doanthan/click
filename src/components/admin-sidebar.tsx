@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode, SVGProps } from "react";
+import { PortalMobileNav, type PortalMobileNavItem } from "./portal-mobile-nav";
 
 export type AdminTabKey =
   | "overview"
@@ -41,13 +42,16 @@ type NavItem = {
   href: string;
 };
 
+// Labels are deliberately concise — the full descriptive title ("Events
+// Management", etc.) lives in each page's H1 (AdminPageHeader). Short labels
+// keep the sidebar scannable and the mobile dropdown tidy.
 const NAV_PRIMARY: NavItem[] = [
   { key: "overview", label: "Dashboard", icon: "dashboard", href: "/admin" },
-  { key: "events", label: "Events Management", icon: "events", href: "/admin/events" },
-  { key: "members", label: "Attendees Management", icon: "attendees", href: "/admin/members" },
-  { key: "merchants", label: "Merchants Management", icon: "merchants", href: "/admin/merchants" },
+  { key: "events", label: "Events", icon: "events", href: "/admin/events" },
+  { key: "members", label: "Attendees", icon: "attendees", href: "/admin/members" },
+  { key: "merchants", label: "Merchants", icon: "merchants", href: "/admin/merchants" },
   { key: "location-waitlist", label: "Location Waitlist", icon: "reports", href: "/admin/location-waitlist" },
-  { key: "transactions", label: "Transactions Management", icon: "transactions", href: "/admin/transactions" },
+  { key: "transactions", label: "Transactions", icon: "transactions", href: "/admin/transactions" },
   { key: "reports", label: "Safety Reports", icon: "reports", href: "/admin/reports" },
   { key: "tags", label: "Tags & Categories", icon: "contents", href: "/admin/tags" },
   { key: "matching", label: "Matching Formula", icon: "matching", href: "/admin/matching" },
@@ -205,8 +209,20 @@ export function AdminSidebar({ counts }: { counts: AdminSidebarCounts }) {
     );
   }
 
+  const mobileItems: PortalMobileNavItem[] = [...NAV_PRIMARY, ...NAV_SECONDARY].map(
+    (item) => ({
+      key: item.key,
+      label: item.label,
+      href: item.href,
+      count: counts[item.key],
+      active: isActiveItem(pathname, item),
+    }),
+  );
+
   return (
-    <aside className="lg:sticky lg:top-6 lg:w-[17.5rem] lg:shrink-0">
+    <>
+      <PortalMobileNav title="Admin Console" items={mobileItems} />
+      <aside className="hidden lg:sticky lg:top-6 lg:block lg:w-[17.5rem] lg:shrink-0">
       <nav className="flex flex-col rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-3 hard-shadow">
         <div className="flex items-center gap-3 px-2 pb-4 pt-2">
           <Image
@@ -232,5 +248,6 @@ export function AdminSidebar({ counts }: { counts: AdminSidebarCounts }) {
         <div className="flex flex-col gap-1">{NAV_SECONDARY.map(renderItem)}</div>
       </nav>
     </aside>
+    </>
   );
 }

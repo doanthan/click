@@ -218,7 +218,15 @@ export default function BusinessPage() {
       {/* Hero */}
       <section className="relative overflow-hidden border-b-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 pb-12 pt-14 sm:px-6">
         <div className="relative z-10 mx-auto max-w-6xl">
-          <span className="sticker sticker--peach tilt-l-2 inline-flex">
+          {/* This page isn't in any nav — give it an explicit way back to admin
+              so it isn't a dead end. */}
+          <Link
+            href="/admin"
+            className="mb-6 inline-flex items-center gap-1.5 text-sm font-bold text-[color:var(--mauve)] hover:text-[color:var(--ink)]"
+          >
+            <span aria-hidden>←</span> Back to admin
+          </Link>
+          <span className="sticker sticker--peach tilt-l-2 flex w-fit">
             <span className="size-2 rounded-full bg-[color:var(--punch)] pulse-ring" />
             Internal · founder reality dashboard
           </span>
@@ -396,7 +404,35 @@ export default function BusinessPage() {
             the hole is and how you fund it.
           </p>
 
-          <div className="mt-8 overflow-x-auto rounded-2xl border-2 border-[color:var(--champagne)]/30">
+          {/* Mobile (< md): stacked scenario cards instead of a 640px table. */}
+          <div className="mt-8 grid gap-3 md:hidden">
+            {(Object.keys(SCENARIOS) as ScenarioKey[]).map((k) => {
+              const sc = SCENARIOS[k];
+              const rev = sum(sc.mrr);
+              return (
+                <div
+                  key={k}
+                  className={`rounded-2xl border-2 border-[color:var(--champagne)]/30 p-4 ${
+                    k === active ? "bg-[color:var(--surface-deep)]/60" : "bg-[color:var(--surface-deep)]/20"
+                  }`}
+                >
+                  <p className="font-bold text-[color:var(--champagne)]">{sc.label}</p>
+                  <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                    <dt className="text-[color:var(--peach)]/80">Yr-1 revenue</dt>
+                    <dd className="text-right font-bold text-[color:var(--champagne)]">{fmt(rev)}</dd>
+                    <dt className="text-[color:var(--peach)]/80">Yr-1 spend</dt>
+                    <dd className="text-right font-bold text-[color:var(--champagne)]">{fmt(sc.year1Burn)}</dd>
+                    <dt className="text-[color:var(--peach)]/80">Net cash hole</dt>
+                    <dd className="text-right font-bold text-[color:var(--rose)]">-{fmt(sc.year1Burn - rev)}</dd>
+                  </dl>
+                  <p className="mt-3 text-sm text-[color:var(--champagne)]/80">{sc.breakeven}</p>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Desktop (md+): full comparison table. */}
+          <div className="mt-8 hidden overflow-x-auto rounded-2xl border-2 border-[color:var(--champagne)]/30 md:block">
             <table className="w-full min-w-[640px] border-collapse text-left text-sm">
               <thead>
                 <tr className="bg-[color:var(--surface-deep)] text-[color:var(--peach)]">

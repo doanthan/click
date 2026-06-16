@@ -1,3 +1,4 @@
+import { AdminPageHeader } from "@/components/admin-page-header";
 import { InfoCard } from "@/components/click-ui";
 import { securityRows } from "@/lib/click-data";
 import { getAdminAuditLog } from "@/lib/event-repository";
@@ -30,6 +31,11 @@ export default async function AdminAuditPage() {
 
   return (
     <div className="space-y-8 py-10">
+      <AdminPageHeader
+        eyebrow="Security"
+        title="Audit Log"
+        description="Every privileged admin action, timestamped."
+      />
       <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
         {securityRows.map(([title, body], index) => (
           <InfoCard

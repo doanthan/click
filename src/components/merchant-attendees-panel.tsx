@@ -144,7 +144,49 @@ export function MerchantAttendeesPanel({ rows }: { rows: MerchantAllAttendeesRow
           No attendees match your filters.
         </p>
       ) : (
-        <div className="overflow-x-auto">
+        <>
+        {/* Mobile (< md): stacked cards so hosts can check people in on a phone
+            at the door without horizontal-scrolling a 6-column table. */}
+        <ul className="divide-y-2 divide-[color:var(--line-soft)] md:hidden">
+          {filtered.map((r) => (
+            <li key={r.attendeeId} className="flex flex-col gap-2 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="truncate font-bold text-[color:var(--ink)]">
+                    {r.displayName}
+                  </div>
+                  <div className="truncate font-mono text-xs text-[color:var(--mauve)]">
+                    {r.email}
+                  </div>
+                </div>
+                <Pill tone={statusTone(r.status)}>{r.status}</Pill>
+              </div>
+              <div className="text-sm font-semibold text-[color:var(--ink)]">
+                {r.eventTitle}
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-mono text-[0.65rem] uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+                  RSVP {dateTimeFormatter.format(new Date(r.rsvpAt))}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => checkIn(r)}
+                  disabled={isPending}
+                  className={`rounded-full border-2 border-[color:var(--line)] px-3 py-1 text-xs font-bold uppercase tracking-wide hard-shadow-sm ${
+                    r.checkedInAt
+                      ? "bg-[color:var(--rose)] text-[color:var(--surface-deep)]"
+                      : "bg-[color:var(--cream)] text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+                  } disabled:opacity-60`}
+                >
+                  {r.checkedInAt ? "✓ Checked in" : "Check in"}
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+
+        {/* Desktop (md+): the full table. */}
+        <div className="hidden overflow-x-auto md:block">
           <table className="w-full text-left text-sm">
             <thead className="border-b-2 border-[color:var(--line)] bg-[color:var(--peach)] text-[color:var(--surface-deep)]">
               <tr>
@@ -194,6 +236,7 @@ export function MerchantAttendeesPanel({ rows }: { rows: MerchantAllAttendeesRow
             </tbody>
           </table>
         </div>
+        </>
       )}
     </div>
   );

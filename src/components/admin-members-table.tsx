@@ -319,7 +319,12 @@ function MemberRow({
           {member.role}
         </span>
       </div>
-      <span>{member.suburb ?? "—"}</span>
+      <span>
+        <span className="font-mono text-[0.6rem] uppercase tracking-wider text-[color:var(--mauve)]/70 md:hidden">
+          Suburb:{" "}
+        </span>
+        {member.suburb ?? "—"}
+      </span>
       <span className="font-bold text-[color:var(--ink)]">
         {member.registrations} RSVP · {member.bookmarks} saved
       </span>
@@ -332,7 +337,12 @@ function MemberRow({
           Photo{member.photoVerified ? " ✓" : " —"}
         </span>
       </span>
-      <span>{dateFormatter.format(new Date(member.joinedAt))}</span>
+      <span>
+        <span className="font-mono text-[0.6rem] uppercase tracking-wider text-[color:var(--mauve)]/70 md:hidden">
+          Joined:{" "}
+        </span>
+        {dateFormatter.format(new Date(member.joinedAt))}
+      </span>
       {isSeed ? (
         <span className="font-mono text-[0.6rem] uppercase tracking-[0.16em] text-[color:var(--mauve)] md:text-right">
           seed data

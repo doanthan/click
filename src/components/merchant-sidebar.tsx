@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode, SVGProps } from "react";
+import { PortalMobileNav, type PortalMobileNavItem } from "./portal-mobile-nav";
 
 // Merchant portal tab keys. Unlike the admin console (which uses real routes +
 // usePathname), the merchant portal is a single page driven by `?tab=`, so the
@@ -132,8 +133,24 @@ export function MerchantSidebar({
     );
   }
 
+  const mobileItems: PortalMobileNavItem[] = [...NAV_PRIMARY, ...NAV_SECONDARY].map(
+    (item) => ({
+      key: item.key,
+      label: item.label,
+      href: `/merchant?tab=${item.key}`,
+      count: counts[item.key],
+      active: item.key === activeTab,
+    }),
+  );
+
   return (
-    <aside className="lg:sticky lg:top-6 lg:w-[17.5rem] lg:shrink-0">
+    <>
+      <PortalMobileNav
+        title="Merchant Portal"
+        items={mobileItems}
+        cta={{ label: "+ Create event", href: "/merchant/events/create" }}
+      />
+      <aside className="hidden lg:sticky lg:top-6 lg:block lg:w-[17.5rem] lg:shrink-0">
       <nav className="flex flex-col rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-3 pb-4 hard-shadow">
         <div className="flex items-center gap-3 px-2 pb-4 pt-2">
           <Image
@@ -166,5 +183,6 @@ export function MerchantSidebar({
         </Link>
       </nav>
     </aside>
+    </>
   );
 }

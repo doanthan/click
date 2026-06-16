@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import { AdminEventQueue } from "@/components/admin-event-queue";
+import { AdminPageHeader } from "@/components/admin-page-header";
 import { getAdminEvents, getProfileTagOptions } from "@/lib/event-repository";
 
 export const metadata = {
@@ -19,6 +20,11 @@ export default async function AdminEventsPage() {
 
   return (
     <div className="space-y-8 py-10">
+      <AdminPageHeader
+        eyebrow="Moderation"
+        title="Events"
+        description="Approve, feature, and manage every event across the platform."
+      />
       {/* AdminEventQueue reads filters from the query string via useSearchParams,
           which Next requires to sit under a Suspense boundary. */}
       <Suspense fallback={null}>

@@ -1,4 +1,5 @@
 import { AdminMembersTable } from "@/components/admin-members-table";
+import { AdminPageHeader } from "@/components/admin-page-header";
 import { getAdminEvents, getAdminMembers } from "@/lib/event-repository";
 
 export const metadata = {
@@ -17,6 +18,11 @@ export default async function AdminMembersPage() {
 
   return (
     <div className="space-y-8 py-10">
+      <AdminPageHeader
+        eyebrow="Community"
+        title="Attendees"
+        description="Search, verify, and moderate member accounts."
+      />
       <AdminMembersTable members={members} eventOptions={eventOptions} />
     </div>
   );

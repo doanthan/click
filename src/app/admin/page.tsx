@@ -1,3 +1,4 @@
+import { AdminPageHeader } from "@/components/admin-page-header";
 import { AdminTrendChart } from "@/components/admin-trend-chart";
 import { InfoCard, MetricCard } from "@/components/click-ui";
 import { adminModules } from "@/lib/click-data";
@@ -20,6 +21,11 @@ export default async function AdminOverviewPage() {
 
   return (
     <div className="space-y-12 py-10">
+      <AdminPageHeader
+        eyebrow="Overview"
+        title="Dashboard"
+        description="Platform health at a glance — members, events, merchants, and revenue."
+      />
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard label="Members" value={metrics.totalMembers.toLocaleString()} tone="cream" />
         <MetricCard label="New this week" value={metrics.newMembersThisWeek.toLocaleString()} tone="peach" />

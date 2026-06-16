@@ -70,7 +70,54 @@ export function AdminLocationWaitlistTable({
             No waitlist entries yet.
           </p>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          {/* Mobile (< md): stacked cards instead of a 720px-wide table that
+              would force horizontal scrolling on phones. */}
+          <ul className="divide-y-2 divide-[color:var(--line-soft)] md:hidden">
+            {filtered.map((e) => (
+              <li key={e.id} className="space-y-2 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate font-bold text-[color:var(--ink)]">
+                      {e.businessName ?? "—"}
+                    </p>
+                    {e.contactEmail ? (
+                      <a
+                        href={`mailto:${e.contactEmail}`}
+                        className="truncate font-mono text-[0.65rem] font-bold uppercase tracking-[0.14em] text-[color:var(--mauve)] hover:text-[color:var(--rose)]"
+                      >
+                        {e.contactEmail}
+                      </a>
+                    ) : null}
+                  </div>
+                  <span
+                    className={`inline-flex shrink-0 rounded-full border-2 border-[color:var(--line)] px-2.5 py-1 text-[0.62rem] font-bold uppercase tracking-wide ${regionTone(
+                      e.region,
+                    )}`}
+                  >
+                    {e.region ?? "Other"}
+                  </span>
+                </div>
+                <p className="text-sm font-bold text-[color:var(--ink)]">
+                  {e.suburb ?? "—"}
+                  {e.address ? (
+                    <span className="ml-1 text-xs font-medium text-[color:var(--mauve)]">
+                      · {e.address}
+                    </span>
+                  ) : null}
+                </p>
+                {e.note ? (
+                  <p className="text-xs font-medium text-[color:var(--mauve)]">{e.note}</p>
+                ) : null}
+                <p className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.14em] text-[color:var(--mauve)]">
+                  Added {dateFormatter.format(new Date(e.createdAt))}
+                </p>
+              </li>
+            ))}
+          </ul>
+
+          {/* Desktop (md+): full table. */}
+          <div className="hidden overflow-x-auto md:block">
             <table className="w-full min-w-[720px] text-left text-sm">
               <thead className="border-b-2 border-[color:var(--line)] bg-[color:var(--champagne)]">
                 <tr className="font-mono text-[0.62rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
@@ -123,6 +170,7 @@ export function AdminLocationWaitlistTable({
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
     </section>

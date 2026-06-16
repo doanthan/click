@@ -221,7 +221,7 @@ function DashboardTab({
       {!showWelcome ? (
         <section>
           <p className="eyebrow">This month at a glance</p>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 md:grid-cols-4">
             <MetricCard label="Upcoming" value={upcomingCount.toString()} tone="pink" />
             <MetricCard label="Confirmed RSVPs" value={totalConfirmed.toString()} tone="aqua" />
             <MetricCard label="Fill rate" value={`${fillRate}%`} tone="white" />
@@ -954,7 +954,7 @@ async function FinancesTabAsync({
         action={<MerchantFinancesExport />}
       />
       <PayoutStatusCard connect={finances.connect} />
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-4">
         <MetricCard label="Total" value={formatPrice(finances.totalRevenueCents)} tone="pink" />
         <MetricCard label="Paid" value={formatPrice(finances.paidRevenueCents)} tone="aqua" />
         <MetricCard label="Pending" value={formatPrice(finances.pendingRevenueCents)} tone="white" />

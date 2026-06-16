@@ -4,7 +4,6 @@ import { auth, isAdminEmail } from "@/auth";
 import { EventCard } from "@/components/event-card";
 import { LinkButton, MetricCard, Pill } from "@/components/click-ui";
 import { PostEventClickCard } from "@/components/post-event-click-card";
-import { ProfilePhotoNudge } from "@/components/profile-photo-nudge";
 import { ClickRadar } from "@/components/click-radar";
 import { ClickWithSomeoneUserCard } from "@/components/click-with-someone-user-card";
 import {
@@ -144,48 +143,26 @@ export default async function DashboardPage() {
           on Discover or Events to add more.
         </p>
 
-        {!completion.quizComplete ? (
-          <div className="mt-8 flex flex-col gap-3 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--ink)] p-5 text-[color:var(--on-deep)] hard-shadow sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--peach)]">
-                Take the Click quiz
-              </p>
-              <p className="mt-2 text-base font-bold leading-6">
-                A 4-step quiz builds your Click persona so we match you to the
-                right rooms — and the right people.
-              </p>
-            </div>
-            <LinkButton href="/quiz/life" variant="light">
-              Start the quiz
-            </LinkButton>
-          </div>
-        ) : null}
-
-        {/* Booked but faceless: keep nudging for a profile photo after an RSVP
-            (bug board #111) — people actually meet up when they can recognise
-            each other. Stands down once they have ANY recognisable photo: an
-            uploaded avatar, an OAuth provider photo, or a gallery photo — so it
-            no longer nags while a photo is already showing on the dashboard. */}
-        {!profileStatus.photoUrl &&
-        !profileStatus.hasGalleryPhotos &&
-        !session.user.image &&
-        registeredSet.size > 0 ? (
-          <div className="mt-8">
-            <ProfilePhotoNudge />
-          </div>
-        ) : null}
-
         <div className="mt-8 grid gap-3 sm:grid-cols-2">
           <MetricCard label="Upcoming RSVPs" value={dashboard.stats.upcoming.toString()} tone="peach" />
           <MetricCard label="Saved events" value={dashboard.stats.saved.toString()} tone="rose" />
         </div>
 
+        {/* One consolidated "Finish setting up" card. The completion checklist
+            already covers photo, suburb, bio, interests and the quiz, so the old
+            standalone quiz/photo/onboarding banners were redundant and are folded
+            in here — one card instead of up to four stacked nudges. */}
         {!completion.complete ? (
-          <div className="mt-4 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-5 hard-shadow-sm">
+          <div className="mt-8 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-5 hard-shadow-sm">
             <div className="flex items-center justify-between gap-4">
-              <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-                Complete your profile
-              </p>
+              <div>
+                <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+                  Finish setting up
+                </p>
+                <p className="mt-1 text-sm font-medium leading-5 text-[color:var(--mauve)]">
+                  A complete profile gets you better event and people matches.
+                </p>
+              </div>
               <span className="font-display text-2xl font-light leading-none text-[color:var(--ink)]">
                 {completion.percent}%
               </span>
@@ -216,23 +193,6 @@ export default async function DashboardPage() {
                 </li>
               ))}
             </ul>
-          </div>
-        ) : null}
-
-        {!profileStatus.onboardingComplete ? (
-          <div className="mt-8 flex flex-col gap-3 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--rose)] p-5 text-[color:var(--surface-deep)] hard-shadow-sm sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em]">
-                Finish your profile
-              </p>
-              <p className="mt-2 text-base font-bold leading-6">
-                Add your suburb, intent, and a few interest tags so we can show
-                you the right events.
-              </p>
-            </div>
-            <LinkButton href="/onboarding" variant="light">
-              Continue onboarding
-            </LinkButton>
           </div>
         ) : null}
 
@@ -269,6 +229,121 @@ export default async function DashboardPage() {
           </div>
         ) : null}
       </section>
+
+      {/* Core loop, lifted up front: clicking with people is the heart of the
+          product, so the people suggestion + radar and any mutual clicks sit
+          right under the hero rather than buried below the event lists. */}
+      <section className="mx-auto mt-12 max-w-6xl">
+        <div className="flex items-end justify-between gap-4">
+          <div>
+            <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
+              Click with someone
+            </p>
+            <h2 className="font-display mt-2 text-3xl font-light leading-tight sm:text-4xl">
+              People you might click with.
+            </h2>
+            <p className="mt-2 max-w-xl text-sm font-semibold leading-6 text-[color:var(--mauve)]">
+              🔒 Clicking is anonymous — we&rsquo;ll only show you if it&rsquo;s mutual.
+              We surface one person at a time, refreshed through the day. See
+              everyone on the People page.
+            </p>
+          </div>
+          <Link
+            href="/people"
+            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-4 py-2 text-xs font-bold text-[color:var(--surface-deep)] hover:bg-[color:var(--rose)]"
+          >
+            See everyone
+          </Link>
+        </div>
+
+        <div className="mt-6 grid gap-8 lg:grid-cols-[2fr_1fr]">
+          <div>
+            {rotatedPeople.length > 0 ? (
+              <div className="grid gap-5">
+                {rotatedPeople.map((person) => (
+                  <ClickWithSomeoneUserCard key={person.id} person={person} />
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-6">
+                <p className="text-base font-bold">No suggestions yet.</p>
+                <p className="mt-2 text-sm font-semibold leading-6 text-[color:var(--mauve)]">
+                  Add a few interest tags to{" "}
+                  <Link
+                    href="/profile/edit"
+                    className="font-bold text-[color:var(--ink)] underline decoration-2 underline-offset-4 hover:text-[color:var(--rose)]"
+                  >
+                    your profile
+                  </Link>{" "}
+                  so we can surface people with overlap.
+                </p>
+              </div>
+            )}
+          </div>
+          <ClickRadar events={rotatedRadar} fomoBySlug={fomoBySlug} />
+        </div>
+      </section>
+
+      {mutualClicks.length > 0 ? (
+        <section className="mx-auto mt-12 max-w-6xl">
+          <div className="flex items-end justify-between gap-4">
+            <div>
+              <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
+                Mutual Click
+              </p>
+              <h2 className="font-display mt-2 text-3xl font-light leading-tight sm:text-4xl">
+                You both tapped.
+              </h2>
+              <p className="mt-1 max-w-xl text-sm font-semibold leading-6 text-[color:var(--mauve)]">
+                When two people click each other we suggest one event you can both
+                go to next. Confirm a plan from your proposals.
+              </p>
+            </div>
+            <Link
+              href="/proposals"
+              className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-4 py-2 text-xs font-bold text-[color:var(--surface-deep)] hover:bg-[color:var(--rose)]"
+            >
+              Open proposals
+            </Link>
+          </div>
+          <ul className="mt-6 grid gap-4 md:grid-cols-2">
+            {mutualClicks.map((m) => (
+              <li
+                key={m.otherProfileId}
+                className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--rose)] p-4 text-[color:var(--surface-deep)] hard-shadow-sm"
+              >
+                <Link
+                  href={`/profile/${m.otherProfileId}`}
+                  className="font-display text-2xl font-light leading-tight hover:underline"
+                >
+                  You + {m.otherDisplayName}
+                </Link>
+                {m.suggestedEventSlug ? (
+                  <p className="mt-2 text-sm font-bold leading-6">
+                    {m.suggestedByOther
+                      ? `${m.otherDisplayName} suggested: `
+                      : "Suggested for you both: "}
+                    <Link
+                      href={`/events/${m.suggestedEventSlug}`}
+                      className="underline decoration-2 underline-offset-4 hover:opacity-80"
+                    >
+                      {m.suggestedEventTitle ?? "an event"}
+                    </Link>
+                  </p>
+                ) : (
+                  <p className="mt-2 text-sm font-semibold leading-6">
+                    Pick a plan together from your{" "}
+                    <Link href="/proposals" className="underline decoration-2 underline-offset-4">
+                      proposals
+                    </Link>
+                    .
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       {activePrompts.length > 0 ? (
         <section className="mx-auto mt-12 max-w-6xl">
@@ -449,117 +524,6 @@ export default async function DashboardPage() {
         </section>
       ) : null}
 
-      {mutualClicks.length > 0 ? (
-        <section className="mx-auto mt-12 max-w-6xl">
-          <div className="flex items-end justify-between gap-4">
-            <div>
-              <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
-                Mutual Click
-              </p>
-              <h2 className="font-display mt-2 text-3xl font-light leading-tight sm:text-4xl">
-                You both tapped.
-              </h2>
-              <p className="mt-1 max-w-xl text-sm font-semibold leading-6 text-[color:var(--mauve)]">
-                When two people click each other we suggest one event you can both
-                go to next. Confirm a plan from your proposals.
-              </p>
-            </div>
-            <Link
-              href="/proposals"
-              className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-4 py-2 text-xs font-bold text-[color:var(--surface-deep)] hover:bg-[color:var(--rose)]"
-            >
-              Open proposals
-            </Link>
-          </div>
-          <ul className="mt-6 grid gap-4 md:grid-cols-2">
-            {mutualClicks.map((m) => (
-              <li
-                key={m.otherProfileId}
-                className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--rose)] p-4 text-[color:var(--surface-deep)] hard-shadow-sm"
-              >
-                <Link
-                  href={`/profile/${m.otherProfileId}`}
-                  className="font-display text-2xl font-light leading-tight hover:underline"
-                >
-                  You + {m.otherDisplayName}
-                </Link>
-                {m.suggestedEventSlug ? (
-                  <p className="mt-2 text-sm font-bold leading-6">
-                    {m.suggestedByOther
-                      ? `${m.otherDisplayName} suggested: `
-                      : "Suggested for you both: "}
-                    <Link
-                      href={`/events/${m.suggestedEventSlug}`}
-                      className="underline decoration-2 underline-offset-4 hover:opacity-80"
-                    >
-                      {m.suggestedEventTitle ?? "an event"}
-                    </Link>
-                  </p>
-                ) : (
-                  <p className="mt-2 text-sm font-semibold leading-6">
-                    Pick a plan together from your{" "}
-                    <Link href="/proposals" className="underline decoration-2 underline-offset-4">
-                      proposals
-                    </Link>
-                    .
-                  </p>
-                )}
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
-
-      <section className="mx-auto mt-12 max-w-6xl">
-        <div className="flex items-end justify-between gap-4">
-          <div>
-            <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
-              Click with someone
-            </p>
-            <h2 className="font-display mt-2 text-3xl font-light leading-tight sm:text-4xl">
-              People you might click with.
-            </h2>
-            <p className="mt-2 max-w-xl text-sm font-semibold leading-6 text-[color:var(--mauve)]">
-              🔒 Clicking is anonymous — we&rsquo;ll only show you if it&rsquo;s mutual.
-              We surface one person at a time, refreshed through the day. See
-              everyone on the People page.
-            </p>
-          </div>
-          <Link
-            href="/people"
-            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-4 py-2 text-xs font-bold text-[color:var(--surface-deep)] hover:bg-[color:var(--rose)]"
-          >
-            See everyone
-          </Link>
-        </div>
-
-        <div className="mt-6 grid gap-8 lg:grid-cols-[2fr_1fr]">
-          <div>
-            {rotatedPeople.length > 0 ? (
-              <div className="grid gap-5">
-                {rotatedPeople.map((person) => (
-                  <ClickWithSomeoneUserCard key={person.id} person={person} />
-                ))}
-              </div>
-            ) : (
-              <div className="rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-6">
-                <p className="text-base font-bold">No suggestions yet.</p>
-                <p className="mt-2 text-sm font-semibold leading-6 text-[color:var(--mauve)]">
-                  Add a few interest tags to{" "}
-                  <Link
-                    href="/profile/edit"
-                    className="font-bold text-[color:var(--ink)] underline decoration-2 underline-offset-4 hover:text-[color:var(--rose)]"
-                  >
-                    your profile
-                  </Link>{" "}
-                  so we can surface people with overlap.
-                </p>
-              </div>
-            )}
-          </div>
-          <ClickRadar events={rotatedRadar} fomoBySlug={fomoBySlug} />
-        </div>
-      </section>
     </main>
   );
 }
