@@ -556,6 +556,10 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                         <EventPaymentButton
                           eventId={event.id}
                           priceLabel={formatPrice(totalCents, "AUD")}
+                          allowGuests
+                          availableSeats={Math.max(0, event.capacity - event.attendees)}
+                          perSeatCents={totalCents}
+                          eventDateISO={event.startsAt}
                         />
                       </EventBookingDialog>
                     )
