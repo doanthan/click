@@ -55,6 +55,8 @@ import {
   reserveUnnamedGuestSeats,
   nameReservedGuestSeats,
   cancelGuestSeatsForTransaction,
+  hashGuestEmail,
+  isUuid,
 } from "./guest-spots";
 import { getPostgresPool } from "./postgres";
 import { getSupabaseAdmin } from "@/utils/supabase/admin";
@@ -8670,6 +8672,269 @@ export async function processGuestSpotsForSession(args: {
     }
   } catch (error) {
     console.warn("processGuestSpotsForSession failed", error);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Guest claim flow (spec 19 §7, §10.2, §10.4)
+// ---------------------------------------------------------------------------
+
+export type GuestSpotView = {
+  state: "valid" | "not_found" | "expired" | "claimed" | "gone";
+  guestFirstName: string | null;
+  purchaserName: string | null;
+  eventTitle: string | null;
+  eventSlug: string | null;
+  eventLongDate: string | null;
+  suburb: string | null;
+  guestEmail: string | null;
+};
+
+// Read-only lookup for the /claim/[token] page. Mirrors the spec's state table:
+// not_found / expired / claimed / gone (released|removed|cancelled or booking
+// not confirmed) / valid.
+export async function getGuestSpotByToken(token: string): Promise<GuestSpotView> {
+  const empty: GuestSpotView = {
+    state: "not_found",
+    guestFirstName: null,
+    purchaserName: null,
+    eventTitle: null,
+    eventSlug: null,
+    eventLongDate: null,
+    suburb: null,
+    guestEmail: null,
+  };
+  const pool = getPostgresPool();
+  if (!pool || !isUuid(token)) return empty;
+
+  const res = await pool.query<{
+    status: string;
+    expired: boolean;
+    booking_confirmed: boolean;
+    guest_first_name: string | null;
+    guest_email: string | null;
+    purchaser_name: string | null;
+    title: string;
+    slug: string;
+    starts_at: Date;
+    timezone: string;
+    suburb: string | null;
+  }>(
+    `
+      select
+        gs.status::text,
+        (gs.claim_token_expires_at <= now()) as expired,
+        (att.id is not null) as booking_confirmed,
+        gs.guest_first_name,
+        gs.guest_email,
+        p.display_name as purchaser_name,
+        e.title, e.slug, e.starts_at, e.timezone, e.suburb
+      from guest_spots gs
+      join events e on e.id = gs.event_id
+      join profiles p on p.id = gs.purchaser_profile_id
+      left join event_attendees att
+        on att.payment_transaction_id = gs.payment_transaction_id
+       and att.profile_id = gs.purchaser_profile_id
+       and att.status = 'confirmed'
+      where gs.claim_token = $1::uuid
+      limit 1
+    `,
+    [token],
+  );
+  const row = res.rows[0];
+  if (!row) return empty;
+
+  const dates = formatEmailDates(row.starts_at, null, row.timezone);
+  const base: GuestSpotView = {
+    state: "valid",
+    guestFirstName: row.guest_first_name,
+    purchaserName: row.purchaser_name,
+    eventTitle: row.title,
+    eventSlug: row.slug,
+    eventLongDate: dates.eventLongDate,
+    suburb: row.suburb,
+    guestEmail: row.guest_email,
+  };
+
+  if (row.status === "claimed") return { ...base, state: "claimed" };
+  if (row.status === "released" || row.status === "removed" || row.status === "cancelled" || !row.booking_confirmed) {
+    return { ...base, state: "gone" };
+  }
+  if (row.expired) return { ...base, state: "expired" };
+  return base; // 'invited' + live + booking confirmed
+}
+
+export type ClaimResult =
+  | { ok: true; eventSlug: string }
+  | { ok: false; reason: "unavailable" };
+
+// Atomic claim (spec §7). Links the token's seat to the signed-in profile. The
+// WHERE clause is the race guard: a second tab / a release in between yields 0
+// rows. Notifies the purchaser (8.4) on success.
+export async function claimGuestSpotForProfile(
+  token: string,
+  profileId: string,
+): Promise<ClaimResult> {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+  if (!isUuid(token)) return { ok: false, reason: "unavailable" };
+
+  const res = await pool.query<{
+    id: string;
+    event_slug: string;
+    event_title: string;
+    guest_first_name: string | null;
+    purchaser_profile_id: string;
+  }>(
+    `
+      update guest_spots gs
+      set status = 'claimed', claimed_at = now(), claimed_profile_id = $2::uuid, updated_at = now()
+      from events e
+      where gs.claim_token = $1::uuid
+        and gs.status = 'invited'
+        and gs.claim_token_expires_at > now()
+        and e.id = gs.event_id
+        -- only claimable while the purchaser's booking is actually confirmed
+        and exists (
+          select 1 from event_attendees att
+          where att.payment_transaction_id = gs.payment_transaction_id
+            and att.profile_id = gs.purchaser_profile_id
+            and att.status = 'confirmed'
+        )
+      returning gs.id::text, e.slug as event_slug, e.title as event_title,
+                gs.guest_first_name, gs.purchaser_profile_id::text
+    `,
+    [token, profileId],
+  );
+  const row = res.rows[0];
+  if (!row) return { ok: false, reason: "unavailable" };
+
+  // Notify the purchaser their guest joined (spec §8.4). Best-effort.
+  void pool
+    .query(
+      `insert into notifications (profile_id, title, body, action_url) values ($1::uuid, $2, $3, $4)`,
+      [
+        row.purchaser_profile_id,
+        `${row.guest_first_name || "Your guest"} is in ✨`,
+        `${row.guest_first_name || "Your guest"} joined Click and claimed their spot at ${row.event_title}.`,
+        `/events/${row.event_slug}`,
+      ],
+    )
+    .catch(() => {});
+
+  return { ok: true, eventSlug: row.event_slug };
+}
+
+export type GuestTokenActionResult = { ok: boolean };
+
+// Friend releases their seat (spec §10.2). Token-authenticated, no account.
+// Seat reverts to the purchaser's held +1 (still paid — capacity unchanged);
+// identity is unlinked; the purchaser is notified (8.5). Never refunds.
+export async function releaseGuestSpotByToken(token: string): Promise<GuestTokenActionResult> {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+  if (!isUuid(token)) return { ok: false };
+
+  const res = await pool.query<{
+    event_slug: string;
+    event_title: string;
+    guest_first_name: string | null;
+    purchaser_profile_id: string;
+  }>(
+    `
+      update guest_spots gs
+      set status = 'released', claimed_profile_id = null, updated_at = now()
+      from events e
+      where gs.claim_token = $1::uuid
+        and gs.status in ('invited', 'claimed')
+        and e.id = gs.event_id
+      returning e.slug as event_slug, e.title as event_title,
+                gs.guest_first_name, gs.purchaser_profile_id::text
+    `,
+    [token],
+  );
+  const row = res.rows[0];
+  if (!row) return { ok: false };
+
+  void pool
+    .query(
+      `insert into notifications (profile_id, title, body, action_url) values ($1::uuid, $2, $3, $4)`,
+      [
+        row.purchaser_profile_id,
+        `${row.guest_first_name || "A guest"} can't make it`,
+        `${row.guest_first_name || "A guest"}'s seat at ${row.event_title} is back with you as a +1 — keep it or cancel it for a refund per the policy.`,
+        `/events/${row.event_slug}`,
+      ],
+    )
+    .catch(() => {});
+
+  return { ok: true };
+}
+
+// "Remove my details" (spec §10.4). Token-authenticated, instant, no account.
+// Nulls PII, suppresses the email so nobody can re-invite it, leaves the seat
+// held as an anonymous +1. Idempotent.
+export async function removeGuestDetailsByToken(token: string): Promise<GuestTokenActionResult> {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+  if (!isUuid(token)) return { ok: false };
+
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    const found = await client.query<{
+      id: string;
+      guest_email: string | null;
+      event_slug: string;
+      purchaser_profile_id: string;
+    }>(
+      `
+        select gs.id::text, gs.guest_email, e.slug as event_slug, gs.purchaser_profile_id::text
+        from guest_spots gs
+        join events e on e.id = gs.event_id
+        where gs.claim_token = $1::uuid
+        for update of gs
+      `,
+      [token],
+    );
+    const row = found.rows[0];
+    if (!row) {
+      await client.query("rollback");
+      return { ok: false };
+    }
+    // Already removed → idempotent success.
+    if (row.guest_email && row.guest_email !== "[removed]") {
+      await client.query(
+        `insert into guest_email_suppression (email_hash, reason)
+         values ($1, 'removed_by_guest') on conflict (email_hash) do nothing`,
+        [hashGuestEmail(row.guest_email)],
+      );
+    }
+    await client.query(
+      `
+        update guest_spots
+        set status = 'removed', guest_first_name = 'Guest', guest_email = '[removed]',
+            guest_dob = null, claimed_profile_id = null, updated_at = now()
+        where id = $1::uuid
+      `,
+      [row.id],
+    );
+    await client.query(
+      `insert into notifications (profile_id, title, body, action_url) values ($1::uuid, $2, $3, $4)`,
+      [
+        row.purchaser_profile_id,
+        "A guest seat is now unnamed",
+        "One of your guests removed their details. The seat is still yours to bring a +1.",
+        `/events/${row.event_slug}`,
+      ],
+    );
+    await client.query("commit");
+    return { ok: true };
+  } catch (error) {
+    await client.query("rollback").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
   }
 }
 

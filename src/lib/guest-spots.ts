@@ -32,6 +32,14 @@ export function hashGuestEmail(email: string): string {
   return createHash("sha256").update(email.trim().toLowerCase()).digest("hex");
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Guard before any `$1::uuid` cast on a user-supplied claim token — a malformed
+// token should be a clean "not found", not a 22P02 invalid-uuid query error.
+export function isUuid(value: string): boolean {
+  return UUID_RE.test(value);
+}
+
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // Whole-years between dob and a reference date (the event date). Floors on the
