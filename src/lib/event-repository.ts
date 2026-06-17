@@ -1669,6 +1669,20 @@ export type MerchantAttendeeRow = {
   rsvpAt: string;
 };
 
+// A named +1 on the merchant door list (spec 19 §11). First name + status + who
+// bought the seat only — never the guest's email or DOB.
+export type MerchantGuestRow = {
+  guestId: string;
+  // First name the purchaser entered for this seat. Nullable in the column, but
+  // an 'invited'/'claimed' seat always has one in practice.
+  firstName: string | null;
+  // 'invited' = named, not yet on Click; 'claimed' = the friend joined Click.
+  status: "invited" | "claimed";
+  // Display name of the member who paid for the seat (already visible to the
+  // merchant as a confirmed attendee). Not new PII exposure.
+  purchasedBy: string;
+};
+
 export type MerchantEventDetail = MerchantEventSummary & {
   description: string;
   // Full street address (nullable), editable from the merchant edit form.
@@ -1679,6 +1693,13 @@ export type MerchantEventDetail = MerchantEventSummary & {
   images: string[];
   imageAlt: string | null;
   attendees: MerchantAttendeeRow[];
+  // Named +1 guests for the door list (spec 19 §11): 'invited'/'claimed' seats
+  // only. Unnamed +1s are NOT listed — they live solely in `guestSeats`.
+  guests: MerchantGuestRow[];
+  // Total live guest SEATS on confirmed bookings (named + unnamed), so the page's
+  // "Confirmed N / capacity" headcount counts seats — matching the public event
+  // page and the checkout capacity gate. guestSeats - guests.length = unnamed +1s.
+  guestSeats: number;
   // Interest tags currently attached, so the merchant edit form can pre-fill.
   tags: { slug: string; label: string }[];
 };
@@ -1779,6 +1800,7 @@ export async function getMerchantEventDetail(
     image_alt: string | null;
     confirmed: string;
     waitlisted: string;
+    guest_seats: string;
   }>(
     `
       select
@@ -1800,7 +1822,21 @@ export async function getMerchantEventDetail(
         event.image_urls,
         event.image_alt,
         count(attendee.id) filter (where attendee.status = 'confirmed') as confirmed,
-        count(attendee.id) filter (where attendee.status = 'waitlisted') as waitlisted
+        count(attendee.id) filter (where attendee.status = 'waitlisted') as waitlisted,
+        -- Live guest SEATS on this event's confirmed bookings (named + unnamed),
+        -- so the page counts seats, not just profile attendees (spec 19 §9/§11).
+        -- exists() (not a join) so a seat can't fan out across attendee rows.
+        coalesce((
+          select count(*)
+          from guest_spots gs
+          where gs.event_id = event.id
+            and gs.status <> 'cancelled'
+            and exists (
+              select 1 from event_attendees ea
+              where ea.payment_transaction_id = gs.payment_transaction_id
+                and ea.status = 'confirmed'
+            )
+        ), 0) as guest_seats
       from events event
       left join event_attendees attendee on attendee.event_id = event.id
       where event.slug = $1 and event.merchant_profile_id = $2::uuid
@@ -1858,6 +1894,23 @@ export async function getMerchantEventDetail(
     [row.id],
   );
 
+  // Named +1 guests for the door list (spec 19 §11) — invited/claimed only,
+  // first name + status + purchaser name, scoped to this merchant's event.
+  const guestResult = await pool.query<{
+    guest_id: string;
+    first_name: string | null;
+    status: string;
+    purchased_by: string;
+  }>(
+    `
+      select guest_id::text, first_name, status, purchased_by
+      from merchant_event_guests_v
+      where event_id = $1::uuid and merchant_profile_id = $2::uuid
+      order by first_name asc nulls last, status asc
+    `,
+    [row.id, merchant.id],
+  );
+
   return {
     slug: row.slug,
     title: row.title,
@@ -1890,6 +1943,13 @@ export async function getMerchantEventDetail(
       status: entry.status as MerchantAttendeeRow["status"],
       rsvpAt: entry.created_at.toISOString(),
     })),
+    guests: guestResult.rows.map((g) => ({
+      guestId: g.guest_id,
+      firstName: g.first_name,
+      status: g.status as MerchantGuestRow["status"],
+      purchasedBy: g.purchased_by,
+    })),
+    guestSeats: Number(row.guest_seats),
   };
 }
 

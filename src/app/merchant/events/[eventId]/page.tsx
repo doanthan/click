@@ -10,6 +10,7 @@ import {
   getProfileStatus,
   getProfileTagOptions,
   type MerchantAttendeeRow,
+  type MerchantGuestRow,
 } from "@/lib/event-repository";
 
 type PageProps = {
@@ -89,8 +90,14 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
     .flatMap((category) => category.tags)
     .sort((a, b) => a.label.localeCompare(b.label));
 
-  const isFull = event.confirmed >= event.capacity;
-  const filledPercent = Math.min((event.confirmed / event.capacity) * 100, 100);
+  // Count SEATS, not just profile attendees: each paid +1 (named or unnamed)
+  // occupies a seat. Mirrors the public event page + the checkout capacity gate
+  // (spec 19) so the merchant sees the same headcount everyone else does.
+  const confirmedSeats = event.confirmed + event.guestSeats;
+  const isFull = confirmedSeats >= event.capacity;
+  const filledPercent = Math.min((confirmedSeats / event.capacity) * 100, 100);
+  // guestSeats counts named + unnamed; the door list lists only the named ones.
+  const unnamedGuestSeats = Math.max(0, event.guestSeats - event.guests.length);
   const confirmedAttendees = event.attendees.filter(
     (attendee) => attendee.status === "confirmed",
   );
@@ -170,13 +177,13 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
         <div className="mt-8 grid gap-3 sm:grid-cols-4">
           <MetricCard
             label="Confirmed"
-            value={`${event.confirmed} / ${event.capacity}`}
+            value={`${confirmedSeats} / ${event.capacity}`}
             tone="peach"
           />
           <MetricCard label="Waitlist" value={event.waitlisted.toString()} tone="rose" />
           <MetricCard
             label="Seats left"
-            value={Math.max(0, event.capacity - event.confirmed).toString()}
+            value={Math.max(0, event.capacity - confirmedSeats).toString()}
             tone="cream"
           />
           <MetricCard label="Price" value={formatPrice(event.priceCents)} tone="ink" />
@@ -188,8 +195,15 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
           </p>
           <div className="mt-3 flex items-end justify-between gap-3">
             <p className="text-base font-bold">
-              {event.confirmed} confirmed out of {event.capacity}
+              {confirmedSeats} {confirmedSeats === 1 ? "seat" : "seats"} taken out of{" "}
+              {event.capacity}
               {isFull ? " — full" : ""}
+              {event.guestSeats > 0 ? (
+                <span className="font-semibold text-[color:var(--mauve)]">
+                  {" "}
+                  ({event.confirmed} confirmed + {event.guestSeats} +1{event.guestSeats === 1 ? "" : "s"})
+                </span>
+              ) : null}
             </p>
             <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
               {Math.round(filledPercent)}%
@@ -227,6 +241,37 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
             </p>
           )}
         </section>
+
+        {event.guestSeats > 0 ? (
+          <section className="mt-10">
+            <div className="flex items-end justify-between gap-4">
+              <div>
+                <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
+                  +1 guests
+                </p>
+                <h2 className="font-display mt-2 text-3xl font-light leading-tight">
+                  {event.guestSeats} +1 {event.guestSeats === 1 ? "seat" : "seats"} on
+                  confirmed bookings
+                </h2>
+                <p className="mt-2 text-sm font-semibold text-[color:var(--mauve)]">
+                  Check guests in by first name. To protect them, we never share a
+                  guest&apos;s email or date of birth — just who&apos;s expected.
+                </p>
+              </div>
+              <Pill tone="peach">{event.guestSeats}</Pill>
+            </div>
+
+            {event.guests.length > 0 ? <GuestList rows={event.guests} /> : null}
+
+            {unnamedGuestSeats > 0 ? (
+              <p className="mt-3 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-5 text-sm font-semibold text-[color:var(--mauve)]">
+                + {unnamedGuestSeats} unnamed +1{" "}
+                {unnamedGuestSeats === 1 ? "seat" : "seats"} reserved. The buyer can
+                name them anytime before the event.
+              </p>
+            ) : null}
+          </section>
+        ) : null}
 
         {awaitingPaymentAttendees.length > 0 ? (
           <section className="mt-10">
@@ -331,6 +376,39 @@ function AttendeeTable({ rows }: { rows: MerchantAttendeeRow[] }) {
             {rsvpDateFormatter.format(new Date(attendee.rsvpAt))}
           </p>
           <Pill tone={attendeeRowTone(attendee.status)}>{attendee.status}</Pill>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// The door list (spec 19 §11): named +1s only, shown as "first name · invited by ·
+// status". No email/DOB — that's the whole merchant-visible footprint of a guest.
+function GuestList({ rows }: { rows: MerchantGuestRow[] }) {
+  return (
+    <div className="mt-4 overflow-hidden rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow-sm">
+      <div className="grid grid-cols-[1.4fr_1.4fr_0.8fr] gap-3 border-b-2 border-[color:var(--line)] bg-[color:var(--surface-deep)] px-5 py-3 font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--on-deep)]/80 max-md:hidden">
+        <span>Guest</span>
+        <span>Invited by</span>
+        <span>Status</span>
+      </div>
+      {rows.map((guest) => (
+        <div
+          key={guest.guestId}
+          className="grid gap-3 border-t-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-4 md:grid-cols-[1.4fr_1.4fr_0.8fr] md:items-center"
+        >
+          <div className="flex items-center gap-3">
+            <AttendeeAvatar displayName={guest.firstName ?? "Guest"} photoUrl={null} />
+            <p className="text-sm font-bold text-[color:var(--ink)]">
+              {guest.firstName ?? "Guest"}
+            </p>
+          </div>
+          <p className="text-sm font-semibold text-[color:var(--mauve)]">
+            {guest.purchasedBy}
+          </p>
+          <Pill tone={guest.status === "claimed" ? "peach" : "cream"}>
+            {guest.status === "claimed" ? "joined Click" : "invited"}
+          </Pill>
         </div>
       ))}
     </div>
