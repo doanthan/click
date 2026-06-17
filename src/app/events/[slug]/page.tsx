@@ -9,11 +9,13 @@ import { EventVenueMap } from "@/components/event-venue-map";
 import { EventPaymentButton } from "@/components/event-payment-button";
 import { EventRegistrationButton } from "@/components/event-registration-button";
 import { EventBookmarkButton } from "@/components/event-bookmark-button";
+import { MyGuestSeats } from "@/components/my-guest-seats";
 import { PostEventClickCard } from "@/components/post-event-click-card";
 import { ShareEventButton } from "@/components/share-event-button";
 import {
   getEventAttendeePreview,
   getEventBySlug,
+  getMyGuestSeatsForEvent,
   getPostEventClickPromptForEvent,
   getProfileStatus,
   getSystemSettings,
@@ -103,13 +105,14 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
     await reconcileCheckoutSession(search.session_id).catch(() => null);
   }
 
-  const [event, profileStatus, attendeePreview, systemSettings, postEventPrompt] =
+  const [event, profileStatus, attendeePreview, systemSettings, postEventPrompt, myGuestSeats] =
     await Promise.all([
       getEventBySlug(slug, session),
       session?.user ? getProfileStatus(session) : null,
       getEventAttendeePreview(slug, session, 8),
       getSystemSettings(),
       session?.user ? getPostEventClickPromptForEvent(slug, session) : null,
+      session?.user ? getMyGuestSeatsForEvent(slug, session) : [],
     ]);
 
   if (!event) notFound();
@@ -289,6 +292,15 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                   {event.description}
                 </p>
               </section>
+
+              {/* Purchaser-only: manage the +1 seats you bought (spec 19 §10.1). */}
+              {isRegistered && myGuestSeats.length > 0 ? (
+                <MyGuestSeats
+                  perSeatCents={totalCents}
+                  eventDateISO={event.startsAt}
+                  seats={myGuestSeats}
+                />
+              ) : null}
 
               {event.relationshipGoal ? (
                 <section className="mt-6 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-5">

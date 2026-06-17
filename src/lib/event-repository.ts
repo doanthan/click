@@ -7605,6 +7605,340 @@ export async function cancelRegistration(eventId: string, session: Session | nul
   };
 }
 
+// A +1 seat the viewer purchased on an event, for the purchaser-facing "Your +1s"
+// manager (spec 19 §10.1). Excludes cancelled seats. `claimed` drives the "your
+// friend will be told" confirmation copy.
+export type MyGuestSeat = {
+  guestSpotId: string;
+  firstName: string | null;
+  status: "unnamed" | "invited" | "claimed" | "released" | "removed";
+  claimed: boolean;
+};
+
+export async function getMyGuestSeatsForEvent(
+  eventSlug: string,
+  session: Session | null,
+): Promise<MyGuestSeat[]> {
+  const pool = getPostgresPool();
+  const email = getSessionEmail(session);
+  if (!email || !pool) return [];
+
+  const profile = await ensureProfileForSession(session);
+  const result = await pool.query<{
+    guest_spot_id: string;
+    guest_first_name: string | null;
+    status: string;
+    claimed: boolean;
+  }>(
+    `
+      select
+        gs.id::text as guest_spot_id,
+        gs.guest_first_name,
+        gs.status::text,
+        (gs.claimed_profile_id is not null) as claimed
+      from guest_spots gs
+      join events event on event.id = gs.event_id
+      where event.slug = $1
+        and gs.purchaser_profile_id = $2::uuid
+        and gs.status <> 'cancelled'
+      order by gs.created_at asc
+    `,
+    [eventSlug, profile.id],
+  );
+
+  return result.rows.map((r) => ({
+    guestSpotId: r.guest_spot_id,
+    firstName: r.guest_first_name,
+    status: r.status as MyGuestSeat["status"],
+    claimed: r.claimed,
+  }));
+}
+
+// Purchaser cancels ONE +1 seat without cancelling their whole booking (spec 19
+// §10.1). Money belongs to the purchaser: the refund follows the standard policy
+// window on the per-seat amount they paid (ticket + booking fee), uses
+// reverse_transfer + refund_application_fee for merchant events (via issueRefund),
+// frees the seat (guest_spots -> 'cancelled', which capacity counts as freed),
+// promotes the next waitlister, and — if the seat was claimed — tells that friend.
+export async function cancelGuestSeatForPurchaser(
+  guestSpotId: string,
+  session: Session | null,
+): Promise<{
+  refund: { refundCents: number; tier: RefundTier; failed: boolean } | null;
+  promotedWaitlist: boolean;
+  wasClaimed: boolean;
+  eventTitle: string;
+}> {
+  const pool = getPostgresPool();
+  const email = getSessionEmail(session);
+  if (!email) throw authError();
+  if (!pool) throw databaseUnavailableError();
+  if (!isUuid(guestSpotId)) {
+    const error = new Error("Invalid guest seat.");
+    error.name = "ValidationError";
+    throw error;
+  }
+
+  const profile = await ensureProfileForSession(session);
+  const client = await pool.connect();
+
+  let promotion: WaitlistPromotion | null = null;
+  let refundPlan:
+    | { paymentTransactionId: string; refundCents: number; tier: RefundTier; currency: string }
+    | null = null;
+  let paidZeroRefund = false;
+  let eventId = "";
+  let eventSlug = "";
+  let eventTitle = "";
+  let eventStartsAt = new Date(0);
+  let purchaserBookingId = "";
+  let merchantId: string | null = null;
+  let claimed: { profileId: string; email: string | null; firstName: string | null } | null = null;
+
+  try {
+    await client.query("begin");
+
+    const result = await client.query<{
+      guest_spot_id: string;
+      claimed_profile_id: string | null;
+      claimed_email: string | null;
+      claimed_name: string | null;
+      guest_first_name: string | null;
+      event_id: string;
+      slug: string;
+      title: string;
+      starts_at: Date;
+      price_cents: number;
+      merchant_profile_id: string | null;
+      purchaser_booking_id: string;
+      txn_id: string;
+      txn_amount_cents: number | null;
+      txn_currency: string | null;
+      txn_status: string | null;
+    }>(
+      `
+        select
+          gs.id::text as guest_spot_id,
+          gs.claimed_profile_id::text,
+          claimer.email::text as claimed_email,
+          claimer.display_name as claimed_name,
+          gs.guest_first_name,
+          event.id::text as event_id,
+          event.slug,
+          event.title,
+          event.starts_at,
+          event.price_cents,
+          event.merchant_profile_id::text,
+          purchaser_attendee.id::text as purchaser_booking_id,
+          pt.id::text as txn_id,
+          pt.amount_cents as txn_amount_cents,
+          pt.currency::text as txn_currency,
+          pt.status::text as txn_status
+        from guest_spots gs
+        join events event on event.id = gs.event_id
+        join payment_transactions pt on pt.id = gs.payment_transaction_id
+        join event_attendees purchaser_attendee
+          on purchaser_attendee.payment_transaction_id = gs.payment_transaction_id
+         and purchaser_attendee.profile_id = gs.purchaser_profile_id
+         and purchaser_attendee.status = 'confirmed'
+        left join profiles claimer on claimer.id = gs.claimed_profile_id
+        where gs.id = $1::uuid
+          and gs.purchaser_profile_id = $2::uuid
+          and gs.status <> 'cancelled'
+        for update of gs
+      `,
+      [guestSpotId, profile.id],
+    );
+
+    const row = result.rows[0];
+    if (!row) {
+      const error = new Error("That guest seat can't be cancelled.");
+      error.name = "NotFoundError";
+      throw error;
+    }
+
+    eventId = row.event_id;
+    eventSlug = row.slug;
+    eventTitle = row.title;
+    eventStartsAt = row.starts_at;
+    purchaserBookingId = row.purchaser_booking_id;
+    merchantId = row.merchant_profile_id;
+    if (row.claimed_profile_id) {
+      claimed = {
+        profileId: row.claimed_profile_id,
+        email: row.claimed_email,
+        firstName: row.claimed_name?.split(/\s+/)[0] ?? row.guest_first_name,
+      };
+    }
+
+    // Free the seat. Capacity counts non-cancelled guest_spots, so this opens it.
+    await client.query(
+      `update guest_spots set status = 'cancelled', updated_at = now() where id = $1::uuid`,
+      [row.guest_spot_id],
+    );
+
+    // One seat freed → offer it to the next person in line (spec §10.1).
+    promotion = await promoteNextWaitlister(client, row.event_id, row.title, row.slug);
+
+    // Per-seat policy refund. Unit = what the buyer paid PER SEAT (ticket +
+    // booking fee), computed exactly as createPaymentHold does, so a full refund
+    // returns precisely the per-seat charge. issueRefund (post-commit) guards
+    // against over-refunding the transaction across repeated per-seat cancels.
+    if (
+      row.price_cents > 0 &&
+      row.txn_amount_cents != null &&
+      (row.txn_status === "paid" || row.txn_status === "partially_refunded")
+    ) {
+      const { bookingFeeBps } = await getSystemSettings();
+      const bookingFeeCents = Math.round((row.price_cents * bookingFeeBps) / 10_000);
+      const perSeatPaidCents = row.price_cents + bookingFeeCents;
+      const quote = quoteCancellationRefund(perSeatPaidCents, row.starts_at);
+      if (quote.refundCents > 0) {
+        refundPlan = {
+          paymentTransactionId: row.txn_id,
+          refundCents: quote.refundCents,
+          tier: quote.tier,
+          currency: row.txn_currency || "AUD",
+        };
+      } else {
+        paidZeroRefund = true;
+      }
+    }
+
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  // ---------- post-commit side effects (the seat is already freed) ----------
+  let refund: { refundCents: number; tier: RefundTier; failed: boolean } | null = null;
+
+  if (refundPlan) {
+    try {
+      const { issueRefund } = await import("./stripe-sync");
+      const refundResult = await issueRefund({
+        paymentTransactionId: refundPlan.paymentTransactionId,
+        amountCents: refundPlan.refundCents,
+        reason: "requested_by_customer",
+        adminProfileId: null,
+      });
+      refund = { refundCents: refundPlan.refundCents, tier: refundPlan.tier, failed: false };
+      await logBookingEvent(pool, {
+        bookingId: purchaserBookingId,
+        eventId,
+        merchantId,
+        userId: profile.id,
+        eventType: refundPlan.tier === "full" ? "refunded_full" : "refunded_partial",
+        amountCents: -refundPlan.refundCents,
+        currency: refundPlan.currency,
+        refundTier: refundBandFromTier(refundPlan.tier),
+        stripeObjectId: refundResult.stripeRefundId,
+        actor: "attendee",
+      }).catch(() => {});
+      await pool
+        .query(
+          `insert into notifications (profile_id, title, body, action_url) values ($1::uuid, $2, $3, $4)`,
+          [
+            profile.id,
+            "Refund on the way",
+            `Your ${formatAud(refundPlan.refundCents, refundPlan.currency)} refund for a cancelled +1 at ${eventTitle} is processing (3–5 business days).`,
+            "/dashboard",
+          ],
+        )
+        .catch(() => {});
+    } catch (err) {
+      // The seat stays cancelled; the refund just didn't initiate. Queue it for
+      // the admin refund-failures sweep and surface "processing" to the user.
+      refund = { refundCents: refundPlan.refundCents, tier: refundPlan.tier, failed: true };
+      await pool
+        .query(
+          `insert into refund_failures (payment_transaction_id, event_id, profile_id, amount_cents, currency, error_message)
+           values ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6)`,
+          [
+            refundPlan.paymentTransactionId,
+            eventId,
+            profile.id,
+            refundPlan.refundCents,
+            refundPlan.currency,
+            err instanceof Error ? err.message : String(err),
+          ],
+        )
+        .catch(() => {});
+    }
+  } else if (paidZeroRefund) {
+    void logBookingEvent(pool, {
+      bookingId: purchaserBookingId,
+      eventId,
+      merchantId,
+      userId: profile.id,
+      eventType: "refund_denied",
+      refundTier: "within_24h",
+      actor: "system",
+    }).catch(() => {});
+  }
+
+  // If the seat was claimed, the friend thought they were going — tell them
+  // (spec §10.1 + §8.6). In-app notification + an email_events row (CLAUDE.md:
+  // every notification flow logs one). The friend is never told why or by whom.
+  if (claimed) {
+    await pool
+      .query(
+        `insert into notifications (profile_id, title, body, action_url) values ($1::uuid, $2, $3, $4)`,
+        [
+          claimed.profileId,
+          "A spot changed",
+          `Your spot at ${eventTitle} is no longer held — no charge, nothing needed.`,
+          `/events/${eventSlug}`,
+        ],
+      )
+      .catch(() => {});
+    if (claimed.email && claimed.email !== "[removed]") {
+      const dateClause = ` on ${new Intl.DateTimeFormat("en-AU", {
+        weekday: "long",
+        month: "short",
+        day: "numeric",
+        timeZone: "Australia/Sydney",
+      }).format(eventStartsAt)}`;
+      void logEmailEvent({
+        template: "guest-spot-cancelled",
+        toEmail: claimed.email,
+        toProfileId: claimed.profileId,
+        vars: {
+          guestFirstName: claimed.firstName || "there",
+          eventTitle,
+          eventLongDateClause: dateClause,
+          eventUrl: `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3001"}/events/${eventSlug}`,
+        },
+      });
+    }
+  }
+
+  if (promotion) {
+    await sendWorkflowEmail({
+      to: promotion.email,
+      subject: `A spot opened for ${promotion.eventTitle}`,
+      text: [
+        `Hi ${promotion.displayName},`,
+        `A spot opened for ${promotion.eventTitle}.`,
+        `Your offer is held until ${promotion.offeredUntil.toLocaleString("en-AU", {
+          timeZone: "Australia/Sydney",
+        })} (about ${WAITLIST_OFFER_MINUTES} minutes).`,
+        `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3001"}/events/${promotion.eventSlug}`,
+      ].join("\n\n"),
+    });
+  }
+
+  return {
+    refund,
+    promotedWaitlist: !!promotion,
+    wasClaimed: !!claimed,
+    eventTitle,
+  };
+}
+
 /**
  * Sweep lapsed waitlist promotion offers (the 30-minute window passed without
  * the user confirming). For each: stamp `last_offer_expired_at`, tell the user
