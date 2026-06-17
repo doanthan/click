@@ -5,6 +5,7 @@ import { LinkButton, MetricCard, Pill } from "@/components/click-ui";
 import { MerchantEventCancelButton } from "@/components/merchant-event-cancel-button";
 import { MerchantEventDuplicateButton } from "@/components/merchant-event-duplicate-button";
 import { MerchantEventEditForm } from "@/components/merchant-event-edit-form";
+import { GuestCheckInToggle } from "@/components/guest-check-in-toggle";
 import {
   getMerchantEventDetail,
   getProfileStatus,
@@ -261,7 +262,9 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
               <Pill tone="peach">{event.guestSeats}</Pill>
             </div>
 
-            {event.guests.length > 0 ? <GuestList rows={event.guests} /> : null}
+            {event.guests.length > 0 ? (
+              <GuestList rows={event.guests} eventSlug={event.slug} />
+            ) : null}
 
             {unnamedGuestSeats > 0 ? (
               <p className="mt-3 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-5 text-sm font-semibold text-[color:var(--mauve)]">
@@ -383,19 +386,21 @@ function AttendeeTable({ rows }: { rows: MerchantAttendeeRow[] }) {
 }
 
 // The door list (spec 19 §11): named +1s only, shown as "first name · invited by ·
-// status". No email/DOB — that's the whole merchant-visible footprint of a guest.
-function GuestList({ rows }: { rows: MerchantGuestRow[] }) {
+// status" with a check-in toggle. No email/DOB — that's the whole merchant-visible
+// footprint of a guest. Check-in writes guest_spots.attended (§9).
+function GuestList({ rows, eventSlug }: { rows: MerchantGuestRow[]; eventSlug: string }) {
   return (
     <div className="mt-4 overflow-hidden rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow-sm">
-      <div className="grid grid-cols-[1.4fr_1.4fr_0.8fr] gap-3 border-b-2 border-[color:var(--line)] bg-[color:var(--surface-deep)] px-5 py-3 font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--on-deep)]/80 max-md:hidden">
+      <div className="grid grid-cols-[1.3fr_1.3fr_0.8fr_0.8fr] gap-3 border-b-2 border-[color:var(--line)] bg-[color:var(--surface-deep)] px-5 py-3 font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--on-deep)]/80 max-md:hidden">
         <span>Guest</span>
         <span>Invited by</span>
         <span>Status</span>
+        <span>Check-in</span>
       </div>
       {rows.map((guest) => (
         <div
           key={guest.guestId}
-          className="grid gap-3 border-t-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-4 md:grid-cols-[1.4fr_1.4fr_0.8fr] md:items-center"
+          className="grid gap-3 border-t-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-4 md:grid-cols-[1.3fr_1.3fr_0.8fr_0.8fr] md:items-center"
         >
           <div className="flex items-center gap-3">
             <AttendeeAvatar displayName={guest.firstName ?? "Guest"} photoUrl={null} />
@@ -409,6 +414,12 @@ function GuestList({ rows }: { rows: MerchantGuestRow[] }) {
           <Pill tone={guest.status === "claimed" ? "peach" : "cream"}>
             {guest.status === "claimed" ? "joined Click" : "invited"}
           </Pill>
+          <GuestCheckInToggle
+            guestId={guest.guestId}
+            eventSlug={eventSlug}
+            name={guest.firstName ?? "guest"}
+            attended={guest.attended}
+          />
         </div>
       ))}
     </div>

@@ -1681,6 +1681,9 @@ export type MerchantGuestRow = {
   // Display name of the member who paid for the seat (already visible to the
   // merchant as a confirmed attendee). Not new PII exposure.
   purchasedBy: string;
+  // Day-of check-in (spec 19 §9/§11): true once the merchant marks the guest
+  // present. Toggled by name from the door list, like attendee check-in.
+  attended: boolean;
 };
 
 export type MerchantEventDetail = MerchantEventSummary & {
@@ -1901,9 +1904,10 @@ export async function getMerchantEventDetail(
     first_name: string | null;
     status: string;
     purchased_by: string;
+    attended: boolean;
   }>(
     `
-      select guest_id::text, first_name, status, purchased_by
+      select guest_id::text, first_name, status, purchased_by, attended
       from merchant_event_guests_v
       where event_id = $1::uuid and merchant_profile_id = $2::uuid
       order by first_name asc nulls last, status asc
@@ -1948,6 +1952,7 @@ export async function getMerchantEventDetail(
       firstName: g.first_name,
       status: g.status as MerchantGuestRow["status"],
       purchasedBy: g.purchased_by,
+      attended: g.attended,
     })),
     guestSeats: Number(row.guest_seats),
   };
@@ -11332,6 +11337,39 @@ export async function toggleAttendeeCheckIn(
         and attendee.id = $2::uuid
     `,
     [merchant.id, attendeeId, checkIn],
+  );
+}
+
+// Day-of check-in for a named +1 (spec 19 §9/§11): writes guest_spots.attended,
+// the guest-seat equivalent of event_attendees.checked_in_at. Ownership-scoped to
+// the merchant's own event, and limited to named seats (invited/claimed) — an
+// unnamed/released/removed +1 isn't on the door list, so there's no one to mark.
+export async function toggleGuestCheckIn(
+  session: Session | null,
+  guestId: string,
+  attended: boolean,
+) {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+  const email = getSessionEmail(session);
+  if (!email) throw authError();
+
+  const profile = await ensureProfileForSession(session);
+  const merchant = await getMerchantProfile(pool, profile.id);
+  if (!merchant) throw authError("Only merchants can check in guests.");
+
+  await pool.query(
+    `
+      update guest_spots gs
+      set attended = $3::boolean,
+          updated_at = now()
+      from events event
+      where gs.event_id = event.id
+        and event.merchant_profile_id = $1::uuid
+        and gs.id = $2::uuid
+        and gs.status in ('invited', 'claimed')
+    `,
+    [merchant.id, guestId, attended],
   );
 }
 
