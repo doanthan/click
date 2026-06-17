@@ -2218,7 +2218,24 @@ export async function getEventsForExplore() {
         event.description,
         event.relationship_goal,
         event.fomo,
-        count(distinct attendee.id) filter (where (attendee.status = 'confirmed' or (attendee.status = 'pending_payment' and attendee.hold_expires_at > now()))) as confirmed_attendees,
+        (
+          count(distinct attendee.id) filter (where (attendee.status = 'confirmed' or (attendee.status = 'pending_payment' and attendee.hold_expires_at > now())))
+          -- Plus paid guest seats (spec 19): each live guest_spots row is a held
+          -- seat exactly like a pending attendee, so it counts toward the
+          -- "X going" headcount + capacity. exists (not a join) so a row can't
+          -- fan out. Mirrors the checkout capacity gate in createPaymentHold.
+          + coalesce((
+            select count(*)
+            from guest_spots gs
+            where gs.event_id = event.id
+              and gs.status <> 'cancelled'
+              and exists (
+                select 1 from event_attendees ga
+                where ga.payment_transaction_id = gs.payment_transaction_id
+                  and (ga.status = 'confirmed' or (ga.status = 'pending_payment' and ga.hold_expires_at > now()))
+              )
+          ), 0)
+        ) as confirmed_attendees,
         (
           -- Up to 3 confirmed-attendee avatars for the "who's going" preview.
           select coalesce(array_agg(preview.photo_url order by preview.joined_at), '{}')
@@ -2618,7 +2635,22 @@ export async function getEventBySlug(
           event.description,
           event.relationship_goal,
           event.fomo,
-          count(distinct attendee.id) filter (where (attendee.status = 'confirmed' or (attendee.status = 'pending_payment' and attendee.hold_expires_at > now()))) as confirmed_attendees,
+          (
+            count(distinct attendee.id) filter (where (attendee.status = 'confirmed' or (attendee.status = 'pending_payment' and attendee.hold_expires_at > now())))
+            -- Plus paid guest seats (spec 19): a live guest_spots row is a held
+            -- seat, so it counts toward the detail page's headcount + capacity.
+            + coalesce((
+              select count(*)
+              from guest_spots gs
+              where gs.event_id = event.id
+                and gs.status <> 'cancelled'
+                and exists (
+                  select 1 from event_attendees ga
+                  where ga.payment_transaction_id = gs.payment_transaction_id
+                    and (ga.status = 'confirmed' or (ga.status = 'pending_payment' and ga.hold_expires_at > now()))
+                )
+            ), 0)
+          ) as confirmed_attendees,
           coalesce(
             array_agg(distinct tag.slug)
               filter (where tag.tag_type in ('interest', 'vibe', 'music')),
@@ -5553,7 +5585,21 @@ const eventSelectColumns = `
         event.description,
         event.relationship_goal,
         event.fomo,
-        count(distinct attendee_count.id) filter (where (attendee_count.status = 'confirmed' or (attendee_count.status = 'pending_payment' and attendee_count.hold_expires_at > now()))) as confirmed_attendees,
+        (
+          count(distinct attendee_count.id) filter (where (attendee_count.status = 'confirmed' or (attendee_count.status = 'pending_payment' and attendee_count.hold_expires_at > now())))
+          -- Plus paid guest seats (spec 19): a live guest_spots row is a held seat.
+          + coalesce((
+            select count(*)
+            from guest_spots gs
+            where gs.event_id = event.id
+              and gs.status <> 'cancelled'
+              and exists (
+                select 1 from event_attendees ga
+                where ga.payment_transaction_id = gs.payment_transaction_id
+                  and (ga.status = 'confirmed' or (ga.status = 'pending_payment' and ga.hold_expires_at > now()))
+              )
+          ), 0)
+        ) as confirmed_attendees,
         (
           -- Up to 3 confirmed-attendee avatars for the "who's going" preview.
           -- Correlated subquery so it stays correct under the GROUP BY above.
