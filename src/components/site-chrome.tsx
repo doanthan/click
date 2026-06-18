@@ -182,7 +182,7 @@ export async function SiteFooter() {
     isAdmin
       ? ["Platform", "Host events", "Admin", "Scale"]
       : ["Platform", "Host events"],
-    ["Legal", "Terms", "Privacy", "Refunds", "Safety"],
+    ["Legal", "Terms", "Privacy", "Security", "Refunds", "Safety"],
   ];
 
   return (
@@ -246,6 +246,7 @@ function linkForFooterItem(item: string) {
   if (normalized === "scale") return "/scale";
   if (normalized === "terms") return "/terms";
   if (normalized === "privacy") return "/privacy";
+  if (normalized === "security") return "/security";
   if (normalized === "refunds") return "/refund-policy";
   if (normalized === "safety") return "/safety";
   return "/";

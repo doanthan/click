@@ -33,22 +33,33 @@ export function LegalPage({
           Last updated {lastUpdated}
         </p>
 
-        <div className="mt-6 rounded-2xl border-2 border-dashed border-[color:var(--rose)] bg-[color:var(--cream)] p-4">
-          <p className="text-xs font-bold uppercase tracking-wide text-[color:var(--rose)]">
-            Draft — pending legal review
-          </p>
-          <p className="mt-1 text-sm font-medium leading-6 text-[color:var(--mauve)]">
-            This document is a structured placeholder for the Click founding team. Sections marked
-            <span className="font-bold text-[color:var(--ink)]"> [LAWYER REVIEW REQUIRED] </span>
-            must be drafted or approved by a qualified Australian lawyer before launch.
-          </p>
-        </div>
-
         <p className="mt-6 text-base font-medium leading-7 text-[color:var(--ink)]">{intro}</p>
+
+        {/* In-page contents — quick jump for long policies. */}
+        <nav
+          aria-label="Contents"
+          className="mt-8 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-4"
+        >
+          <p className="text-xs font-bold uppercase tracking-wide text-[color:var(--mauve)]">
+            On this page
+          </p>
+          <ol className="mt-2 grid gap-x-6 gap-y-1 text-sm font-semibold text-[color:var(--ink)] sm:grid-cols-2">
+            {sections.map((section, i) => (
+              <li key={section.heading}>
+                <a
+                  href={`#section-${i + 1}`}
+                  className="underline decoration-[color:var(--peach)] decoration-2 underline-offset-4 hover:text-[color:var(--rose)]"
+                >
+                  {i + 1}. {section.heading}
+                </a>
+              </li>
+            ))}
+          </ol>
+        </nav>
 
         <div className="mt-10 space-y-8">
           {sections.map((section, i) => (
-            <section key={section.heading}>
+            <section key={section.heading} id={`section-${i + 1}`} className="scroll-mt-24">
               <h2 className="font-display text-2xl font-light leading-tight text-[color:var(--ink)]">
                 {i + 1}. {section.heading}
               </h2>
@@ -60,25 +71,45 @@ export function LegalPage({
         </div>
 
         <div className="mt-12 border-t-2 border-dashed border-[color:var(--line)] pt-6 text-sm font-medium text-[color:var(--mauve)]">
-          Questions? Email{" "}
-          <a
-            href="mailto:hello@click.com.au"
-            className="font-bold text-[color:var(--ink)] underline decoration-2 underline-offset-4 hover:text-[color:var(--rose)]"
-          >
-            hello@click.com.au
-          </a>{" "}
-          or see our other policies:{" "}
-          <Link href="/terms" className="font-bold underline">Terms</Link>{" · "}
-          <Link href="/privacy" className="font-bold underline">Privacy</Link>{" · "}
-          <Link href="/refund-policy" className="font-bold underline">Refunds</Link>{" · "}
-          <Link href="/safety" className="font-bold underline">Safety</Link>
+          <p>
+            Questions? Email{" "}
+            <a
+              href="mailto:hello@letsclick.app"
+              className="font-bold text-[color:var(--ink)] underline decoration-2 underline-offset-4 hover:text-[color:var(--rose)]"
+            >
+              hello@letsclick.app
+            </a>{" "}
+            or see our other policies:{" "}
+            <Link href="/terms" className="font-bold underline">Terms</Link>{" · "}
+            <Link href="/privacy" className="font-bold underline">Privacy</Link>{" · "}
+            <Link href="/security" className="font-bold underline">Security</Link>{" · "}
+            <Link href="/refund-policy" className="font-bold underline">Refunds</Link>{" · "}
+            <Link href="/safety" className="font-bold underline">Safety</Link>
+          </p>
+          <p className="mt-4 text-xs leading-6 text-[color:var(--mauve)]/80">
+            This page describes how Click works and is provided for general information only. It is
+            not legal advice. Click is operated from Sydney, Australia and is intended for residents
+            of Australia.
+          </p>
         </div>
       </article>
     </main>
   );
 }
 
-// Shorthand for a paragraph that still needs a lawyer's eyes.
+// Inline placeholder for a hard business fact that must be filled in before launch
+// (e.g. the registered operating entity and ABN). Renders as a clearly-marked,
+// fill-in token rather than free-flowing prose.
+export function Fill({ children }: { children: ReactNode }) {
+  return (
+    <span className="rounded bg-[color:var(--peach)]/40 px-1.5 py-0.5 font-mono text-[0.85em] font-bold text-[color:var(--ink)]">
+      {children}
+    </span>
+  );
+}
+
+// Retained for backwards compatibility with any older callers. Prefer writing
+// finished copy (or using <Fill> for a genuine fill-in) over leaving this in.
 export function Pending({ children }: { children: ReactNode }) {
   return (
     <p>

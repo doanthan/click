@@ -101,6 +101,7 @@ Every route in `src/app`. URI on the left, source file on the right. Use this to
 | `/profile/[userId]` | `src/app/profile/[userId]/page.tsx` |
 | `/terms` | `src/app/terms/page.tsx` |
 | `/privacy` | `src/app/privacy/page.tsx` |
+| `/security` | `src/app/security/page.tsx` |
 | `/refund-policy` | `src/app/refund-policy/page.tsx` |
 | `/safety` | `src/app/safety/page.tsx` |
 | `/claim/[token]` | `src/app/claim/[token]/page.tsx` (guest-spot invite landing — spec 19; states valid/expired/claimed/gone + `?action=release\|remove` token-authed flows needing no account; signed-in visitors claim via `POST /api/claim/[token]`) |
