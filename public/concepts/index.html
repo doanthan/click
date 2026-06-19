@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Click — Front page concepts · canonical palette</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..600;1,9..144,300..600&family=Archivo:wght@700;800;900&family=Bricolage+Grotesque:opsz,wght@12..96,700;800&family=Hanken+Grotesk:wght@400;500;600&family=Gabarito:wght@700;800;900&family=Schibsted+Grotesk:wght@600;700;800&family=Caveat:wght@700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --purple:#3B2F81; --lavender:#C8B8F8; --cream:#F9F6F0; --coral:#E8674C;
+    --amber:#E0A33A; --sage:#5B8C6E; --teal:#2E7D8A; --ink:#1C1830; --slate:#6B6580; --mist:#E8E4F0;
+    --hair: rgba(28,24,48,.12);
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background:var(--cream); color:var(--ink);
+    font-family:"Hanken Grotesk", system-ui, sans-serif; line-height:1.55;
+    -webkit-font-smoothing:antialiased; padding:0 24px 80px;
+    background-image:
+      radial-gradient(circle at 1px 1px, rgba(28,24,48,.035) 1px, transparent 0),
+      radial-gradient(circle at 11px 11px, rgba(28,24,48,.02) 1px, transparent 0);
+    background-size:22px 22px, 22px 22px; background-position:0 0, 11px 11px;
+  }
+  a { color:inherit; text-decoration:none; }
+  .wrap { max-width:1180px; margin:0 auto; }
+  .mono { font-family:"IBM Plex Mono", monospace; }
+
+  header.head { padding:72px 0 40px; max-width:62ch; }
+  .kick { font-family:"IBM Plex Mono", monospace; font-size:.74rem; letter-spacing:.22em; text-transform:uppercase; color:var(--slate); }
+  .kick .dot { color:var(--coral); }
+  h1 { font-family:"Fraunces", serif; font-weight:330; font-size:clamp(2.6rem,6vw,4.6rem); letter-spacing:-.035em; line-height:.96; margin-top:18px; }
+  h1 em { font-style:italic; color:var(--coral); }
+  .head p { margin-top:20px; color:var(--ink); opacity:.85; font-size:1.1rem; line-height:1.65; }
+  .head .lineage { margin-top:22px; display:flex; flex-wrap:wrap; gap:10px; }
+  .chip { display:inline-flex; align-items:center; gap:8px; padding:7px 14px; border-radius:999px; border:1px solid var(--hair); background:#fffdf8; font-size:.82rem; font-weight:500; }
+  .chip b { color:var(--purple); }
+
+  .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:22px; margin-top:14px; }
+  .card { border:1px solid var(--hair); border-radius:18px; overflow:hidden; background:#fffdf8; transition:transform .28s cubic-bezier(.2,.7,.2,1), box-shadow .28s, border-color .28s; display:flex; flex-direction:column; box-shadow:0 1px 2px rgba(28,24,48,.04); }
+  .card:hover { transform:translateY(-6px); border-color:var(--purple); box-shadow:0 28px 50px -26px rgba(59,47,129,.45); }
+
+  /* ---- thumbnails ---- */
+  .thumb { height:230px; position:relative; overflow:hidden; display:flex; flex-direction:column; justify-content:center; padding:26px; }
+  /* 01 editorial */
+  .t1 { background:var(--cream); }
+  .t1 .hair { height:1px; background:var(--hair); margin:0 0 14px; }
+  .t1 .eb { font-family:"IBM Plex Mono"; font-size:.6rem; letter-spacing:.18em; text-transform:uppercase; color:var(--slate); }
+  .t1 .big { font-family:"Fraunces", serif; font-weight:320; font-size:2.1rem; letter-spacing:-.03em; line-height:1.02; margin-top:10px; }
+  .t1 .big em { font-style:italic; color:var(--coral); }
+  .t1 .big .u { background:linear-gradient(transparent 62%, var(--lavender) 62% 92%, transparent 92%); }
+  /* 02 warm */
+  .t2 { background:radial-gradient(70% 80% at 80% 10%, var(--lavender), #efeafc); }
+  .t2 .pill { align-self:flex-start; background:var(--purple); color:var(--cream); font-weight:700; font-size:.66rem; padding:6px 12px; border-radius:999px; font-family:"Hanken Grotesk"; }
+  .t2 .big { font-family:"Bricolage Grotesque", sans-serif; font-weight:800; font-size:1.9rem; letter-spacing:-.03em; line-height:1; margin-top:14px; color:var(--purple); }
+  .t2 .big span { color:var(--coral); }
+  .t2 .mini { margin-top:14px; align-self:flex-start; background:#fff; border-radius:12px; padding:8px 12px; box-shadow:0 10px 22px -12px rgba(28,24,48,.4); display:flex; gap:8px; align-items:center; }
+  .t2 .mini .sw { width:8px; height:8px; border-radius:999px; background:var(--coral); }
+  .t2 .mini .mt { font-size:.66rem; font-weight:600; color:var(--ink); }
+  /* 03 bold */
+  .t3 { background:#2b2363; background-image:linear-gradient(90deg, rgba(200,184,248,.16) 1px, transparent 1px); background-size:28px 100%; }
+  .t3 .big { font-family:"Archivo", sans-serif; font-weight:900; text-transform:uppercase; letter-spacing:-.045em; font-size:2rem; line-height:.86; color:var(--cream); }
+  .t3 .big .o { color:transparent; -webkit-text-stroke:1.2px var(--lavender); }
+  .t3 .big .c { color:var(--coral); }
+  .t3 .row { margin-top:14px; display:inline-flex; gap:6px; }
+  .t3 .st { font-family:"IBM Plex Mono"; font-size:.56rem; font-weight:600; text-transform:uppercase; letter-spacing:.04em; padding:4px 7px; border-radius:3px; }
+  .t3 .st.c { background:var(--coral); color:#fff; } .t3 .st.a { background:var(--amber); color:var(--ink); } .t3 .st.t { background:#5AB6C4; color:var(--ink); }
+
+  .meta { padding:22px 22px 24px; display:flex; flex-direction:column; gap:6px; flex:1; }
+  .meta .no { font-family:"IBM Plex Mono"; font-size:.66rem; letter-spacing:.16em; text-transform:uppercase; color:var(--slate); }
+  .meta h2 { font-family:"Fraunces", serif; font-weight:380; font-size:1.5rem; letter-spacing:-.02em; }
+  .meta .desc { font-size:.9rem; color:var(--slate); line-height:1.55; }
+  .meta .tags { margin-top:6px; display:flex; flex-wrap:wrap; gap:6px; }
+  .meta .tag { font-family:"IBM Plex Mono"; font-size:.62rem; letter-spacing:.04em; padding:4px 8px; border-radius:5px; background:var(--mist); color:var(--purple); }
+  .meta .open { margin-top:14px; display:inline-flex; align-items:center; gap:8px; font-weight:600; color:var(--purple); font-size:.92rem; }
+  .meta .open .arr { transition:transform .25s cubic-bezier(.2,.7,.2,1); }
+  .card:hover .open .arr { transform:translateX(4px); }
+
+  .foot { margin-top:44px; padding-top:24px; border-top:1px solid var(--hair); display:flex; flex-wrap:wrap; gap:8px 22px; justify-content:space-between; }
+  .foot .mono { font-size:.74rem; color:var(--slate); }
+  .note { margin-top:14px; font-size:.82rem; color:var(--slate); max-width:70ch; line-height:1.6; }
+  .note code { font-family:"IBM Plex Mono"; font-size:.78rem; background:var(--mist); padding:1px 6px; border-radius:4px; color:var(--purple); }
+
+  @keyframes rise { from { opacity:0; transform:translateY(18px); } to { opacity:1; transform:translateY(0); } }
+  .rise { animation:rise .8s cubic-bezier(.2,.7,.2,1) both; }
+  .d1{animation-delay:.05s;} .d2{animation-delay:.16s;} .d3{animation-delay:.27s;} .d4{animation-delay:.38s;}
+
+  /* group labels + 2-up grid */
+  .group-label { font-family:"IBM Plex Mono"; font-size:.72rem; letter-spacing:.16em; text-transform:uppercase; color:var(--slate); margin:36px 0 14px; display:flex; align-items:center; gap:14px; }
+  .group-label::after { content:""; flex:1; height:1px; background:var(--hair); }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:22px; }
+
+  /* 05 thumb — lavender pop */
+  .t5 { background:#E9E1FB; justify-content:center; }
+  .t5 .disc { position:absolute; right:-34px; top:50%; transform:translateY(-50%); width:208px; height:208px; border-radius:999px; background:radial-gradient(circle at 50% 38%, #fff, #D9CCF8); z-index:1; }
+  .t5 .ill { position:absolute; right:-2px; top:50%; transform:translateY(-50%); width:176px; z-index:2; }
+  .t5 .big { font-family:"Gabarito", sans-serif; font-weight:800; font-size:1.85rem; letter-spacing:-.02em; line-height:1.0; color:var(--purple); max-width:58%; position:relative; z-index:3; }
+  .t5 .big .sc { font-family:"Caveat", cursive; color:var(--coral); font-size:1.15em; }
+  .t5 .btn-fake { margin-top:14px; align-self:flex-start; background:var(--lime); color:var(--ink); font-family:"Gabarito"; font-weight:800; font-size:.7rem; padding:8px 15px; border-radius:999px; position:relative; z-index:3; }
+
+  /* 06 thumb — soft minimal */
+  .t6 { background:var(--cream); }
+  .t6 .eb { font-family:"Schibsted Grotesk", sans-serif; font-weight:600; font-size:.58rem; letter-spacing:.18em; text-transform:uppercase; color:var(--coral); display:flex; align-items:center; gap:8px; position:relative; z-index:2; }
+  .t6 .eb::before { content:""; width:18px; height:1px; background:var(--coral); }
+  .t6 .big { font-family:"Schibsted Grotesk", sans-serif; font-weight:700; font-size:1.7rem; letter-spacing:-.02em; line-height:1.06; color:var(--ink); margin-top:12px; max-width:62%; position:relative; z-index:2; }
+  .t6 .big .u { background:linear-gradient(transparent 66%, var(--lavender) 66% 92%, transparent 92%); }
+  .t6 .ill { position:absolute; right:16px; bottom:-6px; width:148px; z-index:1; }
+
+  /* featured (04 — illustrated) */
+  .featured { display:grid; grid-template-columns:1.1fr 1fr; border:1px solid var(--hair); border-radius:20px; overflow:hidden; background:#fffdf8; margin-bottom:22px; box-shadow:0 1px 2px rgba(28,24,48,.04); transition:transform .28s cubic-bezier(.2,.7,.2,1), box-shadow .28s, border-color .28s; }
+  .featured:hover { transform:translateY(-6px); border-color:var(--coral); box-shadow:0 32px 58px -26px rgba(232,103,76,.42); }
+  .t4 { position:relative; min-height:320px; padding:34px; background:radial-gradient(82% 90% at 72% 24%, var(--lavender), #efeafc 70%); display:flex; flex-direction:column; justify-content:space-between; overflow:hidden; }
+  .t4 .h { font-family:"Bricolage Grotesque", sans-serif; font-weight:800; font-size:1.7rem; letter-spacing:-.03em; color:var(--purple); line-height:1.04; max-width:13ch; position:relative; z-index:2; }
+  .t4 .h .mk { background:var(--lime); border-radius:3px; padding:0 .1em; }
+  .t4 img { position:relative; z-index:2; width:60%; align-self:flex-end; margin:-26px -6px -34px 0; }
+  .t4 .dc { position:absolute; border-radius:999px; z-index:1; }
+  .t4 .pill { position:absolute; z-index:3; top:22px; right:22px; background:var(--coral); color:#fff; font-weight:700; font-size:.62rem; padding:6px 11px; border-radius:999px; letter-spacing:.03em; }
+  .featured .meta { justify-content:center; padding:36px; }
+  .badge-rec { align-self:flex-start; display:inline-flex; align-items:center; gap:6px; background:var(--lime); color:var(--ink); font-weight:700; font-size:.64rem; letter-spacing:.08em; text-transform:uppercase; padding:5px 11px; border-radius:999px; margin-bottom:2px; }
+  @media (max-width:880px){ .grid{grid-template-columns:1fr;} .featured{grid-template-columns:1fr;} }
+  @media (prefers-reduced-motion: reduce){ *{animation:none!important; transition:none!important;} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="head">
+    <p class="kick rise">Click <span class="dot">·</span> front-page concepts <span class="dot">·</span> 6 directions <span class="dot">·</span> canonical palette</p>
+    <h1 class="rise d1">Pick a <em>direction</em>.</h1>
+    <p class="rise d2">Six takes on the Click landing page. <b style="color:var(--ink)">The three illustrated concepts (04, 05, 06) match the flat-illustration references you shared</b>: 04 is the lead, 05 goes bold and color-blocked, 06 goes airy and minimal. The earlier three (01 to 03) are typographic. All share one palette from <span class="mono">CLICK_PALETTE.md</span> (deep purple, lavender, cream) and the anti-slop rules from taste-skill and impeccable: distinctive type, tinted ink (never pure black or gray), no gray-on-colour, no card soup, one orchestrated load.</p>
+    <div class="lineage rise d2">
+      <span class="chip"><b>Palette:</b> #3B2F81 · #C8B8F8 · #F9F6F0</span>
+      <span class="chip"><b>Refs:</b> taste-skill · impeccable</span>
+      <span class="chip"><b>Status accents:</b> coral · amber · sage · teal</span>
+    </div>
+  </header>
+
+  <div class="group-label">Illustrated &mdash; closest to your references</div>
+
+  <!-- 04 — featured / illustrated -->
+  <a class="featured rise d1" href="04-illustrated.html">
+    <div class="t4">
+      <span class="pill">&#9733; Closest to your refs</span>
+      <span class="dc" style="width:74px;height:74px;background:rgba(232,103,76,.16);top:-12px;left:34%;"></span>
+      <span class="dc" style="width:16px;height:16px;background:var(--coral);bottom:34%;left:9%;"></span>
+      <span class="dc" style="width:12px;height:12px;background:var(--lime);top:20%;right:34%;"></span>
+      <div class="h">Grow your <span class="mk">circle</span>, one real night out at a time.</div>
+      <img src="illus/communication.svg" alt="Two people talking" />
+    </div>
+    <div class="meta">
+      <span class="badge-rec">&#9679; Recommended direction</span>
+      <div class="no">04 · Illustrated</div>
+      <h2>Find Your People</h2>
+      <div class="desc">The flat-illustration look from your references: pastel section blocks (peach, mint, lavender), bold Bricolage headlines, soft rounded cards, friendly vector characters, and coral + lime energy pops. Warmest and most approachable of the set.</div>
+      <div class="tags"><span class="tag">illustrated</span><span class="tag">Bricolage</span><span class="tag">+ lime accent</span><span class="tag">recolored Popsy art</span></div>
+      <span class="open">Open concept <span class="arr">&rarr;</span></span>
+    </div>
+  </a>
+
+  <div class="grid2">
+    <!-- 05 -->
+    <a class="card rise d2" href="05-lavender-pop.html">
+      <div class="thumb t5">
+        <span class="disc"></span>
+        <img class="ill" src="illus/happy-man-waving.svg" alt="" />
+        <div class="big">Meet your <span class="sc">people.</span></div>
+        <span class="btn-fake">Start exploring</span>
+      </div>
+      <div class="meta">
+        <div class="no">05 · Lavender Pop</div>
+        <h2>Lavender Pop</h2>
+        <div class="desc">Bold and colour-blocked, lavender-forward like reference #3. Rounded Gabarito type, lime as a co-primary, a bento grid, illustrations in circular backdrops.</div>
+        <div class="tags"><span class="tag">illustrated</span><span class="tag">Gabarito</span><span class="tag">lime co-primary</span><span class="tag">bento</span></div>
+        <span class="open">Open concept <span class="arr">&rarr;</span></span>
+      </div>
+    </a>
+    <!-- 06 -->
+    <a class="card rise d3" href="06-soft-minimal.html">
+      <div class="thumb t6">
+        <div class="eb">Now in Sydney</div>
+        <div class="big">Something you <span class="u">care about</span>.</div>
+        <img class="ill" src="illus/digital-nomad.svg" alt="" />
+      </div>
+      <div class="meta">
+        <div class="no">06 · Soft Minimal</div>
+        <h2>Soft Minimal</h2>
+        <div class="desc">Airy and premium. Generous whitespace, big calm illustrations, hairline dividers and a single coral accent. Schibsted Grotesk. The restrained end of the illustrated family.</div>
+        <div class="tags"><span class="tag">illustrated</span><span class="tag">Schibsted</span><span class="tag">minimal</span><span class="tag">1 accent</span></div>
+        <span class="open">Open concept <span class="arr">&rarr;</span></span>
+      </div>
+    </a>
+  </div>
+
+  <div class="group-label">Earlier directions &mdash; typographic</div>
+  <div class="grid">
+    <!-- 01 -->
+    <a class="card rise d2" href="01-editorial.html">
+      <div class="thumb t1">
+        <div class="eb">Now in Sydney · No. 01</div>
+        <div class="big">Where interests become <em>friend&shy;ships.</em></div>
+        <div class="hair" style="margin:16px 0 0;"></div>
+      </div>
+      <div class="meta">
+        <div class="no">01 · Editorial</div>
+        <h2>The Slow Table</h2>
+        <div class="desc">Cream paper, Fraunces serif, a magazine grid and a contents-page event list. Calm, premium, trustworthy. Whitespace does the work.</div>
+        <div class="tags"><span class="tag">taste: soft</span><span class="tag">Fraunces</span><span class="tag">restraint</span></div>
+        <span class="open">Open concept <span class="arr">&rarr;</span></span>
+      </div>
+    </a>
+
+    <!-- 02 -->
+    <a class="card rise d3" href="02-warm.html">
+      <div class="thumb t2">
+        <span class="pill">● Now in Sydney</span>
+        <div class="big">Find your <span>people</span>.</div>
+        <div class="mini"><span class="sw"></span><span class="mt">Long Table Supper · Almost full</span></div>
+      </div>
+      <div class="meta">
+        <div class="no">02 · Warm</div>
+        <h2>Find Your People</h2>
+        <div class="desc">Lavender light field, Bricolage Grotesque, rounded geometry, floating event cards and status stickers. Friendly and social, kept tasteful.</div>
+        <div class="tags"><span class="tag">taste: high-end</span><span class="tag">Bricolage</span><span class="tag">soft motion</span></div>
+        <span class="open">Open concept <span class="arr">&rarr;</span></span>
+      </div>
+    </a>
+
+    <!-- 03 -->
+    <a class="card rise d4" href="03-bold.html">
+      <div class="thumb t3">
+        <div class="big"><span>Show up.</span><br /><span class="o">Talk happens.</span><br /><span class="c">Click.</span></div>
+        <div class="row"><span class="st c">Almost full</span><span class="st a">Trending</span><span class="st t">New</span></div>
+      </div>
+      <div class="meta">
+        <div class="no">03 · Bold</div>
+        <h2>Show Up. Click.</h2>
+        <div class="desc">Deep-purple dark ground, Archivo + mono, Swiss grid lines and a live "departures board" of rooms. Sharp, modern, confident.</div>
+        <div class="tags"><span class="tag">taste: brutalist</span><span class="tag">Archivo</span><span class="tag">Swiss grid</span></div>
+        <span class="open">Open concept <span class="arr">&rarr;</span></span>
+      </div>
+    </a>
+  </div>
+
+  <div class="foot">
+    <span class="mono">Static HTML · no build step · open this file or any of 01 / 02 / 03 directly.</span>
+    <span class="mono">Tell me which to push into src/app/page.tsx.</span>
+  </div>
+  <p class="note">Notes: your earlier drafts in <code>design-samples/01-03</code> (blue/orange) are untouched. These live in <code>design-samples/canonical/</code> and follow the canonical purple/lavender palette from <code>context/DESIGN.MD</code>, which differs from the live <code>globals.css</code> (electric-lime) &mdash; porting a winner means re-skinning the live tokens. Concept 04 adds one <b style="color:var(--purple)">lime accent</b> (not in DESIGN.MD, but it bridges reference #3 and your live app) and uses Popsy&rsquo;s free illustration set, recolored to brand tokens and stored locally in <code>illus/</code>.</p>
+</div>
+</body>
+</html>
