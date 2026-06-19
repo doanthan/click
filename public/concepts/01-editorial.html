@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Click — 01 · Editorial</title>
+<meta name="description" content="Where interests become friendships. A local calendar with a human pulse." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..600;1,9..144,300..600&family=Hanken+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  /* ============================================================
+     CLICK — Concept 01 · "The Slow Table"
+     Direction: Editorial / quiet luxury (taste-skill "soft" +
+     impeccable restraint). Cream paper, deep-purple ink, lavender
+     hairlines, ONE coral accent. Type carries the page; whitespace
+     does the rest. Palette = CLICK_PALETTE.md (canonical) only.
+     ============================================================ */
+  :root {
+    --purple:   #3B2F81;
+    --purple-2: #4a3d99;
+    --lavender: #C8B8F8;
+    --lav-wash: #efeafc;   /* lavender at ~22% over cream, baked */
+    --cream:    #F9F6F0;
+    --paper:    #FFFDF8;   /* a hair lighter, for raised surfaces */
+    --coral:    #E8674C;
+    --amber:    #E0A33A;
+    --sage:     #5B8C6E;
+    --teal:     #2E7D8A;
+    --ink:      #1C1830;
+    --slate:    #6B6580;
+    --mist:     #E8E4F0;
+    --hair:     rgba(28,24,48,0.12);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+  body {
+    background: var(--cream);
+    color: var(--ink);
+    font-family: "Hanken Grotesk", system-ui, sans-serif;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overflow-x: hidden;
+    /* faint paper grain so the cream never reads as flat */
+    background-image:
+      radial-gradient(circle at 1px 1px, rgba(28,24,48,0.035) 1px, transparent 0),
+      radial-gradient(circle at 11px 11px, rgba(28,24,48,0.02) 1px, transparent 0);
+    background-size: 22px 22px, 22px 22px;
+    background-position: 0 0, 11px 11px;
+  }
+  ::selection { background: var(--lavender); color: var(--ink); }
+  a { color: inherit; text-decoration: none; }
+  img { display: block; max-width: 100%; }
+
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 0 28px; }
+  .mono { font-family: "IBM Plex Mono", monospace; }
+  .serif { font-family: "Fraunces", Georgia, serif; }
+
+  .kicker {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.72rem; letter-spacing: 0.22em; text-transform: uppercase;
+    color: var(--slate);
+  }
+  .kicker .dot { color: var(--coral); }
+
+  h1, h2, h3 { font-family: "Fraunces", Georgia, serif; font-weight: 340; letter-spacing: -0.02em; line-height: 1; }
+  em, .ital { font-style: italic; }
+  .coral { color: var(--coral); }
+  .lav { color: var(--purple); }
+
+  /* ---- top bar ---- */
+  header.bar {
+    position: sticky; top: 0; z-index: 50;
+    backdrop-filter: blur(8px);
+    background: color-mix(in srgb, var(--cream) 82%, transparent);
+    border-bottom: 1px solid var(--hair);
+  }
+  .bar .row { display: flex; align-items: center; justify-content: space-between; height: 68px; }
+  .word { font-family: "Fraunces", serif; font-weight: 560; font-size: 1.5rem; letter-spacing: -0.04em; color: var(--purple); display: inline-flex; align-items: baseline; }
+  .word .pd { width: 8px; height: 8px; border-radius: 999px; background: var(--coral); margin-left: 3px; align-self: flex-end; margin-bottom: 6px; }
+  nav.links { display: flex; gap: 30px; align-items: center; }
+  nav.links a { font-size: 0.9rem; color: var(--slate); transition: color .2s; }
+  nav.links a:hover { color: var(--ink); }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 22px;
+    border-radius: 999px; font-weight: 600; font-size: 0.92rem; letter-spacing: -0.01em;
+    transition: transform .22s cubic-bezier(.2,.7,.2,1), background-color .2s, color .2s, box-shadow .2s;
+  }
+  .btn .arr { transition: transform .25s cubic-bezier(.2,.7,.2,1); }
+  .btn:hover .arr { transform: translateX(4px); }
+  .btn--solid { background: var(--purple); color: var(--cream); box-shadow: 0 1px 2px rgba(28,24,48,.12), 0 14px 30px -14px rgba(59,47,129,.6); }
+  .btn--solid:hover { transform: translateY(-2px); background: var(--ink); }
+  .btn--ghost { border: 1px solid var(--hair); color: var(--ink); }
+  .btn--ghost:hover { border-color: var(--purple); transform: translateY(-2px); }
+  nav.links a.nav-cta { color: var(--purple); font-weight: 600; }
+
+  /* ---- hero ---- */
+  .hero { padding: 64px 0 56px; }
+  .hero-grid { display: grid; grid-template-columns: 1.08fr 0.92fr; gap: 56px; align-items: center; }
+  .hero h1 { font-size: clamp(3rem, 6.6vw, 5.6rem); font-weight: 320; letter-spacing: -0.035em; }
+  .hero h1 .underline { background: linear-gradient(transparent 64%, var(--lavender) 64% 94%, transparent 94%); padding: 0 .04em; }
+  .lead { margin-top: 26px; max-width: 30rem; font-size: 1.12rem; line-height: 1.65; color: var(--ink); opacity: .9; }
+  .cta-row { margin-top: 32px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .cta-note { font-family: "Fraunces", serif; font-style: italic; color: var(--slate); font-size: 1.05rem; }
+
+  .stats { margin-top: 46px; padding-top: 26px; border-top: 1px solid var(--hair); display: grid; grid-template-columns: repeat(3,1fr); gap: 24px; max-width: 30rem; }
+  .stats .n { font-family: "Fraunces", serif; font-weight: 340; font-size: 2.6rem; letter-spacing: -0.03em; line-height: 1; }
+  .stats .l { font-family: "IBM Plex Mono", monospace; margin-top: 8px; font-size: 0.66rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--slate); }
+
+  /* hero figure — purple duotone portrait + lavender mat */
+  .figure { position: relative; }
+  .frame {
+    position: relative; border-radius: 18px; overflow: hidden; aspect-ratio: 4/5;
+    background: var(--lavender);
+    box-shadow: 0 2px 6px rgba(28,24,48,.06), 0 40px 70px -30px rgba(59,47,129,.45);
+  }
+  .duo { position: absolute; inset: 0; background: var(--lavender); }
+  .duo img { width: 100%; height: 100%; object-fit: cover; filter: grayscale(1) contrast(1.08) brightness(1.04); }
+  .duo::after { content: ""; position: absolute; inset: 0; background: linear-gradient(155deg, rgba(59,47,129,.62), rgba(200,184,248,.18) 70%); mix-blend-mode: multiply; }
+  .tag {
+    position: absolute; top: 18px; right: -10px; z-index: 3;
+    background: var(--coral); color: #fff; font-family: "IBM Plex Mono", monospace;
+    font-size: 0.66rem; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 500;
+    padding: 8px 14px; border-radius: 999px; box-shadow: 0 10px 22px -10px rgba(232,103,76,.7);
+    transform: rotate(2deg);
+  }
+  .cap {
+    position: absolute; left: 20px; bottom: -22px; right: 40px; z-index: 3;
+    background: var(--paper); border: 1px solid var(--hair); border-radius: 14px;
+    padding: 14px 18px; box-shadow: 0 18px 40px -22px rgba(28,24,48,.4);
+  }
+  .cap .q { font-family: "Fraunces", serif; font-style: italic; font-size: 1.15rem; color: var(--ink); }
+  .cap .m { font-family: "IBM Plex Mono", monospace; margin-top: 4px; font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--slate); }
+
+  /* ---- running rule ---- */
+  .rule-line { display: flex; align-items: center; gap: 18px; padding: 40px 0; }
+  .rule-line .ln { flex: 1; height: 1px; background: var(--hair); }
+  .rule-line .mid { font-family: "IBM Plex Mono", monospace; font-size: 0.7rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--slate); }
+
+  /* ---- section heads ---- */
+  .sec { padding: 70px 0; }
+  .sec-head { display: grid; grid-template-columns: 0.8fr 1.2fr; gap: 28px; align-items: end; margin-bottom: 14px; }
+  .sec-head h2 { font-size: clamp(2.2rem, 4.4vw, 3.4rem); font-weight: 330; }
+  .sec-head p { color: var(--slate); max-width: 34rem; justify-self: end; font-size: 1.02rem; }
+
+  /* ---- contents-style "browse by feel" (no cards) ---- */
+  .toc { margin-top: 22px; border-top: 1px solid var(--hair); }
+  .toc-row {
+    display: grid; grid-template-columns: 64px 1fr auto; gap: 24px; align-items: baseline;
+    padding: 26px 8px; border-bottom: 1px solid var(--hair);
+    transition: padding-left .3s cubic-bezier(.2,.7,.2,1), background-color .3s;
+  }
+  .toc-row:hover { padding-left: 22px; background: var(--lav-wash); }
+  .toc-row .ix { font-family: "IBM Plex Mono", monospace; font-size: 0.92rem; color: var(--slate); transition: color .25s; }
+  .toc-row:hover .ix { color: var(--coral); }
+  .toc-row h3 { font-size: 1.7rem; font-weight: 360; }
+  .toc-row .body { color: var(--slate); font-size: 0.98rem; max-width: 30rem; margin-top: 6px; }
+  .toc-row .go { font-family: "IBM Plex Mono", monospace; font-size: 0.78rem; color: var(--purple); opacity: 0; transition: opacity .25s, transform .25s; transform: translateX(-6px); white-space: nowrap; }
+  .toc-row:hover .go { opacity: 1; transform: translateX(0); }
+  .toc-text { min-width: 0; }
+
+  /* ---- dictionary entry ---- */
+  .dict { background: var(--lav-wash); border: 1px solid var(--mist); border-radius: 24px; padding: 56px; }
+  .dict .top { font-family: "IBM Plex Mono", monospace; font-size: 0.7rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--slate); }
+  .dict .head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 18px; margin-top: 10px; }
+  .dict .word2 { font-family: "Fraunces", serif; font-weight: 380; font-size: clamp(3rem, 7vw, 5rem); letter-spacing: -0.03em; color: var(--purple); }
+  .dict .ipa { font-family: "Fraunces", serif; font-style: italic; font-size: 1.8rem; color: var(--slate); }
+  .dict .pos { font-family: "IBM Plex Mono", monospace; font-size: 0.78rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--slate); }
+  .defs { margin-top: 34px; border-left: 2px solid var(--lavender); padding-left: 28px; display: grid; gap: 26px; }
+  .defs .d { font-family: "Fraunces", serif; font-weight: 360; font-size: 1.5rem; line-height: 1.3; }
+  .defs .eg { color: var(--slate); font-size: 0.96rem; margin-top: 8px; font-family: "Hanken Grotesk"; }
+  .defs .eg code { font-family: "IBM Plex Mono", monospace; font-size: 0.82rem; color: var(--teal); }
+  .pull { margin-top: 40px; font-family: "Fraunces", serif; font-style: italic; font-size: 2rem; color: var(--coral); }
+
+  /* ---- how it works ---- */
+  .steps { display: grid; grid-template-columns: repeat(3,1fr); gap: 0; margin-top: 24px; border-top: 1px solid var(--hair); }
+  .step { padding: 34px 30px 34px 0; border-right: 1px solid var(--hair); }
+  .step:last-child { border-right: 0; padding-right: 0; }
+  .step .bn { font-family: "Fraunces", serif; font-weight: 320; font-size: 3.4rem; color: var(--lavender); line-height: 1; letter-spacing: -0.03em; }
+  .step h3 { font-size: 1.5rem; font-weight: 360; margin-top: 14px; }
+  .step p { color: var(--slate); margin-top: 10px; font-size: 0.98rem; }
+
+  /* ---- dark "join once" band ---- */
+  .band { background: var(--purple); color: var(--cream); border-radius: 28px; padding: 64px; margin: 30px 0; position: relative; overflow: hidden; }
+  .band::before { content: ""; position: absolute; inset: 0; background-image: linear-gradient(rgba(200,184,248,.08) 1px, transparent 1px), linear-gradient(90deg, rgba(200,184,248,.08) 1px, transparent 1px); background-size: 40px 40px; opacity: .5; }
+  .band-grid { position: relative; display: grid; grid-template-columns: 0.9fr 1.1fr; gap: 48px; align-items: center; }
+  .band h2 { font-size: clamp(2.4rem, 4.6vw, 3.8rem); font-weight: 320; color: var(--cream); }
+  .band h2 em { color: var(--lavender); }
+  .band .sub { margin-top: 20px; color: rgba(249,246,240,.72); max-width: 24rem; }
+  .glist { display: grid; gap: 0; }
+  .grow { display: flex; align-items: baseline; justify-content: space-between; gap: 18px; padding: 20px 4px; border-bottom: 1px solid rgba(200,184,248,.2); transition: padding-left .3s cubic-bezier(.2,.7,.2,1); }
+  .grow:first-child { border-top: 1px solid rgba(200,184,248,.2); }
+  .grow:hover { padding-left: 14px; }
+  .grow .gn { font-family: "Fraunces", serif; font-size: 1.4rem; font-weight: 360; color: var(--cream); }
+  .grow .gm { font-family: "IBM Plex Mono", monospace; font-size: 0.66rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--lavender); }
+  .grow .gc { font-size: 0.86rem; color: rgba(249,246,240,.6); white-space: nowrap; }
+
+  /* ---- closing ---- */
+  .closing { text-align: center; padding: 96px 0 80px; }
+  .closing .k { margin-bottom: 22px; }
+  .closing h2 { font-size: clamp(3rem, 8vw, 6rem); font-weight: 300; letter-spacing: -0.04em; }
+  .closing h2 em { color: var(--coral); }
+  .closing .btn { margin-top: 36px; height: 54px; padding: 0 30px; font-size: 1.05rem; }
+
+  footer { border-top: 1px solid var(--hair); padding: 30px 0 50px; }
+  footer .row { display: flex; flex-wrap: wrap; gap: 14px; justify-content: space-between; align-items: center; }
+  footer .mono { font-size: 0.74rem; color: var(--slate); letter-spacing: 0.04em; }
+
+  /* ---- entrance motion (one orchestrated load) ---- */
+  @keyframes rise { from { opacity: 0; transform: translateY(22px); } to { opacity: 1; transform: translateY(0); } }
+  .rise { animation: rise .9s cubic-bezier(.2,.7,.2,1) both; }
+  .d1 { animation-delay: .05s; } .d2 { animation-delay: .15s; } .d3 { animation-delay: .25s; }
+  .d4 { animation-delay: .35s; } .d5 { animation-delay: .45s; } .d6 { animation-delay: .55s; }
+
+  @media (max-width: 940px) {
+    .hero-grid { grid-template-columns: 1fr; gap: 40px; }
+    .figure { max-width: 420px; }
+    .sec-head { grid-template-columns: 1fr; }
+    .sec-head p { justify-self: start; }
+    .steps { grid-template-columns: 1fr; }
+    .step { border-right: 0; border-bottom: 1px solid var(--hair); padding-right: 0; }
+    .band-grid { grid-template-columns: 1fr; gap: 32px; }
+    .dict, .band { padding: 36px; }
+    nav.links { display: none; }
+    .toc-row { grid-template-columns: 40px 1fr; }
+    .toc-row .go { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+  }
+</style>
+</head>
+<body>
+
+<header class="bar">
+  <div class="wrap row">
+    <a class="word" href="#">Click<span class="pd"></span></a>
+    <nav class="links">
+      <a href="#feel">Browse</a>
+      <a href="#how">How it works</a>
+      <a href="#groups">Groups</a>
+      <a href="#">For hosts</a>
+      <a href="#" class="nav-cta">Log in</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <!-- ============ HERO ============ -->
+  <section class="hero">
+    <div class="wrap hero-grid">
+      <div>
+        <p class="kicker rise d1">Now in Sydney <span class="dot">·</span> No. 01 <span class="dot">·</span> Editorial</p>
+        <h1 class="rise d2" style="margin-top:22px;">
+          Where interests<br />become <span class="underline">friendships</span><span class="coral">.</span>
+        </h1>
+        <p class="lead rise d3">
+          Click is a local calendar with a human pulse. Real rooms: dinners, walks,
+          workshops, run clubs, where the conversation already has a reason.
+          Show up twice. Become familiar.
+        </p>
+        <div class="cta-row rise d4">
+          <a class="btn btn--solid" href="#">Start exploring <span class="arr">&rarr;</span></a>
+          <a class="btn btn--ghost" href="#feel">Browse events</a>
+          <span class="cta-note">takes 30 seconds</span>
+        </div>
+        <div class="stats rise d5">
+          <div><div class="n">27</div><div class="l">Weekly hosts</div></div>
+          <div><div class="n">8.4k</div><div class="l">Showing up</div></div>
+          <div><div class="n">94%</div><div class="l">Would return</div></div>
+        </div>
+      </div>
+
+      <div class="figure rise d3">
+        <div class="frame">
+          <div class="duo"><img src="/media/networking.jpg" alt="People talking at a local dinner" /></div>
+        </div>
+        <span class="tag">&#10022; Mutual click</span>
+        <div class="cap">
+          <div class="q">&ldquo;We clicked over the bread course.&rdquo;</div>
+          <div class="m">Newtown · 2nd time</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="wrap">
+    <div class="rule-line">
+      <span class="ln"></span>
+      <span class="mid">a local calendar with a human pulse</span>
+      <span class="ln"></span>
+    </div>
+  </div>
+
+  <!-- ============ BROWSE BY FEEL (contents page) ============ -->
+  <section class="sec" id="feel">
+    <div class="wrap">
+      <div class="sec-head">
+        <h2>Browse by <em class="coral">feel</em>,<br />not by category.</h2>
+        <p>What kind of room are you in the mood for? Click events are organised by how a night feels, not by the topic on the flyer.</p>
+      </div>
+      <div class="toc">
+        <a class="toc-row" href="#">
+          <span class="ix">01</span>
+          <span class="toc-text"><h3>Slow tables</h3><span class="body">Small dinners, one long table, a host who actually hosts.</span></span>
+          <span class="go">See this room &rarr;</span>
+        </a>
+        <a class="toc-row" href="#">
+          <span class="ix">02</span>
+          <span class="toc-text"><h3>Move and meet</h3><span class="body">Walk, run, climb, swim. Conversation as a side effect of the activity.</span></span>
+          <span class="go">See this room &rarr;</span>
+        </a>
+        <a class="toc-row" href="#">
+          <span class="ix">03</span>
+          <span class="toc-text"><h3>Hands on</h3><span class="body">Pottery, cooking, life drawing. A shared output, a built-in excuse to talk.</span></span>
+          <span class="go">See this room &rarr;</span>
+        </a>
+        <a class="toc-row" href="#">
+          <span class="ix">04</span>
+          <span class="toc-text"><h3>Group rituals</h3><span class="body">Weekly run clubs, monthly book nights, regular brunch crews. Familiar by week three.</span></span>
+          <span class="go">See this room &rarr;</span>
+        </a>
+        <a class="toc-row" href="#">
+          <span class="ix">05</span>
+          <span class="toc-text"><h3>Career rooms</h3><span class="body">Pivots, founders, freelancers. Quiet enough to actually talk.</span></span>
+          <span class="go">See this room &rarr;</span>
+        </a>
+        <a class="toc-row" href="#">
+          <span class="ix">06</span>
+          <span class="toc-text"><h3>Talks and screenings</h3><span class="body">Low pressure rooms where you do not need to be on. Listen first.</span></span>
+          <span class="go">See this room &rarr;</span>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ DICTIONARY ENTRY ============ -->
+  <section class="sec" style="padding-top:20px;">
+    <div class="wrap">
+      <article class="dict">
+        <p class="top">Dictionary entry · ed. 01</p>
+        <div class="head">
+          <span class="word2">click</span>
+          <span class="ipa">/kl&#618;k/</span>
+          <span class="pos">noun · verb</span>
+        </div>
+        <div class="defs">
+          <div>
+            <p class="d"><span class="coral">1.</span> A quiet burst of <em>yes</em> between two people in the same room.</p>
+            <p class="eg">e.g. <em>&ldquo;we clicked over the bread course.&rdquo;</em></p>
+          </div>
+          <div>
+            <p class="d"><span class="coral">2.</span> The reason a stranger becomes <em>a friend</em>.</p>
+            <p class="eg">see also: <code>low pressure</code>, <code>familiar by week 3</code>, <code>slow dating</code>.</p>
+          </div>
+          <div>
+            <p class="d"><span class="coral">3.</span> <em>verb.</em> To privately tap a person you would like to see again.</p>
+            <p class="eg">Mutual is an unlocked second event. No mutual, and nobody knows.</p>
+          </div>
+        </div>
+        <p class="pull">Clicks happen in person.</p>
+      </article>
+    </div>
+  </section>
+
+  <!-- ============ HOW IT WORKS ============ -->
+  <section class="sec" id="how">
+    <div class="wrap">
+      <div class="sec-head">
+        <h2>Meet through something<br />you <em class="coral">already</em> care about.</h2>
+        <p>People show up because the event is real: a walk, a dinner, a workout, a class. The thing you came for is the thing that makes talking easy.</p>
+      </div>
+      <div class="steps">
+        <div class="step">
+          <div class="bn">01</div>
+          <h3>Pick a real thing to do.</h3>
+          <p>Browse a local calendar of dinners, walks, classes and clubs happening near you this week.</p>
+        </div>
+        <div class="step">
+          <div class="bn">02</div>
+          <h3>Show up. Talk happens.</h3>
+          <p>The activity carries the conversation, so you do not have to manufacture it.</p>
+        </div>
+        <div class="step">
+          <div class="bn">03</div>
+          <h3>Click if you clicked.</h3>
+          <p>Privately tap someone you would see again. A mutual click unlocks a second event.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ JOIN ONCE (dark band) ============ -->
+  <section class="sec" id="groups" style="padding-top:10px;">
+    <div class="wrap">
+      <div class="band">
+        <div class="band-grid">
+          <div>
+            <p class="kicker" style="color:var(--lavender);">Groups for common people</p>
+            <h2 style="margin-top:14px;">Join <em>once.</em><br />Show up <em>twice.</em><br />Become <em>familiar.</em></h2>
+            <p class="sub">Relationships rarely start in a single perfect moment. They start when ordinary people keep crossing paths.</p>
+            <a class="btn btn--ghost" href="#" style="margin-top:28px; color:var(--cream); border-color:rgba(200,184,248,.4);">Find a group <span class="arr">&rarr;</span></a>
+          </div>
+          <div class="glist">
+            <div class="grow"><div><div class="gn">Tuesday Trail Runners</div><div class="gm">Weekly · Centennial Park</div></div><div class="gc">312 members</div></div>
+            <div class="grow"><div><div class="gn">Newtown Book Night</div><div class="gm">Monthly · Inner West</div></div><div class="gc">148 members</div></div>
+            <div class="grow"><div><div class="gn">Bondi Cold Swim</div><div class="gm">Weekly · Eastern Beaches</div></div><div class="gc">204 members</div></div>
+            <div class="grow"><div><div class="gn">Founders Coffee</div><div class="gm">Fortnightly · Surry Hills</div></div><div class="gc">96 members</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ CLOSING ============ -->
+  <section class="closing">
+    <div class="wrap">
+      <p class="kicker k">Ready when you are</p>
+      <h2>Pick a room. Show up.<br /><em>See what clicks.</em></h2>
+      <a class="btn btn--solid" href="#">Start exploring <span class="arr">&rarr;</span></a>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap row">
+    <a class="word" href="#" style="font-size:1.2rem;">Click<span class="pd"></span></a>
+    <span class="mono">Concept 01 · Editorial · canonical palette (CLICK_PALETTE.md)</span>
+  </div>
+</footer>
+
+</body>
+</html>

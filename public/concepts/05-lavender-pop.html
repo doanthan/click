@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Click — 05 · Lavender Pop</title>
+<meta name="description" content="Helping you grow your circle and meet your people, one real night out at a time." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Gabarito:wght@500;600;700;800;900&family=Hanken+Grotesk:wght@400;500;600;700&family=Caveat:wght@700&display=swap" rel="stylesheet" />
+<style>
+  /* ============================================================
+     CLICK — Concept 05 · "Lavender Pop" (illustrated)
+     Direction: bold, color-blocked, lavender-forward (reference #3
+     energy). Rounded Gabarito type, lime as a co-primary, coral pops,
+     illustrations in circular backdrops. Canonical palette + lime.
+     ============================================================ */
+  :root {
+    --purple:#3B2F81; --purple-d:#2f2568; --lavender:#C8B8F8;
+    --lav-bg:#E9E1FB; --lav-deep:#D9CCF8;
+    --cream:#F9F6F0; --paper:#FFFFFF;
+    --coral:#E8674C; --coral-d:#d3543b; --amber:#E0A33A; --sage:#5B8C6E; --teal:#2E7D8A;
+    --ink:#1C1830; --slate:#6B6580; --mist:#E8E4F0;
+    --lime:#D6F24E; --lime-d:#c6e43a; --lime-soft:#EEF8C0;
+    --sh:47,37,104;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html { scroll-behavior:smooth; -webkit-text-size-adjust:100%; }
+  body {
+    background:var(--lav-bg); color:var(--ink);
+    font-family:"Hanken Grotesk", system-ui, sans-serif; line-height:1.6;
+    -webkit-font-smoothing:antialiased; overflow-x:hidden;
+  }
+  ::selection { background:var(--lime); color:var(--ink); }
+  a { color:inherit; text-decoration:none; }
+  img { display:block; max-width:100%; }
+  .wrap { max-width:1180px; margin:0 auto; padding:0 24px; }
+  .disp { font-family:"Gabarito", system-ui, sans-serif; font-weight:800; letter-spacing:-0.02em; line-height:1.0; }
+  .script { font-family:"Caveat", cursive; font-weight:700; letter-spacing:0; }
+
+  .eyebrow { display:inline-flex; align-items:center; gap:8px; background:var(--paper); border:1px solid var(--lav-deep); color:var(--purple); font-weight:700; font-size:0.78rem; padding:7px 15px; border-radius:999px; box-shadow:0 1px 2px rgba(var(--sh),.06); }
+  .eyebrow .d { width:8px; height:8px; border-radius:999px; background:var(--coral); }
+  .eyebrow.flat { background:transparent; border:0; box-shadow:none; padding:0; letter-spacing:0.16em; text-transform:uppercase; font-size:0.74rem; }
+  .eyebrow.on-dark { color:var(--lavender); }
+
+  .btn { display:inline-flex; align-items:center; gap:9px; height:54px; padding:0 28px; border-radius:999px; font-weight:800; font-family:"Gabarito"; font-size:1rem; transition:transform .25s cubic-bezier(.2,.7,.2,1), background-color .2s, box-shadow .25s; }
+  .btn .arr { transition:transform .25s cubic-bezier(.2,.7,.2,1); }
+  .btn:hover .arr { transform:translateX(4px); }
+  .btn--lime { background:var(--lime); color:var(--ink); box-shadow:0 2px 4px rgba(var(--sh),.1), 0 16px 30px -14px rgba(170,200,40,.6); }
+  .btn--lime:hover { transform:translateY(-2px); background:var(--lime-d); }
+  .btn--purple { background:var(--purple); color:var(--cream); box-shadow:0 2px 4px rgba(var(--sh),.12), 0 16px 30px -14px rgba(59,47,129,.7); }
+  .btn--purple:hover { transform:translateY(-2px); background:var(--ink); }
+  .btn--coral { background:var(--coral); color:#fff; box-shadow:0 2px 4px rgba(var(--sh),.12), 0 16px 30px -14px rgba(232,103,76,.7); }
+  .btn--coral:hover { transform:translateY(-2px); background:var(--coral-d); }
+  .btn--white { background:var(--paper); color:var(--purple); border:1px solid var(--lav-deep); }
+  .btn--white:hover { transform:translateY(-2px); box-shadow:0 14px 26px -16px rgba(var(--sh),.4); }
+
+  /* nav */
+  .nav-shell { position:sticky; top:14px; z-index:60; padding:0 16px; }
+  .nav { max-width:1180px; margin:0 auto; display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,.82); backdrop-filter:blur(12px); border:1px solid var(--paper); border-radius:999px; padding:9px 9px 9px 22px; box-shadow:0 2px 4px rgba(var(--sh),.06), 0 22px 44px -26px rgba(var(--sh),.5); }
+  .brand { font-family:"Gabarito"; font-weight:900; font-size:1.45rem; letter-spacing:-0.03em; color:var(--purple); display:inline-flex; align-items:baseline; }
+  .brand .pd { width:8px; height:8px; border-radius:999px; background:var(--coral); margin-left:3px; align-self:flex-end; margin-bottom:5px; }
+  .nav .links { display:flex; gap:26px; align-items:center; }
+  .nav .links a { font-size:0.92rem; font-weight:600; color:var(--slate); }
+  .nav .links a:hover { color:var(--ink); }
+  .nav .cta { display:inline-flex; align-items:center; height:44px; padding:0 22px; border-radius:999px; background:var(--purple); color:var(--cream); font-weight:700; font-family:"Gabarito"; font-size:0.92rem; transition:transform .2s, background-color .2s; }
+  .nav .cta:hover { transform:translateY(-2px); background:var(--ink); }
+
+  /* hero */
+  .hero { padding:56px 0 30px; }
+  .hero-grid { display:grid; grid-template-columns:1.05fr 0.95fr; gap:40px; align-items:center; }
+  .hero h1 { font-size:clamp(2.8rem,6.2vw,4.9rem); color:var(--purple); margin-top:20px; }
+  .hero h1 .mk { position:relative; white-space:nowrap; z-index:0; }
+  .hero h1 .mk::after { content:""; position:absolute; inset:auto -4% 0.07em; height:0.36em; background:var(--lime); z-index:-1; border-radius:4px; }
+  .hero h1 .sc { color:var(--coral); font-size:1.18em; }
+  .hero .lead { margin-top:22px; max-width:30rem; font-size:1.16rem; color:var(--ink); opacity:.82; }
+  .hero .actions { margin-top:30px; display:flex; gap:14px; flex-wrap:wrap; align-items:center; }
+  .hero .proof { margin-top:28px; display:flex; align-items:center; gap:14px; }
+  .av-stack { display:flex; } .av-stack .av { width:44px; height:44px; border-radius:999px; overflow:hidden; border:3px solid var(--lav-bg); margin-left:-13px; background:var(--paper); }
+  .av-stack .av:first-child { margin-left:0; } .av-stack .av img { width:100%; height:100%; object-fit:cover; object-position:center 16%; transform:scale(1.55); }
+  .proof .t { font-size:0.92rem; color:var(--slate); } .proof .t b { color:var(--ink); }
+
+  .hero-art { position:relative; display:grid; place-items:center; min-height:420px; }
+  .hero-art .disc { position:absolute; width:84%; aspect-ratio:1; border-radius:999px; background:radial-gradient(circle at 50% 40%, var(--paper), var(--lav-deep)); box-shadow:inset 0 -30px 60px -30px rgba(var(--sh),.3); }
+  .hero-art .ring { position:absolute; width:92%; aspect-ratio:1; border-radius:999px; border:2px dashed var(--lavender); animation:spin 60s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .hero-art .illo { position:relative; z-index:2; width:80%; max-width:430px; }
+  .chip-float { position:absolute; z-index:4; background:var(--paper); border-radius:16px; padding:11px 15px; box-shadow:0 18px 34px -18px rgba(var(--sh),.5); display:flex; align-items:center; gap:10px; }
+  .chip-float .ic { width:30px; height:30px; border-radius:999px; display:grid; place-items:center; flex-shrink:0; }
+  .chip-float .tt { font-weight:700; font-size:0.8rem; color:var(--ink); line-height:1.2; }
+  .chip-float .tt small { display:block; font-weight:600; color:var(--slate); font-size:0.68rem; }
+  @keyframes floaty { 0%,100%{ transform:translateY(0);} 50%{ transform:translateY(-12px);} }
+  .floaty { animation:floaty 6s ease-in-out infinite; } .floaty.b { animation-duration:7.4s; animation-delay:.7s; }
+  .blip { position:absolute; border-radius:999px; z-index:1; }
+
+  /* stat blocks (ref #3) */
+  .stats { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-top:20px; }
+  .stat { border-radius:24px; padding:28px; }
+  .stat .n { font-family:"Gabarito"; font-weight:900; font-size:3rem; letter-spacing:-0.03em; line-height:1; display:flex; align-items:baseline; gap:6px; }
+  .stat .n .plus { font-size:1.6rem; }
+  .stat .l { font-weight:600; margin-top:8px; }
+  .stat--purple { background:var(--purple); color:var(--cream); } .stat--purple .l { color:var(--lavender); }
+  .stat--lime { background:var(--lime); color:var(--ink); } .stat--lime .l { color:var(--purple); }
+  .stat--white { background:var(--paper); color:var(--purple); } .stat--white .l { color:var(--slate); }
+
+  /* section heads */
+  .sec { padding:80px 0; }
+  .sec-h { max-width:42rem; } .sec-h.center { margin:0 auto; text-align:center; }
+  .sec-h h2 { font-family:"Gabarito"; font-weight:800; font-size:clamp(2.1rem,4.6vw,3.4rem); letter-spacing:-0.02em; color:var(--ink); margin-top:14px; line-height:1.02; }
+  .sec-h h2 .mk { position:relative; white-space:nowrap; } .sec-h h2 .mk::after { content:""; position:absolute; inset:auto 0 0.06em; height:0.3em; background:var(--lime); z-index:-1; border-radius:4px; }
+  .sec-h h2 .sc { color:var(--coral); }
+  .sec-h p { margin-top:14px; color:var(--slate); font-size:1.06rem; }
+
+  /* bento feel grid */
+  .bento { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-top:46px; }
+  .bcard { border-radius:26px; padding:26px; display:flex; flex-direction:column; transition:transform .3s cubic-bezier(.2,.7,.2,1), box-shadow .3s; position:relative; overflow:hidden; }
+  .bcard:hover { transform:translateY(-7px); box-shadow:0 30px 50px -26px rgba(var(--sh),.4); }
+  .bcard .circ { width:104px; height:104px; border-radius:999px; display:grid; place-items:center; margin-bottom:16px; }
+  .bcard .circ img { width:80%; }
+  .bcard h3 { font-family:"Gabarito"; font-weight:800; font-size:1.4rem; letter-spacing:-0.02em; color:var(--ink); }
+  .bcard p { color:var(--slate); margin-top:8px; font-size:0.95rem; }
+  .bcard .more { margin-top:auto; padding-top:16px; font-family:"Gabarito"; font-weight:700; color:var(--purple); display:inline-flex; gap:7px; }
+  .bcard .more .arr { transition:transform .25s cubic-bezier(.2,.7,.2,1); } .bcard:hover .more .arr { transform:translateX(4px); }
+  .span2 { grid-column:span 2; }
+  .b-lav { background:var(--paper); } .b-lavd { background:var(--lav-deep); } .b-lime { background:var(--lime-soft); } .b-peach { background:#FBEADD; } .b-mint { background:#E6F1E9; }
+  .b-purple { background:var(--purple); } .b-purple h3 { color:var(--cream); } .b-purple p { color:var(--lavender); } .b-purple .more { color:var(--lime); }
+  .circ--white { background:var(--paper); } .circ--lav { background:var(--lav-deep); } .circ--lime { background:var(--lime); } .circ--cream { background:var(--cream); }
+  .bcard.span2 { flex-direction:row; align-items:center; gap:22px; } .bcard.span2 .circ { margin-bottom:0; flex-shrink:0; width:128px; height:128px; } .bcard.span2 .txt { display:flex; flex-direction:column; }
+
+  /* how it works — purple band */
+  .band { background:var(--purple); border-radius:36px; padding:64px 48px; position:relative; overflow:hidden; }
+  .band::before { content:""; position:absolute; inset:0; background-image:radial-gradient(circle at 1px 1px, rgba(200,184,248,.16) 1px, transparent 0); background-size:26px 26px; }
+  .band .inner { position:relative; }
+  .how { display:grid; grid-template-columns:repeat(3,1fr); gap:24px; margin-top:46px; }
+  .hstep { text-align:center; }
+  .hstep .circ { width:150px; height:150px; border-radius:999px; background:var(--lav-bg); display:grid; place-items:center; margin:0 auto; position:relative; }
+  .hstep .circ img { width:78%; }
+  .hstep .num { position:absolute; top:-6px; right:18%; width:40px; height:40px; border-radius:999px; background:var(--lime); color:var(--ink); display:grid; place-items:center; font-family:"Gabarito"; font-weight:900; box-shadow:0 10px 20px -10px rgba(170,200,40,.7); }
+  .hstep h3 { font-family:"Gabarito"; font-weight:800; font-size:1.35rem; color:var(--cream); margin-top:18px; }
+  .hstep p { color:var(--lavender); margin-top:8px; font-size:0.96rem; max-width:20rem; margin-inline:auto; }
+
+  /* click panel — lime band */
+  .clickrow { display:grid; grid-template-columns:0.9fr 1.1fr; gap:26px; align-items:center; background:var(--lime); border-radius:32px; padding:46px; overflow:hidden; }
+  .clickrow .art { display:grid; place-items:center; } .clickrow .art .holder { width:88%; max-width:340px; aspect-ratio:1; border-radius:999px; background:rgba(255,255,255,.55); display:grid; place-items:center; } .clickrow .art img { width:80%; }
+  .clickrow h2 { font-family:"Gabarito"; font-weight:800; font-size:clamp(1.9rem,3.6vw,2.7rem); letter-spacing:-0.02em; color:var(--ink); }
+  .clickrow .defs { margin-top:18px; display:grid; gap:12px; }
+  .clickrow .defs li { list-style:none; display:flex; gap:12px; align-items:flex-start; }
+  .clickrow .defs .n { flex-shrink:0; width:26px; height:26px; border-radius:999px; background:var(--purple); color:var(--cream); display:grid; place-items:center; font-weight:700; font-size:0.8rem; margin-top:2px; }
+  .clickrow .defs p { color:var(--ink); opacity:.84; }
+  .clicked { margin-top:22px; display:inline-flex; align-items:center; gap:9px; background:var(--purple); color:var(--cream); font-weight:700; padding:11px 20px; border-radius:999px; }
+
+  /* groups */
+  .groups { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-top:46px; }
+  .gcard { background:var(--paper); border-radius:22px; padding:22px; transition:transform .3s cubic-bezier(.2,.7,.2,1), box-shadow .3s; box-shadow:0 1px 2px rgba(var(--sh),.05); }
+  .gcard:hover { transform:translateY(-6px); box-shadow:0 24px 42px -22px rgba(var(--sh),.4); }
+  .gcard .cad { font-weight:700; font-size:0.66rem; letter-spacing:0.1em; text-transform:uppercase; color:var(--teal); }
+  .gcard h3 { font-family:"Gabarito"; font-weight:800; font-size:1.16rem; margin-top:8px; color:var(--ink); line-height:1.1; }
+  .gcard .gp { margin-top:16px; display:flex; align-items:center; justify-content:space-between; }
+  .gcard .gm { font-weight:700; font-size:0.82rem; color:var(--slate); }
+  .mini-av { display:flex; } .mini-av .a { width:28px; height:28px; border-radius:999px; overflow:hidden; border:2px solid var(--paper); margin-left:-9px; background:var(--lav-deep); } .mini-av .a:first-child { margin-left:0; } .mini-av .a img { width:100%; height:100%; object-fit:cover; transform:scale(1.55); object-position:center 16%; }
+
+  /* closing */
+  .closing { background:var(--purple); border-radius:36px; padding:0 56px; display:grid; grid-template-columns:1.25fr 0.75fr; gap:18px; align-items:center; overflow:hidden; position:relative; }
+  .closing .body { padding:62px 0; }
+  .closing h2 { font-family:"Gabarito"; font-weight:900; font-size:clamp(2.4rem,5vw,4rem); letter-spacing:-0.03em; color:var(--cream); line-height:1; }
+  .closing h2 .sc { color:var(--lime); font-size:1.12em; }
+  .closing p { color:var(--lavender); margin-top:16px; max-width:25rem; }
+  .closing .actions { margin-top:26px; display:flex; gap:14px; flex-wrap:wrap; }
+  .closing .art { align-self:end; } .closing .art img { max-height:320px; width:auto; margin-left:auto; }
+
+  footer { padding:54px 0 46px; }
+  .foot-grid { display:flex; flex-wrap:wrap; gap:16px; justify-content:space-between; align-items:center; border-top:1px solid var(--lav-deep); padding-top:28px; }
+  .foot-grid .mono { font-size:0.78rem; color:var(--slate); }
+
+  @keyframes rise { from{opacity:0; transform:translateY(20px);} to{opacity:1; transform:translateY(0);} }
+  .rise { animation:rise .85s cubic-bezier(.2,.7,.2,1) both; }
+  .d1{animation-delay:.05s;}.d2{animation-delay:.14s;}.d3{animation-delay:.23s;}.d4{animation-delay:.32s;}.d5{animation-delay:.41s;}
+
+  @media (max-width:980px){
+    .hero-grid{ grid-template-columns:1fr; gap:20px; } .hero-art{ min-height:340px; max-width:440px; margin:0 auto; }
+    .bento{ grid-template-columns:1fr 1fr; } .span2{ grid-column:span 2; } .bcard.span2{ flex-direction:column; align-items:flex-start; }
+    .how{ grid-template-columns:1fr; max-width:24rem; margin-inline:auto; }
+    .clickrow{ grid-template-columns:1fr; } .clickrow .art{ order:-1; }
+    .groups{ grid-template-columns:1fr 1fr; }
+    .closing{ grid-template-columns:1fr; padding:34px; } .closing .art{ display:none; }
+    .nav .links{ display:none; }
+  }
+  @media (max-width:560px){ .stats{ grid-template-columns:1fr; } .bento{ grid-template-columns:1fr; } .span2{ grid-column:span 1; } .groups{ grid-template-columns:1fr; } .band{ padding:36px 24px; } }
+  @media (prefers-reduced-motion: reduce){ *{ animation:none !important; transition:none !important; scroll-behavior:auto !important; } }
+</style>
+</head>
+<body>
+
+<div class="nav-shell">
+  <div class="nav">
+    <a class="brand" href="#">Click<span class="pd"></span></a>
+    <nav class="links"><a href="#feel">Browse</a><a href="#how">How it works</a><a href="#groups">Groups</a><a href="#">For hosts</a></nav>
+    <a class="cta" href="#">Start exploring</a>
+  </div>
+</div>
+
+<main>
+  <!-- HERO -->
+  <section class="hero">
+    <div class="wrap hero-grid">
+      <div>
+        <span class="eyebrow rise d1"><span class="d"></span> Now in Sydney</span>
+        <h1 class="disp rise d2">Helping you grow your <span class="mk">circle</span> and meet your <span class="sc script">people.</span></h1>
+        <p class="lead rise d3">Click is a friendly local calendar of dinners, walks, workshops and run clubs where the conversation already has a reason. Show up twice. Become familiar.</p>
+        <div class="actions rise d4">
+          <a class="btn btn--lime" href="#">Start exploring <span class="arr">&rarr;</span></a>
+          <a class="btn btn--white" href="#feel">Browse events</a>
+        </div>
+        <div class="proof rise d5">
+          <div class="av-stack">
+            <span class="av"><img src="illus/woman-with-curly-hair-avatar.svg" alt="" /></span>
+            <span class="av"><img src="illus/man-with-short-hair-avatar.svg" alt="" /></span>
+            <span class="av"><img src="illus/woman-with-long-hair-avatar.svg" alt="" /></span>
+            <span class="av"><img src="illus/man-avatar.svg" alt="" /></span>
+          </div>
+          <span class="t"><b>8,400 people</b> showing up across Sydney this month</span>
+        </div>
+      </div>
+      <div class="hero-art rise d3">
+        <span class="ring"></span>
+        <span class="disc"></span>
+        <span class="blip floaty" style="width:20px;height:20px;background:var(--coral);top:12%;left:8%;"></span>
+        <span class="blip floaty b" style="width:14px;height:14px;background:var(--lime);bottom:16%;right:10%;"></span>
+        <img class="illo" src="illus/happy-man-waving.svg" alt="A friendly person waving hello" />
+        <div class="chip-float floaty" style="top:8%;right:-2%;">
+          <span class="ic" style="background:var(--lime-soft)">&#127881;</span>
+          <span class="tt">Free tonight<small>Bronte · 6 spots</small></span>
+        </div>
+        <div class="chip-float floaty b" style="bottom:6%;left:-3%;">
+          <span class="ic" style="background:#FBEADD">&#128075;</span>
+          <span class="tt">We clicked<small>Mutual · 2nd event</small></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="wrap">
+      <div class="stats rise d5">
+        <div class="stat stat--purple"><div class="n">27<span class="plus">+</span></div><div class="l">weekly hosts in Sydney</div></div>
+        <div class="stat stat--lime"><div class="n">8.4k</div><div class="l">people showing up</div></div>
+        <div class="stat stat--white"><div class="n">94<span class="plus">%</span></div><div class="l">would come back again</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- BROWSE BY FEEL (bento) -->
+  <section class="sec" id="feel">
+    <div class="wrap">
+      <div class="sec-h">
+        <span class="eyebrow flat" style="color:var(--purple)">Pick a vibe</span>
+        <h2 class="disp">We work with every kind of <span class="mk">night out</span>.</h2>
+        <p>Click events are organised by how a night feels, not by the topic on the flyer.</p>
+      </div>
+      <div class="bento">
+        <article class="bcard span2 b-purple"><div class="circ circ--lime"><img src="illus/romantic-dinner.svg" alt=""/></div><div class="txt"><h3>Slow tables</h3><p>Small dinners, one long table, and a host who actually hosts. The original Click night.</p><a class="more" href="#">Learn more <span class="arr">&rarr;</span></a></div></article>
+        <article class="bcard b-lime"><div class="circ circ--white"><img src="illus/man-running.svg" alt=""/></div><h3>Move &amp; meet</h3><p>Walk, run, climb, swim.</p><a class="more" href="#">More <span class="arr">&rarr;</span></a></article>
+        <article class="bcard b-peach"><div class="circ circ--white"><img src="illus/creative-work.svg" alt=""/></div><h3>Hands on</h3><p>Pottery, cooking, life drawing.</p><a class="more" href="#">More <span class="arr">&rarr;</span></a></article>
+
+        <article class="bcard b-mint"><div class="circ circ--white"><img src="illus/yoga-girl.svg" alt=""/></div><h3>Group rituals</h3><p>Familiar by week three.</p><a class="more" href="#">More <span class="arr">&rarr;</span></a></article>
+        <article class="bcard b-lavd"><div class="circ circ--white"><img src="illus/keynote-presentation.svg" alt=""/></div><h3>Career rooms</h3><p>Pivots, founders, freelancers.</p><a class="more" href="#">More <span class="arr">&rarr;</span></a></article>
+        <article class="bcard span2 b-lav"><div class="circ circ--lav"><img src="illus/guitarist.svg" alt=""/></div><div class="txt"><h3>Live &amp; loud</h3><p>Backroom gigs, open mics and listening nights. Show up for the music, leave with a crew.</p><a class="more" href="#">Learn more <span class="arr">&rarr;</span></a></div></article>
+      </div>
+    </div>
+  </section>
+
+  <!-- HOW IT WORKS (purple band) -->
+  <section class="sec" id="how" style="padding-top:6px;">
+    <div class="wrap">
+      <div class="band">
+        <div class="inner">
+          <div class="sec-h center">
+            <span class="eyebrow flat on-dark">How Click works</span>
+            <h2 class="disp" style="color:var(--cream)">Three steps. No swiping.</h2>
+          </div>
+          <div class="how">
+            <div class="hstep"><div class="circ"><span class="num">1</span><img src="illus/woman-with-a-laptop.svg" alt=""/></div><h3>Pick a real thing</h3><p>Browse a local calendar of dinners, walks and clubs near you.</p></div>
+            <div class="hstep"><div class="circ"><span class="num">2</span><img src="illus/shaking-hands.svg" alt=""/></div><h3>Show up</h3><p>The activity carries the conversation, so you do not have to.</p></div>
+            <div class="hstep"><div class="circ"><span class="num">3</span><img src="illus/man-holding-a-heart.svg" alt=""/></div><h3>Click</h3><p>Privately tap anyone you clicked with. Mutual unlocks a second event.</p></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- THE CLICK (lime band) -->
+  <section class="sec" style="padding-top:6px;">
+    <div class="wrap">
+      <div class="clickrow">
+        <div class="art"><div class="holder"><img src="illus/couple-hugging.svg" alt="Two people who met and clicked"/></div></div>
+        <div>
+          <span class="eyebrow flat" style="color:var(--purple)">What is a click?</span>
+          <h2 class="disp" style="margin-top:8px;">A quiet, mutual yes.</h2>
+          <ul class="defs">
+            <li><span class="n">1</span><p>A burst of yes between two people in the same room.</p></li>
+            <li><span class="n">2</span><p>The reason a stranger becomes a friend.</p></li>
+            <li><span class="n">3</span><p>To privately tap someone you would see again. No mutual, and nobody ever knows.</p></li>
+          </ul>
+          <span class="clicked">&#128075; We clicked over the bread course</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- GROUPS -->
+  <section class="sec" id="groups" style="padding-top:6px;">
+    <div class="wrap">
+      <div class="sec-h">
+        <span class="eyebrow flat" style="color:var(--purple)">Join once, show up twice</span>
+        <h2 class="disp">Groups that get <span class="mk">familiar</span>.</h2>
+      </div>
+      <div class="groups">
+        <article class="gcard"><div class="cad">Weekly · Centennial Park</div><h3>Tuesday Trail Runners</h3><div class="gp"><div class="mini-av"><span class="a"><img src="illus/man-avatar.svg" alt=""/></span><span class="a"><img src="illus/woman-with-curly-hair-avatar.svg" alt=""/></span></div><span class="gm">312</span></div></article>
+        <article class="gcard"><div class="cad">Monthly · Inner West</div><h3>Newtown Book Night</h3><div class="gp"><div class="mini-av"><span class="a"><img src="illus/woman-with-long-hair-avatar.svg" alt=""/></span><span class="a"><img src="illus/man-with-short-hair-avatar.svg" alt=""/></span></div><span class="gm">148</span></div></article>
+        <article class="gcard"><div class="cad">Weekly · Eastern Beaches</div><h3>Bondi Cold Swim</h3><div class="gp"><div class="mini-av"><span class="a"><img src="illus/man-with-long-hair-avatar.svg" alt=""/></span><span class="a"><img src="illus/woman-with-short-hair-avatar.svg" alt=""/></span></div><span class="gm">204</span></div></article>
+        <article class="gcard"><div class="cad">Fortnightly · Surry Hills</div><h3>Founders Coffee</h3><div class="gp"><div class="mini-av"><span class="a"><img src="illus/man-avatar.svg" alt=""/></span><span class="a"><img src="illus/woman-with-curly-hair-avatar.svg" alt=""/></span></div><span class="gm">96</span></div></article>
+      </div>
+    </div>
+  </section>
+
+  <!-- CLOSING -->
+  <section class="sec" style="padding-top:6px; padding-bottom:30px;">
+    <div class="wrap">
+      <div class="closing">
+        <div class="body">
+          <span class="eyebrow flat on-dark">Ready when you are</span>
+          <h2 class="disp" style="margin-top:12px;">Pick a room. Show up. <span class="sc script">See what clicks.</span></h2>
+          <p>It takes 30 seconds to find your first one. The rest happens in person.</p>
+          <div class="actions">
+            <a class="btn btn--lime" href="#">Start exploring <span class="arr">&rarr;</span></a>
+            <a class="btn btn--white" href="#">Take the life quiz</a>
+          </div>
+        </div>
+        <div class="art"><img src="illus/success.svg" alt="" /></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap"><div class="foot-grid">
+    <a class="brand" href="#" style="font-size:1.3rem;">Click<span class="pd"></span></a>
+    <span class="mono">Concept 05 · Lavender Pop · canonical palette + lime · art: recolored Popsy SVGs</span>
+  </div></div>
+</footer>
+
+</body>
+</html>
