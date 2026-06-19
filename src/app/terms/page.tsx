@@ -1,4 +1,4 @@
-import { LegalPage, Fill } from "@/components/legal-page";
+import { LegalPage } from "@/components/legal-page";
 
 export const metadata = {
   title: "Terms of Service | Click",
@@ -18,9 +18,8 @@ export default function TermsPage() {
           body: (
             <>
               <p>
-                Click is operated by <Fill>[ENTITY NAME] Pty Ltd</Fill> (ABN{" "}
-                <Fill>[ABN]</Fill>), a company registered in Australia with its principal place of
-                business in Sydney, New South Wales (&quot;Click&quot;, &quot;we&quot;,
+                Click is operated by Cindy Kim, an individual trading as &quot;Click&quot; (ABN
+                68 308 567 670), based in Sydney, New South Wales (&quot;Click&quot;, &quot;we&quot;,
                 &quot;us&quot;, &quot;our&quot;). You can reach us at{" "}
                 <a href="mailto:hello@letsclick.app" className="font-bold underline">hello@letsclick.app</a>.
               </p>
@@ -144,10 +143,13 @@ export default function TermsPage() {
               </p>
               <p>
                 When you book a paid event, payment is processed by Stripe. A Click booking/service
-                fee may be added and is disclosed at checkout before you pay. Prices are in
-                Australian dollars and, where applicable, include GST; a tax receipt is issued by
-                email after a successful payment. You are responsible for arriving at the event and
-                meeting any conditions the host sets (such as age, dress, or venue rules).
+                fee may be added and is disclosed at checkout before you pay. Prices are shown in
+                Australian dollars, and a payment confirmation is emailed to you after a successful
+                payment. Click is not currently registered for GST and does not charge GST on its
+                booking/service fee; where a host is separately registered for GST, any GST on the
+                ticket price is the host&apos;s responsibility. You are responsible for arriving at
+                the event and meeting any conditions the host sets (such as age, dress, or venue
+                rules).
               </p>
               <p>
                 Where an event supports guest seats, the person who books and pays is responsible for

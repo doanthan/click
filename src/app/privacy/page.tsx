@@ -1,4 +1,4 @@
-import { LegalPage, Fill } from "@/components/legal-page";
+import { LegalPage } from "@/components/legal-page";
 
 export const metadata = {
   title: "Privacy Policy | Click",
@@ -17,8 +17,8 @@ export default function PrivacyPage() {
           heading: "Who we are",
           body: (
             <p>
-              Click is operated by <Fill>[ENTITY NAME] Pty Ltd</Fill> (ABN{" "}
-              <Fill>[ABN]</Fill>), based in Sydney, Australia. We are the entity responsible for the
+              Click is operated by Cindy Kim, an individual trading as &quot;Click&quot; (ABN
+              68 308 567 670), based in Sydney, Australia. This is the person responsible for the
               personal information we collect through the Platform. For any privacy question or
               request, contact our Privacy Officer at{" "}
               <a href="mailto:privacy@letsclick.app" className="font-bold underline">privacy@letsclick.app</a>.
@@ -98,7 +98,7 @@ export default function PrivacyPage() {
                 Platform, only as needed to perform their function:
               </p>
               <ul className="ml-5 list-disc space-y-1.5">
-                <li><strong>Stripe</strong> — payment processing, tax receipts, and merchant payouts (Stripe Connect).</li>
+                <li><strong>Stripe</strong> — payment processing, receipts, and merchant payouts (Stripe Connect).</li>
                 <li><strong>Supabase</strong> — our database and file storage (profile data, photos, documents).</li>
                 <li><strong>Vercel</strong> — application hosting and delivery.</li>
                 <li><strong>Mapbox &amp; Google Maps</strong> — location, mapping, and proximity features.</li>
