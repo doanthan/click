@@ -76,7 +76,7 @@ export function ClickWithSomeoneUserCard({ person }: { person: SuggestedPerson }
           className="flex-1 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-4 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)] disabled:cursor-not-allowed disabled:opacity-70 disabled:hover:bg-[color:var(--rose)] disabled:hover:text-[color:var(--surface-deep)]"
         >
           {sent
-            ? "Clicked ✓ — waiting for them"
+            ? "Clicked privately ✓ — pending their Click"
             : pending
               ? "Sending…"
               : "Click privately"}

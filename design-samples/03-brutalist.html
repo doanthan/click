@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>CLICK // EVENT PROTOCOL — SYDNEY</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #0b0b0b;
+    --panel: #121211;
+    --line: rgba(235,232,225,.16);
+    --line-bold: rgba(235,232,225,.42);
+    --fg: #ece9e1;
+    --dim: #8a877e;
+    --orange: #ff5b04;
+    --green: #b6ff2e;
+    --disp: "Archivo", sans-serif;
+    --mono: "IBM Plex Mono", monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg); color: var(--fg); font-family: var(--mono);
+    font-size: 15px; line-height: 1.5; overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+    background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px);
+    background-size: 56px 56px;
+  }
+  ::selection { background: var(--orange); color: #000; }
+  .wrap { max-width: 1300px; margin: 0 auto; border-left: 1px solid var(--line-bold); border-right: 1px solid var(--line-bold); }
+  .mono-label { font-family: var(--mono); font-size: 11.5px; letter-spacing: .18em; text-transform: uppercase; color: var(--dim); }
+  h1,h2,h3 { font-family: var(--disp); font-weight: 900; text-transform: uppercase; letter-spacing: -.01em; line-height: .92; }
+
+  /* entrance */
+  @keyframes wipe { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+  .wipe { opacity: 0; animation: wipe .7s steps(8) forwards; }
+  .w1{animation-delay:.05s}.w2{animation-delay:.13s}.w3{animation-delay:.22s}.w4{animation-delay:.32s}.w5{animation-delay:.44s}.w6{animation-delay:.56s}
+
+  /* status bar */
+  .statusbar { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--line-bold); padding: 9px 22px; font-family: var(--mono); font-size: 11.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); background: var(--bg); }
+  .statusbar .l, .statusbar .r { display: flex; gap: 22px; align-items: center; }
+  .statusbar .live { color: var(--green); display: flex; align-items: center; gap: 7px; }
+  .statusbar .live::before { content:""; width: 8px; height: 8px; background: var(--green); border-radius: 50%; animation: pulse 1.1s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1;box-shadow:0 0 0 0 var(--green)} 50%{opacity:.4} }
+
+  /* nav */
+  header { display: flex; justify-content: space-between; align-items: stretch; border-bottom: 1px solid var(--line-bold); }
+  .brand { font-family: var(--disp); font-weight: 900; font-size: 26px; letter-spacing: -.02em; padding: 18px 22px; border-right: 1px solid var(--line); display: flex; align-items: center; gap: 10px; }
+  .brand .sq { width: 14px; height: 14px; background: var(--orange); }
+  nav { display: flex; }
+  nav a { font-family: var(--mono); font-size: 12px; letter-spacing: .16em; text-transform: uppercase; color: var(--dim); text-decoration: none; padding: 0 22px; display: flex; align-items: center; border-left: 1px solid var(--line); transition: all .12s; }
+  nav a:hover { background: var(--fg); color: #000; }
+  nav a.cta { background: var(--orange); color: #000; font-weight: 600; }
+  nav a.cta:hover { background: var(--green); }
+
+  /* hero */
+  .hero { display: grid; grid-template-columns: 1fr 320px; }
+  .hero-main { padding: 46px 22px 30px; border-right: 1px solid var(--line); }
+  .hero-tag { display: flex; gap: 16px; align-items: center; margin-bottom: 28px; }
+  .hero-tag .badge { background: var(--orange); color: #000; font-family: var(--mono); font-weight: 600; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; padding: 4px 9px; }
+  h1.hero-h { font-size: clamp(46px, 8vw, 104px); font-stretch: 125%; }
+  h1.hero-h .stroke { color: transparent; -webkit-text-stroke: 1.5px var(--fg); }
+  h1.hero-h .o { color: var(--orange); }
+  .cursor { display: inline-block; width: .5em; height: .9em; background: var(--orange); margin-left: 6px; vertical-align: -8%; animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .hero-sub { font-family: var(--mono); font-size: 16px; color: var(--dim); max-width: 56ch; margin: 30px 0 32px; line-height: 1.6; }
+  .hero-sub b { color: var(--fg); font-weight: 500; }
+  .hero-cta { display: flex; gap: 0; border: 1px solid var(--line-bold); width: fit-content; }
+  .hero-cta a { font-family: var(--mono); font-size: 13px; letter-spacing: .12em; text-transform: uppercase; text-decoration: none; padding: 16px 26px; transition: all .12s; }
+  .hero-cta a.primary { background: var(--orange); color: #000; font-weight: 600; }
+  .hero-cta a.primary:hover { background: var(--green); }
+  .hero-cta a.ghost { color: var(--fg); border-left: 1px solid var(--line-bold); }
+  .hero-cta a.ghost:hover { background: var(--fg); color: #000; }
+
+  /* hero readout panel */
+  .readout { display: flex; flex-direction: column; }
+  .readout .cell { padding: 18px 20px; border-bottom: 1px solid var(--line); flex: 1; display: flex; flex-direction: column; justify-content: center; }
+  .readout .cell:last-child { border-bottom: none; }
+  .readout .k { font-family: var(--mono); font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--dim); margin-bottom: 8px; }
+  .readout .v { font-family: var(--disp); font-weight: 900; font-size: 40px; line-height: 1; }
+  .readout .v.o { color: var(--orange); }
+  .readout .v.g { color: var(--green); }
+  .readout .v small { font-size: 14px; color: var(--dim); font-family: var(--mono); font-weight: 400; }
+
+  /* section header band */
+  .band { display: flex; justify-content: space-between; align-items: center; padding: 14px 22px; border-bottom: 1px solid var(--line-bold); border-top: 1px solid var(--line-bold); background: var(--panel); }
+  .band h2 { font-size: 16px; letter-spacing: .04em; }
+  .band .idx { color: var(--orange); }
+
+  /* departures board */
+  .board { width: 100%; border-collapse: collapse; }
+  .board th { font-family: var(--mono); font-size: 10.5px; letter-spacing: .18em; text-transform: uppercase; color: var(--dim); text-align: left; padding: 12px 22px; border-bottom: 1px solid var(--line); font-weight: 500; }
+  .board td { padding: 18px 22px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  .board tr { transition: background .12s; cursor: pointer; }
+  .board tbody tr:hover { background: var(--panel); }
+  .board tbody tr:hover .ev { color: var(--orange); }
+  .board .time { font-family: var(--mono); color: var(--dim); font-size: 13px; white-space: nowrap; }
+  .board .ev { font-family: var(--disp); font-weight: 800; font-size: 21px; text-transform: uppercase; letter-spacing: -.01em; transition: color .12s; }
+  .board .loc { font-family: var(--mono); font-size: 12px; color: var(--dim); }
+  .board .price { font-family: var(--disp); font-weight: 700; font-size: 18px; text-align: right; }
+  .flap { font-family: var(--mono); font-size: 10.5px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; padding: 4px 9px; display: inline-block; }
+  .flap.live { background: var(--green); color: #000; }
+  .flap.fill { background: var(--orange); color: #000; }
+  .flap.few { border: 1px solid var(--line-bold); color: var(--fg); }
+  .flap.sold { color: var(--dim); border: 1px solid var(--line); text-decoration: line-through; }
+
+  /* protocol / how it works */
+  .protocol { display: grid; grid-template-columns: repeat(3,1fr); }
+  .proto { padding: 34px 24px 40px; border-right: 1px solid var(--line); position: relative; }
+  .proto:last-child { border-right: none; }
+  .proto .num { font-family: var(--disp); font-weight: 900; font-size: 14px; color: var(--orange); letter-spacing: .1em; margin-bottom: 60px; }
+  .proto h3 { font-size: 30px; font-stretch: 110%; margin-bottom: 14px; }
+  .proto p { font-family: var(--mono); font-size: 13.5px; color: var(--dim); line-height: 1.6; }
+  .proto .ascii { position: absolute; top: 30px; right: 24px; font-family: var(--mono); color: var(--line-bold); font-size: 12px; }
+
+  /* host terminal */
+  .host { display: grid; grid-template-columns: 1fr 1fr; }
+  .host .side { padding: 46px 24px; border-right: 1px solid var(--line); }
+  .host .side:last-child { border-right: none; background: var(--panel); }
+  .host h2.big { font-size: clamp(34px,4.6vw,58px); font-stretch: 120%; margin: 18px 0 18px; }
+  .host p { font-family: var(--mono); font-size: 14px; color: var(--dim); max-width: 42ch; line-height: 1.65; margin-bottom: 26px; }
+  .term { font-family: var(--mono); font-size: 13px; line-height: 1.9; }
+  .term .pr { color: var(--green); } .term .c { color: var(--fg); } .term .out { color: var(--dim); }
+  .btn-term { font-family: var(--mono); font-size: 13px; letter-spacing: .12em; text-transform: uppercase; background: var(--orange); color: #000; font-weight: 600; text-decoration: none; padding: 14px 24px; display: inline-block; transition: background .12s; }
+  .btn-term:hover { background: var(--green); }
+
+  /* footer */
+  footer { border-top: 1px solid var(--line-bold); }
+  .foot-cta { padding: 70px 22px; text-align: center; border-bottom: 1px solid var(--line); }
+  .foot-cta h2 { font-size: clamp(50px, 11vw, 150px); font-stretch: 125%; }
+  .foot-cta h2 .o { color: var(--orange); }
+  .foot-cta .sub { font-family: var(--mono); color: var(--dim); margin: 18px 0 30px; letter-spacing: .1em; text-transform: uppercase; font-size: 12px; }
+  .foot-grid { display: grid; grid-template-columns: repeat(4,1fr); }
+  .foot-grid .col { padding: 26px 22px; border-right: 1px solid var(--line); }
+  .foot-grid .col:last-child { border-right: none; }
+  .foot-grid h4 { font-family: var(--mono); font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: var(--orange); margin-bottom: 14px; }
+  .foot-grid a { display: block; color: var(--fg); text-decoration: none; font-family: var(--mono); font-size: 13px; margin-bottom: 8px; }
+  .foot-grid a:hover { color: var(--orange); }
+  .colophon { display: flex; justify-content: space-between; padding: 14px 22px; border-top: 1px solid var(--line); font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); flex-wrap: wrap; gap: 10px; }
+
+  @media (max-width: 900px) {
+    body { background-size: 40px 40px; }
+    .hero { grid-template-columns: 1fr; }
+    .hero-main { border-right: none; border-bottom: 1px solid var(--line); }
+    .protocol, .host, .foot-grid { grid-template-columns: 1fr; }
+    .proto, .host .side, .foot-grid .col { border-right: none; border-bottom: 1px solid var(--line); }
+    nav a:not(.cta) { display: none; }
+    .statusbar .l span:not(.live) { display: none; }
+    .board .loc { display: block; }
+    .board th:nth-child(4), .board td:nth-child(4) { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="statusbar wipe w1">
+    <div class="l"><span>SYS://CLICK.EVENT.PROTOCOL</span><span>LOC: -33.8688, 151.2093</span><span>SYDNEY/AU</span></div>
+    <div class="r"><span class="live">38 EVENTS LIVE</span><span>v2.6</span></div>
+  </div>
+
+  <header class="wipe w1">
+    <div class="brand"><span class="sq"></span>CLICK</div>
+    <nav>
+      <a href="#board">// EVENTS</a>
+      <a href="#protocol">// PROTOCOL</a>
+      <a href="#host">// HOST</a>
+      <a href="#" class="cta">SIGN UP →</a>
+    </nav>
+  </header>
+
+  <section class="hero">
+    <div class="hero-main">
+      <div class="hero-tag wipe w2"><span class="badge">SYDNEY PILOT</span><span class="mono-label">// MEET PEOPLE. OFFLINE.</span></div>
+      <h1 class="hero-h wipe w3">SHOW UP.<br><span class="stroke">CONNECT.</span><br><span class="o">CLICK.</span><span class="cursor"></span></h1>
+      <p class="hero-sub wipe w4">A no-nonsense protocol for meeting people in real life. <b>Pick an event. Turn up. Click whoever you vibe with.</b> Mutual clicks unlock a private channel the next morning. Zero swiping. Zero small-talk-by-text.</p>
+      <div class="hero-cta wipe w5">
+        <a href="#board" class="primary">RUN: FIND EVENTS</a>
+        <a href="#protocol" class="ghost">READ PROTOCOL</a>
+      </div>
+    </div>
+    <div class="readout">
+      <div class="cell wipe w3"><div class="k">// CONNECTIONS MADE</div><div class="v o">12,418</div></div>
+      <div class="cell wipe w4"><div class="k">// EVENTS RUN</div><div class="v">600<small> /yr</small></div></div>
+      <div class="cell wipe w5"><div class="k">// HIT RATE</div><div class="v g">41%</div></div>
+      <div class="cell wipe w6"><div class="k">// AVG RATING</div><div class="v">4.9<small> /5</small></div></div>
+    </div>
+  </section>
+
+  <div class="band wipe w1" id="board">
+    <h2><span class="idx">[01]</span> DEPARTURES // THIS WEEK</h2>
+    <span class="mono-label">SORT: SOONEST ↓</span>
+  </div>
+  <table class="board">
+    <thead><tr><th>When</th><th>Event</th><th>Location</th><th>Status</th><th style="text-align:right">Entry</th></tr></thead>
+    <tbody>
+      <tr><td class="time">THU 19:00</td><td><div class="ev">Neon Trivia Night</div><div class="loc">The Lansdowne / Chippendale</div></td><td class="loc">CHIPPENDALE</td><td><span class="flap live">LIVE · 22 IN</span></td><td class="price">$24</td></tr>
+      <tr><td class="time">FRI 19:30</td><td><div class="ev">Strangers' Supper Club</div><div class="loc">Private dining / Surry Hills</div></td><td class="loc">SURRY HILLS</td><td><span class="flap fill">FILLING</span></td><td class="price">$48</td></tr>
+      <tr><td class="time">SAT 06:00</td><td><div class="ev">Bondi Sunrise Run</div><div class="loc">Bondi → Bronte</div></td><td class="loc">BONDI</td><td><span class="flap live">LIVE · 40 IN</span></td><td class="price">FREE</td></tr>
+      <tr><td class="time">SAT 18:00</td><td><div class="ev">Pasta &amp; Wine Lab</div><div class="loc">Studio kitchen / Marrickville</div></td><td class="loc">MARRICKVILLE</td><td><span class="flap few">2 SEATS</span></td><td class="price">$65</td></tr>
+      <tr><td class="time">SAT 16:00</td><td><div class="ev">Vinyl Listening Bar</div><div class="loc">Hi-fi room / Enmore</div></td><td class="loc">ENMORE</td><td><span class="flap fill">FILLING</span></td><td class="price">$12</td></tr>
+      <tr><td class="time">SUN 14:00</td><td><div class="ev">Life Drawing &amp; Beer</div><div class="loc">Warehouse / Newtown</div></td><td class="loc">NEWTOWN</td><td><span class="flap sold">SOLD OUT</span></td><td class="price">$30</td></tr>
+    </tbody>
+  </table>
+
+  <div class="band wipe w1" id="protocol">
+    <h2><span class="idx">[02]</span> THE PROTOCOL</h2>
+    <span class="mono-label">3 STEPS</span>
+  </div>
+  <div class="protocol">
+    <div class="proto"><div class="ascii">[ &gt; ]</div><div class="num">STEP_01</div><h3>Select<br>Event</h3><p>Filter by night, suburb, or vibe. Reserve your spot in two taps. Small rooms only — capped capacity by design.</p></div>
+    <div class="proto"><div class="ascii">[ ◎ ]</div><div class="num">STEP_02</div><h3>Execute<br>Attend</h3><p>Turn up. The host runs the room so you don't have to break the ice cold. Everyone present opted in to meet people.</p></div>
+    <div class="proto"><div class="ascii">[ ✦ ]</div><div class="num">STEP_03</div><h3>Send<br>Click</h3><p>Quietly click anyone you connected with. Mutual = a private channel opens at 09:00 next day. Non-mutual = nothing logged.</p></div>
+  </div>
+
+  <div class="band wipe w1" id="host">
+    <h2><span class="idx">[03]</span> HOST ACCESS</h2>
+    <span class="mono-label">FOR ORGANISERS</span>
+  </div>
+  <div class="host">
+    <div class="side">
+      <span class="mono-label">// RUN A ROOM</span>
+      <h2 class="big">DEPLOY YOUR<br>OWN EVENT</h2>
+      <p>List a class, dinner, run or club night. We route the right guests to you and handle ticketing, RSVPs, capacity and payouts. You run the room.</p>
+      <a href="#" class="btn-term">REQUEST HOST ACCESS →</a>
+    </div>
+    <div class="side">
+      <div class="term">
+        <div><span class="pr">click@host</span>:<span class="c">~$</span> create-event --type "supper club"</div>
+        <div class="out">→ event drafted ............. OK</div>
+        <div class="out">→ capacity set: 14 seats .... OK</div>
+        <div class="out">→ ticketing + payouts ....... OK</div>
+        <div class="out">→ matched guests in radius .. 312</div>
+        <div><span class="pr">click@host</span>:<span class="c">~$</span> publish<span class="cursor"></span></div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <div class="foot-cta">
+      <span class="mono-label">// END OF FEED</span>
+      <h2>LET'S <span class="o">CLICK.</span></h2>
+      <div class="sub">YOUR PEOPLE ARE ALREADY IN A ROOM NEARBY</div>
+      <a href="#" class="btn-term" style="font-size:14px;padding:16px 30px">CREATE FREE ACCOUNT →</a>
+    </div>
+    <div class="foot-grid">
+      <div class="col"><h4>// CLICK</h4><a href="#">How it works</a><a href="#">Discover</a><a href="#">Safety</a></div>
+      <div class="col"><h4>// HOSTS</h4><a href="#">Host access</a><a href="#">Pricing</a><a href="#">Payouts</a></div>
+      <div class="col"><h4>// COMPANY</h4><a href="#">About</a><a href="#">Careers</a><a href="#">Press</a></div>
+      <div class="col"><h4>// LEGAL</h4><a href="#">Terms</a><a href="#">Privacy</a><a href="#">Refunds</a></div>
+    </div>
+    <div class="colophon"><span>© 2026 CLICK // SYDNEY/AU</span><span>SET IN ARCHIVO + IBM PLEX MONO</span><span>STATUS: OPERATIONAL ●</span></div>
+  </footer>
+
+</div>
+</body>
+</html>

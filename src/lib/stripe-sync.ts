@@ -337,6 +337,15 @@ export async function reconcilePendingTransactionsForMerchant(
           await attachPaymentIntent(row.id, s.payment_intent);
         }
         await markPaymentSucceeded(row.id);
+        // Name reserved guest seats too (see reconcilePendingPayments / #192) —
+        // this self-heal path must invite guests just like the webhook does.
+        await processGuestSpotsForSession({
+          paymentTransactionId: row.id,
+          guestDetailsJson:
+            typeof s.metadata?.guest_details === "string"
+              ? s.metadata.guest_details
+              : null,
+        });
         paid += 1;
       } else if (s.status === "expired") {
         await markPaymentFailed(row.id);
@@ -383,6 +392,18 @@ export async function reconcilePendingPayments(
     if (!paymentTransactionId) continue;
     try {
       await markPaymentSucceeded(paymentTransactionId);
+      // Name any reserved guest seats from the session metadata. The webhook and
+      // success-URL return already do this; the cron backstop must too, or a
+      // guest invited on a missed-webhook booking that only the cron reconciles
+      // is never emailed / added to the roster, and the seats they paid for sit
+      // unnamed (bug board #192).
+      await processGuestSpotsForSession({
+        paymentTransactionId,
+        guestDetailsJson:
+          typeof session.metadata?.guest_details === "string"
+            ? session.metadata.guest_details
+            : null,
+      });
       reconciled += 1;
     } catch (error) {
       if (process.env.CLICK_DB_DEBUG === "true") {

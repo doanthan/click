@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Click — Front page concepts</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#101010; color:#ece9e1; font-family:"IBM Plex Mono",monospace; min-height:100vh; padding:64px 32px; }
+  .head { max-width:1100px; margin:0 auto 48px; }
+  .kick { font-size:12px; letter-spacing:.24em; text-transform:uppercase; color:#ff5b04; margin-bottom:14px; }
+  h1 { font-family:"Fraunces",serif; font-weight:500; font-size:clamp(36px,6vw,64px); letter-spacing:-.02em; line-height:1; }
+  .head p { color:#8a877e; margin-top:16px; max-width:60ch; line-height:1.6; }
+  .grid { max-width:1100px; margin:0 auto; display:grid; grid-template-columns:repeat(3,1fr); gap:20px; }
+  a.card { text-decoration:none; color:inherit; border:1px solid rgba(235,232,225,.18); border-radius:10px; overflow:hidden; transition:transform .2s, border-color .2s; display:block; }
+  a.card:hover { transform:translateY(-6px); border-color:#ff5b04; }
+  .thumb { height:190px; display:flex; align-items:center; justify-content:center; font-family:"Fraunces",serif; font-size:30px; position:relative; }
+  .t1 { background:#f3ede1; color:#1a1510; }
+  .t1 em { font-style:italic; color:#b8431f; }
+  .t2 { background:#fff3e4; color:#14110c; font-family:"IBM Plex Mono"; font-weight:600; }
+  .t2 b { background:#2238ee; color:#fff3e4; padding:2px 10px; border-radius:8px; transform:rotate(-2deg); display:inline-block; }
+  .t3 { background:#0b0b0b; color:#ece9e1; background-image:linear-gradient(rgba(235,232,225,.1) 1px,transparent 1px),linear-gradient(90deg,rgba(235,232,225,.1) 1px,transparent 1px); background-size:28px 28px; font-family:"IBM Plex Mono"; }
+  .t3 span { -webkit-text-stroke:1px #ece9e1; color:transparent; } .t3 .o { color:#ff5b04; -webkit-text-stroke:0; }
+  .meta { padding:20px; }
+  .meta .no { font-size:11px; letter-spacing:.2em; color:#8a877e; text-transform:uppercase; }
+  .meta h2 { font-family:"Fraunces",serif; font-weight:500; font-size:22px; margin:8px 0 6px; }
+  .meta .desc { font-size:12.5px; color:#8a877e; line-height:1.5; }
+  .foot { max-width:1100px; margin:40px auto 0; font-size:12px; color:#5f5d57; }
+  @media(max-width:760px){ .grid{grid-template-columns:1fr;} }
+</style>
+</head>
+<body>
+  <div class="head">
+    <div class="kick">Click · front-page concepts · 3 directions</div>
+    <h1>Pick a direction.</h1>
+    <p>Three takes on the Click landing page — same story (meet people through real-life events), three very different aesthetics. Open each, then tell me which to push further or remix.</p>
+  </div>
+  <div class="grid">
+    <a class="card" href="01-editorial.html">
+      <div class="thumb t1">the <em>old</em> way</div>
+      <div class="meta"><div class="no">01 — Editorial</div><h2>Refined &amp; print-like</h2><div class="desc">Cream paper, Fraunces serif, asymmetric magazine grid, hairline rules, restrained motion. Calm, premium, trustworthy.</div></div>
+    </a>
+    <a class="card" href="02-maximalist.html">
+      <div class="thumb t2">find your <b>people</b></div>
+      <div class="meta"><div class="no">02 — Maximalist</div><h2>Loud &amp; playful</h2><div class="desc">Color-blocking, Bricolage Grotesque, sticker badges, marquee, floating blobs, cursor-follow, hard shadows. High energy, social.</div></div>
+    </a>
+    <a class="card" href="03-brutalist.html">
+      <div class="thumb t3"><span>SHOW UP.</span> <span class="o">CLICK.</span></div>
+      <div class="meta"><div class="no">03 — Brutalist</div><h2>Industrial &amp; technical</h2><div class="desc">Dark, monospace + condensed Archivo, Swiss grid lines, a "departures board" event list, terminal blocks. Sharp, modern, confident.</div></div>
+    </a>
+  </div>
+  <div class="foot">Static HTML — no build step. Open this file or any of 01/02/03 directly in a browser.</div>
+</body>
+</html>
