@@ -3627,6 +3627,24 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
       return createLocalEventForMerchant(input, session);
     }
 
+    // The prevent_merchant_event_overlap trigger (database/001_schema.sql) raises
+    // "merchant has an overlapping live event" when this event's time window
+    // collides with another live event of the same merchant. That fires most
+    // often when DUPLICATING an event and re-picking the source's own date/time
+    // (the source is still live) — the raw Postgres message reads like an
+    // internal error. Translate it into a clear, actionable validation message
+    // pointing the merchant back at the Schedule step (bug board #194).
+    if (
+      error instanceof Error &&
+      /overlapping live event/i.test(error.message)
+    ) {
+      const friendly = new Error(
+        "You already have a live event during that time. Pick a different date or time on the Schedule step.",
+      );
+      friendly.name = "ValidationError";
+      throw friendly;
+    }
+
     throw error;
   }
 }
@@ -5988,7 +6006,7 @@ export async function getProfileCompletion(
 ): Promise<ProfileCompletion> {
   const empty = (): ProfileCompletion => {
     const items: ProfileCompletionItem[] = [
-      { key: "photo", label: "Add a profile photo", done: false, href: "/profile/edit" },
+      { key: "photo", label: "Add a photo to Click with others", done: false, href: "/profile/edit" },
       { key: "suburb", label: "Set your suburb", done: false, href: "/onboarding" },
       { key: "bio", label: "Write a short bio", done: false, href: "/profile/edit" },
       { key: "tags", label: "Pick at least 3 interests", done: false, href: "/profile/edit" },
@@ -6040,7 +6058,10 @@ export async function getProfileCompletion(
       // forward (api/upload/gallery), so this mainly clears already-affected profiles.
       {
         key: "photo",
-        label: "Add a profile photo",
+        // Spell out WHY a photo matters: it's required to enter the "Click with
+        // someone" pool (getSuggestedPeople filters out photoless profiles), so
+        // the nudge doubles as the reminder a photoless user needs (#190).
+        label: "Add a photo to Click with others",
         done: !!row?.photo_url || (row?.gallery_count ?? 0) > 0,
         href: "/profile/edit",
       },
@@ -6993,7 +7014,7 @@ export async function createUserClickForSession(
 
       if (!sourceEventId) {
         const error = new Error(
-          "The Click window opens 12 hours after an event you both attended ends. Once it's been long enough since a shared event, you'll be able to Click the people you met there.",
+          "Post-event Clicking opens 12 hours after an event you both attended ends — this applies only to people you met at that event, not to “Click with someone” discovery.",
         );
         error.name = "ValidationError";
         throw error;
@@ -10576,8 +10597,11 @@ export async function getSuggestedPeople(session: Session | null): Promise<Sugge
           and p.bio is not null
           -- Only include people who have a profile photo: clicking is a
           -- face-first decision, so a photoless profile shouldn't enter the
-          -- "click with someone" pool (bug board #190).
+          -- "click with someone" pool (bug board #190). Guard the empty string
+          -- too: a blank photo_url is photoless and "is not null" alone lets it
+          -- slip through.
           and p.photo_url is not null
+          and p.photo_url <> ''
           and not exists (
             select 1 from user_blocks b
             where (b.blocker_profile_id = $1::uuid and b.blocked_profile_id = p.id)
@@ -10703,19 +10727,36 @@ export async function getMutualClicksForSession(session: Session | null): Promis
                or (fc.status = 'pending_payment' and fc.hold_expires_at > now())
              )
          ) < event.capacity
-        -- If the pair are BOTH already confirmed attendees of the same upcoming
-        -- event, celebrate that directly instead of suggesting a new plan (#186).
+        -- If the pair are BOTH going to the same upcoming event, celebrate that
+        -- directly instead of suggesting a new plan (#186). "Going" means a
+        -- confirmed event_attendees row OR a claimed guest_spot — i.e. a +1 seat
+        -- a friend bought and they then claimed (spec 19). Without the guest_spots
+        -- arm, a guest-RSVP'd attendee has no event_attendees row and the
+        -- celebration silently never fires. Picks the soonest such shared event.
         left join lateral (
           select e2.slug, e2.title
           from events e2
-          join event_attendees me
-            on me.event_id = e2.id and me.profile_id = $1::uuid and me.status = 'confirmed'
-          join event_attendees them
-            on them.event_id = e2.id and them.status = 'confirmed'
-           and them.profile_id = (
-             case when m.profile_a_id = $1::uuid then m.profile_b_id else m.profile_a_id end
-           )
           where e2.starts_at > now()
+            and exists (
+              select 1 from event_attendees a
+              where a.event_id = e2.id and a.profile_id = $1::uuid and a.status = 'confirmed'
+              union all
+              select 1 from guest_spots g
+              where g.event_id = e2.id and g.claimed_profile_id = $1::uuid and g.status = 'claimed'
+            )
+            and exists (
+              select 1 from event_attendees a
+              where a.event_id = e2.id and a.status = 'confirmed'
+                and a.profile_id = (
+                  case when m.profile_a_id = $1::uuid then m.profile_b_id else m.profile_a_id end
+                )
+              union all
+              select 1 from guest_spots g
+              where g.event_id = e2.id and g.status = 'claimed'
+                and g.claimed_profile_id = (
+                  case when m.profile_a_id = $1::uuid then m.profile_b_id else m.profile_a_id end
+                )
+            )
           order by e2.starts_at asc
           limit 1
         ) both_going on true
@@ -11691,6 +11732,9 @@ export type MerchantAllAttendeesRow = {
   eventSlug: string;
   eventTitle: string;
   eventStartsAt: string;
+  // The owning event's publish status (live/pending/rejected/cancelled/…), so
+  // the Bookings tab can flag an event that was rejected or pulled (#193).
+  eventStatus: string;
   displayName: string;
   email: string;
   status: string;
@@ -11715,6 +11759,7 @@ export async function getMerchantAllAttendees(
       event_slug: string;
       event_title: string;
       event_starts_at: Date;
+      event_status: string;
       display_name: string;
       email: string;
       status: string;
@@ -11727,6 +11772,7 @@ export async function getMerchantAllAttendees(
           event.slug as event_slug,
           event.title as event_title,
           event.starts_at as event_starts_at,
+          event.status::text as event_status,
           guest.display_name,
           guest.email::text as email,
           attendee.status::text,
@@ -11747,6 +11793,7 @@ export async function getMerchantAllAttendees(
       eventSlug: row.event_slug,
       eventTitle: row.event_title,
       eventStartsAt: row.event_starts_at.toISOString(),
+      eventStatus: row.event_status,
       displayName: row.display_name,
       email: row.email,
       status: row.status,

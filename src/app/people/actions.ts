@@ -1,6 +1,5 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { createUserClickForSession } from "@/lib/event-repository";
@@ -37,10 +36,13 @@ export async function clickPersonAction(
     return { ok: false, message };
   }
 
-  // The card appears on both /people and /dashboard — refresh both so the state
-  // is consistent wherever it was clicked from.
-  revalidatePath("/people");
-  revalidatePath("/dashboard");
+  // Deliberately DON'T revalidate here. The click is already persisted, so the
+  // next natural load of /people or /dashboard reflects it (and the dashboard
+  // drops the person from its "click with someone" rotation). Revalidating the
+  // current page instead re-renders it mid-action and the dashboard's
+  // already-clicked filter unmounts this very card before the user ever sees the
+  // "Clicked privately — pending their Click" confirmation (bug board #188). The
+  // optimistic state below keeps the card mounted so that pending state shows.
   return {
     ok: true,
     message: "Click sent privately. If they Click you back, you'll both see it.",

@@ -741,10 +741,14 @@ async function BookingsTabAsync({
 
   // Per-event summary (folded in from the old Bookings tab).
   const grouped = new Map<string, typeof attendees>();
+  // The owning event's publish status, so a rejected/cancelled event is flagged
+  // here rather than looking like a normal live booking list (#193).
+  const eventStatusBySlug = new Map<string, string>();
   for (const a of attendees) {
     const list = grouped.get(a.eventSlug) ?? [];
     list.push(a);
     grouped.set(a.eventSlug, list);
+    eventStatusBySlug.set(a.eventSlug, a.eventStatus);
   }
 
   return (
@@ -766,7 +770,17 @@ async function BookingsTabAsync({
               // Past events stay in the bookings list (no time filter on the
               // query) so a merchant can always review who attended — flag them
               // "Ended" so it's clear the door list is historical, not live.
+              // eslint-disable-next-line react-hooks/purity -- async server component, evaluated once per request
               const hasEnded = new Date(list[0].eventStartsAt).getTime() < Date.now();
+              // Surface a rejected/cancelled event so the merchant knows this
+              // event is NOT live (#193). Takes precedence over the "Ended" tag.
+              const eventStatus = eventStatusBySlug.get(slug) ?? "live";
+              const notLiveLabel =
+                eventStatus === "rejected"
+                  ? "Rejected"
+                  : eventStatus === "cancelled"
+                    ? "Cancelled"
+                    : null;
               return (
                 <li
                   key={slug}
@@ -775,7 +789,7 @@ async function BookingsTabAsync({
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
-                        Event {hasEnded ? "· Ended" : ""}
+                        Event {notLiveLabel ? `· ${notLiveLabel}` : hasEnded ? "· Ended" : ""}
                       </span>
                       <Link
                         href={`/merchant/events/${slug}`}
@@ -785,6 +799,7 @@ async function BookingsTabAsync({
                       </Link>
                     </div>
                     <div className="flex flex-wrap gap-2">
+                      {notLiveLabel ? <Pill tone="ink">Not live · {notLiveLabel}</Pill> : null}
                       {hasEnded ? <Pill tone="cream">Ended</Pill> : null}
                       <Pill tone="peach">{confirmed} confirmed</Pill>
                       <Pill tone="rose">{waitlisted} waitlist</Pill>

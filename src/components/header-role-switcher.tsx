@@ -25,6 +25,7 @@ const ACCOUNT_LINKS: AccountLink[] = [
   { label: "People", href: "/people" },
   { label: "Your events", href: "/confirmed-events" },
   { label: "Bookmarks", href: "/bookmarks" },
+  { label: "How it works", href: "/how-it-works" },
   { label: "Account settings", href: "/account-settings" },
 ];
 
