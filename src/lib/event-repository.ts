@@ -10812,7 +10812,19 @@ export async function getMutualClicksForSession(session: Session | null): Promis
           order by e2.starts_at asc
           limit 1
         ) both_going on true
-        where m.profile_a_id = $1::uuid or m.profile_b_id = $1::uuid
+        where (m.profile_a_id = $1::uuid or m.profile_b_id = $1::uuid)
+          -- Drop dead mutuals: once the 7-day proposal window lapses without a
+          -- confirm, the click has effectively expired (21_CLICK_MECHANIC.md) and
+          -- shouldn't keep showing as a live "you both tapped" card. Confirmed and
+          -- still-open proposals stay; a mutual whose proposal row is somehow
+          -- missing is kept (one is always created alongside the mutual). A pair
+          -- who are already BOTH going to a shared event is always kept and
+          -- celebrated, even if their proposal lapsed (they got there anyway).
+          and (
+            both_going.slug is not null
+            or p.id is null
+            or (p.status <> 'expired' and not (p.status = 'pending' and p.expires_at <= now()))
+          )
         order by m.created_at desc
         limit 12
       `,
@@ -11361,6 +11373,11 @@ export type ProposalEntry = {
   alternativesRemaining: number;
   expiresAt: string;
   confirmedAt: string | null;
+  // True when the VIEWER is the one who tapped "Confirm this plan" — lets the
+  // card say "you confirmed, now RSVP" vs "they confirmed, RSVP to lock in"
+  // instead of a blanket "Plan confirmed" that confuses the person who never
+  // acted (bug board #199).
+  confirmedByMe: boolean;
 };
 
 export async function getProposalsForSession(session: Session | null): Promise<ProposalEntry[]> {
@@ -11382,12 +11399,18 @@ export async function getProposalsForSession(session: Session | null): Promise<P
       alternatives_count: number;
       expires_at: Date;
       confirmed_at: Date | null;
+      confirmed_by_me: boolean;
     }>(
       `
         select
           p.id::text,
           p.status,
-          (p.status = 'pending' and p.expires_at <= now()) as expired,
+          -- "Expired" means the 7-day window has closed without a confirm —
+          -- either persisted (status flipped to 'expired', e.g. someone tapped
+          -- Confirm too late) or a still-'pending' row past its deadline. Both
+          -- must render as expired so a lapsed proposal never shows live
+          -- Confirm/Suggest buttons under a past date (bug #199).
+          (p.status = 'expired' or (p.status = 'pending' and p.expires_at <= now())) as expired,
           case when m.profile_a_id = $1::uuid then m.profile_b_id::text else m.profile_a_id::text end as other_id,
           other.display_name as other_name,
           e.slug as event_slug,
@@ -11396,7 +11419,8 @@ export async function getProposalsForSession(session: Session | null): Promise<P
           (p.suggested_event_id is not null) as had_suggestion,
           p.alternatives_count,
           p.expires_at,
-          p.confirmed_at
+          p.confirmed_at,
+          (p.confirmed_by = $1::uuid) as confirmed_by_me
         from event_proposals p
         join mutual_clicks m on m.id = p.mutual_click_id
         join profiles other on other.id = (
@@ -11442,6 +11466,7 @@ export async function getProposalsForSession(session: Session | null): Promise<P
       alternativesRemaining: Math.max(0, 3 - row.alternatives_count),
       expiresAt: row.expires_at.toISOString(),
       confirmedAt: row.confirmed_at ? row.confirmed_at.toISOString() : null,
+      confirmedByMe: Boolean(row.confirmed_by_me),
     }));
   } catch {
     return [];

@@ -63,3 +63,33 @@ export function regionForEvent(input: {
   if (fromCoords !== "Other") return fromCoords;
   return regionFromSuburb(input.suburb);
 }
+
+// Postcode → region, for surfaces that only collect a 4-digit AU postcode (e.g.
+// attendee onboarding) and have no coordinates. The Greater Sydney ranges below
+// are chosen to track the wide `sydneyBox` above: metro core, plus the Macarthur
+// and Penrith/Blue Mountains/Hawkesbury outer rings. Central Coast, Wollongong,
+// Newcastle and everything else fall to "Other" — i.e. outside the current
+// Sydney pilot. Melbourne is best-effort metro-core only (not load-bearing).
+type PostcodeRange = readonly [number, number];
+const SYDNEY_POSTCODE_RANGES: readonly PostcodeRange[] = [
+  [2000, 2234], // Sydney metropolitan (city, east, inner west, north shore,
+                // northern beaches, Sutherland, St George, Canterbury-Bankstown,
+                // Hills, Parramatta, Blacktown, Liverpool, Hornsby)
+  [2555, 2574], // Macarthur (Camden, Campbelltown, Picton)
+  [2745, 2786], // Penrith, Blue Mountains, Hawkesbury (Windsor, Richmond)
+];
+const MELBOURNE_POSTCODE_RANGES: readonly PostcodeRange[] = [
+  [3000, 3207], // Melbourne metropolitan core
+  [3211, 3220], // Geelong corridor
+  [3750, 3810], // outer north / south-east (Whittlesea, Pakenham)
+  [3910, 3944], // Frankston / Mornington Peninsula
+];
+
+export function regionFromPostcode(postcode: string | null | undefined): Region {
+  if (!postcode) return "Other";
+  const code = Number.parseInt(postcode.trim(), 10);
+  if (!Number.isInteger(code)) return "Other";
+  if (SYDNEY_POSTCODE_RANGES.some(([lo, hi]) => code >= lo && code <= hi)) return "Sydney";
+  if (MELBOURNE_POSTCODE_RANGES.some(([lo, hi]) => code >= lo && code <= hi)) return "Melbourne";
+  return "Other";
+}

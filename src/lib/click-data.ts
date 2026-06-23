@@ -372,3 +372,11 @@ export const roadmapItems = [
   "Merchant QR check-in tools",
   "Corporate and community partner portals",
 ];
+
+// Connection-intent slugs are stored lowercase with underscores (e.g.
+// "new_in_town"). Humanize them for display so a Pill never shows the raw slug:
+// Pills uppercase via CSS, so we only need to turn underscores/hyphens into
+// spaces ("new_in_town" → "new in town" → rendered "NEW IN TOWN").
+export function formatIntent(slug: string): string {
+  return slug.replace(/[_-]+/g, " ").trim();
+}
