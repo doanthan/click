@@ -13,9 +13,9 @@ export function PostEventClickCard({ prompt }: { prompt: PostEventClickPrompt })
       <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
         You went to {shortDate.format(new Date(prompt.endedAt))}
       </p>
-      <h3 className="font-display mt-2 text-2xl font-light leading-tight text-[color:var(--ink)]">
+      <h3 className="font-display mt-2 text-2xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)]">
         Did you click with anyone at{" "}
-        <Link href={`/events/${prompt.eventSlug}`} className="italic hover:text-[color:var(--rose)]">
+        <Link href={`/events/${prompt.eventSlug}`} className="text-[color:var(--coral)] hover:text-[color:var(--coral-deep)]">
           {prompt.eventTitle}
         </Link>
         ?

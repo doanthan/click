@@ -49,7 +49,7 @@ export function AdminTrendChart({ buckets }: { buckets: AdminTrendBucket[] }) {
               <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
                 {m.label}
               </span>
-              <span className="font-display text-2xl font-light leading-none tabular-nums text-[color:var(--ink)]">
+              <span className="font-display text-2xl font-semibold leading-none tabular-nums text-[color:var(--ink)]">
                 {m.format(total)}
               </span>
             </div>

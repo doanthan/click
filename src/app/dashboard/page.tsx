@@ -135,8 +135,8 @@ export default async function DashboardPage() {
           <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
           Your Click
         </span>
-        <h1 className="font-display mt-6 text-5xl font-light leading-[0.96] tracking-tight sm:text-6xl">
-          Hi <span className="italic">{userName.split(" ")[0]}</span>.
+        <h1 className="font-display mt-6 text-5xl font-bold leading-[0.96] tracking-[-0.025em] sm:text-6xl">
+          Hi <span className="text-[color:var(--coral)]">{userName.split(" ")[0]}</span>.
         </h1>
         <p className="mt-4 max-w-2xl text-base font-medium leading-7 text-[color:var(--mauve)]">
           Your RSVPs, saved plans, and onboarding state live here. Browse events
@@ -163,7 +163,7 @@ export default async function DashboardPage() {
                   A complete profile gets you better event and people matches.
                 </p>
               </div>
-              <span className="font-display text-2xl font-light leading-none text-[color:var(--ink)]">
+              <span className="font-display text-2xl font-semibold leading-none text-[color:var(--ink)]">
                 {completion.percent}%
               </span>
             </div>
@@ -239,7 +239,7 @@ export default async function DashboardPage() {
             <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
               Click with someone
             </p>
-            <h2 className="font-display mt-2 text-3xl font-light leading-tight sm:text-4xl">
+            <h2 className="font-display mt-2 text-3xl font-semibold leading-tight tracking-[-0.02em] sm:text-4xl">
               People you might click with.
             </h2>
             <p className="mt-2 max-w-xl text-sm font-semibold leading-6 text-[color:var(--mauve)]">
@@ -297,12 +297,12 @@ export default async function DashboardPage() {
               <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
                 Mutual Click
               </p>
-              <h2 className="font-display mt-2 text-3xl font-light leading-tight sm:text-4xl">
+              <h2 className="font-display mt-2 text-3xl font-semibold leading-tight tracking-[-0.02em] sm:text-4xl">
                 You both tapped.
               </h2>
               <p className="mt-1 max-w-xl text-sm font-semibold leading-6 text-[color:var(--mauve)]">
-                When two people click each other we suggest one event you can both
-                go to next. Confirm a plan from your proposals.
+                You both tapped — that&rsquo;s a mutual click. Confirm the suggested
+                plan in one tap, or suggest another. No messaging — just a plan.
               </p>
             </div>
             <Link
@@ -316,11 +316,14 @@ export default async function DashboardPage() {
             {mutualClicks.map((m) => (
               <li
                 key={m.otherProfileId}
-                className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--rose)] p-4 text-[color:var(--surface-deep)] hard-shadow-sm"
+                className="flex flex-col rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--rose)] p-4 text-[color:var(--surface-deep)] hard-shadow-sm"
               >
+                <p className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] opacity-80">
+                  ✨ You both clicked
+                </p>
                 <Link
                   href={`/profile/${m.otherProfileId}`}
-                  className="font-display text-2xl font-light leading-tight hover:underline"
+                  className="font-display mt-1 text-2xl font-semibold leading-tight hover:underline"
                 >
                   You + {m.otherDisplayName}
                 </Link>
@@ -333,28 +336,35 @@ export default async function DashboardPage() {
                     >
                       {m.bothGoingEventTitle ?? "the same event"}
                     </Link>
-                    !
-                  </p>
-                ) : m.suggestedEventSlug ? (
-                  <p className="mt-2 text-sm font-bold leading-6">
-                    {m.suggestedByOther
-                      ? `${m.otherDisplayName} suggested: `
-                      : "Suggested for you both: "}
-                    <Link
-                      href={`/events/${m.suggestedEventSlug}`}
-                      className="underline decoration-2 underline-offset-4 hover:opacity-80"
-                    >
-                      {m.suggestedEventTitle ?? "an event"}
-                    </Link>
+                    . See you there.
                   </p>
                 ) : (
-                  <p className="mt-2 text-sm font-semibold leading-6">
-                    Pick a plan together from your{" "}
-                    <Link href="/proposals" className="underline decoration-2 underline-offset-4">
-                      proposals
+                  <>
+                    <p className="mt-2 text-sm font-semibold leading-6">
+                      {m.suggestedEventSlug ? (
+                        <>
+                          {m.suggestedByOther
+                            ? `${m.otherDisplayName} suggested `
+                            : "Your suggested plan: "}
+                          <Link
+                            href={`/events/${m.suggestedEventSlug}`}
+                            className="font-bold underline decoration-2 underline-offset-4 hover:opacity-80"
+                          >
+                            {m.suggestedEventTitle ?? "an event"}
+                          </Link>
+                          . Confirm it together — or suggest another.
+                        </>
+                      ) : (
+                        "No plan yet — pick one together, or suggest your own."
+                      )}
+                    </p>
+                    <Link
+                      href="/proposals"
+                      className="mt-3 inline-flex w-fit items-center rounded-full border-2 border-[color:var(--surface-deep)] bg-[color:var(--champagne)] px-4 py-2 text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
+                    >
+                      {m.suggestedEventSlug ? "Confirm or suggest another →" : "Pick a plan →"}
                     </Link>
-                    .
-                  </p>
+                  </>
                 )}
               </li>
             ))}
@@ -367,7 +377,7 @@ export default async function DashboardPage() {
           <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
             After your events
           </p>
-          <h2 className="font-display mt-2 text-3xl font-light leading-tight sm:text-4xl">
+          <h2 className="font-display mt-2 text-3xl font-semibold leading-tight tracking-[-0.02em] sm:text-4xl">
             Who did you click with?
           </h2>
           <div className="mt-6 grid gap-5 lg:grid-cols-2">
@@ -384,7 +394,7 @@ export default async function DashboardPage() {
             <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
               Upcoming
             </p>
-            <h2 className="font-display mt-2 text-3xl font-light leading-tight sm:text-4xl">
+            <h2 className="font-display mt-2 text-3xl font-semibold leading-tight tracking-[-0.02em] sm:text-4xl">
               {upcoming.length > 0 ? "Plans on your calendar." : "No RSVPs yet."}
             </h2>
           </div>
@@ -435,7 +445,7 @@ export default async function DashboardPage() {
               <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
                 Waitlisted
               </p>
-              <h2 className="font-display mt-2 text-3xl font-light leading-tight sm:text-4xl">
+              <h2 className="font-display mt-2 text-3xl font-semibold leading-tight tracking-[-0.02em] sm:text-4xl">
                 On the waitlist.
               </h2>
               <p className="mt-1 max-w-xl text-sm font-semibold leading-6 text-[color:var(--mauve)]">
@@ -465,7 +475,7 @@ export default async function DashboardPage() {
             <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
               Saved
             </p>
-            <h2 className="font-display mt-2 text-3xl font-light leading-tight sm:text-4xl">
+            <h2 className="font-display mt-2 text-3xl font-semibold leading-tight tracking-[-0.02em] sm:text-4xl">
               Plans you bookmarked.
             </h2>
           </div>
@@ -510,7 +520,7 @@ export default async function DashboardPage() {
               <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
                 {personalized.fallback ? "Editorial picks" : "For you"}
               </p>
-              <h2 className="font-display mt-2 text-3xl font-light leading-tight sm:text-4xl">
+              <h2 className="font-display mt-2 text-3xl font-semibold leading-tight tracking-[-0.02em] sm:text-4xl">
                 Suggested events.
               </h2>
               <p className="mt-1 max-w-xl text-sm font-semibold leading-6 text-[color:var(--mauve)]">

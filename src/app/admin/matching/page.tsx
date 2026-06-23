@@ -46,7 +46,7 @@ export default async function AdminMatchingPage() {
         <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.2em] text-[color:var(--rose)]">
           Discovery
         </span>
-        <h1 className="font-display mt-2 text-4xl font-light leading-tight tracking-tight sm:text-5xl">
+        <h1 className="font-display mt-2 text-4xl font-bold leading-tight tracking-[-0.025em] sm:text-5xl">
           Matching Formula
         </h1>
         <p className="mt-3 max-w-2xl text-sm font-medium leading-6 text-[color:var(--mauve)]">

@@ -166,7 +166,7 @@ export default async function AdminMerchantDetailPage({
             >
               {merchant.verificationStatus}
             </span>
-            <h1 className="font-display mt-3 text-4xl font-light leading-[1.05] tracking-tight sm:text-5xl">
+            <h1 className="font-display mt-3 text-4xl font-bold leading-[1.05] tracking-[-0.025em] sm:text-5xl">
               {merchant.businessName}
             </h1>
             {merchant.tradingName && merchant.tradingName !== merchant.businessName ? (
@@ -276,7 +276,7 @@ export default async function AdminMerchantDetailPage({
             <div className="min-w-0">
               <Link
                 href={`/admin/members/${merchant.owner.id}`}
-                className="font-display text-2xl font-light leading-tight tracking-tight text-[color:var(--ink)] hover:underline"
+                className="font-display text-2xl font-semibold leading-tight tracking-tight text-[color:var(--ink)] hover:underline"
               >
                 {merchant.owner.displayName}
               </Link>
@@ -570,7 +570,7 @@ function Metric({
       <p className="font-mono text-[0.6rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
         {label}
       </p>
-      <p className="mt-1 font-display text-xl font-light tracking-tight text-[color:var(--ink)]">
+      <p className="mt-1 font-display text-xl font-semibold tracking-tight text-[color:var(--ink)]">
         {value}
       </p>
       {hint ? (

@@ -25,14 +25,13 @@ export default function AdminError({
 
   return (
     <section className="paper-noise relative overflow-hidden rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-6 py-16 text-center text-[color:var(--ink)] hard-shadow sm:px-10">
-      <div className="confetti-field absolute inset-0 opacity-20" aria-hidden />
       <div className="relative z-10 mx-auto max-w-xl">
-        <span className="sticker sticker--rose tilt-r-2 inline-flex">
+        <span className="sticker sticker--rose tilt-r-1 inline-flex">
           <span className="size-2 rounded-full bg-[color:var(--surface-deep)]" />
           Something broke
         </span>
-        <h1 className="font-display mt-6 text-4xl font-light leading-[0.96] tracking-tight sm:text-5xl">
-          This panel didn’t <span className="italic">click</span>.
+        <h1 className="font-display mt-6 text-4xl font-bold leading-[0.96] tracking-[-0.025em] sm:text-5xl">
+          This panel didn’t <span className="text-[color:var(--coral)]">click</span>.
         </h1>
         <p className="mt-5 text-base font-medium leading-7 text-[color:var(--mauve)]">
           An error interrupted this admin view. The rest of the portal is fine —

@@ -135,7 +135,7 @@ export function AdminTagManager({ tags }: { tags: AdminTagRow[] }) {
         onSubmit={submit}
         className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-5 hard-shadow-sm"
       >
-        <h3 className="font-display text-3xl font-light leading-none text-[color:var(--ink)]">
+        <h3 className="font-display text-3xl font-semibold leading-none text-[color:var(--ink)]">
           {editingId ? "Edit tag" : "Add or update tag"}
         </h3>
         {editingId ? (

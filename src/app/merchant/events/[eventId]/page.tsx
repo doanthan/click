@@ -128,7 +128,7 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
             <Pill tone={event.status === "Pending" ? "rose" : "peach"}>
               {event.status}
             </Pill>
-            <h1 className="font-display mt-4 text-4xl font-light leading-[0.96] tracking-tight sm:text-5xl">
+            <h1 className="font-display mt-4 text-4xl font-bold leading-[0.96] tracking-[-0.025em] sm:text-5xl">
               {event.title}
             </h1>
             <p className="mt-3 text-sm font-bold leading-6 text-[color:var(--mauve)]">
@@ -224,7 +224,7 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
               <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
                 Confirmed attendees
               </p>
-              <h2 className="font-display mt-2 text-3xl font-light leading-tight">
+              <h2 className="font-display mt-2 text-3xl font-semibold leading-tight">
                 {confirmedAttendees.length === 0
                   ? "No confirmed attendees yet."
                   : `${confirmedAttendees.length} ${confirmedAttendees.length === 1 ? "person" : "people"} confirmed.`}
@@ -250,7 +250,7 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
                 <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
                   +1 guests
                 </p>
-                <h2 className="font-display mt-2 text-3xl font-light leading-tight">
+                <h2 className="font-display mt-2 text-3xl font-semibold leading-tight">
                   {event.guestSeats} +1 {event.guestSeats === 1 ? "seat" : "seats"} on
                   confirmed bookings
                 </h2>
@@ -283,7 +283,7 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
                 <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
                   Awaiting payment
                 </p>
-                <h2 className="font-display mt-2 text-3xl font-light leading-tight">
+                <h2 className="font-display mt-2 text-3xl font-semibold leading-tight">
                   {awaitingPaymentAttendees.length}{" "}
                   {awaitingPaymentAttendees.length === 1 ? "seat" : "seats"}{" "}
                   reserved, payment in progress
@@ -307,7 +307,7 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
                 <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
                   Waitlist
                 </p>
-                <h2 className="font-display mt-2 text-3xl font-light leading-tight">
+                <h2 className="font-display mt-2 text-3xl font-semibold leading-tight">
                   {waitlistedAttendees.length}{" "}
                   {waitlistedAttendees.length === 1 ? "person" : "people"}{" "}
                   waiting

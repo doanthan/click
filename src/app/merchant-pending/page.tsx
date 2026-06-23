@@ -31,7 +31,7 @@ function AccessDenied({
           <span className="size-2 rounded-full bg-[color:var(--punch)]" />
           No access
         </span>
-        <h1 className="font-display mt-6 text-4xl font-light leading-[0.98] tracking-tight sm:text-5xl">
+        <h1 className="font-display mt-6 text-4xl font-semibold leading-[0.98] tracking-[-0.025em] sm:text-5xl">
           {showHostCta ? "Want to host on Click?" : "You don’t have access to this page."}
         </h1>
         <p className="mt-5 text-base font-medium leading-7 text-[color:var(--mauve)]">
@@ -97,14 +97,14 @@ export default async function MerchantPendingPage() {
             {rejected ? "Application needs another look" : "Application received"}
           </span>
 
-          <h1 className="font-display mt-6 text-5xl font-light leading-[0.96] tracking-tight sm:text-6xl">
+          <h1 className="font-display mt-6 text-5xl font-bold leading-[0.96] tracking-[-0.025em] sm:text-6xl">
             {rejected ? (
               <>
-                We need to <span className="italic text-[color:var(--rose)]">talk it over</span>.
+                We need to <span className="text-[color:var(--coral)]">talk it over</span>.
               </>
             ) : (
               <>
-                Thanks, <span className="italic">we’re on it</span>.
+                Thanks, <span className="text-[color:var(--coral)]">we’re on it</span>.
               </>
             )}
           </h1>
@@ -116,7 +116,7 @@ export default async function MerchantPendingPage() {
           </p>
 
           <p className="mt-6 text-sm font-bold text-[color:var(--ink)]">
-            Application for: <span className="font-display italic">{merchantProfile.business_name}</span>
+            Application for: <span className="font-display font-semibold text-[color:var(--purple)]">{merchantProfile.business_name}</span>
           </p>
           <p className="mt-1 text-sm font-medium text-[color:var(--mauve)]">
             Contact email on file: {merchantProfile.contact_email}
@@ -145,7 +145,7 @@ export default async function MerchantPendingPage() {
           <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
             While you wait
           </p>
-          <h2 className="mt-3 font-display text-3xl font-light leading-tight">
+          <h2 className="mt-3 font-display text-3xl font-semibold leading-tight tracking-[-0.02em]">
             Get your first event live in 15 minutes — prep these now.
           </h2>
 

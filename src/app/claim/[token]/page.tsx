@@ -8,9 +8,11 @@ type PageProps = {
   searchParams?: Promise<{ action?: string }>;
 };
 
+const SANS = '"Schibsted Grotesk", system-ui, -apple-system, sans-serif';
+
 const SHELL: React.CSSProperties = {
   minHeight: "100vh",
-  background: "#FFFCF9",
+  background: "var(--champagne)",
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
@@ -20,40 +22,41 @@ const SHELL: React.CSSProperties = {
 const CARD: React.CSSProperties = {
   width: "100%",
   maxWidth: 480,
-  background: "#fff",
-  border: "1px solid #EDE3F0",
+  background: "var(--cream)",
+  border: "1px solid var(--line)",
   borderRadius: 16,
   padding: "40px 32px",
 };
 
 const KICKER: React.CSSProperties = {
-  fontFamily: "Inter, system-ui, sans-serif",
+  fontFamily: SANS,
   fontSize: 11,
   fontWeight: 600,
   letterSpacing: "0.18em",
   textTransform: "uppercase",
-  color: "#6D435A",
+  color: "var(--mauve)",
   margin: "0 0 12px",
 };
 
 const TITLE: React.CSSProperties = {
-  fontFamily: "Fraunces, Georgia, serif",
+  fontFamily: SANS,
   fontSize: 28,
-  fontWeight: 600,
-  color: "#1F1226",
+  fontWeight: 700,
+  letterSpacing: "-0.02em",
+  color: "var(--ink)",
   lineHeight: 1.2,
   margin: "0 0 12px",
 };
 
 const BODY: React.CSSProperties = {
-  fontFamily: "Inter, system-ui, sans-serif",
+  fontFamily: SANS,
   fontSize: 16,
-  color: "#3A2E42",
+  color: "var(--ink)",
   lineHeight: 1.6,
   margin: "0 0 24px",
 };
 
-const LINK: React.CSSProperties = { color: "#340068", fontWeight: 600 };
+const LINK: React.CSSProperties = { color: "var(--purple)", fontWeight: 600 };
 
 function Frame({ children }: { children: React.ReactNode }) {
   return (
@@ -153,9 +156,9 @@ export default async function ClaimPage({ params, searchParams }: PageProps) {
             href={`/register?callbackUrl=${encodeURIComponent(`/claim/${token}`)}`}
             style={{
               display: "inline-block",
-              background: "#340068",
-              color: "#fff",
-              fontFamily: "Inter, system-ui, sans-serif",
+              background: "var(--purple)",
+              color: "var(--cream)",
+              fontFamily: SANS,
               fontSize: 16,
               fontWeight: 600,
               padding: "14px 28px",
@@ -165,13 +168,13 @@ export default async function ClaimPage({ params, searchParams }: PageProps) {
           >
             Create your account to claim →
           </Link>
-          <p style={{ ...BODY, fontSize: 14, color: "#6D435A", margin: "16px 0 0" }}>
+          <p style={{ ...BODY, fontSize: 14, color: "var(--mauve)", margin: "16px 0 0" }}>
             Already on Click? <Link href={`/login?callbackUrl=${encodeURIComponent(`/claim/${token}`)}`} style={LINK}>Sign in</Link> to claim, then come back to this link.
           </p>
         </div>
       )}
 
-      <p style={{ ...BODY, fontSize: 13, color: "#6D435A", margin: "28px 0 0", textAlign: "center" }}>
+      <p style={{ ...BODY, fontSize: 13, color: "var(--mauve)", margin: "28px 0 0", textAlign: "center" }}>
         Can&apos;t make it?{" "}
         <Link href={`/claim/${token}?action=release`} style={LINK}>Let {purchaser} know</Link>
         {" · "}

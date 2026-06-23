@@ -45,7 +45,7 @@ export default async function DiscoverPage() {
               <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
                 {personalized.fallback ? "Editorial picks" : "For you"}
               </p>
-              <h2 className="font-display mt-2 text-3xl font-light leading-tight sm:text-4xl">
+              <h2 className="font-display mt-2 text-3xl font-semibold leading-tight tracking-[-0.02em] sm:text-4xl">
                 {personalized.heading}
               </h2>
               <p className="mt-1 text-sm font-medium text-[color:var(--mauve)]">

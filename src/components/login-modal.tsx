@@ -220,31 +220,25 @@ export function LoginModal({
           </span>
           <h2
             id="login-modal-title"
-            className="font-display mt-4 text-3xl font-light leading-[1] tracking-tight text-[color:var(--ink)] sm:text-4xl"
+            className="font-display mt-4 text-3xl font-bold leading-[1] tracking-[-0.025em] text-[color:var(--ink)] sm:text-4xl"
           >
             {isSignup ? (
               isHostSignup ? (
                 <>
                   You run the room.{" "}
-                  <span className="italic">
-                    <span className="peach-highlight">We bring the people.</span>
-                  </span>
+                  <span className="text-[color:var(--coral)]">We bring the people.</span>
                 </>
               ) : (
                 <>
                   Make your{" "}
-                  <span className="italic">
-                    <span className="peach-highlight">first Click</span>
-                  </span>
+                  <span className="text-[color:var(--coral)]">first Click</span>
                   .
                 </>
               )
             ) : (
               <>
                 Get into your{" "}
-                <span className="italic">
-                  <span className="peach-highlight">real-world</span>
-                </span>{" "}
+                <span className="text-[color:var(--coral)]">real-world</span>{" "}
                 plans.
               </>
             )}

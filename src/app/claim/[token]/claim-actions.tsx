@@ -5,6 +5,8 @@ import { useState } from "react";
 
 type Action = "claim" | "release" | "remove";
 
+const SANS = '"Schibsted Grotesk", system-ui, -apple-system, sans-serif';
+
 const LABELS: Record<Action, { idle: string; busy: string; doneTitle: string; doneBody: string }> = {
   claim: {
     idle: "Claim my spot",
@@ -77,10 +79,10 @@ export function GuestClaimActions({
   if (state === "done") {
     return (
       <div style={{ textAlign: "center" }}>
-        <p style={{ fontFamily: "Fraunces, Georgia, serif", fontSize: 22, color: "#1F1226", margin: "0 0 8px" }}>
+        <p style={{ fontFamily: SANS, fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em", color: "var(--ink)", margin: "0 0 8px" }}>
           {copy.doneTitle}
         </p>
-        <p style={{ fontFamily: "Inter, system-ui, sans-serif", fontSize: 15, color: "#6D435A", margin: 0 }}>
+        <p style={{ fontFamily: SANS, fontSize: 15, color: "var(--mauve)", margin: 0 }}>
           {copy.doneBody}
         </p>
       </div>
@@ -97,9 +99,9 @@ export function GuestClaimActions({
           appearance: "none",
           border: "none",
           cursor: state === "busy" ? "default" : "pointer",
-          background: action === "remove" ? "#6D435A" : "#340068",
-          color: "#fff",
-          fontFamily: "Inter, system-ui, sans-serif",
+          background: action === "remove" ? "var(--surface-deep)" : "var(--purple)",
+          color: "var(--cream)",
+          fontFamily: SANS,
           fontSize: 16,
           fontWeight: 600,
           padding: "14px 28px",
@@ -110,7 +112,7 @@ export function GuestClaimActions({
         {state === "busy" ? copy.busy : copy.idle}
       </button>
       {state === "error" && message ? (
-        <p style={{ fontFamily: "Inter, system-ui, sans-serif", fontSize: 14, color: "#B42318", margin: "14px 0 0" }}>
+        <p style={{ fontFamily: SANS, fontSize: 14, color: "var(--coral)", margin: "14px 0 0" }}>
           {message}
         </p>
       ) : null}

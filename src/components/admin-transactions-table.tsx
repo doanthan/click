@@ -285,11 +285,11 @@ export function AdminTransactionsTable({
     <div className="space-y-6">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <span className="sticker sticker--cream tilt-l-2 inline-flex">
+          <span className="sticker sticker--cream tilt-l-1 inline-flex">
             <span className="size-2 rounded-full bg-[color:var(--surface-deep)]" />
             Transactions
           </span>
-          <h1 className="font-display mt-3 text-4xl font-light leading-tight text-[color:var(--ink)]">
+          <h1 className="font-display mt-3 text-4xl font-bold leading-tight tracking-[-0.025em] text-[color:var(--ink)]">
             Stripe ledger
           </h1>
           <p className="mt-1 max-w-xl text-sm font-medium text-[color:var(--mauve)]">
@@ -315,10 +315,10 @@ export function AdminTransactionsTable({
       </header>
 
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Kpi label="Gross volume (filtered)" value={formatMoney(kpis.gross, "AUD")} note={`${kpis.paidCount} paid txns`} tilt="tilt-r-2" tone="peach" />
-        <Kpi label="Refunded" value={formatMoney(kpis.refunded, "AUD")} note="includes partial refunds" tilt="tilt-l-2" tone="rose" />
-        <Kpi label="Net to merchants" value={formatMoney(kpis.net, "AUD")} note="gross minus refunds" tilt="tilt-r-2" tone="cream" />
-        <Kpi label="Platform fees" value={formatMoney(kpis.fees, "AUD")} note="from Stripe Connect" tilt="tilt-l-2" tone="champagne" />
+        <Kpi label="Gross volume (filtered)" value={formatMoney(kpis.gross, "AUD")} note={`${kpis.paidCount} paid txns`} tilt="tilt-r-1" tone="peach" />
+        <Kpi label="Refunded" value={formatMoney(kpis.refunded, "AUD")} note="includes partial refunds" tilt="tilt-l-1" tone="rose" />
+        <Kpi label="Net to merchants" value={formatMoney(kpis.net, "AUD")} note="gross minus refunds" tilt="tilt-r-1" tone="cream" />
+        <Kpi label="Platform fees" value={formatMoney(kpis.fees, "AUD")} note="from Stripe Connect" tilt="tilt-l-1" tone="champagne" />
       </section>
 
       <nav className="flex gap-2">
@@ -538,7 +538,7 @@ function Kpi({
       <p className="text-[0.65rem] font-black uppercase tracking-[0.18em] text-[color:var(--surface-deep)]/80">
         {label}
       </p>
-      <p className="font-display mt-1 text-2xl font-light leading-tight text-[color:var(--ink)]">
+      <p className="font-display mt-1 text-2xl font-semibold leading-tight text-[color:var(--ink)]">
         {value}
       </p>
       <p className="mt-1 text-[0.7rem] font-bold text-[color:var(--surface-deep)]/80">{note}</p>

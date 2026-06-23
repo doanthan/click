@@ -27,14 +27,13 @@ export default async function TablesPage() {
   return (
     <main className="paper-noise min-h-screen overflow-hidden text-[color:var(--ink)]">
       <section className="relative overflow-hidden bg-[color:var(--champagne)] px-4 pb-12 pt-16 sm:px-6 lg:pt-20">
-        <div className="confetti-field absolute inset-0 opacity-20" aria-hidden />
         <div className="relative z-10 mx-auto max-w-6xl">
           <span className="sticker sticker--peach tilt-l-2 inline-flex">
             <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
             {isLive ? "Live schema" : "Schema reference"}
           </span>
-          <h1 className="font-display mt-6 max-w-4xl text-5xl font-light leading-[0.94] tracking-tight sm:text-7xl">
-            The <span className="italic"><span className="peach-highlight">tables</span></span>{" "}
+          <h1 className="font-display mt-6 max-w-4xl text-5xl font-bold leading-[0.94] tracking-[-0.025em] sm:text-7xl">
+            The <span className="text-[color:var(--coral)]">tables</span>{" "}
             behind Click.
           </h1>
           <p className="mt-6 max-w-3xl text-base font-medium leading-7 text-[color:var(--mauve)] sm:text-lg">

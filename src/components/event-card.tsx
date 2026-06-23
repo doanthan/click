@@ -80,7 +80,7 @@ export function EventCard({
         <p className="font-mono break-words text-xs font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
           {event.suburb} · {event.category} · {event.price}
         </p>
-        <h3 className="font-display mt-2 line-clamp-2 text-[1.65rem] font-light leading-[1.04] text-[color:var(--ink)]">
+        <h3 className="font-display mt-2 line-clamp-2 text-[1.65rem] font-semibold leading-[1.04] tracking-[-0.025em] text-[color:var(--ink)]">
           <Link href={`/events/${event.id}`} className="hover:underline">
             {event.title}
           </Link>

@@ -194,7 +194,7 @@ export default function SupabaseLogDrawer() {
                 <p className="font-mono text-[0.62rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
                   Supabase
                 </p>
-                <h2 className="font-display text-2xl font-light leading-tight">
+                <h2 className="font-display text-2xl font-semibold leading-tight tracking-[-0.02em]">
                   Table log
                 </h2>
               </div>

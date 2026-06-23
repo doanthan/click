@@ -208,7 +208,7 @@ export default async function AlgoPage({
         <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.2em] text-[color:var(--rose)]">
           Under the hood · v2
         </span>
-        <h1 className="font-display mt-2 text-4xl font-light leading-tight tracking-tight sm:text-5xl">
+        <h1 className="font-display mt-2 text-4xl font-bold leading-tight tracking-[-0.025em] sm:text-5xl">
           The matching engine
         </h1>
         <p className="mt-4 text-base font-medium leading-7 text-[color:var(--mauve)]">
@@ -272,7 +272,7 @@ export default async function AlgoPage({
 
       {/* Feature-store health — the data the engine runs on */}
       <section className="mt-8">
-        <h2 className="font-display text-3xl font-light tracking-tight">The data it runs on</h2>
+        <h2 className="font-display text-3xl font-semibold tracking-tight">The data it runs on</h2>
         <p className="mt-2 max-w-2xl text-sm font-medium text-[color:var(--mauve)]">
           Live coverage of the <code className="font-mono text-[color:var(--ink)]">user_features</code> store
           and <code className="font-mono text-[color:var(--ink)]">events.sub_tags</code>. Matching quality
@@ -373,7 +373,7 @@ export default async function AlgoPage({
           <section className="mt-6 grid gap-6 lg:grid-cols-2">
             <div className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-6 hard-shadow-sm">
               <div className="flex items-center justify-between">
-                <h3 className="font-display text-2xl font-light">{selfName}</h3>
+                <h3 className="font-display text-2xl font-semibold">{selfName}</h3>
                 <span className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--ink)] px-3 py-1 font-mono text-[0.62rem] font-black uppercase tracking-wide text-[color:var(--on-deep)]">
                   {cohort}
                 </span>
@@ -486,7 +486,7 @@ export default async function AlgoPage({
 
       {/* All cohort weights — see how the levers differ per cohort */}
       <section className="mt-12">
-        <h2 className="font-display text-3xl font-light tracking-tight">Per-cohort weights</h2>
+        <h2 className="font-display text-3xl font-semibold tracking-tight">Per-cohort weights</h2>
         <p className="mt-2 max-w-2xl text-sm font-medium text-[color:var(--mauve)]">
           The core of v2: each cohort gets its own weight vector (user↔user features shown). This is
           why a new-to-Sydney member and a habitual local rank the same candidate differently.
@@ -599,7 +599,7 @@ export default async function AlgoPage({
 
       {/* Levers */}
       <section className="mt-12">
-        <h2 className="font-display text-3xl font-light tracking-tight">Levers we can pull</h2>
+        <h2 className="font-display text-3xl font-semibold tracking-tight">Levers we can pull</h2>
         <p className="mt-2 max-w-2xl text-sm font-medium text-[color:var(--mauve)]">
           v2&apos;s control points and where they live. Most are code-level today; the weights become
           data-driven once the training pipeline ships (Month 2+).
@@ -646,7 +646,7 @@ export default async function AlgoPage({
 
       {/* Recommendations — computed from the live feature-store coverage above */}
       <section className="mt-12">
-        <h2 className="font-display text-3xl font-light tracking-tight">
+        <h2 className="font-display text-3xl font-semibold tracking-tight">
           How to improve it
         </h2>
         <p className="mt-2 max-w-2xl text-sm font-medium text-[color:var(--mauve)]">
@@ -683,7 +683,7 @@ export default async function AlgoPage({
 
       {/* Pipeline */}
       <section className="mt-12">
-        <h2 className="font-display text-3xl font-light tracking-tight">How it runs</h2>
+        <h2 className="font-display text-3xl font-semibold tracking-tight">How it runs</h2>
         <ol className="mt-5 grid gap-3 sm:grid-cols-3">
           {[
             { n: "1", t: "Feature store", b: "Nightly batch turns RSVPs, clicks, tags + quiz into user_features + events.sub_tags, and assigns each member a cohort." },
@@ -720,7 +720,7 @@ function StatCard({
       <p className="font-mono text-[0.58rem] uppercase tracking-wide text-[color:var(--mauve)]">
         {label}
       </p>
-      <p className="mt-1 font-display text-3xl font-light text-[color:var(--ink)]">{value}</p>
+      <p className="mt-1 font-display text-3xl font-semibold text-[color:var(--ink)]">{value}</p>
       <p className="mt-0.5 text-[0.68rem] font-medium text-[color:var(--mauve)]">{sub}</p>
       {percent !== undefined && (
         <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[color:var(--champagne)]">

@@ -44,7 +44,7 @@ export default async function BookmarksPage() {
         </span>
         <div className="mt-6 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h1 className="font-display text-5xl font-light leading-[0.96] tracking-tight sm:text-6xl">
+            <h1 className="font-display text-5xl font-bold leading-[0.96] tracking-[-0.025em] sm:text-6xl">
               Bookmarked plans.
             </h1>
             <p className="mt-3 max-w-2xl text-base font-medium leading-7 text-[color:var(--mauve)]">
@@ -69,7 +69,7 @@ export default async function BookmarksPage() {
           </div>
         ) : (
           <div className="mt-8 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-8 text-center">
-            <p className="font-display text-3xl font-light leading-tight">
+            <p className="font-display text-3xl font-semibold leading-tight tracking-[-0.02em]">
               No bookmarks yet.
             </p>
             <p className="mt-3 text-sm font-semibold leading-6 text-[color:var(--mauve)]">

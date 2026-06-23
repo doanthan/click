@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Click — 06 · Soft Minimal</title>
+<meta name="description" content="Meet people through something you already care about. A calm local calendar of events worth showing up to." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700;800&family=Hanken+Grotesk:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  /* ============================================================
+     CLICK — Concept 06 · "Soft Minimal" (illustrated)
+     Direction: airy, premium, restrained. White/cream canvas, big
+     calm illustrations, generous whitespace, hairline dividers, a
+     single coral accent (lime only as a whisper). Schibsted Grotesk.
+     Canonical palette.
+     ============================================================ */
+  :root {
+    --purple:#3B2F81; --lavender:#C8B8F8; --lav-bg:#F1ECFB;
+    --cream:#F9F6F0; --paper:#FFFFFF;
+    --coral:#E8674C; --coral-d:#d3543b; --sage:#5B8C6E; --teal:#2E7D8A;
+    --ink:#1C1830; --slate:#6B6580; --mist:#E8E4F0;
+    --lime:#D6F24E;
+    --line:rgba(28,24,48,0.10); --line-s:rgba(28,24,48,0.07);
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html { scroll-behavior:smooth; -webkit-text-size-adjust:100%; }
+  body {
+    background:var(--cream); color:var(--ink);
+    font-family:"Hanken Grotesk", system-ui, sans-serif; line-height:1.65;
+    -webkit-font-smoothing:antialiased; overflow-x:hidden;
+  }
+  ::selection { background:var(--lavender); color:var(--ink); }
+  a { color:inherit; text-decoration:none; }
+  img { display:block; max-width:100%; }
+  .wrap { max-width:1080px; margin:0 auto; padding:0 28px; }
+  .disp { font-family:"Schibsted Grotesk", system-ui, sans-serif; font-weight:700; letter-spacing:-0.025em; line-height:1.04; }
+
+  .eyebrow { font-family:"Schibsted Grotesk"; font-weight:600; font-size:0.74rem; letter-spacing:0.18em; text-transform:uppercase; color:var(--coral); display:inline-flex; align-items:center; gap:9px; }
+  .eyebrow::before { content:""; width:22px; height:1px; background:var(--coral); }
+  .eyebrow.c { color:var(--slate); } .eyebrow.c::before { background:var(--slate); }
+
+  .btn { display:inline-flex; align-items:center; gap:9px; height:52px; padding:0 26px; border-radius:999px; font-family:"Schibsted Grotesk"; font-weight:600; font-size:0.98rem; transition:transform .25s cubic-bezier(.2,.7,.2,1), background-color .2s, box-shadow .25s; }
+  .btn .arr { transition:transform .25s cubic-bezier(.2,.7,.2,1); } .btn:hover .arr { transform:translateX(4px); }
+  .btn--coral { background:var(--coral); color:#fff; box-shadow:0 1px 2px rgba(28,24,48,.1), 0 16px 30px -16px rgba(232,103,76,.55); }
+  .btn--coral:hover { transform:translateY(-2px); background:var(--coral-d); }
+  .btn--ink { background:var(--ink); color:var(--cream); }
+  .btn--ink:hover { transform:translateY(-2px); background:#000; }
+  .textlink { display:inline-flex; align-items:center; gap:8px; font-family:"Schibsted Grotesk"; font-weight:600; color:var(--ink); border-bottom:1.5px solid var(--coral); padding-bottom:2px; }
+  .textlink .arr { transition:transform .25s cubic-bezier(.2,.7,.2,1); } .textlink:hover .arr { transform:translateX(3px); }
+
+  /* nav */
+  .nav-shell { position:sticky; top:0; z-index:60; background:color-mix(in srgb, var(--cream) 86%, transparent); backdrop-filter:blur(10px); }
+  .nav { display:flex; align-items:center; justify-content:space-between; height:78px; border-bottom:1px solid var(--line-s); }
+  .brand { font-family:"Schibsted Grotesk"; font-weight:800; font-size:1.4rem; letter-spacing:-0.03em; color:var(--ink); display:inline-flex; align-items:baseline; }
+  .brand .pd { width:7px; height:7px; border-radius:999px; background:var(--coral); margin-left:3px; align-self:flex-end; margin-bottom:5px; }
+  .nav .links { display:flex; gap:34px; align-items:center; }
+  .nav .links a { font-size:0.92rem; font-weight:500; color:var(--slate); }
+  .nav .links a:hover { color:var(--ink); }
+  .nav .cta { font-family:"Schibsted Grotesk"; font-weight:600; font-size:0.92rem; color:var(--ink); display:inline-flex; align-items:center; gap:7px; }
+  .nav .cta .arr { transition:transform .2s; } .nav .cta:hover .arr { transform:translateX(3px); }
+
+  /* hero */
+  .hero { padding:74px 0 64px; }
+  .hero-grid { display:grid; grid-template-columns:1.06fr 0.94fr; gap:56px; align-items:center; }
+  .hero h1 { font-size:clamp(2.7rem,5.8vw,4.5rem); color:var(--ink); margin-top:24px; }
+  .hero h1 .lav { color:var(--purple); }
+  .hero h1 .u { background:linear-gradient(transparent 66%, var(--lavender) 66% 94%, transparent 94%); }
+  .hero .lead { margin-top:24px; max-width:30rem; font-size:1.16rem; color:var(--slate); }
+  .hero .actions { margin-top:34px; display:flex; gap:20px; align-items:center; flex-wrap:wrap; }
+  .hero-art { display:grid; place-items:center; position:relative; }
+  .hero-art img { width:92%; max-width:440px; }
+  .hero-art .q { position:absolute; bottom:6%; left:0; background:var(--paper); border:1px solid var(--line); border-radius:16px; padding:13px 17px; box-shadow:0 20px 40px -24px rgba(28,24,48,.4); max-width:15rem; }
+  .hero-art .q .t { font-family:"Schibsted Grotesk"; font-weight:600; font-size:0.92rem; color:var(--ink); }
+  .hero-art .q .s { font-size:0.74rem; color:var(--slate); margin-top:3px; }
+  .hero-art .dot { position:absolute; width:10px; height:10px; border-radius:999px; background:var(--coral); top:14%; right:12%; }
+
+  /* inline stat row (hairline separated, no blocks) */
+  .statrow { margin-top:8px; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+  .statrow .inner { display:grid; grid-template-columns:repeat(3,1fr); }
+  .statrow .s { padding:30px 8px; text-align:center; border-right:1px solid var(--line-s); }
+  .statrow .s:last-child { border-right:0; }
+  .statrow .n { font-family:"Schibsted Grotesk"; font-weight:700; font-size:2.6rem; letter-spacing:-0.03em; color:var(--ink); line-height:1; }
+  .statrow .l { font-size:0.86rem; color:var(--slate); margin-top:8px; }
+
+  /* sections */
+  .sec { padding:88px 0; }
+  .sec-h { max-width:38rem; } .sec-h.center { margin:0 auto; text-align:center; }
+  .sec-h h2 { font-family:"Schibsted Grotesk"; font-weight:700; font-size:clamp(2rem,4.2vw,3rem); letter-spacing:-0.025em; color:var(--ink); margin-top:14px; line-height:1.06; }
+  .sec-h h2 .lav { color:var(--purple); }
+  .sec-h p { margin-top:14px; color:var(--slate); font-size:1.06rem; }
+
+  /* feel — borderless airy grid */
+  .feel { display:grid; grid-template-columns:repeat(3,1fr); gap:48px 40px; margin-top:56px; }
+  .fcell { transition:transform .3s cubic-bezier(.2,.7,.2,1); }
+  .fcell:hover { transform:translateY(-5px); }
+  .fcell .art { height:150px; display:grid; place-items:center; margin-bottom:18px; }
+  .fcell .art img { max-height:150px; width:auto; }
+  .fcell h3 { font-family:"Schibsted Grotesk"; font-weight:700; font-size:1.3rem; letter-spacing:-0.02em; color:var(--ink); }
+  .fcell p { color:var(--slate); margin-top:8px; font-size:0.96rem; }
+  .fcell .more { margin-top:12px; font-family:"Schibsted Grotesk"; font-weight:600; font-size:0.9rem; color:var(--coral); display:inline-flex; gap:7px; }
+  .fcell .more .arr { transition:transform .25s cubic-bezier(.2,.7,.2,1); } .fcell:hover .more .arr { transform:translateX(4px); }
+
+  /* how it works — alternating airy rows */
+  .how { margin-top:30px; }
+  .hrow { display:grid; grid-template-columns:0.9fr 1.1fr; gap:48px; align-items:center; padding:54px 0; border-top:1px solid var(--line); }
+  .hrow:last-child { border-bottom:1px solid var(--line); }
+  .hrow .art { display:grid; place-items:center; }
+  .hrow .art img { max-width:300px; width:84%; }
+  .hrow.flip .art { order:2; }
+  .hrow .n { font-family:"Schibsted Grotesk"; font-weight:700; font-size:1rem; color:var(--coral); }
+  .hrow h3 { font-family:"Schibsted Grotesk"; font-weight:700; font-size:1.8rem; letter-spacing:-0.02em; color:var(--ink); margin-top:8px; }
+  .hrow p { color:var(--slate); margin-top:10px; font-size:1.04rem; max-width:26rem; }
+
+  /* the click — centered statement */
+  .click { text-align:center; max-width:48rem; margin:0 auto; }
+  .click .art { display:grid; place-items:center; margin-bottom:8px; } .click .art img { max-width:300px; width:70%; }
+  .click h2 { font-family:"Schibsted Grotesk"; font-weight:700; font-size:clamp(1.9rem,4vw,2.7rem); letter-spacing:-0.025em; color:var(--ink); }
+  .click .defs { margin-top:30px; display:grid; grid-template-columns:repeat(3,1fr); gap:28px; text-align:left; }
+  .click .defs .d { padding-top:18px; border-top:2px solid var(--lavender); }
+  .click .defs .num { font-family:"Schibsted Grotesk"; font-weight:700; color:var(--purple); }
+  .click .defs p { margin-top:6px; color:var(--slate); font-size:0.98rem; }
+  .click .pull { margin-top:34px; font-family:"Schibsted Grotesk"; font-weight:600; font-style:italic; font-size:1.3rem; color:var(--coral); }
+
+  /* groups — clean list */
+  .glist { margin-top:40px; border-top:1px solid var(--line); }
+  .grow { display:grid; grid-template-columns:auto 1fr auto auto; gap:24px; align-items:center; padding:24px 6px; border-bottom:1px solid var(--line); transition:padding-left .3s cubic-bezier(.2,.7,.2,1), background-color .3s; }
+  .grow:hover { padding-left:18px; background:var(--lav-bg); }
+  .grow .mini-av { display:flex; } .grow .mini-av .a { width:38px; height:38px; border-radius:999px; overflow:hidden; border:2px solid var(--cream); margin-left:-12px; background:var(--lav-bg); } .grow .mini-av .a:first-child { margin-left:0; } .grow .mini-av .a img { width:100%; height:100%; object-fit:cover; transform:scale(1.55); object-position:center 16%; }
+  .grow h3 { font-family:"Schibsted Grotesk"; font-weight:700; font-size:1.25rem; letter-spacing:-0.02em; color:var(--ink); }
+  .grow .cad { font-size:0.84rem; color:var(--slate); }
+  .grow .gm { font-size:0.88rem; color:var(--slate); white-space:nowrap; }
+  .grow .go { font-family:"Schibsted Grotesk"; font-weight:600; font-size:0.86rem; color:var(--coral); opacity:0; transition:opacity .25s; white-space:nowrap; }
+  .grow:hover .go { opacity:1; }
+
+  /* closing */
+  .closing { text-align:center; padding:30px 0 10px; }
+  .closing .art { display:grid; place-items:center; margin-bottom:14px; } .closing .art img { max-width:240px; width:60%; }
+  .closing h2 { font-family:"Schibsted Grotesk"; font-weight:700; font-size:clamp(2.4rem,6vw,4.4rem); letter-spacing:-0.03em; color:var(--ink); line-height:1.02; }
+  .closing h2 .lav { color:var(--purple); }
+  .closing p { color:var(--slate); margin-top:16px; }
+  .closing .actions { margin-top:30px; display:flex; gap:18px; justify-content:center; align-items:center; flex-wrap:wrap; }
+
+  footer { padding:70px 0 56px; }
+  .foot-grid { display:flex; flex-wrap:wrap; gap:16px; justify-content:space-between; align-items:center; border-top:1px solid var(--line); padding-top:30px; }
+  .foot-grid .mono { font-size:0.78rem; color:var(--slate); }
+
+  @keyframes rise { from{opacity:0; transform:translateY(18px);} to{opacity:1; transform:translateY(0);} }
+  .rise { animation:rise .9s cubic-bezier(.2,.7,.2,1) both; }
+  .d1{animation-delay:.05s;}.d2{animation-delay:.15s;}.d3{animation-delay:.25s;}.d4{animation-delay:.35s;}.d5{animation-delay:.45s;}
+
+  @media (max-width:920px){
+    .hero-grid{ grid-template-columns:1fr; gap:30px; } .hero-art{ max-width:420px; margin:0 auto; }
+    .feel{ grid-template-columns:1fr 1fr; gap:40px 32px; }
+    .hrow, .hrow.flip{ grid-template-columns:1fr; gap:22px; } .hrow .art, .hrow.flip .art{ order:0; max-width:240px; }
+    .click .defs{ grid-template-columns:1fr; gap:18px; }
+    .grow{ grid-template-columns:auto 1fr auto; } .grow .go{ display:none; }
+    .nav .links{ display:none; }
+  }
+  @media (max-width:560px){ .statrow .inner{ grid-template-columns:1fr; } .statrow .s{ border-right:0; border-bottom:1px solid var(--line-s); } .feel{ grid-template-columns:1fr; } }
+  @media (prefers-reduced-motion: reduce){ *{ animation:none !important; transition:none !important; scroll-behavior:auto !important; } }
+</style>
+</head>
+<body>
+
+<div class="nav-shell">
+  <div class="wrap nav">
+    <a class="brand" href="#">Click<span class="pd"></span></a>
+    <nav class="links"><a href="#feel">Browse</a><a href="#how">How it works</a><a href="#groups">Groups</a><a href="#">For hosts</a></nav>
+    <a class="cta" href="#">Start exploring <span class="arr">&rarr;</span></a>
+  </div>
+</div>
+
+<main>
+  <!-- HERO -->
+  <section class="hero">
+    <div class="wrap hero-grid">
+      <div>
+        <span class="eyebrow rise d1">Now in Sydney</span>
+        <h1 class="disp rise d2">Meet people through something you <span class="lav">already</span> <span class="u">care about</span>.</h1>
+        <p class="lead rise d3">Click is a calm local calendar of dinners, walks, workshops and run clubs where the conversation already has a reason. Show up twice. Become familiar.</p>
+        <div class="actions rise d4">
+          <a class="btn btn--coral" href="#">Start exploring <span class="arr">&rarr;</span></a>
+          <a class="textlink" href="#feel">Browse events <span class="arr">&rarr;</span></a>
+        </div>
+      </div>
+      <div class="hero-art rise d3">
+        <span class="dot"></span>
+        <img src="illus/digital-nomad.svg" alt="A person relaxed, browsing what is on nearby" />
+        <div class="q">
+          <div class="t">&ldquo;We clicked over the bread course.&rdquo;</div>
+          <div class="s">Newtown · 2nd time</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- STAT ROW -->
+  <div class="statrow rise d5">
+    <div class="wrap"><div class="inner">
+      <div class="s"><div class="n">27</div><div class="l">weekly hosts in Sydney</div></div>
+      <div class="s"><div class="n">8,400</div><div class="l">people showing up monthly</div></div>
+      <div class="s"><div class="n">94%</div><div class="l">would come back again</div></div>
+    </div></div>
+  </div>
+
+  <!-- BROWSE BY FEEL -->
+  <section class="sec" id="feel">
+    <div class="wrap">
+      <div class="sec-h">
+        <span class="eyebrow c">Pick a vibe</span>
+        <h2 class="disp">Browse by <span class="lav">feel</span>, not by category.</h2>
+        <p>Click events are organised by how a night feels, not by the topic on the flyer.</p>
+      </div>
+      <div class="feel">
+        <div class="fcell"><div class="art"><img src="illus/romantic-dinner.svg" alt=""/></div><h3>Slow tables</h3><p>Small dinners, one long table, a host who actually hosts.</p><a class="more" href="#">Learn more <span class="arr">&rarr;</span></a></div>
+        <div class="fcell"><div class="art"><img src="illus/woman-running.svg" alt=""/></div><h3>Move &amp; meet</h3><p>Walk, run, climb, swim. The talk is a side effect of the activity.</p><a class="more" href="#">Learn more <span class="arr">&rarr;</span></a></div>
+        <div class="fcell"><div class="art"><img src="illus/painting.svg" alt=""/></div><h3>Hands on</h3><p>Pottery, cooking, life drawing. A shared output, an excuse to chat.</p><a class="more" href="#">Learn more <span class="arr">&rarr;</span></a></div>
+        <div class="fcell"><div class="art"><img src="illus/meditation-outdoors.svg" alt=""/></div><h3>Group rituals</h3><p>Weekly run clubs, monthly book nights. Familiar by week three.</p><a class="more" href="#">Learn more <span class="arr">&rarr;</span></a></div>
+        <div class="fcell"><div class="art"><img src="illus/studying.svg" alt=""/></div><h3>Career rooms</h3><p>Pivots, founders, freelancers. Quiet enough to actually talk.</p><a class="more" href="#">Learn more <span class="arr">&rarr;</span></a></div>
+        <div class="fcell"><div class="art"><img src="illus/microphone.svg" alt=""/></div><h3>Talks &amp; screenings</h3><p>Low pressure rooms where you do not need to be on. Listen first.</p><a class="more" href="#">Learn more <span class="arr">&rarr;</span></a></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- HOW IT WORKS -->
+  <section class="sec" id="how" style="padding-top:0;">
+    <div class="wrap">
+      <div class="sec-h center">
+        <span class="eyebrow c" style="justify-content:center;">How Click works</span>
+        <h2 class="disp">Three steps, no swiping.</h2>
+      </div>
+      <div class="how">
+        <div class="hrow">
+          <div class="art"><img src="illus/woman-with-a-laptop.svg" alt=""/></div>
+          <div><div class="n">Step 1</div><h3>Pick a real thing to do</h3><p>Browse a local calendar of dinners, walks, classes and clubs happening near you this week.</p></div>
+        </div>
+        <div class="hrow flip">
+          <div class="art"><img src="illus/shaking-hands.svg" alt=""/></div>
+          <div><div class="n">Step 2</div><h3>Show up. Talk happens</h3><p>The activity carries the conversation, so you do not have to manufacture it.</p></div>
+        </div>
+        <div class="hrow">
+          <div class="art"><img src="illus/man-holding-a-heart.svg" alt=""/></div>
+          <div><div class="n">Step 3</div><h3>Click if you clicked</h3><p>Privately tap someone you would see again. A mutual click unlocks a second event.</p></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- THE CLICK -->
+  <section class="sec" style="padding-top:0;">
+    <div class="wrap">
+      <div class="click">
+        <div class="art"><img src="illus/online-dating.svg" alt="Two people matching after meeting in person"/></div>
+        <span class="eyebrow c" style="justify-content:center;">What is a click?</span>
+        <h2 class="disp" style="margin-top:14px;">A quiet, mutual yes.</h2>
+        <div class="defs">
+          <div class="d"><span class="num">01</span><p>A burst of yes between two people in the same room.</p></div>
+          <div class="d"><span class="num">02</span><p>The reason a stranger becomes a friend.</p></div>
+          <div class="d"><span class="num">03</span><p>To privately tap someone you would see again. No mutual, and nobody knows.</p></div>
+        </div>
+        <p class="pull">Clicks happen in person.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- GROUPS -->
+  <section class="sec" id="groups" style="padding-top:0;">
+    <div class="wrap">
+      <div class="sec-h">
+        <span class="eyebrow c">Join once, show up twice</span>
+        <h2 class="disp">Groups that get <span class="lav">familiar</span>.</h2>
+      </div>
+      <div class="glist">
+        <a class="grow" href="#"><div class="mini-av"><span class="a"><img src="illus/man-avatar.svg" alt=""/></span><span class="a"><img src="illus/woman-with-curly-hair-avatar.svg" alt=""/></span></div><div><h3>Tuesday Trail Runners</h3><div class="cad">Weekly · Centennial Park</div></div><span class="gm">312 members</span><span class="go">Join &rarr;</span></a>
+        <a class="grow" href="#"><div class="mini-av"><span class="a"><img src="illus/woman-with-long-hair-avatar.svg" alt=""/></span><span class="a"><img src="illus/man-with-short-hair-avatar.svg" alt=""/></span></div><div><h3>Newtown Book Night</h3><div class="cad">Monthly · Inner West</div></div><span class="gm">148 members</span><span class="go">Join &rarr;</span></a>
+        <a class="grow" href="#"><div class="mini-av"><span class="a"><img src="illus/man-with-long-hair-avatar.svg" alt=""/></span><span class="a"><img src="illus/woman-with-short-hair-avatar.svg" alt=""/></span></div><div><h3>Bondi Cold Swim</h3><div class="cad">Weekly · Eastern Beaches</div></div><span class="gm">204 members</span><span class="go">Join &rarr;</span></a>
+        <a class="grow" href="#"><div class="mini-av"><span class="a"><img src="illus/man-avatar.svg" alt=""/></span><span class="a"><img src="illus/woman-with-curly-hair-avatar.svg" alt=""/></span></div><div><h3>Founders Coffee</h3><div class="cad">Fortnightly · Surry Hills</div></div><span class="gm">96 members</span><span class="go">Join &rarr;</span></a>
+      </div>
+    </div>
+  </section>
+
+  <!-- CLOSING -->
+  <section class="sec" style="padding-top:0;">
+    <div class="wrap">
+      <div class="closing">
+        <div class="art"><img src="illus/celebrating-business-success.svg" alt=""/></div>
+        <span class="eyebrow" style="justify-content:center;">Ready when you are</span>
+        <h2 class="disp" style="margin-top:16px;">Pick a room. Show up.<br /><span class="lav">See what clicks.</span></h2>
+        <p>It takes 30 seconds to find your first one. The rest happens in person.</p>
+        <div class="actions">
+          <a class="btn btn--coral" href="#">Start exploring <span class="arr">&rarr;</span></a>
+          <a class="textlink" href="#">Take the life quiz <span class="arr">&rarr;</span></a>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap"><div class="foot-grid">
+    <a class="brand" href="#" style="font-size:1.3rem;">Click<span class="pd"></span></a>
+    <span class="mono">Concept 06 · Soft Minimal · canonical palette · art: recolored Popsy SVGs</span>
+  </div></div>
+</footer>
+
+</body>
+</html>

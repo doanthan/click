@@ -4,7 +4,7 @@
 // adds branded chrome, status-specific colour, and a next-step CTA.
 
 import { escapeHtml, eyebrow, heroTitle, paragraph, renderButton, renderShell, renderCallout } from "./chrome";
-import { FONT_SANS, INK, MAUVE, PEACH, ROSE } from "./tokens";
+import { CREAM, FONT_SANS, INK, MAUVE, PEACH, ROSE } from "./tokens";
 
 export type MerchantVerificationStatus = "approved" | "rejected" | "suspended";
 
@@ -37,12 +37,12 @@ export function buildMerchantVerificationStatusEmail(d: MerchantVerificationStat
   const text = [`Hi ${d.merchantFirstName},`, leadLine, d.dashboardUrl].join("\n\n");
 
   const statusChipBg = d.status === "approved" ? PEACH : d.status === "suspended" ? ROSE : INK;
-  const statusChipFg = d.status === "approved" ? INK : "#FFFFFF";
+  const statusChipFg = d.status === "approved" ? INK : CREAM;
   const statusLabel = d.status === "approved" ? "Approved" : d.status === "suspended" ? "Suspended" : "Needs review";
 
   const heroByStatus =
     d.status === "approved"
-      ? `<em style="color:${ROSE};font-style:italic;">Approved.</em> Welcome aboard, ${escapeHtml(d.merchantFirstName)}.`
+      ? `<span style="color:${ROSE};">Approved.</span> Welcome aboard, ${escapeHtml(d.merchantFirstName)}.`
       : d.status === "suspended"
         ? `We've paused ${escapeHtml(d.businessName)}.`
         : `${escapeHtml(d.businessName)} needs another look.`;

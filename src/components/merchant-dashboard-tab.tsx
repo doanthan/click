@@ -467,7 +467,7 @@ function WelcomeToClick({ businessName }: { businessName: string }) {
       <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
         ✷ Welcome to Click
       </span>
-      <h2 className="font-display mt-3 text-3xl font-light leading-[1.04] text-[color:var(--ink)] sm:text-4xl">
+      <h2 className="font-display mt-3 text-3xl font-semibold leading-[1.04] text-[color:var(--ink)] sm:text-4xl">
         You&apos;re in, {businessName}.
       </h2>
       <p className="mt-4 max-w-prose text-sm font-medium leading-6 text-[color:var(--mauve)]">
@@ -486,11 +486,11 @@ function WelcomeToClick({ businessName }: { businessName: string }) {
             key={step.n}
             className="flex gap-4 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-5 hard-shadow-sm"
           >
-            <span className="font-display shrink-0 text-3xl font-light leading-none text-[color:var(--rose)]">
+            <span className="font-display shrink-0 text-3xl font-semibold leading-none text-[color:var(--coral)]">
               {step.n}
             </span>
             <div className="min-w-0">
-              <p className="font-display text-xl font-light leading-tight text-[color:var(--ink)]">
+              <p className="font-display text-xl font-semibold leading-tight text-[color:var(--ink)]">
                 {step.title}
               </p>
               <p className="mt-1.5 text-sm font-medium leading-6 text-[color:var(--mauve)]">

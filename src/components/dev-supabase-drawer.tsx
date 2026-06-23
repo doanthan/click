@@ -319,7 +319,7 @@ export default function DevSupabaseDrawer() {
                 <p className="font-mono text-[0.62rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
                   Dev mode · live
                 </p>
-                <h2 className="font-display text-2xl font-light leading-tight">
+                <h2 className="font-display text-2xl font-semibold leading-tight tracking-[-0.025em]">
                   {tab === "writes" ? "Supabase writes" : "Email log"}
                 </h2>
               </div>
@@ -896,7 +896,7 @@ function EmailPreviewModal({
           </button>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-hidden bg-[#FFFCF9]">
+        <div className="min-h-0 flex-1 overflow-hidden bg-[color:var(--cream)]">
           <iframe
             title={`${entry.template} preview`}
             srcDoc={entry.html}
@@ -905,7 +905,7 @@ function EmailPreviewModal({
               width: "100%",
               height: "70vh",
               border: "none",
-              background: "#FFFCF9",
+              background: "var(--cream)",
               display: "block",
             }}
           />

@@ -76,7 +76,7 @@ export function TabHeader({
     <div className="flex flex-wrap items-start justify-between gap-4">
       <div className="max-w-2xl">
         <p className="eyebrow">{eyebrow}</p>
-        <h1 className="font-display mt-2 text-3xl font-light leading-tight tracking-tight text-[color:var(--ink)] sm:text-4xl">
+        <h1 className="font-display mt-2 text-3xl font-bold leading-tight tracking-[-0.025em] text-[color:var(--ink)] sm:text-4xl">
           {title}
         </h1>
         {body ? (

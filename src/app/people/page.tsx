@@ -40,8 +40,8 @@ export default async function PeoplePage() {
           <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
           People
         </span>
-        <h1 className="mt-6 font-display text-5xl font-light leading-[0.96] tracking-tight sm:text-6xl">
-          People you might <span className="italic">click</span> with.
+        <h1 className="mt-6 font-display text-5xl font-bold leading-[0.96] tracking-[-0.025em] sm:text-6xl">
+          People you might <span className="text-[color:var(--coral)]">click</span> with.
         </h1>
         <p className="mt-3 max-w-2xl text-base font-medium leading-7 text-[color:var(--mauve)]">
           Ranked by shared interest tags. Click on someone privately — nobody
@@ -55,7 +55,7 @@ export default async function PeoplePage() {
                 <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em]">
                   Mutual Click
                 </p>
-                <h2 className="font-display mt-2 text-3xl font-light leading-tight">
+                <h2 className="font-display mt-2 text-3xl font-semibold leading-tight tracking-[-0.02em]">
                   You both tapped.
                 </h2>
               </div>
@@ -75,7 +75,7 @@ export default async function PeoplePage() {
                 >
                   <Link
                     href={`/profile/${m.otherProfileId}`}
-                    className="font-display text-2xl font-light leading-tight hover:text-[color:var(--rose)]"
+                    className="font-display text-2xl font-semibold leading-tight tracking-[-0.02em] hover:text-[color:var(--rose)]"
                   >
                     {m.otherDisplayName}
                   </Link>
@@ -104,7 +104,7 @@ export default async function PeoplePage() {
             <h2 className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
               Suggested · {Math.min(suggested.length, 6)}
             </h2>
-            <h3 className="mt-2 font-display text-3xl font-light leading-tight sm:text-4xl">
+            <h3 className="mt-2 font-display text-3xl font-semibold leading-tight tracking-[-0.02em] sm:text-4xl">
               People sorted by overlap.
             </h3>
             {suggested.length > 0 ? (

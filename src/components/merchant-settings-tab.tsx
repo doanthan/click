@@ -66,7 +66,7 @@ export function SettingsTab({
               key={f.q}
               className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-5 hard-shadow-sm"
             >
-              <p className="font-display text-xl font-light leading-tight">
+              <p className="font-display text-xl font-semibold leading-tight">
                 {f.q}
               </p>
               <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">

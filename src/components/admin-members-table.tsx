@@ -16,6 +16,7 @@ import {
   unsuspendMemberAction,
 } from "@/app/admin/actions";
 import type { AdminMemberRow } from "@/lib/event-repository";
+import { formatIntent } from "@/lib/click-data";
 import { EmptyState } from "@/components/empty-state";
 
 type RoleFilter = "all" | "attendee" | "merchant" | "admin";
@@ -312,7 +313,7 @@ function MemberRow({
         ) : null}
         {member.intents.length > 0 ? (
           <p className="mt-1 text-[0.7rem] font-bold uppercase tracking-wider text-[color:var(--mauve)]/80">
-            {member.intents.join(" · ")}
+            {member.intents.map(formatIntent).join(" · ")}
           </p>
         ) : null}
         <EventCards events={member.events} onSelect={onEventSelect} />

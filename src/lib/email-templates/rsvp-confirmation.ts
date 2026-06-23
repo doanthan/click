@@ -1,10 +1,10 @@
 // RSVP confirmed (to attendee) — fires when a user lands `status: 'confirmed'`
 // in `registerForEvent()`. Voice + meta-grid card ported from
-// `emails/rsvp-attendee.html`. Includes a social-signal flourish (italic
-// Fraunces line under the ticket meta) when present.
+// `emails/rsvp-attendee.html`. Includes a social-signal flourish (a Schibsted
+// Grotesk line under the ticket meta) when present.
 
 import { escapeHtml, eyebrow, heroTitle, paragraph, renderButton, renderEventCard, renderNoteList, renderShell } from "./chrome";
-import { FONT_SANS, FONT_SERIF, INK, MAUVE, ROSE, TEXT_BODY } from "./tokens";
+import { FONT_SANS, FONT_SERIF, INK, LINE_SOFT, MAUVE, ROSE, TEXT_BODY } from "./tokens";
 
 export type RsvpConfirmationData = {
   firstName: string;
@@ -44,7 +44,7 @@ export function buildRsvpConfirmationEmail(d: RsvpConfirmationData) {
     <tr>
       <td class="px-gutter" style="padding:40px 40px 8px 40px;">
         ${eyebrow("You're going")}
-        ${heroTitle(`See you at <em style="color:${ROSE};font-style:italic;">${escapeHtml(d.eventTitle)}</em>, ${escapeHtml(d.firstName)}.`)}
+        ${heroTitle(`See you at <span style="color:${ROSE};">${escapeHtml(d.eventTitle)}</span>, ${escapeHtml(d.firstName)}.`)}
         ${paragraph("Your spot is held. Add it to your calendar so it survives the week, and we'll send a small nudge the day before.")}
       </td>
     </tr>
@@ -59,7 +59,7 @@ export function buildRsvpConfirmationEmail(d: RsvpConfirmationData) {
     })}
     ${
       d.socialSignalLabel
-        ? `<tr><td class="px-gutter" style="padding:0 40px;"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-top:1px solid #EDE3F0;margin-top:-1px;"><tr><td style="padding:16px 0 0 0;"><p style="margin:0;font:400 14px/1.5 ${FONT_SANS};color:${INK};"><span style="font:italic 400 14px/1 ${FONT_SERIF};">${escapeHtml(d.socialSignalLabel)}</span></p></td></tr></table></td></tr>`
+        ? `<tr><td class="px-gutter" style="padding:0 40px;"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-top:1px solid ${LINE_SOFT};margin-top:-1px;"><tr><td style="padding:16px 0 0 0;"><p style="margin:0;font:400 14px/1.5 ${FONT_SANS};color:${INK};"><span style="font:600 14px/1 ${FONT_SERIF};">${escapeHtml(d.socialSignalLabel)}</span></p></td></tr></table></td></tr>`
         : ""
     }
     <tr>

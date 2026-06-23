@@ -243,7 +243,7 @@ export default function TestCasesBoard() {
           <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
             Editable in Supabase
           </p>
-          <h2 className="mt-1 font-display text-4xl font-light leading-[0.96] tracking-tight">
+          <h2 className="mt-1 font-display text-4xl font-semibold leading-[0.96] tracking-[-0.025em]">
             Test cases
           </h2>
         </div>
@@ -382,7 +382,7 @@ function TestCaseCard({
     <article className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-5 hard-shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="font-display text-2xl font-light leading-tight text-[color:var(--ink)]">
+          <h3 className="font-display text-2xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)]">
             {testCase.title}
           </h3>
           {testCase.description ? (

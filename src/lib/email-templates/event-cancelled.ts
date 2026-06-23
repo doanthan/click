@@ -28,7 +28,7 @@ export function buildEventCancelledEmail(d: EventCancelledData) {
     <tr>
       <td class="px-gutter" style="padding:40px 40px 8px 40px;">
         ${eyebrow("Plans changed")}
-        ${heroTitle(`<em style="color:${ROSE};font-style:italic;">${escapeHtml(d.eventTitle)}</em> isn't happening.`)}
+        ${heroTitle(`<span style="color:${ROSE};">${escapeHtml(d.eventTitle)}</span> isn't happening.`)}
         ${paragraph(
           `Hi ${escapeHtml(d.firstName)} &mdash; the host has cancelled this event. Any payment/refund handling will follow the merchant policy for this event.${d.eventHostName ? ` Questions reach <strong>${escapeHtml(d.eventHostName)}</strong> fastest if you reply to this email.` : ""}`,
         )}

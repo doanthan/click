@@ -26,7 +26,7 @@ export function AdminPageHeader({
         <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.2em] text-[color:var(--rose)]">
           {eyebrow}
         </span>
-        <h1 className="font-display mt-2 text-4xl font-light leading-tight tracking-tight text-[color:var(--ink)] sm:text-5xl">
+        <h1 className="font-display mt-2 text-4xl font-bold leading-tight tracking-[-0.025em] text-[color:var(--ink)] sm:text-5xl">
           {title}
         </h1>
         {description ? (

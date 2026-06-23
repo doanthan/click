@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useActionState } from "react";
 import { Pill } from "./click-ui";
 import { clickPersonAction } from "@/app/people/actions";
+import { formatIntent } from "@/lib/click-data";
 import type { SuggestedPerson } from "@/lib/event-repository";
 
 export function ClickWithSomeoneUserCard({ person }: { person: SuggestedPerson }) {
@@ -40,7 +41,7 @@ export function ClickWithSomeoneUserCard({ person }: { person: SuggestedPerson }
         <div className="min-w-0 flex-1">
           <Link
             href={`/profile/${person.id}`}
-            className="font-display block truncate text-2xl font-light leading-tight text-[color:var(--ink)] hover:text-[color:var(--rose)]"
+            className="font-display block truncate text-2xl font-semibold leading-tight text-[color:var(--ink)] hover:text-[color:var(--rose)]"
           >
             {person.displayName}
           </Link>
@@ -53,7 +54,7 @@ export function ClickWithSomeoneUserCard({ person }: { person: SuggestedPerson }
 
       <div className="mt-4 flex flex-wrap gap-1.5">
         {person.intents.slice(0, 3).map((intent) => (
-          <Pill key={intent} tone="cream">{intent}</Pill>
+          <Pill key={intent} tone="cream">{formatIntent(intent)}</Pill>
         ))}
       </div>
 
@@ -94,7 +95,7 @@ export function ClickWithSomeoneUserCard({ person }: { person: SuggestedPerson }
           role="status"
           className={`mt-3 rounded-xl border-2 border-[color:var(--line)] px-3 py-2 text-xs font-bold leading-5 ${
             state.ok
-              ? "bg-[color:var(--mint,#d7f0e0)] text-[color:var(--surface-deep)]"
+              ? "bg-[color:var(--lav-bg)] text-[color:var(--surface-deep)]"
               : "bg-[color:var(--cream)] text-[color:var(--mauve)]"
           }`}
         >

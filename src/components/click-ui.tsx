@@ -12,10 +12,10 @@ export function SectionIntro({ eyebrow, title, body, invert = false }: SectionIn
   return (
     <div className="grid gap-6 lg:grid-cols-[0.78fr_1.22fr] lg:items-end">
       <div>
-        <p className={`eyebrow ${invert ? "!text-[color:var(--peach)]" : ""}`}>{eyebrow}</p>
+        <p className={`eyebrow ${invert ? "!text-[color:var(--lavender)]" : ""}`}>{eyebrow}</p>
         <h2
-          className={`font-display mt-3 text-5xl font-light leading-[0.95] tracking-tight sm:text-6xl ${
-            invert ? "text-[color:var(--champagne)]" : "text-[color:var(--ink)]"
+          className={`font-display mt-4 text-[2.4rem] font-bold leading-[1.04] tracking-[-0.025em] sm:text-[3rem] ${
+            invert ? "text-[color:var(--on-deep)]" : "text-[color:var(--ink)]"
           }`}
         >
           {title}
@@ -46,8 +46,7 @@ export function PageHero({ eyebrow, title, body, children }: PageHeroProps) {
   // not a full-screen marquee. Side content (children) gets equal weight on
   // wide screens; without it, the text column stays narrow and readable.
   return (
-    <section className="relative overflow-hidden border-b-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-6 sm:px-6 sm:py-8">
-      <div className="paper-noise pointer-events-none absolute inset-0 opacity-80" />
+    <section className="relative overflow-hidden border-b border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-7 sm:px-6 sm:py-10">
       <div
         className={`relative z-10 mx-auto grid max-w-7xl gap-6 ${
           children ? "lg:grid-cols-[0.9fr_1.1fr] lg:items-end" : ""
@@ -55,10 +54,10 @@ export function PageHero({ eyebrow, title, body, children }: PageHeroProps) {
       >
         <div>
           <p className="eyebrow">{eyebrow}</p>
-          <h1 className="font-display mt-2 text-3xl font-light italic leading-[0.98] tracking-tight text-[color:var(--ink)] sm:text-4xl">
+          <h1 className="font-display mt-3 text-[2rem] font-bold leading-[1.02] tracking-[-0.025em] text-[color:var(--ink)] sm:text-[2.6rem]">
             {title}
           </h1>
-          <p className="mt-3 max-w-2xl text-sm font-medium leading-6 text-[color:var(--mauve)] sm:text-base">
+          <p className="mt-3 max-w-2xl text-sm leading-7 text-[color:var(--mauve)] sm:text-base">
             {body}
           </p>
         </div>
@@ -85,7 +84,7 @@ export function MetricCard({ label, value, tone = "peach" }: { label: string; va
   return (
     <article className={`rounded-2xl border ${palette} hard-shadow-sm p-5`}>
       <p className="font-condensed text-[0.72rem] font-semibold uppercase tracking-[0.16em] opacity-70">{label}</p>
-      <p className="font-display mt-2 text-5xl font-light leading-none tracking-[-0.02em] tabular-nums">{value}</p>
+      <p className="font-display mt-2 text-5xl font-bold leading-none tracking-[-0.03em] tabular-nums">{value}</p>
     </article>
   );
 }
@@ -118,7 +117,7 @@ export function InfoCard({
     <article className="group relative rounded-2xl border border-[color:var(--line)] bg-[color:var(--cream)] p-6 transition-all duration-300 hover:-translate-y-1 hard-shadow-sm hover:hard-shadow">
       <span className={`block h-1.5 w-12 rounded-full ${accentBar}`} />
       {eyebrow ? <p className="eyebrow mt-5">{eyebrow}</p> : null}
-      <h3 className="font-display mt-3 text-3xl font-light leading-[1.04] tracking-[-0.02em] text-[color:var(--ink)]">
+      <h3 className="font-display mt-3 text-[1.7rem] font-bold leading-[1.08] tracking-[-0.025em] text-[color:var(--ink)]">
         {title}
       </h3>
       <p className="mt-3 text-[0.95rem] leading-7 text-[color:var(--mauve)]">{body}</p>
@@ -173,16 +172,17 @@ export function LinkButton({
   children: ReactNode;
   variant?: "primary" | "secondary" | "light" | "ink";
 }) {
-  // River button voice: solid near-black primary, ghost secondary, electric
-  // lime as the "pop" CTA (great on dark bands). Sentence-case, soft lift.
+  // Soft Minimal button voice: solid CORAL primary (the concept's hero CTA),
+  // ghost hairline secondary, deep-ink "ink", and a white "light" pill that
+  // reads cleanly on the deep aubergine bands. Sentence-case, soft lift.
   const className =
     variant === "secondary"
       ? "border border-[color:var(--line-strong)] bg-transparent text-[color:var(--ink)] hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)] hover:border-transparent"
       : variant === "light"
-        ? "bg-[color:var(--peach)] text-[color:var(--surface-deep)] hover:brightness-95 shadow-[0_1px_2px_rgba(22,24,29,0.06)]"
+        ? "bg-[color:var(--paper)] text-[color:var(--ink)] hover:bg-white shadow-[0_1px_2px_rgba(28,24,48,0.10),0_16px_30px_-16px_rgba(28,24,48,0.5)]"
         : variant === "ink"
-          ? "bg-[color:var(--surface-deep)] text-[color:var(--on-deep)] hover:bg-black shadow-[0_1px_2px_rgba(22,24,29,0.06)]"
-          : "bg-[color:var(--surface-deep)] text-[color:var(--on-deep)] hover:bg-black shadow-[0_1px_2px_rgba(22,24,29,0.06)]";
+          ? "bg-[color:var(--surface-deep)] text-[color:var(--on-deep)] hover:bg-[color:var(--ink-deep)] shadow-[0_1px_2px_rgba(28,24,48,0.10)]"
+          : "bg-[color:var(--coral)] text-white hover:bg-[color:var(--coral-deep)] shadow-[0_1px_2px_rgba(28,24,48,0.10),0_16px_30px_-16px_rgba(232,103,76,0.55)]";
 
   return (
     <Link

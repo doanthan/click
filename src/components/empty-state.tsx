@@ -57,7 +57,7 @@ export function EmptyState({
         <span className={`size-2 rounded-full ${dot}`} />
         {eyebrow}
       </span>
-      <h3 className="font-display mt-4 text-2xl font-light leading-tight tracking-tight text-[color:var(--ink)] sm:text-3xl">
+      <h3 className="font-display mt-4 text-2xl font-semibold leading-tight tracking-[-0.025em] text-[color:var(--ink)] sm:text-3xl">
         {title}
       </h3>
       {body ? (

@@ -14,10 +14,12 @@
 //
 // Ported from the static drafts at `emails/account-welcome.html`,
 // `emails/rsvp-attendee.html`, etc., swapping Inter → Manrope to match the
-// in-app body font.
+// in-app body font. Display headings use Schibsted Grotesk (a clean grotesque,
+// no serif) per the Soft Minimal concept — bold and tight, never italic.
 
 import {
   CHAMPAGNE,
+  CREAM,
   FONT_SANS,
   FONT_SERIF,
   INK,
@@ -68,7 +70,7 @@ function renderHeader({ forHosts = false, eyebrow }: RenderHeaderOptions): strin
       <td class="px-gutter" style="padding:28px 40px 20px 40px;border-bottom:1px solid ${LINE_SOFT};">
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
           <tr>
-            <td style="font:600 22px/1 ${FONT_SERIF};color:${INK};letter-spacing:-0.01em;">
+            <td style="font:700 22px/1 ${FONT_SERIF};color:${INK};letter-spacing:-0.02em;">
               Click${subBrand}
             </td>
             <td align="right" style="font:500 11px/1 ${FONT_SANS};letter-spacing:0.14em;text-transform:uppercase;color:${MAUVE};">
@@ -144,13 +146,13 @@ export function eyebrow(text: string): string {
 }
 
 /**
- * Hero heading — Fraunces, indigo, optionally with an italic rose word.
- * Pass `text` as already-HTML (interpolation safe) so callers can wrap a word
- * in `<em>` for the bubblegum-pink emphasis without losing escaping on
- * surrounding fragments.
+ * Hero heading — Schibsted Grotesk, bold + tight, ink. Pass `text` as
+ * already-HTML (interpolation safe) so callers can wrap a word in a coloured
+ * `<span>` for coral/purple emphasis without losing escaping on surrounding
+ * fragments. (No serif now, so emphasis is colour, not synthetic italic.)
  */
 export function heroTitle(html: string): string {
-  return `<h1 class="hero-title" style="margin:0 0 16px 0;font:500 34px/1.1 ${FONT_SERIF};color:${INK};letter-spacing:-0.015em;">${html}</h1>`;
+  return `<h1 class="hero-title" style="margin:0 0 16px 0;font:700 34px/1.1 ${FONT_SERIF};color:${INK};letter-spacing:-0.02em;">${html}</h1>`;
 }
 
 export type RenderButtonOpts = {
@@ -166,7 +168,7 @@ export type RenderButtonOpts = {
  */
 export function renderButton({ href, label, tone = "rose" }: RenderButtonOpts): string {
   const bg = tone === "ink" ? INK : ROSE;
-  const fg = "#FFFFFF";
+  const fg = CREAM;
   return `
     <table role="presentation" cellspacing="0" cellpadding="0" border="0">
       <tr>
@@ -271,7 +273,7 @@ export function renderEventCard(opts: RenderEventCardOpts): string {
 }
 
 /**
- * Italic "P.S." or "Heads up —" callout, Fraunces, indigo. Returns one <tr>.
+ * "P.S." or "Heads up —" callout, Schibsted Grotesk, ink. Returns one <tr>.
  */
 export function renderCallout(leadHtml: string, bodyText: string): string {
   return `
@@ -281,7 +283,7 @@ export function renderCallout(leadHtml: string, bodyText: string): string {
           <tr>
             <td style="padding:16px 18px;">
               <p style="margin:0;font:400 14px/1.55 ${FONT_SANS};color:${TEXT_BODY};">
-                <span style="font:italic 400 14px/1 ${FONT_SERIF};color:${INK};">${leadHtml}</span>
+                <span style="font:700 14px/1 ${FONT_SERIF};color:${INK};">${leadHtml}</span>
                 ${escapeHtml(bodyText)}
               </p>
             </td>
@@ -354,7 +356,7 @@ export function renderShell(opts: RenderShellOptions): string {
     <title>${escapeHtml(title)}</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
       body { margin:0; padding:0; width:100% !important; background:${CHAMPAGNE}; -webkit-text-size-adjust:100%; -ms-text-size-adjust:100%; }
       table { border-collapse:collapse; mso-table-lspace:0pt; mso-table-rspace:0pt; }

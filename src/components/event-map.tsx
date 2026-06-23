@@ -66,7 +66,7 @@ const radiusFill: LayerProps = {
   id: "radius-fill",
   type: "fill",
   paint: {
-    "fill-color": "#FF6978",
+    "fill-color": "#E8674C",
     "fill-opacity": 0.12,
   },
 };
@@ -75,7 +75,7 @@ const radiusOutline: LayerProps = {
   id: "radius-outline",
   type: "line",
   paint: {
-    "line-color": "#340068",
+    "line-color": "#3B2F81",
     "line-width": 2,
     "line-opacity": 0.7,
   },
@@ -218,7 +218,7 @@ export function EventMap({
                     </p>
                     <a
                       href={`/events/${activeEvent.id}`}
-                      className="mt-2 inline-block text-xs font-black text-[#1A73E8]"
+                      className="mt-2 inline-block text-xs font-black text-[color:var(--coral)]"
                     >
                       View event →
                     </a>
@@ -231,13 +231,13 @@ export function EventMap({
               href={mapsUrl}
               target="_blank"
               rel="noreferrer"
-              className="absolute left-3 top-3 z-10 rounded-lg border border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-2 text-xs font-black text-[#1A73E8] shadow"
+              className="absolute left-3 top-3 z-10 rounded-lg border border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-2 text-xs font-black text-[color:var(--coral)] shadow"
             >
               Open in Maps
             </a>
           </>
         ) : (
-          <div className="flex h-full flex-col items-center justify-center gap-2 bg-[#E8F2EA] px-6 text-center">
+          <div className="flex h-full flex-col items-center justify-center gap-2 bg-[color:var(--lav-bg)] px-6 text-center">
             <p className="text-sm font-black text-[color:var(--ink)]">
               Add a Mapbox public token to load the map
             </p>
@@ -250,7 +250,7 @@ export function EventMap({
               href={mapsUrl}
               target="_blank"
               rel="noreferrer"
-              className="mt-1 rounded-lg border border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-2 text-xs font-black text-[#1A73E8] shadow"
+              className="mt-1 rounded-lg border border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-2 text-xs font-black text-[color:var(--coral)] shadow"
             >
               Open in Maps
             </a>

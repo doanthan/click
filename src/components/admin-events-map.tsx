@@ -19,13 +19,13 @@ const SYDNEY = { lat: -33.8856, lng: 151.21 };
 // Hex equivalents of the brand status tones used in the table pills, so a
 // marker reads the same status at a glance on the map.
 const STATUS_HEX: Record<EventStatus, { bg: string; fg: string }> = {
-  Pending: { bg: "#FF6978", fg: "#1A1036" },
-  Live: { bg: "#FFB29B", fg: "#1A1036" },
-  Featured: { bg: "#340068", fg: "#F7E1B5" },
-  Waitlist: { bg: "#FFF1D6", fg: "#340068" },
-  Locked: { bg: "#F7E1B5", fg: "#340068" },
-  Rejected: { bg: "#8C7A9E", fg: "#FFFCF9" },
-  Cancelled: { bg: "#C9B8D6", fg: "#340068" },
+  Pending: { bg: "var(--coral)", fg: "var(--cream)" },
+  Live: { bg: "var(--lavender)", fg: "var(--ink)" },
+  Featured: { bg: "var(--purple)", fg: "var(--cream)" },
+  Waitlist: { bg: "var(--lav-bg)", fg: "var(--purple)" },
+  Locked: { bg: "var(--lime)", fg: "var(--ink)" },
+  Rejected: { bg: "var(--mauve)", fg: "var(--cream)" },
+  Cancelled: { bg: "var(--line-strong)", fg: "var(--ink)" },
 };
 
 const popupDateFormatter = new Intl.DateTimeFormat("en-AU", {
@@ -168,7 +168,7 @@ export function AdminEventsMap({ events }: { events: AdminEventRow[] }) {
                     href={`/events/${activeEvent.id}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="mt-2 inline-block text-xs font-black text-[#1A73E8]"
+                    className="mt-2 inline-block text-xs font-black text-[color:var(--coral)]"
                   >
                     View event ↗
                   </Link>

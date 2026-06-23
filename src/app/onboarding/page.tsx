@@ -30,8 +30,8 @@ export default async function OnboardingPage() {
             <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
             Set up your profile
           </span>
-          <h1 className="font-display mt-6 text-5xl font-light leading-[0.96] tracking-tight">
-            A few quick taps. <span className="italic">No quiz.</span>
+          <h1 className="font-display mt-6 text-5xl font-bold leading-[0.96] tracking-[-0.025em]">
+            A few quick taps. <span className="text-[color:var(--coral)]">No quiz.</span>
           </h1>
           <p className="mt-6 max-w-xl text-base font-medium leading-7 text-[color:var(--mauve)]">
             Everything&apos;s on one page. Skip anything optional — you can polish it

@@ -444,8 +444,8 @@ export default async function TestPage() {
           </nav>
         </div>
         <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
-          <h1 className="font-display text-5xl font-light leading-[0.96] tracking-tight sm:text-6xl">
-            Test by <span className="italic text-[color:var(--rose)]">who</span>.
+          <h1 className="font-display text-5xl font-bold leading-[0.96] tracking-[-0.025em] sm:text-6xl">
+            Test by <span className="text-[color:var(--coral)]">who</span>.
           </h1>
           <SupabaseLogDrawer />
         </div>
@@ -468,7 +468,7 @@ export default async function TestPage() {
               <header
                 className={`-mx-5 -mt-5 mb-5 rounded-t-3xl border-b-2 border-[color:var(--line)] px-5 py-4 ${persona.accent}`}
               >
-                <h2 className="font-display text-3xl font-light leading-tight">
+                <h2 className="font-display text-3xl font-semibold leading-tight tracking-[-0.02em]">
                   {persona.name}
                 </h2>
                 <p className="mt-1 text-sm font-medium leading-5 opacity-90">

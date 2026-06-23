@@ -53,7 +53,7 @@ export function EventsTab({
                 <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
                   Venue
                 </span>
-                <h3 className="font-display mt-2 text-2xl font-light leading-tight">
+                <h3 className="font-display mt-2 text-2xl font-semibold leading-tight">
                   {venue.locationName}
                 </h3>
                 <p className="mt-2 text-sm font-semibold text-[color:var(--mauve)]">

@@ -308,7 +308,10 @@ function DocPanel({ doc }: { doc: DocCoverage }) {
 
       {/* Architecture note */}
       {doc.architectureNotes ? (
-        <div className="rounded-2xl border-l-4 border-l-rose border border-line bg-[#fff7f4] px-4 py-3">
+        <div
+          className="rounded-2xl border-l-4 border-l-rose border border-line px-4 py-3"
+          style={{ background: "color-mix(in srgb, var(--coral) 8%, var(--cream))" }}
+        >
           <div className="eyebrow" style={{ color: "var(--rose)" }}>
             Architecture / divergence
           </div>
@@ -340,14 +343,17 @@ function DocPanel({ doc }: { doc: DocCoverage }) {
                   </p>
                 </div>
                 {r.gap ? (
-                  <div className="rounded-xl bg-[#fff7f4] px-3 py-2">
+                  <div
+                    className="rounded-xl px-3 py-2"
+                    style={{ background: "color-mix(in srgb, var(--coral) 8%, var(--cream))" }}
+                  >
                     <div className="text-[10px] font-semibold uppercase tracking-wide text-rose">
                       Gap
                     </div>
                     <p className="mt-0.5 leading-relaxed text-ink/85">{r.gap}</p>
                   </div>
                 ) : (
-                  <div className="rounded-xl bg-[#f1f8f1] px-3 py-2">
+                  <div className="rounded-xl bg-lav-bg px-3 py-2">
                     <div className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: "#15803d" }}>
                       No gap
                     </div>

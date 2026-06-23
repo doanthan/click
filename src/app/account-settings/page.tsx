@@ -57,7 +57,7 @@ export default async function AccountSettingsPage({ searchParams }: AccountSetti
           <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
           Settings
         </span>
-        <h1 className="mt-6 font-display text-5xl font-light leading-[0.96] tracking-tight sm:text-6xl">
+        <h1 className="mt-6 font-display text-5xl font-bold leading-[0.96] tracking-[-0.025em] sm:text-6xl">
           Account settings
         </h1>
         <p className="mt-3 text-base font-medium leading-7 text-[color:var(--mauve)]">
@@ -192,7 +192,7 @@ function PaymentsTab() {
         body="Used for paid event RSVPs. Card data lives in Stripe, never on Click servers."
       />
       <div className="rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--champagne)] p-6 text-center">
-        <p className="font-display text-2xl font-light leading-tight">
+        <p className="font-display text-2xl font-semibold leading-tight">
           No saved cards yet.
         </p>
         <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
@@ -251,7 +251,7 @@ function SectionHeading({
       <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
         {eyebrow}
       </span>
-      <h2 className="mt-2 font-display text-3xl font-light leading-tight">
+      <h2 className="mt-2 font-display text-3xl font-semibold leading-tight tracking-[-0.02em]">
         {title}
       </h2>
       <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">

@@ -187,7 +187,7 @@ function ConfirmDialogBody({
         </span>
         <h2
           id={titleId}
-          className="font-display mt-4 text-2xl font-light leading-tight tracking-tight text-[color:var(--ink)] sm:text-3xl"
+          className="font-display mt-4 text-2xl font-semibold leading-tight tracking-[-0.025em] text-[color:var(--ink)] sm:text-3xl"
         >
           {title}
         </h2>

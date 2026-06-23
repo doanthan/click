@@ -23,14 +23,13 @@ export default function MerchantError({
 
   return (
     <main className="paper-noise relative min-h-screen overflow-hidden px-4 py-20 text-[color:var(--ink)] sm:px-6">
-      <div className="confetti-field absolute inset-0 opacity-20" aria-hidden />
-      <section className="relative z-10 mx-auto max-w-2xl rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-10 text-center hard-shadow">
-        <span className="sticker sticker--rose tilt-l-2 inline-flex">
+      <section className="relative z-10 mx-auto max-w-2xl rounded-3xl border border-[color:var(--line)] bg-[color:var(--champagne)] p-10 text-center hard-shadow">
+        <span className="sticker sticker--rose tilt-l-1 inline-flex">
           <span className="size-2 rounded-full bg-[color:var(--ink)] pulse-ring" />
           Something didn’t click
         </span>
-        <h1 className="font-display mt-6 text-5xl font-light leading-[0.96] tracking-tight sm:text-6xl">
-          Your portal hit a <span className="italic">snag</span>.
+        <h1 className="font-display mt-6 text-5xl font-bold leading-[0.96] tracking-[-0.025em] sm:text-6xl">
+          Your portal hit a <span className="text-[color:var(--coral)]">snag</span>.
         </h1>
         <p className="mt-5 text-base font-medium leading-7 text-[color:var(--mauve)]">
           We couldn’t load this part of the merchant portal. It’s usually a

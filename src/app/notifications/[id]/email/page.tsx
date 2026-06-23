@@ -71,7 +71,7 @@ export default async function NotificationEmailPage({ params }: PageProps) {
             <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
             {email ? "Email" : "Notification"}
           </span>
-          <h1 className="mt-6 font-display text-4xl font-light leading-[0.98] tracking-tight sm:text-5xl">
+          <h1 className="mt-6 font-display text-4xl font-bold leading-[0.98] tracking-[-0.025em] sm:text-5xl">
             {email?.subject ?? notification.title}
           </h1>
           <dl className="mt-5 grid gap-2 text-sm sm:grid-cols-[6rem_1fr]">
@@ -125,14 +125,14 @@ export default async function NotificationEmailPage({ params }: PageProps) {
                   maxWidth: "100%",
                   height: 900,
                   border: "1px solid var(--line)",
-                  background: "#FFFCF9",
+                  background: "var(--cream)",
                   borderRadius: 12,
                 }}
               />
             </div>
           ) : (
             <div className="space-y-3">
-              <p className="font-display text-lg font-light leading-snug text-[color:var(--ink)]">
+              <p className="font-display text-lg font-semibold leading-snug text-[color:var(--ink)]">
                 {notification.title}
               </p>
               <p className="text-sm font-medium leading-6 text-[color:var(--mauve)]">

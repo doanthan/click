@@ -73,19 +73,21 @@ export function ProposalCard({
         <StatusBadge proposal={proposal} />
       </div>
 
-      <h3 className="font-display mt-2 text-2xl font-light leading-tight text-[color:var(--ink)]">
+      <h3 className="font-display mt-2 text-2xl font-semibold tracking-[-0.025em] leading-tight text-[color:var(--ink)]">
         {proposal.suggestedEventTitle ? (
           <>
             Suggested:{" "}
             <Link
               href={`/events/${proposal.suggestedEventSlug}`}
-              className="italic hover:text-[color:var(--rose)]"
+              className="text-[color:var(--purple)] hover:text-[color:var(--rose)]"
             >
               {proposal.suggestedEventTitle}
             </Link>
           </>
         ) : proposal.suggestionUnavailable ? (
           "That event filled up — pick another plan."
+        ) : proposal.status === "confirmed" ? (
+          <>Your plan with {proposal.otherName}.</>
         ) : (
           "Pick something to do together."
         )}
@@ -109,23 +111,40 @@ export function ProposalCard({
       ) : null}
 
       {proposal.status === "confirmed" ? (
-        <div className="mt-4 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--peach)] p-3">
-          <p className="text-sm font-bold text-[color:var(--ink)]">
-            Plan confirmed — see you there. 🎉
-          </p>
-          <p className="mt-1 text-sm font-medium text-[color:var(--ink)]/80">
-            Last step: you <em>both</em> need to RSVP to the event so your seats
-            are locked in.
-          </p>
-          {proposal.suggestedEventSlug ? (
+        proposal.suggestedEventSlug ? (
+          <div className="mt-4 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--peach)] p-3">
+            <p className="text-sm font-bold text-[color:var(--ink)]">
+              {proposal.confirmedByMe
+                ? "You're in — now lock in your seat."
+                : `${proposal.otherName} confirmed this plan 🎉`}
+            </p>
+            <p className="mt-1 text-sm font-medium text-[color:var(--ink)]/80">
+              {proposal.confirmedByMe ? (
+                <>
+                  RSVP to the event below. {proposal.otherName} needs to RSVP too —
+                  you&apos;re only going together once you <em>both</em> have a seat.
+                </>
+              ) : (
+                <>
+                  RSVP to lock in your seat. You&apos;re both going once you each
+                  have a confirmed spot.
+                </>
+              )}
+            </p>
             <Link
               href={`/events/${proposal.suggestedEventSlug}`}
               className="mt-3 inline-flex rounded-full border-2 border-[color:var(--surface-deep)] bg-[color:var(--rose)] px-4 py-2 text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
             >
               RSVP to {proposal.suggestedEventTitle ?? "the event"} →
             </Link>
-          ) : null}
-        </div>
+          </div>
+        ) : (
+          <p className="mt-4 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-3 text-sm font-medium text-[color:var(--mauve)]">
+            You and {proposal.otherName} agreed on a plan, but that event
+            isn&apos;t available anymore. Click again at a future event to make a
+            new one.
+          </p>
+        )
       ) : proposal.isExpired ? (
         <p className="mt-4 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-3 text-sm font-medium text-[color:var(--mauve)]">
           This proposal expired. Click again at a future event to reopen it.
@@ -220,7 +239,9 @@ export function ProposalCard({
 function StatusBadge({ proposal }: { proposal: ProposalEntry }) {
   const { label, tone } =
     proposal.status === "confirmed"
-      ? { label: "Confirmed", tone: "bg-[color:var(--rose)] text-[color:var(--surface-deep)]" }
+      ? proposal.suggestedEventSlug
+        ? { label: "RSVP needed", tone: "bg-[color:var(--peach)] text-[color:var(--ink)]" }
+        : { label: "Wrapped", tone: "bg-[color:var(--cream)] text-[color:var(--mauve)]" }
       : proposal.isExpired
         ? { label: "Expired", tone: "bg-[color:var(--cream)] text-[color:var(--mauve)]" }
         : { label: "Pending", tone: "bg-[color:var(--peach)] text-[color:var(--ink)]" };

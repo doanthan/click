@@ -39,7 +39,7 @@ export function AdminSystemSettings({ initial }: { initial: SystemSettings }) {
             <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
               Maintenance mode
             </p>
-            <h3 className="font-display mt-2 text-2xl font-light leading-tight">
+            <h3 className="font-display mt-2 text-2xl font-semibold leading-tight">
               Take Click offline.
             </h3>
             <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
@@ -65,7 +65,7 @@ export function AdminSystemSettings({ initial }: { initial: SystemSettings }) {
         <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
           Commission rate
         </p>
-        <h3 className="font-display mt-2 text-2xl font-light leading-tight">
+        <h3 className="font-display mt-2 text-2xl font-semibold leading-tight">
           Per paid-ticket fee
         </h3>
         <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
@@ -90,7 +90,7 @@ export function AdminSystemSettings({ initial }: { initial: SystemSettings }) {
         <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
           Booking fees %
         </p>
-        <h3 className="font-display mt-2 text-2xl font-light leading-tight">
+        <h3 className="font-display mt-2 text-2xl font-semibold leading-tight">
           Per-booking service fee
         </h3>
         <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
@@ -117,7 +117,7 @@ export function AdminSystemSettings({ initial }: { initial: SystemSettings }) {
         <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
           Marketing banner
         </p>
-        <h3 className="font-display mt-2 text-2xl font-light leading-tight">
+        <h3 className="font-display mt-2 text-2xl font-semibold leading-tight">
           Site-wide message
         </h3>
         <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">

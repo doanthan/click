@@ -40,7 +40,7 @@ export default async function AdminReportsPage() {
         <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.2em] text-[color:var(--rose)]">
           Trust &amp; Safety
         </span>
-        <h1 className="font-display mt-2 text-4xl font-light leading-tight tracking-tight sm:text-5xl">
+        <h1 className="font-display mt-2 text-4xl font-bold leading-tight tracking-[-0.025em] sm:text-5xl">
           Safety Reports
         </h1>
         <p className="mt-3 max-w-2xl text-sm font-medium leading-6 text-[color:var(--mauve)]">
@@ -120,7 +120,7 @@ function ReportCard({ report }: { report: AdminReportRow }) {
           <span className="inline-flex rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-2.5 py-0.5 text-[0.65rem] font-black uppercase tracking-wider text-[color:var(--surface-deep)]">
             {REASON_LABELS[report.reason] ?? report.reason}
           </span>
-          <h3 className="font-display mt-2 text-2xl font-light leading-tight">
+          <h3 className="font-display mt-2 text-2xl font-semibold leading-tight">
             <Link
               href={`/profile/${report.reportedId}`}
               className="hover:text-[color:var(--rose)]"

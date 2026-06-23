@@ -187,7 +187,7 @@ export async function SiteFooter() {
 
   return (
     <footer className="relative overflow-hidden bg-[color:var(--surface-deep)] text-[color:var(--on-deep)]">
-      <div className="h-1 w-full bg-[color:var(--peach)]" />
+      <div className="h-1 w-full bg-[color:var(--coral)]" />
       <div className="mx-auto grid max-w-7xl gap-10 px-4 py-16 sm:px-6 md:grid-cols-[1.5fr_0.8fr_0.8fr_0.8fr]">
         <div>
           <span className="click-wordmark text-5xl text-[color:var(--on-deep)]">
@@ -195,14 +195,14 @@ export async function SiteFooter() {
             <span
               className="click-wordmark__period"
               aria-hidden
-              style={{ background: "var(--peach)" }}
+              style={{ background: "var(--coral)" }}
             />
           </span>
           <p className="mt-5 max-w-sm text-[0.95rem] leading-7 text-[color:var(--on-deep)]/65">
             An event-first people platform for friendship, dating, local groups,
             and shared-interest discovery in Sydney.
           </p>
-          <p className="font-display mt-7 text-2xl italic text-[color:var(--peach)]">
+          <p className="font-display mt-7 text-2xl font-semibold italic text-[color:var(--coral)]">
             See you out there.
           </p>
         </div>
@@ -214,7 +214,7 @@ export async function SiteFooter() {
                 <Link
                   href={linkForFooterItem(item)}
                   key={item}
-                  className="w-fit transition-colors hover:text-[color:var(--peach)]"
+                  className="w-fit transition-colors hover:text-[color:var(--coral)]"
                 >
                   {item}
                 </Link>

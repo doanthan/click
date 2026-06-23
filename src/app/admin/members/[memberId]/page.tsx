@@ -102,7 +102,7 @@ export default async function AdminMemberDetailPage({
             >
               {member.role}
             </span>
-            <h1 className="font-display mt-3 text-4xl font-light leading-[1.05] tracking-tight sm:text-5xl">
+            <h1 className="font-display mt-3 text-4xl font-bold leading-[1.05] tracking-[-0.025em] sm:text-5xl">
               {member.displayName}
             </h1>
             <p className="mt-2 font-mono text-xs font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
@@ -175,7 +175,7 @@ export default async function AdminMemberDetailPage({
                 <p className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
                   Click persona
                 </p>
-                <p className="mt-1 font-display text-3xl font-light leading-tight tracking-tight text-[color:var(--ink)]">
+                <p className="mt-1 font-display text-3xl font-semibold leading-tight tracking-tight text-[color:var(--ink)]">
                   {member.persona.personaName}
                 </p>
                 <p className="mt-1 font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">

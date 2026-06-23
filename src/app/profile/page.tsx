@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { LinkButton, Pill } from "@/components/click-ui";
 import { VerifiedTick } from "@/components/verified-tick";
+import { formatIntent } from "@/lib/click-data";
 import { getConfirmedEvents, getOwnProfile } from "@/lib/event-repository";
 
 export const metadata = {
@@ -64,7 +65,7 @@ export default async function OwnProfilePage() {
                 <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
                 Your profile
               </span>
-              <h1 className="mt-6 font-display text-5xl font-light leading-[0.96] tracking-tight sm:text-6xl">
+              <h1 className="mt-6 font-display text-5xl font-bold leading-[0.96] tracking-[-0.025em] sm:text-6xl">
                 {profile.displayName}
                 {profile.verified ? <VerifiedTick className="ml-3 text-3xl sm:text-4xl" /> : null}
               </h1>
@@ -121,7 +122,7 @@ export default async function OwnProfilePage() {
                 <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
                   {prompt.label}…
                 </span>
-                <p className="mt-3 font-display text-2xl font-light leading-snug text-[color:var(--ink)]">
+                <p className="mt-3 font-display text-2xl font-semibold leading-snug text-[color:var(--ink)]">
                   {prompt.answer}
                 </p>
               </div>
@@ -133,7 +134,9 @@ export default async function OwnProfilePage() {
               </span>
               <div className="mt-3 flex flex-wrap gap-2">
                 {profile.intents.length > 0 ? (
-                  profile.intents.map((intent) => <Pill key={intent} tone="peach">{intent}</Pill>)
+                  profile.intents.map((intent) => (
+                    <Pill key={intent} tone="peach">{formatIntent(intent)}</Pill>
+                  ))
                 ) : (
                   <p className="text-sm font-medium text-[color:var(--mauve)]">
                     No intents selected. Update from{" "}
@@ -207,7 +210,7 @@ export default async function OwnProfilePage() {
           <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
             Event history
           </span>
-          <h2 className="mt-2 font-display text-3xl font-light leading-tight">
+          <h2 className="mt-2 font-display text-3xl font-semibold leading-tight tracking-[-0.02em]">
             Events you’ve been to.
           </h2>
           {pastEvents.length > 0 ? (
@@ -219,7 +222,7 @@ export default async function OwnProfilePage() {
                     className="flex items-center justify-between gap-3 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-4 hard-shadow-sm hover:bg-[color:var(--peach)]"
                   >
                     <span className="min-w-0">
-                      <span className="block truncate font-display text-xl font-light leading-tight text-[color:var(--ink)]">
+                      <span className="block truncate font-display text-xl font-semibold leading-tight text-[color:var(--ink)]">
                         {event.title}
                       </span>
                       <span className="mt-1 block font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">

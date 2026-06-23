@@ -66,7 +66,7 @@ export function EventBookingDialog({
                 </p>
                 <h2
                   id="booking-dialog-title"
-                  className="font-display mt-2 text-3xl font-light leading-tight"
+                  className="font-display mt-2 text-3xl font-semibold leading-tight tracking-[-0.025em]"
                 >
                   {title}
                 </h2>

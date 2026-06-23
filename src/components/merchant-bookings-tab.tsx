@@ -77,7 +77,7 @@ export async function BookingsTabAsync({
                       </span>
                       <Link
                         href={`/merchant/events/${slug}`}
-                        className="font-display block text-2xl font-light leading-tight hover:text-[color:var(--rose)]"
+                        className="font-display block text-2xl font-semibold leading-tight hover:text-[color:var(--coral)]"
                       >
                         {list[0].eventTitle}
                       </Link>
