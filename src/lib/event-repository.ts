@@ -3617,10 +3617,32 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
         });
     }
 
-    return result.rows[0];
+    // Hand back the resolved status so the create wizard can tell a trusted
+    // merchant their event is LIVE (vs the generic "submitted for review"
+    // message), which otherwise reads as a contradiction of auto-approval
+    // (bug board #180).
+    return { slug: result.rows[0].slug, title: result.rows[0].title, status: eventStatus };
   } catch (error) {
     if (isDatabaseConnectivityError(error)) {
       return createLocalEventForMerchant(input, session);
+    }
+
+    // The prevent_merchant_event_overlap trigger (database/001_schema.sql) raises
+    // "merchant has an overlapping live event" when this event's time window
+    // collides with another live event of the same merchant. That fires most
+    // often when DUPLICATING an event and re-picking the source's own date/time
+    // (the source is still live) — the raw Postgres message reads like an
+    // internal error. Translate it into a clear, actionable validation message
+    // pointing the merchant back at the Schedule step (bug board #194).
+    if (
+      error instanceof Error &&
+      /overlapping live event/i.test(error.message)
+    ) {
+      const friendly = new Error(
+        "You already have a live event during that time. Pick a different date or time on the Schedule step.",
+      );
+      friendly.name = "ValidationError";
+      throw friendly;
     }
 
     throw error;
@@ -3635,10 +3657,38 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
 // exact same validation, trusted-merchant status logic, tag attach, sub-tag
 // derivation and "event created" email as a hand-made event. Ownership-scoped:
 // only the owning merchant can duplicate, and only their own event.
-export async function duplicateEventForMerchant(
+// A duplicate "draft" prefilled into the create wizard's sessionStorage, shaped
+// to match the wizard's WizardValues (string fields). Date/time is deliberately
+// LEFT BLANK so the merchant must pick a fresh date (bug board #184), and the
+// title carries NO "Copy of" prefix (#185). The merchant then edits and
+// publishes through the normal create flow so it actually lands in discovery
+// (#191) — instead of the old path that silently created a re-dated clone.
+export type EventDuplicateDraft = {
+  title: string;
+  groupName: string;
+  category: string;
+  startsAt: string;
+  durationMinutes: string;
+  capacity: string;
+  locationName: string;
+  suburb: string;
+  address: string;
+  latitude: number | null;
+  longitude: number | null;
+  price: string;
+  tags: string;
+  relationshipGoal: string;
+  description: string;
+  images: string[];
+  imageAlt: string;
+  recurrenceFreq: "none";
+  recurrenceCount: string;
+};
+
+export async function getMerchantEventDuplicateDraft(
   sourceSlug: string,
   session: Session | null,
-): Promise<{ slug: string; title: string }> {
+): Promise<EventDuplicateDraft> {
   const pool = getPostgresPool();
   const email = getSessionEmail(session);
   if (!email) throw authError();
@@ -3692,9 +3742,7 @@ export async function duplicateEventForMerchant(
     throw error;
   }
 
-  // Re-date a week from now (not from the original date, which may be in the
-  // past) at the same wall-clock time, so the copy lands in the future and the
-  // merchant just nudges the date. Keep the original duration.
+  // Keep the original duration so the merchant only has to re-pick a date.
   const durationMinutes =
     source.ends_at
       ? Math.max(
@@ -3702,10 +3750,6 @@ export async function duplicateEventForMerchant(
           Math.round((source.ends_at.getTime() - source.starts_at.getTime()) / 60000),
         )
       : 120;
-  const newStart = new Date(source.starts_at);
-  while (newStart.getTime() <= Date.now()) {
-    newStart.setDate(newStart.getDate() + 7);
-  }
 
   const gallery =
     source.image_urls && source.image_urls.length > 0
@@ -3714,7 +3758,8 @@ export async function duplicateEventForMerchant(
         ? [source.image_url]
         : [];
 
-  // Interest tag slugs attached to the source, comma-joined for CreateEventInput.
+  // Interest tag slugs attached to the source, comma-joined to match the
+  // wizard's tags field.
   const tagResult = await pool.query<{ slug: string }>(
     `
       select tag.slug
@@ -3726,29 +3771,52 @@ export async function duplicateEventForMerchant(
   );
   const tags = tagResult.rows.map((t) => t.slug).join(", ");
 
-  const input: CreateEventInput = {
-    title: `Copy of ${source.title}`,
+  return {
+    // No "Copy of" prefix (#185) — the merchant renames if they want to.
+    title: source.title,
     groupName: source.group_name ?? "",
     category: source.category,
-    // Absolute instant (carries a Z) — parseEventStart passes it through as-is.
-    startsAt: newStart.toISOString(),
-    durationMinutes,
+    // Blank on purpose: the merchant must choose the new date/time (#184).
+    startsAt: "",
+    durationMinutes: String(durationMinutes),
+    capacity: String(source.capacity),
     locationName: source.location_name,
     suburb: source.suburb,
-    address: source.address ?? undefined,
+    address: source.address ?? "",
     latitude: source.latitude,
     longitude: source.longitude,
     price: (source.price_cents / 100).toString(),
-    capacity: source.capacity,
-    description: source.description,
-    relationshipGoal: source.relationship_goal ?? "",
     tags,
-    imageAlt: source.image_alt ?? undefined,
-    imageUrls: gallery,
+    relationshipGoal: source.relationship_goal ?? "",
+    description: source.description,
+    images: gallery,
+    imageAlt: source.image_alt ?? "",
+    recurrenceFreq: "none",
+    recurrenceCount: "1",
   };
+}
 
-  const created = await createEventForMerchant(input, session);
-  return { slug: created.slug, title: created.title };
+// True when a profile already exists for this email (case-insensitive). Lets the
+// login surfaces reject an unknown / mistyped address with "no account found —
+// sign up" instead of silently passwordless-creating a junk profile for the typo
+// (bug board #181: a typo'd domain logged the tester into a brand-new account).
+// Only returns false when we're CONFIDENT no account exists — a missing pool or a
+// query error stays permissive so a DB hiccup can't lock anyone out, and signup
+// surfaces skip this check entirely so new accounts still work.
+export async function profileExistsByEmail(email: string): Promise<boolean> {
+  const pool = getPostgresPool();
+  if (!pool) return true;
+  const normalized = email.trim().toLowerCase();
+  if (!normalized) return false;
+  try {
+    const result = await pool.query<{ found: boolean }>(
+      `select exists (select 1 from profiles where lower(email) = $1) as found`,
+      [normalized],
+    );
+    return Boolean(result.rows[0]?.found);
+  } catch {
+    return true;
+  }
 }
 
 export async function approveEventForAdmin(eventId: string, session: Session | null) {
@@ -5938,7 +6006,7 @@ export async function getProfileCompletion(
 ): Promise<ProfileCompletion> {
   const empty = (): ProfileCompletion => {
     const items: ProfileCompletionItem[] = [
-      { key: "photo", label: "Add a profile photo", done: false, href: "/profile/edit" },
+      { key: "photo", label: "Add a photo to Click with others", done: false, href: "/profile/edit" },
       { key: "suburb", label: "Set your suburb", done: false, href: "/onboarding" },
       { key: "bio", label: "Write a short bio", done: false, href: "/profile/edit" },
       { key: "tags", label: "Pick at least 3 interests", done: false, href: "/profile/edit" },
@@ -5954,8 +6022,14 @@ export async function getProfileCompletion(
   try {
     const profile = await ensureProfileForSession(session);
     const [fieldsResult, tagCountResult, quizResult] = await Promise.all([
-      pool.query<{ photo_url: string | null; suburb: string | null; bio: string | null }>(
-        `select photo_url, suburb, bio from profiles where id = $1::uuid`,
+      pool.query<{
+        photo_url: string | null;
+        gallery_count: number;
+        suburb: string | null;
+        bio: string | null;
+      }>(
+        `select photo_url, cardinality(coalesce(gallery_photos, '{}')) as gallery_count, suburb, bio
+         from profiles where id = $1::uuid`,
         [profile.id],
       ),
       pool.query<{ count: string }>(
@@ -5978,7 +6052,19 @@ export async function getProfileCompletion(
     const quizComplete = Number(quizResult.rows[0]?.count ?? 0) > 0;
 
     const items: ProfileCompletionItem[] = [
-      { key: "photo", label: "Add a profile photo", done: !!row?.photo_url, href: "/profile/edit" },
+      // Counts the avatar OR any "More photos" gallery image — a user who filled
+      // the gallery but never set a primary avatar was still nagged to "add a
+      // photo" (bug board #182). The gallery upload also seeds the avatar going
+      // forward (api/upload/gallery), so this mainly clears already-affected profiles.
+      {
+        key: "photo",
+        // Spell out WHY a photo matters: it's required to enter the "Click with
+        // someone" pool (getSuggestedPeople filters out photoless profiles), so
+        // the nudge doubles as the reminder a photoless user needs (#190).
+        label: "Add a photo to Click with others",
+        done: !!row?.photo_url || (row?.gallery_count ?? 0) > 0,
+        href: "/profile/edit",
+      },
       { key: "suburb", label: "Set your suburb", done: !!row?.suburb, href: "/onboarding" },
       { key: "bio", label: "Write a short bio", done: !!row?.bio, href: "/profile/edit" },
       { key: "tags", label: "Pick at least 3 interests", done: tagCount >= 3, href: "/profile/edit" },
@@ -6899,34 +6985,40 @@ export async function createUserClickForSession(
       throw error;
     }
 
-    // Clicks are gated to the post-event window: you can only Click someone you
-    // were both confirmed attendees of an event with, and only once that event
-    // has ended + 12 hours (business plan §1.2 step 5). If a specific source
-    // event slug is supplied (from the dashboard prompt) we verify *that* event
-    // qualifies; otherwise we pick the most recent qualifying shared event.
-    const eligibilityResult = await client.query<{ id: string }>(
-      `
-        select e.id::text
-        from events e
-        join event_attendees a1 on a1.event_id = e.id and a1.profile_id = $1::uuid and a1.status = 'confirmed'
-        join event_attendees a2 on a2.event_id = e.id and a2.profile_id = $2::uuid and a2.status = 'confirmed'
-        where coalesce(e.ends_at, e.starts_at) + interval '12 hours' <= now()
-          ${input.sourceEventId ? "and e.slug = $3" : ""}
-        order by coalesce(e.ends_at, e.starts_at) desc
-        limit 1
-      `,
-      input.sourceEventId
-        ? [profile.id, clickedProfile.id, input.sourceEventId]
-        : [profile.id, clickedProfile.id],
-    );
-    const sourceEventId = eligibilityResult.rows[0]?.id ?? null;
-
-    if (!sourceEventId) {
-      const error = new Error(
-        "The Click window opens 12 hours after an event you both attended ends. Once it's been long enough since a shared event, you'll be able to Click the people you met there.",
+    // Two distinct kinds of Click (per user-journey spec §6 vs §8.2):
+    //  • Discovery "Click with someone" (no source event) — the dashboard/People
+    //    suggestion. Allowed any time; it just records an anonymous pending click
+    //    and reveals only on a mutual. There is NO shared-past-event requirement
+    //    here (bug board: "Click privately did nothing" — the post-event gate was
+    //    wrongly applied to discovery clicks, and the 12-hour window message is
+    //    "only post-event clicking, not 'click with someone'").
+    //  • Post-event Click (a source event slug arrives from the post-event prompt)
+    //    — gated to people you were both confirmed attendees of, and only once
+    //    that event has ended + 12 hours.
+    let sourceEventId: string | null = null;
+    if (input.sourceEventId) {
+      const eligibilityResult = await client.query<{ id: string }>(
+        `
+          select e.id::text
+          from events e
+          join event_attendees a1 on a1.event_id = e.id and a1.profile_id = $1::uuid and a1.status = 'confirmed'
+          join event_attendees a2 on a2.event_id = e.id and a2.profile_id = $2::uuid and a2.status = 'confirmed'
+          where coalesce(e.ends_at, e.starts_at) + interval '12 hours' <= now()
+            and e.slug = $3
+          order by coalesce(e.ends_at, e.starts_at) desc
+          limit 1
+        `,
+        [profile.id, clickedProfile.id, input.sourceEventId],
       );
-      error.name = "ValidationError";
-      throw error;
+      sourceEventId = eligibilityResult.rows[0]?.id ?? null;
+
+      if (!sourceEventId) {
+        const error = new Error(
+          "Post-event Clicking opens 12 hours after an event you both attended ends — this applies only to people you met at that event, not to “Click with someone” discovery.",
+        );
+        error.name = "ValidationError";
+        throw error;
+      }
     }
 
     await client.query(
@@ -10503,6 +10595,13 @@ export async function getSuggestedPeople(session: Session | null): Promise<Sugge
           -- "click with someone" until they've completed a real profile.
           and p.suburb is not null
           and p.bio is not null
+          -- Only include people who have a profile photo: clicking is a
+          -- face-first decision, so a photoless profile shouldn't enter the
+          -- "click with someone" pool (bug board #190). Guard the empty string
+          -- too: a blank photo_url is photoless and "is not null" alone lets it
+          -- slip through.
+          and p.photo_url is not null
+          and p.photo_url <> ''
           and not exists (
             select 1 from user_blocks b
             where (b.blocker_profile_id = $1::uuid and b.blocked_profile_id = p.id)
@@ -10566,6 +10665,11 @@ export type MutualClickEntry = {
   // (they picked an alternative in /proposals) — lets the UI attribute it as
   // "Janey suggested:" instead of the generic "Suggested for you both:".
   suggestedByOther: boolean;
+  // When the pair are BOTH already confirmed for the same upcoming event, the UI
+  // skips the "suggested plan" copy and celebrates "You're both going to X!"
+  // instead (bug board #186).
+  bothGoingEventSlug: string | null;
+  bothGoingEventTitle: string | null;
   createdAt: string;
 };
 
@@ -10583,6 +10687,8 @@ export async function getMutualClicksForSession(session: Session | null): Promis
       event_slug: string | null;
       event_title: string | null;
       proposed_by: string | null;
+      both_going_slug: string | null;
+      both_going_title: string | null;
       created_at: Date;
     }>(
       `
@@ -10593,6 +10699,8 @@ export async function getMutualClicksForSession(session: Session | null): Promis
           event.slug as event_slug,
           event.title as event_title,
           p.proposed_by::text as proposed_by,
+          both_going.slug as both_going_slug,
+          both_going.title as both_going_title,
           m.created_at
         from mutual_clicks m
         join profiles other on other.id = (
@@ -10609,6 +10717,49 @@ export async function getMutualClicksForSession(session: Session | null): Promis
           on event.id = coalesce(p.suggested_event_id, m.suggested_event_id)
          and event.starts_at > now()
          and event.status in ('live', 'featured', 'waitlist')
+         -- Never re-surface a suggestion that has since booked out (confirmed +
+         -- live payment holds count toward capacity) — bug board #177.
+         and (
+           select count(*) from event_attendees fc
+           where fc.event_id = event.id
+             and (
+               fc.status = 'confirmed'
+               or (fc.status = 'pending_payment' and fc.hold_expires_at > now())
+             )
+         ) < event.capacity
+        -- If the pair are BOTH going to the same upcoming event, celebrate that
+        -- directly instead of suggesting a new plan (#186). "Going" means a
+        -- confirmed event_attendees row OR a claimed guest_spot — i.e. a +1 seat
+        -- a friend bought and they then claimed (spec 19). Without the guest_spots
+        -- arm, a guest-RSVP'd attendee has no event_attendees row and the
+        -- celebration silently never fires. Picks the soonest such shared event.
+        left join lateral (
+          select e2.slug, e2.title
+          from events e2
+          where e2.starts_at > now()
+            and exists (
+              select 1 from event_attendees a
+              where a.event_id = e2.id and a.profile_id = $1::uuid and a.status = 'confirmed'
+              union all
+              select 1 from guest_spots g
+              where g.event_id = e2.id and g.claimed_profile_id = $1::uuid and g.status = 'claimed'
+            )
+            and exists (
+              select 1 from event_attendees a
+              where a.event_id = e2.id and a.status = 'confirmed'
+                and a.profile_id = (
+                  case when m.profile_a_id = $1::uuid then m.profile_b_id else m.profile_a_id end
+                )
+              union all
+              select 1 from guest_spots g
+              where g.event_id = e2.id and g.status = 'claimed'
+                and g.claimed_profile_id = (
+                  case when m.profile_a_id = $1::uuid then m.profile_b_id else m.profile_a_id end
+                )
+            )
+          order by e2.starts_at asc
+          limit 1
+        ) both_going on true
         where m.profile_a_id = $1::uuid or m.profile_b_id = $1::uuid
         order by m.created_at desc
         limit 12
@@ -10623,6 +10774,8 @@ export async function getMutualClicksForSession(session: Session | null): Promis
       suggestedEventSlug: row.event_slug,
       suggestedEventTitle: row.event_title,
       suggestedByOther: row.proposed_by != null && row.proposed_by === row.other_id,
+      bothGoingEventSlug: row.both_going_slug,
+      bothGoingEventTitle: row.both_going_title,
       createdAt: row.created_at.toISOString(),
     }));
   } catch {
@@ -11579,6 +11732,9 @@ export type MerchantAllAttendeesRow = {
   eventSlug: string;
   eventTitle: string;
   eventStartsAt: string;
+  // The owning event's publish status (live/pending/rejected/cancelled/…), so
+  // the Bookings tab can flag an event that was rejected or pulled (#193).
+  eventStatus: string;
   displayName: string;
   email: string;
   status: string;
@@ -11603,6 +11759,7 @@ export async function getMerchantAllAttendees(
       event_slug: string;
       event_title: string;
       event_starts_at: Date;
+      event_status: string;
       display_name: string;
       email: string;
       status: string;
@@ -11615,6 +11772,7 @@ export async function getMerchantAllAttendees(
           event.slug as event_slug,
           event.title as event_title,
           event.starts_at as event_starts_at,
+          event.status::text as event_status,
           guest.display_name,
           guest.email::text as email,
           attendee.status::text,
@@ -11635,6 +11793,7 @@ export async function getMerchantAllAttendees(
       eventSlug: row.event_slug,
       eventTitle: row.event_title,
       eventStartsAt: row.event_starts_at.toISOString(),
+      eventStatus: row.event_status,
       displayName: row.display_name,
       email: row.email,
       status: row.status,

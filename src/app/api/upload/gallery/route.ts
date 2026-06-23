@@ -123,6 +123,20 @@ export async function POST(request: Request) {
       );
     }
 
+    // If the user has no primary avatar yet, seed it from this gallery photo.
+    // Otherwise a user who only ever fills the gallery has no face on their
+    // profile card / in the "click with someone" pool, and the dashboard keeps
+    // nagging "add a profile photo" even though they added photos (bug board
+    // #182). A real square avatar uploaded later via /api/upload/avatar still
+    // overwrites this. Best-effort — never fail the gallery upload over it.
+    await pool
+      .query(
+        `update profiles set photo_url = $2, updated_at = now()
+         where id = $1::uuid and (photo_url is null or photo_url = '')`,
+        [who.profileId, url],
+      )
+      .catch(() => {});
+
     return NextResponse.json({ urls: row.gallery_photos });
   } catch (error) {
     console.error("gallery upload failed", error);
@@ -154,6 +168,19 @@ export async function DELETE(request: Request) {
       `,
       [who.profileId, url],
     );
+
+    // If the removed photo was also serving as the avatar (seeded from the
+    // gallery on first upload), repoint the avatar to the next remaining gallery
+    // photo, or clear it if none are left — so we never leave a broken avatar
+    // pointing at a deleted object (bug board #182).
+    await pool
+      .query(
+        `update profiles
+         set photo_url = gallery_photos[1], updated_at = now()
+         where id = $1::uuid and photo_url = $2`,
+        [who.profileId, url],
+      )
+      .catch(() => {});
 
     // Only delete the object when the URL provably sits under the caller's own
     // gallery prefix — a crafted URL can't reach other users' objects.

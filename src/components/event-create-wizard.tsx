@@ -18,6 +18,7 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { MapboxAutocomplete, type MapboxPlace } from "./mapbox-autocomplete";
 import { toTitleCase } from "@/lib/text-format";
+import { EVENT_CREATE_STORAGE_KEY } from "@/lib/event-create-storage";
 
 // Create-event — multi-step wizard. Each step has its own URL so users can
 // bookmark, link to, and browser-back through them:
@@ -91,7 +92,9 @@ export const STEP_PATHS = [
 // /review on its own) starts a fresh context and resets to these defaults. To
 // keep entered values across those reloads too, we mirror the state into
 // sessionStorage and rehydrate from it on mount.
-const STORAGE_KEY = "click:event-create-wizard";
+// Shared with the "Duplicate event" action, which seeds a prefilled draft into
+// this same slot (see src/lib/event-create-storage.ts).
+const STORAGE_KEY = EVENT_CREATE_STORAGE_KEY;
 
 const initial: WizardValues = {
   title: "",
@@ -452,6 +455,9 @@ export function WizardShell({
       let okCount = 0;
       const errors: string[] = [];
       let firstTitle: string | undefined;
+      // Whether the created event(s) went straight live (trusted / auto-approved
+      // merchant) vs landed in the pending review queue — drives the toast copy.
+      let firstStatus: string | undefined;
 
       for (const startsAt of startsAtList) {
         const form = new FormData();
@@ -491,7 +497,7 @@ export function WizardShell({
         }
 
         const payload = (await response.json().catch(() => ({}))) as {
-          event?: { title?: string };
+          event?: { title?: string; status?: string };
           error?: string;
           redirect?: string;
         };
@@ -513,6 +519,7 @@ export function WizardShell({
         }
         okCount++;
         firstTitle = firstTitle ?? payload.event?.title;
+        firstStatus = firstStatus ?? payload.event?.status;
       }
 
       if (okCount === 0) {
@@ -531,11 +538,20 @@ export function WizardShell({
       }
 
       const label = firstTitle ?? values.title ?? "Event";
+      // Trusted merchants (auto-approve on) publish straight to live — congratulate
+      // them instead of saying it's "submitted for admin review", which reads as a
+      // contradiction of the trust they were just granted (bug board #180).
+      const liveNow =
+        firstStatus === "live" || firstStatus === "featured" || firstStatus === "Live";
       if (errors.length === 0) {
         toast.success(
-          startsAtList.length === 1
-            ? `${label} submitted for admin review.`
-            : `${okCount} occurrences of ${label} submitted for admin review.`,
+          liveNow
+            ? startsAtList.length === 1
+              ? `🎉 ${label} is live — members can find it on Discover now.`
+              : `🎉 ${okCount} occurrences of ${label} are live on Discover.`
+            : startsAtList.length === 1
+              ? `${label} submitted for admin review.`
+              : `${okCount} occurrences of ${label} submitted for admin review.`,
         );
       } else {
         toast.success(`${okCount} of ${startsAtList.length} submitted`, {
@@ -787,28 +803,44 @@ function TagPicker({
         className={`${inputClass()} h-12 w-full disabled:cursor-not-allowed disabled:opacity-60`}
       />
 
-      {/* Browsable chip cloud — click to add, no typing required. Capped to a
-          scrollable area so the full tag list never blows out the form; the
-          search box above narrows it for anyone who'd rather type. */}
+      {/* Browsable chip cloud — tap to add, no typing required. The list does
+          NOT use an inner scroll area: on phones a tap inside a nested
+          overflow-y-auto box gets swallowed as a scroll-start, so chips could
+          only be added via search (bug board #179). Instead we render a plain
+          wrapping cloud and, when nothing's typed, cap how many chips show so
+          the full list can't blow out the form — search narrows it for the
+          rest. `touch-manipulation` also drops the mobile tap delay. */}
       {!atLimit && browsable.length > 0 ? (
-        <div className="mt-1">
-          <p className="mb-2 font-mono text-[0.6rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
-            {query.trim() ? `Matching tags (${browsable.length})` : `Tap to add · ${browsable.length}`}
-          </p>
-          <ul className="flex max-h-44 flex-wrap gap-2 overflow-y-auto rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--cream)]/40 p-2">
-            {browsable.map((opt) => (
-              <li key={opt}>
-                <button
-                  type="button"
-                  onClick={() => addTag(opt)}
-                  className="inline-flex items-center gap-1 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
-                >
-                  <span aria-hidden className="text-[color:var(--mauve)]">+</span> {opt}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
+        (() => {
+          const BROWSE_CAP = 14;
+          const visibleTags = query.trim() ? browsable : browsable.slice(0, BROWSE_CAP);
+          const hiddenCount = browsable.length - visibleTags.length;
+          return (
+            <div className="mt-1">
+              <p className="mb-2 font-mono text-[0.6rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+                {query.trim() ? `Matching tags (${browsable.length})` : `Tap to add · ${browsable.length}`}
+              </p>
+              <ul className="flex flex-wrap gap-2 rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--cream)]/40 p-2">
+                {visibleTags.map((opt) => (
+                  <li key={opt}>
+                    <button
+                      type="button"
+                      onClick={() => addTag(opt)}
+                      className="inline-flex touch-manipulation items-center gap-1 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+                    >
+                      <span aria-hidden className="text-[color:var(--mauve)]">+</span> {opt}
+                    </button>
+                  </li>
+                ))}
+                {hiddenCount > 0 ? (
+                  <li className="self-center font-mono text-[0.6rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+                    +{hiddenCount} more — search to filter
+                  </li>
+                ) : null}
+              </ul>
+            </div>
+          );
+        })()
       ) : null}
     </div>
   );

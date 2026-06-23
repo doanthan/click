@@ -3,10 +3,26 @@
 import { AuthError } from "next-auth";
 import { redirect } from "next/navigation";
 import { signIn, signOut } from "@/auth";
+import { profileExistsByEmail } from "@/lib/event-repository";
 
 function getFormValue(formData: FormData, key: string) {
   const value = formData.get(key);
   return typeof value === "string" ? value : "";
+}
+
+// Basic deliverable-shape check: one @, a dot in the domain, no spaces. This
+// catches malformed input; the existing-account check below catches a typo'd
+// but well-formed address (bug board #181).
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Returns an error CODE (or null) for an email sign-in attempt. On a login
+// surface (mode === "login") an unknown address is rejected so we don't
+// passwordless-create a junk profile for a mistyped email; signup surfaces pass
+// no mode and skip the existence check so new accounts still work.
+async function emailSignInGate(email: string, mode: string): Promise<string | null> {
+  if (!EMAIL_RE.test(email)) return "InvalidEmail";
+  if (mode === "login" && !(await profileExistsByEmail(email))) return "EmailNotFound";
+  return null;
 }
 
 // Every sign-in is funneled through /post-login so the admin gate there can
@@ -41,11 +57,23 @@ export async function signInWithMeta(formData: FormData) {
 }
 
 export async function signInWithEmail(formData: FormData) {
-  const callbackUrl = safeCallbackUrl(getFormValue(formData, "callbackUrl"));
+  const rawCallback = getFormValue(formData, "callbackUrl");
+  const callbackUrl = safeCallbackUrl(rawCallback);
+  const email = getFormValue(formData, "email").trim().toLowerCase();
+  const mode = getFormValue(formData, "mode");
+
+  // Validate before handing to the passwordless provider — redirect runs OUTSIDE
+  // the try so its NEXT_REDIRECT isn't mistaken for an auth failure.
+  const gateError = await emailSignInGate(email, mode);
+  if (gateError) {
+    redirect(
+      `/login?${new URLSearchParams({ error: gateError, callbackUrl: rawCallback }).toString()}`,
+    );
+  }
 
   try {
     await signIn("email-login", {
-      email: getFormValue(formData, "email"),
+      email,
       redirectTo: callbackUrl,
     });
   } catch (error) {
@@ -115,6 +143,8 @@ export type EmailLoginFormState = { error: string | null };
 const errorCopyByType: Record<string, string> = {
   CredentialsSignin: "Enter a valid email address to continue.",
   Configuration: "Authentication is missing provider or secret configuration.",
+  InvalidEmail: "Enter a valid email address to continue.",
+  EmailNotFound: "No account found for that email. Check the spelling, or sign up.",
 };
 
 export async function signInWithEmailFromModal(
@@ -122,10 +152,17 @@ export async function signInWithEmailFromModal(
   formData: FormData,
 ): Promise<EmailLoginFormState> {
   const callbackUrl = safeCallbackUrl(getFormValue(formData, "callbackUrl"));
+  const email = getFormValue(formData, "email").trim().toLowerCase();
+  const mode = getFormValue(formData, "mode");
+
+  const gateError = await emailSignInGate(email, mode);
+  if (gateError) {
+    return { error: errorCopyByType[gateError] ?? "Login failed." };
+  }
 
   try {
     await signIn("email-login", {
-      email: getFormValue(formData, "email"),
+      email,
       redirectTo: callbackUrl,
     });
     return { error: null };

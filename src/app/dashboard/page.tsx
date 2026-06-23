@@ -245,7 +245,13 @@ export default async function DashboardPage() {
             <p className="mt-2 max-w-xl text-sm font-semibold leading-6 text-[color:var(--mauve)]">
               🔒 Clicking is anonymous — we&rsquo;ll only show you if it&rsquo;s mutual.
               We surface one person at a time, refreshed through the day. See
-              everyone on the People page.
+              everyone on the People page.{" "}
+              <Link
+                href="/how-it-works"
+                className="font-bold text-[color:var(--ink)] underline decoration-2 underline-offset-4 hover:text-[color:var(--rose)]"
+              >
+                How Click works →
+              </Link>
             </p>
           </div>
           <Link
@@ -318,7 +324,18 @@ export default async function DashboardPage() {
                 >
                   You + {m.otherDisplayName}
                 </Link>
-                {m.suggestedEventSlug ? (
+                {m.bothGoingEventSlug ? (
+                  <p className="mt-2 text-sm font-bold leading-6">
+                    🎉 You&rsquo;re both going to{" "}
+                    <Link
+                      href={`/events/${m.bothGoingEventSlug}`}
+                      className="underline decoration-2 underline-offset-4 hover:opacity-80"
+                    >
+                      {m.bothGoingEventTitle ?? "the same event"}
+                    </Link>
+                    !
+                  </p>
+                ) : m.suggestedEventSlug ? (
                   <p className="mt-2 text-sm font-bold leading-6">
                     {m.suggestedByOther
                       ? `${m.otherDisplayName} suggested: `

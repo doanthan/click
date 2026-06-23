@@ -28,6 +28,8 @@ type LoginPageProps = {
 
 const errorCopy: Record<string, string> = {
   CredentialsSignin: "Enter a valid email address to continue.",
+  InvalidEmail: "Enter a valid email address to continue.",
+  EmailNotFound: "No account found for that email. Check the spelling, or sign up.",
   OAuthSignin: "The social login could not start. Check the provider configuration.",
   OAuthCallback: "The social login callback failed. Check the provider callback URL.",
   Configuration: "Authentication is missing provider or secret configuration.",
@@ -168,6 +170,7 @@ export default async function MerchantLoginPage({ searchParams }: LoginPageProps
 
             <form action={signInWithEmail} className="grid gap-4">
               <input type="hidden" name="callbackUrl" value={callbackUrl} />
+              <input type="hidden" name="mode" value="login" />
 
               <label className="grid gap-2 text-sm font-bold text-[color:var(--ink)]">
                 <span className="font-mono text-[0.7rem] uppercase tracking-[0.18em] text-[color:var(--mauve)]">

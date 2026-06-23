@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Click — The Guide to Meeting People IRL</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=Newsreader:ital,opsz,wght@0,6..72,300..600;1,6..72,300..500&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --paper: #f3ede1;
+    --paper-deep: #ebe2d2;
+    --ink: #1a1510;
+    --ink-soft: #4b4338;
+    --terra: #b8431f;
+    --terra-deep: #8f3417;
+    --sage: #5f6b4f;
+    --rule: #cdc2ad;
+    --display: "Fraunces", serif;
+    --body: "Newsreader", serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 19px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+    position: relative;
+  }
+
+  /* paper grain */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 9999;
+    opacity: 0.05;
+    mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  ::selection { background: var(--terra); color: var(--paper); }
+
+  .wrap { max-width: 1240px; margin: 0 auto; padding: 0 40px; }
+
+  /* ---------- entrance animation ---------- */
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(26px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .rise { opacity: 0; animation: rise 1.05s cubic-bezier(.16,.84,.34,1) forwards; }
+  .d1 { animation-delay: .05s; } .d2 { animation-delay: .15s; }
+  .d3 { animation-delay: .25s; } .d4 { animation-delay: .35s; }
+  .d5 { animation-delay: .45s; } .d6 { animation-delay: .55s; }
+  .d7 { animation-delay: .68s; } .d8 { animation-delay: .8s; }
+
+  /* ---------- top bar ---------- */
+  header {
+    display: flex; align-items: baseline; justify-content: space-between;
+    padding: 28px 0 22px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .brand {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 26px;
+    letter-spacing: -.02em;
+    font-optical-sizing: auto;
+  }
+  .brand span { color: var(--terra); }
+  nav { display: flex; gap: 34px; align-items: baseline; }
+  nav a {
+    color: var(--ink-soft); text-decoration: none;
+    font-size: 14px; letter-spacing: .14em; text-transform: uppercase;
+    position: relative;
+  }
+  nav a::after {
+    content: ""; position: absolute; left: 0; bottom: -5px; height: 1px;
+    width: 0; background: var(--terra); transition: width .35s ease;
+  }
+  nav a:hover { color: var(--ink); }
+  nav a:hover::after { width: 100%; }
+  .nav-cta {
+    color: var(--paper) !important; background: var(--ink);
+    padding: 9px 18px; border-radius: 2px; letter-spacing: .1em;
+  }
+  .nav-cta::after { display: none; }
+  .nav-cta:hover { background: var(--terra); }
+
+  /* ---------- masthead meta strip ---------- */
+  .masthead {
+    display: flex; justify-content: space-between;
+    font-size: 12.5px; letter-spacing: .22em; text-transform: uppercase;
+    color: var(--ink-soft); padding: 12px 0; border-bottom: 1px solid var(--rule);
+  }
+
+  /* ---------- hero ---------- */
+  .hero { display: grid; grid-template-columns: 1fr 360px; gap: 56px; padding: 70px 0 40px; align-items: end; }
+  .kicker {
+    font-size: 13px; letter-spacing: .3em; text-transform: uppercase;
+    color: var(--terra); font-weight: 600; margin-bottom: 26px;
+    display: flex; align-items: center; gap: 14px;
+  }
+  .kicker::before { content: ""; width: 46px; height: 1px; background: var(--terra); display: inline-block; }
+  h1 {
+    font-family: var(--display);
+    font-optical-sizing: auto;
+    font-weight: 340;
+    font-size: clamp(54px, 8.5vw, 122px);
+    line-height: 0.92;
+    letter-spacing: -.035em;
+  }
+  h1 em { font-style: italic; font-weight: 420; color: var(--terra); }
+  h1 .out {
+    -webkit-text-stroke: 1.4px var(--ink); color: transparent;
+    font-weight: 600;
+  }
+  .lede {
+    font-size: 21px; color: var(--ink-soft); line-height: 1.5;
+    max-width: 42ch; margin-top: 4px;
+  }
+  .hero-actions { display: flex; gap: 16px; align-items: center; margin-top: 30px; flex-wrap: wrap; }
+  .btn {
+    font-family: var(--body); font-size: 16px; letter-spacing: .04em;
+    padding: 14px 28px; border-radius: 2px; text-decoration: none; cursor: pointer;
+    border: 1px solid var(--ink); transition: all .3s ease; display: inline-block;
+  }
+  .btn-fill { background: var(--ink); color: var(--paper); }
+  .btn-fill:hover { background: var(--terra); border-color: var(--terra); transform: translateY(-2px); }
+  .btn-ghost { background: transparent; color: var(--ink); }
+  .btn-ghost:hover { background: var(--ink); color: var(--paper); }
+
+  /* hero card stack */
+  .stack { position: relative; height: 420px; }
+  .card {
+    position: absolute; width: 252px; height: 318px; border-radius: 6px;
+    padding: 22px; display: flex; flex-direction: column; justify-content: flex-end;
+    color: var(--paper); box-shadow: 0 26px 50px -20px rgba(26,21,16,.45);
+    border: 1px solid rgba(0,0,0,.06); overflow: hidden;
+  }
+  .card .tag {
+    font-size: 11px; letter-spacing: .2em; text-transform: uppercase;
+    opacity: .85; margin-bottom: 8px;
+  }
+  .card .ttl { font-family: var(--display); font-weight: 500; font-size: 25px; line-height: 1.05; }
+  .card::after {
+    content: ""; position: absolute; inset: 0; opacity: .14; mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  .c1 { right: 64px; top: 0; background: linear-gradient(150deg, #c2502a, #7d2e16); transform: rotate(-7deg); z-index: 1; }
+  .c2 { right: 0; top: 58px; background: linear-gradient(150deg, #5f6b4f, #38402c); transform: rotate(5deg); z-index: 3; }
+  .c3 { right: 118px; top: 96px; background: linear-gradient(150deg, #3a3530, #1c1814); transform: rotate(-2deg); z-index: 2; }
+  .stack:hover .c1 { transform: rotate(-11deg) translateY(-6px); }
+  .stack:hover .c2 { transform: rotate(8deg) translateY(-6px); }
+  .card { transition: transform .5s cubic-bezier(.16,.84,.34,1); }
+
+  /* ---------- ticker ---------- */
+  .ticker {
+    border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule);
+    overflow: hidden; white-space: nowrap; margin-top: 30px; padding: 16px 0;
+  }
+  .ticker-track { display: inline-block; animation: scroll 38s linear infinite; }
+  .ticker-track span { font-family: var(--display); font-style: italic; font-size: 22px; color: var(--ink-soft); margin: 0 30px; }
+  .ticker-track span::before { content: "✦"; color: var(--terra); margin-right: 30px; font-style: normal; }
+  @keyframes scroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+
+  /* ---------- section heading ---------- */
+  .sec { padding: 92px 0; border-bottom: 1px solid var(--rule); }
+  .sec-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 54px; }
+  .sec-head h2 {
+    font-family: var(--display); font-weight: 360; font-size: clamp(34px, 4.4vw, 58px);
+    letter-spacing: -.025em; line-height: 1;
+  }
+  .sec-no { font-family: var(--display); font-style: italic; color: var(--terra); font-size: 17px; letter-spacing: .1em; }
+
+  /* how it works */
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; }
+  .step { padding: 0 34px; border-left: 1px solid var(--rule); }
+  .step:first-child { padding-left: 0; border-left: none; }
+  .step .num { font-family: var(--display); font-size: 78px; font-weight: 300; line-height: 1; color: var(--terra); font-style: italic; }
+  .step h3 { font-family: var(--display); font-weight: 500; font-size: 27px; margin: 20px 0 10px; letter-spacing: -.01em; }
+  .step p { color: var(--ink-soft); font-size: 18px; }
+
+  /* featured list */
+  .listing { border-top: 1px solid var(--rule); }
+  .row {
+    display: grid; grid-template-columns: 56px 1fr auto auto; gap: 28px; align-items: center;
+    padding: 26px 8px; border-bottom: 1px solid var(--rule); text-decoration: none; color: var(--ink);
+    transition: background .3s ease, padding .3s ease;
+  }
+  .row:hover { background: var(--paper-deep); padding-left: 22px; }
+  .row .idx { font-family: var(--display); font-style: italic; color: var(--sage); font-size: 16px; }
+  .row .title { font-family: var(--display); font-weight: 480; font-size: 26px; letter-spacing: -.01em; }
+  .row .where { color: var(--ink-soft); font-size: 15px; letter-spacing: .04em; }
+  .row .meta { font-size: 14px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-soft); }
+  .row .arrow { font-size: 22px; color: var(--terra); transition: transform .3s ease; }
+  .row:hover .arrow { transform: translate(6px,-6px); }
+
+  /* manifesto pull quote */
+  .quote { text-align: center; padding: 110px 0; }
+  .quote p {
+    font-family: var(--display); font-weight: 320; font-style: italic;
+    font-size: clamp(30px, 4.6vw, 60px); line-height: 1.12; letter-spacing: -.02em;
+    max-width: 18ch; margin: 0 auto;
+  }
+  .quote p b { font-weight: 320; font-style: normal; color: var(--terra); }
+  .quote .by { margin-top: 30px; font-size: 13px; letter-spacing: .28em; text-transform: uppercase; color: var(--ink-soft); }
+
+  /* host strip */
+  .host { display: grid; grid-template-columns: 1fr 1fr; gap: 60px; align-items: center; }
+  .host-card {
+    background: var(--ink); color: var(--paper); border-radius: 6px; padding: 48px;
+    position: relative; overflow: hidden;
+  }
+  .host-card::after {
+    content: ""; position: absolute; inset: 0; opacity: .08; mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  .host-card .stat { font-family: var(--display); font-weight: 300; font-size: 64px; line-height: 1; color: var(--terra); }
+  .host-card h3 { font-family: var(--display); font-weight: 460; font-size: 30px; margin: 8px 0 14px; }
+  .host-card p { color: #cdc2ad; max-width: 40ch; }
+
+  /* footer CTA */
+  footer { padding: 110px 0 60px; }
+  .foot-cta { text-align: center; margin-bottom: 80px; }
+  .foot-cta h2 {
+    font-family: var(--display); font-weight: 320; font-size: clamp(48px, 9vw, 140px);
+    letter-spacing: -.04em; line-height: .9;
+  }
+  .foot-cta h2 em { font-style: italic; color: var(--terra); }
+  .foot-links { display: flex; justify-content: space-between; padding-top: 34px; border-top: 1px solid var(--rule); flex-wrap: wrap; gap: 24px; }
+  .foot-links .col h4 { font-size: 12px; letter-spacing: .22em; text-transform: uppercase; color: var(--ink-soft); margin-bottom: 14px; }
+  .foot-links .col a { display: block; color: var(--ink); text-decoration: none; font-size: 16px; margin-bottom: 7px; }
+  .foot-links .col a:hover { color: var(--terra); }
+  .colophon { margin-top: 48px; font-size: 13px; color: var(--ink-soft); letter-spacing: .05em; }
+
+  @media (max-width: 880px) {
+    .hero { grid-template-columns: 1fr; }
+    .stack { display: none; }
+    .steps { grid-template-columns: 1fr; gap: 40px; }
+    .step { border-left: none; padding: 0; border-top: 1px solid var(--rule); padding-top: 22px; }
+    .host { grid-template-columns: 1fr; }
+    .row { grid-template-columns: 1fr auto; }
+    .row .idx, .row .where { display: none; }
+    nav a:not(.nav-cta) { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="brand rise d1">Click<span>.</span></div>
+    <nav class="rise d2">
+      <a href="#how">How it works</a>
+      <a href="#events">Discover</a>
+      <a href="#host">For hosts</a>
+      <a href="#" class="nav-cta">Get started</a>
+    </nav>
+  </header>
+
+  <div class="masthead rise d2">
+    <span>Issue 01 — Sydney</span>
+    <span>Real events, real people</span>
+    <span>Winter 2026</span>
+  </div>
+
+  <section class="hero">
+    <div>
+      <div class="kicker rise d3">Stop scrolling. Start showing up.</div>
+      <h1 class="rise d4">Meet people<br>the <em>old</em><br><span class="out">fashioned</span> way.</h1>
+      <p class="lede rise d6">Click curates small, real-life events across Sydney — then helps you find the people you actually clicked with once you're in the room.</p>
+      <div class="hero-actions rise d7">
+        <a href="#" class="btn btn-fill">Find an event tonight</a>
+        <a href="#how" class="btn btn-ghost">How it works</a>
+      </div>
+    </div>
+    <div class="stack rise d5">
+      <div class="card c1"><div class="tag">Surry Hills · Fri</div><div class="ttl">Rooftop Cinema &amp; Negronis</div></div>
+      <div class="card c3"><div class="tag">Newtown · Sat</div><div class="ttl">Pottery + Natural Wine</div></div>
+      <div class="card c2"><div class="tag">Bondi · Sun 6am</div><div class="ttl">Sunrise Run Club</div></div>
+    </div>
+  </section>
+
+  <div class="ticker rise d8">
+    <div class="ticker-track">
+      <span>Life drawing</span><span>Supper clubs</span><span>Trail runs</span><span>Vinyl listening bars</span><span>Board game nights</span><span>Pasta making</span><span>Life drawing</span><span>Supper clubs</span><span>Trail runs</span><span>Vinyl listening bars</span><span>Board game nights</span><span>Pasta making</span>
+    </div>
+  </div>
+
+  <section class="sec" id="how">
+    <div class="sec-head">
+      <h2>How it<br>works</h2>
+      <div class="sec-no">No. 01 — The method</div>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <div class="num">01</div>
+        <h3>Find your night</h3>
+        <p>Browse hand-picked events near you. Small rooms, shared interests, no algorithm-bait. RSVP in two taps.</p>
+      </div>
+      <div class="step">
+        <div class="num">02</div>
+        <h3>Turn up &amp; relax</h3>
+        <p>Hosts set the scene. You just arrive. Everyone's there for the same reason — to actually meet someone.</p>
+      </div>
+      <div class="step">
+        <div class="num">03</div>
+        <h3>Click with someone</h3>
+        <p>Felt a spark? Quietly click them in the app. If it's mutual, we open a private thread the next morning.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec" id="events">
+    <div class="sec-head">
+      <h2>This week<br>in Sydney</h2>
+      <div class="sec-no">No. 02 — The calendar</div>
+    </div>
+    <div class="listing">
+      <a class="row" href="#"><span class="idx">i.</span><div><div class="title">Long-table dinner for strangers</div><div class="where">Carriageworks · Eveleigh</div></div><div class="meta">Thu · $48</div><div class="arrow">↗</div></a>
+      <a class="row" href="#"><span class="idx">ii.</span><div><div class="title">Analogue photo walk</div><div class="where">The Rocks · Sydney</div></div><div class="meta">Fri · Free</div><div class="arrow">↗</div></a>
+      <a class="row" href="#"><span class="idx">iii.</span><div><div class="title">Ceramics &amp; orange wine</div><div class="where">Marrickville</div></div><div class="meta">Sat · $65</div><div class="arrow">↗</div></a>
+      <a class="row" href="#"><span class="idx">iv.</span><div><div class="title">Sunset sea pool swim</div><div class="where">Bronte Baths</div></div><div class="meta">Sun · $12</div><div class="arrow">↗</div></a>
+    </div>
+  </section>
+
+  <section class="quote">
+    <p>The best people you'll meet this year are <b>already in a room near you.</b></p>
+    <div class="by">— The Click manifesto</div>
+  </section>
+
+  <section class="sec" id="host">
+    <div class="host">
+      <div>
+        <div class="sec-no" style="margin-bottom:18px">No. 03 — For hosts</div>
+        <h2 style="font-family:var(--display);font-weight:360;font-size:clamp(34px,4.4vw,56px);letter-spacing:-.025em;line-height:1.02;margin-bottom:20px">Host a room.<br>We bring the<br>right people.</h2>
+        <p style="color:var(--ink-soft);max-width:44ch;margin-bottom:26px">Run a supper club, a class, a screening? List it on Click and reach guests who are genuinely there to connect — with ticketing, RSVPs and payouts handled.</p>
+        <a href="#" class="btn btn-fill">Become a host</a>
+      </div>
+      <div class="host-card">
+        <div class="stat">12,400+</div>
+        <h3>connections made</h3>
+        <p>since launch — across 600 curated events, hosted by 180 Sydney creators, supper clubs and studios.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="foot-cta">
+      <h2>Your<br>people are<br><em>out there.</em></h2>
+      <div style="margin-top:34px"><a href="#" class="btn btn-fill" style="font-size:18px;padding:16px 38px">Join Click — it's free</a></div>
+    </div>
+    <div class="foot-links">
+      <div class="col"><h4>Click</h4><a href="#">How it works</a><a href="#">Discover events</a><a href="#">Safety</a></div>
+      <div class="col"><h4>Hosts</h4><a href="#">Become a host</a><a href="#">Pricing</a><a href="#">Host stories</a></div>
+      <div class="col"><h4>Company</h4><a href="#">About</a><a href="#">Careers</a><a href="#">Press</a></div>
+      <div class="col"><h4>Legal</h4><a href="#">Terms</a><a href="#">Privacy</a><a href="#">Refunds</a></div>
+    </div>
+    <div class="colophon">© 2026 Click · Made in Sydney · Set in Fraunces &amp; Newsreader</div>
+  </footer>
+
+</div>
+</body>
+</html>

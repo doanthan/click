@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AdminMerchantAutoApprove } from "@/components/admin-merchant-auto-approve";
+import { AdminMerchantVerification } from "@/components/admin-merchant-verification";
 import {
   getAdminMerchantDetail,
   getMerchantDocumentsForAdmin,
@@ -250,6 +251,11 @@ export default async function AdminMerchantDetailPage({
           />
         </dl>
       </header>
+
+      <AdminMerchantVerification
+        merchantId={merchant.id}
+        initialStatus={merchant.verificationStatus as "pending" | "approved" | "rejected" | "suspended"}
+      />
 
       <AdminMerchantAutoApprove
         merchantId={merchant.id}

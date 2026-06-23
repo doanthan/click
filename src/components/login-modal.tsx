@@ -345,6 +345,10 @@ export function LoginModal({
 
           <form action={emailAction} onSubmit={() => handleSubmit("email")} className="grid gap-3">
             <input type="hidden" name="callbackUrl" value={formCallbackUrl} />
+            {/* Login mode rejects an unknown email ("no account found") instead
+                of passwordless-creating a junk profile; signup still creates. (#181) */}
+            <input type="hidden" name="mode" value={isSignup ? "signup" : "login"} />
+
 
             {isSignup ? (
               <label className="grid gap-1.5 text-sm font-bold text-[color:var(--ink)]">

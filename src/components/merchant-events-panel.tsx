@@ -43,6 +43,10 @@ function formatPrice(cents: number) {
 
 function statusTone(status: MerchantEventSummary["status"]): "rose" | "peach" | "cream" | "ink" {
   if (status === "Pending") return "rose";
+  // A rejected event is "not live" and needs the merchant's attention — give it
+  // the alert tone instead of the neutral default it used to fall through to,
+  // which made it indistinguishable from a live event (#193).
+  if (status === "Rejected") return "rose";
   if (status === "Waitlist") return "peach";
   if (status === "Locked") return "ink";
   return "cream";
@@ -220,11 +224,15 @@ export function MerchantEventsPanel({
             const statusLabel =
               event.status === "Cancelled"
                 ? "Cancelled"
-                : past
-                  ? "Ended"
-                  : isFull && event.status === "Live"
-                    ? "Full"
-                    : event.status;
+                : // Rejected takes precedence over "Ended": a past rejected event
+                  // should still read "Rejected", not look like it merely lapsed (#193).
+                  event.status === "Rejected"
+                  ? "Rejected"
+                  : past
+                    ? "Ended"
+                    : isFull && event.status === "Live"
+                      ? "Full"
+                      : event.status;
 
             return (
               <Link
@@ -259,7 +267,17 @@ export function MerchantEventsPanel({
                   {event.waitlisted > 0 ? `${event.waitlisted} waiting` : "—"}
                 </p>
 
-                <Pill tone={past || event.status === "Cancelled" ? "cream" : statusTone(event.status)}>
+                <Pill
+                  tone={
+                    // Rejected always keeps its alert tone, even when past — being
+                    // "not live" matters more than being over (#193).
+                    event.status === "Rejected"
+                      ? "rose"
+                      : past || event.status === "Cancelled"
+                        ? "cream"
+                        : statusTone(event.status)
+                  }
+                >
                   {statusLabel}
                 </Pill>
               </Link>

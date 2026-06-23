@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { duplicateEventForMerchant } from "@/lib/event-repository";
+import { getMerchantEventDuplicateDraft } from "@/lib/event-repository";
 
 type RouteContext = {
   params: Promise<{ eventId: string }>;
@@ -35,17 +35,19 @@ function errorResponse(error: unknown) {
   );
 }
 
-// POST /api/merchant/events/[eventId]/duplicate
-// Clones the merchant's event into a fresh draft (no attendees, re-dated a week
-// out) and returns the new event's slug so the client can route the merchant
-// straight to the copy to adjust the date/details.
-export async function POST(_request: Request, context: RouteContext) {
+// GET /api/merchant/events/[eventId]/duplicate
+// Returns a prefilled "draft" (the source event's details, with the date left
+// blank and no "Copy of" prefix) that the client seeds into the create wizard,
+// so duplicating an event becomes "create event, pre-populated" — the merchant
+// picks a new date/time, tweaks anything, and publishes through the normal flow
+// (so the copy actually lands in discovery). Bug board #184/#185/#191.
+export async function GET(_request: Request, context: RouteContext) {
   const { eventId } = await context.params;
   const session = await auth();
 
   try {
-    const result = await duplicateEventForMerchant(eventId, session);
-    return NextResponse.json({ ok: true, ...result });
+    const draft = await getMerchantEventDuplicateDraft(eventId, session);
+    return NextResponse.json({ ok: true, draft });
   } catch (error) {
     return errorResponse(error);
   }
