@@ -1,5 +1,33 @@
 @import "tailwindcss";
 
+/* ============================================================================
+   DESIGN CONVENTIONS — the scale this app composes against. Keep new UI on it.
+   ----------------------------------------------------------------------------
+   Color     : use color:var(--token), never hardcoded hex. --champagne (page),
+               --cream (card surface), --ink (text), --mauve (2ndary text),
+               --rose (coral accent / destructive), --peach (electric lime,
+               ALWAYS on --surface-deep dark text), --line (hairline border).
+   Radius     : rounded-full = pills / chips / buttons · rounded-2xl = standard
+                cards · rounded-3xl = large containers, modals, heroes, sidebars
+                · rounded-xl = small inset elements.
+   Borders    : `border` (1px) = content hairlines + .sticker · `border-2` =
+                structural frames (cards, sidebars, table shells). --line for
+                hairlines, --line-strong for emphasis.
+   Elevation  : hard-shadow-sm = cards · hard-shadow = raised surfaces ·
+                hard-shadow-lg = modals / popovers.
+   Labels     : `.eyebrow` (condensed Archivo, mauve) is the CANONICAL section
+                label. NOTE: many admin/merchant cards still use an ad-hoc
+                `font-mono ... text-[--rose]` label voice — a known divergence;
+                prefer `.eyebrow` for new work, and unify deliberately if asked.
+   Numerals   : add `tabular-nums` to proportional-font (font-display) figures
+                that update or need to align in a column.
+   Primitives : loading -> components/skeleton.tsx + route loading.tsx · empty
+                -> components/empty-state.tsx (pass `bare` to embed in a card) ·
+                confirm/prompt -> components/confirm-dialog.tsx (focus-trapped).
+   Motion     : prefers-reduced-motion is handled GLOBALLY (block near EOF) —
+                no per-element guard needed; don't rely on motion for meaning.
+   ============================================================================ */
+
 :root {
   /* Click — "River"-style editorial palette: warm cream + near-black ink,
      one electric-lime accent, a warm coral secondary, cool-gray support.
