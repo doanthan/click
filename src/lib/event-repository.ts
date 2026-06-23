@@ -1608,7 +1608,25 @@ async function backfillAvatarFromRemote(profileId: string, sourceUrl: string) {
   }
 }
 
-export async function getMerchantProfile(pool: ReturnType<typeof getPostgresPool>, profileId: string) {
+export function getMerchantProfile(
+  pool: ReturnType<typeof getPostgresPool>,
+  profileId: string,
+): Promise<MerchantProfileRow | null> {
+  // Per-request memo, same shape as memoizeBySessionEmail (which also drives
+  // sessionMemoSlot): a single render hits this many times (layout gate + page
+  // + repository helpers) and each used to be its own round-trip. Keyed on the
+  // string profileId — the pool is a process-wide singleton, so it never varies
+  // per call. Outside a React request scope cache() falls through uncached,
+  // matching the previous behaviour for route handlers / crons.
+  const slot = sessionMemoSlot("merchantProfile", profileId);
+  if (!slot.promise) slot.promise = loadMerchantProfile(pool, profileId);
+  return slot.promise as Promise<MerchantProfileRow | null>;
+}
+
+async function loadMerchantProfile(
+  pool: ReturnType<typeof getPostgresPool>,
+  profileId: string,
+): Promise<MerchantProfileRow | null> {
   if (!pool) return null;
   const result = await pool.query<MerchantProfileRow>(
     `
@@ -4313,19 +4331,30 @@ export async function getAdminEvents() {
     `);
 
     // Interest tags per event, in a separate query so joining the tags table
-    // doesn't multiply the attendee-count aggregation above.
-    const tagsResult = await pool.query<{ slug: string; tag_slug: string; tag_label: string }>(`
-      select event.slug, tag.slug as tag_slug, tag.label as tag_label
-      from events event
-      join event_tags et on et.event_id = event.id
-      join tags tag on tag.id = et.tag_id and tag.tag_type = 'interest'
-      order by tag.label asc
-    `);
+    // doesn't multiply the attendee-count aggregation above. Scoped to the
+    // (≤200) event slugs the main query actually returned — the previous
+    // unscoped scan computed tags for every event in the table only to discard
+    // any not present in `result.rows`. Output is identical: same per-event tag
+    // lists, same `order by tag.label asc` ordering within each event.
+    const eventSlugs = result.rows.map((row) => row.slug);
     const tagsBySlug = new Map<string, { slug: string; label: string }[]>();
-    for (const row of tagsResult.rows) {
-      const list = tagsBySlug.get(row.slug) ?? [];
-      list.push({ slug: row.tag_slug, label: row.tag_label });
-      tagsBySlug.set(row.slug, list);
+    if (eventSlugs.length > 0) {
+      const tagsResult = await pool.query<{ slug: string; tag_slug: string; tag_label: string }>(
+        `
+        select event.slug, tag.slug as tag_slug, tag.label as tag_label
+        from events event
+        join event_tags et on et.event_id = event.id
+        join tags tag on tag.id = et.tag_id and tag.tag_type = 'interest'
+        where event.slug = any($1::text[])
+        order by tag.label asc
+      `,
+        [eventSlugs],
+      );
+      for (const row of tagsResult.rows) {
+        const list = tagsBySlug.get(row.slug) ?? [];
+        list.push({ slug: row.tag_slug, label: row.tag_label });
+        tagsBySlug.set(row.slug, list);
+      }
     }
 
     return result.rows.map((event): AdminEventRow => {
@@ -4363,6 +4392,29 @@ export async function getAdminEvents() {
     }
 
     return getFallbackAdminEvents();
+  }
+}
+
+// Lightweight {slug,title} list for admin dropdowns (e.g. the members-page
+// event filter), so callers that only need the event picker don't pull the full
+// getAdminEvents() payload (attendee counts, avatars, tags subquery, geo, etc).
+// Same DB-down contract as getFallbackAdminEvents(): an honest empty list.
+export async function getAdminEventOptions(): Promise<{ slug: string; title: string }[]> {
+  const pool = getPostgresPool();
+  if (!pool) return [];
+
+  try {
+    const result = await pool.query<{ slug: string; title: string }>(`
+      select slug, title
+      from events
+      order by title
+    `);
+    return result.rows.map((row) => ({ slug: row.slug, title: row.title }));
+  } catch (error) {
+    if (process.env.CLICK_DB_DEBUG === "true") {
+      console.warn("Falling back to empty admin event options.", error);
+    }
+    return [];
   }
 }
 

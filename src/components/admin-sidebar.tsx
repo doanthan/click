@@ -186,7 +186,7 @@ export function AdminSidebar({ counts }: { counts: AdminSidebarCounts }) {
         key={item.key}
         href={item.href}
         aria-current={isActive ? "page" : undefined}
-        className={`group flex w-full items-center gap-3 rounded-2xl border-2 px-3.5 py-2.5 text-left text-[0.92rem] font-bold transition ${
+        className={`group flex w-full items-center gap-3 rounded-2xl border-2 px-3.5 py-2.5 text-left text-[0.92rem] font-bold transition active:translate-y-px ${
           isActive
             ? "border-[color:var(--line)] bg-[color:var(--ink)] text-[color:var(--champagne)] hard-shadow-sm"
             : "border-transparent text-[color:var(--mauve)] hover:bg-[color:var(--cream)] hover:text-[color:var(--ink)]"

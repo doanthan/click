@@ -293,6 +293,9 @@ body {
   transition: transform 200ms ease, box-shadow 200ms ease, background-color 200ms ease;
 }
 .sticker:hover { transform: translateY(-1px); box-shadow: 0 6px 16px -8px rgba(22, 24, 29, 0.22); }
+/* Press feedback — the soft elevation system implies physicality, so a pressed
+   capsule settles back flush. */
+.sticker:active { transform: translateY(0); box-shadow: 0 1px 1px rgba(22, 24, 29, 0.06); }
 .sticker--rose { background: var(--rose); color: #fff; border-color: transparent; }
 /* --peach is the electric lime in both modes; pair it with the near-black
    --surface-deep so text stays legible on the bright accent. */
@@ -451,6 +454,42 @@ button:focus-visible, a:focus-visible, select:focus-visible, textarea:focus-visi
   background-repeat: repeat-x;
 }
 
+/* ---------- Skeleton (loading shimmer) ----------
+   Premium loading state in the warm palette: a champagne-deep base with a soft
+   cream light-sweep that mirrors the surface of the cards it stands in for —
+   never a generic gray pulse. The global prefers-reduced-motion block below
+   freezes the sweep; we also pin a flat base there so a frozen frame can never
+   look like a half-finished swipe. */
+@keyframes skeleton-sweep {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.skeleton {
+  background-color: var(--champagne-deep);
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--cream) 92%, transparent) 45%,
+    color-mix(in srgb, var(--cream) 92%, transparent) 55%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  animation: skeleton-sweep 1.5s ease-in-out infinite;
+}
+/* On the near-black "deep" surfaces (dark cards/bands) the cream sweep would
+   glare; use a quiet lift of the surface instead. */
+.skeleton--deep {
+  background-color: var(--surface-deep-2);
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(244, 241, 234, 0.10) 45%,
+    rgba(244, 241, 234, 0.10) 55%,
+    transparent 100%
+  );
+}
+
 /* ---------- Step transitions (onboarding wizard) ---------- */
 @keyframes step-slide-in-fwd {
   from { opacity: 0; transform: translateX(20px); }
@@ -471,4 +510,6 @@ button:focus-visible, a:focus-visible, select:focus-visible, textarea:focus-visi
     animation-iteration-count: 1 !important;
   }
   .marquee__track { animation: none !important; }
+  /* Freeze the loading shimmer to a calm flat surface rather than a stuck mid-sweep frame. */
+  .skeleton, .skeleton--deep { animation: none !important; background-image: none !important; }
 }

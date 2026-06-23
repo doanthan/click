@@ -85,7 +85,7 @@ export function MetricCard({ label, value, tone = "peach" }: { label: string; va
   return (
     <article className={`rounded-2xl border ${palette} hard-shadow-sm p-5`}>
       <p className="font-condensed text-[0.72rem] font-semibold uppercase tracking-[0.16em] opacity-70">{label}</p>
-      <p className="font-display mt-2 text-5xl font-light leading-none tracking-[-0.02em]">{value}</p>
+      <p className="font-display mt-2 text-5xl font-light leading-none tracking-[-0.02em] tabular-nums">{value}</p>
     </article>
   );
 }
@@ -154,7 +154,7 @@ export function Pill({
     return (
       <Link
         href={href}
-        className={`${base} transition-all duration-200 hover:-translate-y-0.5 hover:border-[color:var(--ink)]`}
+        className={`${base} transition-all duration-200 hover:-translate-y-0.5 hover:border-[color:var(--ink)] active:translate-y-0 active:brightness-[0.97]`}
       >
         {children}
       </Link>
@@ -187,7 +187,7 @@ export function LinkButton({
   return (
     <Link
       href={href}
-      className={`group/btn inline-flex min-h-12 items-center gap-2 rounded-full px-6 text-[0.95rem] font-semibold tracking-[-0.005em] transition-all duration-200 hover:-translate-y-0.5 ${className}`}
+      className={`group/btn inline-flex min-h-12 items-center gap-2 rounded-full px-6 text-[0.95rem] font-semibold tracking-[-0.005em] transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:brightness-[0.97] ${className}`}
     >
       {children}
       <span aria-hidden className="inline-block text-base transition-transform duration-300 group-hover/btn:translate-x-1">→</span>

@@ -2,7 +2,10 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import type { AdminMerchantRow } from "@/lib/event-repository";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { EmptyState } from "@/components/empty-state";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -27,12 +30,10 @@ function MerchantActions({
   merchant,
   onUpdate,
   onToggleTrust,
-  pendingMessage,
 }: {
   merchant: AdminMerchantRow;
   onUpdate: (status: VerificationStatus) => void;
   onToggleTrust: (next: boolean) => void;
-  pendingMessage?: string;
 }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -159,11 +160,6 @@ function MerchantActions({
               Events hidden from Discover
             </p>
           ) : null}
-          {pendingMessage ? (
-            <p className="mt-1 px-3 py-1 text-[0.65rem] font-bold text-[color:var(--mauve)]">
-              {pendingMessage}
-            </p>
-          ) : null}
         </div>
       ) : null}
     </div>
@@ -174,7 +170,10 @@ export function AdminMerchantsTable({ merchants }: { merchants: AdminMerchantRow
   const [rows, setRows] = useState(merchants);
   const [status, setStatus] = useState<StatusFilter>("all");
   const [query, setQuery] = useState("");
-  const [actionState, setActionState] = useState<Record<string, string>>({});
+  // Merchant id currently mid-request (drives the reject dialog's busy state).
+  const [busyId, setBusyId] = useState<string | null>(null);
+  // Merchant queued for the branded reject confirmation (null = dialog closed).
+  const [pendingReject, setPendingReject] = useState<AdminMerchantRow | null>(null);
 
   const filtered = useMemo(() => {
     const search = query.trim().toLowerCase();
@@ -197,36 +196,40 @@ export function AdminMerchantsTable({ merchants }: { merchants: AdminMerchantRow
     { value: "suspended", label: "Suspended", count: rows.filter((m) => m.verificationStatus === "suspended").length },
   ];
 
-  async function updateVerification(merchantId: string, nextStatus: VerificationStatus) {
-    // Rejection carries a free-text "why" — it rides through to the merchant's
-    // notification + email so they know what to fix and resubmit.
-    let reason: string | undefined;
+  // Entry point from the row menu. Rejection carries a free-text "why", so it
+  // routes through the branded confirm/prompt dialog; the rest run immediately.
+  function updateVerification(merchantId: string, nextStatus: VerificationStatus) {
     if (nextStatus === "rejected") {
-      const entered = window.prompt(
-        "Why is this merchant being rejected? (sent to them by email — leave blank to send the generic note)",
-        "",
-      );
-      if (entered === null) return; // admin cancelled
-      reason = entered.trim() || undefined;
+      const merchant = rows.find((m) => m.id === merchantId) ?? null;
+      setPendingReject(merchant);
+      return;
     }
+    void performVerification(merchantId, nextStatus);
+  }
 
-    setActionState((current) => ({ ...current, [merchantId]: "Saving..." }));
+  // Reason rides through to the merchant's notification + email so they know
+  // what to fix and resubmit (only ever set on the rejection branch).
+  async function performVerification(
+    merchantId: string,
+    nextStatus: VerificationStatus,
+    reason?: string,
+  ) {
+    setBusyId(merchantId);
 
     const response = await fetch(`/api/admin/merchants/${merchantId}/verification`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: nextStatus, ...(reason ? { reason } : {}) }),
     });
-    const payload = (await response.json()) as {
+    const payload = (await response.json().catch(() => ({}))) as {
       error?: string;
       verificationStatus?: string;
     };
 
     if (!response.ok) {
-      setActionState((current) => ({
-        ...current,
-        [merchantId]: payload.error ?? "Update failed.",
-      }));
+      toast.error(payload.error ?? "Update failed.");
+      setBusyId(null);
+      setPendingReject(null);
       return;
     }
 
@@ -240,21 +243,21 @@ export function AdminMerchantsTable({ merchants }: { merchants: AdminMerchantRow
           : merchant,
       ),
     );
-    setActionState((current) => ({
-      ...current,
-      [merchantId]:
-        nextStatus === "approved"
-          ? "Approved."
-          : nextStatus === "suspended"
-            ? "Suspended."
-            : nextStatus === "rejected"
-              ? "Rejected."
-              : "Updated.",
-    }));
+    toast.success(
+      nextStatus === "approved"
+        ? "Merchant approved."
+        : nextStatus === "suspended"
+          ? "Merchant suspended."
+          : nextStatus === "rejected"
+            ? "Merchant rejected."
+            : "Merchant updated.",
+    );
+    setBusyId(null);
+    setPendingReject(null);
   }
 
   async function updateAutoApprove(merchantId: string, next: boolean) {
-    setActionState((current) => ({ ...current, [merchantId]: "Saving..." }));
+    setBusyId(merchantId);
 
     const response = await fetch(`/api/admin/merchants/${merchantId}/auto-approve`, {
       method: "POST",
@@ -267,10 +270,8 @@ export function AdminMerchantsTable({ merchants }: { merchants: AdminMerchantRow
     };
 
     if (!response.ok) {
-      setActionState((current) => ({
-        ...current,
-        [merchantId]: payload.error ?? "Update failed.",
-      }));
+      toast.error(payload.error ?? "Update failed.");
+      setBusyId(null);
       return;
     }
 
@@ -282,10 +283,8 @@ export function AdminMerchantsTable({ merchants }: { merchants: AdminMerchantRow
           : merchant,
       ),
     );
-    setActionState((current) => ({
-      ...current,
-      [merchantId]: applied ? "Trusted — events auto-publish." : "Review required.",
-    }));
+    toast.success(applied ? "Trusted — events auto-publish." : "Review required for future events.");
+    setBusyId(null);
   }
 
   return (
@@ -328,9 +327,19 @@ export function AdminMerchantsTable({ merchants }: { merchants: AdminMerchantRow
           <span className="text-right">Actions</span>
         </div>
         {filtered.length === 0 ? (
-          <p className="px-5 py-8 text-center text-sm font-bold text-[color:var(--mauve)]">
-            No merchants match this filter.
-          </p>
+          <div className="p-5">
+            <EmptyState
+              bare
+              eyebrow="No matches"
+              title={rows.length === 0 ? "No merchants yet" : "No merchants match this filter"}
+              body={
+                rows.length === 0
+                  ? "Merchant applications will appear here once businesses sign up."
+                  : "Try a different status filter or clear your search to see more."
+              }
+              tone="ink"
+            />
+          </div>
         ) : (
           filtered.map((merchant) => (
             <div
@@ -373,11 +382,6 @@ export function AdminMerchantsTable({ merchants }: { merchants: AdminMerchantRow
                     ABN {merchant.abn}
                   </p>
                 ) : null}
-                {actionState[merchant.id] ? (
-                  <p className="mt-1 text-[0.65rem] font-bold text-[color:var(--mauve)]">
-                    {actionState[merchant.id]}
-                  </p>
-                ) : null}
               </div>
               <div>
                 <p className="font-black text-[color:var(--ink)]">{merchant.ownerName}</p>
@@ -389,12 +393,32 @@ export function AdminMerchantsTable({ merchants }: { merchants: AdminMerchantRow
                 merchant={merchant}
                 onUpdate={(next) => updateVerification(merchant.id, next)}
                 onToggleTrust={(next) => updateAutoApprove(merchant.id, next)}
-                pendingMessage={actionState[merchant.id]}
               />
             </div>
           ))
         )}
       </div>
+
+      <ConfirmDialog
+        open={pendingReject !== null}
+        title={
+          pendingReject
+            ? `Reject ${pendingReject.businessName}?`
+            : "Reject this merchant?"
+        }
+        description="They'll be notified by email with your reason so they know what to fix and resubmit."
+        confirmLabel="Reject merchant"
+        tone="rose"
+        busy={pendingReject ? busyId === pendingReject.id : false}
+        promptLabel="Why is this merchant being rejected? (sent to them by email)"
+        promptPlaceholder="Leave blank to send the generic note"
+        onConfirm={(reason) => {
+          if (pendingReject) {
+            void performVerification(pendingReject.id, "rejected", reason || undefined);
+          }
+        }}
+        onCancel={() => setPendingReject(null)}
+      />
     </div>
   );
 }

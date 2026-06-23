@@ -1,12 +1,39 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import type { AdminEventRow } from "@/lib/event-repository";
 import type { EventStatus } from "@/lib/click-data";
 import type { Region } from "@/lib/geo";
-import { AdminEventsMap } from "@/components/admin-events-map";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { EmptyState } from "@/components/empty-state";
+import { Skeleton } from "@/components/skeleton";
+
+// Skeleton sized to the real map shell (mt-6 card + h-[32rem] viewport) so the
+// swap-in doesn't shift layout while mapbox-gl loads.
+function MapSkeleton() {
+  return (
+    <div className="mt-6 overflow-hidden rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow-sm">
+      {/* Mirror the real map card's dark header strip so the swap-in doesn't shift. */}
+      <div className="flex items-center justify-between gap-3 border-b-2 border-[color:var(--line)] bg-[color:var(--surface-deep)] px-5 py-3">
+        <Skeleton deep className="h-3.5 w-40 rounded-full" />
+        <Skeleton deep className="h-6 w-24 rounded-full" />
+      </div>
+      <Skeleton className="h-[32rem] w-full rounded-none" />
+    </div>
+  );
+}
+
+// Code-split mapbox-gl out of the initial bundle: the default view is the table,
+// so the (hundreds of KB) map module only loads once a user switches to the map
+// view. ssr:false because react-map-gl/mapbox-gl is browser-only.
+const AdminEventsMap = dynamic(
+  () => import("@/components/admin-events-map").then((m) => m.AdminEventsMap),
+  { ssr: false, loading: () => <MapSkeleton /> },
+);
 
 type ViewMode = "table" | "map";
 type StatusFilter = "all" | EventStatus;
@@ -154,9 +181,11 @@ export function AdminEventQueue({
   const searchParams = useSearchParams();
 
   const [rows, setRows] = useState(events);
-  const [message, setMessage] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  // The event currently queued for a reject-with-reason confirmation. Drives the
+  // branded <ConfirmDialog> (replaces the native window.prompt).
+  const [rejectTarget, setRejectTarget] = useState<AdminEventRow | null>(null);
 
   // The query string is the single source of truth for every filter, so the
   // browser Back/Forward buttons replay filter states and each combination is
@@ -364,7 +393,6 @@ export function AdminEventQueue({
   const pageEnd = Math.min(safePage * PAGE_SIZE, sorted.length);
 
   async function approve(eventId: string) {
-    setMessage("");
     setBusyId(eventId);
 
     try {
@@ -375,7 +403,7 @@ export function AdminEventQueue({
       const payload = (await response.json()) as { event?: { title?: string }; error?: string };
 
       if (!response.ok) {
-        setMessage(payload.error ?? "Approval failed.");
+        toast.error(payload.error ?? "Approval failed.");
         return;
       }
 
@@ -384,7 +412,7 @@ export function AdminEventQueue({
           event.id === eventId ? { ...event, status: "Live" } : event,
         ),
       );
-      setMessage(`${payload.event?.title ?? "Event"} is now live.`);
+      toast.success(`${payload.event?.title ?? "Event"} is now live.`);
     } finally {
       setBusyId(null);
     }
@@ -394,7 +422,6 @@ export function AdminEventQueue({
   // pendingAddress onto the live address; reject discards it. Either way we clear
   // the banner by nulling pendingAddress on the row.
   async function decideAddress(eventId: string, decision: "approve" | "reject") {
-    setMessage("");
     setBusyId(eventId);
     try {
       const response = await fetch(
@@ -411,7 +438,7 @@ export function AdminEventQueue({
         address?: string | null;
       };
       if (!response.ok) {
-        setMessage(payload.error ?? "Could not update the address change.");
+        toast.error(payload.error ?? "Could not update the address change.");
         return;
       }
       setRows((current) =>
@@ -428,7 +455,7 @@ export function AdminEventQueue({
             : event,
         ),
       );
-      setMessage(
+      toast.success(
         decision === "approve"
           ? `Address updated for ${payload.title ?? "the event"}.`
           : `Address change declined for ${payload.title ?? "the event"}.`,
@@ -439,7 +466,6 @@ export function AdminEventQueue({
   }
 
   async function saveTags(eventId: string, slugs: string[]) {
-    setMessage("");
     setBusyId(eventId);
     try {
       const response = await fetch(
@@ -455,7 +481,7 @@ export function AdminEventQueue({
         error?: string;
       };
       if (!response.ok) {
-        setMessage(payload.error ?? "Could not update tags.");
+        toast.error(payload.error ?? "Could not update tags.");
         return false;
       }
       setRows((current) =>
@@ -463,23 +489,17 @@ export function AdminEventQueue({
           event.id === eventId ? { ...event, tags: payload.tags ?? [] } : event,
         ),
       );
-      setMessage("Interest tags updated.");
+      toast.success("Interest tags updated.");
       return true;
     } finally {
       setBusyId(null);
     }
   }
 
-  async function reject(eventId: string) {
-    // Capture an optional reason — it rides through to the
-    // event-rejected-merchant email + audit log. Cancel (null) aborts.
-    const reason = window.prompt(
-      "Why is this event being declined? The merchant sees this note.",
-      "",
-    );
-    if (reason === null) return;
-
-    setMessage("");
+  // Runs once the reject-reason dialog is confirmed. The reason rides through to
+  // the event-rejected-merchant email + audit log (empty string is allowed — the
+  // note is optional, matching the previous window.prompt behaviour).
+  async function confirmReject(eventId: string, reason: string) {
     setBusyId(eventId);
 
     try {
@@ -494,7 +514,7 @@ export function AdminEventQueue({
       const payload = (await response.json()) as { event?: { title?: string }; error?: string };
 
       if (!response.ok) {
-        setMessage(payload.error ?? "Rejection failed.");
+        toast.error(payload.error ?? "Rejection failed.");
         return;
       }
 
@@ -503,9 +523,10 @@ export function AdminEventQueue({
           event.id === eventId ? { ...event, status: "Rejected" } : event,
         ),
       );
-      setMessage(`${payload.event?.title ?? "Event"} was declined.`);
+      toast.success(`${payload.event?.title ?? "Event"} was declined.`);
     } finally {
       setBusyId(null);
+      setRejectTarget(null);
     }
   }
 
@@ -606,24 +627,25 @@ export function AdminEventQueue({
       ) : (
         // overflow-visible so the row's 3-dot menu can render outside the card edge.
         <div className="mt-6 overflow-visible rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow-sm">
-        <div className="hidden grid-cols-[1.2fr_0.7fr_0.7fr_0.85fr_0.85fr_0.6fr_0.4fr] gap-4 bg-[color:var(--surface-deep)] px-5 py-3 text-xs font-black uppercase tracking-[0.14em] text-[color:var(--on-deep)] md:grid">
-          <SortHeader label="Event"    sortKey="title"     activeKey={sortKey} dir={sortDir} onClick={toggleSort} />
-          <SortHeader label="Status"   sortKey="status"    activeKey={sortKey} dir={sortDir} onClick={toggleSort} />
-          <SortHeader label="Category" sortKey="category"  activeKey={sortKey} dir={sortDir} onClick={toggleSort} />
-          <SortHeader label="Starts"   sortKey="startsAt"  activeKey={sortKey} dir={sortDir} onClick={toggleSort} />
-          <SortHeader label="Created"  sortKey="createdAt" activeKey={sortKey} dir={sortDir} onClick={toggleSort} />
-          <SortHeader label="Going"    sortKey="attendees" activeKey={sortKey} dir={sortDir} onClick={toggleSort} />
-          <span className="text-right">Actions</span>
-        </div>
-        {message ? (
-          <p className="border-b border-[color:var(--line)] bg-[color:var(--peach)] px-5 py-3 text-sm font-black text-[color:var(--surface-deep)]">
-            {message}
-          </p>
+        {filtered.length > 0 ? (
+          <div className="hidden grid-cols-[1.2fr_0.7fr_0.7fr_0.85fr_0.85fr_0.6fr_0.4fr] gap-4 bg-[color:var(--surface-deep)] px-5 py-3 text-xs font-black uppercase tracking-[0.14em] text-[color:var(--on-deep)] md:grid">
+            <SortHeader label="Event"    sortKey="title"     activeKey={sortKey} dir={sortDir} onClick={toggleSort} />
+            <SortHeader label="Status"   sortKey="status"    activeKey={sortKey} dir={sortDir} onClick={toggleSort} />
+            <SortHeader label="Category" sortKey="category"  activeKey={sortKey} dir={sortDir} onClick={toggleSort} />
+            <SortHeader label="Starts"   sortKey="startsAt"  activeKey={sortKey} dir={sortDir} onClick={toggleSort} />
+            <SortHeader label="Created"  sortKey="createdAt" activeKey={sortKey} dir={sortDir} onClick={toggleSort} />
+            <SortHeader label="Going"    sortKey="attendees" activeKey={sortKey} dir={sortDir} onClick={toggleSort} />
+            <span className="text-right">Actions</span>
+          </div>
         ) : null}
         {filtered.length === 0 ? (
-          <p className="px-5 py-8 text-center text-sm font-bold text-[color:var(--mauve)]">
-            No events match this filter.
-          </p>
+          <EmptyState
+            bare
+            eyebrow="Nothing to triage"
+            title="No events match this filter."
+            body="Try a different status, region, or date range — or clear the search to widen the queue."
+            tone="peach"
+          />
         ) : (
           pageRows.map((event) => {
             const isExpanded = expanded === event.id;
@@ -711,7 +733,7 @@ export function AdminEventQueue({
                     isBusy={busyId === event.id}
                     onToggleExpand={() => setExpanded(isExpanded ? null : event.id)}
                     onApprove={() => approve(event.id)}
-                    onReject={() => reject(event.id)}
+                    onReject={() => setRejectTarget(event)}
                   />
                 </div>
                 {event.pendingAddress ? (
@@ -827,6 +849,30 @@ export function AdminEventQueue({
         ) : null}
       </div>
       )}
+
+      {/* Branded reject-reason prompt (replaces window.prompt). The reason is
+          optional — empty confirms a reject with no note, as before. */}
+      <ConfirmDialog
+        open={rejectTarget !== null}
+        title="Reject this event?"
+        description={
+          rejectTarget
+            ? `"${rejectTarget.title}" will be declined and the merchant notified. They'll see your note below.`
+            : undefined
+        }
+        badge="Reject"
+        tone="rose"
+        confirmLabel="Reject event"
+        cancelLabel="Keep pending"
+        busy={rejectTarget !== null && busyId === rejectTarget.id}
+        promptLabel="Why is this event being declined? The merchant sees this note."
+        promptPlaceholder="Optional — shared with the merchant"
+        promptMultiline
+        onConfirm={(reason) => {
+          if (rejectTarget) confirmReject(rejectTarget.id, reason);
+        }}
+        onCancel={() => setRejectTarget(null)}
+      />
     </div>
   );
 }

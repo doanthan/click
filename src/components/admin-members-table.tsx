@@ -1,7 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import {
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import { toast } from "sonner";
 import {
   setMemberVerifiedAction,
@@ -9,6 +16,7 @@ import {
   unsuspendMemberAction,
 } from "@/app/admin/actions";
 import type { AdminMemberRow } from "@/lib/event-repository";
+import { EmptyState } from "@/components/empty-state";
 
 type RoleFilter = "all" | "attendee" | "merchant" | "admin";
 
@@ -220,9 +228,11 @@ function MemberActions({
 
 function MemberRow({
   member,
+  joinedLabel,
   onEventSelect,
 }: {
   member: AdminMemberRow;
+  joinedLabel: string;
   onEventSelect?: (slug: string) => void;
 }) {
   const [isPending, startTransition] = useTransition();
@@ -341,7 +351,7 @@ function MemberRow({
         <span className="font-mono text-[0.6rem] uppercase tracking-wider text-[color:var(--mauve)]/70 md:hidden">
           Joined:{" "}
         </span>
-        {dateFormatter.format(new Date(member.joinedAt))}
+        {joinedLabel}
       </span>
       {isSeed ? (
         <span className="font-mono text-[0.6rem] uppercase tracking-[0.16em] text-[color:var(--mauve)] md:text-right">
@@ -374,6 +384,10 @@ export function AdminMembersTable({
   const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
   const [page, setPage] = useState<number>(1);
 
+  // Filter against a deferred copy of the search term so typing stays snappy on
+  // the row cap; the input itself stays bound to the immediate `query`.
+  const deferredQuery = useDeferredValue(query);
+
   // Build a combined event list: every event we got from the page plus any
   // event present on a member but missing from the server list (defensive).
   const eventDropdownOptions = useMemo<EventOption[]>(() => {
@@ -391,22 +405,48 @@ export function AdminMembersTable({
     return Array.from(map.values()).sort((a, b) => a.title.localeCompare(b.title));
   }, [eventOptions, members]);
 
+  // Per-role pill counts in ONE pass over the members (was a filter() per pill).
+  const roleCounts = useMemo(() => {
+    const counts = { attendee: 0, merchant: 0, admin: 0 } as Record<
+      AdminMemberRow["role"],
+      number
+    >;
+    for (const member of members) {
+      counts[member.role] += 1;
+    }
+    return counts;
+  }, [members]);
+
+  // Precompute the formatted join date + a lowercased search haystack per row,
+  // so render and filtering read precomputed values instead of re-parsing the
+  // date and lowercasing every field on each keystroke.
+  const displayRows = useMemo(() => {
+    return members.map((member) => ({
+      member,
+      joinedLabel: dateFormatter.format(new Date(member.joinedAt)),
+      haystack: [
+        member.displayName,
+        member.email,
+        member.suburb ?? "",
+        ...member.events.map((event) => event.title),
+      ]
+        .join(" ")
+        .toLowerCase(),
+    }));
+  }, [members]);
+
   const filtered = useMemo(() => {
-    const search = query.trim().toLowerCase();
-    return members.filter((member) => {
+    const search = deferredQuery.trim().toLowerCase();
+    return displayRows.filter((d) => {
+      const member = d.member;
       if (role !== "all" && member.role !== role) return false;
       if (eventFilter !== "all" && !member.events.some((event) => event.slug === eventFilter)) {
         return false;
       }
       if (!search) return true;
-      return (
-        member.displayName.toLowerCase().includes(search) ||
-        member.email.toLowerCase().includes(search) ||
-        (member.suburb ?? "").toLowerCase().includes(search) ||
-        member.events.some((event) => event.title.toLowerCase().includes(search))
-      );
+      return d.haystack.includes(search);
     });
-  }, [members, role, query, eventFilter]);
+  }, [displayRows, role, deferredQuery, eventFilter]);
 
   // Reset to page 1 whenever the filter result set changes shape.
   useEffect(() => {
@@ -422,10 +462,18 @@ export function AdminMembersTable({
 
   const roles: { value: RoleFilter; label: string; count: number }[] = [
     { value: "all", label: "All", count: members.length },
-    { value: "attendee", label: "Attendees", count: members.filter((m) => m.role === "attendee").length },
-    { value: "merchant", label: "Merchants", count: members.filter((m) => m.role === "merchant").length },
-    { value: "admin", label: "Admins", count: members.filter((m) => m.role === "admin").length },
+    { value: "attendee", label: "Attendees", count: roleCounts.attendee },
+    { value: "merchant", label: "Merchants", count: roleCounts.merchant },
+    { value: "admin", label: "Admins", count: roleCounts.admin },
   ];
+
+  const filtersActive = role !== "all" || eventFilter !== "all" || query.trim() !== "";
+
+  function clearFilters() {
+    setRole("all");
+    setEventFilter("all");
+    setQuery("");
+  }
 
   return (
     <div>
@@ -484,14 +532,36 @@ export function AdminMembersTable({
           <span>Moderation</span>
         </div>
         {visible.length === 0 ? (
-          <p className="px-5 py-8 text-center text-sm font-bold text-[color:var(--mauve)]">
-            No members match this filter.
-          </p>
+          <div className="px-5 py-8">
+            <EmptyState
+              bare
+              eyebrow="No members"
+              title="No members match this filter."
+              body={
+                filtersActive
+                  ? "Nothing here for the current role, event or search. Clear the filters to see everyone."
+                  : "No members to show yet."
+              }
+              tone="rose"
+              action={
+                filtersActive ? (
+                  <button
+                    type="button"
+                    onClick={clearFilters}
+                    className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--ink)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--on-deep)] transition hard-shadow-sm hover:bg-black active:translate-y-px"
+                  >
+                    Clear filters
+                  </button>
+                ) : undefined
+              }
+            />
+          </div>
         ) : (
-          visible.map((member) => (
+          visible.map((d) => (
             <MemberRow
-              key={member.id}
-              member={member}
+              key={d.member.id}
+              member={d.member}
+              joinedLabel={d.joinedLabel}
               onEventSelect={setEventFilter}
             />
           ))

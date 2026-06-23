@@ -1,9 +1,16 @@
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import type { Session } from "next-auth";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { MetricCard, Pill } from "@/components/click-ui";
+import { EmptyState } from "@/components/empty-state";
+import {
+  Skeleton,
+  SkeletonFilterBar,
+  SkeletonMetricGrid,
+  SkeletonTable,
+} from "@/components/skeleton";
 import { MerchantCalendar } from "@/components/merchant-calendar";
 import { MerchantEventsPanel } from "@/components/merchant-events-panel";
 import { MerchantAttendeesPanel } from "@/components/merchant-attendees-panel";
@@ -18,6 +25,7 @@ import {
   getProfileStatus,
   type MerchantFinancesSummary,
 } from "@/lib/event-repository";
+import { after } from "next/server";
 import { reconcilePendingTransactionsForMerchant } from "@/lib/stripe-sync";
 
 export const metadata = {
@@ -114,8 +122,19 @@ export default async function MerchantPage({ searchParams }: MerchantPageProps) 
             />
           ) : null}
           {tab === "events" ? <EventsTab events={merchantEvents} /> : null}
-          {tab === "bookings" ? <BookingsTabAsync session={session} /> : null}
-          {tab === "finances" ? <FinancesTabAsync session={session} /> : null}
+          {/* Async tab queries get their own Suspense boundary so a slow
+              attendees/finances read streams into the tab body without holding
+              up the merchant chrome (sidebar + tab bar) that's already painted. */}
+          {tab === "bookings" ? (
+            <Suspense fallback={<BookingsTabSkeleton />}>
+              <BookingsTabAsync session={session} />
+            </Suspense>
+          ) : null}
+          {tab === "finances" ? (
+            <Suspense fallback={<FinancesTabSkeleton />}>
+              <FinancesTabAsync session={session} />
+            </Suspense>
+          ) : null}
           {tab === "settings" ? (
             <SettingsTab
               businessName={businessName}
@@ -125,6 +144,42 @@ export default async function MerchantPage({ searchParams }: MerchantPageProps) 
         </div>
       </div>
     </main>
+  );
+}
+
+// Suspense fallbacks for the two async tabs. They mirror each tab's real
+// geometry so the body doesn't jump on hydration: bookings = filter bar + door
+// list table; finances = metric grid + a transactions table. A static skeleton
+// header keeps the eyebrow/title block in place while the query resolves.
+function TabHeaderSkeleton() {
+  return (
+    <div className="space-y-3">
+      <Skeleton className="h-3 w-24 rounded-full" />
+      <Skeleton className="h-9 w-72 max-w-full rounded-lg sm:h-10" />
+      <Skeleton className="h-3.5 w-full max-w-md rounded-full" />
+    </div>
+  );
+}
+
+function BookingsTabSkeleton() {
+  return (
+    <div className="space-y-10 py-10">
+      <TabHeaderSkeleton />
+      <div className="space-y-6">
+        <SkeletonFilterBar pills={3} />
+        <SkeletonTable rows={6} withThumb />
+      </div>
+    </div>
+  );
+}
+
+function FinancesTabSkeleton() {
+  return (
+    <div className="space-y-8 py-10">
+      <TabHeaderSkeleton />
+      <SkeletonMetricGrid count={4} />
+      <SkeletonTable rows={6} withThumb={false} />
+    </div>
   );
 }
 
@@ -723,9 +778,14 @@ function EventsTab({
             ))}
           </div>
         ) : (
-          <p className="mt-6 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-6 text-sm font-medium leading-6 text-[color:var(--mauve)]">
-            No venues yet — create an event to add one.
-          </p>
+          <EmptyState
+            className="mt-6"
+            eyebrow="No venues yet"
+            title="Your venues show up here."
+            body="Venues are pulled from the events you host. Create your first event and its location will be listed here automatically."
+            actionHref="/merchant/events/create"
+            actionLabel="Create an event →"
+          />
         )}
       </section>
     </div>
@@ -758,6 +818,16 @@ async function BookingsTabAsync({
         title="Everyone booked across your events."
         body="Per-event status counts up top; toggle check-in or export the full door list below."
       />
+
+      {attendees.length === 0 ? (
+        <EmptyState
+          eyebrow="No bookings yet"
+          title="No one's booked in yet."
+          body="As people RSVP to your events, they'll appear here — grouped by event up top, with a full door list to check in and export below. Publish an event to start taking bookings."
+          actionHref="/merchant/events/create"
+          actionLabel="Create an event →"
+        />
+      ) : null}
 
       {grouped.size > 0 ? (
         <section>
@@ -813,15 +883,17 @@ async function BookingsTabAsync({
         </section>
       ) : null}
 
-      <section>
-        <p className="eyebrow">All attendees</p>
-        <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
-          Toggle check-in on the day. Export to CSV for door lists.
-        </p>
-        <div className="mt-6">
-          <MerchantAttendeesPanel rows={attendees} />
-        </div>
-      </section>
+      {attendees.length > 0 ? (
+        <section>
+          <p className="eyebrow">All attendees</p>
+          <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+            Toggle check-in on the day. Export to CSV for door lists.
+          </p>
+          <div className="mt-6">
+            <MerchantAttendeesPanel rows={attendees} />
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }
@@ -954,10 +1026,13 @@ async function FinancesTabAsync({
 }: {
   session: Session | null;
 }) {
-  // Self-heal any pending rows whose Stripe session is actually paid/expired
-  // before reading the summary — the webhook is the primary path, but this keeps
-  // the tab correct when it's missed. Best-effort; never block the page on it.
-  await reconcilePendingTransactionsForMerchant(session).catch(() => null);
+  // Self-heal any pending rows whose Stripe session is actually paid/expired.
+  // Deferred with after() so the Stripe round-trip never blocks first paint —
+  // we render the DB summary immediately and the reconcile runs after the
+  // response is flushed (and, unlike a bare fire-and-forget, after() keeps it
+  // anchored to the request on serverless so it's guaranteed to run). The
+  // webhook + api/cron/reconcile-payments sweep remain the primary paths.
+  after(() => reconcilePendingTransactionsForMerchant(session).catch(() => {}));
   const finances = await getMerchantFinancesSummary(session);
 
   return (
@@ -977,17 +1052,21 @@ async function FinancesTabAsync({
       </div>
       <MerchantFinancesAnalytics monthlyRevenue={finances.monthlyRevenue} />
       <RecentPayoutsCard payouts={finances.recentPayouts} />
-      <div className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] hard-shadow-sm">
-        <div className="border-b-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-3">
-          <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
-            Recent transactions
-          </span>
-        </div>
-        {finances.recentTransactions.length === 0 ? (
-          <p className="p-6 text-sm font-medium leading-6 text-[color:var(--mauve)]">
-            No transactions yet.
-          </p>
-        ) : (
+      {finances.recentTransactions.length === 0 ? (
+        <EmptyState
+          eyebrow="No transactions yet"
+          title="Paid bookings will land here."
+          body="Once someone pays for one of your Click-managed paid events, the charge shows up here and rolls into the totals above. Free events never appear in Finances."
+          actionHref="/merchant/events/create"
+          actionLabel="Create a paid event →"
+        />
+      ) : (
+        <div className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] hard-shadow-sm">
+          <div className="border-b-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-3">
+            <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
+              Recent transactions
+            </span>
+          </div>
           <ul className="divide-y-2 divide-[color:var(--line-soft)]">
             {finances.recentTransactions.map((t) => (
               <li
@@ -1011,8 +1090,8 @@ async function FinancesTabAsync({
               </li>
             ))}
           </ul>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -49,7 +49,7 @@ export function AdminTrendChart({ buckets }: { buckets: AdminTrendBucket[] }) {
               <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
                 {m.label}
               </span>
-              <span className="font-display text-2xl font-light leading-none text-[color:var(--ink)]">
+              <span className="font-display text-2xl font-light leading-none tabular-nums text-[color:var(--ink)]">
                 {m.format(total)}
               </span>
             </div>
@@ -57,17 +57,37 @@ export function AdminTrendChart({ buckets }: { buckets: AdminTrendBucket[] }) {
               {buckets.map((b) => {
                 const v = b[m.key];
                 const pct = Math.max(Math.round((v / max) * 100), v > 0 ? 6 : 2);
+                const isEmpty = v === 0;
                 return (
                   // Full-height, bottom-aligned column so the bar's percentage
                   // height resolves against a definite parent height (otherwise
                   // the bars collapse to zero and the chart looks empty).
+                  // `tabIndex` lets keyboard users reveal the CSS-only popover
+                  // via :focus-within — no JS, so the component stays an RSC.
                   <div
                     key={`${m.key}-${b.week}`}
-                    className="group relative flex h-full flex-1 items-end"
-                    title={`${dateFormatter.format(new Date(b.week))} · ${m.format(v)}`}
+                    className="group relative flex h-full flex-1 items-end focus:outline-none"
+                    tabIndex={0}
+                    role="img"
+                    aria-label={`${m.label}, week of ${dateFormatter.format(new Date(b.week))}: ${m.format(v)}`}
                   >
+                    {/* CSS-only brand popover: hidden by default, revealed on
+                        hover/focus of this `group` wrapper. Positioned above the
+                        bar, centered, never intercepts pointer events. */}
+                    <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 whitespace-nowrap rounded-lg border border-[color:var(--line)] bg-[color:var(--cream)] px-2 py-1 text-center opacity-0 transition-opacity duration-150 hard-shadow-sm group-hover:opacity-100 group-focus-within:opacity-100">
+                      <span className="block font-condensed text-[0.6rem] font-bold uppercase tracking-[0.14em] text-[color:var(--mauve)]">
+                        {dateFormatter.format(new Date(b.week))}
+                      </span>
+                      <span className="block font-condensed text-[0.8rem] font-bold tabular-nums text-[color:var(--ink)]">
+                        {m.format(v)}
+                      </span>
+                    </div>
                     <div
-                      className={`w-full rounded-t-md border border-[color:var(--line)] ${m.bar}`}
+                      className={
+                        isEmpty
+                          ? "w-full rounded-t-md border border-dashed border-[color:var(--line)] bg-transparent"
+                          : `w-full rounded-t-md border border-[color:var(--line)] ${m.bar}`
+                      }
                       style={{ height: `${pct}%` }}
                     />
                   </div>

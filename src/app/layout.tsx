@@ -93,7 +93,30 @@ export default async function RootLayout({
           metaConfigured={metaConfigured}
           showDemoCredentials={showDemoCredentials}
         />
-        <Toaster position="top-right" richColors closeButton />
+        <Toaster
+          position="top-right"
+          closeButton
+          gap={10}
+          toastOptions={{
+            // Re-skin sonner into the warm-editorial surface: cream card,
+            // hairline border, soft elevation, brand type — with rose for
+            // errors and electric-lime for success instead of stock red/green.
+            classNames: {
+              toast:
+                "!bg-[color:var(--cream)] !border !border-[color:var(--line)] !text-[color:var(--ink)] !rounded-2xl !shadow-[0_12px_28px_-10px_rgba(22,24,29,0.18)]",
+              title: "!font-semibold !text-[color:var(--ink)]",
+              description: "!text-[color:var(--mauve)] !font-medium",
+              actionButton:
+                "!bg-[color:var(--ink)] !text-[color:var(--champagne)] !rounded-full !font-semibold",
+              cancelButton: "!bg-transparent !text-[color:var(--mauve)] !rounded-full",
+              closeButton:
+                "!bg-[color:var(--cream)] !border-[color:var(--line)] !text-[color:var(--mauve)] hover:!text-[color:var(--ink)]",
+              error: "!border-[color:var(--rose)] [&_[data-icon]]:!text-[color:var(--rose)]",
+              success: "[&_[data-icon]]:!text-[color:var(--ink)]",
+              info: "[&_[data-icon]]:!text-[color:var(--mauve)]",
+            },
+          }}
+        />
         <SessionFreshness />
         <DevSupabaseDrawer />
         {session?.user ? <SupportWidget /> : null}
