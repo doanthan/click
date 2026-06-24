@@ -89,8 +89,8 @@ export default async function Home() {
   return (
     <main className="min-h-screen max-w-full overflow-hidden bg-[color:var(--champagne)] text-[color:var(--ink)]">
       {/* ============================ HERO — minimal, airy ============================ */}
-      <section className="relative overflow-hidden px-4 pb-12 pt-12 sm:px-6 sm:pb-16 lg:pt-20">
-        <div className="mx-auto grid max-w-7xl items-center gap-12 lg:grid-cols-[1.05fr_0.95fr]">
+      <section className="relative overflow-hidden px-5 pb-12 pt-12 sm:px-8 sm:pb-16 lg:px-12 lg:pt-20">
+        <div className="mx-auto grid max-w-7xl items-center gap-12 lg:grid-cols-[1.05fr_0.95fr] lg:gap-16">
           {/* ---- Copy column ---- */}
           <div className="relative z-10">
             <p className="rise rise-d1 eyebrow">Now in <LocationLabel /></p>
@@ -145,7 +145,7 @@ export default async function Home() {
       </section>
 
       {/* ============================ EVENTS — surfaced right under the hero ============================ */}
-      <section className="bg-[color:var(--champagne)] px-4 pb-16 sm:px-6">
+      <section className="bg-[color:var(--champagne)] px-5 pb-16 sm:px-8 lg:px-12">
         <div className="rise rise-d5 mx-auto max-w-7xl">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div className="min-w-0">
@@ -181,7 +181,7 @@ export default async function Home() {
 
       {/* ============================ SLIM TRUST STRIP ============================ */}
       <section className="border-y border-[color:var(--line)] bg-[color:var(--cream)]">
-        <div className="mx-auto grid max-w-3xl grid-cols-3 divide-x divide-[color:var(--line)] px-4 sm:px-6">
+        <div className="mx-auto grid max-w-3xl grid-cols-3 divide-x divide-[color:var(--line)] px-5 sm:px-8 lg:px-12">
           {trustStats.map(([num, label]) => (
             <div key={label} className="px-4 py-5 text-center">
               <p className="font-display text-3xl font-bold leading-none tracking-[-0.03em] text-[color:var(--ink)] tabular-nums sm:text-4xl">
@@ -200,7 +200,7 @@ export default async function Home() {
 
       {/* ============================ STICKY CATEGORY BAR ============================ */}
       <section className="border-y border-[color:var(--line)] bg-[color:var(--cream)]">
-        <div className="mx-auto flex max-w-7xl items-center gap-3 overflow-x-auto px-4 py-4 sm:px-6">
+        <div className="mx-auto flex max-w-7xl items-center gap-3 overflow-x-auto px-5 py-4 sm:px-8 lg:px-12">
           <span className="shrink-0 text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
             Browse →
           </span>
@@ -218,7 +218,7 @@ export default async function Home() {
 
       {/* ============================ EXPERIENCE-TYPE BROWSER ============================ */}
       <section className="border-b border-[color:var(--line)] bg-[color:var(--champagne)] py-20 sm:py-24">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6">
+        <div className="mx-auto max-w-7xl px-5 sm:px-8 lg:px-12">
           <SectionIntro
             eyebrow="Pick a vibe"
             title={
@@ -263,7 +263,7 @@ export default async function Home() {
 
       {/* ============================ WHAT IS A CLICK — centered ============================ */}
       <section className="border-b border-[color:var(--line)] bg-[color:var(--cream)] py-24">
-        <div className="mx-auto max-w-3xl px-4 text-center sm:px-6">
+        <div className="mx-auto max-w-3xl px-5 text-center sm:px-8 lg:px-12">
           <p className="eyebrow eyebrow--muted text-center">Dictionary entry · ed. 01</p>
           <h2 className="font-display mt-4 flex flex-wrap items-baseline justify-center gap-x-4 text-6xl font-bold leading-[0.98] tracking-[-0.03em] text-[color:var(--ink)] sm:text-7xl">
             click
@@ -304,7 +304,7 @@ export default async function Home() {
 
       {/* ============================ HOW IT WORKS ============================ */}
       <section className="bg-[color:var(--champagne)] py-24">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6">
+        <div className="mx-auto max-w-7xl px-5 sm:px-8 lg:px-12">
           <SectionIntro
             eyebrow="How Click works"
             title={
@@ -346,7 +346,7 @@ export default async function Home() {
 
       {/* ============================ PERSONAS ============================ */}
       <section className="border-y border-[color:var(--line)] bg-[color:var(--lav-bg)] py-24">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6">
+        <div className="mx-auto max-w-7xl px-5 sm:px-8 lg:px-12">
           <div className="grid gap-6 lg:grid-cols-[0.78fr_1.22fr] lg:items-end">
             <div>
               <p className="eyebrow">Local rhythm</p>
@@ -389,7 +389,7 @@ export default async function Home() {
       <section className="relative overflow-hidden bg-[color:var(--surface-deep)] py-24 text-[color:var(--on-deep)]">
         <div className="absolute inset-0 stamp-grid opacity-[0.06]" aria-hidden />
 
-        <div className="relative mx-auto grid max-w-7xl gap-14 px-4 sm:px-6 lg:grid-cols-[0.85fr_1.15fr] lg:items-center">
+        <div className="relative mx-auto grid max-w-7xl gap-14 px-5 sm:px-8 lg:grid-cols-[0.85fr_1.15fr] lg:items-center lg:px-12">
           <div>
             <p className="eyebrow !text-[color:var(--lavender)]">Groups for common people</p>
             <h2 className="font-display mt-4 text-5xl font-bold leading-[1.0] tracking-[-0.03em] text-[color:var(--on-deep)] sm:text-6xl lg:text-[4.3rem]">
@@ -438,7 +438,7 @@ export default async function Home() {
 
       {/* ============================ PHOTO + ARCHITECTURE ============================ */}
       <section className="border-b border-[color:var(--line)] bg-[color:var(--champagne)] py-24">
-        <div className="mx-auto grid max-w-7xl gap-14 px-4 sm:px-6 lg:grid-cols-[0.95fr_1.05fr] lg:items-center">
+        <div className="mx-auto grid max-w-7xl gap-14 px-5 sm:px-8 lg:grid-cols-[0.95fr_1.05fr] lg:items-center lg:px-12">
           {/* framed photo */}
           <div className="relative mx-auto w-full max-w-md">
             <div className="relative aspect-[4/5] overflow-hidden rounded-[28px] hard-shadow-lg">
@@ -501,7 +501,7 @@ export default async function Home() {
 
       {/* ============================ CLOSING — calm centered cream ============================ */}
       <section className="bg-[color:var(--champagne)] py-28">
-        <div className="mx-auto max-w-3xl px-4 text-center sm:px-6">
+        <div className="mx-auto max-w-3xl px-5 text-center sm:px-8 lg:px-12">
           <p className="eyebrow text-center">Ready when you are</p>
           <h2 className="font-display mt-5 text-5xl font-bold leading-[1.0] tracking-[-0.03em] text-[color:var(--ink)] sm:text-7xl">
             Pick a room. Show up.

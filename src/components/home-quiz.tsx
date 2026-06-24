@@ -137,7 +137,7 @@ function LoggedOutQuizCta() {
 
   return (
     <>
-      <section className="border-b-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-10 sm:px-6">
+      <section className="border-b-2 border-[color:var(--line)] bg-[color:var(--cream)] px-5 py-10 sm:px-8 lg:px-12">
         <div className="mx-auto max-w-6xl">
           <div className="flex flex-wrap items-center justify-between gap-5 rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-6 hard-shadow sm:p-7">
             <div className="min-w-0 max-w-2xl">
@@ -332,7 +332,7 @@ function QuizFrame({
   children: React.ReactNode;
 }) {
   return (
-    <section className="border-b-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-10 sm:px-6">
+    <section className="border-b-2 border-[color:var(--line)] bg-[color:var(--cream)] px-5 py-10 sm:px-8 lg:px-12">
       <div className="mx-auto max-w-6xl">
         <div className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-6 hard-shadow sm:p-8">
           <div className="flex flex-wrap items-start justify-between gap-4">
