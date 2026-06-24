@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ClickWalkthrough } from "@/components/click-walkthrough";
+import { ClickAuditReport } from "./audit-report";
 
 export const metadata = {
   title: "How a Click works | Click",
@@ -18,7 +19,7 @@ const OUTCOMES = [
   {
     title: "Proposal lapses",
     clock: "7 days",
-    body: "“This proposal expired. Click again at a future event to reopen it.”",
+    body: "If neither of you confirms within 7 days, the proposal dies and the mutual drops off your lists. There’s no reopen path today (the card’s “Click again to reopen” isn’t wired) — see the audit below.",
   },
   {
     title: "Event sold out",
@@ -113,6 +114,9 @@ export default function TestClickPage() {
           </p>
         </div>
       </section>
+
+      {/* Engineering audit — accuracy, edge cases, gaps */}
+      <ClickAuditReport />
 
       {/* Section 6 — TL;DR recap + jump-off links */}
       <section className="border-t-2 border-[color:var(--line)] bg-[color:var(--ink)] px-4 py-16 text-[color:var(--on-deep)] sm:px-6">

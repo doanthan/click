@@ -44,8 +44,8 @@ const DEMO = {
   mutual: {
     other: "Maya",
     event: "Sunset Pottery Social",
-    dateLabel: "Sat 12 Jul",
-    expiresLabel: "Sat 19 Jul",
+    dateLabel: "Sat 26 Jul", // event is weeks out…
+    expiresLabel: "Sun 13 Jul", // …but the proposal expires 7 days after you matched
   },
 };
 
@@ -357,7 +357,7 @@ const STEPS = [
         />
         <div className="mt-4 flex flex-wrap gap-1.5">
           <Pill tone="cream">Can&rsquo;t Click yourself</Pill>
-          <Pill tone="cream">Blocking hides you from each other</Pill>
+          <Pill tone="cream">Blocking stops new Clicks &amp; hides you in discovery</Pill>
           <Pill tone="peach">100% private &amp; anonymous</Pill>
         </div>
       </>
@@ -419,8 +419,10 @@ const STEPS = [
           clock="Expires 7 days after it opens; the card counts it down."
         />
         <p className="mt-4 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-4 text-sm font-semibold leading-6 text-[color:var(--mauve)]">
-          If 7 days pass with no confirm: “This proposal expired. Click again at a future event to
-          reopen it.”
+          The 7-day clock runs from when you <strong>matched</strong> — not from the event date (the
+          event can be weeks later). If it lapses, the proposal dies and the mutual drops off your
+          lists. The real card says “Click again to reopen”, but that reopen isn’t built yet — see the
+          audit below.
         </p>
       </>
     ),
@@ -443,7 +445,7 @@ const STEPS = [
           <Pill tone="peach">A claimed guest +1 also counts</Pill>
         </div>
         <Annotation
-          trigger="One of you taps “Confirm this plan”."
+          trigger="One of you taps “Confirm this plan” — only possible while the suggested event is still bookable. If it sold out, you Suggest an alternative first."
           youSee="An “RSVP needed” card pointing you to the event."
           theySee="The same — they’re nudged to RSVP too."
           clock="No new timer — you just both need a seat."
@@ -466,7 +468,7 @@ const STEPS = [
         </p>
         <Annotation
           trigger="You both complete a real RSVP for the same upcoming event."
-          youSee="The celebration card on your dashboard (the Proposals page shows the confirmed plan instead)."
+          youSee="The celebration card on your dashboard. The Proposals page never shows this 🎉 — it’s computed live from your RSVPs, not from anyone tapping Confirm."
           theySee="The same — it celebrates on their dashboard too, at the same time."
           clock="No timer. You’re going. 🎉"
         />
@@ -623,7 +625,7 @@ export function ClickWalkthrough() {
               </h3>
               <p className="mb-4 mt-2 text-sm font-semibold leading-6 text-[color:var(--mauve)]">
                 On your dashboard (one rotating suggestion) and the People page (the full list, ranked by
-                shared interest tags). No need to have met.
+                how well you match — shared interests plus your match profile). No need to have met.
               </p>
               <DemoClickCard />
             </div>
