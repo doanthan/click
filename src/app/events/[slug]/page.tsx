@@ -214,7 +214,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
         ) : null}
 
         {search?.booked && isRegistered ? (
-          <div className="mt-6 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--mint,#d7f0e0)] p-4 text-sm font-bold text-[color:var(--surface-deep)] hard-shadow-sm">
+          <div className="mt-6 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--lav-bg)] p-4 text-sm font-bold text-[color:var(--surface-deep)] hard-shadow-sm">
             🎉 You&apos;re confirmed! Your seat is locked and the full details
             are unlocked below — it&apos;s on your{" "}
             <Link href="/dashboard/calendar" className="underline">
@@ -277,7 +277,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                   </a>
                 </div>
               ) : null}
-              <h1 className="font-display mt-3 text-4xl font-light leading-[1.05] sm:text-5xl">
+              <h1 className="font-display mt-3 text-4xl font-bold leading-[1.05] tracking-[-0.025em] sm:text-5xl">
                 {event.title}
               </h1>
               <p className="mt-2 text-sm font-semibold text-[color:var(--mauve)]">
@@ -370,7 +370,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                 <p className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
                   Price
                 </p>
-                <p className="font-display mt-1 text-3xl font-light leading-tight">
+                <p className="font-display mt-1 text-3xl font-semibold leading-tight tracking-[-0.02em]">
                   {formatPrice(hasBookingFee ? totalCents : event.priceCents, "AUD")}
                 </p>
                 {hasBookingFee ? (
@@ -621,7 +621,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                 <p className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--peach)]">
                   Countdown
                 </p>
-                <p className="font-display mt-1 text-2xl font-light leading-tight">
+                <p className="font-display mt-1 text-2xl font-semibold leading-tight tracking-[-0.02em]">
                   {countdownLabel}
                 </p>
                 <p className="mt-2 text-xs font-bold uppercase tracking-wider text-[color:var(--peach)]">

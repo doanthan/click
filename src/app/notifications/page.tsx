@@ -36,7 +36,7 @@ export default async function NotificationsPage() {
               <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
               Inbox
             </span>
-            <h1 className="mt-6 font-display text-5xl font-light leading-[0.96] tracking-tight sm:text-6xl">
+            <h1 className="mt-6 font-display text-5xl font-bold leading-[0.96] tracking-[-0.025em] sm:text-6xl">
               Notifications
             </h1>
             <p className="mt-3 text-base font-medium leading-7 text-[color:var(--mauve)]">
@@ -117,7 +117,7 @@ function NotificationItem({
     >
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="font-display text-lg font-light leading-snug text-[color:var(--ink)]">
+          <p className="font-display text-lg font-semibold leading-snug text-[color:var(--ink)]">
             {title}
           </p>
           <p className="mt-1 text-sm font-medium leading-6 text-[color:var(--mauve)]">

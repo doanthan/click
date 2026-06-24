@@ -3,7 +3,6 @@ import { AdminTrendChart } from "@/components/admin-trend-chart";
 import { InfoCard, MetricCard } from "@/components/click-ui";
 import { adminModules } from "@/lib/click-data";
 import {
-  getAdminEvents,
   getAdminMetrics,
   getAdminWeeklyTrend,
 } from "@/lib/event-repository";
@@ -13,11 +12,16 @@ export const metadata = {
 };
 
 export default async function AdminOverviewPage() {
-  const [events, trend] = await Promise.all([
-    getAdminEvents(),
+  // getAdminMetrics computes every live metric from its own COUNT queries; the
+  // `events` argument only feeds the DB-down fallback's event/pending counts,
+  // and getAdminEvents()'s own fallback already returns [] (so events.length /
+  // pendingCount are 0 in that path regardless). Passing [] here is therefore
+  // behaviourally identical and lets all three fan out concurrently instead of
+  // awaiting metrics serially after the events query.
+  const [trend, metrics] = await Promise.all([
     getAdminWeeklyTrend(),
+    getAdminMetrics([]),
   ]);
-  const metrics = await getAdminMetrics(events);
 
   return (
     <div className="space-y-12 py-10">

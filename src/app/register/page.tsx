@@ -51,7 +51,6 @@ export default async function RegisterPage({ searchParams }: RegisterPageProps) 
   return (
     <main className="paper-noise relative min-h-screen overflow-hidden px-4 py-12 text-[color:var(--ink)] sm:px-6">
       <AuthedRedirect />
-      <div className="confetti-field absolute inset-0 opacity-25" aria-hidden />
 
       <section className="relative z-10 mx-auto grid max-w-7xl gap-10 lg:grid-cols-[0.85fr_1.15fr] lg:items-center">
         <div className="relative">
@@ -60,11 +59,9 @@ export default async function RegisterPage({ searchParams }: RegisterPageProps) 
             Click sign up · new here
           </span>
 
-          <h1 className="font-display mt-6 text-5xl font-light leading-[0.94] tracking-tight text-[color:var(--ink)] sm:text-7xl">
+          <h1 className="font-display mt-6 text-5xl font-bold leading-[0.94] tracking-[-0.025em] text-[color:var(--ink)] sm:text-7xl">
             Make your{" "}
-            <span className="italic">
-              <span className="peach-highlight">first Click</span>
-            </span>{" "}
+            <span className="text-[color:var(--coral)]">first Click</span>{" "}
             in 30 seconds.
           </h1>
 

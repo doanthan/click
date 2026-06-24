@@ -276,7 +276,7 @@ function Tile({
       ) : null}
       {extraCount > 0 ? (
         <span className="absolute inset-0 flex items-center justify-center bg-[color:var(--ink)]/55 backdrop-blur-[1px]">
-          <span className="font-display text-3xl font-light text-[color:var(--on-deep)]">
+          <span className="font-display text-3xl font-semibold tracking-[-0.025em] text-[color:var(--on-deep)]">
             +{extraCount}
           </span>
         </span>

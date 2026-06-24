@@ -95,7 +95,7 @@ export default async function EmailPage({ searchParams }: EmailPageProps) {
                     {active.group}
                   </span>
                 </div>
-                <h2 className="font-display mt-3 text-3xl font-light leading-[1.05] text-[color:var(--ink)]">
+                <h2 className="font-display mt-3 text-3xl font-semibold tracking-[-0.025em] leading-[1.05] text-[color:var(--ink)]">
                   {active.label}
                 </h2>
                 <p className="mt-1.5 text-sm font-medium text-[color:var(--mauve)]">

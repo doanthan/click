@@ -12,7 +12,7 @@ export default function OnboardingDonePage() {
         <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
           ✷ You&apos;re all set
         </span>
-        <h2 className="font-display mt-3 text-3xl font-light leading-tight">
+        <h2 className="font-display mt-3 text-3xl font-semibold leading-tight">
           That&apos;s the lap — go make something.
         </h2>
         <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--mauve)]">

@@ -39,13 +39,13 @@ export default async function CreateEventLayout({
     return (
       <main className="min-h-screen bg-[color:var(--champagne)] px-4 py-12 text-[color:var(--ink)] sm:px-6">
         <section className="mx-auto max-w-3xl">
-          <span className="sticker sticker--peach tilt-l-2 inline-flex">
+          <span className="sticker sticker--peach tilt-l-1 inline-flex">
             <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
             Approval required
           </span>
-          <h1 className="mt-6 font-display text-5xl font-light leading-[0.96] tracking-tight sm:text-6xl">
+          <h1 className="mt-6 font-display text-5xl font-bold leading-[0.96] tracking-[-0.025em] sm:text-6xl">
             Your merchant profile is{" "}
-            <span className="italic">{status.merchantProfile.verification_status}</span>.
+            <span className="text-[color:var(--coral)]">{status.merchantProfile.verification_status}</span>.
           </h1>
           <p className="mt-4 text-base font-medium leading-7 text-[color:var(--mauve)]">
             An admin needs to approve your business before you can publish events.
@@ -62,11 +62,11 @@ export default async function CreateEventLayout({
     return (
       <main className="min-h-screen bg-[color:var(--champagne)] px-4 py-12 text-[color:var(--ink)] sm:px-6">
         <section className="mx-auto max-w-3xl">
-          <span className="sticker sticker--peach tilt-l-2 inline-flex">
+          <span className="sticker sticker--peach tilt-l-1 inline-flex">
             <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
             Connect payments first
           </span>
-          <h1 className="mt-6 font-display text-5xl font-light leading-[0.96] tracking-tight sm:text-6xl">
+          <h1 className="mt-6 font-display text-5xl font-bold leading-[0.96] tracking-[-0.025em] sm:text-6xl">
             Set up payouts before you create events.
           </h1>
           <p className="mt-4 text-base font-medium leading-7 text-[color:var(--mauve)]">

@@ -20,7 +20,7 @@ export function ClickRadar({
       <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--peach)]">
         Click Radar
       </span>
-      <h3 className="font-display mt-3 text-2xl font-light leading-tight">
+      <h3 className="font-display mt-3 text-2xl font-semibold leading-tight tracking-[-0.02em]">
         Events on your radar.
       </h3>
       <p className="mt-2 text-sm font-medium leading-6 opacity-80">

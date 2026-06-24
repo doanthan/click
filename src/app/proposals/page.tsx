@@ -2,7 +2,11 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { ProposalCard } from "@/components/proposal-card";
-import { getProposalCatalogue, getProposalsForSession } from "@/lib/event-repository";
+import {
+  getProposalCatalogue,
+  getProposalsForSession,
+  type ProposalEntry,
+} from "@/lib/event-repository";
 
 export const metadata = {
   title: "Proposals | Click",
@@ -20,8 +24,19 @@ export default async function ProposalsPage() {
     getProposalCatalogue(),
   ]);
 
-  const active = proposals.filter((p) => p.status === "pending" && !p.isExpired);
-  const past = proposals.filter((p) => p.status !== "pending" || p.isExpired);
+  // A confirmed plan whose event is still upcoming + bookable is the most
+  // actionable item on the page — both people still need to RSVP — so it stays
+  // in the live list rather than getting buried under "Settled" (bug #199).
+  // Only genuinely-done proposals (expired, or confirmed with no live event
+  // left) drop to the settled list.
+  const isLivePlan = (p: ProposalEntry) =>
+    p.status === "confirmed" && Boolean(p.suggestedEventSlug);
+  const isActive = (p: ProposalEntry) =>
+    (p.status === "pending" && !p.isExpired) || isLivePlan(p);
+  const active = proposals.filter(isActive);
+  const past = proposals.filter((p) => !isActive(p));
+  // Confirmed-but-unRSVP'd plans first (they need a tap); then open proposals.
+  active.sort((a, b) => Number(isLivePlan(b)) - Number(isLivePlan(a)));
 
   return (
     <main className="paper-noise min-h-screen bg-[color:var(--champagne)] px-4 py-12 text-[color:var(--ink)] sm:px-6">
@@ -30,8 +45,8 @@ export default async function ProposalsPage() {
           <span className="size-2 rounded-full bg-[color:var(--surface-deep)]" />
           Proposals
         </span>
-        <h1 className="mt-6 font-display text-5xl font-light leading-[0.96] tracking-tight sm:text-6xl">
-          Your shared <span className="italic">plans</span>.
+        <h1 className="mt-6 font-display text-5xl font-bold leading-[0.96] tracking-[-0.025em] sm:text-6xl">
+          Your shared <span className="text-[color:var(--coral)]">plans</span>.
         </h1>
         <p className="mt-3 max-w-2xl text-base font-medium leading-7 text-[color:var(--mauve)]">
           When you and someone else both click, we suggest a follow-up event. Either of you can

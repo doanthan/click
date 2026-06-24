@@ -38,12 +38,12 @@ const SEARCH_BOX_THEME = {
   // rounded-xl (0.75rem), 2px ink border, champagne fill, cream hover,
   // semibold ink text, px-4 py-3 padding, no shadow.
   variables: {
-    colorPrimary: "#FF6978",
-    colorText: "#340068",
-    colorBackground: "#FFFCF9",
-    colorBackgroundHover: "#fff6f7",
-    colorBackgroundActive: "#fff6f7",
-    border: "2px solid #340068",
+    colorPrimary: "#E8674C",
+    colorText: "#3B2F81",
+    colorBackground: "#FFFFFF",
+    colorBackgroundHover: "#F1ECFB",
+    colorBackgroundActive: "#F1ECFB",
+    border: "2px solid #3B2F81",
     borderRadius: "0.75rem",
     boxShadow: "none",
     padding: "0.75em 1em",
@@ -63,19 +63,19 @@ const SEARCH_BOX_THEME = {
     .SearchBox .SearchIcon { display: none; }
     .SearchBox .Input {
       font-weight: 600;
-      color: #340068;
+      color: var(--purple);
       letter-spacing: 0;
     }
     .SearchBox .Input::placeholder {
       font-weight: 500;
-      color: #6D435A;
+      color: var(--mauve);
       opacity: 1;
     }
     .Results, .ResultsList, .Suggestion, .SuggestionName {
-      color: #340068;
+      color: var(--purple);
       font-weight: 600;
     }
-    .SuggestionDesc { color: #6D435A; font-weight: 500; }
+    .SuggestionDesc { color: var(--mauve); font-weight: 500; }
   `,
 };
 

@@ -20,8 +20,7 @@ export function LoadingSpinner({ label = "Loading…", className = "" }: Loading
 export function LoadingScreen({ label = "Loading…" }: { label?: string }) {
   return (
     <main className="paper-noise relative min-h-screen overflow-hidden px-4 py-20 text-[color:var(--ink)] sm:px-6">
-      <div className="confetti-field absolute inset-0 opacity-20" aria-hidden />
-      <section className="relative z-10 mx-auto flex max-w-2xl items-center justify-center rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-16 hard-shadow">
+      <section className="relative z-10 mx-auto flex max-w-2xl items-center justify-center rounded-3xl border border-[color:var(--line)] bg-[color:var(--champagne)] p-16 hard-shadow">
         <LoadingSpinner label={label} />
       </section>
     </main>

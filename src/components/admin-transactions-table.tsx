@@ -1,13 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, useTransition, type ReactNode } from "react";
+import {
+  useDeferredValue,
+  useMemo,
+  useState,
+  useTransition,
+  type ReactNode,
+} from "react";
 import { useRouter } from "next/navigation";
 import type {
   AdminConnectAccountRow,
   AdminPayoutRow,
   AdminTransactionRow,
 } from "@/lib/event-repository";
+import { EmptyState } from "@/components/empty-state";
 
 // /admin/transactions client UI:
 // • A 30-day default view of payment_transactions joined with event + attendee
@@ -116,6 +123,10 @@ export function AdminTransactionsTable({
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [syncing, startSync] = useTransition();
 
+  // Typing stays responsive on the row cap by filtering against a deferred copy
+  // of the search term; the input itself stays bound to the immediate `search`.
+  const deferredSearch = useDeferredValue(search);
+
   const merchants = useMemo(() => {
     const map = new Map<string, string>();
     for (const t of transactions) {
@@ -128,22 +139,62 @@ export function AdminTransactionsTable({
     );
   }, [transactions]);
 
+  // Per-status pill counts in ONE pass over the rows (was N filter() passes,
+  // one per pill, on every render). `all` is just the total.
+  const statusCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const t of transactions) {
+      counts[t.status] = (counts[t.status] ?? 0) + 1;
+    }
+    return counts;
+  }, [transactions]);
+
+  // Precompute everything each cell renders — parsed/formatted dates, currency
+  // strings, the derived net, and a lowercased search haystack — so render and
+  // filtering read precomputed values instead of re-parsing on every keystroke.
+  const displayRows = useMemo(() => {
+    return transactions.map((t) => {
+      const created = new Date(t.createdAt);
+      const net =
+        t.transferAmountCents != null
+          ? t.transferAmountCents
+          : t.amountCents - (t.applicationFeeCents ?? 0);
+      return {
+        row: t,
+        net,
+        dateLabel: dateOnlyFormatter.format(created),
+        timeLabel: dateTimeFormatter.format(created).split(", ").slice(-1)[0],
+        amountLabel: formatMoney(t.amountCents, t.currency),
+        feeLabel: formatMoney(t.applicationFeeCents, t.currency),
+        netLabel: formatMoney(net, t.currency),
+        refundedLabel:
+          t.refundedAmountCents > 0 ? formatMoney(t.refundedAmountCents, t.currency) : "—",
+        piLabel: truncate(t.stripePaymentIntentId),
+        haystack: [
+          t.eventTitle,
+          t.attendeeName,
+          t.attendeeEmail,
+          t.merchantName,
+          t.stripePaymentIntentId,
+          t.stripeChargeId,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase(),
+      };
+    });
+  }, [transactions]);
+
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return transactions.filter((t) => {
+    const q = deferredSearch.trim().toLowerCase();
+    return displayRows.filter((d) => {
+      const t = d.row;
       if (status !== "all" && t.status !== status) return false;
       if (merchantFilter !== "all" && t.merchantProfileId !== merchantFilter) return false;
       if (!q) return true;
-      return (
-        (t.eventTitle?.toLowerCase().includes(q) ?? false) ||
-        (t.attendeeName?.toLowerCase().includes(q) ?? false) ||
-        (t.attendeeEmail?.toLowerCase().includes(q) ?? false) ||
-        (t.merchantName?.toLowerCase().includes(q) ?? false) ||
-        (t.stripePaymentIntentId?.toLowerCase().includes(q) ?? false) ||
-        (t.stripeChargeId?.toLowerCase().includes(q) ?? false)
-      );
+      return d.haystack.includes(q);
     });
-  }, [transactions, status, merchantFilter, search]);
+  }, [displayRows, status, merchantFilter, deferredSearch]);
 
   // KPI stickers reflect the filtered set so the headline numbers match the
   // table the admin is actually looking at.
@@ -153,7 +204,7 @@ export function AdminTransactionsTable({
     let net = 0;
     let fees = 0;
     let paidCount = 0;
-    for (const t of filtered) {
+    for (const { row: t } of filtered) {
       if (t.status === "paid" || t.status === "partially_refunded" || t.status === "refunded") {
         gross += t.amountCents;
         refunded += t.refundedAmountCents;
@@ -164,6 +215,14 @@ export function AdminTransactionsTable({
     }
     return { gross, refunded, net, fees, paidCount };
   }, [filtered]);
+
+  const filtersActive = status !== "all" || merchantFilter !== "all" || search.trim() !== "";
+
+  function clearFilters() {
+    setStatus("all");
+    setMerchantFilter("all");
+    setSearch("");
+  }
 
   function runSync() {
     setSyncMessage("Syncing…");
@@ -226,11 +285,11 @@ export function AdminTransactionsTable({
     <div className="space-y-6">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <span className="sticker sticker--cream tilt-l-2 inline-flex">
+          <span className="sticker sticker--cream tilt-l-1 inline-flex">
             <span className="size-2 rounded-full bg-[color:var(--surface-deep)]" />
             Transactions
           </span>
-          <h1 className="font-display mt-3 text-4xl font-light leading-tight text-[color:var(--ink)]">
+          <h1 className="font-display mt-3 text-4xl font-bold leading-tight tracking-[-0.025em] text-[color:var(--ink)]">
             Stripe ledger
           </h1>
           <p className="mt-1 max-w-xl text-sm font-medium text-[color:var(--mauve)]">
@@ -256,10 +315,10 @@ export function AdminTransactionsTable({
       </header>
 
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Kpi label="Gross volume (filtered)" value={formatMoney(kpis.gross, "AUD")} note={`${kpis.paidCount} paid txns`} tilt="tilt-r-2" tone="peach" />
-        <Kpi label="Refunded" value={formatMoney(kpis.refunded, "AUD")} note="includes partial refunds" tilt="tilt-l-2" tone="rose" />
-        <Kpi label="Net to merchants" value={formatMoney(kpis.net, "AUD")} note="gross minus refunds" tilt="tilt-r-2" tone="cream" />
-        <Kpi label="Platform fees" value={formatMoney(kpis.fees, "AUD")} note="from Stripe Connect" tilt="tilt-l-2" tone="champagne" />
+        <Kpi label="Gross volume (filtered)" value={formatMoney(kpis.gross, "AUD")} note={`${kpis.paidCount} paid txns`} tilt="tilt-r-1" tone="peach" />
+        <Kpi label="Refunded" value={formatMoney(kpis.refunded, "AUD")} note="includes partial refunds" tilt="tilt-l-1" tone="rose" />
+        <Kpi label="Net to merchants" value={formatMoney(kpis.net, "AUD")} note="gross minus refunds" tilt="tilt-r-1" tone="cream" />
+        <Kpi label="Platform fees" value={formatMoney(kpis.fees, "AUD")} note="from Stripe Connect" tilt="tilt-l-1" tone="champagne" />
       </section>
 
       <nav className="flex gap-2">
@@ -293,7 +352,7 @@ export function AdminTransactionsTable({
                 const count =
                   option.value === "all"
                     ? transactions.length
-                    : transactions.filter((t) => t.status === option.value).length;
+                    : statusCounts[option.value] ?? 0;
                 return (
                   <button
                     key={option.value}
@@ -345,16 +404,34 @@ export function AdminTransactionsTable({
               <span className="text-right">PI</span>
             </div>
             {filtered.length === 0 ? (
-              <p className="px-5 py-10 text-center text-sm font-bold text-[color:var(--mauve)]">
-                No transactions match this filter.
-              </p>
+              <div className="px-5 py-10">
+                <EmptyState
+                  bare
+                  eyebrow="No transactions"
+                  title="No transactions match this filter."
+                  body={
+                    filtersActive
+                      ? "Nothing here for the current status, merchant or search. Clear the filters to see the full 30-day ledger."
+                      : "No payment_transactions in the last 30 days. Run Sync from Stripe to backfill anything the webhook missed."
+                  }
+                  tone="rose"
+                  action={
+                    filtersActive ? (
+                      <button
+                        type="button"
+                        onClick={clearFilters}
+                        className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--ink)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--on-deep)] transition hard-shadow-sm hover:bg-black active:translate-y-px"
+                      >
+                        Clear filters
+                      </button>
+                    ) : undefined
+                  }
+                />
+              </div>
             ) : (
-              filtered.map((t) => {
+              filtered.map((d) => {
+                const t = d.row;
                 const isOpen = openRow === t.id;
-                const net =
-                  t.transferAmountCents != null
-                    ? t.transferAmountCents
-                    : t.amountCents - (t.applicationFeeCents ?? 0);
                 return (
                   <div key={t.id} className="border-b border-[color:var(--line)] last:border-0">
                     <button
@@ -364,10 +441,10 @@ export function AdminTransactionsTable({
                     >
                       <div>
                         <p className="font-black text-[color:var(--ink)]">
-                          {dateOnlyFormatter.format(new Date(t.createdAt))}
+                          {d.dateLabel}
                         </p>
                         <p className="text-[0.65rem] uppercase tracking-wider">
-                          {dateTimeFormatter.format(new Date(t.createdAt)).split(", ").slice(-1)[0]}
+                          {d.timeLabel}
                         </p>
                       </div>
                       <div>
@@ -384,23 +461,21 @@ export function AdminTransactionsTable({
                       </div>
                       <div>
                         <p className="font-black text-[color:var(--ink)]">
-                          {formatMoney(t.amountCents, t.currency)}
+                          {d.amountLabel}
                         </p>
                         <p className="text-[0.65rem] uppercase tracking-wider">{t.currency}</p>
                       </div>
                       <div>
                         <p className="text-[0.7rem]">
-                          fee {formatMoney(t.applicationFeeCents, t.currency)}
+                          fee {d.feeLabel}
                         </p>
                         <p className="text-[0.7rem] font-bold text-[color:var(--ink)]">
-                          net {formatMoney(net, t.currency)}
+                          net {d.netLabel}
                         </p>
                       </div>
                       <div>
                         <p className="font-bold text-[color:var(--ink)]">
-                          {t.refundedAmountCents > 0
-                            ? formatMoney(t.refundedAmountCents, t.currency)
-                            : "—"}
+                          {d.refundedLabel}
                         </p>
                       </div>
                       <div>
@@ -411,7 +486,7 @@ export function AdminTransactionsTable({
                         </span>
                       </div>
                       <div className="text-right text-[0.65rem] font-mono text-[color:var(--mauve)]">
-                        {truncate(t.stripePaymentIntentId)}
+                        {d.piLabel}
                       </div>
                     </button>
 
@@ -463,7 +538,7 @@ function Kpi({
       <p className="text-[0.65rem] font-black uppercase tracking-[0.18em] text-[color:var(--surface-deep)]/80">
         {label}
       </p>
-      <p className="font-display mt-1 text-2xl font-light leading-tight text-[color:var(--ink)]">
+      <p className="font-display mt-1 text-2xl font-semibold leading-tight text-[color:var(--ink)]">
         {value}
       </p>
       <p className="mt-1 text-[0.7rem] font-bold text-[color:var(--surface-deep)]/80">{note}</p>

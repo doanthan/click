@@ -187,7 +187,7 @@ export function MerchantCalendar({ events, monthParam }: MerchantCalendarProps) 
           <p className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
             Hosting calendar
           </p>
-          <h3 className="font-display mt-1 text-2xl font-light leading-tight text-[color:var(--ink)] sm:text-3xl">
+          <h3 className="font-display mt-1 text-2xl font-semibold leading-tight text-[color:var(--ink)] sm:text-3xl">
             {heading}
           </h3>
         </div>

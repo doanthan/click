@@ -1,10 +1,9 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import {
-  Archivo,
-  Fraunces,
   Hanken_Grotesk,
   IBM_Plex_Mono,
+  Schibsted_Grotesk,
 } from "next/font/google";
 import { Toaster } from "sonner";
 import DevSupabaseDrawer from "@/components/dev-supabase-drawer";
@@ -16,28 +15,21 @@ import { SiteFooter, SiteHeader, SiteHeaderShell } from "@/components/site-chrom
 import { auth } from "@/auth";
 import "./globals.css";
 
-// Body / UI grotesque — stand-in for River's Faktum / American Grotesk.
+// Body / UI grotesque — calm, readable (Soft Minimal body voice).
 const hanken = Hanken_Grotesk({
   variable: "--font-click-body",
   subsets: ["latin"],
   display: "swap",
 });
 
-// Editorial high-contrast display serif — stand-in for River's Copernicus.
-const fraunces = Fraunces({
+// Display + label voice — Schibsted Grotesk, the Soft Minimal (concept 06)
+// face: a clean grotesque set big, bold and tight. Replaces the editorial
+// serif; also drives eyebrows/labels (no separate condensed face).
+const schibsted = Schibsted_Grotesk({
   variable: "--font-click-display",
   subsets: ["latin"],
   display: "swap",
-  axes: ["opsz", "SOFT"],
-});
-
-// Condensed grotesque for eyebrows / labels / stat numerals — stand-in for
-// River's American Grotesk Condensed.
-const archivo = Archivo({
-  variable: "--font-click-condensed",
-  subsets: ["latin"],
-  display: "swap",
-  axes: ["wdth"],
+  weight: ["400", "500", "600", "700", "800", "900"],
 });
 
 const plexMono = IBM_Plex_Mono({
@@ -67,7 +59,7 @@ export default async function RootLayout({
     <html
       lang="en"
       data-scroll-behavior="smooth"
-      className={`${hanken.variable} ${fraunces.variable} ${archivo.variable} ${plexMono.variable} h-full antialiased`}
+      className={`${hanken.variable} ${schibsted.variable} ${plexMono.variable} h-full antialiased`}
     >
       {/* suppressHydrationWarning: browser extensions (e.g. ColorZilla's
           cz-shortcut-listen, Grammarly) inject attributes onto <body> before
@@ -93,7 +85,30 @@ export default async function RootLayout({
           metaConfigured={metaConfigured}
           showDemoCredentials={showDemoCredentials}
         />
-        <Toaster position="top-right" richColors closeButton />
+        <Toaster
+          position="top-right"
+          closeButton
+          gap={10}
+          toastOptions={{
+            // Re-skin sonner into the warm-editorial surface: cream card,
+            // hairline border, soft elevation, brand type — with rose for
+            // errors and electric-lime for success instead of stock red/green.
+            classNames: {
+              toast:
+                "!bg-[color:var(--cream)] !border !border-[color:var(--line)] !text-[color:var(--ink)] !rounded-2xl !shadow-[0_12px_28px_-10px_rgba(22,24,29,0.18)]",
+              title: "!font-semibold !text-[color:var(--ink)]",
+              description: "!text-[color:var(--mauve)] !font-medium",
+              actionButton:
+                "!bg-[color:var(--ink)] !text-[color:var(--champagne)] !rounded-full !font-semibold",
+              cancelButton: "!bg-transparent !text-[color:var(--mauve)] !rounded-full",
+              closeButton:
+                "!bg-[color:var(--cream)] !border-[color:var(--line)] !text-[color:var(--mauve)] hover:!text-[color:var(--ink)]",
+              error: "!border-[color:var(--rose)] [&_[data-icon]]:!text-[color:var(--rose)]",
+              success: "[&_[data-icon]]:!text-[color:var(--ink)]",
+              info: "[&_[data-icon]]:!text-[color:var(--mauve)]",
+            },
+          }}
+        />
         <SessionFreshness />
         <DevSupabaseDrawer />
         {session?.user ? <SupportWidget /> : null}

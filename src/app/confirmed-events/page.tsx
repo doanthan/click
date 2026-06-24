@@ -62,7 +62,7 @@ export default async function ConfirmedEventsPage({ searchParams }: ConfirmedEve
           <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
           Confirmed
         </span>
-        <h1 className="mt-6 font-display text-5xl font-light leading-[0.96] tracking-tight sm:text-6xl">
+        <h1 className="mt-6 font-display text-5xl font-bold leading-[0.96] tracking-[-0.025em] sm:text-6xl">
           {tab === "past"
             ? "Plans you’ve been to."
             : tab === "saved"
@@ -130,7 +130,7 @@ export default async function ConfirmedEventsPage({ searchParams }: ConfirmedEve
               </div>
             ) : (
               <div className="mt-4 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-8 text-center">
-                <p className="font-display text-3xl font-light leading-tight">
+                <p className="font-display text-3xl font-semibold leading-tight tracking-[-0.02em]">
                   {tab === "past"
                     ? "No past RSVPs yet."
                     : tab === "saved"

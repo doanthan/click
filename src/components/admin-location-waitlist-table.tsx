@@ -39,7 +39,7 @@ export function AdminLocationWaitlistTable({
           <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
             Location Waitlist
           </p>
-          <h1 className="font-display mt-1 text-3xl font-light leading-tight text-[color:var(--ink)]">
+          <h1 className="font-display mt-1 text-3xl font-semibold leading-tight tracking-[-0.025em] text-[color:var(--ink)]">
             Merchants outside the Sydney pilot
           </h1>
           <p className="mt-1 text-sm font-bold text-[color:var(--mauve)]">

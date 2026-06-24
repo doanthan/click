@@ -69,21 +69,18 @@ export default async function MerchantLoginPage({ searchParams }: LoginPageProps
 
   return (
     <main className="paper-noise relative min-h-screen overflow-hidden px-4 py-12 text-[color:var(--ink)] sm:px-6">
-      <div className="confetti-field absolute inset-0 opacity-25" aria-hidden />
 
       <section className="relative z-10 mx-auto grid max-w-7xl gap-10 lg:grid-cols-[0.85fr_1.15fr] lg:items-center">
         {/* ---------- LEFT: Host-focused intro ---------- */}
         <div className="relative">
-          <span className="sticker sticker--peach tilt-l-2 inline-flex">
+          <span className="sticker sticker--peach tilt-l-1 inline-flex">
             <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
             Host portal · welcome back
           </span>
 
-          <h1 className="font-display mt-6 text-5xl font-light leading-[0.94] tracking-tight text-[color:var(--ink)] sm:text-7xl">
+          <h1 className="font-display mt-6 text-5xl font-bold leading-[0.94] tracking-[-0.025em] text-[color:var(--ink)] sm:text-7xl">
             Back to your{" "}
-            <span className="italic">
-              <span className="peach-highlight">guest list</span>
-            </span>
+            <span className="text-[color:var(--coral)]">guest list</span>
             .
           </h1>
 

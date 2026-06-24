@@ -64,14 +64,13 @@ export default function HowItWorksPage() {
   return (
     <main className="paper-noise min-h-screen overflow-hidden text-[color:var(--ink)]">
       <section className="relative overflow-hidden bg-[color:var(--champagne)] px-4 pb-16 pt-16 sm:px-6 lg:pt-20">
-        <div className="confetti-field absolute inset-0 opacity-25" aria-hidden />
         <div className="relative z-10 mx-auto max-w-6xl">
           <span className="sticker sticker--peach tilt-l-2 inline-flex">
             <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
             How Click works
           </span>
-          <h1 className="font-display mt-6 max-w-4xl text-5xl font-light leading-[0.94] tracking-tight sm:text-7xl">
-            A burst of <span className="italic"><span className="peach-highlight">YES</span></span>{" "}
+          <h1 className="font-display mt-6 max-w-4xl text-5xl font-bold leading-[0.94] tracking-[-0.025em] sm:text-7xl">
+            A burst of <span className="text-[color:var(--coral)]">YES</span>{" "}
             — five honest steps from nervous to nearby.
           </h1>
           <p className="mt-6 max-w-3xl text-base font-medium leading-7 text-[color:var(--mauve)] sm:text-lg">
@@ -107,7 +106,7 @@ export default function HowItWorksPage() {
                 <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
                   {step.n} · {step.eyebrow}
                 </span>
-                <h3 className="font-display mt-3 text-2xl font-light leading-tight">
+                <h3 className="font-display mt-3 text-2xl font-semibold leading-tight tracking-[-0.02em]">
                   {step.title}
                 </h3>
                 <p className="mt-3 text-sm font-semibold leading-6 text-[color:var(--mauve)]">
@@ -135,7 +134,7 @@ export default function HowItWorksPage() {
                 <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
                   {role.eyebrow}
                 </span>
-                <h3 className="font-display mt-3 text-2xl font-light leading-tight">
+                <h3 className="font-display mt-3 text-2xl font-semibold leading-tight tracking-[-0.02em]">
                   {role.title}
                 </h3>
                 <p className="mt-3 text-sm font-semibold leading-6 text-[color:var(--mauve)]">
@@ -147,7 +146,7 @@ export default function HowItWorksPage() {
               <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--surface-deep)]">
                 Admins
               </span>
-              <h3 className="font-display mt-3 text-2xl font-light leading-tight text-[color:var(--ink)]">
+              <h3 className="font-display mt-3 text-2xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)]">
                 Click HQ
               </h3>
               <p className="mt-3 text-sm font-semibold leading-6 text-[color:var(--surface-deep)]">
@@ -172,7 +171,7 @@ export default function HowItWorksPage() {
                 key={b.title}
                 className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-5 hard-shadow-sm"
               >
-                <h3 className="font-display text-xl font-light leading-tight">
+                <h3 className="font-display text-xl font-semibold leading-tight tracking-[-0.02em]">
                   {b.title}
                 </h3>
                 <p className="mt-3 text-sm font-semibold leading-6 text-[color:var(--mauve)]">
@@ -240,8 +239,8 @@ export default function HowItWorksPage() {
             <span className="size-2 rounded-full bg-[color:var(--rose)]" />
             Ready?
           </span>
-          <h2 className="font-display mt-6 text-4xl font-light leading-tight tracking-tight sm:text-6xl">
-            Pick a plan. Show up. <span className="italic">See what clicks.</span>
+          <h2 className="font-display mt-6 text-4xl font-bold leading-tight tracking-[-0.025em] sm:text-6xl">
+            Pick a plan. Show up. <span className="text-[color:var(--coral)]">See what clicks.</span>
           </h2>
           <p className="mt-6 text-base font-medium leading-7 text-[color:var(--peach)] sm:text-lg">
             30 seconds to make an account. No quiz required to RSVP your first

@@ -1,20 +1,22 @@
 import { AdminMembersTable } from "@/components/admin-members-table";
 import { AdminPageHeader } from "@/components/admin-page-header";
-import { getAdminEvents, getAdminMembers } from "@/lib/event-repository";
+import { getAdminEventOptions, getAdminMembers } from "@/lib/event-repository";
 
 export const metadata = {
   title: "Attendees Management | Admin",
 };
 
 export default async function AdminMembersPage() {
-  const [members, events] = await Promise.all([
+  const [members, options] = await Promise.all([
     getAdminMembers(),
-    getAdminEvents(),
+    // Only the {slug,title} picker is needed here, not the full events payload.
+    getAdminEventOptions(),
   ]);
 
-  const eventOptions = events
-    .map((event) => ({ slug: event.id, title: event.title }))
-    .sort((a, b) => a.title.localeCompare(b.title));
+  // Keep the same case-insensitive ordering the previous getAdminEvents()-backed
+  // list produced (the table component re-sorts the same way, but this preserves
+  // the exact data handed in).
+  const eventOptions = [...options].sort((a, b) => a.title.localeCompare(b.title));
 
   return (
     <div className="space-y-8 py-10">

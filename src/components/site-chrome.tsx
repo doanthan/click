@@ -17,7 +17,7 @@ import { MobileBottomNav, type BottomNavTab } from "./mobile-bottom-nav";
 export function SiteHeaderShell() {
   return (
     <header className="sticky top-0 z-50 border-b border-[color:var(--line)] bg-[color:var(--champagne)]/85 backdrop-blur-xl">
-      <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-2 sm:px-6 sm:py-3.5">
+      <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-2 sm:px-8 sm:py-3.5 lg:px-12">
         <div className="flex items-center gap-1.5 sm:gap-2">
           <Image
             src="/click_blob_mascot.svg"
@@ -103,7 +103,7 @@ export async function SiteHeader() {
   return (
     <>
       <header className="sticky top-0 z-50 border-b border-[color:var(--line)] bg-[color:var(--champagne)]/85 backdrop-blur-xl">
-      <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-2 sm:px-6 sm:py-3.5">
+      <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-2 sm:px-8 sm:py-3.5 lg:px-12">
         <Link
           href={logoHref}
           className="group flex items-center gap-1.5 sm:gap-2"
@@ -187,22 +187,22 @@ export async function SiteFooter() {
 
   return (
     <footer className="relative overflow-hidden bg-[color:var(--surface-deep)] text-[color:var(--on-deep)]">
-      <div className="h-1 w-full bg-[color:var(--peach)]" />
-      <div className="mx-auto grid max-w-7xl gap-10 px-4 py-16 sm:px-6 md:grid-cols-[1.5fr_0.8fr_0.8fr_0.8fr]">
+      <div className="h-1 w-full bg-[color:var(--coral)]" />
+      <div className="mx-auto grid max-w-7xl gap-10 px-5 py-16 sm:px-8 lg:px-12 md:grid-cols-[1.5fr_0.8fr_0.8fr_0.8fr]">
         <div>
           <span className="click-wordmark text-5xl text-[color:var(--on-deep)]">
             Click
             <span
               className="click-wordmark__period"
               aria-hidden
-              style={{ background: "var(--peach)" }}
+              style={{ background: "var(--coral)" }}
             />
           </span>
           <p className="mt-5 max-w-sm text-[0.95rem] leading-7 text-[color:var(--on-deep)]/65">
             An event-first people platform for friendship, dating, local groups,
             and shared-interest discovery in Sydney.
           </p>
-          <p className="font-display mt-7 text-2xl italic text-[color:var(--peach)]">
+          <p className="font-display mt-7 text-2xl font-semibold italic text-[color:var(--coral)]">
             See you out there.
           </p>
         </div>
@@ -214,7 +214,7 @@ export async function SiteFooter() {
                 <Link
                   href={linkForFooterItem(item)}
                   key={item}
-                  className="w-fit transition-colors hover:text-[color:var(--peach)]"
+                  className="w-fit transition-colors hover:text-[color:var(--coral)]"
                 >
                   {item}
                 </Link>
@@ -224,7 +224,7 @@ export async function SiteFooter() {
         ))}
       </div>
       <div className="border-t border-[color:var(--on-deep)]/12">
-        <div className="mx-auto flex max-w-7xl flex-col items-start justify-between gap-2 px-4 py-6 font-condensed text-xs uppercase tracking-[0.18em] text-[color:var(--on-deep)]/45 sm:flex-row sm:items-center sm:px-6">
+        <div className="mx-auto flex max-w-7xl flex-col items-start justify-between gap-2 px-5 py-6 font-condensed text-xs uppercase tracking-[0.18em] text-[color:var(--on-deep)]/45 sm:flex-row sm:items-center sm:px-8 lg:px-12">
           <span>Made in Sydney · Click {new Date().getFullYear()}</span>
           <span>People → Events → Familiar Faces</span>
         </div>

@@ -32,7 +32,7 @@ export function buildWaitlistPromotedEmail(d: WaitlistPromotedData) {
     <tr>
       <td class="px-gutter" style="padding:40px 40px 8px 40px;">
         ${eyebrow("A seat opened")}
-        ${heroTitle(`Your turn for <em style="color:${ROSE};font-style:italic;">${escapeHtml(d.eventTitle)}</em>.`)}
+        ${heroTitle(`Your turn for <span style="color:${ROSE};">${escapeHtml(d.eventTitle)}</span>.`)}
         ${paragraph(
           `Hi ${escapeHtml(d.firstName)} &mdash; the next person on the waitlist is you. The seat is yours if you confirm before the timer runs out.`,
         )}

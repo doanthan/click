@@ -226,12 +226,12 @@ export default function BusinessPage() {
           >
             <span aria-hidden>←</span> Back to admin
           </Link>
-          <span className="sticker sticker--peach tilt-l-2 flex w-fit">
+          <span className="sticker sticker--peach tilt-l-1 flex w-fit">
             <span className="size-2 rounded-full bg-[color:var(--punch)] pulse-ring" />
             Internal · founder reality dashboard
           </span>
-          <h1 className="font-display mt-6 max-w-4xl text-5xl font-light leading-[0.94] tracking-tight sm:text-7xl">
-            How much money can <span className="italic"><span className="peach-highlight">Click</span></span> actually make?
+          <h1 className="font-display mt-6 max-w-4xl text-5xl font-bold leading-[0.94] tracking-[-0.025em] sm:text-7xl">
+            How much money can <span className="peach-highlight text-[color:var(--purple)]">Click</span> actually make?
           </h1>
           <p className="mt-6 max-w-3xl text-base font-medium leading-7 text-[color:var(--mauve)] sm:text-lg">
             A straight forecast built off the business case — worst, base, and best.
@@ -273,7 +273,7 @@ export default function BusinessPage() {
                   >
                     {sc.tag}
                   </span>
-                  <p className="font-display mt-2 text-2xl font-light leading-tight">
+                  <p className="font-display mt-2 text-2xl font-semibold leading-tight">
                     {sc.label}
                   </p>
                   <p
@@ -329,7 +329,7 @@ export default function BusinessPage() {
       <section className="border-b-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-12 sm:px-6">
         <div className="mx-auto max-w-6xl">
           <p className="eyebrow">Monthly recurring revenue · {s.label}</p>
-          <h2 className="font-display mt-3 text-4xl font-light leading-tight">The 12-month ramp.</h2>
+          <h2 className="font-display mt-3 text-4xl font-bold leading-tight tracking-[-0.025em]">The 12-month ramp.</h2>
           <div className="mt-8 grid grid-cols-12 items-end gap-1.5 sm:gap-2" style={{ height: 240 }}>
             {s.mrr.map((v, i) => {
               const h = Math.max(4, Math.round((v / peakMrr) * 100));
@@ -356,7 +356,7 @@ export default function BusinessPage() {
       <section className="border-b-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-12 sm:px-6">
         <div className="mx-auto max-w-6xl">
           <p className="eyebrow">Where Month-12 revenue comes from · {s.label}</p>
-          <h2 className="font-display mt-3 text-4xl font-light leading-tight">Four streams, one bar.</h2>
+          <h2 className="font-display mt-3 text-4xl font-bold leading-tight tracking-[-0.025em]">Four streams, one bar.</h2>
           <div className="mt-8 flex h-12 w-full overflow-hidden rounded-full border-2 border-[color:var(--line)] hard-shadow-sm">
             {streams.map((st) => (
               <div
@@ -372,7 +372,7 @@ export default function BusinessPage() {
               <div key={st.label} className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-4 hard-shadow-sm">
                 <span className="inline-block size-3 rounded-full border border-[color:var(--line)]" style={{ background: st.tone }} />
                 <p className="mt-2 text-xs font-bold uppercase tracking-wide text-[color:var(--ink)]">{st.label}</p>
-                <p className="font-display mt-1 text-2xl font-light">{fmtFull(st.value)}</p>
+                <p className="font-display mt-1 text-2xl font-semibold">{fmtFull(st.value)}</p>
                 <p className="text-xs font-semibold text-[color:var(--mauve)]">
                   {Math.round((st.value / streamTotal) * 100)}% of MRR
                 </p>
@@ -390,11 +390,11 @@ export default function BusinessPage() {
       {/* THE CASH MATH — the part the deck skips */}
       <section className="border-b-2 border-[color:var(--line)] bg-[color:var(--ink)] px-4 py-14 text-[color:var(--on-deep)] sm:px-6">
         <div className="mx-auto max-w-6xl">
-          <span className="sticker sticker--peach tilt-r-2 inline-flex">
+          <span className="sticker sticker--peach tilt-r-1 inline-flex">
             <span className="size-2 rounded-full bg-[color:var(--punch)]" />
             Read this part twice
           </span>
-          <h2 className="font-display mt-6 text-4xl font-light leading-tight sm:text-5xl">
+          <h2 className="font-display mt-6 text-4xl font-bold leading-tight tracking-[-0.025em] sm:text-5xl">
             The cash math is the whole story.
           </h2>
           <p className="mt-5 max-w-3xl text-base font-medium leading-7 text-[color:var(--peach)]">
@@ -478,12 +478,12 @@ export default function BusinessPage() {
       <section className="border-b-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-12 sm:px-6">
         <div className="mx-auto max-w-6xl">
           <p className="eyebrow">Why this could genuinely work</p>
-          <h2 className="font-display mt-3 text-4xl font-light leading-tight">The real strengths.</h2>
+          <h2 className="font-display mt-3 text-4xl font-bold leading-tight tracking-[-0.025em]">The real strengths.</h2>
           <div className="mt-8 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
             {PROS.map((p) => (
               <div key={p.title} className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-6 hard-shadow-sm">
                 <span className="block h-2 w-12 rounded-full bg-[color:var(--peach)]" />
-                <h3 className="font-display mt-4 text-2xl font-light leading-tight">{p.title}</h3>
+                <h3 className="font-display mt-4 text-2xl font-semibold leading-tight">{p.title}</h3>
                 <p className="mt-3 text-sm font-semibold leading-6 text-[color:var(--mauve)]">{p.body}</p>
               </div>
             ))}
@@ -495,7 +495,7 @@ export default function BusinessPage() {
       <section className="border-b-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-12 sm:px-6">
         <div className="mx-auto max-w-6xl">
           <p className="eyebrow">The threats nobody on the team wants to say out loud</p>
-          <h2 className="font-display mt-3 text-4xl font-light leading-tight">What actually kills this.</h2>
+          <h2 className="font-display mt-3 text-4xl font-bold leading-tight tracking-[-0.025em]">What actually kills this.</h2>
           <div className="mt-8 grid gap-5 md:grid-cols-2">
             {THREATS.map((t, i) => (
               <div key={t.title} className="flex gap-4 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-5 hard-shadow-sm">
@@ -503,7 +503,7 @@ export default function BusinessPage() {
                   {i + 1}
                 </span>
                 <div>
-                  <h3 className="font-display text-xl font-light leading-tight">{t.title}</h3>
+                  <h3 className="font-display text-xl font-semibold leading-tight">{t.title}</h3>
                   <p className="mt-2 text-sm font-semibold leading-6 text-[color:var(--mauve)]">{t.body}</p>
                 </div>
               </div>
@@ -516,7 +516,7 @@ export default function BusinessPage() {
       <section className="border-b-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-12 sm:px-6">
         <div className="mx-auto max-w-6xl">
           <p className="eyebrow">Be honest about who you&apos;re up against</p>
-          <h2 className="font-display mt-3 text-4xl font-light leading-tight">You are not first. You are not alone.</h2>
+          <h2 className="font-display mt-3 text-4xl font-bold leading-tight tracking-[-0.025em]">You are not first. You are not alone.</h2>
           <p className="mt-4 max-w-3xl text-sm font-semibold leading-6 text-[color:var(--mauve)]">
             The deck says &ldquo;a new category&rdquo;. It isn&apos;t. &ldquo;Meet people through
             shared real-world events, no swiping&rdquo; is a crowded, funded bet right now.
@@ -526,7 +526,7 @@ export default function BusinessPage() {
             {COMPETITORS.map((c) => (
               <div key={c.name} className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-6 hard-shadow-sm">
                 <div className="flex items-center justify-between gap-3">
-                  <h3 className="font-display text-2xl font-light leading-tight">{c.name}</h3>
+                  <h3 className="font-display text-2xl font-semibold leading-tight">{c.name}</h3>
                   <span
                     className={`shrink-0 rounded-full border-2 border-[color:var(--line)] px-3 py-1 text-[0.65rem] font-bold uppercase tracking-wider ${
                       c.threat.startsWith("Severe")
@@ -553,11 +553,11 @@ export default function BusinessPage() {
       {/* THE VC QUESTION */}
       <section className="border-b-2 border-[color:var(--line)] bg-[color:var(--ink)] px-4 py-16 text-[color:var(--on-deep)] sm:px-6">
         <div className="mx-auto max-w-5xl">
-          <span className="sticker sticker--peach tilt-l-2 inline-flex">
+          <span className="sticker sticker--peach tilt-l-1 inline-flex">
             <span className="size-2 rounded-full bg-[color:var(--punch)]" />
             The real question
           </span>
-          <h2 className="font-display mt-6 text-4xl font-light leading-tight sm:text-6xl">
+          <h2 className="font-display mt-6 text-4xl font-bold leading-tight tracking-[-0.025em] sm:text-6xl">
             Should you take VC money?
           </h2>
           <p className="mt-6 text-lg font-medium leading-8 text-[color:var(--peach)]">
@@ -589,7 +589,7 @@ export default function BusinessPage() {
             </p>
           </div>
 
-          <h3 className="font-display mt-10 text-2xl font-light text-[color:var(--peach)]">
+          <h3 className="font-display mt-10 text-2xl font-semibold text-[color:var(--peach)]">
             A decision rule you can actually use
           </h3>
           <div className="mt-5 grid gap-4 md:grid-cols-3">
@@ -680,7 +680,7 @@ function Metric({ label, value, sub, tone }: { label: string; value: string; sub
   return (
     <article className={`rounded-2xl border-2 border-[color:var(--line)] ${palette} hard-shadow-sm p-5`}>
       <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] opacity-80">{label}</p>
-      <p className="font-display mt-2 text-4xl font-light leading-none sm:text-5xl">{value}</p>
+      <p className="font-display mt-2 text-4xl font-bold leading-none tracking-[-0.025em] sm:text-5xl">{value}</p>
       <p className="mt-2 text-xs font-semibold opacity-75">{sub}</p>
     </article>
   );
@@ -689,7 +689,7 @@ function Metric({ label, value, sub, tone }: { label: string; value: string; sub
 function DeepCard({ title, body }: { title: string; body: string }) {
   return (
     <div className="rounded-2xl border-2 border-[color:var(--champagne)]/40 bg-[color:var(--surface-deep)] p-5">
-      <h3 className="font-display text-xl font-light text-[color:var(--peach)]">{title}</h3>
+      <h3 className="font-display text-xl font-semibold text-[color:var(--peach)]">{title}</h3>
       <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--champagne)]/85">{body}</p>
     </div>
   );

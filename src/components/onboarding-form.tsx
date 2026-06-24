@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { interestTagCategories } from "@/lib/click-data";
+import { regionFromPostcode } from "@/lib/geo";
 import { REGISTER_PREFILL_KEY, type RegisterPrefill } from "@/components/register-form";
 import { BirthDatePicker } from "@/components/birth-date-picker";
 
@@ -96,6 +97,15 @@ export function OnboardingForm({ initialName }: OnboardingFormProps) {
   const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   const [state, setState] = useState<SubmitState>("idle");
   const [message, setMessage] = useState("");
+
+  // Pilot is greater Sydney for now. When the postcode lands outside it, show a
+  // non-blocking heads-up that we're not live there yet but they'll be on the
+  // launch waitlist (mirrors the merchant event-create location gate). Only
+  // fires on a complete 4-digit postcode so it never flashes mid-typing.
+  const outsidePilotArea = useMemo(() => {
+    const trimmed = postcode.trim();
+    return POSTCODE_RE.test(trimmed) && regionFromPostcode(trimmed) !== "Sydney";
+  }, [postcode]);
 
   const hydratedRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -276,7 +286,7 @@ export function OnboardingForm({ initialName }: OnboardingFormProps) {
         <p className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.2em] text-[color:var(--rose)]">
           Set up your profile
         </p>
-        <h2 className="font-display mt-2 text-3xl font-light leading-[1.02] sm:text-4xl">
+        <h2 className="font-display mt-2 text-3xl font-bold leading-[1.02] tracking-[-0.02em] sm:text-4xl">
           A few quick taps. No quiz.
         </h2>
         <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
@@ -324,6 +334,16 @@ export function OnboardingForm({ initialName }: OnboardingFormProps) {
                 placeholder="2204"
               />
             </label>
+            {outsidePilotArea ? (
+              <p className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-4 py-3 text-xs font-bold leading-5 text-[color:var(--surface-deep)] hard-shadow-sm">
+                <span className="font-mono mr-2 text-[0.65rem] font-bold uppercase tracking-[0.18em]">
+                  Heads up
+                </span>
+                Click is launching in Sydney first, so we&apos;re not live in your
+                area just yet. Finish signing up and we&apos;ll add you to the
+                waitlist — we&apos;ll email you the moment Click launches near you.
+              </p>
+            ) : null}
             {coords ? (
               <p className="rounded-xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-3 text-xs font-semibold text-[color:var(--mauve)]">
                 <span className="font-mono mr-2 text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
@@ -527,7 +547,7 @@ function Section({
         <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.2em] text-[color:var(--rose)]">
           {eyebrow}
         </p>
-        <h2 className="font-display mt-2 text-2xl font-light leading-[1.05] sm:text-3xl">
+        <h2 className="font-display mt-2 text-2xl font-semibold leading-[1.05] tracking-[-0.02em] sm:text-3xl">
           {title}
         </h2>
         {subtitle ? (

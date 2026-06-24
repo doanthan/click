@@ -105,7 +105,7 @@ export function AvatarUploader({ initialUrl, displayName }: AvatarUploaderProps)
               className="size-full object-cover"
             />
           ) : (
-            <span className="font-display text-3xl font-light text-[color:var(--ink)]">
+            <span className="font-display text-3xl font-semibold text-[color:var(--ink)]">
               {initial}
             </span>
           )}

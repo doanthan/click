@@ -36,7 +36,7 @@ export default function OnboardingCreateEventsPage() {
   return (
     <div className="grid gap-6">
       <div className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-6 hard-shadow sm:p-8">
-        <h2 className="font-display text-3xl font-light leading-tight">
+        <h2 className="font-display text-3xl font-semibold leading-tight">
           How creating an event works.
         </h2>
         <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--mauve)]">

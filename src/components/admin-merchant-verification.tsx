@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 
 type Status = "pending" | "approved" | "rejected" | "suspended";
 
@@ -19,27 +21,18 @@ export function AdminMerchantVerification({
   const router = useRouter();
   const [status, setStatus] = useState<Status>(initialStatus);
   const [saving, setSaving] = useState<null | "approved" | "rejected">(null);
-  const [error, setError] = useState("");
+  // Which decision the branded ConfirmDialog is currently confirming (null = closed).
+  const [pending, setPending] = useState<null | "approved" | "rejected">(null);
 
-  async function decide(next: "approved" | "rejected") {
-    let reason: string | undefined;
-    if (next === "rejected") {
-      const input = window.prompt(
-        "Reason for declining (included in the email to the merchant)?",
-        "",
-      );
-      if (input === null) return; // cancelled the prompt
-      reason = input.trim() || undefined;
-    } else if (
-      !window.confirm(
-        "Approve this merchant? They'll be able to create events and will get an approval email.",
-      )
-    ) {
-      return;
-    }
+  // Opens the branded confirm/prompt dialog for the chosen decision.
+  function decide(next: "approved" | "rejected") {
+    setPending(next);
+  }
 
+  // Runs after the admin confirms in the dialog. `reason` carries the decline
+  // free-text (empty for approvals) and rides through to the merchant email.
+  async function performDecision(next: "approved" | "rejected", reason?: string) {
     setSaving(next);
-    setError("");
 
     const response = await fetch(
       `/api/admin/merchants/${merchantId}/verification`,
@@ -55,13 +48,16 @@ export function AdminMerchantVerification({
     };
 
     if (!response.ok) {
-      setError(payload.error ?? "Could not update.");
+      toast.error(payload.error ?? "Could not update.");
       setSaving(null);
+      setPending(null);
       return;
     }
 
     setStatus(payload.verificationStatus ?? next);
     setSaving(null);
+    setPending(null);
+    toast.success(next === "approved" ? "Merchant approved." : "Merchant declined.");
     // Re-render the server page so the status badge + downstream gating update.
     router.refresh();
   }
@@ -87,9 +83,6 @@ export function AdminMerchantVerification({
             Approving lets them create events and sends an approval email.
             Declining notifies them with your reason. You can change this later.
           </p>
-          {error ? (
-            <p className="mt-2 text-xs font-bold text-[color:var(--punch)]">{error}</p>
-          ) : null}
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           <button
@@ -110,6 +103,29 @@ export function AdminMerchantVerification({
           </button>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={pending === "approved"}
+        title="Approve this merchant?"
+        description="They'll be able to create events and will get an approval email. You can change this later."
+        confirmLabel="Approve merchant"
+        tone="peach"
+        busy={saving === "approved"}
+        onConfirm={() => performDecision("approved")}
+        onCancel={() => setPending(null)}
+      />
+      <ConfirmDialog
+        open={pending === "rejected"}
+        title="Decline this merchant?"
+        description="They'll be notified by email and won't be able to publish events. You can change this later."
+        confirmLabel="Decline merchant"
+        tone="rose"
+        busy={saving === "rejected"}
+        promptLabel="Reason for declining (included in the email to the merchant)"
+        promptPlaceholder="Leave blank to send the generic note"
+        onConfirm={(reason) => performDecision("rejected", reason || undefined)}
+        onCancel={() => setPending(null)}
+      />
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { Pill } from "@/components/click-ui";
 import { ProfileSafetyControls } from "@/components/profile-safety-controls";
 import { VerifiedTick } from "@/components/verified-tick";
+import { formatIntent } from "@/lib/click-data";
 import { getOwnProfile, getPublicProfileById, getSafetyState } from "@/lib/event-repository";
 
 export const metadata = {
@@ -52,7 +53,7 @@ export default async function PublicProfilePage({ params }: PublicProfilePagePro
               className="size-24 shrink-0 rounded-full border-2 border-[color:var(--line)] object-cover hard-shadow-sm sm:size-28"
             />
           ) : (
-            <div className="grid size-24 shrink-0 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] font-display text-4xl font-light text-[color:var(--surface-deep)] hard-shadow-sm sm:size-28">
+            <div className="grid size-24 shrink-0 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] font-display text-4xl font-semibold text-[color:var(--surface-deep)] hard-shadow-sm sm:size-28">
               {profile.displayName
                 .split(/\s+/)
                 .map((w) => w[0])
@@ -63,7 +64,7 @@ export default async function PublicProfilePage({ params }: PublicProfilePagePro
             </div>
           )}
           <div className="min-w-0">
-            <h1 className="font-display text-5xl font-light leading-[0.96] tracking-tight sm:text-6xl">
+            <h1 className="font-display text-5xl font-bold leading-[0.96] tracking-[-0.025em] sm:text-6xl">
               {profile.displayName}
               {profile.verified ? <VerifiedTick className="ml-3 text-3xl sm:text-4xl" /> : null}
             </h1>
@@ -122,7 +123,7 @@ export default async function PublicProfilePage({ params }: PublicProfilePagePro
                 <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
                   {prompt.label}…
                 </span>
-                <p className="mt-3 font-display text-2xl font-light leading-snug text-[color:var(--ink)]">
+                <p className="mt-3 font-display text-2xl font-semibold leading-snug text-[color:var(--ink)]">
                   {prompt.answer}
                 </p>
               </div>
@@ -134,7 +135,9 @@ export default async function PublicProfilePage({ params }: PublicProfilePagePro
               </span>
               <div className="mt-3 flex flex-wrap gap-2">
                 {profile.intents.length > 0 ? (
-                  profile.intents.map((intent) => <Pill key={intent} tone="peach">{intent}</Pill>)
+                  profile.intents.map((intent) => (
+                    <Pill key={intent} tone="peach">{formatIntent(intent)}</Pill>
+                  ))
                 ) : (
                   <p className="text-sm font-medium text-[color:var(--mauve)]">Not specified.</p>
                 )}

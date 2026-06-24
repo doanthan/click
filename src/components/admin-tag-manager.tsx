@@ -1,7 +1,10 @@
 "use client";
 
 import { useMemo, useState, type FormEvent } from "react";
+import { toast } from "sonner";
 import type { AdminTagRow } from "@/lib/event-repository";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { EmptyState } from "@/components/empty-state";
 
 const tagTypeOptions = ["interest", "music", "vibe"] as const;
 
@@ -11,9 +14,10 @@ export function AdminTagManager({ tags }: { tags: AdminTagRow[] }) {
   const [label, setLabel] = useState("");
   const [categoryName, setCategoryName] = useState("");
   const [tagType, setTagType] = useState<(typeof tagTypeOptions)[number]>("interest");
-  const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  // Tag queued for the branded delete confirmation (null = dialog closed).
+  const [pendingDelete, setPendingDelete] = useState<AdminTagRow | null>(null);
   // Make a long list manageable: free-text search + a type filter.
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<"all" | (typeof tagTypeOptions)[number]>("all");
@@ -64,7 +68,6 @@ export function AdminTagManager({ tags }: { tags: AdminTagRow[] }) {
         ? (tag.tagType as (typeof tagTypeOptions)[number])
         : "interest",
     );
-    setMessage("");
     if (typeof window !== "undefined") {
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
@@ -73,8 +76,8 @@ export function AdminTagManager({ tags }: { tags: AdminTagRow[] }) {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitting(true);
-    setMessage("");
 
+    const wasEditing = Boolean(editingId);
     const response = await fetch("/api/admin/tags", {
       method: editingId ? "PATCH" : "POST",
       headers: { "Content-Type": "application/json" },
@@ -91,7 +94,7 @@ export function AdminTagManager({ tags }: { tags: AdminTagRow[] }) {
 
     if (!response.ok || !payload.tag) {
       setSubmitting(false);
-      setMessage(payload.error ?? "Tag could not be saved.");
+      toast.error(payload.error ?? "Tag could not be saved.");
       return;
     }
 
@@ -99,23 +102,13 @@ export function AdminTagManager({ tags }: { tags: AdminTagRow[] }) {
       const withoutExisting = current.filter((tag) => tag.id !== payload.tag?.id);
       return [payload.tag as AdminTagRow, ...withoutExisting];
     });
-    setMessage(editingId ? "Tag updated and audit logged." : "Tag saved and audit logged.");
+    toast.success(wasEditing ? "Tag updated and audit logged." : "Tag saved and audit logged.");
     resetForm();
     setSubmitting(false);
   }
 
-  async function remove(tag: AdminTagRow) {
-    if (
-      typeof window !== "undefined" &&
-      !window.confirm(
-        `Delete "${tag.label}"? This removes it from ${tag.usageCount} association${tag.usageCount === 1 ? "" : "s"} and cannot be undone.`,
-      )
-    ) {
-      return;
-    }
-
+  async function performDelete(tag: AdminTagRow) {
     setDeletingId(tag.id);
-    setMessage("");
 
     const response = await fetch(`/api/admin/tags?id=${encodeURIComponent(tag.id)}`, {
       method: "DELETE",
@@ -124,14 +117,16 @@ export function AdminTagManager({ tags }: { tags: AdminTagRow[] }) {
 
     if (!response.ok) {
       setDeletingId(null);
-      setMessage(payload.error ?? "Tag could not be deleted.");
+      setPendingDelete(null);
+      toast.error(payload.error ?? "Tag could not be deleted.");
       return;
     }
 
     setRows((current) => current.filter((row) => row.id !== tag.id));
     if (editingId === tag.id) resetForm();
-    setMessage("Tag deleted and audit logged.");
+    toast.success("Tag deleted and audit logged.");
     setDeletingId(null);
+    setPendingDelete(null);
   }
 
   return (
@@ -140,7 +135,7 @@ export function AdminTagManager({ tags }: { tags: AdminTagRow[] }) {
         onSubmit={submit}
         className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-5 hard-shadow-sm"
       >
-        <h3 className="font-display text-3xl font-light leading-none text-[color:var(--ink)]">
+        <h3 className="font-display text-3xl font-semibold leading-none text-[color:var(--ink)]">
           {editingId ? "Edit tag" : "Add or update tag"}
         </h3>
         {editingId ? (
@@ -220,9 +215,6 @@ export function AdminTagManager({ tags }: { tags: AdminTagRow[] }) {
               </button>
             ) : null}
           </div>
-          {message ? (
-            <p className="text-xs font-bold text-[color:var(--mauve)]">{message}</p>
-          ) : null}
         </div>
       </form>
 
@@ -262,9 +254,19 @@ export function AdminTagManager({ tags }: { tags: AdminTagRow[] }) {
           <span className="text-right">Actions</span>
         </div>
         {filtered.length === 0 ? (
-          <p className="px-5 py-6 text-sm font-medium text-[color:var(--mauve)]">
-            No tags match your search.
-          </p>
+          <div className="p-5">
+            <EmptyState
+              bare
+              eyebrow="No matches"
+              title={rows.length === 0 ? "No tags yet" : "No tags match your search"}
+              body={
+                rows.length === 0
+                  ? "Add a tag with the form on the left to start building your taxonomy."
+                  : "Try a different search term or clear the type filter to see more tags."
+              }
+              tone="ink"
+            />
+          </div>
         ) : null}
         {filtered.map((tag) => (
           <div
@@ -294,7 +296,7 @@ export function AdminTagManager({ tags }: { tags: AdminTagRow[] }) {
               </button>
               <button
                 type="button"
-                onClick={() => remove(tag)}
+                onClick={() => setPendingDelete(tag)}
                 disabled={deletingId === tag.id}
                 className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-1 text-[0.65rem] font-black uppercase tracking-wider text-[color:var(--punch)] hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)] disabled:cursor-not-allowed disabled:opacity-60"
               >
@@ -304,6 +306,23 @@ export function AdminTagManager({ tags }: { tags: AdminTagRow[] }) {
           </div>
         ))}
       </div>
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title={pendingDelete ? `Delete "${pendingDelete.label}"?` : "Delete tag?"}
+        description={
+          pendingDelete
+            ? `This removes it from every event and member it's linked to (${pendingDelete.usageCount} association${pendingDelete.usageCount === 1 ? "" : "s"}). This can't be undone.`
+            : undefined
+        }
+        confirmLabel="Delete tag"
+        tone="rose"
+        busy={pendingDelete ? deletingId === pendingDelete.id : false}
+        onConfirm={() => {
+          if (pendingDelete) void performDelete(pendingDelete);
+        }}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   );
 }

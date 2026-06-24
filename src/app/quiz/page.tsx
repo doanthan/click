@@ -23,7 +23,7 @@ export default async function QuizIndexPage() {
           <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
           Quizzes
         </span>
-        <h1 className="mt-6 font-display text-5xl font-light leading-[0.96] tracking-tight sm:text-6xl">
+        <h1 className="mt-6 font-display text-5xl font-bold leading-[0.96] tracking-[-0.025em] sm:text-6xl">
           Two quick quizzes that change what Click suggests.
         </h1>
         <p className="mt-4 max-w-2xl text-base font-medium leading-7 text-[color:var(--mauve)]">
@@ -36,7 +36,7 @@ export default async function QuizIndexPage() {
             <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em]">
               Latest persona
             </p>
-            <h2 className="font-display mt-2 text-3xl font-light leading-tight">
+            <h2 className="font-display mt-2 text-3xl font-semibold leading-tight">
               {persona.personaName}
             </h2>
             <p className="mt-2 text-sm font-bold">
@@ -90,7 +90,7 @@ function QuizCard({
       <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] opacity-80">
         {eyebrow}
       </span>
-      <h3 className="font-display mt-3 text-3xl font-light leading-tight">
+      <h3 className="font-display mt-3 text-3xl font-semibold leading-tight">
         {title}
       </h3>
       <p className="mt-3 text-sm font-medium leading-6 opacity-90">{body}</p>

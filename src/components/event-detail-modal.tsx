@@ -207,7 +207,7 @@ export function EventDetailModal({
               </p>
               <h2
                 id="event-modal-title"
-                className="font-display mt-2 text-3xl font-light leading-tight sm:text-4xl"
+                className="font-display mt-2 text-3xl font-bold leading-tight tracking-[-0.025em] sm:text-4xl"
               >
                 {data.title}
               </h2>
@@ -265,7 +265,7 @@ export function EventDetailModal({
                   <p className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
                     Price
                   </p>
-                  <p className="font-display mt-1 text-2xl font-light leading-tight">
+                  <p className="font-display mt-1 text-2xl font-semibold leading-tight tracking-[-0.025em]">
                     {data.price}
                   </p>
                 </div>

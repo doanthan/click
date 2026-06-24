@@ -24,7 +24,7 @@ function step(num: number, headline: string, body: string): string {
   return `
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-bottom:18px;">
       <tr>
-        <td valign="top" width="36" style="font:500 22px/1 ${FONT_SERIF};color:${INK};padding-top:2px;">${num}.</td>
+        <td valign="top" width="36" style="font:700 22px/1 ${FONT_SERIF};color:${INK};letter-spacing:-0.02em;padding-top:2px;">${num}.</td>
         <td valign="top">
           <p style="margin:0 0 4px 0;font:600 16px/1.35 ${FONT_SANS};color:${SURFACE_DEEP};">${escapeHtml(headline)}</p>
           <p style="margin:0;font:400 15px/1.55 ${FONT_SANS};color:${TEXT_BODY};">${escapeHtml(body)}</p>
@@ -84,7 +84,7 @@ export function buildUserSignupEmail(d: UserSignupData) {
     <tr>
       <td class="px-gutter" style="padding:32px 40px 40px 40px;">
         <p style="margin:0;font:400 14px/1.6 ${FONT_SANS};color:${MAUVE};">
-          <span style="font:italic 400 14px/1 ${FONT_SERIF};color:${INK};">P.S.</span> A real human reads every reply to this email. If something's confusing, broken, or you can't find what you're looking for, just hit reply.
+          <span style="font:700 14px/1 ${FONT_SERIF};color:${INK};">P.S.</span> A real human reads every reply to this email. If something's confusing, broken, or you can't find what you're looking for, just hit reply.
         </p>
       </td>
     </tr>

@@ -52,7 +52,7 @@ export default async function OnboardingPayoutsPage({ searchParams }: PageProps)
   return (
     <div className="grid gap-6">
       <div className={cardClass}>
-        <h2 className="font-display text-3xl font-light leading-tight">
+        <h2 className="font-display text-3xl font-semibold leading-tight">
           Connect payouts.
         </h2>
         <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--mauve)]">

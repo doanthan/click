@@ -570,7 +570,7 @@ export function StepAuthCard({
         <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
           Sign in first
         </p>
-        <h2 className="mt-3 font-display text-3xl font-light leading-tight">
+        <h2 className="mt-3 font-display text-3xl font-semibold leading-tight">
           One account for hosting and attending.
         </h2>
         <p className="mt-4 text-sm font-medium leading-6 text-[color:var(--mauve)]">
@@ -667,7 +667,7 @@ export function BusinessSection() {
   const { state, dispatch, categories } = useWizard();
   return (
     <div className="grid gap-5">
-      <h3 className="font-display text-3xl font-light leading-tight">Business details</h3>
+      <h3 className="font-display text-3xl font-semibold leading-tight">Business details</h3>
 
       <label className="grid gap-2">
         <FieldLabel>Business name *</FieldLabel>
@@ -872,7 +872,7 @@ export function ContactSection() {
 
   return (
     <div className="grid gap-5">
-      <h3 className="font-display text-3xl font-light leading-tight">Contact & address</h3>
+      <h3 className="font-display text-3xl font-semibold leading-tight">Contact & address</h3>
 
       <div className="grid gap-5 sm:grid-cols-2">
         <label className="grid gap-2">
@@ -1123,7 +1123,7 @@ export function DocumentsSection() {
   const { state, dispatch } = useWizard();
   return (
     <div className="grid gap-5">
-      <h3 className="font-display text-3xl font-light leading-tight">Documents</h3>
+      <h3 className="font-display text-3xl font-semibold leading-tight">Documents</h3>
       <p className="text-sm font-medium leading-6 text-[color:var(--mauve)]">
         Upload PDFs or images (max 5 MB each). Files land in a private Supabase Storage bucket;
         only admins and you can access them via signed URLs.

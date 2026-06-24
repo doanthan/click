@@ -23,10 +23,10 @@ export function LegalPage({
     <main className="paper-noise min-h-screen bg-[color:var(--champagne)] px-4 py-14 text-[color:var(--ink)] sm:px-6">
       <article className="mx-auto max-w-3xl">
         <span className="sticker sticker--peach tilt-l-2 inline-flex">
-          <span className="size-2 rounded-full bg-[color:var(--rose)]" />
+          <span className="size-2 rounded-full bg-[color:var(--coral)]" />
           {eyebrow}
         </span>
-        <h1 className="mt-6 font-display text-5xl font-light leading-[0.98] tracking-tight sm:text-6xl">
+        <h1 className="mt-6 font-display text-5xl font-bold leading-[0.98] tracking-[-0.025em] sm:text-6xl">
           {title}
         </h1>
         <p className="mt-3 font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
@@ -38,7 +38,7 @@ export function LegalPage({
         {/* In-page contents — quick jump for long policies. */}
         <nav
           aria-label="Contents"
-          className="mt-8 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-4"
+          className="mt-8 rounded-2xl border border-[color:var(--line)] bg-[color:var(--cream)] p-4"
         >
           <p className="text-xs font-bold uppercase tracking-wide text-[color:var(--mauve)]">
             On this page
@@ -48,7 +48,7 @@ export function LegalPage({
               <li key={section.heading}>
                 <a
                   href={`#section-${i + 1}`}
-                  className="underline decoration-[color:var(--peach)] decoration-2 underline-offset-4 hover:text-[color:var(--rose)]"
+                  className="underline decoration-[color:var(--lavender)] decoration-2 underline-offset-4 hover:text-[color:var(--coral)]"
                 >
                   {i + 1}. {section.heading}
                 </a>
@@ -60,7 +60,7 @@ export function LegalPage({
         <div className="mt-10 space-y-8">
           {sections.map((section, i) => (
             <section key={section.heading} id={`section-${i + 1}`} className="scroll-mt-24">
-              <h2 className="font-display text-2xl font-light leading-tight text-[color:var(--ink)]">
+              <h2 className="font-display text-2xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)]">
                 {i + 1}. {section.heading}
               </h2>
               <div className="mt-3 space-y-3 text-sm font-medium leading-7 text-[color:var(--mauve)]">
@@ -70,12 +70,12 @@ export function LegalPage({
           ))}
         </div>
 
-        <div className="mt-12 border-t-2 border-dashed border-[color:var(--line)] pt-6 text-sm font-medium text-[color:var(--mauve)]">
+        <div className="mt-12 border-t border-[color:var(--line)] pt-6 text-sm font-medium text-[color:var(--mauve)]">
           <p>
             Questions? Email{" "}
             <a
               href="mailto:hello@letsclick.app"
-              className="font-bold text-[color:var(--ink)] underline decoration-2 underline-offset-4 hover:text-[color:var(--rose)]"
+              className="font-bold text-[color:var(--ink)] underline decoration-2 underline-offset-4 hover:text-[color:var(--coral)]"
             >
               hello@letsclick.app
             </a>{" "}
@@ -102,7 +102,7 @@ export function LegalPage({
 // fill-in token rather than free-flowing prose.
 export function Fill({ children }: { children: ReactNode }) {
   return (
-    <span className="rounded bg-[color:var(--peach)]/40 px-1.5 py-0.5 font-mono text-[0.85em] font-bold text-[color:var(--ink)]">
+    <span className="rounded bg-[color:var(--lavender)]/40 px-1.5 py-0.5 font-mono text-[0.85em] font-bold text-[color:var(--ink)]">
       {children}
     </span>
   );
@@ -113,7 +113,7 @@ export function Fill({ children }: { children: ReactNode }) {
 export function Pending({ children }: { children: ReactNode }) {
   return (
     <p>
-      <span className="font-bold text-[color:var(--rose)]">[LAWYER REVIEW REQUIRED]</span>{" "}
+      <span className="font-bold text-[color:var(--coral)]">[LAWYER REVIEW REQUIRED]</span>{" "}
       {children}
     </p>
   );

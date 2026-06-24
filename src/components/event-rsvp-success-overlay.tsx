@@ -137,13 +137,13 @@ export function EventRsvpSuccessOverlay({
         </p>
         <h2
           id="rsvp-success-title"
-          className="font-display mt-2 text-4xl font-light leading-tight"
+          className="font-display mt-2 text-4xl font-bold leading-tight tracking-[-0.025em]"
         >
           🎉 You&apos;re in! 🎉
         </h2>
 
         <div className="mt-5 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-5 text-left">
-          <p className="font-display text-2xl font-light leading-tight">
+          <p className="font-display text-2xl font-semibold leading-tight tracking-[-0.025em]">
             {details.title}
           </p>
           <p className="mt-3 text-sm font-bold text-[color:var(--ink)]">

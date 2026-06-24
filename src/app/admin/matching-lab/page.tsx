@@ -38,7 +38,7 @@ export default async function MatchingLabPage() {
         <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.2em] text-[color:var(--rose)]">
           Matching v2 · Stage 6
         </span>
-        <h1 className="font-display mt-2 text-4xl font-light leading-tight tracking-tight sm:text-5xl">
+        <h1 className="font-display mt-2 text-4xl font-bold leading-tight tracking-[-0.025em] sm:text-5xl">
           Matching Lab
         </h1>
         <p className="mt-3 max-w-2xl text-sm font-medium leading-6 text-[color:var(--mauve)]">
@@ -116,7 +116,7 @@ export default async function MatchingLabPage() {
                 <span className="font-mono text-[0.6rem] uppercase tracking-wide text-[color:var(--mauve)]">
                   predicted
                 </span>
-                <span className="font-display text-4xl font-light text-[color:var(--rose)]">
+                <span className="font-display text-4xl font-bold text-[color:var(--coral)]">
                   {pair.score.toFixed(0)}
                 </span>
               </div>
@@ -195,7 +195,7 @@ function Stat({ label, value, sub }: { label: string; value: string | number; su
   return (
     <div className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-4 hard-shadow-sm">
       <p className="font-mono text-[0.58rem] uppercase tracking-wide text-[color:var(--mauve)]">{label}</p>
-      <p className="mt-1 font-display text-3xl font-light text-[color:var(--ink)]">{value}</p>
+      <p className="mt-1 font-display text-3xl font-semibold text-[color:var(--ink)]">{value}</p>
       <p className="mt-0.5 text-[0.68rem] font-medium text-[color:var(--mauve)]">{sub}</p>
     </div>
   );

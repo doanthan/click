@@ -33,9 +33,9 @@ function HostPitch() {
         <p className="font-mono text-[0.72rem] font-bold uppercase tracking-[0.22em] text-[color:var(--mauve)]">
           For hosts + venues
         </p>
-        <h2 className="font-display mt-4 text-4xl font-light leading-[0.95] tracking-tight sm:text-5xl">
+        <h2 className="font-display mt-4 text-4xl font-bold leading-[0.95] tracking-[-0.025em] sm:text-5xl">
           You run the room.{" "}
-          <span className="italic">We bring the right people.</span>
+          <span className="text-[color:var(--coral)]">We bring the right people.</span>
         </h2>
         <p className="mt-6 max-w-2xl text-base font-medium leading-7 text-[color:var(--mauve)]">
           List your event in minutes. Click matches it with users who already
@@ -74,7 +74,7 @@ function HostPitch() {
               key={label}
               className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-4"
             >
-              <dt className="font-display text-3xl font-light italic leading-none text-[color:var(--rose)]">
+              <dt className="font-display text-3xl font-semibold leading-none text-[color:var(--coral)]">
                 {num}
               </dt>
               <dd className="font-mono mt-2 text-[0.65rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">

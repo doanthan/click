@@ -31,8 +31,8 @@ export default async function LifeQuizLayout({
           <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
           Life Quiz
         </span>
-        <h1 className="mt-6 font-display text-5xl font-light leading-[0.96] tracking-tight sm:text-6xl">
-          Tap what fits. <span className="italic">Skip what doesn’t.</span>
+        <h1 className="mt-6 font-display text-5xl font-bold leading-[0.96] tracking-[-0.025em] sm:text-6xl">
+          Tap what fits. <span className="text-[color:var(--coral)]">Skip what doesn’t.</span>
         </h1>
         <p className="mt-3 text-base font-medium leading-7 text-[color:var(--mauve)]">
           Your answers become tags on your profile. We use them to surface

@@ -23,7 +23,7 @@ export default async function ForgotPasswordPage({
           <span className="sticker sticker--peach tilt-l-2 inline-flex">
             account access
           </span>
-          <h1 className="font-display mt-6 text-5xl font-light leading-[0.94] tracking-tight sm:text-6xl">
+          <h1 className="font-display mt-6 text-5xl font-bold leading-[0.94] tracking-[-0.025em] sm:text-6xl">
             Get back to your plans.
           </h1>
           <p className="mt-5 max-w-md text-base font-medium leading-7 text-[color:var(--mauve)]">
@@ -35,7 +35,7 @@ export default async function ForgotPasswordPage({
         <div className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-6 hard-shadow sm:p-7">
           {sent ? (
             <div className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-5">
-              <p className="font-display text-3xl font-light leading-tight">
+              <p className="font-display text-3xl font-semibold leading-tight">
                 Check your email.
               </p>
               <p className="mt-3 text-sm font-semibold leading-6 text-[color:var(--mauve)]">

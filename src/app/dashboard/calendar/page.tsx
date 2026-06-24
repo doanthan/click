@@ -47,8 +47,8 @@ export default async function CalendarPage({ searchParams }: PageProps) {
               <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
               Calendar
             </span>
-            <h1 className="font-display mt-6 text-5xl font-light leading-[0.96] tracking-tight sm:text-6xl">
-              Your <span className="italic">plans</span>.
+            <h1 className="font-display mt-6 text-5xl font-bold leading-[0.96] tracking-[-0.025em] sm:text-6xl">
+              Your <span className="text-[color:var(--coral)]">plans</span>.
             </h1>
             <p className="mt-4 max-w-2xl text-base font-medium leading-7 text-[color:var(--mauve)]">
               Every event you&apos;ve booked or paid for, laid out by day. Tap an

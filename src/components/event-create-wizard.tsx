@@ -966,7 +966,7 @@ export function BasicsSection() {
         <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
           Step 1 · Basics
         </p>
-        <h2 className="font-display mt-2 text-3xl font-light leading-tight">
+        <h2 className="font-display mt-2 text-3xl font-semibold leading-tight tracking-[-0.025em]">
           What is this event?
         </h2>
       </header>
@@ -1070,7 +1070,7 @@ export function ScheduleSection() {
         <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
           Step 2 · Schedule
         </p>
-        <h2 className="font-display mt-1 text-2xl font-light leading-tight">
+        <h2 className="font-display mt-1 text-2xl font-semibold leading-tight tracking-[-0.025em]">
           When + how many?
         </h2>
       </header>
@@ -1218,7 +1218,7 @@ function DateTimePicker({
         >
           ←
         </button>
-        <span className="font-display text-xl font-light leading-none">
+        <span className="font-display text-xl font-semibold leading-none tracking-[-0.025em]">
           {MONTH_NAMES[cursorMonth]} {cursorYear}
         </span>
         <button
@@ -1558,7 +1558,7 @@ export function LocationSection() {
         <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
           Step 3 · Location
         </p>
-        <h2 className="font-display mt-2 text-3xl font-light leading-tight">
+        <h2 className="font-display mt-2 text-3xl font-semibold leading-tight tracking-[-0.025em]">
           Where in Sydney?
         </h2>
         <p className="mt-1 text-sm font-bold text-[color:var(--mauve)]">
@@ -1913,7 +1913,7 @@ export function MediaSection() {
         <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
           Step 4 · Media
         </p>
-        <h2 className="font-display mt-2 text-3xl font-light leading-tight">
+        <h2 className="font-display mt-2 text-3xl font-semibold leading-tight tracking-[-0.025em]">
           Drop in a few real photos.
         </h2>
         <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
@@ -1947,7 +1947,7 @@ export function MediaSection() {
             : "border-[color:var(--line)] bg-[color:var(--champagne)] hover:bg-[color:var(--peach)]/40"
         }`}
       >
-        <span className="font-display text-2xl font-light leading-tight text-[color:var(--ink)]">
+        <span className="font-display text-2xl font-semibold leading-tight tracking-[-0.025em] text-[color:var(--ink)]">
           Drop photos, paste, or click to upload
         </span>
         <span className="font-mono text-[0.7rem] uppercase tracking-[0.16em] text-[color:var(--mauve)]">
@@ -2090,7 +2090,7 @@ export function ReviewSection() {
         <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
           Step 5 · Review
         </p>
-        <h2 className="font-display mt-2 text-3xl font-light leading-tight">
+        <h2 className="font-display mt-2 text-3xl font-semibold leading-tight tracking-[-0.025em]">
           Looks good?
         </h2>
         <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
@@ -2137,7 +2137,7 @@ export function ReviewSection() {
             <p className="font-mono break-words text-xs font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
               {values.suburb || "—"} · {values.category || "—"} · {priceLabel}
             </p>
-            <h3 className="font-display mt-2 text-[1.65rem] font-light leading-[1.04] text-[color:var(--ink)]">
+            <h3 className="font-display mt-2 text-[1.65rem] font-semibold leading-[1.04] tracking-[-0.025em] text-[color:var(--ink)]">
               {values.title || "Untitled event"}
             </h3>
             <p className="mt-1 text-sm font-semibold text-[color:var(--mauve)]">

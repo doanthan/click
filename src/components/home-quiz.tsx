@@ -118,7 +118,7 @@ export function HomeQuiz({ isLoggedIn, persona = null }: HomeQuizProps) {
       eyebrow={isLoggedIn ? "Two-minute quiz" : "Tell us about you"}
       title={
         <>
-          A <span className="italic">tiny</span> quiz so Click can suggest{" "}
+          A <span className="text-[color:var(--coral)]">tiny</span> quiz so Click can suggest{" "}
           <span className="peach-highlight">rooms that fit you</span>.
         </>
       }
@@ -137,7 +137,7 @@ function LoggedOutQuizCta() {
 
   return (
     <>
-      <section className="border-b-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-10 sm:px-6">
+      <section className="border-b-2 border-[color:var(--line)] bg-[color:var(--cream)] px-5 py-10 sm:px-8 lg:px-12">
         <div className="mx-auto max-w-6xl">
           <div className="flex flex-wrap items-center justify-between gap-5 rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-6 hard-shadow sm:p-7">
             <div className="min-w-0 max-w-2xl">
@@ -145,8 +145,8 @@ function LoggedOutQuizCta() {
                 <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
                 ✷ about you
               </span>
-              <h2 className="font-display mt-4 text-2xl font-light leading-[1.05] tracking-tight text-[color:var(--ink)] sm:text-3xl">
-                A <span className="italic">tiny</span> quiz so Click can suggest{" "}
+              <h2 className="font-display mt-4 text-2xl font-semibold leading-[1.05] tracking-[-0.02em] text-[color:var(--ink)] sm:text-3xl">
+                A <span className="text-[color:var(--coral)]">tiny</span> quiz so Click can suggest{" "}
                 <span className="peach-highlight">rooms that fit you</span>.
               </h2>
               <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
@@ -217,9 +217,9 @@ function QuizModal({ onClose }: { onClose: () => void }) {
         <div className="p-6 sm:p-8">
           <h2
             id="home-quiz-modal-title"
-            className="font-display text-3xl font-light leading-[1.02] tracking-tight text-[color:var(--ink)] sm:text-4xl"
+            className="font-display text-3xl font-bold leading-[1.02] tracking-[-0.025em] text-[color:var(--ink)] sm:text-4xl"
           >
-            A <span className="italic">tiny</span> quiz so Click can suggest{" "}
+            A <span className="text-[color:var(--coral)]">tiny</span> quiz so Click can suggest{" "}
             <span className="peach-highlight">rooms that fit you</span>.
           </h2>
           <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--mauve)]">
@@ -332,7 +332,7 @@ function QuizFrame({
   children: React.ReactNode;
 }) {
   return (
-    <section className="border-b-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-10 sm:px-6">
+    <section className="border-b-2 border-[color:var(--line)] bg-[color:var(--cream)] px-5 py-10 sm:px-8 lg:px-12">
       <div className="mx-auto max-w-6xl">
         <div className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-6 hard-shadow sm:p-8">
           <div className="flex flex-wrap items-start justify-between gap-4">
@@ -341,14 +341,14 @@ function QuizFrame({
                 <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
                 {eyebrow}
               </span>
-              <h2 className="font-display mt-4 text-3xl font-light leading-[1.02] tracking-tight text-[color:var(--ink)] sm:text-4xl">
+              <h2 className="font-display mt-4 text-3xl font-bold leading-[1.02] tracking-[-0.025em] text-[color:var(--ink)] sm:text-4xl">
                 {title}
               </h2>
               <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--mauve)]">
                 {subtitle}
               </p>
             </div>
-            <span className="sticker sticker--rose tilt-r-3 hidden sm:inline-flex">
+            <span className="sticker sticker--rose tilt-r-1 hidden sm:inline-flex">
               ✷ about you
             </span>
           </div>

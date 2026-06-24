@@ -1,45 +1,92 @@
 @import "tailwindcss";
 
+/* ============================================================================
+   DESIGN CONVENTIONS — the scale this app composes against. Keep new UI on it.
+   ----------------------------------------------------------------------------
+   Color     : use color:var(--token), never hardcoded hex. Soft Minimal
+               (concept 06): --champagne (cream page), --cream/--paper (white
+               card), --ink (purple-tinted near-black text), --mauve/--slate
+               (2ndary text), --rose/--coral (THE coral accent + destructive),
+               --peach/--lavender (soft secondary pop — was lime; pairs with
+               dark text), --purple (emphasis), --lime (whisper only),
+               --line (hairline border).
+   Radius     : rounded-full = pills / chips / buttons · rounded-2xl = standard
+                cards · rounded-3xl = large containers, modals, heroes, sidebars
+                · rounded-xl = small inset elements.
+   Borders    : `border` (1px) = content hairlines + .sticker · `border-2` =
+                structural frames (cards, sidebars, table shells). --line for
+                hairlines, --line-strong for emphasis.
+   Elevation  : hard-shadow-sm = cards · hard-shadow = raised surfaces ·
+                hard-shadow-lg = modals / popovers.
+   Labels     : `.eyebrow` (Schibsted Grotesk 600, coral, with a leading rule)
+                is the CANONICAL section label; `.eyebrow--muted` for slate.
+                NOTE: many admin/merchant cards still use an ad-hoc
+                `font-mono ... text-[--rose]` label voice — a known divergence;
+                prefer `.eyebrow` for new work, and unify deliberately if asked.
+   Numerals   : add `tabular-nums` to proportional-font (font-display) figures
+                that update or need to align in a column.
+   Primitives : loading -> components/skeleton.tsx + route loading.tsx · empty
+                -> components/empty-state.tsx (pass `bare` to embed in a card) ·
+                confirm/prompt -> components/confirm-dialog.tsx (focus-trapped).
+   Motion     : prefers-reduced-motion is handled GLOBALLY (block near EOF) —
+                no per-element guard needed; don't rely on motion for meaning.
+   ============================================================================ */
+
 :root {
-  /* Click — "River"-style editorial palette: warm cream + near-black ink,
-     one electric-lime accent, a warm coral secondary, cool-gray support.
+  /* Click — "Soft Minimal" (concept 06): airy white/cream canvas, a single
+     warm coral accent, soft lavender + deep purple as the secondary pop, lime
+     only as a whisper. Schibsted Grotesk display.
      Token NAMES are kept stable so the whole app re-skins coherently; only
-     their VALUES change. (--peach is always paired with dark text in the
-     codebase, so it's the safe home for the bright lime; --rose stays a
-     mid-luminance accent because it's used both as text and as a fill.) */
-  --ink: #16181D;          /* Near-black ink — headings, body, primary */
-  --ink-deep: #000000;     /* Pure black for hover/contrast */
-  --rose: #FF5A3C;         /* Warm coral — secondary accent / emphasis */
-  --rose-soft: #ff8369;    /* Lighter coral for hovers */
-  --champagne: #F4F1EA;    /* Warm cream — page background */
-  --champagne-deep: #ECE7DD;
-  --peach: #E2FF05;        /* ELECTRIC LIME — the signature accent */
-  --peach-soft: #EEFFA0;   /* Pale lime wash */
-  --mauve: #5C616B;        /* Cool gray — secondary text */
-  --cream: #FBF9F4;        /* Subtle elevated surface (cards on cream) */
-  --punch: #E2FF05;        /* Accent → folds into the lime */
+     their VALUES change. The old electric-lime role (--peach / --punch) now
+     resolves to soft LAVENDER — it was always paired with dark text, and
+     lavender keeps that contrast while matching the concept's lavender
+     highlight underline. --rose is the canonical coral. */
+  --ink: #1C1830;          /* Purple-tinted near-black — headings + body */
+  --ink-deep: #100B22;     /* Deepest ink for hover/contrast */
+  --rose: #E8674C;         /* Warm coral — THE accent (text + fill) */
+  --rose-soft: #ef8366;    /* Lighter coral for hovers */
+  --champagne: #F9F6F0;    /* Soft cream — page background */
+  --champagne-deep: #F0EBE2;
+  --peach: #C8B8F8;        /* LAVENDER — soft secondary pop (was lime) */
+  --peach-soft: #F1ECFB;   /* Pale lavender wash */
+  --mauve: #6B6580;        /* Slate (purple-tinted gray) — secondary text */
+  --cream: #FFFFFF;        /* White paper — elevated card surface */
+  --punch: #C8B8F8;        /* Accent → folds into the lavender */
+
+  /* New semantic tokens for hand-tuned Soft Minimal surfaces. */
+  --purple: #3B2F81;       /* Deep purple — heading emphasis */
+  --lavender: #C8B8F8;     /* = --peach role, named for intent */
+  --lav-bg: #F1ECFB;       /* Pale lavender section/hover tint */
+  --paper: #FFFFFF;        /* Pure white card */
+  --coral: #E8674C;        /* = --rose, named for intent */
+  --coral-deep: #D3543B;   /* Coral hover/pressed */
+  --lime: #D6F24E;         /* Whisper lime — rare */
+  --sage: #5B8C6E;
+  --teal: #2E7D8A;
+  --slate: #6B6580;        /* = --mauve, named for intent */
+  --mist: #E8E4F0;
 
   /* Tokens that retain their meaning across modes */
-  --noise-dot-a: rgba(22, 24, 29, 0.05);
-  --noise-dot-b: rgba(22, 24, 29, 0.03);
-  --grid-line: rgba(22, 24, 29, 0.05);
-  --hairline: rgba(22, 24, 29, 0.12);
+  --noise-dot-a: rgba(28, 24, 48, 0.045);
+  --noise-dot-b: rgba(28, 24, 48, 0.03);
+  --grid-line: rgba(28, 24, 48, 0.045);
+  --hairline: rgba(28, 24, 48, 0.09);
 
-  /* "Anchor dark" — sections that always read as dramatic near-black bands
-     (category strip, "Join once", footer). */
-  --surface-deep: #16181D;     /* Near-black band + dark text on lime/coral */
-  --surface-deep-2: #202329;   /* elevated card on deep surface */
-  --on-deep: #F4F1EA;          /* foreground on deep surface */
-  --on-deep-soft: rgba(244, 241, 234, 0.70);
+  /* "Anchor dark" — the few sections we keep as deep bands ("Join once",
+     footer). Re-skinned to a soft deep aubergine-ink so they tie into the
+     purple/lavender accent system rather than reading as flat black. */
+  --surface-deep: #201A3A;     /* Deep aubergine-ink band */
+  --surface-deep-2: #2C2552;   /* elevated card on deep surface */
+  --on-deep: #F9F6F0;          /* foreground on deep surface */
+  --on-deep-soft: rgba(249, 246, 240, 0.70);
 
-  /* Borders: River uses quiet hairlines, not heavy frames. --line is a soft
-     warm hairline so existing `border-2 border-line` reads as refined, not
-     zine-y. --shadow-ink is a faint translucent dark for any inline offset
-     shadows that still reference it. */
-  --line: rgba(22, 24, 29, 0.14);
-  --line-strong: rgba(22, 24, 29, 0.55);
-  --line-soft: rgba(22, 24, 29, 0.08);
-  --shadow-ink: rgba(22, 24, 29, 0.12);
+  /* Borders: Soft Minimal uses quiet, purple-tinted hairlines. --line is the
+     standard hairline; --line-strong is a restrained emphasis border (softer
+     than before so dashed/structural frames read refined, not heavy). */
+  --line: rgba(28, 24, 48, 0.10);
+  --line-strong: rgba(28, 24, 48, 0.42);
+  --line-soft: rgba(28, 24, 48, 0.07);
+  --shadow-ink: rgba(28, 24, 48, 0.10);
 
   --background: var(--champagne);
   --foreground: var(--ink);
@@ -50,32 +97,44 @@
 @media (prefers-color-scheme: dark) {
   :root {
     /* Keep the event marketplace light even for users in system dark mode. */
-    --ink: #16181D;
-    --ink-deep: #000000;
-    --rose: #FF5A3C;
-    --rose-soft: #ff8369;
-    --champagne: #F4F1EA;
-    --champagne-deep: #ECE7DD;
-    --peach: #E2FF05;
-    --peach-soft: #EEFFA0;
-    --mauve: #5C616B;
-    --cream: #FBF9F4;
-    --punch: #E2FF05;
+    --ink: #1C1830;
+    --ink-deep: #100B22;
+    --rose: #E8674C;
+    --rose-soft: #ef8366;
+    --champagne: #F9F6F0;
+    --champagne-deep: #F0EBE2;
+    --peach: #C8B8F8;
+    --peach-soft: #F1ECFB;
+    --mauve: #6B6580;
+    --cream: #FFFFFF;
+    --punch: #C8B8F8;
 
-    --noise-dot-a: rgba(22, 24, 29, 0.05);
-    --noise-dot-b: rgba(22, 24, 29, 0.03);
-    --grid-line: rgba(22, 24, 29, 0.05);
-    --hairline: rgba(22, 24, 29, 0.12);
+    --purple: #3B2F81;
+    --lavender: #C8B8F8;
+    --lav-bg: #F1ECFB;
+    --paper: #FFFFFF;
+    --coral: #E8674C;
+    --coral-deep: #D3543B;
+    --lime: #D6F24E;
+    --sage: #5B8C6E;
+    --teal: #2E7D8A;
+    --slate: #6B6580;
+    --mist: #E8E4F0;
 
-    --surface-deep: #16181D;
-    --surface-deep-2: #202329;
-    --on-deep: #F4F1EA;
-    --on-deep-soft: rgba(244, 241, 234, 0.70);
+    --noise-dot-a: rgba(28, 24, 48, 0.045);
+    --noise-dot-b: rgba(28, 24, 48, 0.03);
+    --grid-line: rgba(28, 24, 48, 0.045);
+    --hairline: rgba(28, 24, 48, 0.09);
 
-    --line: rgba(22, 24, 29, 0.14);
-    --line-strong: rgba(22, 24, 29, 0.55);
-    --line-soft: rgba(22, 24, 29, 0.08);
-    --shadow-ink: rgba(22, 24, 29, 0.12);
+    --surface-deep: #201A3A;
+    --surface-deep-2: #2C2552;
+    --on-deep: #F9F6F0;
+    --on-deep-soft: rgba(249, 246, 240, 0.70);
+
+    --line: rgba(28, 24, 48, 0.10);
+    --line-strong: rgba(28, 24, 48, 0.42);
+    --line-soft: rgba(28, 24, 48, 0.07);
+    --shadow-ink: rgba(28, 24, 48, 0.10);
 
     color-scheme: light;
   }
@@ -98,15 +157,28 @@
   --color-surface-deep: var(--surface-deep);
   --color-surface-deep-2: var(--surface-deep-2);
   --color-on-deep: var(--on-deep);
+  --color-purple: var(--purple);
+  --color-lavender: var(--lavender);
+  --color-lav-bg: var(--lav-bg);
+  --color-paper: var(--paper);
+  --color-coral: var(--coral);
+  --color-coral-deep: var(--coral-deep);
+  --color-lime: var(--lime);
+  --color-sage: var(--sage);
+  --color-teal: var(--teal);
+  --color-slate: var(--slate);
+  --color-mist: var(--mist);
   --color-line: var(--line);
   --color-line-strong: var(--line-strong);
   --color-line-soft: var(--line-soft);
   --font-sans: var(--font-click-body);
   --font-mono: var(--font-click-mono);
   --font-display: var(--font-click-display);
-  --font-condensed: var(--font-click-condensed);
-  /* Legacy aliases — `font-script` / `font-brand` now resolve to the
-     editorial serif so the 7 files still using them stay coherent. */
+  /* "Condensed" label voice now resolves to Schibsted Grotesk (the concept
+     uses one grotesque for labels, not a separate condensed face). */
+  --font-condensed: var(--font-click-display);
+  /* Legacy aliases — `font-script` / `font-brand` now resolve to Schibsted
+     Grotesk so the files still using them stay coherent. */
   --font-script: var(--font-click-display);
   --font-brand: var(--font-click-display);
 }
@@ -134,53 +206,75 @@ body {
 ::selection { background: var(--peach); color: var(--surface-deep); }
 
 /* ---------- Typography helpers ----------
-   Display = high-contrast editorial serif (Copernicus stand-in). Used big
-   and tight: the redesign sets these inline, but the defaults below keep the
-   serif looking intentional wherever .font-display is applied. */
+   Display = Schibsted Grotesk, the Soft Minimal voice: a clean grotesque set
+   BIG, BOLD and TIGHT. Default weight is 700 so unstyled .font-display reads
+   confident; pages can still go heavier (800) or lighter inline. Headings that
+   used `font-light` (a serif-era device) should move toward 600–800 to match
+   the concept.
+   These live in @layer components so inline Tailwind utilities (font-bold,
+   tracking-[…], text-[color:…]) reliably WIN over the defaults below. */
+@layer components {
 .font-display {
-  font-family: var(--font-click-display), Georgia, serif;
-  font-optical-sizing: auto;
-  letter-spacing: -0.02em;
+  font-family: var(--font-click-display), system-ui, -apple-system, sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.025em;
 }
-/* Legacy "script"/"brand" → resolve to the same editorial serif, italic, so
-   the few pages still using them read as refined accents, not handwriting. */
-.font-script  { font-family: var(--font-click-display), Georgia, serif; font-style: italic; }
-.font-brand   { font-family: var(--font-click-display), Georgia, serif; font-weight: 500; letter-spacing: -0.02em; }
+/* Legacy "script"/"brand" → resolve to Schibsted Grotesk (no serif). The
+   concept has no handwriting/serif voice, so these read as clean grotesque
+   accents: script = a soft 600, brand = a tight 700. */
+.font-script  { font-family: var(--font-click-display), system-ui, sans-serif; font-weight: 600; letter-spacing: -0.015em; }
+.font-brand   { font-family: var(--font-click-display), system-ui, sans-serif; font-weight: 700; letter-spacing: -0.025em; }
 .font-mono    { font-family: var(--font-click-mono), ui-monospace, monospace; }
-/* Condensed grotesque for labels / numerals (American Grotesk Cond stand-in). */
+/* "Condensed" label voice → Schibsted Grotesk wide-tracked (the concept uses
+   one grotesque for labels, no separate condensed face). Tracking is applied
+   per-use via utilities; this just sets the family + weight. */
 .font-condensed {
-  font-family: var(--font-click-condensed), var(--font-click-body), sans-serif;
-  font-stretch: 82%;
+  font-family: var(--font-click-display), var(--font-click-body), sans-serif;
+  font-weight: 600;
 }
 
 .click-wordmark {
-  font-family: var(--font-click-display), Georgia, serif;
-  font-weight: 600;
-  letter-spacing: -0.04em;
+  font-family: var(--font-click-display), system-ui, sans-serif;
+  font-weight: 800;
+  letter-spacing: -0.03em;
   line-height: 0.9;
   display: inline-flex;
   align-items: baseline;
 }
 .click-wordmark__period {
   display: inline-block;
-  width: 0.26em;
-  height: 0.26em;
-  margin-left: 0.04em;
+  width: 0.22em;
+  height: 0.22em;
+  margin-left: 0.05em;
   border-radius: 999px;
-  background: var(--peach);
+  background: var(--coral);
   align-self: flex-end;
-  margin-bottom: 0.14em;
+  margin-bottom: 0.16em;
 }
 
-/* Eyebrow — condensed grotesque, wide-tracked uppercase (River's label voice). */
+/* Eyebrow — Schibsted Grotesk, wide-tracked uppercase, coral, with a short
+   leading rule (the concept's signature label voice). The rule is an
+   inline-block ::before so it never changes the element's block flow. */
 .eyebrow {
-  font-family: var(--font-click-condensed), var(--font-click-body), sans-serif;
+  font-family: var(--font-click-display), var(--font-click-body), sans-serif;
   font-weight: 600;
-  font-stretch: 82%;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   font-size: 0.74rem;
-  color: var(--mauve);
+  color: var(--coral);
+}
+.eyebrow::before {
+  content: "";
+  display: inline-block;
+  width: 1.4em;
+  height: 1px;
+  margin-right: 0.7em;
+  vertical-align: middle;
+  background: currentColor;
+  opacity: 0.55;
+}
+/* Muted eyebrow variant — slate, no coral (for dense/secondary contexts). */
+.eyebrow--muted { color: var(--slate); }
 }
 
 /* ---------- Highlight & marker ----------
@@ -191,17 +285,21 @@ body {
    leaves the upper portion of letters as dark-on-dark. Cover the full
    letter height in dark mode so the dark text always sits on peach. */
 .peach-highlight {
-  background-image: linear-gradient(180deg, transparent 32%, var(--peach) 32%, var(--peach) 92%, transparent 92%);
+  background-image: linear-gradient(180deg, transparent 62%, var(--lavender) 62%, var(--lavender) 92%, transparent 92%);
   background-repeat: no-repeat;
   color: var(--ink);
-  padding: 0 0.12em;
+  padding: 0 0.06em;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
 }
 
 .rose-highlight {
-  background: linear-gradient(180deg, transparent 60%, color-mix(in srgb, var(--rose) 38%, transparent) 60%, color-mix(in srgb, var(--rose) 38%, transparent) 92%, transparent 92%);
-  padding: 0 0.12em;
+  background-image: linear-gradient(180deg, transparent 62%, color-mix(in srgb, var(--coral) 30%, transparent) 62%, color-mix(in srgb, var(--coral) 30%, transparent) 92%, transparent 92%);
+  background-repeat: no-repeat;
+  color: var(--ink);
+  padding: 0 0.06em;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
 }
 
 .ink-underline {
@@ -254,19 +352,19 @@ body {
    rather than the old hard zine offset. These class names are reused
    app-wide, so redefining them here re-skins every surface at once. */
 .hard-shadow {
-  box-shadow: 0 1px 2px rgba(22, 24, 29, 0.04), 0 12px 28px -10px rgba(22, 24, 29, 0.16);
+  box-shadow: 0 1px 2px rgba(28, 24, 48, 0.04), 0 14px 30px -14px rgba(28, 24, 48, 0.16);
 }
 .hard-shadow-rose {
-  box-shadow: 0 1px 2px rgba(22, 24, 29, 0.04), 0 12px 28px -10px rgba(255, 90, 60, 0.30);
+  box-shadow: 0 1px 2px rgba(28, 24, 48, 0.04), 0 16px 32px -16px rgba(232, 103, 76, 0.34);
 }
 .hard-shadow-peach {
-  box-shadow: 0 1px 2px rgba(22, 24, 29, 0.04), 0 12px 28px -10px rgba(146, 168, 0, 0.35);
+  box-shadow: 0 1px 2px rgba(28, 24, 48, 0.04), 0 16px 32px -16px rgba(150, 130, 230, 0.34);
 }
 .hard-shadow-sm {
-  box-shadow: 0 1px 2px rgba(22, 24, 29, 0.05), 0 6px 16px -8px rgba(22, 24, 29, 0.14);
+  box-shadow: 0 1px 2px rgba(28, 24, 48, 0.05), 0 6px 16px -8px rgba(28, 24, 48, 0.12);
 }
 .hard-shadow-lg {
-  box-shadow: 0 2px 6px rgba(22, 24, 29, 0.05), 0 28px 60px -18px rgba(22, 24, 29, 0.22);
+  box-shadow: 0 2px 6px rgba(28, 24, 48, 0.05), 0 30px 60px -22px rgba(28, 24, 48, 0.20);
 }
 .hard-shadow-deep {
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18), 0 28px 60px -18px rgba(0, 0, 0, 0.45);
@@ -293,6 +391,9 @@ body {
   transition: transform 200ms ease, box-shadow 200ms ease, background-color 200ms ease;
 }
 .sticker:hover { transform: translateY(-1px); box-shadow: 0 6px 16px -8px rgba(22, 24, 29, 0.22); }
+/* Press feedback — the soft elevation system implies physicality, so a pressed
+   capsule settles back flush. */
+.sticker:active { transform: translateY(0); box-shadow: 0 1px 1px rgba(22, 24, 29, 0.06); }
 .sticker--rose { background: var(--rose); color: #fff; border-color: transparent; }
 /* --peach is the electric lime in both modes; pair it with the near-black
    --surface-deep so text stays legible on the bright accent. */
@@ -309,10 +410,10 @@ body {
 .tilt-r-5 { transform: rotate(5deg); }
 
 @keyframes wiggle {
-  0%, 100% { transform: rotate(-2deg); }
-  50% { transform: rotate(2deg); }
+  0%, 100% { transform: rotate(-0.8deg); }
+  50% { transform: rotate(0.8deg); }
 }
-.wiggle { animation: wiggle 1.6s ease-in-out infinite; transform-origin: center; }
+.wiggle { animation: wiggle 3.2s ease-in-out infinite; transform-origin: center; }
 
 @keyframes float {
   0%, 100% { transform: translateY(0); }
@@ -420,7 +521,7 @@ button:focus-visible, a:focus-visible, select:focus-visible, textarea:focus-visi
 
 /* ---------- Squiggle underline (decorative) ---------- */
 .squiggle {
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='80' height='10' viewBox='0 0 80 10'><path d='M0 5 Q 10 0 20 5 T 40 5 T 60 5 T 80 5' stroke='%23FF5A3C' stroke-width='2.4' fill='none' stroke-linecap='round'/></svg>");
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='80' height='10' viewBox='0 0 80 10'><path d='M0 5 Q 10 0 20 5 T 40 5 T 60 5 T 80 5' stroke='%23E8674C' stroke-width='2.2' fill='none' stroke-linecap='round'/></svg>");
   background-repeat: repeat-x;
   background-position: 0 100%;
   background-size: 80px 10px;
@@ -451,6 +552,42 @@ button:focus-visible, a:focus-visible, select:focus-visible, textarea:focus-visi
   background-repeat: repeat-x;
 }
 
+/* ---------- Skeleton (loading shimmer) ----------
+   Premium loading state in the warm palette: a champagne-deep base with a soft
+   cream light-sweep that mirrors the surface of the cards it stands in for —
+   never a generic gray pulse. The global prefers-reduced-motion block below
+   freezes the sweep; we also pin a flat base there so a frozen frame can never
+   look like a half-finished swipe. */
+@keyframes skeleton-sweep {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.skeleton {
+  background-color: var(--champagne-deep);
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--cream) 92%, transparent) 45%,
+    color-mix(in srgb, var(--cream) 92%, transparent) 55%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  animation: skeleton-sweep 1.5s ease-in-out infinite;
+}
+/* On the near-black "deep" surfaces (dark cards/bands) the cream sweep would
+   glare; use a quiet lift of the surface instead. */
+.skeleton--deep {
+  background-color: var(--surface-deep-2);
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(244, 241, 234, 0.10) 45%,
+    rgba(244, 241, 234, 0.10) 55%,
+    transparent 100%
+  );
+}
+
 /* ---------- Step transitions (onboarding wizard) ---------- */
 @keyframes step-slide-in-fwd {
   from { opacity: 0; transform: translateX(20px); }
@@ -471,4 +608,6 @@ button:focus-visible, a:focus-visible, select:focus-visible, textarea:focus-visi
     animation-iteration-count: 1 !important;
   }
   .marquee__track { animation: none !important; }
+  /* Freeze the loading shimmer to a calm flat surface rather than a stuck mid-sweep frame. */
+  .skeleton, .skeleton--deep { animation: none !important; background-image: none !important; }
 }

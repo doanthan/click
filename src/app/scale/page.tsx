@@ -260,17 +260,14 @@ export default function ScalePage() {
     <main className="paper-noise min-h-screen overflow-hidden text-[color:var(--ink)]">
       {/* Hero */}
       <section className="relative overflow-hidden bg-[color:var(--champagne)] px-4 pb-12 pt-16 sm:px-6 lg:pt-20">
-        <div className="confetti-field absolute inset-0 opacity-20" aria-hidden />
         <div className="relative z-10 mx-auto max-w-6xl">
           <span className="sticker sticker--peach tilt-l-2 inline-flex">
             <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
             Architecture · capacity plan
           </span>
-          <h1 className="font-display mt-6 max-w-4xl text-5xl font-light leading-[0.94] tracking-tight sm:text-7xl">
+          <h1 className="font-display mt-6 max-w-4xl text-5xl font-bold leading-[0.94] tracking-[-0.025em] sm:text-7xl">
             How Click{" "}
-            <span className="italic">
-              <span className="peach-highlight">scales</span>
-            </span>
+            <span className="text-[color:var(--coral)]">scales</span>
             .
           </h1>
           <p className="mt-6 max-w-3xl text-base font-medium leading-7 text-[color:var(--mauve)] sm:text-lg">
@@ -302,7 +299,7 @@ export default function ScalePage() {
             {stack.map((node, i) => (
               <div key={node.step} className="contents">
                 <div className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-5 hard-shadow-sm">
-                  <p className="font-display text-2xl font-light leading-tight text-[color:var(--ink)]">
+                  <p className="font-display text-2xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)]">
                     {node.step}
                   </p>
                   <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
@@ -349,7 +346,7 @@ export default function ScalePage() {
                 } ${i > 0 ? "border-t-2 border-dashed border-[color:var(--line)]" : ""}`}
               >
                 <p className="text-sm font-bold text-[color:var(--ink)]">{row.metric}</p>
-                <p className="font-display text-2xl font-light leading-none text-[color:var(--rose)]">
+                <p className="font-display text-2xl font-semibold leading-none tracking-[-0.02em] text-[color:var(--rose)]">
                   {row.value}
                 </p>
                 <p className="text-sm font-medium leading-6 text-[color:var(--mauve)]">{row.note}</p>
@@ -386,7 +383,7 @@ export default function ScalePage() {
                   }`}
                 />
                 <p className="eyebrow mt-5">{wall.eyebrow}</p>
-                <h3 className="font-display mt-3 text-3xl font-light leading-[1.04] text-[color:var(--ink)]">
+                <h3 className="font-display mt-3 text-3xl font-semibold leading-[1.04] tracking-[-0.02em] text-[color:var(--ink)]">
                   {wall.title}
                 </h3>
                 <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--mauve)]">
@@ -439,7 +436,7 @@ export default function ScalePage() {
                 <p className="mt-4 font-mono text-[0.65rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
                   {t.when}
                 </p>
-                <h3 className="font-display mt-2 text-2xl font-light leading-[1.06] text-[color:var(--ink)]">
+                <h3 className="font-display mt-2 text-2xl font-semibold leading-[1.06] tracking-[-0.02em] text-[color:var(--ink)]">
                   {t.headline}
                 </h3>
                 <ul className="mt-4 grid gap-2">
@@ -542,7 +539,7 @@ export default function ScalePage() {
                 className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-6 hard-shadow-sm"
               >
                 <div className="flex items-center justify-between gap-2">
-                  <h3 className="font-display text-3xl font-light leading-none text-[color:var(--ink)]">
+                  <h3 className="font-display text-3xl font-semibold leading-none tracking-[-0.02em] text-[color:var(--ink)]">
                     {r.city}
                   </h3>
                   <span
@@ -572,7 +569,7 @@ export default function ScalePage() {
                 className="rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--champagne)] p-6"
               >
                 <p className="eyebrow">{p.phase}</p>
-                <h4 className="font-display mt-2 text-xl font-light leading-snug text-[color:var(--ink)]">
+                <h4 className="font-display mt-2 text-xl font-semibold leading-snug tracking-[-0.02em] text-[color:var(--ink)]">
                   {p.title}
                 </h4>
                 <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
@@ -617,7 +614,7 @@ export default function ScalePage() {
                 <p className="mt-4 font-mono text-[0.65rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
                   {t.when}
                 </p>
-                <p className="font-display mt-2 text-4xl font-light leading-none text-[color:var(--rose)]">
+                <p className="font-display mt-2 text-4xl font-bold leading-none tracking-[-0.025em] text-[color:var(--rose)]">
                   {t.total}
                   <span className="ml-1 align-baseline text-base text-[color:var(--mauve)]">/mo</span>
                 </p>
@@ -651,7 +648,7 @@ export default function ScalePage() {
                 key={a.title}
                 className="rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--champagne)] p-6"
               >
-                <h4 className="font-display text-xl font-light leading-snug text-[color:var(--ink)]">
+                <h4 className="font-display text-xl font-semibold leading-snug tracking-[-0.02em] text-[color:var(--ink)]">
                   {a.title}
                 </h4>
                 <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
@@ -682,7 +679,7 @@ export default function ScalePage() {
                 key={s}
                 className="flex items-center gap-4 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-5 py-4 hard-shadow-sm"
               >
-                <span className="font-display flex size-9 shrink-0 items-center justify-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] text-lg font-light text-[color:var(--surface-deep)]">
+                <span className="font-display flex size-9 shrink-0 items-center justify-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] text-lg font-semibold text-[color:var(--surface-deep)]">
                   {i + 1}
                 </span>
                 <span className="text-sm font-semibold leading-6 text-[color:var(--ink)] sm:text-base">
