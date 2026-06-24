@@ -88,58 +88,40 @@ export default async function Home() {
 
   return (
     <main className="min-h-screen max-w-full overflow-hidden bg-[color:var(--champagne)] text-[color:var(--ink)]">
-      {/* ============================ HERO ============================ */}
-      <section className="relative overflow-hidden px-4 pb-16 pt-12 sm:px-6 lg:pt-20">
-        <div className="mx-auto grid max-w-7xl items-center gap-12 lg:grid-cols-[1.06fr_0.94fr]">
+      {/* ============================ HERO — minimal, airy ============================ */}
+      <section className="relative overflow-hidden px-4 pb-12 pt-12 sm:px-6 sm:pb-16 lg:pt-20">
+        <div className="mx-auto grid max-w-7xl items-center gap-12 lg:grid-cols-[1.05fr_0.95fr]">
           {/* ---- Copy column ---- */}
           <div className="relative z-10">
-            <div className="rise rise-d1">
-              <span className="sticker sticker--cream">
-                <span className="size-2 rounded-full bg-[color:var(--coral)] pulse-ring" />
-                Now in <LocationLabel /> · low pressure, high yes
-              </span>
-            </div>
+            <p className="rise rise-d1 eyebrow">Now in <LocationLabel /></p>
 
-            <h1 className="rise rise-d2 font-display mt-7 text-[3.2rem] font-bold leading-[0.98] tracking-[-0.03em] text-[color:var(--ink)] sm:text-[4.4rem] lg:text-[5rem]">
-              Where{" "}
-              <span className="peach-highlight">interests</span>
+            <h1 className="rise rise-d2 font-display mt-6 text-[3.1rem] font-bold leading-[0.98] tracking-[-0.03em] text-[color:var(--ink)] sm:text-[4.2rem] lg:text-[4.8rem]">
+              Where <span className="peach-highlight">interests</span>
               <br className="hidden sm:block" /> become{" "}
               <span className="text-[color:var(--coral)]">friendships.</span>
             </h1>
 
-            <p className="rise rise-d3 mt-7 max-w-xl text-lg leading-8 text-[color:var(--mauve)]">
-              Click is a calm local calendar with a human pulse. Join real rooms —
-              dinners, walks, workshops, run clubs — where conversation already
-              has a reason. Show up twice. Become familiar.
+            <p className="rise rise-d3 mt-6 max-w-md text-lg leading-8 text-[color:var(--mauve)]">
+              A calm local calendar of dinners, walks, workshops and run clubs —
+              where the conversation already has a reason. Show up twice. Become
+              familiar.
             </p>
 
-            <div className="rise rise-d4 mt-9 flex flex-wrap items-center gap-3">
+            <div className="rise rise-d4 mt-8 flex flex-wrap items-center gap-x-7 gap-y-3">
               <LinkButton href="/discover">Start exploring</LinkButton>
-              <LinkButton href="/events" variant="secondary">
+              <Link
+                href="/events"
+                className="group/bl inline-flex items-center gap-1.5 text-[0.95rem] font-semibold text-[color:var(--ink)] transition-colors hover:text-[color:var(--coral)]"
+              >
                 Browse events
-              </LinkButton>
-              <span className="ml-1 hidden text-[0.95rem] font-medium text-[color:var(--mauve)] sm:inline">
-                takes 30 seconds
-              </span>
-            </div>
-
-            {/* trust row — hairline separated, no blocks */}
-            <div className="rise rise-d5 mt-12 grid max-w-lg grid-cols-3 gap-8 border-t border-[color:var(--line)] pt-7">
-              {trustStats.map(([num, label]) => (
-                <div key={label}>
-                  <p className="font-display text-4xl font-bold leading-none tracking-[-0.03em] text-[color:var(--ink)] tabular-nums">
-                    {num}
-                  </p>
-                  <p className="mt-2 text-[0.8rem] font-medium leading-snug text-[color:var(--mauve)]">
-                    {label}
-                  </p>
-                </div>
-              ))}
+                <span aria-hidden className="inline-block transition-transform group-hover/bl:translate-x-1">→</span>
+              </Link>
             </div>
           </div>
 
-          {/* ---- Photo collage column ---- */}
+          {/* ---- Single calm image + one quote card ---- */}
           <div className="rise rise-d3 relative mx-auto hidden w-full max-w-md lg:block">
+            <span className="absolute -top-3 right-10 z-10 size-3 rounded-full bg-[color:var(--coral)]" aria-hidden />
             <div className="relative aspect-[4/5] overflow-hidden rounded-[28px] hard-shadow-lg">
               <Image
                 src="/media/networking.jpg"
@@ -150,36 +132,21 @@ export default async function Home() {
                 priority
               />
             </div>
-            {/* floating secondary photo */}
-            <div className="absolute -bottom-10 -left-12 w-44 overflow-hidden rounded-[22px] border-4 border-[color:var(--champagne)] hard-shadow float-slow">
-              <div className="relative aspect-square">
-                <Image
-                  src="/media/concert.jpg"
-                  alt="Live music meetup"
-                  fill
-                  sizes="180px"
-                  className="object-cover"
-                />
-              </div>
-            </div>
-            {/* lavender tag */}
-            <span className="absolute -right-3 top-8 inline-flex rotate-2 items-center gap-2 rounded-full bg-[color:var(--lavender)] px-4 py-2 text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[color:var(--ink)] hard-shadow-sm">
-              ✦ Mutual click
-            </span>
-            {/* small stat card */}
-            <div className="absolute -right-6 bottom-6 rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)] px-4 py-3 hard-shadow">
-              <p className="font-display text-2xl font-bold leading-none text-[color:var(--ink)]">
-                2nd time
+            <div className="absolute -bottom-6 -left-8 max-w-[15rem] rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)] px-5 py-4 hard-shadow">
+              <p className="font-display text-base font-bold leading-snug text-[color:var(--ink)]">
+                &ldquo;We clicked over the bread course.&rdquo;
               </p>
-              <p className="mt-1 text-[0.68rem] font-medium uppercase tracking-[0.14em] text-[color:var(--mauve)]">
-                familiar already
+              <p className="mt-1.5 text-[0.68rem] font-medium uppercase tracking-[0.14em] text-[color:var(--mauve)]">
+                Newtown · 2nd time
               </p>
             </div>
           </div>
         </div>
+      </section>
 
-        {/* ---- Upcoming events ---- */}
-        <div className="rise rise-d6 mx-auto mt-20 max-w-7xl">
+      {/* ============================ EVENTS — surfaced right under the hero ============================ */}
+      <section className="bg-[color:var(--champagne)] px-4 pb-16 sm:px-6">
+        <div className="rise rise-d5 mx-auto max-w-7xl">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div className="min-w-0">
               <p className="eyebrow">Happening near <LocationLabel /></p>
@@ -209,6 +176,22 @@ export default async function Home() {
               .
             </p>
           )}
+        </div>
+      </section>
+
+      {/* ============================ SLIM TRUST STRIP ============================ */}
+      <section className="border-y border-[color:var(--line)] bg-[color:var(--cream)]">
+        <div className="mx-auto grid max-w-3xl grid-cols-3 divide-x divide-[color:var(--line)] px-4 sm:px-6">
+          {trustStats.map(([num, label]) => (
+            <div key={label} className="px-4 py-5 text-center">
+              <p className="font-display text-3xl font-bold leading-none tracking-[-0.03em] text-[color:var(--ink)] tabular-nums sm:text-4xl">
+                {num}
+              </p>
+              <p className="mt-1.5 text-[0.78rem] font-medium leading-snug text-[color:var(--mauve)]">
+                {label}
+              </p>
+            </div>
+          ))}
         </div>
       </section>
 
