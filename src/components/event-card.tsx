@@ -3,6 +3,7 @@ import Link from "next/link";
 import { type EventItem, formatEventTimeRange } from "@/lib/click-data";
 import { formatCapacity } from "@/lib/click-matching";
 import { Pill } from "./click-ui";
+import { FaceStack } from "./face-stack";
 import { EventBookmarkButton } from "./event-bookmark-button";
 import { EventDetailModal } from "./event-detail-modal";
 
@@ -12,6 +13,7 @@ export function EventCard({
   bookmarked = false,
   registered = false,
   bookingStatus,
+  showLivePulse = false,
 }: {
   event: EventItem;
   compact?: boolean;
@@ -21,6 +23,10 @@ export function EventCard({
   // card/modal show "View your booking" (confirmed) vs the waitlist state
   // accurately instead of guessing from whether the event is full.
   bookingStatus?: "confirmed" | "waitlisted";
+  // Opt-in (default off so every existing surface is unchanged): adds a small
+  // pulsing dot to the status badge of genuinely Live events. Used by the
+  // homepage party-board bento to make "happening now" read at a glance.
+  showLivePulse?: boolean;
 }) {
   const seatsLeft = Math.max(0, event.capacity - event.attendees);
   const isFull = seatsLeft === 0;
@@ -61,8 +67,14 @@ export function EventCard({
         />
         <div className="absolute inset-0 bg-gradient-to-t from-[color:var(--ink)]/30 via-transparent to-transparent" />
         <span
-          className={`absolute left-3 top-3 rounded-full border-2 border-[color:var(--line)] ${statusTone} px-3 py-1.5 text-[0.68rem] font-bold uppercase tracking-wider hard-shadow-sm`}
+          className={`absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full border-2 border-[color:var(--line)] ${statusTone} px-3 py-1.5 text-[0.68rem] font-bold uppercase tracking-wider hard-shadow-sm`}
         >
+          {showLivePulse && event.status === "Live" ? (
+            <span className="relative inline-flex size-1.5" aria-hidden>
+              <span className="absolute inline-flex h-full w-full rounded-full bg-[color:var(--surface-deep)] pulse-ring" />
+              <span className="relative inline-flex size-1.5 rounded-full bg-[color:var(--surface-deep)]" />
+            </span>
+          ) : null}
           {statusLabel}
         </span>
         <span className="absolute bottom-3 left-3 rounded-md border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-2 text-[0.72rem] font-black uppercase leading-tight tracking-[0.14em] text-[color:var(--ink)] hard-shadow-sm">
@@ -118,22 +130,11 @@ export function EventCard({
         <p className="sr-only">{formatCapacity(event)}</p>
 
         {event.attendees > 2 && (event.attendeeAvatars?.length ?? 0) > 0 ? (
-          <div className="mt-4 flex items-center gap-2">
-            <div className="flex -space-x-2">
-              {event.attendeeAvatars!.slice(0, 3).map((url, i) => (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  key={`${url}-${i}`}
-                  src={url}
-                  alt=""
-                  className="h-7 w-7 rounded-full border-2 border-[color:var(--champagne)] object-cover hard-shadow-sm"
-                />
-              ))}
-            </div>
-            <span className="text-xs font-bold text-[color:var(--mauve)]">
-              {event.attendees} going
-            </span>
-          </div>
+          <FaceStack
+            className="mt-4"
+            avatars={event.attendeeAvatars!}
+            count={event.attendees}
+          />
         ) : null}
 
         <div className="mt-auto pt-5">

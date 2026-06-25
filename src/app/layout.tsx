@@ -40,7 +40,7 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Click — A burst of YES",
+  title: "Click · A burst of YES",
   description:
     "Click helps ordinary people find local groups, dating, friendship and Sydney events with a reason to talk.",
 };

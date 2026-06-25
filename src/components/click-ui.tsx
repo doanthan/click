@@ -2,7 +2,10 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 type SectionIntroProps = {
-  eyebrow: string;
+  // Optional: many sections read cleaner with the headline carrying itself.
+  // The taste rule of thumb is roughly one eyebrow per three sections, so most
+  // intros should omit this.
+  eyebrow?: string;
   title: ReactNode;
   body?: string;
   invert?: boolean;
@@ -12,7 +15,9 @@ export function SectionIntro({ eyebrow, title, body, invert = false }: SectionIn
   return (
     <div className="grid gap-6 lg:grid-cols-[0.78fr_1.22fr] lg:items-end">
       <div>
-        <p className={`eyebrow ${invert ? "!text-[color:var(--lavender)]" : ""}`}>{eyebrow}</p>
+        {eyebrow ? (
+          <p className={`eyebrow ${invert ? "!text-[color:var(--lavender)]" : ""}`}>{eyebrow}</p>
+        ) : null}
         <h2
           className={`font-display mt-4 text-[2.4rem] font-bold leading-[1.04] tracking-[-0.025em] sm:text-[3rem] ${
             invert ? "text-[color:var(--on-deep)]" : "text-[color:var(--ink)]"
@@ -182,7 +187,7 @@ export function LinkButton({
         ? "bg-[color:var(--paper)] text-[color:var(--ink)] hover:bg-white shadow-[0_1px_2px_rgba(28,24,48,0.10),0_16px_30px_-16px_rgba(28,24,48,0.5)]"
         : variant === "ink"
           ? "bg-[color:var(--surface-deep)] text-[color:var(--on-deep)] hover:bg-[color:var(--ink-deep)] shadow-[0_1px_2px_rgba(28,24,48,0.10)]"
-          : "bg-[color:var(--coral)] text-white hover:bg-[color:var(--coral-deep)] shadow-[0_1px_2px_rgba(28,24,48,0.10),0_16px_30px_-16px_rgba(232,103,76,0.55)]";
+          : "bg-[color:var(--coral)] text-[color:var(--surface-deep)] hover:bg-[color:var(--coral-deep)] shadow-[0_1px_2px_rgba(28,24,48,0.10),0_16px_30px_-16px_rgba(232,103,76,0.55)]";
 
   return (
     <Link

@@ -138,7 +138,7 @@ export function EventDetailModal({
     : isWaitlistMode
       ? "Join waitlist"
       : priceIsFree
-        ? "RSVP — it’s free"
+        ? "RSVP, it’s free"
         : `RSVP · ${event.price}`;
   const triggerClassName =
     className ??
@@ -245,7 +245,7 @@ export function EventDetailModal({
                   </p>
                   {isLockedEvent ? (
                     <p className="mt-1 text-sm font-bold leading-6">
-                      🔒 {data.suburb} — venue revealed after RSVP.
+                      🔒 {data.suburb}. Venue revealed after RSVP.
                     </p>
                   ) : (
                     <>
