@@ -187,7 +187,7 @@ export function LinkButton({
         ? "bg-[color:var(--paper)] text-[color:var(--ink)] hover:bg-white shadow-[0_1px_2px_rgba(28,24,48,0.10),0_16px_30px_-16px_rgba(28,24,48,0.5)]"
         : variant === "ink"
           ? "bg-[color:var(--surface-deep)] text-[color:var(--on-deep)] hover:bg-[color:var(--ink-deep)] shadow-[0_1px_2px_rgba(28,24,48,0.10)]"
-          : "bg-[color:var(--coral)] text-white hover:bg-[color:var(--coral-deep)] shadow-[0_1px_2px_rgba(28,24,48,0.10),0_16px_30px_-16px_rgba(232,103,76,0.55)]";
+          : "bg-[color:var(--coral)] text-[color:var(--surface-deep)] hover:bg-[color:var(--coral-deep)] shadow-[0_1px_2px_rgba(28,24,48,0.10),0_16px_30px_-16px_rgba(232,103,76,0.55)]";
 
   return (
     <Link

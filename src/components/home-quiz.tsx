@@ -143,7 +143,6 @@ function LoggedOutQuizCta() {
           <div className="flex flex-wrap items-center justify-between gap-5 rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-6 hard-shadow sm:p-7">
             <div className="min-w-0 max-w-2xl">
               <span className="sticker sticker--peach tilt-l-2 inline-flex">
-                <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
                 Pick your vibe
               </span>
               <h2 className="font-display mt-4 text-2xl font-semibold leading-[1.05] tracking-[-0.02em] text-[color:var(--ink)] sm:text-3xl">
@@ -202,7 +201,6 @@ function QuizModal({ onClose }: { onClose: () => void }) {
       <div className="relative z-10 max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow">
         <div className="flex items-center justify-between gap-3 border-b-2 border-[color:var(--line)] bg-[color:var(--cream)] px-5 py-3">
           <span className="sticker sticker--peach tilt-l-2 inline-flex">
-            <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
             Pick your vibe
           </span>
           <button
@@ -353,7 +351,6 @@ function QuizFrame({
         <div className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-6 hard-shadow sm:p-8">
           <div className="max-w-2xl">
             <span className="sticker sticker--peach tilt-l-2 inline-flex">
-              <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
               {eyebrow}
             </span>
             <h2 className="font-display mt-4 text-3xl font-bold leading-[1.02] tracking-[-0.025em] text-[color:var(--ink)] sm:text-4xl">

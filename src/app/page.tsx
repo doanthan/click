@@ -52,7 +52,15 @@ function deriveCityPulse(events: EventItem[]) {
   const distinctHosts = new Set(
     events.map((e) => e.host || e.group).filter(Boolean),
   ).size;
-  const soonest = events[0] ?? null;
+  // Prefer the next event that has not started yet, so the hero "Starts ..."
+  // framing stays truthful; fall back to the earliest only if all are underway.
+  const soonest =
+    events.find((e) => {
+      const t = within(e.startsAt);
+      return t !== null && t >= now;
+    }) ??
+    events[0] ??
+    null;
   // Pool real attendee faces across the soonest events for the hero stack.
   const heroAvatars = Array.from(
     new Set(events.flatMap((e) => e.attendeeAvatars ?? [])),
@@ -282,21 +290,18 @@ export default async function Home() {
           </h2>
           <div className="mt-12 grid gap-7 text-left sm:grid-cols-3">
             <div className="border-t-2 border-[color:var(--lavender)] pt-5">
-              <span className="font-display font-bold text-[color:var(--purple)]">01</span>
-              <p className="mt-2 text-[0.98rem] leading-7 text-[color:var(--mauve)]">
+              <p className="text-[0.98rem] leading-7 text-[color:var(--mauve)]">
                 A burst of <span className="peach-highlight">yes</span> between two
                 people in the same room.
               </p>
             </div>
             <div className="border-t-2 border-[color:var(--lavender)] pt-5">
-              <span className="font-display font-bold text-[color:var(--purple)]">02</span>
-              <p className="mt-2 text-[0.98rem] leading-7 text-[color:var(--mauve)]">
+              <p className="text-[0.98rem] leading-7 text-[color:var(--mauve)]">
                 The reason a stranger becomes a friend. Familiar by week 3.
               </p>
             </div>
             <div className="border-t-2 border-[color:var(--lavender)] pt-5">
-              <span className="font-display font-bold text-[color:var(--purple)]">03</span>
-              <p className="mt-2 text-[0.98rem] leading-7 text-[color:var(--mauve)]">
+              <p className="text-[0.98rem] leading-7 text-[color:var(--mauve)]">
                 <span className="font-semibold text-[color:var(--ink)]">verb.</span> To
                 privately tap a person you&apos;d see again. No mutual, nobody knows.
               </p>
@@ -405,7 +410,7 @@ export default async function Home() {
             <span className="text-[color:var(--purple)]">See what clicks.</span>
           </h2>
           <p className="mt-6 text-lg text-[color:var(--mauve)]">
-            It takes 30 seconds to find your first one. The rest happens in person.
+            It takes 30 seconds to find your first room. The rest happens in person.
           </p>
           <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
             <LinkButton href="/discover">Start exploring</LinkButton>
