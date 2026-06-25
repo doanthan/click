@@ -1,26 +1,19 @@
 import Image from "next/image";
 import Link from "next/link";
 import { auth } from "@/auth";
+import type { EventItem } from "@/lib/click-data";
 import { EventCard } from "@/components/event-card";
+import { FaceStack } from "@/components/face-stack";
+import { LiveActivityMarquee } from "@/components/live-activity-marquee";
 import { LinkButton, SectionIntro } from "@/components/click-ui";
 import { HomeQuiz } from "@/components/home-quiz";
 import { LocationLabel } from "@/components/location-label";
-import {
-  architectureLayers,
-  groups,
-  personaCards,
-  roleCards,
-} from "@/lib/click-data";
+import { architectureLayers, groups } from "@/lib/click-data";
 import {
   getEventsForExplore,
   getLatestPersonaForSession,
+  getPersonalizedDiscovery,
 } from "@/lib/event-repository";
-
-const trustStats: Array<[string, string]> = [
-  ["27", "weekly hosts"],
-  ["8.4k", "showing up"],
-  ["94%", "would return"],
-];
 
 const categoryStrip: Array<{ label: string; href: string }> = [
   { label: "Make friends", href: "/events?category=Social" },
@@ -33,65 +26,90 @@ const categoryStrip: Array<{ label: string; href: string }> = [
   { label: "Free events", href: "/events?search=free" },
 ];
 
-const experienceTiles: Array<{
-  eyebrow: string;
-  title: string;
-  body: string;
-  href: string;
-}> = [
-  {
-    eyebrow: "Slow tables",
-    title: "Slow dating + small dinners",
-    body: "10 people, one long table, a host who actually hosts. No swiping required.",
-    href: "/events?category=Relationships",
-  },
-  {
-    eyebrow: "Move + meet",
-    title: "Walk, run, climb, swim",
-    body: "Active rooms where the conversation is a side effect of the activity.",
-    href: "/events?category=Fitness",
-  },
-  {
-    eyebrow: "Hands on",
-    title: "Classes + workshops",
-    body: "Pottery, cooking, life-drawing — common output, common excuse to chat.",
-    href: "/events?category=Creative",
-  },
-  {
-    eyebrow: "Group rituals",
-    title: "Recurring meetups",
-    body: "Weekly run clubs, monthly book nights, regular brunch crews. Familiar by week 3.",
-    href: "/discover",
-  },
-  {
-    eyebrow: "Career rooms",
-    title: "Networking + peer support",
-    body: "Career pivots, founders, freelancers. Quiet enough to actually talk.",
-    href: "/events?category=Career",
-  },
-  {
-    eyebrow: "Quiet + curious",
-    title: "Talks + screenings",
-    body: "Low-pressure rooms where you don't need to be on. Listen first, mingle second.",
-    href: "/events?category=Community",
-  },
-];
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+// Honest social proof, derived entirely from the real events array. No
+// invented percentages, no satisfaction claims, nothing about private Clicks.
+// Every value collapses to nothing when the data does not support it.
+function deriveCityPulse(events: EventItem[]) {
+  const now = Date.now();
+  const within = (iso: string) => {
+    const t = new Date(iso).getTime();
+    return Number.isFinite(t) ? t : null;
+  };
+
+  const weekEvents = events.filter((e) => {
+    const t = within(e.startsAt);
+    return t !== null && t <= now + WEEK_MS;
+  });
+
+  const eventsThisWeek = weekEvents.length;
+  const peopleThisWeek = weekEvents.reduce((sum, e) => sum + (e.attendees || 0), 0);
+  const peopleGoing = events.reduce((sum, e) => sum + (e.attendees || 0), 0);
+  const distinctSuburbs = new Set(
+    events.map((e) => e.suburb).filter(Boolean),
+  ).size;
+  const distinctHosts = new Set(
+    events.map((e) => e.host || e.group).filter(Boolean),
+  ).size;
+  const soonest = events[0] ?? null;
+  // Pool real attendee faces across the soonest events for the hero stack.
+  const heroAvatars = Array.from(
+    new Set(events.flatMap((e) => e.attendeeAvatars ?? [])),
+  ).slice(0, 3);
+
+  const marqueeItems = [
+    eventsThisWeek > 0
+      ? `${eventsThisWeek} ${eventsThisWeek === 1 ? "event" : "events"} this week`
+      : events.length > 0
+        ? `${events.length} upcoming ${events.length === 1 ? "event" : "events"}`
+        : null,
+    peopleGoing > 0 ? `${peopleGoing} going across Sydney` : null,
+    soonest ? `Next up: ${soonest.title} in ${soonest.suburb}` : null,
+    distinctHosts > 0
+      ? `${distinctHosts} ${distinctHosts === 1 ? "host" : "hosts"} on the calendar`
+      : null,
+    distinctSuburbs > 1 ? `${distinctSuburbs} Sydney suburbs active` : null,
+  ].filter((x): x is string => Boolean(x));
+
+  return {
+    hasEvents: events.length > 0,
+    eventsThisWeek,
+    peopleThisWeek,
+    peopleGoing,
+    distinctSuburbs,
+    distinctHosts,
+    soonest,
+    heroAvatars,
+    marqueeItems,
+  };
+}
 
 export default async function Home() {
   const session = await auth();
   const isLoggedIn = Boolean(session?.user);
-  const [events, persona] = await Promise.all([
+  const [events, persona, discovery] = await Promise.all([
     getEventsForExplore(),
     isLoggedIn ? getLatestPersonaForSession(session) : Promise.resolve(null),
+    isLoggedIn ? getPersonalizedDiscovery(session) : Promise.resolve(null),
   ]);
-  const upcomingEvents = events.slice(0, 6);
+
+  const pulse = deriveCityPulse(events);
+
+  // Bento source: a genuinely personalised feed when we have one, otherwise the
+  // live city catalogue. "Picked for you" only when the feed is real, not the
+  // cold-start editorial fallback.
+  const personalized = Boolean(
+    discovery && !discovery.fallback && discovery.events.length >= 3,
+  );
+  const bentoEvents = (personalized ? discovery!.events : events).slice(0, 6);
 
   return (
     <main className="min-h-screen max-w-full overflow-hidden bg-[color:var(--champagne)] text-[color:var(--ink)]">
-      {/* ============================ HERO — minimal, airy ============================ */}
+      {/* ============================ HERO. Living "tonight in Sydney" panel ============================ */}
       <section className="relative overflow-hidden px-5 pb-12 pt-12 sm:px-8 sm:pb-16 lg:px-12 lg:pt-20">
         <div className="mx-auto grid max-w-7xl items-center gap-12 lg:grid-cols-[1.05fr_0.95fr] lg:gap-16">
-          {/* ---- Copy column ---- */}
+          {/* Copy column */}
           <div className="relative z-10">
             <p className="rise rise-d1 eyebrow">Now in <LocationLabel /></p>
 
@@ -102,26 +120,41 @@ export default async function Home() {
             </h1>
 
             <p className="rise rise-d3 mt-6 max-w-md text-lg leading-8 text-[color:var(--mauve)]">
-              A calm local calendar of dinners, walks, workshops and run clubs —
-              where the conversation already has a reason. Show up twice. Become
-              familiar.
+              Real dinners, walks, workshops and run clubs across Sydney. Show up
+              twice, become familiar.
             </p>
 
             <div className="rise rise-d4 mt-8 flex flex-wrap items-center gap-x-7 gap-y-3">
               <LinkButton href="/discover">Start exploring</LinkButton>
               <Link
-                href="/events"
+                href="#events"
                 className="group/bl inline-flex items-center gap-1.5 text-[0.95rem] font-semibold text-[color:var(--ink)] transition-colors hover:text-[color:var(--coral)]"
               >
-                Browse events
+                See who is going
                 <span aria-hidden className="inline-block transition-transform group-hover/bl:translate-x-1">→</span>
               </Link>
             </div>
+
+            {/* Mobile-only social proof — the living panel is desktop-only, so the
+                real faces still reach phones here. */}
+            {pulse.hasEvents && pulse.peopleGoing > 0 ? (
+              <div className="rise rise-d5 mt-8 lg:hidden">
+                <FaceStack
+                  avatars={pulse.heroAvatars}
+                  count={pulse.peopleGoing}
+                  label={
+                    pulse.eventsThisWeek > 0
+                      ? `${pulse.peopleGoing} going to ${pulse.eventsThisWeek} ${pulse.eventsThisWeek === 1 ? "event" : "events"} this week`
+                      : `${pulse.peopleGoing} going across Sydney`
+                  }
+                />
+              </div>
+            ) : null}
           </div>
 
-          {/* ---- Single calm image + one quote card ---- */}
+          {/* Living panel — framed photo + one honest social-proof card + the
+              soonest-event pulse chip. Collapses to the bare photo when empty. */}
           <div className="rise rise-d3 relative mx-auto hidden w-full max-w-md lg:block">
-            <span className="absolute -top-3 right-10 z-10 size-3 rounded-full bg-[color:var(--coral)]" aria-hidden />
             <div className="relative aspect-[4/5] overflow-hidden rounded-[28px] hard-shadow-lg">
               <Image
                 src="/media/networking.jpg"
@@ -132,28 +165,63 @@ export default async function Home() {
                 priority
               />
             </div>
-            <div className="absolute -bottom-6 -left-8 max-w-[15rem] rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)] px-5 py-4 hard-shadow">
-              <p className="font-display text-base font-bold leading-snug text-[color:var(--ink)]">
-                &ldquo;We clicked over the bread course.&rdquo;
-              </p>
-              <p className="mt-1.5 text-[0.68rem] font-medium uppercase tracking-[0.14em] text-[color:var(--mauve)]">
-                Newtown · 2nd time
-              </p>
-            </div>
+
+            {pulse.hasEvents ? (
+              <>
+                <div className="absolute -bottom-6 -left-8 max-w-[16rem] rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)] px-5 py-4 hard-shadow">
+                  {pulse.peopleGoing > 0 ? (
+                    <>
+                      <FaceStack
+                        avatars={pulse.heroAvatars}
+                        count={pulse.peopleGoing}
+                        ringClass="border-[color:var(--paper)]"
+                      />
+                      <p className="mt-1.5 text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[color:var(--mauve)]">
+                        to{" "}
+                        {pulse.eventsThisWeek > 0 ? pulse.eventsThisWeek : events.length}{" "}
+                        {(pulse.eventsThisWeek > 0 ? pulse.eventsThisWeek : events.length) === 1
+                          ? "event"
+                          : "events"}{" "}
+                        {pulse.eventsThisWeek > 0 ? "this week" : "coming up"}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="font-display text-base font-bold leading-snug text-[color:var(--ink)]">
+                      {pulse.eventsThisWeek > 0
+                        ? `${pulse.eventsThisWeek} ${pulse.eventsThisWeek === 1 ? "event" : "events"} this week`
+                        : `${events.length} ${events.length === 1 ? "event" : "events"} coming up`}
+                    </p>
+                  )}
+                </div>
+
+                {pulse.soonest ? (
+                  <Link
+                    href={`/events/${pulse.soonest.id}`}
+                    className="absolute -right-3 top-6 inline-flex rotate-2 items-center gap-2 rounded-full border border-[color:var(--line)] bg-[color:var(--paper)] px-4 py-2 text-[0.72rem] font-semibold text-[color:var(--ink)] hard-shadow-sm transition-transform hover:rotate-0"
+                  >
+                    <span className="relative inline-flex size-2.5" aria-hidden>
+                      <span className="absolute inline-flex h-full w-full rounded-full bg-[color:var(--coral)] pulse-ring" />
+                      <span className="relative inline-flex size-2.5 rounded-full bg-[color:var(--coral)]" />
+                    </span>
+                    Starts {pulse.soonest.time} · {pulse.soonest.suburb}
+                  </Link>
+                ) : null}
+              </>
+            ) : null}
           </div>
         </div>
       </section>
 
-      {/* ============================ EVENTS — surfaced right under the hero ============================ */}
-      <section className="bg-[color:var(--champagne)] px-5 pb-16 sm:px-8 lg:px-12">
-        <div className="rise rise-d5 mx-auto max-w-7xl">
+      {/* ============================ LIVE ACTIVITY MARQUEE ============================ */}
+      <LiveActivityMarquee items={pulse.marqueeItems} />
+
+      {/* ============================ EVENTS. Party-board bento ============================ */}
+      <section id="events" className="scroll-mt-24 bg-[color:var(--champagne)] px-5 pb-16 pt-16 sm:px-8 lg:px-12">
+        <div className="rise mx-auto max-w-7xl">
           <div className="flex flex-wrap items-end justify-between gap-4">
-            <div className="min-w-0">
-              <p className="eyebrow">Happening near <LocationLabel /></p>
-              <h2 className="font-display mt-3 text-3xl font-bold leading-[1.05] tracking-[-0.025em] text-[color:var(--ink)] sm:text-4xl">
-                Browse what&apos;s on near you.
-              </h2>
-            </div>
+            <h2 className="font-display min-w-0 text-3xl font-bold leading-[1.05] tracking-[-0.025em] text-[color:var(--ink)] sm:text-4xl">
+              {personalized ? "Picked for you." : "What is on near you."}
+            </h2>
             <Link
               href="/events"
               className="shrink-0 rounded-full border border-[color:var(--line-strong)] px-4 py-2 text-sm font-semibold text-[color:var(--ink)] transition-all duration-200 hover:-translate-y-0.5 hover:border-transparent hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
@@ -161,15 +229,18 @@ export default async function Home() {
               See all events →
             </Link>
           </div>
-          {upcomingEvents.length > 0 ? (
-            <div className="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-              {upcomingEvents.map((event) => (
-                <EventCard key={event.id} event={event} compact />
+
+          {bentoEvents.length > 0 ? (
+            <div className="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
+              {bentoEvents.map((event, i) => (
+                <div key={event.id} className={i === 0 ? "sm:col-span-2 xl:col-span-2" : ""}>
+                  <EventCard event={event} compact={i !== 0} showLivePulse />
+                </div>
               ))}
             </div>
           ) : (
             <p className="mt-8 rounded-2xl border border-dashed border-[color:var(--line-strong)] bg-[color:var(--cream)] p-6 text-sm text-[color:var(--mauve)]">
-              No upcoming events just yet — check back soon, or{" "}
+              No events on the calendar just yet. Check back soon, or{" "}
               <Link href="/events" className="text-[color:var(--coral)] underline">
                 browse the full calendar
               </Link>
@@ -179,31 +250,12 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* ============================ SLIM TRUST STRIP ============================ */}
-      <section className="border-y border-[color:var(--line)] bg-[color:var(--cream)]">
-        <div className="mx-auto grid max-w-3xl grid-cols-3 divide-x divide-[color:var(--line)] px-5 sm:px-8 lg:px-12">
-          {trustStats.map(([num, label]) => (
-            <div key={label} className="px-4 py-5 text-center">
-              <p className="font-display text-3xl font-bold leading-none tracking-[-0.03em] text-[color:var(--ink)] tabular-nums sm:text-4xl">
-                {num}
-              </p>
-              <p className="mt-1.5 text-[0.78rem] font-medium leading-snug text-[color:var(--mauve)]">
-                {label}
-              </p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* ============================ HOME QUIZ ============================ */}
+      {/* ============================ PERSONA QUIZ. The "pick your vibe" moment ============================ */}
       <HomeQuiz isLoggedIn={isLoggedIn} persona={persona} />
 
-      {/* ============================ STICKY CATEGORY BAR ============================ */}
+      {/* ============================ CATEGORY PILL BAR ============================ */}
       <section className="border-y border-[color:var(--line)] bg-[color:var(--cream)]">
         <div className="mx-auto flex max-w-7xl items-center gap-3 overflow-x-auto px-5 py-4 sm:px-8 lg:px-12">
-          <span className="shrink-0 text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
-            Browse →
-          </span>
           {categoryStrip.map((category) => (
             <Link
               key={category.label}
@@ -216,56 +268,10 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* ============================ EXPERIENCE-TYPE BROWSER ============================ */}
-      <section className="border-b border-[color:var(--line)] bg-[color:var(--champagne)] py-20 sm:py-24">
-        <div className="mx-auto max-w-7xl px-5 sm:px-8 lg:px-12">
-          <SectionIntro
-            eyebrow="Pick a vibe"
-            title={
-              <>
-                Browse by{" "}
-                <span className="text-[color:var(--purple)]">feel</span>, not by
-                category.
-              </>
-            }
-            body="What kind of room are you in the mood for? Click events are organised by how a night feels, not by the topic on the flyer."
-          />
-          <div className="mt-14 grid gap-x-10 gap-y-12 sm:grid-cols-2 lg:grid-cols-3">
-            {experienceTiles.map((tile) => (
-              <Link
-                key={tile.title}
-                href={tile.href}
-                className="group flex flex-col transition-transform duration-300 hover:-translate-y-1"
-              >
-                <span className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[color:var(--coral)]">
-                  {tile.eyebrow}
-                </span>
-                <h3 className="font-display mt-3 text-[1.6rem] font-bold leading-[1.08] tracking-[-0.025em] text-[color:var(--ink)]">
-                  {tile.title}
-                </h3>
-                <p className="mt-3 text-[0.95rem] leading-7 text-[color:var(--mauve)]">
-                  {tile.body}
-                </p>
-                <span className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-[color:var(--coral)]">
-                  Learn more
-                  <span
-                    className="transition-transform group-hover:translate-x-1"
-                    aria-hidden
-                  >
-                    →
-                  </span>
-                </span>
-              </Link>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ============================ WHAT IS A CLICK — centered ============================ */}
+      {/* ============================ WHAT IS A CLICK. Centered definition ============================ */}
       <section className="border-b border-[color:var(--line)] bg-[color:var(--cream)] py-24">
         <div className="mx-auto max-w-3xl px-5 text-center sm:px-8 lg:px-12">
-          <p className="eyebrow eyebrow--muted text-center">Dictionary entry · ed. 01</p>
-          <h2 className="font-display mt-4 flex flex-wrap items-baseline justify-center gap-x-4 text-6xl font-bold leading-[0.98] tracking-[-0.03em] text-[color:var(--ink)] sm:text-7xl">
+          <h2 className="font-display flex flex-wrap items-baseline justify-center gap-x-4 text-6xl font-bold leading-[0.98] tracking-[-0.03em] text-[color:var(--ink)] sm:text-7xl">
             click
             <span className="text-2xl font-medium text-[color:var(--mauve)] sm:text-3xl">
               /klɪk/
@@ -302,7 +308,7 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* ============================ HOW IT WORKS ============================ */}
+      {/* ============================ HOW IT WORKS. Merged mechanic grid ============================ */}
       <section className="bg-[color:var(--champagne)] py-24">
         <div className="mx-auto max-w-7xl px-5 sm:px-8 lg:px-12">
           <SectionIntro
@@ -314,85 +320,39 @@ export default async function Home() {
                 about.
               </>
             }
-            body="People join because the event is real: a walk, dinner, workout, class, coffee, or group ritual that makes conversation easier."
+            body="People show up for the event itself, a walk, a dinner, a class, a run. The conversation comes free, because the reason to talk is already in the room."
           />
 
           <div className="mt-14 grid gap-x-10 gap-y-12 lg:grid-cols-3">
-            {roleCards.map((role, index) => (
-              <article key={role.title} className="group">
+            {architectureLayers.map(([layer, body], index) => (
+              <article key={layer} className="group relative">
                 <span className="font-display text-5xl font-bold leading-none tracking-[-0.03em] text-[color:var(--coral)]">
                   {String(index + 1).padStart(2, "0")}
                 </span>
-                <p className="mt-5 text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
-                  {role.eyebrow}
-                </p>
-                <h3 className="font-display mt-2 text-[1.9rem] font-bold leading-[1.06] tracking-[-0.025em] text-[color:var(--ink)]">
-                  {role.title}
-                </h3>
-                <p className="mt-4 text-[0.95rem] leading-7 text-[color:var(--mauve)]">
-                  {role.body}
-                </p>
-                <div className="mt-7 h-1 w-full rounded-full bg-[color:var(--champagne-deep)]">
-                  <div
-                    className="h-1 rounded-full bg-[color:var(--lavender)]"
-                    style={{ width: `${42 + index * 20}%` }}
-                  />
-                </div>
-              </article>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ============================ PERSONAS ============================ */}
-      <section className="border-y border-[color:var(--line)] bg-[color:var(--lav-bg)] py-24">
-        <div className="mx-auto max-w-7xl px-5 sm:px-8 lg:px-12">
-          <div className="grid gap-6 lg:grid-cols-[0.78fr_1.22fr] lg:items-end">
-            <div>
-              <p className="eyebrow">Local rhythm</p>
-              <h2 className="font-display mt-4 text-[2.6rem] font-bold leading-[1.0] tracking-[-0.03em] text-[color:var(--ink)] sm:text-[3.2rem]">
-                Small rituals beat{" "}
-                <span className="text-[color:var(--purple)]">perfect</span> matches.
-              </h2>
-            </div>
-            <p className="text-[0.98rem] leading-7 text-[color:var(--mauve)] lg:max-w-xl lg:justify-self-end">
-              A familiar group, a friendly host, and a reason to show up again are
-              what turn strangers into people you know.
-            </p>
-          </div>
-
-          <div className="mt-14 grid gap-5 md:grid-cols-2 lg:grid-cols-4">
-            {personaCards.map((persona, idx) => (
-              <article
-                key={persona.title}
-                className="group relative rounded-[22px] border border-[color:var(--line)] bg-[color:var(--paper)] p-7 transition-all duration-300 hover:-translate-y-1.5 hard-shadow-sm hover:hard-shadow"
-              >
-                <span className="font-display text-5xl font-bold leading-none tracking-[-0.04em] text-[color:var(--lavender)]">
-                  0{idx + 1}
-                </span>
-                <p className="mt-5 text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
-                  People style
-                </p>
-                <h3 className="font-display mt-2 text-[1.55rem] font-bold leading-[1.08] tracking-[-0.025em] text-[color:var(--ink)]">
-                  {persona.title}
+                <h3 className="font-display mt-5 text-[1.9rem] font-bold leading-[1.06] tracking-[-0.025em] text-[color:var(--ink)]">
+                  {layer}
                 </h3>
                 <p className="mt-3 text-[0.95rem] leading-7 text-[color:var(--mauve)]">
-                  {persona.body}
+                  {body}
                 </p>
+                {index === architectureLayers.length - 1 ? (
+                  <span className="mt-5 inline-flex rotate-[-2deg] items-center gap-2 rounded-full bg-[color:var(--coral)] px-4 py-2 text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-white hard-shadow-sm">
+                    ✦ Mutual click
+                  </span>
+                ) : null}
               </article>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ============================ GROUPS — JOIN ONCE (kept deep band) ============================ */}
+      {/* ============================ GROUPS. JOIN ONCE (deep band anchor) ============================ */}
       <section className="relative overflow-hidden bg-[color:var(--surface-deep)] py-24 text-[color:var(--on-deep)]">
         <div className="absolute inset-0 stamp-grid opacity-[0.06]" aria-hidden />
 
         <div className="relative mx-auto grid max-w-7xl gap-14 px-5 sm:px-8 lg:grid-cols-[0.85fr_1.15fr] lg:items-center lg:px-12">
           <div>
-            <p className="eyebrow !text-[color:var(--lavender)]">Groups for common people</p>
-            <h2 className="font-display mt-4 text-5xl font-bold leading-[1.0] tracking-[-0.03em] text-[color:var(--on-deep)] sm:text-6xl lg:text-[4.3rem]">
+            <h2 className="font-display text-5xl font-bold leading-[1.0] tracking-[-0.03em] text-[color:var(--on-deep)] sm:text-6xl lg:text-[4.3rem]">
               Join <span className="text-[color:var(--lavender)]">once.</span> Show
               up <span className="text-[color:var(--coral)]">twice.</span> Become{" "}
               <span className="text-[color:var(--lavender)]">familiar.</span>
@@ -436,74 +396,10 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* ============================ PHOTO + ARCHITECTURE ============================ */}
-      <section className="border-b border-[color:var(--line)] bg-[color:var(--champagne)] py-24">
-        <div className="mx-auto grid max-w-7xl gap-14 px-5 sm:px-8 lg:grid-cols-[0.95fr_1.05fr] lg:items-center lg:px-12">
-          {/* framed photo */}
-          <div className="relative mx-auto w-full max-w-md">
-            <div className="relative aspect-[4/5] overflow-hidden rounded-[28px] hard-shadow-lg">
-              <Image
-                src="/media/open-yoga.jpg"
-                alt="People connecting at a local social event"
-                fill
-                sizes="(min-width: 1024px) 45vw, 100vw"
-                className="object-cover"
-              />
-            </div>
-            <div className="absolute -bottom-6 left-1/2 w-[88%] -translate-x-1/2 rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)] px-6 py-4 text-center hard-shadow">
-              <p className="font-display text-xl font-bold text-[color:var(--ink)]">
-                You both love live jazz
-              </p>
-              <p className="mt-1 text-[0.68rem] font-medium uppercase tracking-[0.14em] text-[color:var(--mauve)]">
-                Newtown · 2nd time
-              </p>
-            </div>
-            <span className="absolute -right-3 top-6 inline-flex rotate-2 items-center gap-2 rounded-full bg-[color:var(--coral)] px-4 py-2 text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-white hard-shadow-sm">
-              ✦ Mutual click
-            </span>
-          </div>
-
-          <div>
-            <SectionIntro
-              eyebrow="Why it works"
-              title={
-                <>
-                  A room feels{" "}
-                  <span className="text-[color:var(--coral)]">easier</span> when the
-                  reason to talk is already there.
-                </>
-              }
-              body="Click should feel like a trusted local calendar with a human pulse: clear hosts, familiar groups, real photos, and enough context to make showing up less awkward."
-            />
-            <div className="mt-10 space-y-3">
-              {architectureLayers.map(([layer, body], idx) => (
-                <article
-                  key={layer}
-                  className="group flex gap-5 rounded-[18px] border border-[color:var(--line)] bg-[color:var(--cream)] p-5 transition-all duration-300 hover:-translate-y-1 hard-shadow-sm hover:hard-shadow"
-                >
-                  <span className="font-display grid size-12 shrink-0 place-items-center rounded-full bg-[color:var(--lavender)] text-xl font-bold text-[color:var(--ink)]">
-                    {idx + 1}
-                  </span>
-                  <div>
-                    <h4 className="font-display text-xl font-bold leading-tight tracking-[-0.02em] text-[color:var(--ink)]">
-                      {layer}
-                    </h4>
-                    <p className="mt-1 text-[0.95rem] leading-7 text-[color:var(--mauve)]">
-                      {body}
-                    </p>
-                  </div>
-                </article>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ============================ CLOSING — calm centered cream ============================ */}
+      {/* ============================ CLOSING. Calm centered cream ============================ */}
       <section className="bg-[color:var(--champagne)] py-28">
         <div className="mx-auto max-w-3xl px-5 text-center sm:px-8 lg:px-12">
-          <p className="eyebrow text-center">Ready when you are</p>
-          <h2 className="font-display mt-5 text-5xl font-bold leading-[1.0] tracking-[-0.03em] text-[color:var(--ink)] sm:text-7xl">
+          <h2 className="font-display text-5xl font-bold leading-[1.0] tracking-[-0.03em] text-[color:var(--ink)] sm:text-7xl">
             Pick a room. Show up.
             <br className="hidden sm:block" />{" "}
             <span className="text-[color:var(--purple)]">See what clicks.</span>
@@ -517,7 +413,7 @@ export default async function Home() {
               href="/onboarding"
               className="inline-flex min-h-12 items-center gap-2 rounded-full border border-[color:var(--line-strong)] px-6 text-[0.95rem] font-semibold text-[color:var(--ink)] transition-all duration-200 hover:-translate-y-0.5 hover:border-transparent hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
             >
-              Take the Life Quiz
+              Take the quiz
               <span aria-hidden>→</span>
             </Link>
           </div>

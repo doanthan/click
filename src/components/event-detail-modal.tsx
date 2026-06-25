@@ -138,7 +138,7 @@ export function EventDetailModal({
     : isWaitlistMode
       ? "Join waitlist"
       : priceIsFree
-        ? "RSVP — it’s free"
+        ? "RSVP, it’s free"
         : `RSVP · ${event.price}`;
   const triggerClassName =
     className ??

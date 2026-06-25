@@ -2,7 +2,10 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 type SectionIntroProps = {
-  eyebrow: string;
+  // Optional: many sections read cleaner with the headline carrying itself.
+  // The taste rule of thumb is roughly one eyebrow per three sections, so most
+  // intros should omit this.
+  eyebrow?: string;
   title: ReactNode;
   body?: string;
   invert?: boolean;
@@ -12,7 +15,9 @@ export function SectionIntro({ eyebrow, title, body, invert = false }: SectionIn
   return (
     <div className="grid gap-6 lg:grid-cols-[0.78fr_1.22fr] lg:items-end">
       <div>
-        <p className={`eyebrow ${invert ? "!text-[color:var(--lavender)]" : ""}`}>{eyebrow}</p>
+        {eyebrow ? (
+          <p className={`eyebrow ${invert ? "!text-[color:var(--lavender)]" : ""}`}>{eyebrow}</p>
+        ) : null}
         <h2
           className={`font-display mt-4 text-[2.4rem] font-bold leading-[1.04] tracking-[-0.025em] sm:text-[3rem] ${
             invert ? "text-[color:var(--on-deep)]" : "text-[color:var(--ink)]"

@@ -56,7 +56,7 @@ export function formatEventTimeRange(event: Pick<EventItem, "time" | "endsAt">) 
   if (!event.endsAt) return event.time;
   const end = new Date(event.endsAt);
   if (Number.isNaN(end.getTime())) return event.time;
-  return `${event.time} – ${sydneyTimeFormatter.format(end)}`;
+  return `${event.time} - ${sydneyTimeFormatter.format(end)}`;
 }
 
 export type PeopleRecommendation = {

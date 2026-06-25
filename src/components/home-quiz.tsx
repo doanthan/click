@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { submitPersonalityQuizAction } from "@/app/quiz/personality/actions";
+import { fireBrandConfetti } from "./brand-confetti";
 import { openLoginModal } from "./login-modal-host";
 
 type Question = {
@@ -115,7 +116,7 @@ export function HomeQuiz({ isLoggedIn, persona = null }: HomeQuizProps) {
 
   return (
     <QuizFrame
-      eyebrow={isLoggedIn ? "Two-minute quiz" : "Tell us about you"}
+      eyebrow="Pick your vibe"
       title={
         <>
           A <span className="text-[color:var(--coral)]">tiny</span> quiz so Click can suggest{" "}
@@ -143,7 +144,7 @@ function LoggedOutQuizCta() {
             <div className="min-w-0 max-w-2xl">
               <span className="sticker sticker--peach tilt-l-2 inline-flex">
                 <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
-                ✷ about you
+                Pick your vibe
               </span>
               <h2 className="font-display mt-4 text-2xl font-semibold leading-[1.05] tracking-[-0.02em] text-[color:var(--ink)] sm:text-3xl">
                 A <span className="text-[color:var(--coral)]">tiny</span> quiz so Click can suggest{" "}
@@ -202,7 +203,7 @@ function QuizModal({ onClose }: { onClose: () => void }) {
         <div className="flex items-center justify-between gap-3 border-b-2 border-[color:var(--line)] bg-[color:var(--cream)] px-5 py-3">
           <span className="sticker sticker--peach tilt-l-2 inline-flex">
             <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
-            Tell us about you
+            Pick your vibe
           </span>
           <button
             type="button"
@@ -245,7 +246,22 @@ function QuizForm({
   // can re-tap once back, and the deeper /quiz/personality form is one
   // click away from the post-login flow.
   function handleLoggedOutSubmit(event: React.FormEvent<HTMLFormElement>) {
-    if (isLoggedIn) return;
+    if (isLoggedIn) {
+      // Real success path: the persona is about to be saved by the server
+      // action (required fields guarantee a valid submit). Celebrate the save
+      // with a brand confetti beat, fired from where the submit button sits.
+      // It is reduced-motion guarded inside fireBrandConfetti.
+      const button = event.currentTarget.querySelector('button[type="submit"]');
+      const rect = button?.getBoundingClientRect();
+      const origin = rect
+        ? {
+            x: (rect.left + rect.width / 2) / window.innerWidth,
+            y: (rect.top + rect.height / 2) / window.innerHeight,
+          }
+        : undefined;
+      void fireBrandConfetti(origin);
+      return;
+    }
     event.preventDefault();
     // Close the quiz modal first so it isn't stacked behind the login modal.
     onLoggedOutSubmit?.();
@@ -335,22 +351,17 @@ function QuizFrame({
     <section className="border-b-2 border-[color:var(--line)] bg-[color:var(--cream)] px-5 py-10 sm:px-8 lg:px-12">
       <div className="mx-auto max-w-6xl">
         <div className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-6 hard-shadow sm:p-8">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="min-w-0 max-w-2xl">
-              <span className="sticker sticker--peach tilt-l-2 inline-flex">
-                <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
-                {eyebrow}
-              </span>
-              <h2 className="font-display mt-4 text-3xl font-bold leading-[1.02] tracking-[-0.025em] text-[color:var(--ink)] sm:text-4xl">
-                {title}
-              </h2>
-              <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--mauve)]">
-                {subtitle}
-              </p>
-            </div>
-            <span className="sticker sticker--rose tilt-r-1 hidden sm:inline-flex">
-              ✷ about you
+          <div className="max-w-2xl">
+            <span className="sticker sticker--peach tilt-l-2 inline-flex">
+              <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
+              {eyebrow}
             </span>
+            <h2 className="font-display mt-4 text-3xl font-bold leading-[1.02] tracking-[-0.025em] text-[color:var(--ink)] sm:text-4xl">
+              {title}
+            </h2>
+            <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+              {subtitle}
+            </p>
           </div>
           {children}
         </div>
