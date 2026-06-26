@@ -341,7 +341,7 @@ export default async function Home() {
                   {body}
                 </p>
                 {index === architectureLayers.length - 1 ? (
-                  <span className="mt-5 inline-flex rotate-[-2deg] items-center gap-2 rounded-full bg-[color:var(--coral)] px-4 py-2 text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-white hard-shadow-sm">
+                  <span className="mt-5 inline-flex rotate-[-2deg] items-center gap-2 rounded-full bg-[color:var(--coral)] px-4 py-2 text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[color:var(--surface-deep)] hard-shadow-sm">
                     ✦ Mutual click
                   </span>
                 ) : null}

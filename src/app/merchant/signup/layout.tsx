@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { MerchantSignupProvider } from "@/components/merchant-signup-wizard";
 import {
   getMerchantCategoryOptions,
+  getMerchantSignupPrefill,
   getProfileStatus,
   listMerchantDocuments,
 } from "@/lib/event-repository";
@@ -32,21 +33,29 @@ export default async function MerchantSignupLayout({
 }) {
   const session = await auth();
 
+  let isRejectedResubmit = false;
   if (session?.user) {
     const status = await getProfileStatus(session);
-    if (status.merchantProfile) {
+    // Approved/pending merchants belong in their portal — but a REJECTED merchant
+    // must be let back into the wizard to edit + resubmit, otherwise the "Resubmit
+    // application" CTA bounces straight back to /merchant (bug board #203/#204).
+    if (status.merchantProfile && status.merchantProfile.verification_status !== "rejected") {
       redirect("/merchant");
     }
+    isRejectedResubmit = status.merchantProfile?.verification_status === "rejected";
   }
 
   // Provider data is only meaningful once authed. For the auth-gate page the
-  // empty arrays are harmless — StepAuthCard doesn't consume the context.
-  const [categories, existingDocs] = session?.user
+  // empty arrays are harmless — StepAuthCard doesn't consume the context. A
+  // rejected merchant resubmitting also gets their saved answers pre-filled
+  // (bug board #203).
+  const [categories, existingDocs, existingProfile] = session?.user
     ? await Promise.all([
         getMerchantCategoryOptions(),
         listMerchantDocuments(session),
+        isRejectedResubmit ? getMerchantSignupPrefill(session) : Promise.resolve(null),
       ])
-    : [[], []];
+    : [[], [], null];
 
   return (
     <main className="paper-noise min-h-screen bg-[color:var(--champagne)] px-4 pb-12 pt-2 text-[color:var(--ink)] sm:px-6">
@@ -79,6 +88,7 @@ export default async function MerchantSignupLayout({
               documentType: d.document_type,
               fileName: d.file_name,
             }))}
+            existingProfile={existingProfile}
           >
             {children}
           </MerchantSignupProvider>

@@ -192,8 +192,19 @@ export function EventRegistrationButton({
     }
 
     setState("cancelled");
-    setMessage("Your RSVP was cancelled.");
-    router.refresh();
+    // After cancelling, the page re-renders into the locked/pre-RSVP state and
+    // this button re-mounts to "idle", wiping the in-memory message — so it
+    // looked like a silent dump onto a locked event (bug board #212). Carry an
+    // acknowledgment in the URL so a durable banner confirms the cancel. The
+    // waitlist "leave" path keeps the lighter in-place refresh.
+    if (previous === "waitlisted") {
+      setMessage("You left the waitlist.");
+      router.refresh();
+    } else {
+      setMessage("Your RSVP was cancelled.");
+      router.push(`${pathname ?? `/events/${encodeURIComponent(eventId)}`}?cancelled=1`);
+      router.refresh();
+    }
   }
 
   // Cancel click: paid bookings show the refund amount first; everything else

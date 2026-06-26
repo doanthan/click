@@ -140,7 +140,62 @@ export default async function MerchantPendingPage() {
           </div>
         </div>
 
-        {/* First-event prep checklist per spec §1 post-submission. */}
+        {/*
+          A rejected merchant must NOT see the "get your first event live"
+          prep checklist — it reads as "you can create events now" even though
+          they can't (bug board #204). Steer them to fix + resubmit instead.
+        */}
+        {rejected ? (
+          <div className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-6 hard-shadow">
+            <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+              What happens next
+            </p>
+            <h2 className="mt-3 font-display text-3xl font-semibold leading-tight tracking-[-0.02em]">
+              Update your application and resubmit.
+            </h2>
+            <p className="mt-4 text-sm font-medium leading-7 text-[color:var(--mauve)]">
+              Your application isn’t live yet, so you can’t create events until it’s
+              approved. Check the rejection email for the specific reason, fix that in
+              your application, and send it back for review.
+            </p>
+            <ol className="mt-6 grid gap-4">
+              {[
+                {
+                  t: "Read the reason in your email",
+                  d: "We emailed the contact address on file with exactly what the admin flagged.",
+                },
+                {
+                  t: "Update the flagged details",
+                  d: "Reopen your application — your previous answers are still there to edit.",
+                },
+                {
+                  t: "Resubmit for review",
+                  d: "Once you resubmit, your application goes back into the admin queue and we’ll email you the outcome.",
+                },
+              ].map((step, idx) => (
+                <li
+                  key={step.t}
+                  className="flex gap-4 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-4"
+                >
+                  <span className="grid size-8 shrink-0 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] font-mono text-sm font-bold text-[color:var(--surface-deep)]">
+                    {idx + 1}
+                  </span>
+                  <div>
+                    <p className="font-bold text-[color:var(--ink)]">{step.t}</p>
+                    <p className="mt-1 text-sm font-medium leading-6 text-[color:var(--mauve)]">{step.d}</p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+            <Link
+              href="/merchant/signup"
+              className="mt-6 inline-flex items-center gap-2 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)]"
+            >
+              Resubmit application →
+            </Link>
+          </div>
+        ) : (
+        /* First-event prep checklist per spec §1 post-submission. */
         <div className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-6 hard-shadow">
           <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
             While you wait
@@ -191,6 +246,7 @@ export default async function MerchantPendingPage() {
             ✷ We’ll email you when approval lands ✷
           </p>
         </div>
+        )}
       </section>
     </main>
   );

@@ -455,7 +455,10 @@ export function ProfileEditForm({
         </div>
       </Fieldset>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+      {/* Sticky save bar so "Save profile" is always reachable without scrolling
+          to the very bottom of this long form (bug board #219). Negative margins
+          cancel the card's p-6 so it spans edge-to-edge; cream bg matches. */}
+      <div className="sticky bottom-0 z-10 -mx-6 -mb-6 flex flex-wrap items-center justify-between gap-3 rounded-b-3xl border-t-2 border-[color:var(--line)] bg-[color:var(--cream)] px-6 py-4">
         <Link
           href="/profile"
           className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)]"

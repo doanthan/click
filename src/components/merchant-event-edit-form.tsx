@@ -16,7 +16,7 @@ export function MerchantEventEditForm({
   initialDescription,
   initialAddress,
   pendingAddress,
-  hasAttendees,
+  addressNeedsReview,
   initialImages,
   initialTags,
   tagOptions,
@@ -27,9 +27,10 @@ export function MerchantEventEditForm({
   initialAddress: string;
   // A proposed address already awaiting admin review, if any.
   pendingAddress: string | null;
-  // Whether anyone has booked — once they have, an address change is queued for
-  // admin review instead of going live, so we tell the merchant up front.
-  hasAttendees: boolean;
+  // Whether an address change will be queued for admin review rather than going
+  // live immediately — true once the event is published or anyone has booked
+  // (bug board #209). We tell the merchant up front.
+  addressNeedsReview: boolean;
   initialImages: string[];
   initialTags: Tag[];
   tagOptions: Tag[];
@@ -199,8 +200,8 @@ export function MerchantEventEditForm({
             />
             <span className="mt-1 block text-xs font-medium text-[color:var(--mauve)]">
               Shown to confirmed attendees on the event page.
-              {hasAttendees
-                ? " People have already booked — changing the address needs admin review before it goes live."
+              {addressNeedsReview
+                ? " This event is already live, so changing the address needs admin review before it goes live."
                 : ""}
             </span>
             {pendingAddress ? (

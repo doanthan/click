@@ -17,7 +17,12 @@
 
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { isAvatarStorageConfigured, uploadAvatarFromBuffer } from "@/lib/avatar-storage";
+import {
+  isAvatarStorageConfigured,
+  uploadAvatarFromBuffer,
+  uploadAvatarFromUrl,
+} from "@/lib/avatar-storage";
+import { ownGalleryKeyFromUrl } from "@/lib/gallery-storage";
 import { updateOwnProfile } from "@/lib/event-repository";
 import { getPostgresPool } from "@/lib/postgres";
 
@@ -105,5 +110,91 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error("avatar upload failed", error);
     return NextResponse.json({ error: "Upload failed." }, { status: 500 });
+  }
+}
+
+/**
+ * PATCH /api/upload/avatar
+ *
+ * Promote one of the caller's existing gallery photos to their main avatar
+ * (bug board #220 — "I can't choose my main"). Body: `{ url }` where url is one
+ * of the profile's own gallery photos. We re-host it through the same 512×512
+ * JPG pipeline as a fresh upload (so the avatar key/shape stays consistent) and
+ * persist it on `profiles.photo_url`.
+ *
+ * Returns:
+ *   200 { url: string }                — success (new avatar URL)
+ *   400 { error }                      — bad body / not one of your gallery photos
+ *   401 { error: "Sign in required." } — no session
+ *   502 { error }                      — re-host failed
+ *   503 { error }                      — storage/db not configured
+ */
+export async function PATCH(request: Request) {
+  const session = await auth();
+  if (!session?.user) {
+    return NextResponse.json({ error: "Sign in required." }, { status: 401 });
+  }
+  if (!isAvatarStorageConfigured()) {
+    return NextResponse.json(
+      { error: "Upload temporarily unavailable." },
+      { status: 503 },
+    );
+  }
+  const email = session.user.email?.trim().toLowerCase();
+  if (!email) {
+    return NextResponse.json({ error: "Sign in required." }, { status: 401 });
+  }
+
+  let body: { url?: unknown };
+  try {
+    body = (await request.json()) as { url?: unknown };
+  } catch {
+    return NextResponse.json({ error: "Expected a JSON body." }, { status: 400 });
+  }
+  const sourceUrl = typeof body.url === "string" ? body.url.trim() : "";
+  if (!sourceUrl) {
+    return NextResponse.json({ error: "Missing `url`." }, { status: 400 });
+  }
+
+  const pool = getPostgresPool();
+  if (!pool) {
+    return NextResponse.json({ error: "Database unavailable." }, { status: 503 });
+  }
+
+  try {
+    const profileRow = await pool.query<{ id: string }>(
+      `select id::text from profiles where email = $1 limit 1`,
+      [email],
+    );
+    const profileId = profileRow.rows[0]?.id;
+    if (!profileId) {
+      return NextResponse.json(
+        { error: "Finish onboarding before setting a photo." },
+        { status: 400 },
+      );
+    }
+
+    // Only one of the caller's OWN gallery photos can become their avatar —
+    // never an arbitrary URL.
+    if (!ownGalleryKeyFromUrl(profileId, sourceUrl)) {
+      return NextResponse.json(
+        { error: "That photo isn't in your gallery." },
+        { status: 400 },
+      );
+    }
+
+    const publicUrl = await uploadAvatarFromUrl(profileId, sourceUrl);
+    if (!publicUrl) {
+      return NextResponse.json(
+        { error: "Couldn't set that photo as your main. Try again." },
+        { status: 502 },
+      );
+    }
+
+    await updateOwnProfile(session, { photoUrl: publicUrl });
+    return NextResponse.json({ url: publicUrl });
+  } catch (error) {
+    console.error("avatar set-as-main failed", error);
+    return NextResponse.json({ error: "Couldn't update your main photo." }, { status: 500 });
   }
 }

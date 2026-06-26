@@ -535,7 +535,7 @@ export function EventExplorer({
         </div>
 
         {/* Quick toggles — free events + trending shortcut. */}
-        <div className="mt-4 flex flex-wrap items-center gap-2">
+        <div className="mt-5 flex flex-wrap items-center gap-2.5">
           <button
             type="button"
             aria-pressed={freeOnly}
@@ -563,8 +563,10 @@ export function EventExplorer({
         </div>
 
         {/* Distance presets — tap targets beat a slider on touch. */}
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          <span className="mr-1 text-xs font-black uppercase tracking-[0.14em] text-[color:var(--mauve)]">
+        <div className="mt-5 flex flex-wrap items-center gap-2.5">
+          {/* Full-width on phone so the presets wrap onto their own line rather
+              than crowding the label inline (bug board #221). */}
+          <span className="mr-1 w-full text-xs font-black uppercase tracking-[0.14em] text-[color:var(--mauve)] sm:w-auto">
             Distance {locationLabel}
           </span>
           {DISTANCE_OPTIONS.map((option) => {
@@ -589,7 +591,7 @@ export function EventExplorer({
         </div>
 
         {/* Active filter chips + view toggle (always shown — the toggle lives here). */}
-        <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-[color:var(--line-soft)] pt-4">
+        <div className="mt-5 flex flex-wrap items-center gap-2.5 border-t border-[color:var(--line-soft)] pt-5">
             {activeChips.length > 0 ? (
               <>
                 {activeChips.map((chip) => (

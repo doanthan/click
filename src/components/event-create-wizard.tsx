@@ -15,6 +15,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { toast } from "sonner";
 import { MapboxAutocomplete, type MapboxPlace } from "./mapbox-autocomplete";
 import { toTitleCase } from "@/lib/text-format";
@@ -400,6 +401,7 @@ export function WizardShell({
     useWizard();
   const router = useRouter();
   const isLast = step === STEP_COUNT - 1;
+  const errorRef = useRef<HTMLParagraphElement>(null);
 
   function goNext() {
     if (uploading) {
@@ -410,6 +412,12 @@ export function WizardShell({
     if (err) {
       setStepError(err);
       toast.error(err);
+      // Pull the inline error next to the button and focus it — on a tall
+      // form the top-right toast is easy to miss (bug board #210).
+      requestAnimationFrame(() => {
+        errorRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+        errorRef.current?.focus();
+      });
       return;
     }
     setStepError(null);
@@ -578,8 +586,10 @@ export function WizardShell({
 
         {stepError ? (
           <p
+            ref={errorRef}
+            tabIndex={-1}
             role="alert"
-            className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-4 py-3 text-sm font-bold text-[color:var(--surface-deep)]"
+            className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-4 py-3 text-sm font-bold text-[color:var(--surface-deep)] outline-none"
           >
             {stepError}
           </p>
@@ -969,6 +979,9 @@ export function BasicsSection() {
         <h2 className="font-display mt-2 text-3xl font-semibold leading-tight tracking-[-0.025em]">
           What is this event?
         </h2>
+        <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+          Don&apos;t worry about getting it perfect — you can edit any of this later from your event page.
+        </p>
       </header>
       <div className="grid gap-4 md:grid-cols-2">
         <Field label="Event title" hint="Auto-capitalised as you type.">
@@ -1619,7 +1632,9 @@ export function LocationSection() {
         }`}
       >
         {pinned
-          ? `Pinned at ${values.latitude!.toFixed(5)}, ${values.longitude!.toFixed(5)}`
+          ? // Number(...) guards against a stale sessionStorage duplicate draft
+            // that seeded string coords before the #223 repository fix landed.
+            `Pinned at ${Number(values.latitude).toFixed(5)}, ${Number(values.longitude).toFixed(5)}`
           : "No coordinates yet — picking a suggestion will pin this on the map."}
       </p>
 
@@ -1687,6 +1702,18 @@ const MEDIA_MAX_BYTES = 10 * 1024 * 1024;
 // out the first 5 images — anything beyond that never renders, so we stop the
 // merchant uploading photos that would silently be dropped.
 const MEDIA_MAX_PHOTOS = 5;
+
+// Bundled sample covers a merchant can pick when they have no photos of their
+// own (bug board #208). These are the same assets the server already falls back
+// to via imageForCategory(), so picking one just makes that fallback explicit
+// and visible. Their /media/*.jpg URL flows through values.images → imageUrls
+// exactly like an uploaded photo, so no server change is needed.
+const SAMPLE_PHOTOS: Array<{ url: string; name: string }> = [
+  { url: "/media/networking.jpg", name: "Food & social" },
+  { url: "/media/yoga.jpg", name: "Fitness & wellness" },
+  { url: "/media/concert.jpg", name: "Music & creative" },
+  { url: "/media/open-yoga.jpg", name: "General / outdoors" },
+];
 
 function makeUploadId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -1907,6 +1934,27 @@ export function MediaSection() {
     };
   }
 
+  // Pick a bundled sample cover (bug board #208). No upload round-trip: the
+  // /media/*.jpg URL is already public, so we add a tile that's immediately
+  // "done", and the images-sync effect mirrors it into values.images.
+  function addSample(sample: { url: string; name: string }) {
+    if (pending.length >= MEDIA_MAX_PHOTOS) {
+      toast.error(`You can add up to ${MEDIA_MAX_PHOTOS} photos.`);
+      return;
+    }
+    if (pending.some((p) => p.url === sample.url)) return; // already added
+    commit([
+      ...pending,
+      {
+        id: makeUploadId(),
+        previewUrl: sample.url,
+        status: "done" as const,
+        url: sample.url,
+        name: sample.name,
+      },
+    ]);
+  }
+
   return (
     <div className="space-y-5">
       <header>
@@ -1962,6 +2010,45 @@ export function MediaSection() {
           className="hidden"
         />
       </div>
+
+      {/* No photos yet? Offer bundled sample covers so a merchant without their
+          own photos isn't left with an empty grid (bug board #208). Thumbnails
+          use next/image so the (large) source files are served resized. */}
+      {pending.length === 0 ? (
+        <div className="space-y-2">
+          <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+            No photos? Pick a sample to start
+          </p>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {SAMPLE_PHOTOS.map((sample) => (
+              <button
+                key={sample.url}
+                type="button"
+                onClick={() => addSample(sample)}
+                className="group overflow-hidden rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] text-left hard-shadow-sm transition hover:border-[color:var(--rose)]"
+              >
+                <div className="aspect-[4/3] w-full overflow-hidden bg-[color:var(--champagne)]">
+                  <Image
+                    src={sample.url}
+                    alt={sample.name}
+                    width={200}
+                    height={150}
+                    sizes="(max-width: 640px) 45vw, 200px"
+                    className="size-full object-cover transition group-hover:scale-[1.03]"
+                  />
+                </div>
+                <span className="block px-2 py-1.5 text-xs font-bold text-[color:var(--ink)]">
+                  {sample.name}
+                </span>
+              </button>
+            ))}
+          </div>
+          <p className="text-xs font-medium leading-5 text-[color:var(--mauve)]">
+            You can swap it for your own photo any time — real photos always perform
+            better.
+          </p>
+        </div>
+      ) : null}
 
       {/* Card grid for uploaded photos. Each card is draggable so the
           merchant can promote any photo to the cover slot. */}
