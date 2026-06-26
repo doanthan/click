@@ -27,7 +27,7 @@ const tab = process.env.GOOGLE_SHEETS_TAB || "Bugs";
 // Get formulas (so we capture HYPERLINK URLs) and values.
 const resp = await sheets.spreadsheets.get({
   spreadsheetId,
-  ranges: [`${tab}!A1:K200`],
+  ranges: [`${tab}!A1:K1000`],
   fields: "sheets(data(rowData(values(formattedValue,hyperlink,userEnteredValue))))",
 });
 const rows = resp.data.sheets?.[0]?.data?.[0]?.rowData ?? [];

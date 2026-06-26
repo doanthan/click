@@ -53,7 +53,7 @@ const sheets = google.sheets({ version: "v4", auth });
 const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
 const tab = process.env.GOOGLE_SHEETS_TAB || "Bugs";
 
-const got = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${tab}!A1:K200` });
+const got = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${tab}!A1:K1000` });
 const all = got.data.values || [];
 
 // 1) Sheet: tick "AI fixed" (col F = TRUE) -> amber; write AI Comment (col K) if given.

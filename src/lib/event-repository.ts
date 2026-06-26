@@ -43,6 +43,15 @@ import {
   type ProfilePromptAnswer,
 } from "./profile-prompts";
 import { regionForEvent, type Region } from "./geo";
+import {
+  DISCOVERY_CLICK_WINDOW_DAYS,
+  POST_EVENT_CLICK_WINDOW_HOURS,
+  POST_EVENT_CLICK_CAP,
+  DISCOVERY_CLICK_CAP,
+  MUTUAL_CLOCK_DAYS,
+  MIN_CLICK_AGE,
+  type SendClickOutcome,
+} from "./clicks/constants";
 import { calculateApplicationFee } from "./stripe-connect";
 import { logBookingEvent, refundBandFromTier } from "./booking-events";
 import {
@@ -1651,6 +1660,84 @@ async function loadMerchantProfile(
   return result.rows[0] ?? null;
 }
 
+// Full set of merchant-signup answers, shaped to seed the wizard's form state
+// when a rejected merchant re-opens the wizard to edit + resubmit (bug board
+// #203). Mirrors the wizard's `State` fields (minus uploads, which come via
+// listMerchantDocuments). Returns null when the caller has no merchant profile.
+export type MerchantSignupPrefill = {
+  businessName: string;
+  tradingName: string;
+  abn: string;
+  acn: string;
+  eventCategoryIds: string[];
+  contactEmail: string;
+  phone: string;
+  websiteUrl: string;
+  socials: Record<string, string>;
+  addressStreet: string;
+  addressSuburb: string;
+  addressState: string;
+  addressPostcode: string;
+};
+
+export async function getMerchantSignupPrefill(
+  session: Session | null,
+): Promise<MerchantSignupPrefill | null> {
+  const pool = getPostgresPool();
+  if (!pool) return null;
+  const profile = await ensureProfileForSession(session);
+
+  const result = await pool.query<{
+    business_name: string | null;
+    trading_name: string | null;
+    abn: string | null;
+    acn: string | null;
+    phone: string | null;
+    contact_email: string | null;
+    website_url: string | null;
+    socials: Record<string, string> | null;
+    address_street: string | null;
+    address_suburb: string | null;
+    address_state: string | null;
+    address_postcode: string | null;
+  }>(
+    `
+      select business_name, trading_name, abn, acn, phone, contact_email::text,
+             website_url, socials, address_street, address_suburb,
+             address_state, address_postcode
+      from merchant_profiles
+      where profile_id = $1::uuid
+      limit 1
+    `,
+    [profile.id],
+  );
+  const row = result.rows[0];
+  if (!row) return null;
+
+  const cats = await pool.query<{ tag_category_id: string }>(
+    `select tag_category_id::text from merchant_event_categories where merchant_profile_id = (
+       select id from merchant_profiles where profile_id = $1::uuid limit 1
+     )`,
+    [profile.id],
+  );
+
+  return {
+    businessName: row.business_name ?? "",
+    tradingName: row.trading_name ?? "",
+    abn: row.abn ?? "",
+    acn: row.acn ?? "",
+    eventCategoryIds: cats.rows.map((c) => c.tag_category_id),
+    contactEmail: row.contact_email ?? "",
+    phone: row.phone ?? "",
+    websiteUrl: row.website_url ?? "",
+    socials: row.socials ?? {},
+    addressStreet: row.address_street ?? "",
+    addressSuburb: row.address_suburb ?? "",
+    addressState: row.address_state ?? "",
+    addressPostcode: row.address_postcode ?? "",
+  };
+}
+
 async function requireAdminProfile(session: Session | null) {
   const profile = await ensureProfileForSession(session);
 
@@ -1711,6 +1798,10 @@ export type MerchantEventDetail = MerchantEventSummary & {
   // A proposed new address awaiting admin review (set when the merchant edits the
   // address of an event that already has attendees). Null when nothing's pending.
   pendingAddress: string | null;
+  // The admin's free-text reason when this event was rejected (bug board #217).
+  // Shown back to the merchant so they know what to fix before resubmitting.
+  // Null unless status is Rejected.
+  rejectionReason: string | null;
   images: string[];
   imageAlt: string | null;
   attendees: MerchantAttendeeRow[];
@@ -1813,6 +1904,7 @@ export async function getMerchantEventDetail(
     suburb: string;
     address: string | null;
     pending_address: string | null;
+    rejection_reason: string | null;
     capacity: number;
     price_cents: number;
     category: string;
@@ -1836,6 +1928,7 @@ export async function getMerchantEventDetail(
         event.suburb,
         event.address,
         event.pending_address,
+        event.rejection_reason,
         event.capacity,
         event.price_cents,
         event.category,
@@ -1945,6 +2038,7 @@ export async function getMerchantEventDetail(
     suburb: row.suburb,
     address: row.address,
     pendingAddress: row.pending_address,
+    rejectionReason: row.rejection_reason,
     capacity: row.capacity,
     confirmed: Number(row.confirmed),
     waitlisted: Number(row.waitlisted),
@@ -1982,11 +2076,12 @@ export async function getMerchantEventDetail(
 // for, so they stay locked here (the UI directs merchants to request a review).
 // Ownership-scoped: only the owning merchant can edit, and only their own event.
 //
-// Address is a special case: it's free to change while no one has booked, but an
-// event with attendees can't have its address silently moved out from under
-// people who planned around it. So once there's at least one confirmed (or live
-// pending_payment) attendee, an address change is parked in `pending_address`
-// for admin review instead of going live — see approveEventAddressChange.
+// Address is a special case: it's free to change while the event is still a
+// private draft/pending application, but once the event is LIVE (publicly
+// visible) — or has any booked attendee — an address change is parked in
+// `pending_address` for admin review instead of going live, so a published
+// venue can't be silently moved out from under the public / people who planned
+// around it (bug board #209). See approveEventAddressChange.
 export async function updateMerchantEventDetails(
   eventSlug: string,
   input: {
@@ -2039,12 +2134,14 @@ export async function updateMerchantEventDetails(
     const eventResult = await client.query<{
       id: string;
       address: string | null;
+      status: string;
       attendee_count: string;
     }>(
       `
         select
           event.id::text,
           event.address,
+          event.status::text as status,
           count(attendee.id) filter (
             where attendee.status = 'confirmed'
                or (attendee.status = 'pending_payment' and attendee.hold_expires_at > now())
@@ -2073,9 +2170,12 @@ export async function updateMerchantEventDetails(
     const currentAddress = event.address?.trim() || null;
     const addressChanged = input.address !== undefined && newAddress !== currentAddress;
     const hasAttendees = Number(event.attendee_count) > 0;
-    // Queue the change when people have booked; otherwise apply it directly.
-    const queueAddress = addressChanged && hasAttendees;
-    const applyAddressNow = addressChanged && !hasAttendees;
+    // "Live" = publicly visible statuses. A still-private draft/pending event
+    // edits its address freely (it gets reviewed at approval anyway); once it's
+    // public, or anyone has booked, the change goes to admin review (#209).
+    const isPublished = ["live", "featured", "locked", "waitlist"].includes(event.status);
+    const queueAddress = addressChanged && (isPublished || hasAttendees);
+    const applyAddressNow = addressChanged && !queueAddress;
 
     await client.query(
       `
@@ -2163,6 +2263,77 @@ export async function updateMerchantEventDetails(
   }
 
   return getMerchantEventDetail(eventSlug, session);
+}
+
+// Merchant resubmits a REJECTED event for review after fixing it (bug board
+// #217). Flips status rejected → pending (or straight to live for a trusted
+// auto-approve merchant, mirroring createEventForMerchant), clears the stored
+// rejection reason, and — when it re-enters the queue — notifies admins. The
+// merchant edits the safe fields via updateMerchantEventDetails first; this is
+// the explicit "send it back for review" step. Ownership-scoped.
+export async function resubmitRejectedEvent(
+  eventSlug: string,
+  session: Session | null,
+): Promise<{ slug: string; title: string; status: EventStatus }> {
+  const pool = getPostgresPool();
+  const email = getSessionEmail(session);
+  if (!email) throw authError();
+  if (!pool) throw databaseUnavailableError();
+
+  const profile = await ensureProfileForSession(session);
+  const merchant = await getMerchantProfile(pool, profile.id);
+  if (!merchant) throw authError("Merchant profile required.");
+
+  // Trusted merchants skip the queue, exactly like a freshly created event.
+  const autoApprove = merchant.auto_approve_events === true;
+  const newStatus = autoApprove ? "live" : "pending";
+
+  const result = await pool.query<{ slug: string; title: string }>(
+    `
+      update events
+      set status = $3,
+          rejection_reason = null,
+          rejected_at = null,
+          updated_at = now()
+      from (
+        select id from events
+        where slug = $1 and merchant_profile_id = $2::uuid and status = 'rejected'
+      ) target
+      where events.id = target.id
+      returning events.slug, events.title
+    `,
+    [eventSlug, merchant.id, newStatus],
+  );
+
+  const event = result.rows[0];
+  if (!event) {
+    const error = new Error("Rejected event not found.");
+    error.name = "NotFoundError";
+    throw error;
+  }
+
+  // Put it back in front of the admins (unless it auto-published).
+  if (!autoApprove) {
+    void pool
+      .query(
+        `
+          insert into notifications (profile_id, title, body, action_url)
+          select id, $1, $2, $3
+          from profiles
+          where role = 'admin'
+        `,
+        [
+          "Event awaiting review",
+          `${merchant.business_name} updated and resubmitted "${event.title}" for review.`,
+          "/admin/events",
+        ],
+      )
+      .catch((error) => {
+        console.warn("Failed to notify admins of resubmitted event.", error);
+      });
+  }
+
+  return { slug: event.slug, title: event.title, status: eventStatusFromDb(newStatus) };
 }
 
 // Admin approves a merchant's queued address change: the parked pending_address
@@ -2733,6 +2904,23 @@ export async function getEventBySlug(
                     and (ga.status = 'confirmed' or (ga.status = 'pending_payment' and ga.hold_expires_at > now()))
                 )
             ), 0)
+            -- Plus live waitlist offers held by anyone (bug board #114/#213): a
+            -- freed seat that's been re-offered to the next in line is reserved
+            -- for the 30-min window, so it must count toward the headcount this
+            -- page shows. registerForEvent's capacity gate already counts these,
+            -- so omitting them here made the page advertise "RSVP again" for a
+            -- seat the register endpoint would correctly waitlist the user into.
+            + coalesce((
+              select count(*)
+              from event_waitlists w
+              join event_attendees wa
+                on wa.event_id = w.event_id
+               and wa.profile_id = w.profile_id
+               and wa.status = 'waitlisted'
+              where w.event_id = event.id
+                and w.accepted_at is null
+                and w.offered_until > now()
+            ), 0)
           ) as confirmed_attendees,
           coalesce(
             array_agg(distinct tag.slug)
@@ -3132,22 +3320,22 @@ async function notifyProposalPartnerOfRsvp(
       `
         insert into notifications (profile_id, title, body, action_url)
         select
-          case when mc.profile_a_id = $2::uuid then mc.profile_b_id else mc.profile_a_id end,
+          case when mc.user_a_id = $2::uuid then mc.user_b_id else mc.user_a_id end,
           'Your click RSVP''d — your turn',
           rsvper.display_name || ' just RSVP''d to ' || e.title ||
             '. RSVP too so your plan is locked in.',
           '/events/' || e.slug || '?from=proposal-partner-rsvp'
-        from event_proposals ep
+        from click_proposals ep
         join mutual_clicks mc on mc.id = ep.mutual_click_id
         join events e on e.id = ep.suggested_event_id
         join profiles rsvper on rsvper.id = $2::uuid
         where ep.suggested_event_id = $1::uuid
           and ep.status <> 'expired'
-          and (mc.profile_a_id = $2::uuid or mc.profile_b_id = $2::uuid)
+          and (mc.user_a_id = $2::uuid or mc.user_b_id = $2::uuid)
           and not exists (
             select 1 from notifications n
             where n.profile_id = (
-                case when mc.profile_a_id = $2::uuid then mc.profile_b_id else mc.profile_a_id end
+                case when mc.user_a_id = $2::uuid then mc.user_b_id else mc.user_a_id end
               )
               and n.action_url = '/events/' || e.slug || '?from=proposal-partner-rsvp'
           )
@@ -3174,16 +3362,16 @@ export async function remindProposalRsvps(): Promise<number> {
     `
       with participants as (
         select ep.id as proposal_id, e.id as event_id, e.slug, e.title,
-               mc.profile_a_id as participant
-        from event_proposals ep
+               mc.user_a_id as participant
+        from click_proposals ep
         join mutual_clicks mc on mc.id = ep.mutual_click_id
         join events e on e.id = ep.suggested_event_id
         where ep.status = 'pending'
           and ep.created_at <= now() - interval '24 hours'
           and coalesce(e.ends_at, e.starts_at) > now()
         union all
-        select ep.id, e.id, e.slug, e.title, mc.profile_b_id
-        from event_proposals ep
+        select ep.id, e.id, e.slug, e.title, mc.user_b_id
+        from click_proposals ep
         join mutual_clicks mc on mc.id = ep.mutual_click_id
         join events e on e.id = ep.suggested_event_id
         where ep.status = 'pending'
@@ -3801,8 +3989,10 @@ export async function getMerchantEventDuplicateDraft(
     locationName: source.location_name,
     suburb: source.suburb,
     address: source.address ?? "",
-    latitude: source.latitude,
-    longitude: source.longitude,
+    // pg returns `numeric` columns as strings; coerce so the wizard's
+    // values.latitude.toFixed(5) (LocationSection) doesn't throw on a string (#223).
+    latitude: source.latitude !== null ? Number(source.latitude) : null,
+    longitude: source.longitude !== null ? Number(source.longitude) : null,
     price: (source.price_cents / 100).toString(),
     tags,
     relationshipGoal: source.relationship_goal ?? "",
@@ -3987,12 +4177,15 @@ export async function rejectEventForAdmin(
     }>(
       `
         update events
-        set status = 'rejected', updated_at = now()
+        set status = 'rejected',
+            rejection_reason = $2,
+            rejected_at = now(),
+            updated_at = now()
         from (select id from events where slug = $1 and status = 'pending') target
         where events.id = target.id
         returning events.slug, events.title, events.host_profile_id::text as owner_profile_id
       `,
-      [eventId],
+      [eventId, rejectionReason],
     );
 
     const event = result.rows[0];
@@ -5894,7 +6087,7 @@ export async function getDashboardData(session: Session | null): Promise<Dashboa
         `
           select count(*) as mutual_clicks
           from mutual_clicks
-          where profile_a_id = $1::uuid or profile_b_id = $1::uuid
+          where user_a_id = $1::uuid or user_b_id = $1::uuid
         `,
         [profile.id],
       ),
@@ -6791,7 +6984,18 @@ export async function registerMerchantWizardSubmit(
           address_suburb = excluded.address_suburb,
           address_state = excluded.address_state,
           address_postcode = excluded.address_postcode,
-          submitted_at = coalesce(merchant_profiles.submitted_at, now()),
+          -- A rejected merchant editing + resubmitting must re-enter the admin
+          -- review queue, so flip rejected → pending and refresh the submitted
+          -- timestamp. Approved/pending rows keep their status untouched (this
+          -- upsert also runs for edits that shouldn't change review state).
+          verification_status = case
+            when merchant_profiles.verification_status = 'rejected' then 'pending'
+            else merchant_profiles.verification_status
+          end,
+          submitted_at = case
+            when merchant_profiles.verification_status = 'rejected' then now()
+            else coalesce(merchant_profiles.submitted_at, now())
+          end,
           updated_at = now()
         returning id::text, business_name, contact_email::text, verification_status,
           business_type, stripe_connect_account_id, charges_enabled, payouts_enabled,
@@ -6995,13 +7199,31 @@ export async function createUserClickForSession(
   try {
     await client.query("begin");
 
+    // §4 mutual-detection race: serialize all click activity for this *pair* on a
+    // deterministic advisory lock taken before any read. Under READ COMMITTED the
+    // FOR UPDATE reciprocal check alone is not enough — two perfectly-interleaved
+    // reciprocal clicks can each commit before the other's select sees it, yielding
+    // ZERO mutuals. The per-pair xact lock makes the second clicker block until the
+    // first commits, so it always sees the committed reciprocal and forms exactly one
+    // mutual (the partial-unique index then guarantees never two). Lock is keyed on the
+    // ordered pair, so A→B and B→A contend on the same key; released at commit/rollback.
+    const [pairLo, pairHi] = [profile.id, input.clickedProfileId].sort();
+    await client.query(`select pg_advisory_xact_lock(hashtext($1)::bigint)`, [
+      `click-pair:${pairLo}:${pairHi}`,
+    ]);
+
     const clickedResult = await client.query<{
       id: string;
       display_name: string;
       email: string | null;
+      age: number | null;
+      is_banned: boolean;
+      social_visible: boolean;
+      paused_until: string | null;
     }>(
       `
-        select id::text, display_name, email::text
+        select id::text, display_name, email::text, age, is_banned, social_visible,
+               paused_until::text
         from profiles
         where id = $1::uuid
         limit 1
@@ -7017,6 +7239,46 @@ export async function createUserClickForSession(
     }
     if (clickedProfile.id === profile.id) {
       const error = new Error("You cannot Click yourself.");
+      error.name = "ValidationError";
+      throw error;
+    }
+
+    // Sender eligibility fields: age (independent age gate §6.7b), photo (R_PHOTO),
+    // and the active intent the click is sent under (rule 6 — snapshotted onto the row).
+    const senderResult = await client.query<{
+      age: number | null;
+      photo_url: string | null;
+      connection_intents: string[] | null;
+    }>(
+      `select age, photo_url, connection_intents::text[] as connection_intents
+         from profiles where id = $1::uuid limit 1`,
+      [profile.id],
+    );
+    const sender = senderResult.rows[0];
+    const senderIntent = sender?.connection_intents?.[0] ?? "friendship";
+
+    // Age gate (§6.7b — non-negotiable, defence-in-depth on the highest-risk surface).
+    // Asserted in the click layer independently of the signup gate: a sub-18 account
+    // (data error / region defining minor >18) cannot send or receive a click, full stop.
+    if (
+      (sender?.age ?? 0) < MIN_CLICK_AGE ||
+      (clickedProfile.age ?? 0) < MIN_CLICK_AGE
+    ) {
+      const error = new Error("This person isn't available to click with right now.");
+      error.name = "ValidationError";
+      throw error;
+    }
+
+    // Receiver eligibility (§6.7a ban, §B7.4 social opt-out / pause). A banned, opted-out,
+    // or paused receiver is not in the social graph — refused with a single neutral reason
+    // that never discloses which (the byte-identical R_NOT_ELIGIBLE contract, 21A, lands in
+    // the 2.2 safety pass; this is the structural refusal it builds on).
+    if (
+      clickedProfile.is_banned ||
+      !clickedProfile.social_visible ||
+      (clickedProfile.paused_until && new Date(clickedProfile.paused_until) > new Date())
+    ) {
+      const error = new Error("This person isn't available to click with right now.");
       error.name = "ValidationError";
       throw error;
     }
@@ -7037,36 +7299,91 @@ export async function createUserClickForSession(
       throw error;
     }
 
-    // Two distinct kinds of Click (per user-journey spec §6 vs §8.2):
-    //  • Discovery "Click with someone" (no source event) — the dashboard/People
-    //    suggestion. Allowed any time; it just records an anonymous pending click
-    //    and reveals only on a mutual. There is NO shared-past-event requirement
-    //    here (bug board: "Click privately did nothing" — the post-event gate was
-    //    wrongly applied to discovery clicks, and the 12-hour window message is
-    //    "only post-event clicking, not 'click with someone'").
-    //  • Post-event Click (a source event slug arrives from the post-event prompt)
-    //    — gated to people you were both confirmed attendees of, and only once
-    //    that event has ended + 12 hours.
-    let sourceEventId: string | null = null;
+    // Two click processes, two surfaces (§1, §2). The surface is decided by whether a
+    // source event is supplied — never by anything the receiver can influence:
+    //  • Process 1 — discovery "Click with someone" (no source event): anonymous,
+    //    person-bound (event_id NULL), live 7 days from creation (§5).
+    //  • Process 2 — post-event "Who was there" (a source event slug arrives): event-
+    //    bound, attendance-gated, live from event_end until event_end + 48h (§5, §7B).
+    //    Supersedes the old +12h gate (TW-3/TW-4).
+    let surface: "discovery" | "who_was_there";
+    let eventId: string | null = null;
+    let expiresAt: Date;
+
     if (input.sourceEventId) {
-      const eligibilityResult = await client.query<{ id: string }>(
+      surface = "who_was_there";
+      const eligibilityResult = await client.query<{ id: string; event_end: string }>(
         `
-          select e.id::text
+          select e.id::text, coalesce(e.ends_at, e.starts_at)::text as event_end
           from events e
           join event_attendees a1 on a1.event_id = e.id and a1.profile_id = $1::uuid and a1.status = 'confirmed'
           join event_attendees a2 on a2.event_id = e.id and a2.profile_id = $2::uuid and a2.status = 'confirmed'
-          where coalesce(e.ends_at, e.starts_at) + interval '12 hours' <= now()
-            and e.slug = $3
+          where e.slug = $3
+            and coalesce(e.ends_at, e.starts_at) <= now()
+            and coalesce(e.ends_at, e.starts_at) + interval '${POST_EVENT_CLICK_WINDOW_HOURS} hours' > now()
           order by coalesce(e.ends_at, e.starts_at) desc
           limit 1
         `,
         [profile.id, clickedProfile.id, input.sourceEventId],
       );
-      sourceEventId = eligibilityResult.rows[0]?.id ?? null;
-
-      if (!sourceEventId) {
+      const eligible = eligibilityResult.rows[0];
+      if (!eligible) {
+        // Window-edge / not-attended / closed all collapse to one neutral refusal (§6.1
+        // window-edge outcome — never a distinct shape that leaks attendance state).
         const error = new Error(
-          "Post-event Clicking opens 12 hours after an event you both attended ends — this applies only to people you met at that event, not to “Click with someone” discovery.",
+          "The window to click people from this event has closed — it opens when the event ends and stays open 48 hours.",
+        );
+        error.name = "ValidationError";
+        throw error;
+      }
+      eventId = eligible.id;
+      expiresAt = new Date(
+        new Date(eligible.event_end).getTime() + POST_EVENT_CLICK_WINDOW_HOURS * 3600_000,
+      );
+    } else {
+      surface = "discovery";
+      expiresAt = new Date(Date.now() + DISCOVERY_CLICK_WINDOW_DAYS * 86400_000);
+    }
+
+    // A still-pending click to this person on this surface = a duplicate send: quiet
+    // success, budget not re-spent (§6.1 P4). Detected before the cap check so a
+    // re-click never trips "you're at your cap".
+    const surfaceMatch = surface === "discovery" ? "event_id is null" : "event_id = $3::uuid";
+    const matchParams =
+      surface === "discovery"
+        ? [profile.id, clickedProfile.id]
+        : [profile.id, clickedProfile.id, eventId];
+    const existing = await client.query(
+      `select 1 from clicks
+        where sender_id = $1::uuid and receiver_id = $2::uuid
+          and status = 'pending' and ${surfaceMatch}
+        limit 1`,
+      matchParams,
+    );
+    const isDuplicate = existing.rows.length > 0;
+
+    if (!isDuplicate) {
+      // Cap check inside the transaction, by process (§2 rule 5). Invalidated rows
+      // refund budget (they're excluded from the post-event count).
+      const capResult =
+        surface === "who_was_there"
+          ? await client.query<{ n: number }>(
+              `select count(*)::int as n from clicks
+                where sender_id = $1::uuid and event_id = $2::uuid and status <> 'invalidated'`,
+              [profile.id, eventId],
+            )
+          : await client.query<{ n: number }>(
+              `select count(*)::int as n from clicks
+                where sender_id = $1::uuid and event_id is null and status = 'pending'`,
+              [profile.id],
+            );
+      const used = Number(capResult.rows[0]?.n ?? 0);
+      const cap = surface === "who_was_there" ? POST_EVENT_CLICK_CAP : DISCOVERY_CLICK_CAP;
+      if (used >= cap) {
+        const error = new Error(
+          surface === "who_was_there"
+            ? `You've used your ${POST_EVENT_CLICK_CAP} clicks for this event already.`
+            : "You've reached your live-click limit for now — see how a few play out first.",
         );
         error.name = "ValidationError";
         throw error;
@@ -7075,31 +7392,35 @@ export async function createUserClickForSession(
 
     await client.query(
       `
-        insert into user_clicks (clicker_profile_id, clicked_profile_id, source_event_id, status, expires_at)
-        values ($1::uuid, $2::uuid, $3::uuid, 'pending', now() + interval '30 days')
-        on conflict (clicker_profile_id, clicked_profile_id) do update
-        set
-          source_event_id = excluded.source_event_id,
-          status = 'pending',
-          expires_at = now() + interval '30 days',
-          created_at = now()
+        insert into clicks (sender_id, receiver_id, event_id, intent_mode, surface, status, expires_at)
+        values ($1::uuid, $2::uuid, $3::uuid, $4, $5, 'pending', $6::timestamptz)
+        on conflict do nothing
       `,
-      [profile.id, clickedProfile.id, sourceEventId],
+      [profile.id, clickedProfile.id, eventId, senderIntent, surface, expiresAt.toISOString()],
     );
 
-    const reciprocalResult = await client.query<{ source_event_id: string | null }>(
+    // §4 mutual detection — lock the reciprocal pending row FOR UPDATE, matching WITHIN
+    // the same process (discovery↔discovery, or post-event on the SAME event). Two
+    // concurrent reciprocal clicks each block on the other's row → exactly one mutual.
+    const reciprocalResult = await client.query<{ id: string; intent_mode: string }>(
       `
-        select source_event_id::text
-        from user_clicks
-        where clicker_profile_id = $1::uuid
-          and clicked_profile_id = $2::uuid
+        select id::text, intent_mode
+        from clicks
+        where sender_id = $1::uuid
+          and receiver_id = $2::uuid
+          and status = 'pending'
           and expires_at > now()
+          and ${surfaceMatch}
+        order by created_at
         limit 1
+        for update
       `,
-      [clickedProfile.id, profile.id],
+      matchParams.length === 3
+        ? [clickedProfile.id, profile.id, eventId]
+        : [clickedProfile.id, profile.id],
     );
 
-    const reciprocalClick = reciprocalResult.rows[0];
+    const reciprocalClick = reciprocalResult.rows[0] ?? null;
     let suggestedEvent:
       | {
           id: string;
@@ -7109,7 +7430,10 @@ export async function createUserClickForSession(
       | null = null;
 
     if (reciprocalClick) {
-      const preferredEventId = sourceEventId ?? reciprocalClick.source_event_id;
+      // The post-event source event is always in the past (you click after it ends), so
+      // the preferred-event reuse below almost always falls through to the shared-interest
+      // future-event query — kept only for the rare still-future case.
+      const preferredEventId = eventId;
       if (preferredEventId) {
         // The "preferred" event is the one they both attended that unlocked the
         // Click — which is ALWAYS in the past (clicking is gated to 12h after an
@@ -7198,90 +7522,109 @@ export async function createUserClickForSession(
         suggestedEvent = suggestedResult.rows[0] ?? null;
       }
 
+      // Intent snapshot, ordered to match user_a = least(pair), user_b = greatest(pair)
+      // (§8 — immutable for the life of the mutual).
+      const intentA =
+        profile.id < clickedProfile.id ? senderIntent : reciprocalClick.intent_mode;
+      const intentB =
+        profile.id < clickedProfile.id ? reciprocalClick.intent_mode : senderIntent;
       const mutualResult = await client.query<{ id: string }>(
         `
-          with pair as (
-            select
-              least($1::uuid, $2::uuid) as profile_a_id,
-              greatest($1::uuid, $2::uuid) as profile_b_id
+          insert into mutual_clicks
+            (user_a_id, user_b_id, intent_a, intent_b, status, coord_state, mutual_at, expires_at)
+          values (
+            least($1::uuid, $2::uuid), greatest($1::uuid, $2::uuid),
+            $3, $4, 'active', 'open', now(), now() + interval '${MUTUAL_CLOCK_DAYS} days'
           )
-          insert into mutual_clicks (profile_a_id, profile_b_id, suggested_event_id)
-          select pair.profile_a_id, pair.profile_b_id, $3::uuid
-          from pair
-          on conflict (profile_a_id, profile_b_id) do update
-          set suggested_event_id = coalesce(excluded.suggested_event_id, mutual_clicks.suggested_event_id)
+          on conflict (user_a_id, user_b_id) where status = 'active' do nothing
           returning id::text
         `,
-        [profile.id, clickedProfile.id, suggestedEvent?.id ?? null],
+        [profile.id, clickedProfile.id, intentA, intentB],
       );
 
-      // Open (or refresh) the Proposal that lets both sides coordinate the
-      // shared follow-up event with no free text. 7-day window.
-      const mutualClickId = mutualResult.rows[0]?.id;
+      // No row back from the partial-unique conflict ⇒ a live mutual already exists for
+      // this pair; reciprocal-while-active is a no-op (§2 rule 6) — leave everything be.
+      const mutualClickId = mutualResult.rows[0]?.id ?? null;
       if (mutualClickId) {
+        // Attach the system's first suggested event as the live coordination attempt so
+        // /proposals keeps working against the new schema. The fuller propose/decline/
+        // counter handshake (§B4) + read-time multi-suggestion generation land in 2.5.
         await client.query(
           `
-            insert into event_proposals (mutual_click_id, suggested_event_id, proposed_by, expires_at)
-            values ($1::uuid, $2::uuid, $3::uuid, now() + interval '7 days')
-            on conflict (mutual_click_id) do update
-            set suggested_event_id = coalesce(event_proposals.suggested_event_id, excluded.suggested_event_id),
+            insert into click_proposals
+              (mutual_click_id, suggested_event_id, proposed_by, status, expires_at)
+            values (
+              $1::uuid, $2::uuid, $3::uuid, 'pending', now() + interval '${MUTUAL_CLOCK_DAYS} days'
+            )
+            on conflict (mutual_click_id) where status = 'pending' do update
+            set suggested_event_id =
+                  coalesce(click_proposals.suggested_event_id, excluded.suggested_event_id),
                 updated_at = now()
           `,
           [mutualClickId, suggestedEvent?.id ?? null, profile.id],
         );
+        await client.query(
+          `update mutual_clicks set coord_state = 'proposed', updated_at = now() where id = $1::uuid`,
+          [mutualClickId],
+        );
+        // Mark both clicks of THIS process as mutual + link them to the relationship row.
+        const updateSurfaceCond =
+          surface === "discovery" ? "event_id is null" : "event_id = $4::uuid";
+        await client.query(
+          `
+            update clicks
+            set status = 'mutual', mutual_click_id = $3::uuid, updated_at = now()
+            where status = 'pending'
+              and ((sender_id = $1::uuid and receiver_id = $2::uuid)
+                or (sender_id = $2::uuid and receiver_id = $1::uuid))
+              and ${updateSurfaceCond}
+          `,
+          surface === "discovery"
+            ? [profile.id, clickedProfile.id, mutualClickId]
+            : [profile.id, clickedProfile.id, mutualClickId, eventId],
+        );
       }
 
-      await client.query(
-        `
-          update user_clicks
-          set status = 'mutual'
-          where (
-            clicker_profile_id = $1::uuid and clicked_profile_id = $2::uuid
-          ) or (
-            clicker_profile_id = $2::uuid and clicked_profile_id = $1::uuid
-          )
-        `,
-        [profile.id, clickedProfile.id],
-      );
-
-      // Notify each side, unless the recipient has muted the other party
-      // (mute = "disable notifications from that user", per the safety spec).
-      await client.query(
-        `
-          insert into notifications (profile_id, title, body, action_url)
-          select $1::uuid, 'Mutual Click found', $3, $4
-          where not exists (
-            select 1 from user_mutes
-            where muter_profile_id = $1::uuid and muted_profile_id = $2::uuid
-          )
-        `,
-        [
-          profile.id,
-          clickedProfile.id,
-          suggestedEvent
-            ? `You and ${clickedProfile.display_name} both clicked. Try ${suggestedEvent.title}.`
-            : `You and ${clickedProfile.display_name} both clicked. Open your proposal to plan.`,
-          "/proposals",
-        ],
-      );
-      await client.query(
-        `
-          insert into notifications (profile_id, title, body, action_url)
-          select $1::uuid, 'Mutual Click found', $3, $4
-          where not exists (
-            select 1 from user_mutes
-            where muter_profile_id = $1::uuid and muted_profile_id = $2::uuid
-          )
-        `,
-        [
-          clickedProfile.id,
-          profile.id,
-          suggestedEvent
-            ? `You and ${profile.display_name} both clicked. Try ${suggestedEvent.title}.`
-            : `You and ${profile.display_name} both clicked. Open your proposal to plan.`,
-          "/proposals",
-        ],
-      );
+      // Notify each side of the mutual — only on a freshly-formed one, and only if the
+      // recipient hasn't muted the other party. Title is the locked §5 push string.
+      if (mutualClickId) {
+        await client.query(
+          `
+            insert into notifications (profile_id, title, body, action_url)
+            select $1::uuid, 'It''s mutual — you two clicked. ✨', $3, $4
+            where not exists (
+              select 1 from user_mutes
+              where muter_profile_id = $1::uuid and muted_profile_id = $2::uuid
+            )
+          `,
+          [
+            profile.id,
+            clickedProfile.id,
+            suggestedEvent
+              ? `You and ${clickedProfile.display_name} clicked. ${suggestedEvent.title} could be your thing.`
+              : `You and ${clickedProfile.display_name} clicked. Open your proposal to plan something.`,
+            "/proposals",
+          ],
+        );
+        await client.query(
+          `
+            insert into notifications (profile_id, title, body, action_url)
+            select $1::uuid, 'It''s mutual — you two clicked. ✨', $3, $4
+            where not exists (
+              select 1 from user_mutes
+              where muter_profile_id = $1::uuid and muted_profile_id = $2::uuid
+            )
+          `,
+          [
+            clickedProfile.id,
+            profile.id,
+            suggestedEvent
+              ? `You and ${profile.display_name} clicked. ${suggestedEvent.title} could be your thing.`
+              : `You and ${profile.display_name} clicked. Open your proposal to plan something.`,
+            "/proposals",
+          ],
+        );
+      }
     }
 
     await client.query("commit");
@@ -7331,15 +7674,13 @@ export async function createUserClickForSession(
       }
     }
 
+    // §6.1: the synchronous response is identical whether or not a mutual formed — the
+    // mutual is revealed only via the async notification + email logged above, never in
+    // this response shape. (The constant-time floor that closes the timing side-channel
+    // lands with the 21A harness in the 2.2 safety pass.)
     return {
       clickedProfileName: clickedProfile.display_name,
-      status: reciprocalClick ? "mutual" : "pending",
-      suggestedEvent: suggestedEvent
-        ? {
-            slug: suggestedEvent.slug,
-            title: suggestedEvent.title,
-          }
-        : null,
+      outcome: "ok" as SendClickOutcome,
     };
   } catch (error) {
     await client.query("rollback");
@@ -10628,10 +10969,15 @@ export async function getSuggestedPeople(session: Session | null): Promise<Sugge
                ) as shared,
                p.connection_intents::text[] as intents,
                exists (
-                 select 1 from user_clicks uc
-                 where uc.clicker_profile_id = $1::uuid
-                   and uc.clicked_profile_id = p.id
+                 select 1 from clicks uc
+                 where uc.sender_id = $1::uuid
+                   and uc.receiver_id = p.id
                    and uc.expires_at > now()
+                   -- Only a still-pending one-way click means "waiting on them".
+                   -- Once it goes mutual the row stays (status='mutual', same
+                   -- 30-day expiry), so without this guard the card kept showing
+                   -- "pending their Click" after a match (bug board #214/#215).
+                   and uc.status = 'pending'
                ) as already_clicked
         from profiles p
         left join user_tags shared_user_tag on shared_user_tag.profile_id = p.id
@@ -10658,6 +11004,14 @@ export async function getSuggestedPeople(session: Session | null): Promise<Sugge
             select 1 from user_blocks b
             where (b.blocker_profile_id = $1::uuid and b.blocked_profile_id = p.id)
                or (b.blocker_profile_id = p.id and b.blocked_profile_id = $1::uuid)
+          )
+          -- Already matched? They live in the "You both tapped" banner, so drop
+          -- them from Suggested entirely instead of showing a stale pending card
+          -- (bug board #214/#215). mutual_clicks stores the pair as least/greatest.
+          and not exists (
+            select 1 from mutual_clicks mc
+            where (mc.user_a_id = $1::uuid and mc.user_b_id = p.id)
+               or (mc.user_a_id = p.id and mc.user_b_id = $1::uuid)
           )
         group by p.id
         order by array_length(
@@ -10745,7 +11099,7 @@ export async function getMutualClicksForSession(session: Session | null): Promis
     }>(
       `
         select
-          case when m.profile_a_id = $1::uuid then m.profile_b_id::text else m.profile_a_id::text end as other_id,
+          case when m.user_a_id = $1::uuid then m.user_b_id::text else m.user_a_id::text end as other_id,
           other.display_name as other_name,
           other.photo_url as other_photo,
           event.slug as event_slug,
@@ -10756,17 +11110,16 @@ export async function getMutualClicksForSession(session: Session | null): Promis
           m.created_at
         from mutual_clicks m
         join profiles other on other.id = (
-          case when m.profile_a_id = $1::uuid then m.profile_b_id else m.profile_a_id end
+          case when m.user_a_id = $1::uuid then m.user_b_id else m.user_a_id end
         )
         -- The live proposal (one per mutual click) holds the CURRENT suggestion,
         -- which either side can replace via "suggest alternative" in /proposals.
-        left join event_proposals p on p.mutual_click_id = m.id
-        -- Prefer the proposal's event (reflects an alternative someone picked);
-        -- fall back to the mutual click's original auto-suggestion. Only surface
-        -- it if it's still a bookable future event, otherwise resolve to null so
-        -- the UI shows the proposal CTA instead of a dead, in-the-past event.
+        left join click_proposals p on p.mutual_click_id = m.id and p.status = 'pending'
+        -- The live (pending) proposal holds the current suggestion. Only surface it
+        -- if it's still a bookable future event, otherwise resolve to null so the UI
+        -- shows the proposal CTA instead of a dead, in-the-past event.
         left join events event
-          on event.id = coalesce(p.suggested_event_id, m.suggested_event_id)
+          on event.id = p.suggested_event_id
          and event.starts_at > now()
          and event.status in ('live', 'featured', 'waitlist')
          -- Never re-surface a suggestion that has since booked out (confirmed +
@@ -10800,31 +11153,25 @@ export async function getMutualClicksForSession(session: Session | null): Promis
               select 1 from event_attendees a
               where a.event_id = e2.id and a.status = 'confirmed'
                 and a.profile_id = (
-                  case when m.profile_a_id = $1::uuid then m.profile_b_id else m.profile_a_id end
+                  case when m.user_a_id = $1::uuid then m.user_b_id else m.user_a_id end
                 )
               union all
               select 1 from guest_spots g
               where g.event_id = e2.id and g.status = 'claimed'
                 and g.claimed_profile_id = (
-                  case when m.profile_a_id = $1::uuid then m.profile_b_id else m.profile_a_id end
+                  case when m.user_a_id = $1::uuid then m.user_b_id else m.user_a_id end
                 )
             )
           order by e2.starts_at asc
           limit 1
         ) both_going on true
-        where (m.profile_a_id = $1::uuid or m.profile_b_id = $1::uuid)
-          -- Drop dead mutuals: once the 7-day proposal window lapses without a
-          -- confirm, the click has effectively expired (21_CLICK_MECHANIC.md) and
-          -- shouldn't keep showing as a live "you both tapped" card. Confirmed and
-          -- still-open proposals stay; a mutual whose proposal row is somehow
-          -- missing is kept (one is always created alongside the mutual). A pair
-          -- who are already BOTH going to a shared event is always kept and
-          -- celebrated, even if their proposal lapsed (they got there anyway).
-          and (
-            both_going.slug is not null
-            or p.id is null
-            or (p.status <> 'expired' and not (p.status = 'pending' and p.expires_at <= now()))
-          )
+        where (m.user_a_id = $1::uuid or m.user_b_id = $1::uuid)
+          -- Only LIVE mutuals render as cards. The mutual's lifecycle lives on its own
+          -- status column now (§B2) — an event-level failure (proposal declined/expired/
+          -- full) returns the mutual to open/dormant but never ends it, so we filter on
+          -- the mutual's status, not the proposal's. Terminal rows (connected/released/
+          -- suppressed/expired) belong on the future "Past clicks" shelf, not here.
+          and m.status = 'active'
         order by m.created_at desc
         limit 12
       `,
@@ -10891,9 +11238,9 @@ export async function blockUser(session: Session | null, targetProfileId: string
   // A block severs any pending Click in either direction so neither resurfaces.
   await pool.query(
     `
-      delete from user_clicks
-      where (clicker_profile_id = $1::uuid and clicked_profile_id = $2::uuid)
-         or (clicker_profile_id = $2::uuid and clicked_profile_id = $1::uuid)
+      delete from clicks
+      where (sender_id = $1::uuid and receiver_id = $2::uuid)
+         or (sender_id = $2::uuid and receiver_id = $1::uuid)
     `,
     [profile.id, targetProfileId],
   );
@@ -11185,8 +11532,8 @@ export async function getPostEventClickPrompts(
           other.display_name as other_name,
           other.suburb as other_suburb,
           exists (
-            select 1 from user_clicks c
-            where c.clicker_profile_id = $1::uuid and c.clicked_profile_id = other.id
+            select 1 from clicks c
+            where c.sender_id = $1::uuid and c.receiver_id = other.id
           ) as already_clicked
         from events e
         join event_attendees mine on mine.event_id = e.id
@@ -11263,8 +11610,8 @@ export async function getPostEventClickPromptForEvent(
           other.display_name as other_name,
           other.suburb as other_suburb,
           exists (
-            select 1 from user_clicks c
-            where c.clicker_profile_id = $1::uuid and c.clicked_profile_id = other.id
+            select 1 from clicks c
+            where c.sender_id = $1::uuid and c.receiver_id = other.id
           ) as already_clicked
         from events e
         join event_attendees mine on mine.event_id = e.id
@@ -11337,9 +11684,9 @@ export async function notifyPostEventClickPrompts(): Promise<number> {
             and theirs.status = 'confirmed'
             and theirs.profile_id <> mine.profile_id
             and not exists (
-              select 1 from user_clicks c
-              where c.clicker_profile_id = mine.profile_id
-                and c.clicked_profile_id = other.id
+              select 1 from clicks c
+              where c.sender_id = mine.profile_id
+                and c.receiver_id = other.id
             )
             and not exists (
               select 1 from user_blocks b
@@ -11388,7 +11735,9 @@ export async function getProposalsForSession(session: Session | null): Promise<P
     const profile = await ensureProfileForSession(session);
     const result = await pool.query<{
       id: string;
-      status: "pending" | "confirmed" | "expired";
+      // Raw DB enum — the WHERE filters to these two; mapped to the UI's
+      // pending/confirmed/expired contract below.
+      status: "pending" | "accepted";
       expired: boolean;
       other_id: string;
       other_name: string;
@@ -11411,7 +11760,7 @@ export async function getProposalsForSession(session: Session | null): Promise<P
           -- must render as expired so a lapsed proposal never shows live
           -- Confirm/Suggest buttons under a past date (bug #199).
           (p.status = 'expired' or (p.status = 'pending' and p.expires_at <= now())) as expired,
-          case when m.profile_a_id = $1::uuid then m.profile_b_id::text else m.profile_a_id::text end as other_id,
+          case when m.user_a_id = $1::uuid then m.user_b_id::text else m.user_a_id::text end as other_id,
           other.display_name as other_name,
           e.slug as event_slug,
           e.title as event_title,
@@ -11421,10 +11770,10 @@ export async function getProposalsForSession(session: Session | null): Promise<P
           p.expires_at,
           p.confirmed_at,
           (p.confirmed_by = $1::uuid) as confirmed_by_me
-        from event_proposals p
+        from click_proposals p
         join mutual_clicks m on m.id = p.mutual_click_id
         join profiles other on other.id = (
-          case when m.profile_a_id = $1::uuid then m.profile_b_id else m.profile_a_id end
+          case when m.user_a_id = $1::uuid then m.user_b_id else m.user_a_id end
         )
         -- Only attach the suggested event if it's still upcoming + bookable, so a
         -- proposal never surfaces an event that has already happened OR has since
@@ -11443,7 +11792,9 @@ export async function getProposalsForSession(session: Session | null): Promise<P
                or (seat.status = 'pending_payment' and seat.hold_expires_at > now())
              )
          ) < e.capacity
-        where m.profile_a_id = $1::uuid or m.profile_b_id = $1::uuid
+        where (m.user_a_id = $1::uuid or m.user_b_id = $1::uuid)
+          and m.status = 'active'
+          and p.status in ('pending', 'accepted')
         order by (p.status = 'pending' and p.expires_at > now()) desc, p.updated_at desc
         limit 50
       `,
@@ -11452,7 +11803,9 @@ export async function getProposalsForSession(session: Session | null): Promise<P
 
     return result.rows.map((row) => ({
       id: row.id,
-      status: row.status,
+      // The new enum uses 'accepted'; the proposal UI still keys on 'confirmed'. Map it
+      // at the boundary so the surface stays unchanged until the 2.6 UI pass.
+      status: row.status === "accepted" ? "confirmed" : row.status,
       isExpired: Boolean(row.expired),
       otherId: row.other_id,
       otherName: row.other_name,
@@ -11483,13 +11836,13 @@ async function assertProposalParticipant(
   const result = await client.query<{ other_id: string; status: string; expires_at: Date }>(
     `
       select
-        case when m.profile_a_id = $2::uuid then m.profile_b_id::text else m.profile_a_id::text end as other_id,
+        case when m.user_a_id = $2::uuid then m.user_b_id::text else m.user_a_id::text end as other_id,
         p.status::text,
         p.expires_at
-      from event_proposals p
+      from click_proposals p
       join mutual_clicks m on m.id = p.mutual_click_id
       where p.id = $1::uuid
-        and (m.profile_a_id = $2::uuid or m.profile_b_id = $2::uuid)
+        and (m.user_a_id = $2::uuid or m.user_b_id = $2::uuid)
       limit 1
     `,
     [proposalId, profileId],
@@ -11519,7 +11872,7 @@ export async function confirmProposal(session: Session | null, proposalId: strin
     }
     if (new Date(row.expires_at).getTime() <= Date.now()) {
       await client.query(
-        `update event_proposals set status = 'expired', updated_at = now() where id = $1::uuid`,
+        `update click_proposals set status = 'expired', updated_at = now() where id = $1::uuid`,
         [proposalId],
       );
       await client.query("commit");
@@ -11528,11 +11881,23 @@ export async function confirmProposal(session: Session | null, proposalId: strin
 
     await client.query(
       `
-        update event_proposals
-        set status = 'confirmed', confirmed_by = $2::uuid, confirmed_at = now(), updated_at = now()
+        update click_proposals
+        set status = 'accepted', confirmed_by = $2::uuid, confirmed_at = now(), updated_at = now()
         where id = $1::uuid and status = 'pending'
       `,
       [proposalId, profile.id],
+    );
+
+    // The plan is locked — advance the mutual to confirmed_together (§B5.3). The fuller
+    // both-or-neither booking coordination (§B5) lands in the 2.5 surfaces pass.
+    await client.query(
+      `
+        update mutual_clicks
+        set coord_state = 'confirmed_together', updated_at = now()
+        where id = (select mutual_click_id from click_proposals where id = $1::uuid)
+          and status = 'active'
+      `,
+      [proposalId],
     );
 
     await client.query(
@@ -11576,7 +11941,7 @@ export async function proposeAlternativeForProposal(
     }
 
     const countResult = await client.query<{ alternatives_count: number }>(
-      `select alternatives_count from event_proposals where id = $1::uuid for update`,
+      `select alternatives_count from click_proposals where id = $1::uuid for update`,
       [proposalId],
     );
     if ((countResult.rows[0]?.alternatives_count ?? 0) >= 3) {
@@ -11602,7 +11967,7 @@ export async function proposeAlternativeForProposal(
 
     await client.query(
       `
-        update event_proposals
+        update click_proposals
         set suggested_event_id = $2::uuid, proposed_by = $3::uuid,
             alternatives_count = alternatives_count + 1, updated_at = now()
         where id = $1::uuid
@@ -12870,7 +13235,7 @@ export async function getMatchingLabStats(): Promise<MatchingLabStats | null> {
         (select count(*) from curated_match_labels where judgment='strong_fit')::int as strong_fit,
         (select count(*) from curated_match_labels where judgment='maybe')::int as maybe,
         (select count(*) from curated_match_labels where judgment='not_a_fit')::int as not_fit,
-        (select count(*) from user_clicks)::int as clicks_made,
+        (select count(*) from clicks)::int as clicks_made,
         (select count(*) from mutual_clicks)::int as mutual_clicks,
         (select count(*) from match_impressions)::int as impressions
     `)

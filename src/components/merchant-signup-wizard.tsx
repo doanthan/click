@@ -103,11 +103,33 @@ async function lookupStateForPostcode(postcode: string): Promise<string> {
 type CategoryOption = { id: string; name: string; slug: string };
 type ExistingDoc = { documentType: DocumentType; fileName: string };
 
+// Saved merchant-signup answers used to pre-fill the wizard when a rejected
+// merchant re-opens it to edit + resubmit (bug board #203). Structural match for
+// the repository's MerchantSignupPrefill — kept loose so the component doesn't
+// import server code.
+export type MerchantSignupPrefill = {
+  businessName: string;
+  tradingName: string;
+  abn: string;
+  acn: string;
+  eventCategoryIds: string[];
+  contactEmail: string;
+  phone: string;
+  websiteUrl: string;
+  socials: Record<string, string>;
+  addressStreet: string;
+  addressSuburb: string;
+  addressState: string;
+  addressPostcode: string;
+};
+
 export type MerchantSignupProviderProps = {
   sessionEmail: string;
   sessionName: string;
   categories: CategoryOption[];
   existingDocs: ExistingDoc[];
+  // Present only for a rejected merchant resubmitting — pre-fills every field.
+  existingProfile?: MerchantSignupPrefill | null;
   children: React.ReactNode;
 };
 
@@ -201,6 +223,7 @@ function initialState(props: {
   sessionEmail: string;
   sessionName: string;
   existingDocs: ExistingDoc[];
+  existingProfile?: MerchantSignupPrefill | null;
 }): State {
   const existing: State["uploads"] = {
     abn_certificate: null,
@@ -210,22 +233,34 @@ function initialState(props: {
   for (const doc of props.existingDocs) {
     existing[doc.documentType] = { fileName: doc.fileName };
   }
+  // Start every platform empty, then overlay any saved handles so the socials
+  // record always has the full set of keys the UI iterates over.
+  const socials = Object.fromEntries(
+    SOCIAL_PLATFORMS.map((p) => [p.value, ""]),
+  ) as Record<SocialPlatform, string>;
+  const prefill = props.existingProfile;
+  if (prefill?.socials) {
+    for (const [k, v] of Object.entries(prefill.socials)) {
+      if (k in socials) socials[k as SocialPlatform] = v ?? "";
+    }
+  }
   return {
-    businessName: props.sessionName ? `${props.sessionName}'s Events` : "",
-    tradingName: "",
-    abn: "",
-    acn: "",
-    eventCategoryIds: [],
-    contactEmail: props.sessionEmail,
-    phone: "",
-    websiteUrl: "",
-    socials: Object.fromEntries(
-      SOCIAL_PLATFORMS.map((p) => [p.value, ""]),
-    ) as Record<SocialPlatform, string>,
-    addressStreet: "",
-    addressSuburb: "",
-    addressState: "",
-    addressPostcode: "",
+    // Pre-fill from a rejected merchant's saved answers when present, else the
+    // session-derived defaults (bug board #203).
+    businessName:
+      prefill?.businessName || (props.sessionName ? `${props.sessionName}'s Events` : ""),
+    tradingName: prefill?.tradingName ?? "",
+    abn: prefill?.abn ?? "",
+    acn: prefill?.acn ?? "",
+    eventCategoryIds: prefill?.eventCategoryIds ?? [],
+    contactEmail: prefill?.contactEmail || props.sessionEmail,
+    phone: prefill?.phone ?? "",
+    websiteUrl: prefill?.websiteUrl ?? "",
+    socials,
+    addressStreet: prefill?.addressStreet ?? "",
+    addressSuburb: prefill?.addressSuburb ?? "",
+    addressState: (prefill?.addressState as AuState | "") ?? "",
+    addressPostcode: prefill?.addressPostcode ?? "",
     uploads: existing,
     submitState: "idle",
     submitMessage: "",
@@ -257,11 +292,12 @@ export function MerchantSignupProvider({
   sessionName,
   categories,
   existingDocs,
+  existingProfile,
   children,
 }: MerchantSignupProviderProps) {
   const [state, dispatch] = useReducer(
     reducer,
-    { sessionEmail, sessionName, existingDocs },
+    { sessionEmail, sessionName, existingDocs, existingProfile },
     initialState,
   );
   return (
@@ -284,12 +320,44 @@ export function MerchantSignupProvider({
 // letting an oddly-formatted one through (admins see it during verification).
 function normalizeAuPhone(raw: string): string {
   let digits = raw.replace(/[^\d]/g, "");
-  // +61 / 0061 country code → leading 0.
-  if (digits.startsWith("0061")) digits = "0" + digits.slice(4);
-  else if (digits.startsWith("61") && digits.length >= 10) digits = "0" + digits.slice(2);
+  // +61 / 0061 country code → national trunk 0. Many people write the standard
+  // "+61 (0)4.." / "+61 0412.." print convention and keep their own trunk 0, so
+  // strip any leftover leading 0(s) before re-adding ours — otherwise we'd get a
+  // double zero ("00412345678") that fails every pattern (bug board #202).
+  if (digits.startsWith("0061")) digits = "0" + digits.slice(4).replace(/^0+/, "");
+  else if (digits.startsWith("61") && digits.length >= 10) digits = "0" + digits.slice(2).replace(/^0+/, "");
   // Mobile typed without the leading 0 ("412 345 678") → add it back.
   if (/^4\d{8}$/.test(digits)) digits = "0" + digits;
   return digits;
+}
+
+// Display-grouping formatter, mirroring formatAbn/formatAcn's "tidy on blur"
+// pattern (bug board #201). Cosmetic only — submit re-normalises via
+// normalizeAuPhone, so grouping can't corrupt the stored value. Unknown shapes
+// fall back to the trimmed input rather than mangling it.
+function formatAuPhone(raw: string): string {
+  const digits = normalizeAuPhone(raw);
+  // Mobile: 04XX XXX XXX
+  if (/^04\d{8}$/.test(digits)) {
+    return `${digits.slice(0, 4)} ${digits.slice(4, 7)} ${digits.slice(7)}`;
+  }
+  // Landline with area code: 0X XXXX XXXX
+  if (/^0[2-9]\d{8}$/.test(digits)) {
+    return `${digits.slice(0, 2)} ${digits.slice(2, 6)} ${digits.slice(6)}`;
+  }
+  // 1300 / 1800: 1300 XXX XXX
+  if (/^1[38]00\d{6}$/.test(digits)) {
+    return `${digits.slice(0, 4)} ${digits.slice(4, 7)} ${digits.slice(7)}`;
+  }
+  // 13 xx xx short business line: 13 XX XX
+  if (/^13\d{4}$/.test(digits)) {
+    return `${digits.slice(0, 2)} ${digits.slice(2, 4)} ${digits.slice(4)}`;
+  }
+  // Bare 8-digit local landline: XXXX XXXX
+  if (/^\d{8}$/.test(digits)) {
+    return `${digits.slice(0, 4)} ${digits.slice(4)}`;
+  }
+  return raw.trim();
 }
 
 // Pinpoints WHY a number fails so the inline error is actionable (bug board
@@ -893,6 +961,9 @@ export function ContactSection() {
             autoComplete="tel"
             value={state.phone}
             onChange={(e) => dispatch({ type: "field", key: "phone", value: e.target.value })}
+            onBlur={() =>
+              dispatch({ type: "field", key: "phone", value: formatAuPhone(state.phone) })
+            }
             placeholder="0412 345 678"
             aria-invalid={state.phone.trim() !== "" && !isValidAuPhone(state.phone)}
             required

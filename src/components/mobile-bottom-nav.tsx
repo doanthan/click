@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 
 // Icon keys kept as a closed union so the server-built tab list can name an
 // icon without shipping a component across the server/client boundary.
-export type BottomNavIcon = "find" | "calendar" | "host" | "you" | "info" | "spark";
+export type BottomNavIcon = "find" | "calendar" | "host" | "you" | "info" | "spark" | "people";
 
 export type BottomNavTab = {
   label: string;
@@ -95,6 +95,14 @@ function BottomNavGlyph({ icon, active }: { icon: BottomNavIcon; active: boolean
         <svg {...common}>
           <circle cx="12" cy="8" r="4" />
           <path d="M4 20c0-3.5 3.6-6 8-6s8 2.5 8 6" />
+        </svg>
+      );
+    case "people":
+      return (
+        <svg {...common}>
+          <circle cx="9" cy="8" r="3.5" />
+          <path d="M2.5 19c0-3 2.9-5 6.5-5s6.5 2 6.5 5" />
+          <path d="M16 5.2a3.5 3.5 0 0 1 0 6.6M21.5 19c0-2.4-1.6-4.2-4-4.8" />
         </svg>
       );
     case "info":

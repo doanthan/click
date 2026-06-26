@@ -34,6 +34,16 @@ export function AvatarUploader({ initialUrl, displayName }: AvatarUploaderProps)
   const [url, setUrl] = useState<string | null>(initialUrl);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The avatar persists on upload, but the only "Save profile" button sits at
+  // the bottom of a long form — so users thought they had to scroll down to
+  // save the photo (bug board #219). Flash a "Saved ✓" to make it clear.
+  const [saved, setSaved] = useState(false);
+  const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  function flashSaved() {
+    if (savedTimer.current) clearTimeout(savedTimer.current);
+    setSaved(true);
+    savedTimer.current = setTimeout(() => setSaved(false), 3000);
+  }
 
   const initial = (displayName.trim()[0] ?? "✷").toUpperCase();
 
@@ -73,6 +83,7 @@ export function AvatarUploader({ initialUrl, displayName }: AvatarUploaderProps)
         return;
       }
       setUrl(payload.url);
+      flashSaved();
       router.refresh();
     } catch {
       setError("Upload failed. Check your connection and try again.");
@@ -83,8 +94,9 @@ export function AvatarUploader({ initialUrl, displayName }: AvatarUploaderProps)
 
   return (
     <div className="grid gap-3">
-      <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+      <span className="flex items-center gap-2 font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
         Profile photo
+        {saved ? <span className="text-[color:var(--rose)]">Saved ✓</span> : null}
       </span>
 
       <div className="flex items-center gap-4">

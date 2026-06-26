@@ -74,14 +74,16 @@ export function AdminMerchantVerification({
           </p>
           <p className="mt-2 text-sm font-bold text-[color:var(--ink)]">
             {isApproved
-              ? "Approved — this merchant can publish events."
+              ? "Approved & trusted — their events now publish without per-event review."
               : isRejected
                 ? "Declined — this merchant cannot publish events."
                 : "Review the details, documents and ABN above, then approve or decline."}
           </p>
           <p className="mt-1 text-xs font-medium text-[color:var(--mauve)]">
-            Approving lets them create events and sends an approval email.
-            Declining notifies them with your reason. You can change this later.
+            Approving auto-trusts this merchant, so their events publish straight
+            to live (no per-event review) and sends an approval email. Need manual
+            review instead? Flip the trust toggle below. Declining notifies them
+            with your reason. You can change this later.
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
@@ -107,7 +109,7 @@ export function AdminMerchantVerification({
       <ConfirmDialog
         open={pending === "approved"}
         title="Approve this merchant?"
-        description="They'll be able to create events and will get an approval email. You can change this later."
+        description="They'll be approved AND auto-trusted — their events publish straight to live without per-event review (you can switch them back to manual review with the trust toggle). They'll get an approval email. You can change this later."
         confirmLabel="Approve merchant"
         tone="peach"
         busy={saving === "approved"}

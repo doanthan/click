@@ -25,7 +25,12 @@ import { quoteCancellationRefund, refundQuoteLabel } from "@/lib/refund-policy";
 
 type PageProps = {
   params: Promise<{ slug: string }>;
-  searchParams?: Promise<{ canceled?: string; booked?: string; session_id?: string }>;
+  searchParams?: Promise<{
+    canceled?: string;
+    booked?: string;
+    session_id?: string;
+    cancelled?: string;
+  }>;
 };
 
 // Statuses an event must be in to be visible to the public. Pending (awaiting
@@ -210,6 +215,17 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
           <div className="mt-6 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--peach)] p-4 text-sm font-bold text-[color:var(--surface-deep)] hard-shadow-sm">
             Checkout was cancelled. Your seat hold was released — you can try
             again any time.
+          </div>
+        ) : null}
+
+        {/* Acknowledge a successful RSVP cancellation so the page doesn't appear
+            to silently dump the viewer on a relocked event (bug board #212). */}
+        {search?.cancelled ? (
+          <div className="mt-6 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--peach)] p-4 text-sm font-bold text-[color:var(--surface-deep)] hard-shadow-sm">
+            Your RSVP was cancelled.{" "}
+            {isPaid ? "Any refund will appear in 3–5 business days. " : ""}
+            The venue details lock again, but you can RSVP any time before the
+            event.
           </div>
         ) : null}
 
@@ -450,7 +466,8 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                       <span className="underline decoration-2 underline-offset-2">
                         {event.viewerClashEventTitle}
                       </span>
-                      , which you&apos;re already going to. You can still book both.
+                      , which you&apos;re already going to. You can still book both —
+                      we&apos;ll ask you to confirm first.
                     </p>
                   ) : null}
 
@@ -552,6 +569,12 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                         title={`Reserve a seat for ${formatPrice(totalCents, "AUD")}?`}
                         body={
                           <>
+                            {event.viewerClashEventTitle ? (
+                              <span className="mb-3 block rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--peach)] p-3 text-xs font-bold text-[color:var(--surface-deep)]">
+                                ⚠️ This clashes with {event.viewerClashEventTitle},
+                                which you&apos;re already going to. Book both anyway?
+                              </span>
+                            ) : null}
                             {hasBookingFee ? (
                               <>
                                 That&apos;s {formatPrice(event.priceCents, "AUD")} ticket
@@ -581,6 +604,12 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                       title="RSVP to this event?"
                       body={
                         <>
+                          {event.viewerClashEventTitle ? (
+                            <span className="mb-3 block rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--peach)] p-3 text-xs font-bold text-[color:var(--surface-deep)]">
+                              ⚠️ This clashes with {event.viewerClashEventTitle},
+                              which you&apos;re already going to. RSVP to both anyway?
+                            </span>
+                          ) : null}
                           Reserve your seat. You can cancel any time before the
                           event — the host gets a waitlist replacement automatically.
                         </>

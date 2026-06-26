@@ -79,19 +79,37 @@ export default async function OnboardingPayoutsPage({ searchParams }: PageProps)
           </div>
         ) : connected ? (
           <div className="mt-6 grid gap-4">
-            <div className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-4">
-              <p className="text-sm font-bold text-[color:var(--ink)]">
+            <div
+              className={`rounded-2xl border-2 border-[color:var(--line)] p-4 ${
+                detailsSubmitted ? "bg-[color:var(--peach)]" : "bg-[color:var(--champagne)]"
+              }`}
+            >
+              <p
+                className={`text-sm font-bold ${
+                  detailsSubmitted ? "text-[color:var(--surface-deep)]" : "text-[color:var(--ink)]"
+                }`}
+              >
                 {detailsSubmitted
-                  ? "Stripe is verifying your details."
+                  ? "✓ Details submitted — Stripe is verifying."
                   : "You started setup but a few details are still needed."}
               </p>
-              <p className="mt-1 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+              <p
+                className={`mt-1 text-sm font-medium leading-6 ${
+                  detailsSubmitted ? "text-[color:var(--surface-deep)]" : "text-[color:var(--mauve)]"
+                }`}
+              >
                 {detailsSubmitted
-                  ? "This usually takes a few minutes. You can continue — we'll flip payouts on automatically once Stripe approves."
+                  ? "Nothing more to do on Stripe — this usually clears in a few minutes and we'll flip payouts on automatically. You're good to continue."
                   : "Pick up where you left off to finish connecting your bank."}
               </p>
             </div>
-            <ConnectPayoutsButton label="Continue on Stripe →" />
+            {/*
+              Only prompt "Continue on Stripe" when setup is genuinely
+              incomplete. Once details are submitted the merchant has finished
+              their part — showing the button made it look like more action was
+              required while Stripe verified asynchronously (bug board #206).
+            */}
+            {!detailsSubmitted ? <ConnectPayoutsButton label="Continue on Stripe →" /> : null}
           </div>
         ) : (
           <div className="mt-6 grid gap-4">
@@ -105,7 +123,10 @@ export default async function OnboardingPayoutsPage({ searchParams }: PageProps)
         )}
       </div>
 
-      {payoutsEnabled ? (
+      {payoutsEnabled || detailsSubmitted ? (
+        // Details submitted counts as "done" for navigation — the merchant has
+        // finished their part and payouts activate asynchronously (#206), so
+        // give them the primary Continue rather than a "Skip for now".
         <OnboardingNav
           backHref="/merchant/onboarding/create-events"
           nextHref="/merchant/onboarding/done"

@@ -5,6 +5,7 @@ import { LinkButton, MetricCard, Pill } from "@/components/click-ui";
 import { MerchantEventCancelButton } from "@/components/merchant-event-cancel-button";
 import { MerchantEventDuplicateButton } from "@/components/merchant-event-duplicate-button";
 import { MerchantEventEditForm } from "@/components/merchant-event-edit-form";
+import { MerchantEventResubmitButton } from "@/components/merchant-event-resubmit-button";
 import { GuestCheckInToggle } from "@/components/guest-check-in-toggle";
 import {
   getMerchantEventDetail,
@@ -144,6 +145,31 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
             </LinkButton>
           </div>
         </div>
+
+        {/* Rejected: surface the admin's reason and a one-tap resubmit so the
+            merchant can fix + reapply for review (bug board #217). */}
+        {event.status === "Rejected" ? (
+          <div className="mt-6 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--peach)] p-5 hard-shadow-sm">
+            <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--surface-deep)]">
+              Not approved yet
+            </p>
+            <h2 className="mt-2 font-display text-2xl font-semibold leading-tight text-[color:var(--surface-deep)]">
+              Fix the below and resubmit for review.
+            </h2>
+            {event.rejectionReason ? (
+              <p className="mt-2 text-sm font-bold leading-6 text-[color:var(--surface-deep)]">
+                Admin note: {event.rejectionReason}
+              </p>
+            ) : null}
+            <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--surface-deep)]/90">
+              Update the details below, then resubmit — it goes back into the
+              admin review queue and we&apos;ll email you the outcome.
+            </p>
+            <div className="mt-4">
+              <MerchantEventResubmitButton eventId={event.slug} />
+            </div>
+          </div>
+        ) : null}
 
         {event.images.length > 0 ? (
           <div className="mt-8 grid gap-3 sm:grid-cols-[2fr_1fr]">
@@ -341,7 +367,10 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
           initialDescription={event.description}
           initialAddress={event.address ?? ""}
           pendingAddress={event.pendingAddress}
-          hasAttendees={event.confirmed > 0}
+          addressNeedsReview={
+            ["Live", "Featured", "Locked", "Waitlist"].includes(event.status) ||
+            event.confirmed > 0
+          }
           initialImages={event.images}
           initialTags={event.tags}
           tagOptions={interestTagOptions}

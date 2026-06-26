@@ -313,7 +313,16 @@ export default async function DashboardPage() {
             </Link>
           </div>
           <ul className="mt-6 grid gap-4 md:grid-cols-2">
-            {mutualClicks.map((m) => (
+            {mutualClicks.map((m) => {
+              // Whether the viewer has already RSVP'd to the suggested plan but
+              // is still waiting on the other person to lock in their seat (bug
+              // board #218). registeredEventIds + suggestedEventSlug are both
+              // event slugs, so this needs no extra query.
+              const viewerAttendingSuggested =
+                m.suggestedEventSlug != null &&
+                registeredSet.has(m.suggestedEventSlug) &&
+                !waitlistedSet.has(m.suggestedEventSlug);
+              return (
               <li
                 key={m.otherProfileId}
                 className="flex flex-col rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--rose)] p-4 text-[color:var(--surface-deep)] hard-shadow-sm"
@@ -342,18 +351,32 @@ export default async function DashboardPage() {
                   <>
                     <p className="mt-2 text-sm font-semibold leading-6">
                       {m.suggestedEventSlug ? (
-                        <>
-                          {m.suggestedByOther
-                            ? `${m.otherDisplayName} suggested `
-                            : "Your suggested plan: "}
-                          <Link
-                            href={`/events/${m.suggestedEventSlug}`}
-                            className="font-bold underline decoration-2 underline-offset-4 hover:opacity-80"
-                          >
-                            {m.suggestedEventTitle ?? "an event"}
-                          </Link>
-                          . Confirm it together — or suggest another.
-                        </>
+                        viewerAttendingSuggested ? (
+                          <>
+                            ✅ You&rsquo;re going to{" "}
+                            <Link
+                              href={`/events/${m.suggestedEventSlug}`}
+                              className="font-bold underline decoration-2 underline-offset-4 hover:opacity-80"
+                            >
+                              {m.suggestedEventTitle ?? "an event"}
+                            </Link>
+                            . Waiting on {m.otherDisplayName} to RSVP — you&rsquo;re
+                            both in once they grab a seat.
+                          </>
+                        ) : (
+                          <>
+                            {m.suggestedByOther
+                              ? `${m.otherDisplayName} suggested `
+                              : "Your suggested plan: "}
+                            <Link
+                              href={`/events/${m.suggestedEventSlug}`}
+                              className="font-bold underline decoration-2 underline-offset-4 hover:opacity-80"
+                            >
+                              {m.suggestedEventTitle ?? "an event"}
+                            </Link>
+                            . Confirm it together — or suggest another.
+                          </>
+                        )
                       ) : (
                         "No plan yet — pick one together, or suggest your own."
                       )}
@@ -362,12 +385,17 @@ export default async function DashboardPage() {
                       href="/proposals"
                       className="mt-3 inline-flex w-fit items-center rounded-full border-2 border-[color:var(--surface-deep)] bg-[color:var(--champagne)] px-4 py-2 text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
                     >
-                      {m.suggestedEventSlug ? "Confirm or suggest another →" : "Pick a plan →"}
+                      {!m.suggestedEventSlug
+                        ? "Pick a plan →"
+                        : viewerAttendingSuggested
+                          ? "View plan →"
+                          : "Confirm or suggest another →"}
                     </Link>
                   </>
                 )}
               </li>
-            ))}
+              );
+            })}
           </ul>
         </section>
       ) : null}

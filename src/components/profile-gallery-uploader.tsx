@@ -24,6 +24,16 @@ export function ProfileGalleryUploader({ initialUrls }: { initialUrls: string[] 
   const [pending, setPending] = useState(false);
   const [removing, setRemoving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Photos persist on upload, but with the only "Save profile" button at the
+  // bottom of a long form, users thought they had to scroll down to save them
+  // (bug board #219). Flash an explicit "Saved ✓" so it's clear it's done.
+  const [saved, setSaved] = useState(false);
+  const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  function flashSaved() {
+    if (savedTimer.current) clearTimeout(savedTimer.current);
+    setSaved(true);
+    savedTimer.current = setTimeout(() => setSaved(false), 3000);
+  }
 
   async function handleFile(file: File) {
     setError(null);
@@ -64,12 +74,43 @@ export function ProfileGalleryUploader({ initialUrls }: { initialUrls: string[] 
         return;
       }
       setUrls(payload.urls);
+      flashSaved();
       router.refresh();
     } catch {
       setError("Upload failed. Check your connection and try again.");
     } finally {
       clearTimeout(timeout);
       setPending(false);
+    }
+  }
+
+  // Promote a gallery photo to the main avatar (bug board #220 — there was no
+  // way to choose your main photo, only "replace" on the avatar itself).
+  const [settingMain, setSettingMain] = useState<string | null>(null);
+  async function handleSetMain(url: string) {
+    setError(null);
+    setSettingMain(url);
+    try {
+      const response = await fetch("/api/upload/avatar", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | { url?: string; error?: string }
+        | null;
+      if (!response.ok || !payload?.url) {
+        setError(payload?.error ?? "Couldn't set that as your main photo. Try again.");
+        return;
+      }
+      // The avatar is a sibling component whose preview is seeded from a server
+      // prop into useState, so router.refresh() alone wouldn't swap it visibly.
+      // A full reload guarantees the new main photo shows everywhere at once.
+      window.location.reload();
+    } catch {
+      setError("Couldn't set that as your main photo. Check your connection.");
+    } finally {
+      setSettingMain(null);
     }
   }
 
@@ -102,12 +143,13 @@ export function ProfileGalleryUploader({ initialUrls }: { initialUrls: string[] 
 
   return (
     <div className="grid gap-3">
-      <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+      <span className="flex items-center gap-2 font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
         More photos · {urls.length}/{MAX_PHOTOS}
+        {saved ? <span className="text-[color:var(--rose)]">Saved ✓</span> : null}
       </span>
       <p className="-mt-1 text-xs font-semibold text-[color:var(--mauve)]">
         Add up to {MAX_PHOTOS} photos of you doing things you love — they show on your
-        profile alongside your prompts.
+        profile alongside your prompts. Photos save automatically — no need to hit Save.
       </p>
 
       <div className="grid grid-cols-3 gap-3 sm:grid-cols-5">
@@ -126,6 +168,16 @@ export function ProfileGalleryUploader({ initialUrls }: { initialUrls: string[] 
               className="absolute right-1.5 top-1.5 grid size-7 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] text-xs font-bold text-[color:var(--ink)] hard-shadow-sm transition hover:bg-[color:var(--rose)] hover:text-[color:var(--surface-deep)] disabled:opacity-50"
             >
               {removing === url ? "…" : "✕"}
+            </button>
+            {/* Choose this as the main avatar (bug board #220). */}
+            <button
+              type="button"
+              onClick={() => void handleSetMain(url)}
+              disabled={settingMain === url}
+              aria-label="Set as main photo"
+              className="absolute inset-x-0 bottom-0 truncate bg-[color:var(--surface-deep)]/70 px-1 py-1 text-center text-[0.6rem] font-bold uppercase tracking-[0.1em] text-[color:var(--on-deep)] transition hover:bg-[color:var(--rose)] hover:text-[color:var(--surface-deep)] disabled:opacity-60"
+            >
+              {settingMain === url ? "Setting…" : "★ Set as main"}
             </button>
           </div>
         ))}

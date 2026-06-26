@@ -6,6 +6,10 @@ import { useEffect, useRef, useState } from "react";
 export function HeaderNotificationsBell({ unreadCount }: { unreadCount: number }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  // The /notifications page only ever lists the latest 50, so cap the count
+  // surfaces here too — otherwise the bell claims a raw "1058 unread" the inbox
+  // can never show, which reads as a bug (bug board #222). Badge already caps.
+  const countLabel = unreadCount > 99 ? "99+" : String(unreadCount);
 
   useEffect(() => {
     function onDocClick(e: MouseEvent) {
@@ -20,7 +24,7 @@ export function HeaderNotificationsBell({ unreadCount }: { unreadCount: number }
     <div className="relative" ref={ref}>
       <button
         type="button"
-        aria-label={`Notifications (${unreadCount} unread)`}
+        aria-label={`Notifications (${countLabel} unread)`}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
@@ -59,14 +63,14 @@ export function HeaderNotificationsBell({ unreadCount }: { unreadCount: number }
             </span>
             {unreadCount > 0 ? (
               <span className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-2 py-0.5 text-[0.6rem] font-bold uppercase tracking-wide text-[color:var(--surface-deep)]">
-                {unreadCount} unread
+                {countLabel} unread
               </span>
             ) : null}
           </div>
           <div className="space-y-2 p-4">
             <p className="text-sm font-medium leading-6 text-[color:var(--mauve)]">
               {unreadCount > 0
-                ? `You have ${unreadCount} unread notification${unreadCount === 1 ? "" : "s"}.`
+                ? `You have ${countLabel} unread notification${unreadCount === 1 ? "" : "s"}.`
                 : "All caught up."}
             </p>
             <Link

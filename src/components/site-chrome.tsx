@@ -69,6 +69,9 @@ export async function SiteHeader() {
   ];
   if (session?.user) {
     navItems.push({ label: "Dashboard", href: "/dashboard" });
+    // "People" is the core click-with-someone loop; it had no global nav entry,
+    // so attendees on /discover couldn't find it (bug board #216).
+    navItems.push({ label: "People", href: "/people" });
   }
   // Existing hosts get a direct link to their portal in the nav, labelled "Host
   // dashboard" so it reads as the management hub (the actual "Host an event" CTA
@@ -87,7 +90,10 @@ export async function SiteHeader() {
   // covers notifications on mobile, so it isn't duplicated here.
   const bottomTabs: BottomNavTab[] = [{ label: "Find", href: "/discover", icon: "find" }];
   if (session?.user) {
-    bottomTabs.push({ label: "Calendar", href: "/dashboard/calendar", icon: "calendar" });
+    // People over Calendar in the 4 thumb slots: it's the core social loop and
+    // had no nav entry (bug board #216). Calendar stays reachable from the
+    // dashboard ("You" tab → "View calendar").
+    bottomTabs.push({ label: "People", href: "/people", icon: "people" });
     bottomTabs.push({
       label: "Host",
       href: hasMerchantProfile ? "/merchant" : "/merchant/signup",
