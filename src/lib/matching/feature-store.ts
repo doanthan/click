@@ -144,18 +144,18 @@ const FEATURES_QUERY = `
     select distinct on (profile_id) profile_id, social_energy
     from click_personas order by profile_id, generated_at desc
   ),
-  clicks_made as (select clicker_profile_id as pid, count(*)::int as c from user_clicks group by 1),
-  clicks_recv as (select clicked_profile_id as pid, count(*)::int as c from user_clicks group by 1),
+  clicks_made as (select sender_id as pid, count(*)::int as c from clicks group by 1),
+  clicks_recv as (select receiver_id as pid, count(*)::int as c from clicks group by 1),
   mutuals as (
     select pid, count(*)::int as c from (
-      select profile_a_id as pid from mutual_clicks
-      union all select profile_b_id from mutual_clicks
+      select user_a_id as pid from mutual_clicks
+      union all select user_b_id from mutual_clicks
     ) m group by pid
   ),
   last_act as (
     select profile_id, max(ts) as ts from (
       select profile_id, updated_at as ts from event_attendees
-      union all select clicker_profile_id as profile_id, created_at from user_clicks
+      union all select sender_id as profile_id, created_at from clicks
     ) x group by profile_id
   )
   select

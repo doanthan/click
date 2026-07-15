@@ -179,22 +179,22 @@ const queries: QuerySpec[] = [
     },
   },
   {
-    table: "user_clicks",
+    table: "clicks",
     sql: `
-      select uc.id::text as id, uc.status::text as status, uc.created_at,
+      select uc.id::text as id, uc.status::text as status, uc.surface::text as surface, uc.created_at,
              clicker.email::text as clicker_email, clicked.email::text as clicked_email
-      from user_clicks uc
-      left join profiles clicker on clicker.id = uc.clicker_profile_id
-      left join profiles clicked on clicked.id = uc.clicked_profile_id
+      from clicks uc
+      left join profiles clicker on clicker.id = uc.sender_id
+      left join profiles clicked on clicked.id = uc.receiver_id
       order by uc.created_at desc
       limit ${PER_TABLE_LIMIT}
     `,
     toEntry: (row) => ({
-      id: `user_clicks:${row.id}`,
-      table: "user_clicks",
+      id: `clicks:${row.id}`,
+      table: "clicks",
       createdAt: toIso(row.created_at),
       label: "Click",
-      detail: `${row.clicker_email ?? "?"} → ${row.clicked_email ?? "?"} · ${row.status}`,
+      detail: `${row.clicker_email ?? "?"} → ${row.clicked_email ?? "?"} · ${row.surface} · ${row.status}`,
       entityId: row.id ? String(row.id) : null,
     }),
   },
