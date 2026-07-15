@@ -8,7 +8,7 @@ type PageProps = {
   searchParams?: Promise<{ action?: string }>;
 };
 
-const SANS = '"Schibsted Grotesk", system-ui, -apple-system, sans-serif';
+const SANS = "var(--font-click-body), system-ui, -apple-system, sans-serif";
 
 const SHELL: React.CSSProperties = {
   minHeight: "100vh",
@@ -119,7 +119,7 @@ export default async function ClaimPage({ params, searchParams }: PageProps) {
       <Frame>
         <h1 style={TITLE}>Hand your spot back?</h1>
         <p style={BODY}>
-          This returns your seat at <strong>{spot.eventTitle}</strong> to {purchaser}. You won&apos;t be charged anything — the seat was always theirs.
+          This returns your seat at <strong>{spot.eventTitle}</strong> to {purchaser}. You won&apos;t be charged anything - the seat was always theirs.
         </p>
         <GuestClaimActions token={token} action="release" />
       </Frame>
@@ -145,7 +145,7 @@ export default async function ClaimPage({ params, searchParams }: PageProps) {
       </h1>
       <p style={BODY}>
         You&apos;ve got a seat at <strong>{spot.eventTitle}</strong>
-        {when ? ` — ${when}` : ""}.
+        {when ? ` - ${when}` : ""}.
       </p>
 
       {signedIn ? (

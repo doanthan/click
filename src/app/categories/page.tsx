@@ -1,171 +1,93 @@
 import Link from "next/link";
-import { MetricCard, SectionIntro } from "@/components/click-ui";
+import { CatGlyph, Icon, categoryGlyphKey } from "@/components/ds";
 import { getEventCategories } from "@/lib/event-repository";
 
 export const metadata = {
   title: "Categories | Click",
   description:
-    "Browse Click events by category — friendship, fitness, dating, food, creative, career, and community — and the tags that power matching.",
+    "Browse Click events by category - and the tags that quietly power who you meet.",
 };
 
 // Event and tag counts are read live from Postgres, so never statically cache.
 export const dynamic = "force-dynamic";
 
-// Each category gets a hand-drawn sticker badge and a rotating accent bar so the
-// grid reads like a wall of stickers rather than a uniform table.
-const categoryEmoji: Record<string, string> = {
-  social: "🤝",
-  fitness: "🏃",
-  relationships: "💘",
-  food: "🍜",
-  creative: "🎨",
-  career: "💼",
-  community: "🌱",
-  family: "👨‍👩‍👧",
-  games: "🎲",
-  learning: "📚",
-  nightlife: "🌃",
-  outdoors: "🏞️",
-  sports: "⚽",
-  travel: "✈️",
-  wellness: "🧘",
-  music: "🎧",
-  life: "✨",
-};
-
-const accentBars = [
-  "bg-[color:var(--peach)]",
-  "bg-[color:var(--rose)]",
-  "bg-[color:var(--punch)]",
-  "bg-[color:var(--ink)]",
-];
-
-const tilts = ["tilt-l-2", "tilt-r-2", "tilt-l-3", "tilt-r-3"];
-
 export default async function CategoriesPage() {
   const categories = await getEventCategories();
-  const totalEvents = categories.reduce((sum, category) => sum + category.eventCount, 0);
-  const totalTags = categories.reduce((sum, category) => sum + category.tagCount, 0);
 
   return (
-    <main className="paper-noise min-h-screen overflow-hidden text-[color:var(--ink)]">
-      <section className="relative overflow-hidden bg-[color:var(--champagne)] px-4 pb-12 pt-16 sm:px-6 lg:pt-20">
-        <div className="relative z-10 mx-auto max-w-6xl">
-          <span className="sticker sticker--peach tilt-l-2 inline-flex">
-            <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
-            Find your kind of plan
-          </span>
-          <h1 className="font-display mt-6 max-w-4xl text-5xl font-bold leading-[0.94] tracking-[-0.025em] sm:text-7xl">
-            Every <span className="text-[color:var(--coral)]">category</span>{" "}
-            of getting out.
-          </h1>
-          <p className="mt-6 max-w-3xl text-base font-medium leading-7 text-[color:var(--mauve)] sm:text-lg">
-            Click sorts Sydney&apos;s social calendar into a handful of honest
-            categories — and tags the vibe underneath each one. Pick a lane to
-            see what&apos;s on, or follow the tags that quietly power who you meet.
-          </p>
+    <main className="min-h-screen bg-[color:var(--champagne)] pb-24 text-[color:var(--ink)]">
+      <div className="ck-page pt-8">
+        <h1 className="font-display max-w-[720px] text-[length:var(--text-h1)] leading-tight font-semibold tracking-[-0.02em] text-[color:var(--ink)]">
+          Every category of getting out.
+        </h1>
+        <p className="mt-2 max-w-[620px] text-sm leading-relaxed text-[color:var(--slate)] sm:text-base">
+          Click sorts Sydney&apos;s social calendar into a handful of honest categories, and tags the vibe underneath
+          each one. Pick a lane to see what&apos;s on.
+        </p>
 
-          <div className="mt-10 grid gap-4 sm:grid-cols-3">
-            <MetricCard label="Categories" value={String(categories.length)} tone="rose" />
-            <MetricCard label="Tags" value={String(totalTags)} tone="peach" />
-            <MetricCard label="Live events" value={String(totalEvents)} tone="ink" />
-          </div>
-        </div>
-      </section>
+        <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          {categories.map((category) => {
+            const shownTags = category.tags.slice(0, 4);
+            const extraTags = category.tags.length - shownTags.length;
 
-      <section className="border-t-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-16 sm:px-6">
-        <div className="mx-auto max-w-6xl">
-          <SectionIntro
-            eyebrow={`${categories.length} categories`}
-            title="Pick a lane."
-            body="Each category collects related events and the interest, vibe, and music tags hosts attach to them. Tap a card to browse everything live in that lane."
-          />
+            return (
+              <Link
+                key={category.slug}
+                href={`/discover?category=${encodeURIComponent(category.name)}`}
+                className="group flex flex-col rounded-[var(--radius-xl)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-6 shadow-[var(--shadow-sm)] transition duration-200 hover:-translate-y-1 hover:shadow-[var(--shadow-md)]"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  {/* The ONE category treatment - a purple line glyph on a
+                      lavender disc. Never an emoji, never a per-category colour. */}
+                  <span className="flex size-14 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--lavender)_18%,var(--champagne))] text-[color:var(--purple)]">
+                    <CatGlyph name={categoryGlyphKey(category.name)} size={26} />
+                  </span>
+                  <span className="ck-badge bg-[color:var(--lavender-100)] text-[color:var(--purple-700)]">
+                    {category.eventCount} {category.eventCount === 1 ? "event" : "events"}
+                  </span>
+                </div>
 
-          <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {categories.map((category, index) => {
-              const emoji = categoryEmoji[category.slug] ?? "✷";
-              const accent = accentBars[index % accentBars.length];
-              const badgeTilt = tilts[index % tilts.length];
-              const shownTags = category.tags.slice(0, 6);
-              const extraTags = category.tags.length - shownTags.length;
+                <h3 className="font-display mt-4 text-[1.3rem] leading-tight font-semibold tracking-[-0.01em] text-[color:var(--ink)]">
+                  {category.name}
+                </h3>
+                {category.description ? (
+                  <p className="mt-1.5 text-sm leading-6 text-[color:var(--ink-soft)]">{category.description}</p>
+                ) : null}
 
-              return (
-                <Link
-                  key={category.slug}
-                  href={`/discover?category=${encodeURIComponent(category.name)}`}
-                  className="group flex flex-col rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-6 transition-transform duration-300 hard-shadow-sm hover:-translate-y-1 hover:rotate-[-0.6deg] hover:hard-shadow"
-                >
-                  <span className={`block h-2 w-14 rounded-full ${accent}`} />
-
-                  <div className="mt-5 flex items-start justify-between gap-3">
-                    <span
-                      className={`flex size-12 items-center justify-center rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] text-2xl ${badgeTilt}`}
-                      aria-hidden
-                    >
-                      {emoji}
-                    </span>
-                    <span className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-3 py-1 text-[0.7rem] font-black uppercase tracking-wider text-[color:var(--surface-deep)]">
-                      {category.eventCount} {category.eventCount === 1 ? "event" : "events"}
-                    </span>
-                  </div>
-
-                  <h3 className="font-display mt-4 text-3xl font-semibold leading-[1.04] tracking-[-0.02em] text-[color:var(--ink)]">
-                    {category.name}
-                  </h3>
-                  {category.description ? (
-                    <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
-                      {category.description}
-                    </p>
-                  ) : null}
-
-                  {shownTags.length > 0 ? (
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      {shownTags.map((tag) => (
-                        <span
-                          key={tag}
-                          className="rounded-full border border-[color:var(--line)] bg-[color:var(--cream)] px-2.5 py-1 text-[0.65rem] font-bold uppercase tracking-wider text-[color:var(--ink)]"
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                      {extraTags > 0 ? (
-                        <span className="rounded-full px-2.5 py-1 text-[0.65rem] font-bold uppercase tracking-wider text-[color:var(--mauve)]">
-                          +{extraTags} more
-                        </span>
-                      ) : null}
-                    </div>
-                  ) : null}
-
-                  <div className="mt-auto flex items-center justify-between border-t-2 border-dashed border-[color:var(--line)] pt-4">
-                    <span className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
-                      {category.tagCount} {category.tagCount === 1 ? "tag" : "tags"}
-                    </span>
-                    <span className="inline-flex items-center gap-1 text-sm font-bold text-[color:var(--ink)]">
-                      Browse
-                      <span
-                        aria-hidden
-                        className="inline-block transition-transform duration-300 group-hover:translate-x-1"
-                      >
-                        →
+                {shownTags.length > 0 ? (
+                  <div className="mt-4 flex flex-wrap gap-1.5">
+                    {shownTags.map((tag) => (
+                      <span key={tag} className="ck-tag ck-tag--dense">
+                        {tag}
                       </span>
-                    </span>
+                    ))}
+                    {extraTags > 0 ? (
+                      <span className="ck-tag ck-tag--dense text-[color:var(--slate)]">+{extraTags}</span>
+                    ) : null}
                   </div>
-                </Link>
-              );
-            })}
-          </div>
+                ) : null}
 
-          <p className="mt-10 text-sm font-medium text-[color:var(--mauve)]">
-            Looking for something specific?{" "}
-            <Link
-              href="/discover"
-              className="font-bold text-[color:var(--ink)] underline decoration-[color:var(--rose)] decoration-2 underline-offset-4 hover:decoration-[color:var(--ink)]"
-            >
-              Search every event in Discover →
-            </Link>
-          </p>
+                <div className="mt-auto flex items-center justify-between border-t border-[color:var(--mist)] pt-4">
+                  <span className="text-[12.5px] font-medium text-[color:var(--slate)]">
+                    {category.tagCount} {category.tagCount === 1 ? "tag" : "tags"}
+                  </span>
+                  <span className="font-display inline-flex items-center gap-1 text-[13.5px] font-semibold text-[color:var(--purple)]">
+                    Browse
+                    <Icon name="arrowR" size={15} stroke={2.2} className="transition-transform group-hover:translate-x-1" />
+                  </span>
+                </div>
+              </Link>
+            );
+          })}
         </div>
-      </section>
+
+        <p className="mt-8 text-sm text-[color:var(--slate)]">
+          Looking for something specific?{" "}
+          <Link href="/discover" className="font-semibold text-[color:var(--purple)] hover:underline">
+            Search every event in Discover →
+          </Link>
+        </p>
+      </div>
     </main>
   );
 }

@@ -1,4 +1,4 @@
-// Waitlist joined (to attendee) — currently wired at `event-repository.ts:1544`.
+// Waitlist joined (to attendee) - currently wired at `event-repository.ts:1544`.
 // Subject + text MUST match what `sendWorkflowEmail` already produces so that
 // swapping the call site to use this builder is a one-line change.
 
@@ -35,7 +35,7 @@ export function buildWaitlistJoinedEmail(d: WaitlistJoinedData) {
         ${eyebrow("On the waitlist")}
         ${heroTitle(`You're on the list for ${escapeHtml(d.eventTitle)}.`)}
         ${paragraph(
-          `Hi ${escapeHtml(d.firstName)} &mdash; the event is full, but if a spot opens we'll email you and ping your Click dashboard. Most waitlists move; sit tight.`,
+          `Hi ${escapeHtml(d.firstName)} - the event is full, but if a spot opens we'll email you and ping your Click dashboard. Most waitlists move; sit tight.`,
         )}
       </td>
     </tr>
@@ -56,7 +56,7 @@ export function buildWaitlistJoinedEmail(d: WaitlistJoinedData) {
       </td>
     </tr>
     ${renderCallout(
-      "While you wait &mdash;",
+      "While you wait -",
       "browse similar events near you. Even if this one doesn't move, the next pottery / breakfast / run-club probably will.",
     )}
   `;

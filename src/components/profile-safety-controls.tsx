@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Badge, Button, ckBtn } from "@/components/ds";
 import {
   blockUserAction,
   muteUserAction,
@@ -24,8 +25,8 @@ const REPORT_REASON_OPTIONS: { value: string; label: string }[] = [
   { value: "other", label: "Something else" },
 ];
 
-const pill =
-  "rounded-full border-2 border-[color:var(--line)] px-4 py-2 text-xs font-bold uppercase tracking-wide hard-shadow-sm";
+const field =
+  "w-full rounded-[12px] border border-[color:var(--mist-strong)] bg-[color:var(--paper)] px-3.5 py-2.5 text-[14.5px] text-[color:var(--ink)] outline-none focus-visible:border-[color:var(--purple)]";
 
 export function ProfileSafetyControls({
   profileId,
@@ -37,77 +38,69 @@ export function ProfileSafetyControls({
   const [reportOpen, setReportOpen] = useState(false);
 
   return (
-    <div className="mt-6 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-4">
-      <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-        Safety
-      </p>
+    // Quiet, grouped by whitespace and a hairline - safety is available, never
+    // shouted. Destructive confirms use --danger, never coral.
+    <section id="safety" className="mt-8 scroll-mt-24 border-t border-[color:var(--mist)] pt-6">
+      <p className="eyebrow">Safety</p>
+
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {/* Block / unblock */}
         <form action={state.isBlocked ? unblockUserAction : blockUserAction}>
           <input type="hidden" name="profile_id" value={profileId} />
-          <button
-            type="submit"
-            className={`${pill} ${
-              state.isBlocked
-                ? "bg-[color:var(--ink)] text-[color:var(--champagne)]"
-                : "bg-[color:var(--champagne)] text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
-            }`}
-          >
-            {state.isBlocked ? "Blocked · Undo" : "Block"}
-          </button>
+          {state.isBlocked ? (
+            <button type="submit" className={ckBtn("pending", "sm")}>
+              <span className="ck-btn__label">Blocked · undo</span>
+            </button>
+          ) : (
+            <Button type="submit" variant="secondary" size="sm">
+              Block
+            </Button>
+          )}
         </form>
 
         {/* Mute / unmute */}
         <form action={state.isMuted ? unmuteUserAction : muteUserAction}>
           <input type="hidden" name="profile_id" value={profileId} />
-          <button
-            type="submit"
-            className={`${pill} ${
-              state.isMuted
-                ? "bg-[color:var(--ink)] text-[color:var(--champagne)]"
-                : "bg-[color:var(--champagne)] text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
-            }`}
-          >
-            {state.isMuted ? "Muted · Undo" : "Mute"}
-          </button>
+          {state.isMuted ? (
+            <button type="submit" className={ckBtn("pending", "sm")}>
+              <span className="ck-btn__label">Muted · undo</span>
+            </button>
+          ) : (
+            <Button type="submit" variant="secondary" size="sm">
+              Mute
+            </Button>
+          )}
         </form>
 
         {/* Report */}
         {state.hasReported ? (
-          <span className={`${pill} bg-[color:var(--champagne)] text-[color:var(--mauve)]`}>
-            Reported · under review
-          </span>
+          <Badge tone="amber">Reported · under review</Badge>
         ) : (
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="sm"
             onClick={() => setReportOpen((v) => !v)}
-            className={`${pill} bg-[color:var(--champagne)] text-[color:var(--rose)] hover:bg-[color:var(--peach)]`}
+            aria-expanded={reportOpen}
           >
             Report
-          </button>
+          </Button>
         )}
       </div>
 
-      <p className="mt-3 text-xs font-medium leading-5 text-[color:var(--mauve)]">
-        Blocking removes you from each other&apos;s discovery and cancels any pending Click. Muting
-        stops notifications. Reports go to our safety team and are reviewed within 24 hours.
+      <p className="mt-3 max-w-[520px] text-[12.5px] leading-[1.55] text-[color:var(--slate)]">
+        Blocking takes you both out of each other&apos;s discovery, releases any pending click, and
+        ends any mutual or shared plan between you. Muting stops notifications. Reports go to our
+        safety team and are reviewed within 24 hours.
       </p>
 
       {reportOpen && !state.hasReported ? (
-        <form
-          action={reportUserAction}
-          className="mt-4 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-4"
-        >
+        <form action={reportUserAction} className="mt-5 max-w-[520px]">
           <input type="hidden" name="profile_id" value={profileId} />
-          <label className="block font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+          <label className="block text-[13.5px] font-semibold text-[color:var(--ink)]">
             What happened?
           </label>
-          <select
-            name="reason"
-            required
-            defaultValue=""
-            className="mt-2 w-full rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-2 text-sm font-semibold text-[color:var(--ink)]"
-          >
+          <select name="reason" required defaultValue="" className={`mt-2 ${field}`}>
             <option value="" disabled>
               Choose a reason…
             </option>
@@ -122,25 +115,18 @@ export function ProfileSafetyControls({
             rows={3}
             maxLength={2000}
             placeholder="Add any detail that helps us review (optional)."
-            className="mt-3 w-full rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-2 text-sm font-medium text-[color:var(--ink)]"
+            className={`mt-3 resize-y ${field}`}
           />
           <div className="mt-3 flex gap-2">
-            <button
-              type="submit"
-              className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-4 py-2 text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
-            >
+            <Button type="submit" variant="danger" size="sm">
               Submit report
-            </button>
-            <button
-              type="button"
-              onClick={() => setReportOpen(false)}
-              className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-2 text-xs font-bold uppercase tracking-wide text-[color:var(--ink)]"
-            >
+            </Button>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setReportOpen(false)}>
               Cancel
-            </button>
+            </Button>
           </div>
         </form>
       ) : null}
-    </div>
+    </section>
   );
 }

@@ -14,13 +14,20 @@
  *
  * Tag chips submit a fixed slug per option (matching the curated `tags` rows),
  * so the server never has to slugify free text.
+ *
+ * Layout follows the DS "Settings / Edit profile" spec: sections separated by
+ * whitespace + one hairline, sitting directly on the cream page ground - no
+ * outer card, so nothing here is a card inside a card. Interests + music are
+ * the neutral→purple-fill `Tag` pill (never the 16 category circles).
  */
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { AvatarUploader } from "@/components/avatar-uploader";
 import { ProfileGalleryUploader } from "@/components/profile-gallery-uploader";
+import { SettingRow, Switch } from "@/components/account-setting-toggle";
 import { VerifiedTick } from "@/components/verified-tick";
+import { Button, Icon } from "@/components/ds";
 import type { OwnProfile, ProfileTagOptions } from "@/lib/event-repository";
 import {
   MAX_PROFILE_PROMPTS,
@@ -29,7 +36,7 @@ import {
 } from "@/lib/profile-prompts";
 
 // Local copy so this client bundle never imports src/lib/postcode.ts (which
-// pulls in the ~300 KB postcode table — that stays server-side).
+// pulls in the ~300 KB postcode table - that stays server-side).
 const isValidPostcode = (code: string) => /^\d{4}$/.test(code.trim());
 import { saveProfileEditAction } from "@/app/profile/edit/actions";
 
@@ -37,12 +44,16 @@ const INTENT_OPTIONS: { value: string; label: string; body: string }[] = [
   { value: "friendship",  label: "Friendship",  body: "Low-pressure plans to make new friends." },
   { value: "dating",      label: "Dating",      body: "Slow dating tables and relationship-minded events." },
   { value: "networking",  label: "Networking",  body: "Career switchers, founders, peer support." },
-  { value: "hobbies",     label: "Hobbies",     body: "Find people who share your craft — creative, sport, gaming, books." },
+  { value: "hobbies",     label: "Hobbies",     body: "People who share your craft - creative, sport, gaming, books." },
   { value: "wellness",    label: "Wellness",    body: "Slow mornings, mindful movement, sober-friendly nights." },
-  { value: "community",   label: "Community",   body: "Local meetups, volunteering, neighbourhood vibes." },
-  { value: "new_in_town", label: "New in town", body: "Just relocated — looking to plug into Sydney fast." },
-  { value: "exploring",   label: "Exploring",   body: "Just curious — show me a bit of everything." },
+  { value: "community",   label: "Community",   body: "Local meetups, volunteering, neighbourhood things." },
+  { value: "new_in_town", label: "New in town", body: "Just landed - keen to plug into Sydney fast." },
+  { value: "exploring",   label: "Exploring",   body: "Curious - show me a bit of everything." },
 ];
+
+const FIELD =
+  "w-full rounded-[12px] border border-[color:var(--mist-strong)] bg-[color:var(--paper)] px-3.5 text-[15.5px] text-[color:var(--ink)] outline-none placeholder:text-[color:var(--ink-faint)] focus-visible:border-[color:var(--purple)]";
+const INPUT = `${FIELD} h-12`;
 
 function toggle(set: Set<string>, value: string): Set<string> {
   const next = new Set(set);
@@ -94,7 +105,7 @@ export function ProfileEditForm({
         setPcStatus("error");
         setPcMessage(
           res.status === 404
-            ? "We don't recognise that postcode — pick the closest suburb below."
+            ? "We don't recognise that postcode - pick the closest suburb below."
             : "Couldn't look that up. Try again.",
         );
         return;
@@ -113,7 +124,7 @@ export function ProfileEditForm({
     }
   }
 
-  // Legacy rows store a postcode in the suburb column — resolve it once on
+  // Legacy rows store a postcode in the suburb column - resolve it once on
   // mount so the suburb dropdown is populated without the user re-typing. The
   // setState happens inside resolvePostcode (an async fn), not in the effect
   // body, so it doesn't trip the cascading-render lint rule.
@@ -145,127 +156,131 @@ export function ProfileEditForm({
   }
 
   return (
-    <form
-      action={saveProfileEditAction}
-      className="mt-5 grid gap-6 rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-6 hard-shadow-sm"
-    >
-      <AvatarUploader initialUrl={profile.photoUrl} displayName={profile.displayName} />
-
-      <p className="-mt-2 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 text-xs font-semibold leading-5 text-[color:var(--mauve)]">
-        📸 Use a real, clear photo of your face. It helps the people you meet
-        recognise you at events — profiles with a real photo get far more Clicks.
-      </p>
-
-      {profile.verified ? (
-        <p className="-mt-3 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-4 py-3 text-xs font-bold leading-5 text-[color:var(--ink)]">
-          <VerifiedTick /> Your profile is verified — the tick shows next to your
-          name across Click.
+    <form action={saveProfileEditAction} className="mt-2">
+      {/* ----- Photos ----- */}
+      <Group>
+        <AvatarUploader initialUrl={profile.photoUrl} displayName={profile.displayName} />
+        <p className="mt-4 max-w-[520px] text-[13px] leading-[1.55] text-[color:var(--slate)]">
+          A real, clear photo of your face works best - it helps the people you meet recognise you
+          when you get there.
         </p>
-      ) : (
-        <p className="-mt-3 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 text-xs font-semibold leading-5 text-[color:var(--mauve)]">
-          🛡️ Photo verification is coming soon — once Click confirms your photo is
-          really you, you’ll get a verified tick next to your name.
-        </p>
-      )}
 
-      <ProfileGalleryUploader initialUrls={profile.galleryPhotos} />
+        {profile.verified ? (
+          <p className="mt-3 inline-flex items-center gap-2 rounded-[12px] bg-[color:var(--lavender-100)] px-3.5 py-2.5 text-[13px] font-medium leading-5 text-[color:var(--ink)]">
+            <VerifiedTick /> Your profile is verified - the tick shows next to your name across
+            Click.
+          </p>
+        ) : (
+          <p className="mt-3 max-w-[520px] text-[13px] leading-[1.55] text-[color:var(--slate)]">
+            Photo verification is coming soon - once Click confirms the photo is really you, a
+            verified tick shows next to your name.
+          </p>
+        )}
 
-      <div className="grid gap-5 sm:grid-cols-2">
-        <Field label="Display name" name="display_name" defaultValue={profile.displayName} required />
-        <Field
-          label="Age (optional)"
-          name="age"
-          type="number"
-          min={18}
-          defaultValue={profile.age?.toString() ?? ""}
-        />
-      </div>
+        <div className="mt-7">
+          <ProfileGalleryUploader initialUrls={profile.galleryPhotos} />
+        </div>
+      </Group>
 
-      {/* ----- Postcode → suburb ----- */}
-      <div className="grid gap-5 sm:grid-cols-2">
-        <label className="grid gap-2 text-sm font-bold text-[color:var(--ink)]">
-          <span className="font-mono text-[0.7rem] uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-            Postcode
-          </span>
-          <input
-            inputMode="numeric"
-            pattern="\d{4}"
-            maxLength={4}
-            value={postcode}
-            onChange={(e) => handlePostcodeChange(e.target.value)}
-            placeholder="2204"
-            className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 text-base font-semibold text-[color:var(--ink)] placeholder:text-[color:var(--mauve)]/55 outline-none focus:bg-[color:var(--cream)]"
-          />
-        </label>
+      {/* ----- About you ----- */}
+      <Group>
+        <SectionHead>About you</SectionHead>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <FieldRow label="Display name">
+            <input
+              name="display_name"
+              defaultValue={profile.displayName}
+              required
+              className={INPUT}
+            />
+          </FieldRow>
+          <FieldRow label="Age" note="Optional - shown next to your name.">
+            <input
+              name="age"
+              type="number"
+              min={18}
+              defaultValue={profile.age?.toString() ?? ""}
+              className={INPUT}
+            />
+          </FieldRow>
+        </div>
 
-        <label className="grid gap-2 text-sm font-bold text-[color:var(--ink)]">
-          <span className="font-mono text-[0.7rem] uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-            Suburb
-          </span>
-          <select
-            name="suburb"
-            required
-            value={suburb}
-            onChange={(e) => setSuburb(e.target.value)}
-            className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 text-base font-semibold text-[color:var(--ink)] outline-none focus:bg-[color:var(--cream)]"
+        <div className="mt-2 grid gap-4 sm:grid-cols-2">
+          <FieldRow
+            label="Postcode"
+            note={
+              pcMessage ? (
+                <span className={pcStatus === "error" ? "text-[color:var(--danger)]" : undefined}>
+                  {pcStatus === "loading" ? "Looking up…" : pcMessage}
+                </span>
+              ) : null
+            }
           >
-            {suburbOptions.length === 0 ? (
-              <option value="" disabled>
-                Enter a postcode first
-              </option>
-            ) : null}
-            {/* Keep whatever was saved selectable even if it's off the list. */}
-            {suburb && !suburbOptions.includes(suburb) ? (
-              <option value={suburb}>{suburb}</option>
-            ) : null}
-            {suburbOptions.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-      {pcMessage ? (
-        <p
-          className={`-mt-3 font-mono text-[0.65rem] uppercase tracking-[0.16em] ${
-            pcStatus === "error" ? "text-[color:var(--rose)]" : "text-[color:var(--mauve)]"
-          }`}
-        >
-          {pcStatus === "loading" ? "Looking up…" : pcMessage}
-        </p>
-      ) : null}
+            <input
+              inputMode="numeric"
+              pattern="\d{4}"
+              maxLength={4}
+              value={postcode}
+              onChange={(e) => handlePostcodeChange(e.target.value)}
+              placeholder="2204"
+              className={INPUT}
+            />
+          </FieldRow>
+
+          <FieldRow label="Suburb">
+            <select
+              name="suburb"
+              required
+              value={suburb}
+              onChange={(e) => setSuburb(e.target.value)}
+              className={INPUT}
+            >
+              {suburbOptions.length === 0 ? (
+                <option value="" disabled>
+                  Enter a postcode first
+                </option>
+              ) : null}
+              {/* Keep whatever was saved selectable even if it's off the list. */}
+              {suburb && !suburbOptions.includes(suburb) ? (
+                <option value={suburb}>{suburb}</option>
+              ) : null}
+              {suburbOptions.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </FieldRow>
+        </div>
+      </Group>
 
       {/* ----- Bio ----- */}
-      <label className="grid gap-2 text-sm font-bold text-[color:var(--ink)]">
-        <span className="font-mono text-[0.7rem] uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+      <Group>
+        <SectionHead sub="A line or two in your own words - e.g. potter by hobby, gig-goer by habit.">
           Bio
-        </span>
+        </SectionHead>
         <textarea
           name="bio"
           rows={4}
           defaultValue={profile.bio ?? ""}
-          className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 text-base font-semibold text-[color:var(--ink)] outline-none focus:bg-[color:var(--cream)]"
-          placeholder="A short, friendly intro — what you’re into, what you’re here for."
+          placeholder="What you're into, and what you're here for."
+          className={`${FIELD} resize-y py-3 leading-[1.55]`}
         />
-      </label>
+      </Group>
 
       {/* ----- Prompts ----- */}
-      <Fieldset
-        legend={`Prompts (optional · up to ${MAX_PROFILE_PROMPTS})`}
-        hint="Show some personality — answer a fun prompt or three. They appear on your profile."
-      >
+      <Group>
+        <SectionHead sub="Show some personality - answer one or three. They show on your profile.">
+          Prompts · optional, up to {MAX_PROFILE_PROMPTS}
+        </SectionHead>
         <div className="grid gap-3">
           {prompts.map((entry, index) => {
             const usedElsewhere = new Set(
               prompts.filter((_, i) => i !== index).map((p) => p.id),
             );
             return (
-              <div
-                key={entry.id}
-                className="grid gap-2 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-4"
-              >
-                <div className="flex items-center justify-between gap-3">
+              <div key={entry.id} className="grid gap-2">
+                <div className="flex items-center gap-2">
                   <select
                     value={entry.id}
                     onChange={(e) =>
@@ -273,7 +288,7 @@ export function ProfileEditForm({
                         list.map((p, i) => (i === index ? { ...p, id: e.target.value } : p)),
                       )
                     }
-                    className="min-w-0 flex-1 rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-2 text-sm font-bold text-[color:var(--ink)] outline-none"
+                    className={`min-w-0 flex-1 ${FIELD} h-11 text-[14px] font-semibold`}
                   >
                     {PROFILE_PROMPTS.filter((p) => !usedElsewhere.has(p.id)).map((p) => (
                       <option key={p.id} value={p.id}>
@@ -285,9 +300,9 @@ export function ProfileEditForm({
                     type="button"
                     onClick={() => setPrompts((list) => list.filter((_, i) => i !== index))}
                     aria-label="Remove prompt"
-                    className="grid size-8 shrink-0 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] text-xs font-bold text-[color:var(--ink)] hover:bg-[color:var(--rose)] hover:text-[color:var(--surface-deep)]"
+                    className="grid size-9 shrink-0 place-items-center rounded-[10px] text-[color:var(--slate)] transition-colors hover:bg-[color:var(--lavender-100)] hover:text-[color:var(--ink)]"
                   >
-                    ✕
+                    <Icon name="x" size={16} stroke={2.2} />
                   </button>
                 </div>
                 <textarea
@@ -300,9 +315,9 @@ export function ProfileEditForm({
                   rows={2}
                   maxLength={MAX_PROMPT_ANSWER_LENGTH}
                   placeholder="Your answer…"
-                  className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-2 text-sm font-semibold text-[color:var(--ink)] placeholder:text-[color:var(--mauve)]/55 outline-none"
+                  className={`${FIELD} resize-y py-2.5 text-[14.5px] leading-[1.5]`}
                 />
-                <span className="text-right font-mono text-[0.6rem] uppercase tracking-[0.14em] text-[color:var(--mauve)]">
+                <span className="text-right text-[11.5px] text-[color:var(--ink-faint)]">
                   {entry.answer.length}/{MAX_PROMPT_ANSWER_LENGTH}
                 </span>
               </div>
@@ -317,89 +332,92 @@ export function ProfileEditForm({
                 const next = PROFILE_PROMPTS.find((p) => !used.has(p.id));
                 if (next) setPrompts((list) => [...list, { id: next.id, answer: "" }]);
               }}
-              className="rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 text-left text-sm font-bold text-[color:var(--mauve)] transition hover:bg-[color:var(--peach)] hover:text-[color:var(--ink)]"
+              className="font-display inline-flex w-fit items-center gap-1.5 rounded-[12px] px-1 py-1 text-[13.5px] font-semibold text-[color:var(--purple)] hover:underline"
             >
-              + Add a prompt{prompts.length === 0 ? " — e.g. Two truths and a lie" : ""}
+              <Icon name="plus" size={15} stroke={2.2} />
+              Add a prompt
             </button>
           ) : null}
         </div>
         {/* Unanswered prompts are dropped server-side, so a blank slot never saves. */}
         <input type="hidden" name="prompts_json" value={JSON.stringify(prompts)} />
-      </Fieldset>
+      </Group>
 
-      {/* ----- Intents ----- */}
-      <Fieldset legend="Intents (pick any)">
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {INTENT_OPTIONS.map((opt) => {
-            const checked = intents.has(opt.value);
-            return (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => setIntents((s) => toggle(s, opt.value))}
-                aria-pressed={checked}
-                className={`rounded-2xl border-2 p-4 text-left transition hard-shadow-sm active:scale-[0.98] ${
-                  checked
-                    ? "border-[color:var(--rose)] bg-[color:var(--rose)] text-[color:var(--surface-deep)]"
-                    : "border-[color:var(--line)] bg-[color:var(--champagne)] text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
-                }`}
-              >
-                <span className="block text-sm font-bold uppercase tracking-wide">{opt.label}</span>
-                <span className="mt-1 block text-xs font-semibold leading-5 opacity-80">{opt.body}</span>
-              </button>
-            );
-          })}
+      {/* ----- Here for (intents) ----- */}
+      <Group>
+        <SectionHead sub="Pick any that fit - it just tunes what we show you.">Here for</SectionHead>
+        <div className="grid gap-2.5 sm:grid-cols-2">
+          {INTENT_OPTIONS.map((opt) => (
+            <IntentCard
+              key={opt.value}
+              label={opt.label}
+              body={opt.body}
+              on={intents.has(opt.value)}
+              onClick={() => setIntents((s) => toggle(s, opt.value))}
+            />
+          ))}
         </div>
         {[...intents].map((value) => (
           <input key={value} type="hidden" name="intent" value={value} />
         ))}
-      </Fieldset>
 
-      {/* ----- Discovery / privacy ----- */}
-      <Fieldset
-        legend="Discovery"
-        hint="Control who finds you and how broad your event recommendations are."
-      >
-        <div className="grid gap-2">
-          {datingSelected ? (
-            <Toggle
-              label="Dating discovery"
-              description="Let people on Click who are dating-minded see you on profiles and Click Radar. Turn this off to keep dating in your event feed without being shown to other daters."
-              checked={datingVisible}
-              onChange={setDatingVisible}
-            />
-          ) : (
-            <p className="rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--champagne)] p-4 text-xs font-semibold leading-5 text-[color:var(--mauve)]">
-              Add the <span className="font-bold text-[color:var(--ink)]">Dating</span> intent above to control dating discovery.
-            </p>
-          )}
-          <Toggle
-            label="Flexible discovery"
-            description="Show me cross-intent events (e.g. friendship-tagged events even if my main intent is dating)."
-            checked={flexibleDiscovery}
-            onChange={setFlexibleDiscovery}
-          />
-        </div>
+        {/* Dating mode sits inline with the intent that reveals it. */}
+        {datingSelected ? (
+          <div className="mt-3.5 rounded-[16px] border border-[color:var(--lavender-200)] bg-[color:var(--lavender-100)] px-4 py-3.5">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={datingVisible}
+              onClick={() => setDatingVisible((v) => !v)}
+              className="flex w-full items-center justify-between gap-4 text-left"
+            >
+              <span className="min-w-0">
+                <span className="block text-[14.5px] font-semibold text-[color:var(--ink)]">
+                  Dating mode {datingVisible ? "· On" : "· Paused"}
+                </span>
+                <span className="mt-0.5 block text-[12.5px] leading-[1.5] text-[color:var(--slate)]">
+                  Only people also open to dating ever see this.
+                </span>
+              </span>
+              <Switch on={datingVisible} />
+            </button>
+          </div>
+        ) : null}
         {/* Always submit current state so it round-trips even while the dating
             toggle is hidden (no dating intent selected). */}
         <input type="hidden" name="dating_visible" value={datingVisible ? "true" : "false"} />
-        <input type="hidden" name="flexible_discovery" value={flexibleDiscovery ? "true" : "false"} />
-      </Fieldset>
+      </Group>
+
+      {/* ----- Discovery ----- */}
+      <Group>
+        <SectionHead sub="How broad your event suggestions are.">Discovery</SectionHead>
+        <SettingRow
+          label="Flexible discovery"
+          description="Show me events across intents - e.g. friendship-tagged events even when dating is my main intent."
+          on={flexibleDiscovery}
+          onToggle={() => setFlexibleDiscovery((v) => !v)}
+        />
+        <input
+          type="hidden"
+          name="flexible_discovery"
+          value={flexibleDiscovery ? "true" : "false"}
+        />
+      </Group>
 
       {/* ----- Interest tags ----- */}
-      <Fieldset
-        legend="Interest tags"
-        hint="Shape your recommendations — pick the activities you're into."
-      >
-        <div className="grid gap-4">
+      <Group>
+        <SectionHead sub="The specific things you're into - not just the broad categories.">
+          Interests
+        </SectionHead>
+        <div className="grid gap-[18px]">
           {tagOptions.interestCategories.map(({ category, tags }) => (
-            <div key={category} className="grid gap-2">
-              <span className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+            <div key={category}>
+              <p className="mb-2.5 text-[12px] font-semibold tracking-[0.03em] text-[color:var(--slate)]">
                 {category}
-              </span>
+              </p>
               <div className="flex flex-wrap gap-2">
                 {tags.map((tag) => (
-                  <Chip
+                  <TagButton
                     key={tag.slug}
                     label={tag.label}
                     selected={interests.has(tag.slug)}
@@ -410,16 +428,26 @@ export function ProfileEditForm({
             </div>
           ))}
         </div>
+        <p
+          className={`mt-4 text-[13.5px] font-semibold ${
+            interests.size >= 3 ? "text-[color:var(--sage)]" : "text-[color:var(--slate)]"
+          }`}
+        >
+          {interests.size === 0
+            ? "Pick a few you're into"
+            : `${interests.size} picked${interests.size >= 3 ? " - nice" : ""}`}
+        </p>
         {[...interests].map((slug) => (
           <input key={slug} type="hidden" name="interest_tag" value={slug} />
         ))}
-      </Fieldset>
+      </Group>
 
       {/* ----- Music tags ----- */}
-      <Fieldset legend="Music tags" hint="Music taste is used as a subtle matching signal.">
+      <Group>
+        <SectionHead sub="A few genres, if you like - optional.">Music you&apos;re into</SectionHead>
         <div className="flex flex-wrap gap-2">
           {tagOptions.musicTags.map((tag) => (
-            <Chip
+            <TagButton
               key={tag.slug}
               label={tag.label}
               selected={music.has(tag.slug)}
@@ -430,116 +458,132 @@ export function ProfileEditForm({
         {[...music].map((slug) => (
           <input key={slug} type="hidden" name="music_tag" value={slug} />
         ))}
-      </Fieldset>
+      </Group>
 
       {/* ----- Click quiz ----- */}
-      <Fieldset legend="Click quiz">
-        <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--champagne)] p-5">
-          <div className="max-w-md">
-            {profile.lifeQuizCompleted ? (
-              <p className="text-sm font-bold uppercase tracking-wide text-[color:var(--ink)]">
-                <span className="text-[color:var(--rose)]">✓</span> Life Quiz completed
-              </p>
-            ) : null}
-            <p className="mt-1 text-sm font-semibold leading-6 text-[color:var(--mauve)]">
-              The Life Quiz tunes your matches — life stage, social energy, availability, and mood.
-              Takes about two minutes.
-            </p>
-          </div>
-          <Link
-            href="/quiz/life"
-            className="shrink-0 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)]"
-          >
-            {profile.lifeQuizCompleted ? "Retake quiz" : "Take the Life Quiz"}
-          </Link>
-        </div>
-      </Fieldset>
+      <Group last>
+        <Link
+          href="/quiz/life"
+          className="flex w-full items-center gap-3.5 rounded-[16px] bg-[color:var(--paper)] px-4 py-4 shadow-[var(--shadow-sm)] transition-colors hover:bg-[color:var(--lavender-100)]"
+        >
+          <span className="grid size-10 shrink-0 place-items-center rounded-[12px] bg-[color:var(--lavender-100)] text-[color:var(--purple)]">
+            <Icon name="compass" size={20} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[15px] font-semibold text-[color:var(--ink)]">
+              {profile.lifeQuizCompleted ? "Update your Click quiz" : "Take the Click quiz"}
+            </span>
+            <span className="mt-0.5 block text-[12.5px] leading-[1.45] text-[color:var(--slate)]">
+              {profile.lifeQuizCompleted
+                ? "Life stage, energy, availability - it keeps your suggestions sharp."
+                : "It makes your suggestions a lot more relevant. About two minutes."}
+            </span>
+          </span>
+          <Icon name="chevR" size={18} className="text-[color:var(--ink-faint)]" />
+        </Link>
+      </Group>
 
-      {/* Sticky save bar so "Save profile" is always reachable without scrolling
-          to the very bottom of this long form (bug board #219). Negative margins
-          cancel the card's p-6 so it spans edge-to-edge; cream bg matches. */}
-      <div className="sticky bottom-0 z-10 -mx-6 -mb-6 flex flex-wrap items-center justify-between gap-3 rounded-b-3xl border-t-2 border-[color:var(--line)] bg-[color:var(--cream)] px-6 py-4">
+      {/* Sticky save bar so "Save changes" is always reachable without scrolling
+          to the very bottom of this long form (bug board #219). */}
+      <div className="sticky bottom-0 z-10 flex items-center justify-end gap-3 border-t border-[color:var(--mist)] bg-[color:var(--champagne)] py-4">
         <Link
           href="/profile"
-          className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)]"
+          className="font-display px-2 text-[14px] font-semibold text-[color:var(--slate)] hover:text-[color:var(--ink)]"
         >
           Cancel
         </Link>
-        <button
-          type="submit"
-          className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-6 py-3 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
-        >
-          Save profile
-        </button>
+        <Button type="submit">Save changes</Button>
       </div>
     </form>
   );
 }
 
-function Fieldset({
-  legend,
-  hint,
-  children,
-}: {
-  legend: string;
-  hint?: string;
-  children: React.ReactNode;
-}) {
+/* Sections are separated by whitespace + ONE hairline - never boxed into cards. */
+function Group({ children, last }: { children: React.ReactNode; last?: boolean }) {
   return (
-    <fieldset className="grid gap-3">
-      <legend className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-        {legend}
-      </legend>
-      {hint ? (
-        <p className="-mt-1 text-xs font-semibold text-[color:var(--mauve)]">{hint}</p>
-      ) : null}
-      {children}
-    </fieldset>
+    <div className={`py-7 ${last ? "" : "border-b border-[color:var(--mist)]"}`}>{children}</div>
   );
 }
 
-function Toggle({
+function SectionHead({ children, sub }: { children: React.ReactNode; sub?: string }) {
+  return (
+    <div className="mb-3.5">
+      <h2 className="eyebrow">{children}</h2>
+      {sub ? (
+        <p className="mt-1.5 text-[13px] leading-[1.5] text-[color:var(--slate)]">{sub}</p>
+      ) : null}
+    </div>
+  );
+}
+
+function FieldRow({
   label,
-  description,
-  checked,
-  onChange,
+  note,
+  children,
 }: {
   label: string;
-  description: string;
-  checked: boolean;
-  onChange: (v: boolean) => void;
+  note?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-[7px] block text-[13.5px] font-semibold text-[color:var(--ink)]">
+        {label}
+      </span>
+      {children}
+      {note ? (
+        <span className="mt-1.5 block text-[12px] text-[color:var(--slate)]">{note}</span>
+      ) : null}
+    </label>
+  );
+}
+
+/* Selected = lavender wash + a purple check disc. Selection is always purple,
+   never a status colour. Radius 12, never a pill (pills are the tags). */
+function IntentCard({
+  label,
+  body,
+  on,
+  onClick,
+}: {
+  label: string;
+  body: string;
+  on: boolean;
+  onClick: () => void;
 }) {
   return (
     <button
       type="button"
-      role="switch"
-      aria-checked={checked}
-      onClick={() => onChange(!checked)}
-      className={`flex items-start justify-between gap-3 rounded-2xl border-2 px-4 py-4 text-left transition ${
-        checked
-          ? "border-[color:var(--rose)] bg-[color:var(--peach)]"
-          : "border-[color:var(--line)] bg-[color:var(--cream)]"
+      onClick={onClick}
+      aria-pressed={on}
+      className={`flex items-start justify-between gap-2.5 rounded-[12px] border px-4 py-3.5 text-left transition-colors ${
+        on
+          ? "border-[color:var(--purple-500)] bg-[color:var(--lavender-100)]"
+          : "border-[color:var(--mist-strong)] bg-[color:var(--paper)] hover:border-[color:var(--slate)]"
       }`}
     >
-      <span className="grid gap-1">
-        <span className="text-base font-bold">{label}</span>
-        <span className="text-xs font-semibold leading-5 text-[color:var(--mauve)]">
-          {description}
+      <span className="min-w-0">
+        <span className="block text-[14.5px] font-semibold text-[color:var(--ink)]">{label}</span>
+        <span className="mt-0.5 block text-[12.5px] leading-[1.45] text-[color:var(--slate)]">
+          {body}
         </span>
       </span>
       <span
-        aria-hidden="true"
-        className={`mt-0.5 inline-flex h-7 w-12 shrink-0 items-center rounded-full border-2 border-[color:var(--line)] p-0.5 transition ${
-          checked ? "bg-[color:var(--rose)] justify-end" : "bg-[color:var(--champagne)] justify-start"
+        aria-hidden
+        className={`mt-0.5 grid size-[22px] shrink-0 place-items-center rounded-full bg-[color:var(--purple)] text-[color:var(--champagne)] transition ${
+          on ? "scale-100 opacity-100" : "scale-75 opacity-0"
         }`}
       >
-        <span className="block size-5 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)]" />
+        <Icon name="check" size={13} stroke={3} />
       </span>
     </button>
   );
 }
 
-function Chip({
+/* The DS `Tag` pill, made pressable. `.ck-tag--select` carries the hover/focus
+   states; `.ck-tag--selected` is the Deep-Purple fill (the fill IS the signal -
+   no tick). Status colour never lands on a tag. */
+function TagButton({
   label,
   selected,
   onClick,
@@ -553,45 +597,9 @@ function Chip({
       type="button"
       onClick={onClick}
       aria-pressed={selected}
-      className={`rounded-full border-2 px-4 py-2 text-sm font-bold transition active:scale-[0.97] ${
-        selected
-          ? "border-[color:var(--rose)] bg-[color:var(--rose)] text-[color:var(--surface-deep)]"
-          : "border-[color:var(--line)] bg-[color:var(--champagne)] text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
-      }`}
+      className={`ck-tag ck-tag--select ${selected ? "ck-tag--selected" : ""}`}
     >
       {label}
     </button>
-  );
-}
-
-function Field({
-  label,
-  name,
-  type = "text",
-  defaultValue,
-  required,
-  min,
-}: {
-  label: string;
-  name: string;
-  type?: string;
-  defaultValue?: string;
-  required?: boolean;
-  min?: number;
-}) {
-  return (
-    <label className="grid gap-2 text-sm font-bold text-[color:var(--ink)]">
-      <span className="font-mono text-[0.7rem] uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-        {label}
-      </span>
-      <input
-        name={name}
-        type={type}
-        defaultValue={defaultValue}
-        required={required}
-        min={min}
-        className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 text-base font-semibold text-[color:var(--ink)] placeholder:text-[color:var(--mauve)]/55 outline-none focus:bg-[color:var(--cream)]"
-      />
-    </label>
   );
 }

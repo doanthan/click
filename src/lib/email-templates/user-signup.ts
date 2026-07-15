@@ -1,4 +1,4 @@
-// Welcome email — sent after a user finishes credential/Google signup.
+// Welcome email - sent after a user finishes credential/Google signup.
 // Voice + structure ported from the static draft at `emails/account-welcome.html`,
 // swapping Inter → Manrope and rebuilt out of `chrome.ts` helpers.
 
@@ -35,15 +35,15 @@ function step(num: number, headline: string, body: string): string {
 }
 
 export function buildUserSignupEmail(d: UserSignupData) {
-  const subject = `You're in, ${d.firstName} — welcome to Click`;
+  const subject = `You're in, ${d.firstName} - welcome to Click`;
 
   const text = [
     `Hi ${d.firstName},`,
-    "Click helps you find people through things worth leaving the house for — pottery nights, coastal walks, CrossFit classes, low-pressure dinners, the small Saturday things that turn into Sunday plans.",
+    "Click helps you find people through things worth leaving the house for - pottery nights, coastal walks, CrossFit classes, low-pressure dinners, the small Saturday things that turn into Sunday plans.",
     "Three small things to start:",
-    "1. Tell us what you're up for. Four questions, ninety seconds — it teaches Click whether you want low-key weekends, a CrossFit crew, friends in the Inner West, or all of the above.",
+    "1. Tell us what you're up for. Four questions, ninety seconds - it teaches Click whether you want low-key weekends, a CrossFit crew, friends in the Inner West, or all of the above.",
     "2. Browse what's actually near you. Pottery in Marrickville, run clubs in Bondi, board game nights in Newtown.",
-    "3. Click on people once you've got an event in common. No swiping — you'll meet people because you're both showing up Thursday, not because of a photo.",
+    "3. click with people once you've got an event in common. You'll meet people because you're both showing up Thursday, not because of a photo.",
     `Take the 90-second quiz: ${d.quizUrl}`,
     `Or just browse events near you first: ${d.discoverUrl}`,
     "P.S. A real human reads every reply to this email. If something's confusing, broken, or you can't find what you're looking for, just hit reply.",
@@ -55,7 +55,7 @@ export function buildUserSignupEmail(d: UserSignupData) {
         ${eyebrow("Welcome")}
         ${heroTitle(`You're in, ${escapeHtml(d.firstName)}.`)}
         ${paragraph(
-          "Click helps you find people through things worth leaving the house for &mdash; pottery nights, coastal walks, CrossFit classes, low-pressure dinners, the small Saturday things that turn into Sunday plans.",
+          "Click helps you find people through things worth leaving the house for - pottery nights, coastal walks, CrossFit classes, low-pressure dinners, the small Saturday things that turn into Sunday plans.",
           { size: 17 },
         )}
       </td>
@@ -70,14 +70,14 @@ export function buildUserSignupEmail(d: UserSignupData) {
         <p style="margin:0 0 20px 0;font:600 11px/1 ${FONT_SANS};letter-spacing:0.18em;text-transform:uppercase;color:${MAUVE};">Three small things to start</p>
         ${step(1, "Tell us what you're up for.", "Four questions, ninety seconds. It teaches Click whether you want low-key weekends, a CrossFit crew, friends in the Inner West, or all of the above.")}
         ${step(2, "Browse what's actually near you.", "Pottery in Marrickville, run clubs in Bondi, board game nights in Newtown. Filter by suburb, date, and the kind of energy you're after.")}
-        ${step(3, "Click on people once you've got an event in common.", "No swiping. You'll meet people because you're both showing up Thursday, not because of a photo.")}
+        ${step(3, "click with people once you've got an event in common.", "You'll meet people because you're both showing up Thursday, not because of a photo.")}
       </td>
     </tr>
     <tr>
       <td class="px-gutter" align="left" style="padding:24px 40px 8px 40px;">
         ${renderButton({ href: d.quizUrl, label: "Take the 90-second quiz", tone: "rose" })}
         <p style="margin:14px 0 0 0;font:400 14px/1.5 ${FONT_SANS};color:${MAUVE};">
-          Or just <a href="${escapeHtml(d.discoverUrl)}" style="color:${INK};text-decoration:underline;">browse events near you</a> first &mdash; the quiz can wait.
+          Or just <a href="${escapeHtml(d.discoverUrl)}" style="color:${INK};text-decoration:underline;">browse events near you</a> first - the quiz can wait.
         </p>
       </td>
     </tr>

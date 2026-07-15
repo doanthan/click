@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { auth } from "@/auth";
-import { Pill } from "@/components/click-ui";
+import { Icon, Tag } from "@/components/ds";
 import { EventAttendeePreview } from "@/components/event-attendee-preview";
 import { EventBookingDialog } from "@/components/event-booking-dialog";
 import { EventMediaGallery } from "@/components/event-media-gallery";
@@ -34,7 +34,7 @@ type PageProps = {
 };
 
 // Statuses an event must be in to be visible to the public. Pending (awaiting
-// admin review), Rejected, and Cancelled events are hidden — the discover/browse
+// admin review), Rejected, and Cancelled events are hidden - the discover/browse
 // queries already exclude them, and this gate closes the direct-URL hole so an
 // unreviewed event can't be shared around before approval. The owning merchant
 // and admins are exempt so they can still preview.
@@ -58,7 +58,7 @@ function formatTimeRange(startIso: string, endIso: string | null) {
   });
   const start = formatter.format(new Date(startIso));
   const end = endIso ? formatter.format(new Date(endIso)) : null;
-  return end ? `${start} – ${end}` : start;
+  return end ? `${start} - ${end}` : start;
 }
 
 function formatPrice(cents: number, currency: string) {
@@ -102,7 +102,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
 
   // Fulfill-on-return: when Stripe redirects back here after a paid checkout it
   // appends the Checkout Session id. Reconcile it BEFORE loading the event so
-  // the viewer's RSVP status already reads 'confirmed' on this first render —
+  // the viewer's RSVP status already reads 'confirmed' on this first render -
   // the details unlock and the "pay" prompt is gone without waiting on (or, in
   // dev, never receiving) the webhook. Idempotent and best-effort: a failure
   // here just defers to the webhook / calendar reconcile.
@@ -124,7 +124,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
 
   // Hide not-yet-public events (pending review, rejected, cancelled) from
   // everyone except the owning merchant and admins. Without this, a direct slug
-  // link rendered the full listing — RSVP button and all — for any visitor.
+  // link rendered the full listing - RSVP button and all - for any visitor.
   const isAdmin = profileStatus?.role === "admin";
   const isOwner =
     Boolean(event.merchantProfileId) &&
@@ -150,7 +150,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
   const isRegistered = event.viewerRsvpStatus === "confirmed";
   const isWaitlisted = event.viewerRsvpStatus === "waitlisted";
   // A freed seat was offered to this waitlisted viewer and the 30-min hold is
-  // still open — drives the "Confirm your spot" CTA.
+  // still open - drives the "Confirm your spot" CTA.
   const waitlistOfferExpiresAt = isWaitlisted ? event.waitlistOfferExpiresAt : null;
   const isPendingPayment = event.viewerRsvpStatus === "pending_payment";
   const isFull = event.attendees >= event.capacity;
@@ -167,14 +167,14 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
     : 0;
   const totalCents = event.priceCents + bookingFeeCents;
   const hasBookingFee = bookingFeeCents > 0;
-  // Exact refund the viewer would get if they cancel their paid booking now —
+  // Exact refund the viewer would get if they cancel their paid booking now -
   // shown in the cancel confirmation so the number matches what we refund.
   const cancelRefundLabel =
     isPaid && isRegistered
       ? refundQuoteLabel(quoteCancellationRefund(totalCents, event.startsAt), "AUD")
       : null;
   // The venue map unlocks for people who've confirmed their seat (or who manage
-  // the event) — the "paid & confirmed" unlocked state the venue/map live in.
+  // the event) - the "paid & confirmed" unlocked state the venue/map live in.
   const venueUnlocked = isRegistered || isAdmin || isOwner;
   const venueMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
     [event.location, event.address, event.suburb, event.city].filter(Boolean).join(", "),
@@ -201,151 +201,101 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
     }),
   };
 
+  const seatsTaken = attendeePreview.totalConfirmed;
+  const capacityPct = event.capacity > 0 ? Math.min(100, Math.round((seatsTaken / event.capacity) * 100)) : 0;
+  const notice = search?.canceled
+    ? "Checkout was cancelled. Your seat hold was released - you can try again any time."
+    : search?.cancelled
+      ? `Your RSVP was cancelled.${isPaid ? " Any refund will appear in 3 to 5 business days." : ""} The venue details lock again, but you can RSVP any time before the event.`
+      : null;
+
   return (
-    <main className="min-h-screen bg-[color:var(--champagne)] text-[color:var(--ink)]">
-      <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-12">
+    <main className="min-h-screen bg-[color:var(--champagne)] pb-24 text-[color:var(--ink)]">
+      <div className="ck-page max-w-[1180px] pt-4">
+        {/* Canonical quiet back link on its own row - same form on every sub-page. */}
         <Link
-          href="/events"
-          className="inline-flex items-center gap-1 font-mono text-xs font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)] hover:text-[color:var(--ink)]"
+          href="/discover"
+          className="font-display inline-flex items-center gap-1 text-[13.5px] font-semibold text-[color:var(--slate)] hover:text-[color:var(--ink)]"
         >
-          ← Back to events
+          <Icon name="chevL" size={16} stroke={2.2} /> Back
         </Link>
 
-        {search?.canceled ? (
-          <div className="mt-6 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--peach)] p-4 text-sm font-bold text-[color:var(--surface-deep)] hard-shadow-sm">
-            Checkout was cancelled. Your seat hold was released — you can try
-            again any time.
-          </div>
-        ) : null}
-
-        {/* Acknowledge a successful RSVP cancellation so the page doesn't appear
-            to silently dump the viewer on a relocked event (bug board #212). */}
-        {search?.cancelled ? (
-          <div className="mt-6 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--peach)] p-4 text-sm font-bold text-[color:var(--surface-deep)] hard-shadow-sm">
-            Your RSVP was cancelled.{" "}
-            {isPaid ? "Any refund will appear in 3–5 business days. " : ""}
-            The venue details lock again, but you can RSVP any time before the
-            event.
+        {notice ? (
+          <div className="mt-4 rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-4 text-sm text-[color:var(--ink-soft)]">
+            {notice}
           </div>
         ) : null}
 
         {search?.booked && isRegistered ? (
-          <div className="mt-6 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--lav-bg)] p-4 text-sm font-bold text-[color:var(--surface-deep)] hard-shadow-sm">
-            🎉 You&apos;re confirmed! Your seat is locked and the full details
-            are unlocked below — it&apos;s on your{" "}
-            <Link href="/dashboard/calendar" className="underline">
-              calendar
-            </Link>
-            .
-            {/* No profile photo yet → nudge them to add one so other attendees
-                can recognise them at the event (bug board #136). */}
-            {profileStatus && !profileStatus.photoUrl ? (
-              <span className="mt-2 block font-medium">
-                Add a profile photo so people can recognise you —{" "}
-                <Link href="/profile/edit" className="font-bold underline">
-                  add a pic
-                </Link>
-                .
-              </span>
-            ) : null}
+          <div className="mt-4 flex items-start gap-3 rounded-[var(--radius-lg)] border border-[color:var(--lavender)] bg-[color:var(--lav-bg)] p-4 text-sm text-[color:var(--purple-800)]">
+            <Icon name="check" size={18} stroke={2.6} className="mt-0.5 text-[color:var(--sage)]" />
+            <span>
+              <b className="font-semibold">You&apos;re going.</b> Your seat is locked and the full details are unlocked
+              below - it&apos;s on your{" "}
+              <Link href="/dashboard/calendar" className="font-semibold underline">
+                calendar
+              </Link>
+              .
+              {profileStatus && !profileStatus.photoUrl ? (
+                <span className="mt-1 block">
+                  Add a profile photo so people can recognise you -{" "}
+                  <Link href="/profile/edit" className="font-semibold underline">
+                    add a pic
+                  </Link>
+                  .
+                </span>
+              ) : null}
+            </span>
           </div>
         ) : null}
 
-        <div className="mt-6">
-          <EventMediaGallery
-            items={event.media}
-            statusLabel={event.status}
-            categoryLabel={event.category}
-          />
-        </div>
+        <div className="mt-5 grid items-start gap-9 lg:grid-cols-[minmax(0,1fr)_372px]">
+          {/* ---- Content column ---- */}
+          <div className="min-w-0">
+            <div className="overflow-hidden rounded-[var(--radius-xl)]">
+              <EventMediaGallery items={event.media} statusLabel={event.status} categoryLabel={event.category} />
+            </div>
 
-        <article className="mt-8 overflow-hidden rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow-sm">
-          <div className="grid gap-8 p-6 sm:p-10 lg:grid-cols-[1fr_320px]">
-            <div>
-              <p className="font-mono text-xs font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-                {formatLongDate(event.startsAt)} · {formatTimeRange(event.startsAt, event.endsAt)}
-              </p>
-              {/* Share is available on every event (locked or unlocked) — the
-                  listing URL never leaks the RSVP-gated venue. */}
-              <div className="mt-3 flex flex-wrap items-center gap-2">
+            {/* Title is the focal point; the panel owns date/time/location, so
+                the title goes straight to the category + all interest tags. */}
+            <h1 className="font-display mt-6 text-[length:var(--text-h1)] leading-[1.2] font-semibold tracking-[-0.02em] text-[color:var(--ink)]">
+              {event.title}
+            </h1>
+            <p className="mt-2 text-sm font-medium text-[color:var(--slate)]">
+              Hosted by {event.host} · {event.group}
+            </p>
+
+            <div className="mt-4 flex flex-wrap items-center gap-1.5">
+              <span className="inline-flex h-[22px] items-center rounded-full bg-[color:var(--lavender-100)] px-2.5 text-xs font-semibold text-[color:var(--purple-700)]">
+                {event.category}
+              </span>
+              {/* The event detail page is the ONE surface that shows every tag. */}
+              {event.tags.map((tag) => (
+                <Link key={tag} href={`/discover?tag=${encodeURIComponent(tag)}`}>
+                  <Tag dense>{tag}</Tag>
+                </Link>
+              ))}
+              <span className="ml-1">
                 <ShareEventButton title={event.title} slug={event.id} />
+              </span>
+            </div>
+
+            <p className="mt-6 text-[15px] leading-[1.65] text-pretty text-[color:var(--ink-soft)]">
+              {event.description}
+            </p>
+
+            {isRegistered && myGuestSeats.length > 0 ? (
+              <MyGuestSeats perSeatCents={totalCents} eventDateISO={event.startsAt} seats={myGuestSeats} />
+            ) : null}
+
+            {event.relationshipGoal ? (
+              <div className="mt-6 rounded-[var(--radius-lg)] bg-[color:var(--lav-bg)] p-5">
+                <p className="text-xs font-bold tracking-[0.08em] uppercase text-[color:var(--purple-700)]">Why this event</p>
+                <p className="mt-2 text-[15px] font-medium leading-6 text-[color:var(--ink)]">{event.relationshipGoal}</p>
               </div>
-              {/* Native add-to-calendar — Google for Google users, .ics for
-                  Apple Calendar / Outlook / everyone else. Only shown once the
-                  viewer has unlocked the event by RSVPing (or manages it): a
-                  calendar entry is only meaningful once you're actually going,
-                  and the .ics/Google links carry the now-unlocked venue. */}
-              {venueUnlocked ? (
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <a
-                    href={`/api/events/${event.id}/ics`}
-                    className="inline-flex items-center gap-1.5 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-1.5 text-[0.7rem] font-bold uppercase tracking-wide text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
-                  >
-                    ＋ Add to calendar (.ics)
-                  </a>
-                  <a
-                    href={successDetails.calendarUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-1.5 text-[0.7rem] font-bold uppercase tracking-wide text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
-                  >
-                    ＋ Google Calendar
-                  </a>
-                </div>
-              ) : null}
-              <h1 className="font-display mt-3 text-4xl font-bold leading-[1.05] tracking-[-0.025em] sm:text-5xl">
-                {event.title}
-              </h1>
-              <p className="mt-2 text-sm font-semibold text-[color:var(--mauve)]">
-                Hosted by {event.host} <span className="opacity-50">·</span> {event.group}
-              </p>
+            ) : null}
 
-              <section className="mt-8">
-                <h2 className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-                  About this event
-                </h2>
-                <p className="mt-3 text-base leading-7 text-[color:var(--ink)]">
-                  {event.description}
-                </p>
-              </section>
-
-              {/* Purchaser-only: manage the +1 seats you bought (spec 19 §10.1). */}
-              {isRegistered && myGuestSeats.length > 0 ? (
-                <MyGuestSeats
-                  perSeatCents={totalCents}
-                  eventDateISO={event.startsAt}
-                  seats={myGuestSeats}
-                />
-              ) : null}
-
-              {event.relationshipGoal ? (
-                <section className="mt-6 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-5">
-                  <p className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-                    Why this event ✷
-                  </p>
-                  <p className="mt-2 text-base font-bold leading-6">{event.relationshipGoal}</p>
-                </section>
-              ) : null}
-
-              {event.tags.length > 0 ? (
-                <section className="mt-6">
-                  <h2 className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-                    Tags
-                  </h2>
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {event.tags.map((tag) => (
-                      <Link
-                        key={tag}
-                        href={`/events?tag=${encodeURIComponent(tag)}`}
-                        className="inline-flex items-center"
-                      >
-                        <Pill>#{tag}</Pill>
-                      </Link>
-                    ))}
-                  </div>
-                </section>
-              ) : null}
-
+            <div className="mt-8">
               <EventAttendeePreview
                 items={attendeePreview.items}
                 totalConfirmed={attendeePreview.totalConfirmed}
@@ -353,319 +303,284 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                 viewerIsAttendee={isRegistered || isAdmin || isOwner}
                 eventSlug={event.id}
               />
-
-              {/* Photo nudge: people are far more likely to actually meet up
-                  when they can recognise each other. Shown to signed-in
-                  attendees who haven't added a photo yet. */}
-              {isAuthenticated && profileStatus && !profileStatus.photoUrl ? (
-                <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--peach-soft)] px-5 py-4 hard-shadow-sm">
-                  <p className="text-sm font-bold leading-6 text-[color:var(--ink)]">
-                    ✷ Add a profile photo so people can recognise you at this event.
-                  </p>
-                  <Link
-                    href="/profile/edit"
-                    className="inline-flex shrink-0 rounded-full border-2 border-[color:var(--surface-deep)] bg-[color:var(--rose)] px-4 py-2 text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
-                  >
-                    Add a photo →
-                  </Link>
-                </div>
-              ) : null}
-
-              {/* Post-event Click prompt: once an event you attended has ended,
-                  Click the people you'd like to see again — right here on the
-                  event page (also surfaced on the dashboard rail). */}
-              {postEventPrompt ? (
-                <div className="mt-6">
-                  <PostEventClickCard prompt={postEventPrompt} />
-                </div>
-              ) : null}
             </div>
 
-            <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">
-              <div className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-5 hard-shadow-sm">
-                <p className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-                  Price
+            {/* Photo nudge - unlocked/booked only (recognise each other on the night). */}
+            {isAuthenticated && venueUnlocked && profileStatus && !profileStatus.photoUrl ? (
+              <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-lg)] border border-[color:var(--lavender)] bg-[color:var(--lav-bg)] px-5 py-4">
+                <p className="flex items-center gap-2 text-sm font-medium text-[color:var(--purple-800)]">
+                  <Icon name="camera" size={17} className="text-[color:var(--purple)]" />
+                  Add a profile photo so people can recognise you at this event.
                 </p>
-                <p className="font-display mt-1 text-3xl font-semibold leading-tight tracking-[-0.02em]">
+                <Link href="/profile/edit" className="ck-btn ck-btn--sm ck-btn--primary shrink-0">
+                  <span className="ck-btn__label">Add a photo</span>
+                </Link>
+              </div>
+            ) : null}
+
+            {postEventPrompt ? (
+              <div className="mt-6">
+                <PostEventClickCard prompt={postEventPrompt} />
+              </div>
+            ) : null}
+          </div>
+
+          {/* ---- Booking panel - the single home for date/time/location/price/capacity ---- */}
+          <aside className="lg:sticky lg:top-20 lg:self-start">
+            <div className="rounded-[var(--radius-xl)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-5 shadow-[var(--shadow-md)]">
+              {/* Price - Ink anchor; "$X per person" or Free, never price-in-button. */}
+              <div className="flex items-baseline gap-2">
+                <span
+                  className={`font-display text-[26px] font-semibold tracking-[-0.01em] ${
+                    isPaid ? "text-[color:var(--ink)]" : "text-[color:var(--sage)]"
+                  }`}
+                >
                   {formatPrice(hasBookingFee ? totalCents : event.priceCents, "AUD")}
+                </span>
+                {isPaid ? <span className="text-[13px] font-medium text-[color:var(--slate)]">per person</span> : null}
+              </div>
+              {hasBookingFee ? (
+                <p className="mt-1 text-xs font-medium text-[color:var(--slate)]">
+                  {formatPrice(event.priceCents, "AUD")} ticket + {formatPrice(bookingFeeCents, "AUD")} booking fee
                 </p>
-                {hasBookingFee ? (
-                  <dl className="mt-2 space-y-0.5 text-xs font-medium text-[color:var(--mauve)]">
-                    <div className="flex items-center justify-between">
-                      <dt>Ticket</dt>
-                      <dd>{formatPrice(event.priceCents, "AUD")}</dd>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <dt>Booking fee</dt>
-                      <dd>{formatPrice(bookingFeeCents, "AUD")}</dd>
-                    </div>
-                  </dl>
-                ) : null}
+              ) : null}
 
-                <div className="mt-5">
-                  <p className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-                    Location
-                  </p>
-                  {!venueUnlocked ? (
-                    <p className="mt-1 text-sm font-bold leading-6">
-                      🔒 {event.suburb} — exact venue revealed after RSVP.
-                    </p>
-                  ) : (
-                    <>
-                      <p className="mt-1 text-sm font-bold leading-6">{event.location}</p>
-                      {event.address ? (
-                        <p className="text-sm font-medium text-[color:var(--mauve)]">
-                          {event.address}
-                        </p>
-                      ) : null}
-                      <p className="text-sm font-medium text-[color:var(--mauve)]">
-                        {[event.suburb, event.city].filter(Boolean).join(", ")}
-                      </p>
-                      {/* Map is a confirmed-attendee perk: once you've paid &
-                          confirmed (or you're admin/owner), the venue unlocks
-                          with a pin you can open in Maps. */}
-                      {venueUnlocked && event.lat && event.lng ? (
-                        <EventVenueMap
-                          lat={event.lat}
-                          lng={event.lng}
-                          label={[event.location, event.address, event.suburb, event.city]
-                            .filter(Boolean)
-                            .join(", ")}
-                          mapsUrl={venueMapsUrl}
-                        />
-                      ) : null}
-                    </>
-                  )}
-                </div>
+              {/* When */}
+              <div className="mt-4 flex items-start gap-2.5 text-sm text-[color:var(--ink-soft)]">
+                <Icon name="calendar" size={16} className="mt-0.5 text-[color:var(--purple)]" />
+                <span>
+                  {formatLongDate(event.startsAt)}
+                  <span className="block text-[color:var(--slate)]">{formatTimeRange(event.startsAt, event.endsAt)}</span>
+                </span>
+              </div>
 
-                <div className="mt-5">
-                  <span
-                    className={`inline-flex items-center rounded-full border-2 border-[color:var(--line)] px-3 py-1.5 text-[0.7rem] font-bold uppercase tracking-wider hard-shadow-sm ${
-                      isFull
-                        ? "bg-[color:var(--ink)] text-[color:var(--on-deep)]"
-                        : "bg-[color:var(--peach)] text-[color:var(--surface-deep)]"
-                    }`}
-                  >
-                    {isFull ? "Fully booked" : "Limited spaces!"}
+              {/* Location - locked until the viewer RSVPs */}
+              {!venueUnlocked ? (
+                <div className="mt-3 flex items-start gap-2.5 rounded-[var(--radius-lg)] bg-[color:var(--lav-bg)] px-3.5 py-3 text-[13px] text-[color:var(--ink-soft)]">
+                  <Icon name="lock" size={16} className="mt-0.5 text-[color:var(--slate)]" />
+                  <span>
+                    <b className="font-semibold text-[color:var(--ink)]">{event.suburb}</b> - venue revealed when you RSVP.
                   </span>
                 </div>
-
-                <div className="mt-6 grid gap-2">
-                  {hasEnded ? (
-                    <div className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-3 text-xs font-bold text-[color:var(--surface-deep)] hard-shadow-sm">
-                      This event has ended.{" "}
-                      <Link href="/discover" className="underline decoration-2 underline-offset-2">
-                        Find an upcoming event →
-                      </Link>
-                    </div>
-                  ) : (
-                  <>
-                  {event.viewerClashEventTitle ? (
-                    <p className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--peach)] p-3 text-xs font-bold text-[color:var(--surface-deep)] hard-shadow-sm">
-                      ⚠️ Heads up — this clashes with{" "}
-                      <span className="underline decoration-2 underline-offset-2">
-                        {event.viewerClashEventTitle}
+              ) : (
+                <div className="mt-3">
+                  <div className="flex items-start gap-2.5 text-sm text-[color:var(--ink-soft)]">
+                    <Icon name="pin" size={16} className="mt-0.5 text-[color:var(--purple)]" />
+                    <span>
+                      <b className="font-semibold text-[color:var(--ink)]">{event.location}</b>
+                      <span className="block text-[color:var(--slate)]">
+                        {[event.address, event.suburb, event.city].filter(Boolean).join(", ")}
                       </span>
-                      , which you&apos;re already going to. You can still book both —
-                      we&apos;ll ask you to confirm first.
-                    </p>
-                  ) : null}
-
-                  {isWaitlisted && !waitlistOfferExpiresAt && event.waitlistPosition ? (
-                    <p className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-3 text-xs font-bold text-[color:var(--surface-deep)] hard-shadow-sm">
-                      You&apos;re #{event.waitlistPosition} on the waitlist. We&apos;ll
-                      notify you the moment a spot opens.
-                    </p>
-                  ) : null}
-
-                  {isPendingPayment && isPaid ? (
-                    // The buyer already holds this seat from a checkout that
-                    // didn't complete (closed tab / failed card). Let them finish
-                    // paying right here instead of dead-ending on the "full"
-                    // waitlist CTA — their own hold is what makes it look full.
-                    // createPaymentHold reuses the existing hold on retry.
-                    <div className="grid gap-2">
-                      <div className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-3 text-xs font-bold text-[color:var(--surface-deep)] hard-shadow-sm">
-                        Your seat is held while your previous checkout finishes.
-                        Complete payment to lock it in.
-                      </div>
-                      {showStripeUnavailableHint ? (
-                        <p className="rounded-xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--rose)]/30 p-3 text-xs font-bold">
-                          Stripe isn&apos;t configured on this server — set
-                          STRIPE_SECRET_KEY in .env.local to enable paid bookings.
-                        </p>
-                      ) : (
-                        <EventPaymentButton
-                          eventId={event.id}
-                          priceLabel={formatPrice(totalCents, "AUD")}
-                        />
-                      )}
+                    </span>
+                  </div>
+                  {event.lat && event.lng ? (
+                    <div className="mt-3">
+                      <EventVenueMap
+                        lat={event.lat}
+                        lng={event.lng}
+                        label={[event.location, event.address, event.suburb, event.city].filter(Boolean).join(", ")}
+                        mapsUrl={venueMapsUrl}
+                      />
                     </div>
-                  ) : isRegistered || isWaitlisted ? (
-                    waitlistOfferExpiresAt && isPaid ? (
-                      // Paid promotion: a seat opened — secure it through Stripe
-                      // checkout, with "Leave waitlist" still available below.
+                  ) : null}
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <a href={`/api/events/${event.id}/ics`} className="ck-btn ck-btn--sm ck-btn--secondary">
+                      <span className="ck-btn__label">
+                        <Icon name="calendar" size={15} /> Add to calendar
+                      </span>
+                    </a>
+                    <a
+                      href={successDetails.calendarUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="ck-btn ck-btn--sm ck-btn--secondary"
+                    >
+                      <span className="ck-btn__label">Google</span>
+                    </a>
+                  </div>
+                </div>
+              )}
+
+              {/* Capacity meter */}
+              <div className="mt-4 border-t border-[color:var(--mist)] pt-4">
+                <div className="mb-1.5 flex items-center justify-between text-[13px] font-medium text-[color:var(--slate)]">
+                  <span>{isFull ? "Fully booked" : `${seatsTaken} of ${event.capacity} going`}</span>
+                  {countdownLabel !== "Ended" ? <span>{countdownLabel}</span> : null}
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-[color:var(--lavender-100)]">
+                  <div
+                    className={`h-full rounded-full ${capacityPct >= 85 ? "bg-[color:var(--coral)]" : "bg-[color:var(--purple)]"}`}
+                    style={{ width: `${Math.max(4, capacityPct)}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* CTA stack - every branch preserved; only the chrome is DS now. */}
+              <div className="mt-5 grid gap-2">
+                {hasEnded ? (
+                  <div className="rounded-[var(--radius-md)] bg-[color:var(--lav-bg)] p-3 text-[13px] text-[color:var(--ink-soft)]">
+                    This event has ended.{" "}
+                    <Link href="/discover" className="font-semibold text-[color:var(--purple)] underline">
+                      Find an upcoming event →
+                    </Link>
+                  </div>
+                ) : (
+                  <>
+                    {event.viewerClashEventTitle ? (
+                      <p className="rounded-[var(--radius-md)] bg-[color-mix(in_srgb,var(--amber)_14%,var(--paper))] p-3 text-[13px] text-[color:var(--amber-ink)]">
+                        Heads up - this clashes with{" "}
+                        <span className="font-semibold">{event.viewerClashEventTitle}</span>, which you&apos;re already
+                        going to. You can still book both.
+                      </p>
+                    ) : null}
+
+                    {isWaitlisted && !waitlistOfferExpiresAt && event.waitlistPosition ? (
+                      <p className="rounded-[var(--radius-md)] bg-[color:var(--lav-bg)] p-3 text-[13px] text-[color:var(--ink-soft)]">
+                        You&apos;re #{event.waitlistPosition} on the waitlist. We&apos;ll let you know the moment a spot
+                        opens.
+                      </p>
+                    ) : null}
+
+                    {isPendingPayment && isPaid ? (
                       <div className="grid gap-2">
-                        <div className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-3 text-xs font-bold text-[color:var(--surface-deep)] hard-shadow-sm">
-                          🎉 A seat opened up! Reserve &amp; pay to claim it before
-                          your hold expires.
+                        <div className="rounded-[var(--radius-md)] bg-[color:var(--lav-bg)] p-3 text-[13px] text-[color:var(--ink-soft)]">
+                          Your seat is held while your previous checkout finishes. Complete payment to lock it in.
                         </div>
                         {showStripeUnavailableHint ? (
-                          <p className="rounded-xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--rose)]/30 p-3 text-xs font-bold">
-                            Stripe isn&apos;t configured on this server — set
-                            STRIPE_SECRET_KEY in .env.local to enable paid bookings.
+                          <p className="rounded-[var(--radius-md)] bg-[color:var(--lav-bg)] p-3 text-[13px] text-[color:var(--ink-soft)]">
+                            Stripe isn&apos;t configured on this server - set STRIPE_SECRET_KEY in .env.local to enable
+                            paid bookings.
                           </p>
                         ) : (
-                          <EventPaymentButton
-                            eventId={event.id}
-                            priceLabel={formatPrice(totalCents, "AUD")}
-                          />
+                          <EventPaymentButton eventId={event.id} priceLabel={formatPrice(totalCents, "AUD")} />
                         )}
+                      </div>
+                    ) : isRegistered || isWaitlisted ? (
+                      waitlistOfferExpiresAt && isPaid ? (
+                        <div className="grid gap-2">
+                          <div className="rounded-[var(--radius-md)] bg-[color-mix(in_srgb,var(--sage)_14%,var(--paper))] p-3 text-[13px] font-medium text-[color:var(--sage)]">
+                            A seat opened up. Reserve &amp; pay to claim it before your hold expires.
+                          </div>
+                          {showStripeUnavailableHint ? (
+                            <p className="rounded-[var(--radius-md)] bg-[color:var(--lav-bg)] p-3 text-[13px] text-[color:var(--ink-soft)]">
+                              Stripe isn&apos;t configured on this server - set STRIPE_SECRET_KEY in .env.local to enable
+                              paid bookings.
+                            </p>
+                          ) : (
+                            <EventPaymentButton eventId={event.id} priceLabel={formatPrice(totalCents, "AUD")} />
+                          )}
+                          <EventRegistrationButton eventId={event.id} initiallyRegistered isWaitlist />
+                        </div>
+                      ) : (
                         <EventRegistrationButton
                           eventId={event.id}
                           initiallyRegistered
-                          isWaitlist
+                          isWaitlist={isWaitlisted}
+                          offerExpiresAt={waitlistOfferExpiresAt}
+                          cancelRefundLabel={cancelRefundLabel}
+                          successDetails={successDetails}
                         />
-                      </div>
-                    ) : (
-                      <EventRegistrationButton
-                        eventId={event.id}
-                        initiallyRegistered
-                        isWaitlist={isWaitlisted}
-                        offerExpiresAt={waitlistOfferExpiresAt}
-                        cancelRefundLabel={cancelRefundLabel}
-                        successDetails={successDetails}
-                      />
-                    )
-                  ) : isWaitlistMode ? (
-                    <EventBookingDialog
-                      triggerLabel="Join the waitlist"
-                      triggerTone="ink"
-                      title="Join the waitlist?"
-                      body={
-                        <>
-                          This event is currently full. Joining the waitlist holds
-                          your spot in queue. If someone cancels, the host will
-                          reach out via email and you can confirm before the seat
-                          is reopened.
-                        </>
-                      }
-                    >
-                      <EventRegistrationButton
-                        eventId={event.id}
-                        initiallyRegistered={false}
-                        isWaitlist
-                      />
-                    </EventBookingDialog>
-                  ) : isPaid ? (
-                    showStripeUnavailableHint ? (
-                      <p className="rounded-xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--rose)]/30 p-3 text-xs font-bold">
-                        Stripe isn&apos;t configured on this server — set
-                        STRIPE_SECRET_KEY in .env.local to enable paid bookings.
-                      </p>
-                    ) : (
+                      )
+                    ) : isWaitlistMode ? (
                       <EventBookingDialog
-                        triggerLabel={`Reserve · ${formatPrice(totalCents, "AUD")}`}
-                        title={`Reserve a seat for ${formatPrice(totalCents, "AUD")}?`}
+                        triggerLabel="Join waitlist"
+                        triggerTone="ink"
+                        title="Join the waitlist?"
                         body={
                           <>
-                            {event.viewerClashEventTitle ? (
-                              <span className="mb-3 block rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--peach)] p-3 text-xs font-bold text-[color:var(--surface-deep)]">
-                                ⚠️ This clashes with {event.viewerClashEventTitle},
-                                which you&apos;re already going to. Book both anyway?
-                              </span>
-                            ) : null}
-                            {hasBookingFee ? (
-                              <>
-                                That&apos;s {formatPrice(event.priceCents, "AUD")} ticket
-                                + {formatPrice(bookingFeeCents, "AUD")} booking fee.{" "}
-                              </>
-                            ) : null}
-                            We&apos;ll hold your seat through Stripe checkout. If you
-                            don&apos;t complete payment, the hold is released and the
-                            seat returns to the pool. Cancel anytime before the
-                            event.
+                            This event is currently full. Joining the waitlist holds your spot in queue. If someone
+                            cancels, the host will reach out via email and you can confirm before the seat is reopened.
                           </>
                         }
                       >
-                        <EventPaymentButton
+                        <EventRegistrationButton eventId={event.id} initiallyRegistered={false} isWaitlist />
+                      </EventBookingDialog>
+                    ) : isPaid ? (
+                      showStripeUnavailableHint ? (
+                        <p className="rounded-[var(--radius-md)] bg-[color:var(--lav-bg)] p-3 text-[13px] text-[color:var(--ink-soft)]">
+                          Stripe isn&apos;t configured on this server - set STRIPE_SECRET_KEY in .env.local to enable paid
+                          bookings.
+                        </p>
+                      ) : (
+                        <EventBookingDialog
+                          triggerLabel="RSVP"
+                          title={`Reserve a seat for ${formatPrice(totalCents, "AUD")}?`}
+                          body={
+                            <>
+                              {event.viewerClashEventTitle ? (
+                                <span className="mb-3 block rounded-[var(--radius-md)] bg-[color-mix(in_srgb,var(--amber)_14%,var(--paper))] p-3 text-xs font-medium text-[color:var(--amber-ink)]">
+                                  This clashes with {event.viewerClashEventTitle}, which you&apos;re already going to.
+                                  Book both anyway?
+                                </span>
+                              ) : null}
+                              {hasBookingFee ? (
+                                <>
+                                  That&apos;s {formatPrice(event.priceCents, "AUD")} ticket +{" "}
+                                  {formatPrice(bookingFeeCents, "AUD")} booking fee.{" "}
+                                </>
+                              ) : null}
+                              We&apos;ll hold your seat through Stripe checkout. If you don&apos;t complete payment, the
+                              hold is released and the seat returns to the pool. Cancel anytime before the event.
+                            </>
+                          }
+                        >
+                          <EventPaymentButton
+                            eventId={event.id}
+                            priceLabel={formatPrice(totalCents, "AUD")}
+                            allowGuests
+                            availableSeats={Math.max(0, event.capacity - event.attendees)}
+                            perSeatCents={totalCents}
+                            eventDateISO={event.startsAt}
+                          />
+                        </EventBookingDialog>
+                      )
+                    ) : (
+                      <EventBookingDialog
+                        triggerLabel="RSVP"
+                        title="RSVP to this event?"
+                        body={
+                          <>
+                            {event.viewerClashEventTitle ? (
+                              <span className="mb-3 block rounded-[var(--radius-md)] bg-[color-mix(in_srgb,var(--amber)_14%,var(--paper))] p-3 text-xs font-medium text-[color:var(--amber-ink)]">
+                                This clashes with {event.viewerClashEventTitle}, which you&apos;re already going to. RSVP
+                                to both anyway?
+                              </span>
+                            ) : null}
+                            Reserve your seat. You can cancel any time before the event - the host gets a waitlist
+                            replacement automatically.
+                          </>
+                        }
+                      >
+                        <EventRegistrationButton
                           eventId={event.id}
-                          priceLabel={formatPrice(totalCents, "AUD")}
-                          allowGuests
-                          availableSeats={Math.max(0, event.capacity - event.attendees)}
-                          perSeatCents={totalCents}
-                          eventDateISO={event.startsAt}
+                          initiallyRegistered={false}
+                          isWaitlist={false}
+                          successDetails={successDetails}
                         />
                       </EventBookingDialog>
-                    )
-                  ) : (
-                    <EventBookingDialog
-                      triggerLabel="Reserve free seat"
-                      title="RSVP to this event?"
-                      body={
-                        <>
-                          {event.viewerClashEventTitle ? (
-                            <span className="mb-3 block rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--peach)] p-3 text-xs font-bold text-[color:var(--surface-deep)]">
-                              ⚠️ This clashes with {event.viewerClashEventTitle},
-                              which you&apos;re already going to. RSVP to both anyway?
-                            </span>
-                          ) : null}
-                          Reserve your seat. You can cancel any time before the
-                          event — the host gets a waitlist replacement automatically.
-                        </>
-                      }
-                    >
-                      <EventRegistrationButton
-                        eventId={event.id}
-                        initiallyRegistered={false}
-                        isWaitlist={false}
-                        successDetails={successDetails}
-                      />
-                    </EventBookingDialog>
-                  )}
+                    )}
 
-                  <EventBookmarkButton
-                    eventId={event.id}
-                    initiallySaved={bookmarked}
-                  />
+                    <EventBookmarkButton eventId={event.id} initiallySaved={bookmarked} />
                   </>
-                  )}
-                </div>
-
-                {isPaid ? (
-                  <div className="mt-4 rounded-xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--champagne)]/60 p-3">
-                    <p className="font-mono text-[0.6rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
-                      Cancellation policy
-                    </p>
-                    <ul className="mt-1.5 space-y-1 text-xs font-medium text-[color:var(--surface-deep)]">
-                      <li>✅ Full refund if cancelled 48+ hours before the event</li>
-                      <li>⚠️ 50% refund if cancelled 24–48 hours before</li>
-                      <li>❌ No refund if cancelled within 24 hours</li>
-                    </ul>
-                  </div>
-                ) : null}
+                )}
               </div>
 
-              <div className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--ink)] p-4 text-[color:var(--on-deep)] hard-shadow-sm">
-                <p className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--peach)]">
-                  Countdown
+              {isPaid ? (
+                <p className="mt-4 flex items-start gap-2 text-[11.5px] leading-relaxed text-[color:var(--slate)]">
+                  <Icon name="info" size={13} className="mt-0.5 shrink-0" />
+                  Full refund up to 48h before - 50% within 48h - none within 24h.
                 </p>
-                <p className="font-display mt-1 text-2xl font-semibold leading-tight tracking-[-0.02em]">
-                  {countdownLabel}
-                </p>
-                <p className="mt-2 text-xs font-bold uppercase tracking-wider text-[color:var(--peach)]">
-                  {attendeePreview.totalConfirmed} of {event.capacity} seats taken
-                </p>
-              </div>
-
-              {event.fomo ? (
-                <div className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--peach)] p-4 text-sm font-bold text-[color:var(--surface-deep)] hard-shadow-sm">
-                  ✷ {event.fomo}
-                </div>
               ) : null}
-            </aside>
-          </div>
-        </article>
+            </div>
+
+            {event.fomo ? (
+              <div className="mt-3 flex items-start gap-2.5 rounded-[var(--radius-lg)] bg-[color:var(--lav-bg)] px-4 py-3 text-[13px] text-[color:var(--ink-soft)]">
+                <Icon name="trend" size={16} className="mt-0.5 text-[color:var(--purple)]" />
+                {event.fomo}
+              </div>
+            ) : null}
+          </aside>
+        </div>
       </div>
     </main>
   );

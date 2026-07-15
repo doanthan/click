@@ -86,7 +86,7 @@ export default async function MerchantLoginPage({ searchParams }: LoginPageProps
 
           <p className="mt-6 max-w-xl text-base font-medium leading-7 text-[color:var(--mauve)] sm:text-lg">
             One sign-in for your Click host portal. Manage events, attendees,
-            payouts, and discounts — all in one place.
+            payouts, and discounts - all in one place.
           </p>
 
           <ul className="mt-8 grid gap-3 text-sm font-semibold text-[color:var(--mauve)]">
@@ -94,7 +94,7 @@ export default async function MerchantLoginPage({ searchParams }: LoginPageProps
               <span className="mt-1 grid size-6 shrink-0 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] text-xs font-bold text-[color:var(--surface-deep)]">
                 ✓
               </span>
-              Same account as your attendee profile — one identity, two surfaces.
+              Same account as your attendee profile - one identity, two surfaces.
             </li>
             <li className="flex items-start gap-3">
               <span className="mt-1 grid size-6 shrink-0 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] text-xs font-bold text-[color:var(--surface-deep)]">

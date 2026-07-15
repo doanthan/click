@@ -1,7 +1,20 @@
 import Link from "next/link";
-import Image from "next/image";
 import type { EventAttendeePreviewRow } from "@/lib/event-repository";
+import { Avatar, AvatarStack, Icon, TagRow } from "./ds";
 
+/**
+ * "Who's going" - the DS event-detail attendee surface.
+ *
+ * LOCKED (not going yet): a COMPACT aggregate only - an avatar cluster + count,
+ * then aggregate social-proof lines that lead with "A few people you might click
+ * with are going". Never names, never photos, a floor of 3 so no line can
+ * identify anyone.
+ *
+ * UNLOCKED (booked): a calm grid where the WHOLE card opens the profile (a quiet
+ * chevron signals it) - first name + up to 3 shared interest tags, no life tags,
+ * no age. "Open to dating" is shown only under a mutual opt-in, so it never
+ * appears here on a named attendee.
+ */
 export function EventAttendeePreview({
   items,
   totalConfirmed,
@@ -15,28 +28,31 @@ export function EventAttendeePreview({
   viewerIsAttendee: boolean;
   eventSlug: string;
 }) {
-  // Who's-clicked-in is an attendees-only signal — anonymous visitors get a
-  // count + sign-in nudge rather than the actual people.
+  const heading = (
+    <h2 className="font-display text-[1.075rem] font-semibold tracking-[-0.01em] text-[color:var(--ink)] sm:text-[1.15rem]">
+      Who&apos;s going
+    </h2>
+  );
+
+  // Not signed in - a count and a quiet sign-in nudge, no identities.
   if (!isAuthenticated) {
     return (
-      <section className="mt-6 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-5">
-        <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-          Who&apos;s clicked in
-        </p>
-        <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+      <section>
+        {heading}
+        <p className="mt-2 text-sm leading-relaxed text-[color:var(--slate)]">
           {totalConfirmed > 0
-            ? `${totalConfirmed} ${totalConfirmed === 1 ? "person has" : "people have"} clicked into this event.`
-            : "No one has clicked in yet."}{" "}
+            ? `${totalConfirmed} ${totalConfirmed === 1 ? "person has" : "people have"} RSVP'd.`
+            : "No one has RSVP'd yet."}{" "}
           <Link
             href={`/login?callbackUrl=${encodeURIComponent(`/events/${eventSlug}`)}`}
-            className="font-bold text-[color:var(--ink)] underline hover:text-[color:var(--mauve)]"
+            className="font-semibold text-[color:var(--purple)] hover:underline"
           >
             Log in
           </Link>{" "}
           or{" "}
           <Link
             href={`/signup?callbackUrl=${encodeURIComponent(`/events/${eventSlug}`)}`}
-            className="font-bold text-[color:var(--ink)] underline hover:text-[color:var(--mauve)]"
+            className="font-semibold text-[color:var(--purple)] hover:underline"
           >
             sign up
           </Link>{" "}
@@ -46,12 +62,8 @@ export function EventAttendeePreview({
     );
   }
 
-  // Signed in but not going yet — the roster (identities) is reserved for people
-  // who've actually clicked in, but we DO surface anonymous FOMO signals
-  // (shared interests + dating-minded counts) to entice an RSVP without outing
-  // anyone. Derived from the per-attendee overlap already computed vs the viewer.
+  // Signed in, not going - COMPACT aggregate FOMO only (≥3 floor), no identities.
   if (!viewerIsAttendee) {
-    // Tally how many of the shown attendees share each interest with the viewer.
     const interestCounts = new Map<string, number>();
     let datingCount = 0;
     for (const p of items) {
@@ -60,126 +72,94 @@ export function EventAttendeePreview({
         interestCounts.set(interest, (interestCounts.get(interest) ?? 0) + 1);
       }
     }
-    const topShared = Array.from(interestCounts.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 3);
-    const hasSignals = topShared.length > 0 || datingCount > 0;
+    const signals: string[] = [];
+    const topShared = Array.from(interestCounts.entries()).sort((a, b) => b[1] - a[1])[0];
+    if (topShared && topShared[1] >= 3) signals.push(`A few people you might click with are going - ${topShared[1]} also like ${topShared[0]}`);
+    if (datingCount >= 3) signals.push(`${datingCount} here are open to dating`);
 
     return (
-      <section className="mt-6 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-5">
-        <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-          Who&apos;s clicked in
+      <section>
+        {heading}
+        <div className="mt-3 rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-4">
+          {totalConfirmed >= 3 && items.length > 0 ? (
+            <AvatarStack
+              people={items.slice(0, 5).map(() => ({}))}
+              max={5}
+              size={30}
+              label={`${totalConfirmed} going`}
+            />
+          ) : (
+            <p className="text-sm text-[color:var(--slate)]">
+              {totalConfirmed > 0
+                ? `${totalConfirmed} ${totalConfirmed === 1 ? "person is" : "people are"} going. RSVP to see who.`
+                : "Be the first to RSVP."}
+            </p>
+          )}
+          {signals.length > 0 ? (
+            <ul className="mt-3 flex flex-col gap-1.5">
+              {signals.map((s) => (
+                <li key={s} className="flex items-start gap-2 text-[13px] text-[color:var(--ink-soft)]">
+                  <Icon name="users" size={14} className="mt-0.5 text-[color:var(--purple)]" />
+                  {s}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+        <p className="mt-2.5 flex items-start gap-1.5 text-[12.5px] leading-relaxed text-[color:var(--slate)]">
+          <Icon name="lock" size={13} className="mt-0.5" />
+          Clicking is anonymous - we&apos;ll only show you if it&apos;s mutual.
         </p>
-        <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
-          {totalConfirmed > 0
-            ? `${totalConfirmed} ${totalConfirmed === 1 ? "person has" : "people have"} clicked into this event. RSVP to see who's going.`
-            : "No one has clicked in yet. RSVP to be the first."}
-        </p>
-        {hasSignals ? (
-          <ul className="mt-3 flex flex-wrap gap-2">
-            {topShared.map(([interest, count]) => (
-              <li
-                key={interest}
-                className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-3 py-1 text-[0.72rem] font-bold text-[color:var(--surface-deep)]"
-              >
-                ✷ {count} {count === 1 ? "person" : "people"} going also like{" "}
-                {interest}
-              </li>
-            ))}
-            {datingCount > 0 ? (
-              <li className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-3 py-1 text-[0.72rem] font-bold text-[color:var(--surface-deep)]">
-                ✷ {datingCount} {datingCount === 1 ? "person" : "people"} here open
-                to dating
-              </li>
-            ) : null}
-          </ul>
-        ) : null}
       </section>
     );
   }
 
+  // Going, but empty roster.
   if (totalConfirmed === 0) {
     return (
-      <section className="mt-6 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-5">
-        <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-          Who&apos;s clicked in
-        </p>
-        <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
-          Be the first to RSVP. The people who&apos;ve clicked into this event
-          show up here once a couple are in.
-        </p>
+      <section>
+        {heading}
+        <div className="mt-3 rounded-[var(--radius-lg)] bg-[color:var(--lav-bg)] px-5 py-6 text-center">
+          <p className="text-sm leading-relaxed text-[color:var(--ink-soft)]">
+            Be the first in. Everyone who RSVPs shows up here once a couple are going.
+          </p>
+        </div>
       </section>
     );
   }
 
+  // Going - the unlocked attendee grid. Whole card opens the profile.
   const remaining = Math.max(0, totalConfirmed - items.length);
-
   return (
-    <section className="mt-6 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-5 hard-shadow-sm">
-      <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-        Who&apos;s clicked in · {totalConfirmed}
-      </p>
-      <ul className="mt-3 flex flex-wrap items-center gap-3">
-        {items.map((p) => {
-          const initials = p.displayName
-            .split(/\s+/)
-            .map((s) => s[0])
-            .filter(Boolean)
-            .slice(0, 2)
-            .join("")
-            .toUpperCase();
-          return (
-            <li
-              key={p.profileId}
-              className="flex flex-col gap-2 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-3 hard-shadow-sm"
-            >
-              <Link
-                href={`/profile/${p.profileId}`}
-                className="group flex items-center gap-2 text-xs font-bold text-[color:var(--ink)]"
-                title={p.displayName}
-              >
-                {p.photoUrl ? (
-                  <Image
-                    src={p.photoUrl}
-                    alt=""
-                    width={28}
-                    height={28}
-                    className="size-7 rounded-full border-2 border-[color:var(--line)] object-cover"
-                  />
-                ) : (
-                  <span className="grid size-7 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] text-[0.65rem] font-bold text-[color:var(--surface-deep)]">
-                    {initials || "·"}
-                  </span>
-                )}
-                <span className="font-mono text-[0.7rem] uppercase tracking-wide group-hover:underline">
-                  {p.displayName.split(" ")[0]}
-                </span>
-                {p.datingMinded ? (
-                  <span
-                    title="Open to dating"
-                    className="ml-auto rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-2 py-0.5 text-[0.6rem] font-bold uppercase tracking-wide text-[color:var(--surface-deep)]"
-                  >
-                    ✷ Dating
-                  </span>
-                ) : null}
-              </Link>
+    <section>
+      {heading}
+      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {items.map((p) => (
+          <Link
+            key={p.profileId}
+            href={`/profile/${p.profileId}`}
+            className="relative flex items-start gap-3 rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-4 pr-9 transition-colors hover:bg-[color:var(--lavender-100)]"
+          >
+            <Icon name="chevR" size={16} stroke={2} className="absolute top-4 right-3 text-[color:var(--ink-faint)]" />
+            <Avatar name={p.displayName} src={p.photoUrl} size={44} />
+            <div className="min-w-0 flex-1">
+              <span className="font-display block truncate text-[15px] font-semibold text-[color:var(--ink)]">
+                {p.displayName.split(" ")[0]}
+              </span>
               {p.sharedInterests.length > 0 ? (
-                <p className="text-[0.7rem] font-semibold leading-4 text-[color:var(--mauve)]">
-                  <span className="font-mono uppercase tracking-wide text-[color:var(--rose)]">
-                    Shared·{" "}
-                  </span>
-                  {p.sharedInterests.slice(0, 4).join(" · ")}
-                </p>
+                <div className="mt-1.5">
+                  <TagRow tags={p.sharedInterests} max={3} budget={200} />
+                </div>
               ) : null}
-            </li>
-          );
-        })}
-        {remaining > 0 ? (
-          <li className="grid size-12 place-items-center rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] text-xs font-bold text-[color:var(--mauve)]">
-            +{remaining}
-          </li>
-        ) : null}
-      </ul>
+            </div>
+          </Link>
+        ))}
+      </div>
+      {remaining > 0 ? (
+        <p className="mt-3 text-[13px] font-medium text-[color:var(--slate)]">
+          + {remaining} more going
+        </p>
+      ) : null}
     </section>
   );
 }

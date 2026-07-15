@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import type { EventItem } from "@/lib/click-data";
 import { Pill } from "./click-ui";
+import { ckBtn } from "./ds";
 import { EventBookmarkButton } from "./event-bookmark-button";
 import { EventPaymentButton } from "./event-payment-button";
 import { EventRegistrationButton } from "./event-registration-button";
@@ -121,28 +122,27 @@ export function EventDetailModal({
   const isLockedEvent = !isRegistered;
   const isPaid = data.priceCents > 0;
 
-  // Card-level CTA label. Reads as an RSVP action (not a vague "Details") so
-  // every event card carries a clear booking entry point; the modal itself
-  // still handles the free / paid / waitlist branches once opened.
-  const priceIsFree = !event.price || event.price.trim().toLowerCase() === "free";
+  // Card-level CTA label - the DS-locked vocabulary. ONE "RSVP" for every
+  // event, free or paid: the price rides on the card, never in the button
+  // ("RSVP · $35" and "buy a ticket" are both banned). Waitlist reads
+  // "Join waitlist" → "Joined waitlist" once joined; a booked seat reads
+  // "You're going".
   // A confirmed attendee gets sent straight to their unlocked event page (full
   // details + venue) rather than back into the booking modal — they've already
   // RSVP'd. Waitlisted/unregistered viewers still open the modal.
   const isConfirmedBooking = fallbackStatus === "confirmed";
-  // A waitlisted member hasn't got a booking to view — say so (bug board
-  // #159). "View your booking" is reserved for confirmed seats.
   const triggerLabel = registered
     ? fallbackStatus === "waitlisted"
-      ? "On the waitlist"
-      : "View your booking"
+      ? "Joined waitlist"
+      : "You're going"
     : isWaitlistMode
       ? "Join waitlist"
-      : priceIsFree
-        ? "RSVP, it’s free"
-        : `RSVP · ${event.price}`;
+      : "RSVP";
+  // The DS Button - radius 12, flat Deep Purple, one footprint everywhere. A
+  // joined-waitlist seat wears the muted "pending" fill at the same size.
   const triggerClassName =
     className ??
-    "block w-full rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-4 py-3 text-center text-sm font-bold text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]";
+    ckBtn(registered && fallbackStatus === "waitlisted" ? "pending" : "primary", "sm");
 
   if (isConfirmedBooking) {
     return (

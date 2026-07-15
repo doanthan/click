@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { signOutOfClick } from "@/app/login/actions";
+import { Avatar, Icon } from "./ds";
 
 export type PortalRole = "user" | "merchant" | "admin";
 
@@ -51,12 +52,11 @@ export function HeaderRoleSwitcher({
     return () => document.removeEventListener("mousedown", onDocClick);
   }, []);
 
-  const currentRole: PortalRole =
-    pathname?.startsWith("/admin")
-      ? "admin"
-      : pathname?.startsWith("/merchant")
-        ? "merchant"
-        : "user";
+  const currentRole: PortalRole = pathname?.startsWith("/admin")
+    ? "admin"
+    : pathname?.startsWith("/merchant")
+      ? "merchant"
+      : "user";
 
   const showPortalSwitcher = roles.length > 1;
 
@@ -67,65 +67,63 @@ export function HeaderRoleSwitcher({
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="flex max-w-52 items-center gap-2 truncate rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] py-1.5 pl-1.5 pr-4 text-sm font-bold text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)]"
+        className="flex items-center gap-1.5 rounded-full p-0.5"
       >
-        {avatarUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={avatarUrl}
-            alt={userLabel}
-            className="h-7 w-7 shrink-0 rounded-full border border-[color:var(--line)] object-cover"
-          />
-        ) : (
-          <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-[color:var(--line)] bg-[color:var(--peach)] text-xs font-bold uppercase text-[color:var(--ink)]">
-            {(userLabel.trim()[0] ?? "✷").toUpperCase()}
-          </span>
-        )}
-        {showPortalSwitcher ? (
-          <span className="hidden font-mono text-[0.65rem] uppercase tracking-[0.16em] text-[color:var(--mauve)] sm:inline">
-            {PORTAL_LABEL[currentRole]}
-          </span>
-        ) : null}
-        <span className="hidden truncate sm:inline">{userLabel}</span>
-        <span aria-hidden className="text-[color:var(--mauve)]">▾</span>
+        <Avatar name={userLabel} src={avatarUrl} size={34} ring={open} />
+        <Icon
+          name="chevD"
+          size={14}
+          stroke={2}
+          className={`text-[color:var(--slate)] transition-transform ${open ? "rotate-180" : ""}`}
+        />
       </button>
 
       {open ? (
         <div
           role="menu"
-          className="absolute right-0 z-50 mt-3 w-60 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow"
+          className="absolute right-0 z-50 mt-2 w-[300px] rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-2 shadow-[0_18px_44px_rgba(76,55,140,0.18)]"
         >
-          <div className="border-b-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-2">
-            <span className="block font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-              Signed in as
-            </span>
-            <span className="block truncate text-sm font-bold text-[color:var(--ink)]">
-              {userLabel}
-            </span>
+          {/* Identity header - non-interactive */}
+          <div className="flex items-center gap-3 px-3 py-2.5">
+            <Avatar name={userLabel} src={avatarUrl} size={40} />
+            <div className="min-w-0">
+              <div className="font-display truncate text-[15px] font-semibold text-[color:var(--ink)]">
+                Signed in as {userLabel.split(" ")[0]}
+              </div>
+              <div className="truncate text-[12.5px] text-[color:var(--slate)]">{userLabel}</div>
+            </div>
           </div>
 
-          <ul className="p-2">
-            {ACCOUNT_LINKS.map((link) => (
-              <li key={link.href}>
-                <Link
-                  href={link.href}
-                  onClick={() => setOpen(false)}
-                  className="block rounded-xl px-3 py-2 text-sm font-bold text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
-                >
-                  {link.label}
-                </Link>
-              </li>
-            ))}
+          <div className="my-1 h-px bg-[color:var(--line-soft)]" />
+
+          <ul>
+            {ACCOUNT_LINKS.map((link) => {
+              const active = pathname === link.href;
+              return (
+                <li key={link.href}>
+                  <Link
+                    href={link.href}
+                    onClick={() => setOpen(false)}
+                    className={`block rounded-xl px-3 py-2.5 text-[14.5px] ${
+                      active
+                        ? "bg-[color:var(--lavender-100)] font-semibold text-[color:var(--purple-800)]"
+                        : "font-medium text-[color:var(--ink)] hover:bg-[color:var(--lavender-100)]"
+                    }`}
+                  >
+                    {link.label}
+                  </Link>
+                </li>
+              );
+            })}
           </ul>
 
           {showPortalSwitcher ? (
             <>
-              <div className="border-t-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-2">
-                <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-                  Switch portal
-                </span>
-              </div>
-              <ul className="p-2">
+              <div className="my-1 h-px bg-[color:var(--line-soft)]" />
+              <p className="px-3 py-1.5 text-[11.5px] font-bold tracking-[0.08em] uppercase text-[color:var(--slate)]">
+                Switch portal
+              </p>
+              <ul>
                 {roles.map((r) => {
                   const active = r === currentRole;
                   return (
@@ -133,17 +131,17 @@ export function HeaderRoleSwitcher({
                       <Link
                         href={PORTAL_HREF[r]}
                         onClick={() => setOpen(false)}
-                        className={`flex items-center justify-between gap-3 rounded-xl px-3 py-2 text-sm font-bold ${
+                        className={`flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-[14.5px] ${
                           active
-                            ? "bg-[color:var(--rose)] text-[color:var(--surface-deep)]"
-                            : "bg-[color:var(--champagne)] text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+                            ? "bg-[color:var(--lavender-100)] font-semibold text-[color:var(--purple-800)]"
+                            : "font-medium text-[color:var(--ink)] hover:bg-[color:var(--lavender-100)]"
                         }`}
                       >
                         <span>{PORTAL_LABEL[r]}</span>
                         {active ? (
-                          <span className="text-xs">current</span>
+                          <span className="text-[12px] text-[color:var(--slate)]">current</span>
                         ) : (
-                          <span aria-hidden>→</span>
+                          <Icon name="arrowR" size={15} stroke={2} className="text-[color:var(--slate)]" />
                         )}
                       </Link>
                     </li>
@@ -153,16 +151,16 @@ export function HeaderRoleSwitcher({
             </>
           ) : null}
 
-          <div className="border-t-2 border-[color:var(--line)] bg-[color:var(--cream)] p-2">
-            <form action={signOutOfClick}>
-              <button
-                type="submit"
-                className="block w-full rounded-xl px-3 py-2 text-left text-sm font-bold text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
-              >
-                Sign out
-              </button>
-            </form>
-          </div>
+          <div className="my-1 h-px bg-[color:var(--line-soft)]" />
+          {/* Sign out is a quiet row - never error red, since signing out is not destructive. */}
+          <form action={signOutOfClick}>
+            <button
+              type="submit"
+              className="block w-full rounded-xl px-3 py-2.5 text-left text-[14.5px] font-medium text-[color:var(--ink)] hover:bg-[color:var(--lavender-100)]"
+            >
+              Sign out
+            </button>
+          </form>
         </div>
       ) : null}
     </div>

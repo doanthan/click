@@ -50,8 +50,14 @@ import {
   DISCOVERY_CLICK_CAP,
   MUTUAL_CLOCK_DAYS,
   MIN_CLICK_AGE,
+  SEND_CLICK_FLOOR_MS,
   type SendClickOutcome,
 } from "./clicks/constants";
+import {
+  severPairCoordination,
+  severAllCoordinationForUser,
+  pairCoordinationAllowed,
+} from "./clicks/teardown";
 import { calculateApplicationFee } from "./stripe-connect";
 import { logBookingEvent, refundBandFromTier } from "./booking-events";
 import {
@@ -286,6 +292,7 @@ export type AdminMemberRow = {
   joinedAt: string;
   suspendedAt: string | null;
   suspendedReason: string | null;
+  isBanned: boolean;
 };
 
 export type AdminMemberDetailTag = {
@@ -3367,16 +3374,48 @@ export async function remindProposalRsvps(): Promise<number> {
         join mutual_clicks mc on mc.id = ep.mutual_click_id
         join events e on e.id = ep.suggested_event_id
         where ep.status = 'pending'
+          -- SAFE-04: a lapsed-but-pending proposal must not fire a stray reminder, and
+          -- the reminder only makes sense while the mutual is still live.
+          and ep.expires_at > now()
+          and mc.status = 'active'
           and ep.created_at <= now() - interval '24 hours'
           and coalesce(e.ends_at, e.starts_at) > now()
+          -- SAFE-04: never remind a torn-down / frozen pair — skip if either party
+          -- blocked the other, or either is banned/suspended.
+          and not exists (
+            select 1 from user_blocks b
+            where (b.blocker_profile_id = mc.user_a_id and b.blocked_profile_id = mc.user_b_id)
+               or (b.blocker_profile_id = mc.user_b_id and b.blocked_profile_id = mc.user_a_id)
+          )
+          and not exists (
+            select 1 from profiles pf
+            where pf.id in (mc.user_a_id, mc.user_b_id)
+              and (pf.is_banned or pf.suspended_at is not null)
+          )
         union all
         select ep.id, e.id, e.slug, e.title, mc.user_b_id
         from click_proposals ep
         join mutual_clicks mc on mc.id = ep.mutual_click_id
         join events e on e.id = ep.suggested_event_id
         where ep.status = 'pending'
+          -- SAFE-04: a lapsed-but-pending proposal must not fire a stray reminder, and
+          -- the reminder only makes sense while the mutual is still live.
+          and ep.expires_at > now()
+          and mc.status = 'active'
           and ep.created_at <= now() - interval '24 hours'
           and coalesce(e.ends_at, e.starts_at) > now()
+          -- SAFE-04: never remind a torn-down / frozen pair — skip if either party
+          -- blocked the other, or either is banned/suspended.
+          and not exists (
+            select 1 from user_blocks b
+            where (b.blocker_profile_id = mc.user_a_id and b.blocked_profile_id = mc.user_b_id)
+               or (b.blocker_profile_id = mc.user_b_id and b.blocked_profile_id = mc.user_a_id)
+          )
+          and not exists (
+            select 1 from profiles pf
+            where pf.id in (mc.user_a_id, mc.user_b_id)
+              and (pf.is_banned or pf.suspended_at is not null)
+          )
       )
       insert into notifications (profile_id, title, body, action_url)
       select
@@ -4661,6 +4700,7 @@ export async function getAdminMembers(): Promise<AdminMemberRow[]> {
       created_at: Date;
       suspended_at: Date | null;
       suspended_reason: string | null;
+      is_banned: boolean;
     }>(`
       select
         profile.id::text,
@@ -4682,7 +4722,8 @@ export async function getAdminMembers(): Promise<AdminMemberRow[]> {
         profile.photo_verified_at,
         profile.created_at,
         profile.suspended_at,
-        profile.suspended_reason
+        profile.suspended_reason,
+        profile.is_banned
       from profiles profile
       left join bookmarks bookmark on bookmark.profile_id = profile.id
       left join event_attendees attendee on attendee.profile_id = profile.id
@@ -4713,6 +4754,7 @@ export async function getAdminMembers(): Promise<AdminMemberRow[]> {
       joinedAt: row.created_at.toISOString(),
       suspendedAt: row.suspended_at ? row.suspended_at.toISOString() : null,
       suspendedReason: row.suspended_reason,
+      isBanned: !!row.is_banned,
     }));
   } catch (error) {
     if (process.env.CLICK_DB_DEBUG === "true") {
@@ -7180,7 +7222,7 @@ export async function toggleBookmark(eventId: string, session: Session | null, s
   return { saved: save };
 }
 
-export async function createUserClickForSession(
+async function sendClickInner(
   input: {
     clickedProfileId: string;
     sourceEventId?: string;
@@ -7248,14 +7290,28 @@ export async function createUserClickForSession(
     const senderResult = await client.query<{
       age: number | null;
       photo_url: string | null;
+      is_banned: boolean;
+      suspended_at: string | null;
       connection_intents: string[] | null;
     }>(
-      `select age, photo_url, connection_intents::text[] as connection_intents
+      `select age, photo_url, is_banned, suspended_at::text,
+              connection_intents::text[] as connection_intents
          from profiles where id = $1::uuid limit 1`,
       [profile.id],
     );
     const sender = senderResult.rows[0];
     const senderIntent = sender?.connection_intents?.[0] ?? "friendship";
+
+    // SAFE-06 hardening: a banned (or suspended) user must not be able to INITIATE new
+    // clicks — the ban/suspend teardown only severs EXISTING coordination, so without
+    // this gate a still-logged-in banned user could POST a fresh click and, if reciprocated,
+    // form a new mutual that re-injects them into the social graph. Checked before any
+    // receiver state so it never leaks the target's state (it's purely about the sender).
+    if (sender?.is_banned || sender?.suspended_at) {
+      const error = new Error("Your account can't send clicks right now.");
+      error.name = "ValidationError";
+      throw error;
+    }
 
     // Age gate (§6.7b — non-negotiable, defence-in-depth on the highest-risk surface).
     // Asserted in the click layer independently of the signup gate: a sub-18 account
@@ -7294,7 +7350,10 @@ export async function createUserClickForSession(
       [profile.id, clickedProfile.id],
     );
     if (blockResult.rows[0]?.blocked) {
-      const error = new Error("This person is unavailable.");
+      // §6.1: identical neutral message to the age/ban/opt-out/pause refusals above, so a
+      // sender can't tell WHY a target is unavailable (block vs ban vs paused vs underage)
+      // — the receiver's state is never disclosed through the refusal text.
+      const error = new Error("This person isn't available to click with right now.");
       error.name = "ValidationError";
       throw error;
     }
@@ -7450,18 +7509,15 @@ export async function createUserClickForSession(
             select id::text, slug, title
             from events event
             where id = $1::uuid
-              and status in ('live', 'featured', 'waitlist')
+              and status in ('live', 'featured')
               and starts_at > now()
-              -- Never reuse a booked-out event as the suggestion (confirmed +
-              -- live payment holds count toward capacity).
-              and (
-                select count(*) from event_attendees full_count
-                where full_count.event_id = event.id
-                  and (
-                    full_count.status = 'confirmed'
-                    or (full_count.status = 'pending_payment' and full_count.hold_expires_at > now())
-                  )
-              ) < event.capacity
+              -- §B3.4 / CAP-1/2/4: a suggested PAIR plan needs room for BOTH. Read the
+              -- canonical seat count (guest +1s + live holds netted) from event_capacity_v
+              -- and require two free seats; full/waitlist events are excluded by status.
+              and exists (
+                select 1 from event_capacity_v cap
+                where cap.event_id = event.id and cap.available >= 2
+              )
             limit 1
           `,
           [preferredEventId],
@@ -7486,18 +7542,14 @@ export async function createUserClickForSession(
             join user_tags user_tag
               on user_tag.tag_id = tag.id
              and user_tag.profile_id in ($1::uuid, $2::uuid)
-            where event.status in ('live', 'featured', 'waitlist')
+            where event.status in ('live', 'featured')
               and event.starts_at > now()
-              -- Never suggest a booked-out event (confirmed + live payment holds
-              -- count toward capacity).
-              and (
-                select count(*) from event_attendees full_count
-                where full_count.event_id = event.id
-                  and (
-                    full_count.status = 'confirmed'
-                    or (full_count.status = 'pending_payment' and full_count.hold_expires_at > now())
-                  )
-              ) < event.capacity
+              -- §B3.4 / CAP-1/2/4: two free seats for the pair (guest +1s + live holds
+              -- netted via event_capacity_v); full/waitlist excluded by status.
+              and exists (
+                select 1 from event_capacity_v cap
+                where cap.event_id = event.id and cap.available >= 2
+              )
             group by event.id
             order by
               -- Prefer a genuinely new shared plan: rank events that neither of
@@ -7687,6 +7739,30 @@ export async function createUserClickForSession(
     throw error;
   } finally {
     client.release();
+  }
+}
+
+// §6.1 / 21A timing floor. Every send-click outcome — mutual formed, eligible-no-mutual,
+// duplicate no-op, ineligible (block/ban/opt-out/pause/underage), cap reached, or error —
+// must take at least SEND_CLICK_FLOOR_MS of wall-clock, so an attacker can't probe the
+// receiver's hidden state (especially "did a mutual just form?") via response latency. The
+// floor wraps BOTH the success return and every throw, and the synchronous payload is
+// already outcome-uniform (the mutual is revealed only via the async notification/email).
+export async function createUserClickForSession(
+  input: {
+    clickedProfileId: string;
+    sourceEventId?: string;
+  },
+  session: Session | null,
+) {
+  const startedAt = Date.now();
+  try {
+    return await sendClickInner(input, session);
+  } finally {
+    const elapsed = Date.now() - startedAt;
+    if (elapsed < SEND_CLICK_FLOOR_MS) {
+      await new Promise((resolve) => setTimeout(resolve, SEND_CLICK_FLOOR_MS - elapsed));
+    }
   }
 }
 
@@ -10935,6 +11011,11 @@ export type SuggestedPerson = {
   photoUrl: string | null;
   age: number | null;
   sharedInterests: string[];
+  // Inputs for the People Card's commonality line - deliberately NON-interest
+  // axes, so the line can never duplicate the interest tags rendered beneath it.
+  // Both are optional: when neither resolves, the card omits the line cleanly.
+  sharedEvent: string | null;
+  nearby: boolean;
   intents: string[];
   // True when the viewer has already sent this person a (still-active) Click
   // that hasn't gone mutual yet. Lets the card show a persistent "Click sent —
@@ -10957,6 +11038,8 @@ export async function getSuggestedPeople(session: Session | null): Promise<Sugge
       photo_url: string | null;
       age: number | null;
       shared: string[];
+      shared_event: string | null;
+      nearby: boolean;
       intents: string[];
       already_clicked: boolean;
     }>(
@@ -10967,6 +11050,26 @@ export async function getSuggestedPeople(session: Session | null): Promise<Sugge
                    filter (where shared_tag.label is not null),
                  '{}'
                ) as shared,
+               -- The People Card's commonality line needs a NON-interest axis,
+               -- so it can never just restate the interest tags under it. Axis 1
+               -- is a past event you both actually attended; axis 2 (fallback) is
+               -- proximity, expressed as a range ("you're both nearby") and never
+               -- as a named suburb, so it stays city-agnostic.
+               (
+                 select e.title
+                 from event_attendees a_me
+                 join event_attendees a_them
+                   on a_them.event_id = a_me.event_id
+                  and a_them.profile_id = p.id
+                  and a_them.status = 'confirmed'
+                 join events e on e.id = a_me.event_id
+                 where a_me.profile_id = $1::uuid
+                   and a_me.status = 'confirmed'
+                   and e.starts_at < now()
+                 order by e.starts_at desc
+                 limit 1
+               ) as shared_event,
+               (p.suburb is not distinct from (select suburb from profiles where id = $1::uuid)) as nearby,
                p.connection_intents::text[] as intents,
                exists (
                  select 1 from clicks uc
@@ -10988,6 +11091,15 @@ export async function getSuggestedPeople(session: Session | null): Promise<Sugge
         where p.id <> $1::uuid
           and p.role = 'attendee'
           and p.suspended_at is null
+          -- SAFE-07: independent ≥18 age gate (§6.7b) — never surface someone we can't
+          -- confirm is an adult into the click pool. NULL age is excluded (can't verify),
+          -- matching the send-path gate that would refuse them anyway.
+          and p.age >= ${MIN_CLICK_AGE}
+          -- §6.7a / §B7.4: a banned, socially-opted-out, or paused profile is not in the
+          -- social graph — keep them out of discovery (the send path already refuses them).
+          and p.is_banned = false
+          and p.social_visible = true
+          and (p.paused_until is null or p.paused_until <= now())
           -- Only surface people who've actually set up an attendee profile.
           -- Merchant accounts (and half-finished signups) shouldn't appear in
           -- "click with someone" until they've completed a real profile.
@@ -11053,6 +11165,8 @@ export async function getSuggestedPeople(session: Session | null): Promise<Sugge
       photoUrl: row.photo_url,
       age: row.age,
       sharedInterests: row.shared ?? [],
+      sharedEvent: row.shared_event ?? null,
+      nearby: Boolean(row.nearby),
       intents: row.intents ?? [],
       alreadyClicked: Boolean(row.already_clicked),
     }));
@@ -11121,17 +11235,15 @@ export async function getMutualClicksForSession(session: Session | null): Promis
         left join events event
           on event.id = p.suggested_event_id
          and event.starts_at > now()
-         and event.status in ('live', 'featured', 'waitlist')
-         -- Never re-surface a suggestion that has since booked out (confirmed +
-         -- live payment holds count toward capacity) — bug board #177.
-         and (
-           select count(*) from event_attendees fc
-           where fc.event_id = event.id
-             and (
-               fc.status = 'confirmed'
-               or (fc.status = 'pending_payment' and fc.hold_expires_at > now())
-             )
-         ) < event.capacity
+         and event.status in ('live', 'featured')
+         -- CAP-2/4: net guest +1s + live holds via event_capacity_v (bug board #177). A
+         -- DISPLAY site keeps showing a still-bookable plan (>= 1 seat) — once one of the
+         -- pair has RSVP'd, only one seat is needed, so the over-strict two-seat rule
+         -- would wrongly hide a valid in-progress plan. full/waitlist excluded by status.
+         and exists (
+           select 1 from event_capacity_v cap
+           where cap.event_id = event.id and cap.available >= 1
+         )
         -- If the pair are BOTH going to the same upcoming event, celebrate that
         -- directly instead of suggesting a new plan (#186). "Going" means a
         -- confirmed event_attendees row OR a claimed guest_spot — i.e. a +1 seat
@@ -11172,6 +11284,14 @@ export async function getMutualClicksForSession(session: Session | null): Promis
           -- the mutual's status, not the proposal's. Terminal rows (connected/released/
           -- suppressed/expired) belong on the future "Past clicks" shelf, not here.
           and m.status = 'active'
+          -- SAFE-05: defence-in-depth — a block tears the mutual down (→ suppressed) so
+          -- this filter rarely bites, but anti-join blocks directly so a blocked pair can
+          -- never render a live card even if a teardown ever failed to run.
+          and not exists (
+            select 1 from user_blocks b
+            where (b.blocker_profile_id = m.user_a_id and b.blocked_profile_id = m.user_b_id)
+               or (b.blocker_profile_id = m.user_b_id and b.blocked_profile_id = m.user_a_id)
+          )
         order by m.created_at desc
         limit 12
       `,
@@ -11226,24 +11346,30 @@ export async function blockUser(session: Session | null, targetProfileId: string
   const profile = await ensureProfileForSession(session);
   if (profile.id === targetProfileId) throw validationError("You can't block yourself.");
 
-  await pool.query(
-    `
-      insert into user_blocks (blocker_profile_id, blocked_profile_id)
-      values ($1::uuid, $2::uuid)
-      on conflict do nothing
-    `,
-    [profile.id, targetProfileId],
-  );
-
-  // A block severs any pending Click in either direction so neither resurfaces.
-  await pool.query(
-    `
-      delete from clicks
-      where (sender_id = $1::uuid and receiver_id = $2::uuid)
-         or (sender_id = $2::uuid and receiver_id = $1::uuid)
-    `,
-    [profile.id, targetProfileId],
-  );
+  // SAFE-01: a block is a full coordination teardown (§6.5), not just a click delete.
+  // Insert the block AND sever every shared state — pending clicks (→ invalidated),
+  // the active mutual (→ suppressed), and any live proposal (→ withdrawn) — in one
+  // transaction, so the non-blocked party can no longer confirm a plan, counter-
+  // propose, or keep a stale "both going" card after they've been blocked.
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    await client.query(
+      `
+        insert into user_blocks (blocker_profile_id, blocked_profile_id)
+        values ($1::uuid, $2::uuid)
+        on conflict do nothing
+      `,
+      [profile.id, targetProfileId],
+    );
+    await severPairCoordination(client, profile.id, targetProfileId);
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function unblockUser(session: Session | null, targetProfileId: string) {
@@ -11541,7 +11667,7 @@ export async function getPostEventClickPrompts(
         join event_attendees theirs on theirs.event_id = e.id
           and theirs.status = 'confirmed' and theirs.profile_id <> $1::uuid
         join profiles other on other.id = theirs.profile_id
-          and other.role = 'attendee' and other.suspended_at is null
+          and other.role = 'attendee' and other.suspended_at is null and other.is_banned = false
         where coalesce(e.ends_at, e.starts_at) + interval '12 hours' <= now()
           and coalesce(e.ends_at, e.starts_at) >= now() - interval '14 days'
           and not exists (
@@ -11619,7 +11745,7 @@ export async function getPostEventClickPromptForEvent(
         join event_attendees theirs on theirs.event_id = e.id
           and theirs.status = 'confirmed' and theirs.profile_id <> $1::uuid
         join profiles other on other.id = theirs.profile_id
-          and other.role = 'attendee' and other.suspended_at is null
+          and other.role = 'attendee' and other.suspended_at is null and other.is_banned = false
         where e.slug = $2
           and coalesce(e.ends_at, e.starts_at) <= now()
           and coalesce(e.ends_at, e.starts_at) >= now() - interval '30 days'
@@ -11679,7 +11805,7 @@ export async function notifyPostEventClickPrompts(): Promise<number> {
           select 1
           from event_attendees theirs
           join profiles other on other.id = theirs.profile_id
-            and other.role = 'attendee' and other.suspended_at is null
+            and other.role = 'attendee' and other.suspended_at is null and other.is_banned = false
           where theirs.event_id = e.id
             and theirs.status = 'confirmed'
             and theirs.profile_id <> mine.profile_id
@@ -11783,18 +11909,22 @@ export async function getProposalsForSession(session: Session | null): Promise<P
         left join events e
           on e.id = p.suggested_event_id
          and e.starts_at > now()
-         and e.status in ('live', 'featured', 'waitlist')
-         and (
-           select count(*) from event_attendees seat
-           where seat.event_id = e.id
-             and (
-               seat.status = 'confirmed'
-               or (seat.status = 'pending_payment' and seat.hold_expires_at > now())
-             )
-         ) < e.capacity
+         and e.status in ('live', 'featured')
+         -- CAP-2/4: net guest +1s + live holds via event_capacity_v; show while >= 1 seat
+         -- remains (a mid-progress plan where one has already RSVP'd stays valid).
+         and exists (
+           select 1 from event_capacity_v cap
+           where cap.event_id = e.id and cap.available >= 1
+         )
         where (m.user_a_id = $1::uuid or m.user_b_id = $1::uuid)
           and m.status = 'active'
           and p.status in ('pending', 'accepted')
+          -- SAFE-05: hide proposals for a blocked pair (belt-and-suspenders to the teardown).
+          and not exists (
+            select 1 from user_blocks b
+            where (b.blocker_profile_id = m.user_a_id and b.blocked_profile_id = m.user_b_id)
+               or (b.blocker_profile_id = m.user_b_id and b.blocked_profile_id = m.user_a_id)
+          )
         order by (p.status = 'pending' and p.expires_at > now()) desc, p.updated_at desc
         limit 50
       `,
@@ -11879,6 +12009,46 @@ export async function confirmProposal(session: Session | null, proposalId: strin
       throw validationError("This proposal has expired.");
     }
 
+    // SAFE-02: re-check block/ban/suspend at mutation time. Membership + status/expiry
+    // alone let a since-blocked (or banned/suspended) party still confirm the plan and
+    // stay "both going". Neutral refusal — never discloses which side blocked.
+    if (!(await pairCoordinationAllowed(client, profile.id, row.other_id))) {
+      await client.query("rollback");
+      throw validationError("This plan is no longer available.");
+    }
+
+    // CAP-5 / §B5.1: accept-time capacity re-check. The proposed event may have filled
+    // since it was suggested (a contended fill). Re-read the canonical seat count; if it's
+    // sold out, refuse the confirm but leave the proposal PENDING — the display join then
+    // resolves the full event to null and the card shows its "that event filled up —
+    // suggest alternative" state, so the pair can re-pick without being stranded. (The
+    // terminal event_full status + the read-time re-propose handshake land in 2.5.)
+    const capRow = await client.query<{ unavailable: boolean }>(
+      `
+        select (
+          e.status not in ('live', 'featured')
+          or e.starts_at <= now()
+          or cap.available < 1
+        ) as unavailable
+        from click_proposals cp
+        join events e on e.id = cp.suggested_event_id
+        join event_capacity_v cap on cap.event_id = e.id
+        where cp.id = $1::uuid
+      `,
+      [proposalId],
+    );
+    if (!capRow.rows[0]) {
+      // No suggested event attached (null / since-deleted) — nothing bookable to confirm.
+      await client.query("rollback");
+      throw validationError("Pick an event for this plan before confirming.");
+    }
+    if (capRow.rows[0].unavailable) {
+      // Sold out, waitlisting (full), cancelled, or now in the past — mirrors the
+      // propose-time + display gates so confirm can't lock an unjoinable plan.
+      await client.query("rollback");
+      throw validationError("That event just filled up — suggest another plan together.");
+    }
+
     await client.query(
       `
         update click_proposals
@@ -11940,6 +12110,13 @@ export async function proposeAlternativeForProposal(
       throw validationError("This plan is already settled.");
     }
 
+    // SAFE-03: re-check block/ban/suspend before mutating the shared proposal, so a
+    // since-blocked party can't keep re-proposing into the other person's surface.
+    if (!(await pairCoordinationAllowed(client, profile.id, row.other_id))) {
+      await client.query("rollback");
+      throw validationError("This plan is no longer available.");
+    }
+
     const countResult = await client.query<{ alternatives_count: number }>(
       `select alternatives_count from click_proposals where id = $1::uuid for update`,
       [proposalId],
@@ -11949,12 +12126,19 @@ export async function proposeAlternativeForProposal(
       throw validationError("You've reached the limit of 3 alternative suggestions.");
     }
 
-    // Alternative must be a real, bookable upcoming event from the catalogue —
-    // no free text is ever accepted.
+    // Alternative must be a real, bookable upcoming event from the catalogue — no free
+    // text. CAP-5 / §B4.1: propose-time capacity re-check — the alternative must have room
+    // for BOTH (>= 2 free seats via event_capacity_v), and full/waitlist events are
+    // excluded by status, so a sold-out event can never be set as the live plan.
     const eventResult = await client.query<{ id: string; title: string }>(
       `
-        select id::text, title from events
-        where slug = $1 and status in ('live', 'featured', 'waitlist') and starts_at > now()
+        select e.id::text, e.title
+        from events e
+        join event_capacity_v cap on cap.event_id = e.id
+        where e.slug = $1
+          and e.status in ('live', 'featured')
+          and e.starts_at > now()
+          and cap.available >= 2
         limit 1
       `,
       [eventSlug],
@@ -11962,7 +12146,7 @@ export async function proposeAlternativeForProposal(
     const event = eventResult.rows[0];
     if (!event) {
       await client.query("rollback");
-      throw validationError("Pick an upcoming event from the catalogue.");
+      throw validationError("Pick an upcoming event with room for two from the catalogue.");
     }
 
     await client.query(
@@ -12017,18 +12201,12 @@ export async function getProposalCatalogue(): Promise<ProposalCatalogueEvent[]> 
       `
         select event.slug, event.title, event.starts_at, event.suburb
         from events event
-        where event.status in ('live', 'featured', 'waitlist')
+        join event_capacity_v cap on cap.event_id = event.id
+        where event.status in ('live', 'featured')
           and event.starts_at > now()
-          -- Don't offer a sold-out event as an alternative plan (confirmed RSVPs
-          -- + live payment holds must be below capacity).
-          and (
-            select count(*) from event_attendees seat
-            where seat.event_id = event.id
-              and (
-                seat.status = 'confirmed'
-                or (seat.status = 'pending_payment' and seat.hold_expires_at > now())
-              )
-          ) < event.capacity
+          -- CAP-2/4: only offer alternatives that fit the PAIR (>= 2 free seats, guests +
+          -- holds netted) so picking one never gets rejected by proposeAlternative's gate.
+          and cap.available >= 2
         order by event.starts_at asc
         limit 60
       `,
@@ -12905,6 +13083,78 @@ export async function unsuspendMemberAsAdmin(
   await writeAuditLog({
     actorProfileId: actor.id,
     action: "unsuspend_member",
+    entityTable: "profiles",
+    entityId: targetProfileId,
+  });
+}
+
+// SAFE-06 / §6.7a — permanent ban. Distinct from suspend (temporary, reversible, no
+// teardown — a suspended user is merely frozen out of coordination by the confirm/
+// propose/RSVP-cron re-checks). A ban flips the DEDICATED profiles.is_banned column
+// (added in migration 049) and PERMANENTLY tears down all coordination — every pending
+// click → invalidated, every active mutual → suppressed, every live proposal → withdrawn
+// — across all the user's pairs.
+//
+// We deliberately DON'T overload suspended_at / social_visible: those are an admin's
+// temporary-suspend state and the user's own §B7.4 opt-out respectively, and sharing a
+// column would make unban silently clear an independent suspension / opt-out. Every
+// social-exclusion surface checks is_banned in its own right (getSuggestedPeople, the
+// send-path sender+receiver gates, pairCoordinationAllowed, the RSVP-reminder cron, and
+// the post-event candidate lists), so is_banned alone fully removes a banned user. The
+// reason rides the audit log, the durable trail for a permanent action.
+export async function banMemberAsAdmin(
+  session: Session | null,
+  targetProfileId: string,
+  reason: string,
+) {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+  const actor = await requireAdminProfile(session);
+
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    await client.query(
+      `update profiles set is_banned = true where id = $1::uuid`,
+      [targetProfileId],
+    );
+    await severAllCoordinationForUser(client, targetProfileId);
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  await writeAuditLog({
+    actorProfileId: actor.id,
+    action: "ban_member",
+    entityTable: "profiles",
+    entityId: targetProfileId,
+    metadata: { reason: reason.trim() || "Banned" },
+  });
+}
+
+// Lifts the ban flag only — the §6.7a teardown (suppressed mutuals, invalidated clicks,
+// withdrawn proposals) is permanent and is NOT restored. Touches nothing but is_banned,
+// so an independent suspension or the user's own social opt-out survives the unban.
+export async function unbanMemberAsAdmin(
+  session: Session | null,
+  targetProfileId: string,
+) {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+  const actor = await requireAdminProfile(session);
+
+  await pool.query(
+    `update profiles set is_banned = false where id = $1::uuid`,
+    [targetProfileId],
+  );
+
+  await writeAuditLog({
+    actorProfileId: actor.id,
+    action: "unban_member",
     entityTable: "profiles",
     entityId: targetProfileId,
   });

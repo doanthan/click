@@ -34,7 +34,7 @@ export function MerchantEventResubmitButton({ eventId }: { eventId: string }) {
     setState("done");
     setMessage(
       payload.status === "Live"
-        ? "Resubmitted — your event is live again."
+        ? "Resubmitted - your event is live again."
         : "Resubmitted for review. We'll email you the outcome.",
     );
     router.refresh();

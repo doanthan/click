@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 /**
- * The "who's going" heartbeat — a row of up to three real attendee avatars
+ * The "who's going" heartbeat - a row of up to three real attendee avatars
  * with a count label. Extracted verbatim from the markup that used to live
  * inline in EventCard so the same honest social-proof primitive can be reused
  * on the homepage hero panel and the group cards.
@@ -23,7 +23,7 @@ export function FaceStack({
   /** Overrides the default `${count} going` label. */
   label?: ReactNode;
   className?: string;
-  /** Border colour of the avatar rings — match it to the surface behind them. */
+  /** Border colour of the avatar rings - match it to the surface behind them. */
   ringClass?: string;
 }) {
   const shown = avatars.slice(0, 3);

@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
-import { LinkButton } from "@/components/click-ui";
 import { AccountSettingToggle } from "@/components/account-setting-toggle";
+import { Button, ButtonLink, Icon, type IconName } from "@/components/ds";
 import { signOutOfClick } from "@/app/login/actions";
 import { getOwnProfile, type AccountSettings } from "@/lib/event-repository";
 
@@ -20,16 +20,16 @@ const DEFAULT_SETTINGS: AccountSettings = {
 };
 
 export const metadata = {
-  title: "Account settings | Click",
+  title: "Settings | Click",
 };
 
 type TabKey = "account" | "notifications" | "privacy" | "payments" | "security";
-const TABS: { key: TabKey; label: string }[] = [
-  { key: "account", label: "Account" },
-  { key: "notifications", label: "Notifications" },
-  { key: "privacy", label: "Privacy" },
-  { key: "payments", label: "Payments" },
-  { key: "security", label: "Security" },
+const TABS: { key: TabKey; label: string; icon: IconName }[] = [
+  { key: "account", label: "Account", icon: "user" },
+  { key: "notifications", label: "Notifications", icon: "bell" },
+  { key: "privacy", label: "Privacy & visibility", icon: "eye" },
+  { key: "payments", label: "Payments", icon: "ticket" },
+  { key: "security", label: "Security", icon: "lock" },
 ];
 
 type AccountSettingsPageProps = {
@@ -49,55 +49,65 @@ export default async function AccountSettingsPage({ searchParams }: AccountSetti
 
   const profile = await getOwnProfile(session);
   const settings = profile?.settings ?? DEFAULT_SETTINGS;
+  const label = TABS.find((t) => t.key === tab)?.label ?? "Settings";
 
   return (
-    <main className="paper-noise min-h-screen bg-[color:var(--champagne)] px-4 py-12 text-[color:var(--ink)] sm:px-6">
-      <section className="mx-auto max-w-5xl">
-        <span className="sticker sticker--peach tilt-l-2 inline-flex">
-          <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
+    <main className="min-h-screen bg-[color:var(--champagne)] pb-24 text-[color:var(--ink)]">
+      <div className="ck-page pt-8">
+        <h1 className="font-display text-[length:var(--text-h1)] font-semibold leading-tight tracking-[-0.02em]">
           Settings
-        </span>
-        <h1 className="mt-6 font-display text-5xl font-bold leading-[0.96] tracking-[-0.025em] sm:text-6xl">
-          Account settings
         </h1>
-        <p className="mt-3 text-base font-medium leading-7 text-[color:var(--mauve)]">
-          Edit your profile, control notifications, manage privacy and payments,
-          and sign out from your devices.
-        </p>
 
-        <nav className="mt-8 flex flex-wrap gap-2">
-          {TABS.map((t) => {
-            const active = t.key === tab;
-            return (
-              <Link
-                key={t.key}
-                href={`/account-settings?tab=${t.key}`}
-                className={`rounded-full border-2 border-[color:var(--line)] px-4 py-2 text-xs font-bold uppercase tracking-wide hard-shadow-sm ${
-                  active
-                    ? "bg-[color:var(--rose)] text-[color:var(--surface-deep)]"
-                    : "bg-[color:var(--cream)] text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
-                }`}
-              >
-                {t.label}
-              </Link>
-            );
-          })}
-        </nav>
+        <div className="mt-6 grid items-start gap-8 lg:grid-cols-[232px_minmax(0,1fr)] lg:gap-11">
+          {/* Sub-nav: a sticky column on desktop, a scrollable rail on mobile. */}
+          <nav className="ckRail -mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1 lg:sticky lg:top-6 lg:mx-0 lg:flex-col lg:overflow-visible lg:px-0">
+            {TABS.map((t) => {
+              const on = t.key === tab;
+              return (
+                <Link
+                  key={t.key}
+                  href={`/account-settings?tab=${t.key}`}
+                  aria-current={on ? "page" : undefined}
+                  className={`flex shrink-0 items-center gap-2.5 whitespace-nowrap rounded-[12px] px-3.5 py-2.5 text-[14.5px] transition-colors ${
+                    on
+                      ? "bg-[color:var(--lavender-100)] font-semibold text-[color:var(--purple-800)]"
+                      : "font-medium text-[color:var(--ink-soft)] hover:bg-[color:var(--lavender-100)]"
+                  }`}
+                >
+                  <Icon
+                    name={t.icon}
+                    size={18}
+                    className={on ? "text-[color:var(--purple)]" : "text-[color:var(--slate)]"}
+                  />
+                  {t.label}
+                </Link>
+              );
+            })}
+          </nav>
 
-        <div className="mt-8 rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-6 hard-shadow-sm sm:p-8">
-          {tab === "account" ? (
-            <AccountTab
-              displayName={profile?.displayName ?? "—"}
-              email={profile?.email ?? session.user.email ?? "—"}
-              suburb={profile?.suburb ?? "—"}
-            />
-          ) : null}
-          {tab === "notifications" ? <NotificationsTab settings={settings} /> : null}
-          {tab === "privacy" ? <PrivacyTab settings={settings} /> : null}
-          {tab === "payments" ? <PaymentsTab /> : null}
-          {tab === "security" ? <SecurityTab email={profile?.email ?? session.user.email ?? "—"} /> : null}
+          {/* Narrow content column: capped, left-aligned, whitespace to the right. */}
+          <div className="min-w-0 max-w-[640px]">
+            <h2 className="font-display text-[length:var(--text-h2)] font-semibold leading-tight tracking-[-0.01em]">
+              {label}
+            </h2>
+            <div className="mt-4 h-px bg-[color:var(--mist)]" />
+
+            {tab === "account" ? (
+              <AccountTab
+                displayName={profile?.displayName ?? "-"}
+                email={profile?.email ?? session.user.email ?? "-"}
+                suburb={profile?.suburb ?? "-"}
+              />
+            ) : null}
+            {tab === "notifications" ? <NotificationsTab settings={settings} /> : null}
+            {tab === "privacy" ? <PrivacyTab settings={settings} /> : null}
+            {tab === "payments" ? <PaymentsTab /> : null}
+            {tab === "security" ? (
+              <SecurityTab email={profile?.email ?? session.user.email ?? "-"} />
+            ) : null}
+          </div>
         </div>
-      </section>
+      </div>
     </main>
   );
 }
@@ -112,165 +122,211 @@ function AccountTab({
   suburb: string;
 }) {
   return (
-    <div className="space-y-6">
-      <SectionHeading
-        eyebrow="Your profile"
-        title="Public details"
-        body="What other Click users see when they meet you at an event."
-      />
-      <dl className="grid gap-3 sm:grid-cols-2">
-        <Row label="Display name" value={displayName} />
-        <Row label="Email" value={email} />
-        <Row label="Suburb" value={suburb} />
-      </dl>
-      <div className="flex flex-wrap gap-3 pt-2">
-        <LinkButton href="/profile/edit">Edit profile</LinkButton>
-        <Link
-          href="/profile"
-          className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)]"
-        >
-          View your profile
-        </Link>
-      </div>
-    </div>
+    <>
+      <Group>
+        <SectionHead sub="What other members see when you meet at an event.">
+          Your details
+        </SectionHead>
+        <dl className="grid gap-4 sm:grid-cols-2">
+          <ReadOnlyField label="Display name" value={displayName} />
+          <ReadOnlyField label="Suburb" value={suburb} />
+          <ReadOnlyField label="Email" value={email} />
+        </dl>
+        <div className="mt-5 flex flex-wrap gap-3">
+          <ButtonLink href="/profile/edit" size="sm">
+            Edit profile
+          </ButtonLink>
+          <ButtonLink href="/profile" size="sm" variant="secondary">
+            View your profile
+          </ButtonLink>
+        </div>
+      </Group>
+
+      <Group last>
+        <SectionHead>Membership</SectionHead>
+        {/* Signing out is not destructive - a quiet Ink row with a lavender-tint
+            hover, never error red. */}
+        <form action={signOutOfClick}>
+          <button
+            type="submit"
+            className="-mx-3 flex w-[calc(100%+1.5rem)] items-center gap-3 rounded-[12px] px-3 py-3 text-left text-[14.5px] font-semibold text-[color:var(--ink)] transition-colors hover:bg-[color:var(--lavender-100)] sm:w-auto sm:min-w-[280px]"
+          >
+            <Icon name="logout" size={18} className="text-[color:var(--slate)]" />
+            Sign out
+          </button>
+        </form>
+      </Group>
+    </>
   );
 }
 
 function NotificationsTab({ settings }: { settings: AccountSettings }) {
   const n = settings.notifications;
   return (
-    <div className="space-y-6">
-      <SectionHeading
-        eyebrow="Notifications"
-        title="What you hear from Click"
-        body="Manage how often we send you reminders, mutual Click alerts, and weekly recap emails."
-      />
-      <div className="space-y-3">
-        <AccountSettingToggle settingKey="notify.eventReminders" label="Event reminders (24h before)" initialOn={n.eventReminders} />
-        <AccountSettingToggle settingKey="notify.waitlistOffers" label="Waitlist offers" initialOn={n.waitlistOffers} />
-        <AccountSettingToggle settingKey="notify.mutualClick" label="Mutual Click alerts" initialOn={n.mutualClick} />
-        <AccountSettingToggle settingKey="notify.weeklyRecap" label="Weekly recap email" initialOn={n.weeklyRecap} />
-        <AccountSettingToggle settingKey="notify.productUpdates" label="Product updates" initialOn={n.productUpdates} />
+    <Group last>
+      <SectionHead sub="What we email and notify you about. Separate from the in-app bell.">
+        Notify me about
+      </SectionHead>
+      <div className="-mx-3 grid gap-1">
+        <AccountSettingToggle
+          settingKey="notify.mutualClick"
+          label="Mutual clicks"
+          description="When you and someone both clicked."
+          initialOn={n.mutualClick}
+        />
+        <AccountSettingToggle
+          settingKey="notify.eventReminders"
+          label="Event reminders"
+          description="A nudge the day before something you've booked."
+          initialOn={n.eventReminders}
+        />
+        <AccountSettingToggle
+          settingKey="notify.waitlistOffers"
+          label="Waitlist offers"
+          description="When a spot opens on something you're waiting for."
+          initialOn={n.waitlistOffers}
+        />
+        <AccountSettingToggle
+          settingKey="notify.weeklyRecap"
+          label="Weekly digest"
+          description="What's on near you, once a week."
+          initialOn={n.weeklyRecap}
+        />
+        <AccountSettingToggle
+          settingKey="notify.productUpdates"
+          label="Product news"
+          description="Occasional updates from Click."
+          initialOn={n.productUpdates}
+        />
       </div>
-      <p className="rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--champagne)] p-4 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+      <p className="mt-5 text-[13px] leading-6 text-[color:var(--slate)]">
         Your in-app inbox lives at{" "}
         <Link
           href="/notifications"
-          className="font-bold text-[color:var(--ink)] underline decoration-2 underline-offset-4 hover:text-[color:var(--rose)]"
+          className="font-semibold text-[color:var(--purple)] hover:underline"
         >
-          /notifications
+          Notifications
         </Link>
         .
       </p>
-    </div>
+    </Group>
   );
 }
 
 function PrivacyTab({ settings }: { settings: AccountSettings }) {
   return (
-    <div className="space-y-6">
-      <SectionHeading
-        eyebrow="Privacy"
-        title="Who sees you, and when"
-        body="Click is private by default. Mutual interest unlocks suggestions, not chat."
-      />
-      <div className="space-y-3">
-        <AccountSettingToggle settingKey="showSuburb" label="Show my suburb on my public profile" initialOn={settings.showSuburb} />
-        <AccountSettingToggle settingKey="showAttendanceCount" label="Show my attendance count on my public profile" initialOn={settings.showAttendanceCount} />
-        <AccountSettingToggle settingKey="allowMerchantMessages" label="Allow merchants I’ve RSVPd to message me" initialOn={settings.allowMerchantMessages} />
+    <Group last>
+      <SectionHead sub="Click is private by default. You only ever hear about the people who clicked with you too.">
+        Who sees you, and when
+      </SectionHead>
+      <div className="-mx-3 grid gap-1">
+        <AccountSettingToggle
+          settingKey="showSuburb"
+          label="Show my suburb"
+          description="Your suburb shows on your profile. Off means only your city does."
+          initialOn={settings.showSuburb}
+        />
+        <AccountSettingToggle
+          settingKey="showAttendanceCount"
+          label="Show how many events I've been to"
+          description="The count on your profile - never which events."
+          initialOn={settings.showAttendanceCount}
+        />
+        <AccountSettingToggle
+          settingKey="allowMerchantMessages"
+          label="Let hosts message me"
+          description="Only hosts of events you've RSVP'd to, and only about those events."
+          initialOn={settings.allowMerchantMessages}
+        />
       </div>
-    </div>
+      <p className="mt-5 text-[13px] leading-6 text-[color:var(--slate)]">
+        Dating mode lives with the Open-to-dating intent in{" "}
+        <Link
+          href="/profile/edit"
+          className="font-semibold text-[color:var(--purple)] hover:underline"
+        >
+          Edit profile
+        </Link>
+        .
+      </p>
+    </Group>
   );
 }
 
 function PaymentsTab() {
   return (
-    <div className="space-y-6">
-      <SectionHeading
-        eyebrow="Payments"
-        title="Cards on file"
-        body="Used for paid event RSVPs. Card data lives in Stripe, never on Click servers."
-      />
-      <div className="rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--champagne)] p-6 text-center">
-        <p className="font-display text-2xl font-semibold leading-tight">
+    <Group last>
+      <SectionHead sub="Used for paid event RSVPs. Card details live in Stripe, never on Click's servers.">
+        Cards on file
+      </SectionHead>
+      <div className="rounded-[16px] bg-[color:var(--paper)] px-5 py-7 text-center shadow-[var(--shadow-sm)]">
+        <p className="font-display text-[length:var(--text-h3)] font-semibold leading-tight">
           No saved cards yet.
         </p>
-        <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
-          Add a card the next time you book a paid event. Stripe Customer-level
-          cards UI lands with the Stripe Connect onboarding work.
+        <p className="mx-auto mt-2 max-w-[360px] text-[14px] leading-[1.55] text-[color:var(--slate)]">
+          Add one next time you book a paid event, and it&apos;ll rest here.
         </p>
       </div>
-    </div>
+    </Group>
   );
 }
 
 function SecurityTab({ email }: { email: string }) {
   return (
-    <div className="space-y-6">
-      <SectionHeading
-        eyebrow="Security"
-        title="Sessions and access"
-        body="Sign out everywhere if you’ve lost a device. Account deletion is a permanent step we’d ask you to confirm twice."
-      />
-      <dl className="grid gap-3 sm:grid-cols-2">
-        <Row label="Signed in as" value={email} />
-        <Row label="Session strategy" value="JWT (NextAuth)" />
+    <Group last>
+      <SectionHead sub="Sign out everywhere if you've lost a device. Deleting your account is permanent, so we'd ask you to confirm twice.">
+        Sessions and access
+      </SectionHead>
+      <dl className="grid gap-4 sm:grid-cols-2">
+        <ReadOnlyField label="Signed in as" value={email} />
       </dl>
-      <div className="flex flex-wrap gap-3 pt-2">
+      <div className="mt-5 grid gap-1">
         <form action={signOutOfClick}>
           <button
             type="submit"
-            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
+            className="-mx-3 flex w-[calc(100%+1.5rem)] items-center gap-3 rounded-[12px] px-3 py-3 text-left text-[14.5px] font-semibold text-[color:var(--ink)] transition-colors hover:bg-[color:var(--lavender-100)] sm:w-auto sm:min-w-[280px]"
           >
+            <Icon name="logout" size={18} className="text-[color:var(--slate)]" />
             Sign out
           </button>
         </form>
-        <button
-          type="button"
-          disabled
-          className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--mauve)] opacity-60"
-        >
-          Delete account · coming soon
-        </button>
+        <div>
+          <Button type="button" variant="ghost" size="sm" disabled>
+            Delete account · coming soon
+          </Button>
+        </div>
       </div>
+    </Group>
+  );
+}
+
+/* Sections group with whitespace + ONE hairline. No cards inside cards. */
+function Group({ children, last }: { children: React.ReactNode; last?: boolean }) {
+  return (
+    <div className={`py-6 ${last ? "" : "border-b border-[color:var(--mist)]"}`}>{children}</div>
+  );
+}
+
+function SectionHead({ children, sub }: { children: React.ReactNode; sub?: string }) {
+  return (
+    <div className="mb-3.5">
+      <h3 className="eyebrow">{children}</h3>
+      {sub ? (
+        <p className="mt-1.5 max-w-[520px] text-[13px] leading-[1.5] text-[color:var(--slate)]">
+          {sub}
+        </p>
+      ) : null}
     </div>
   );
 }
 
-function SectionHeading({
-  eyebrow,
-  title,
-  body,
-}: {
-  eyebrow: string;
-  title: string;
-  body: string;
-}) {
+function ReadOnlyField({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
-        {eyebrow}
-      </span>
-      <h2 className="mt-2 font-display text-3xl font-semibold leading-tight tracking-[-0.02em]">
-        {title}
-      </h2>
-      <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
-        {body}
-      </p>
-    </div>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-3 hard-shadow-sm">
-      <dt className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-        {label}
-      </dt>
-      <dd className="mt-1 text-sm font-bold text-[color:var(--ink)] break-all">
+      <dt className="mb-[7px] text-[13.5px] font-semibold text-[color:var(--ink)]">{label}</dt>
+      <dd className="flex h-12 items-center break-all rounded-[12px] border border-[color:var(--mist)] bg-[color:var(--champagne-deep)] px-3.5 text-[15px] text-[color:var(--slate)]">
         {value}
       </dd>
     </div>
   );
 }
-

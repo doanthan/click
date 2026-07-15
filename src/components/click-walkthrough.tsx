@@ -5,7 +5,7 @@ import { Pill } from "@/components/click-ui";
 import { formatIntent } from "@/lib/click-data";
 
 // ---------------------------------------------------------------------------
-// /test-click — interactive walkthrough of the Click mechanic.
+// /test-click - interactive walkthrough of the Click mechanic.
 //
 // This is an EXPLAINER, not a live surface. Every card below is a faithful,
 // STATIC clone of a real component (no server actions, no DB) so the page
@@ -50,8 +50,8 @@ const DEMO = {
 };
 
 const POST_EVENT_HELP =
-  "Tap anyone you’d like to see again. It’s completely private — they only find out if they click you back.";
-const CONFIRMED_HELP = `RSVP to the event below. ${DEMO.mutual.other} needs to RSVP too — you’re only going together once you both have a seat.`;
+  "Tap anyone you’d like to see again. It’s completely private - they only find out if they click you back.";
+const CONFIRMED_HELP = `RSVP to the event below. ${DEMO.mutual.other} needs to RSVP too - you’re only going together once you both have a seat.`;
 
 // --- Faithful static card clones -------------------------------------------
 
@@ -93,7 +93,7 @@ function DemoClickCard({ sent = false }: { sent?: boolean }) {
             sent ? "opacity-70" : ""
           }`}
         >
-          {sent ? "Clicked privately ✓ — pending their Click" : "Click privately"}
+          {sent ? "Clicked privately ✓ - pending their Click" : "Click privately"}
         </span>
       </div>
     </article>
@@ -157,7 +157,7 @@ function DemoMutualCard({ celebrate = false }: { celebrate?: boolean }) {
             <span className="font-bold underline decoration-2 underline-offset-4">
               {DEMO.mutual.event}
             </span>
-            . Confirm it together — or suggest another.
+            . Confirm it together - or suggest another.
           </p>
           <span className="mt-3 inline-flex w-fit items-center rounded-full border-2 border-[color:var(--surface-deep)] bg-[color:var(--champagne)] px-4 py-2 text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm">
             Confirm or suggest another →
@@ -204,7 +204,7 @@ function DemoProposalCard() {
           Pick an event… <span aria-hidden>▾</span>
         </div>
         <p className="mt-2 text-xs font-bold leading-5 text-[color:var(--mauve)]">
-          A dropdown of real events — not a message box. There&rsquo;s no free text anywhere in a
+          A dropdown of real events - not a message box. There&rsquo;s no free text anywhere in a
           proposal.
         </p>
       </div>
@@ -219,7 +219,7 @@ function DemoProposalCard() {
 function DemoConfirmedCard() {
   return (
     <div className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--peach)] p-4">
-      <p className="text-sm font-bold text-[color:var(--ink)]">You&rsquo;re in — now lock in your seat.</p>
+      <p className="text-sm font-bold text-[color:var(--ink)]">You&rsquo;re in - now lock in your seat.</p>
       <p className="mt-1 text-sm font-medium leading-6 text-[color:var(--ink)]/80">{CONFIRMED_HELP}</p>
       <span className="mt-3 inline-flex rounded-full border-2 border-[color:var(--surface-deep)] bg-[color:var(--rose)] px-4 py-2 text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm">
         RSVP to {DEMO.mutual.event} →
@@ -331,7 +331,7 @@ const STEPS = [
           <div className="rounded-3xl border-2 border-[color:var(--rose)] bg-[color:var(--lav-bg)] p-5">
             <p className={EYEBROW}>Your screen</p>
             <p className="mb-4 mt-2 text-sm font-bold text-[color:var(--ink)]">
-              You tapped — this is exactly what you see:
+              You tapped - this is exactly what you see:
             </p>
             <DemoClickCard sent />
           </div>
@@ -351,12 +351,12 @@ const STEPS = [
         </div>
         <Annotation
           trigger="You tap “Click privately”, or “Click” on a post-event prompt."
-          youSee="The button flips to “Clicked privately ✓ — pending their Click”."
-          theySee="Nothing — they are never told. It only surfaces if they Click you back."
+          youSee="The button flips to “Clicked privately ✓ - pending their Click”."
+          theySee="Nothing - they are never told. It only surfaces if they Click you back."
           clock="Stored as pending; auto-expires after 30 days."
         />
         <div className="mt-4 flex flex-wrap gap-1.5">
-          <Pill tone="cream">Can&rsquo;t Click yourself</Pill>
+          <Pill tone="cream">Can&rsquo;t click with yourself</Pill>
           <Pill tone="cream">Blocking stops new Clicks &amp; hides you in discovery</Pill>
           <Pill tone="peach">100% private &amp; anonymous</Pill>
         </div>
@@ -373,7 +373,7 @@ const STEPS = [
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
           {[
             "Both of your clicks flip to “mutual”.",
-            "We auto-suggest a future, still-bookable event around a shared interest — matching both of you where it can, otherwise something one of you is into. Soonest first, ideally one neither has RSVP’d to.",
+            "We auto-suggest a future, still-bookable event around a shared interest - suiting both of you where it can, otherwise something one of you is into. Soonest first, ideally one neither has RSVP’d to.",
             "A 7-day Proposal opens automatically.",
           ].map((text, i) => (
             <div
@@ -389,12 +389,12 @@ const STEPS = [
         </div>
         <p className="mt-4 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-4 text-sm font-semibold leading-6 text-[color:var(--ink)]">
           You both get an in-app “Mutual Click found” notification (opens <code>/proposals</code>) and a
-          mutual-click email — the first time anyone is notified at all. <strong>No chat opens — ever.</strong>
+          mutual-click email - the first time anyone is notified at all. <strong>No chat opens - ever.</strong>
         </p>
         <Annotation
           trigger="The moment they also Click you (their pending Click already existed)."
           youSee="A bright “Mutual Click” card on your dashboard and the People page."
-          theySee="Exactly the same — both sides light up at once."
+          theySee="Exactly the same - both sides light up at once."
           clock="A 7-day Proposal window opens."
         />
         <p className="mt-4 rounded-2xl border-2 border-[color:var(--rose)] bg-[color:var(--lav-bg)] p-4 text-center font-display text-xl font-bold tracking-[-0.01em] text-[color:var(--ink)]">
@@ -406,7 +406,7 @@ const STEPS = [
   {
     n: "03",
     label: "Proposal",
-    blurb: "You coordinate with taps — there is no chat.",
+    blurb: "You coordinate with taps - there is no chat.",
     body: (
       <>
         <div className="mx-auto max-w-xl">
@@ -415,13 +415,13 @@ const STEPS = [
         <Annotation
           trigger="Either of you opens it from the mutual card or the Proposals page."
           youSee="The proposal card above, on /proposals."
-          theySee="The same card — either of you can confirm or suggest."
+          theySee="The same card - either of you can confirm or suggest."
           clock="Expires 7 days after it opens; the card counts it down."
         />
         <p className="mt-4 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-4 text-sm font-semibold leading-6 text-[color:var(--mauve)]">
-          The 7-day clock runs from when you <strong>matched</strong> — not from the event date (the
+          The 7-day clock runs from when you <strong>clicked</strong> - not from the event date (the
           event can be weeks later). If it lapses, the proposal dies and the mutual drops off your
-          lists. The real card says “Click again to reopen”, but that reopen isn’t built yet — see the
+          lists. The real card says “Click again to reopen”, but that reopen isn’t built yet - see the
           audit below.
         </p>
       </>
@@ -445,10 +445,10 @@ const STEPS = [
           <Pill tone="peach">A claimed guest +1 also counts</Pill>
         </div>
         <Annotation
-          trigger="One of you taps “Confirm this plan” — only possible while the suggested event is still bookable. If it sold out, you Suggest an alternative first."
+          trigger="One of you taps “Confirm this plan” - only possible while the suggested event is still bookable. If it sold out, you Suggest an alternative first."
           youSee="An “RSVP needed” card pointing you to the event."
-          theySee="The same — they’re nudged to RSVP too."
-          clock="No new timer — you just both need a seat."
+          theySee="The same - they’re nudged to RSVP too."
+          clock="No new timer - you just both need a seat."
         />
       </>
     ),
@@ -468,8 +468,8 @@ const STEPS = [
         </p>
         <Annotation
           trigger="You both complete a real RSVP for the same upcoming event."
-          youSee="The celebration card on your dashboard. The Proposals page never shows this 🎉 — it’s computed live from your RSVPs, not from anyone tapping Confirm."
-          theySee="The same — it celebrates on their dashboard too, at the same time."
+          youSee="The celebration card on your dashboard. The Proposals page never shows this 🎉 - it’s computed live from your RSVPs, not from anyone tapping Confirm."
+          theySee="The same - it celebrates on their dashboard too, at the same time."
           clock="No timer. You’re going. 🎉"
         />
       </>
@@ -480,7 +480,7 @@ const STEPS = [
 // --- Main component ---------------------------------------------------------
 
 export function ClickWalkthrough() {
-  // True only after client hydration — without JS the page renders all five
+  // True only after client hydration - without JS the page renders all five
   // steps stacked (a readable static walkthrough); once hydrated it collapses
   // to the interactive stepper. useSyncExternalStore gives us this flag with no
   // setState-in-effect (which the repo's react-hooks lint forbids).
@@ -510,7 +510,7 @@ export function ClickWalkthrough() {
 
   return (
     <>
-      {/* Section 2 — the whole flow at a glance */}
+      {/* Section 2 - the whole flow at a glance */}
       <section className="border-t-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-14 sm:px-6">
         <div className="mx-auto max-w-6xl">
           <p className={EYEBROW}>The whole flow at a glance</p>
@@ -610,7 +610,7 @@ export function ClickWalkthrough() {
         </div>
       </section>
 
-      {/* Section 3 — two ways to start a Click */}
+      {/* Section 3 - two ways to start a Click */}
       <section className="border-t-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-14 sm:px-6">
         <div className="mx-auto max-w-6xl">
           <p className={EYEBROW}>Two ways to start a Click</p>
@@ -625,7 +625,7 @@ export function ClickWalkthrough() {
               </h3>
               <p className="mb-4 mt-2 text-sm font-semibold leading-6 text-[color:var(--mauve)]">
                 On your dashboard (one rotating suggestion) and the People page (the full list, ranked by
-                how well you match — shared interests plus your match profile). No need to have met.
+                how well you click - shared interests plus your click profile). No need to have met.
               </p>
               <DemoClickCard />
             </div>
@@ -642,12 +642,12 @@ export function ClickWalkthrough() {
             </div>
           </div>
           <p className="mt-5 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--lav-bg)] p-4 text-center text-sm font-bold text-[color:var(--ink)]">
-            Either door leads to the same private pending Click — that&rsquo;s the walkthrough below.
+            Either door leads to the same private pending Click - that&rsquo;s the walkthrough below.
           </p>
         </div>
       </section>
 
-      {/* Section 4 — the interactive stepper */}
+      {/* Section 4 - the interactive stepper */}
       <section
         ref={stepperRef}
         className="scroll-mt-4 border-t-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-14 sm:px-6"
@@ -658,11 +658,11 @@ export function ClickWalkthrough() {
             Walk one Click, end to end.
           </h2>
 
-          {/* Sticky pill bar — interactive only once hydrated. Without JS, all
+          {/* Sticky pill bar - interactive only once hydrated. Without JS, all
               five steps render stacked below (a readable static walkthrough). */}
           {mounted ? (
             <div className="sticky top-2 z-20 mt-6 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)]/95 p-3 backdrop-blur hard-shadow-sm">
-              {/* Arrow keys move steps while a pill is focused — scoped here so it
+              {/* Arrow keys move steps while a pill is focused - scoped here so it
                   never swallows arrow-key scrolling elsewhere on the page. */}
               <div className="flex gap-2 overflow-x-auto" onKeyDown={onStepperKeyDown}>
                 {STEPS.map((step, i) => {

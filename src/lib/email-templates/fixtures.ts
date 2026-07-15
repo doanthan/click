@@ -1,6 +1,6 @@
 // Mock data for every email preview. Personas + event titles are pulled from
 // `database/002_seed.sql` so the gallery feels internally consistent with the
-// rest of the app: Maya RSVPs to Theo's CrossFit class — that one RSVP is the
+// rest of the app: Maya RSVPs to Theo's CrossFit class - that one RSVP is the
 // fixture for both `rsvp-confirmation` (to Maya) and `merchant-new-rsvp`
 // (to Theo). Touch this file when adjusting copy; templates stay generic.
 //
@@ -55,7 +55,7 @@ const SLOW_DATING = {
   address: "21 Brisbane St",
   city: "Surry Hills NSW 2010",
   priceLabel: "$45",
-  spotsLabel: "Full — waitlist open",
+  spotsLabel: "Full - waitlist open",
 };
 
 const POTTERY = {

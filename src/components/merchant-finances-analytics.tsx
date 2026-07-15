@@ -51,18 +51,18 @@ export function MerchantFinancesAnalytics({
   const total = months.reduce((sum, m) => sum + m.paidCents, 0);
 
   return (
-    <div className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] hard-shadow-sm">
-      <div className="flex items-center justify-between gap-3 border-b-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-3">
-        <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
+    <div className="rounded-[var(--radius-xl)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] shadow-[var(--shadow-sm)]">
+      <div className="flex items-center justify-between gap-3 border-b border-[color:var(--mist)] px-5 py-3.5">
+        <span className="text-xs font-bold tracking-[0.08em] uppercase text-[color:var(--purple-700)]">
           Revenue · last 6 months
         </span>
-        <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+        <span className="text-[13px] font-semibold text-[color:var(--slate)]">
           {dollars(total)} paid
         </span>
       </div>
 
       {total === 0 ? (
-        <p className="p-6 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+        <p className="p-6 text-sm leading-6 text-[color:var(--slate)]">
           No paid revenue in the last 6 months yet. Paid-event sales show up here.
         </p>
       ) : (
@@ -71,7 +71,7 @@ export function MerchantFinancesAnalytics({
             const heightPct = Math.round((m.paidCents / peak) * 100);
             return (
               <div key={m.key} className="flex flex-1 flex-col items-center gap-2">
-                <span className="font-mono text-[0.6rem] font-bold text-[color:var(--ink)]">
+                <span className="text-[11px] font-semibold tabular-nums text-[color:var(--ink)]">
                   {m.paidCents > 0 ? dollars(m.paidCents) : ""}
                 </span>
                 <div
@@ -80,11 +80,11 @@ export function MerchantFinancesAnalytics({
                   title={`${m.label}: ${dollars(m.paidCents)} paid`}
                 >
                   <div
-                    className="w-full rounded-t-md border-2 border-[color:var(--line)] bg-[color:var(--peach)]"
+                    className="w-full rounded-t-md bg-[color:var(--sage)]"
                     style={{ height: `${Math.max(heightPct, m.paidCents > 0 ? 6 : 0)}%` }}
                   />
                 </div>
-                <span className="font-mono text-[0.62rem] font-bold uppercase tracking-[0.12em] text-[color:var(--mauve)]">
+                <span className="text-[11px] font-medium text-[color:var(--slate)]">
                   {m.label}
                 </span>
               </div>

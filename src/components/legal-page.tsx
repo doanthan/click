@@ -35,7 +35,7 @@ export function LegalPage({
 
         <p className="mt-6 text-base font-medium leading-7 text-[color:var(--ink)]">{intro}</p>
 
-        {/* In-page contents — quick jump for long policies. */}
+        {/* In-page contents - quick jump for long policies. */}
         <nav
           aria-label="Contents"
           className="mt-8 rounded-2xl border border-[color:var(--line)] bg-[color:var(--cream)] p-4"

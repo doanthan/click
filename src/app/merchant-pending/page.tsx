@@ -81,7 +81,7 @@ export default async function MerchantPendingPage() {
     } else {
       // verification_status === "approved"
       reason =
-        "Your merchant application is already approved — your portal is live, so there’s no pending status to show.";
+        "Your merchant application is already approved - your portal is live, so there’s no pending status to show.";
     }
     return <AccessDenied reason={reason} showHostCta={showHostCta} />;
   }
@@ -166,7 +166,7 @@ export default async function MerchantPendingPage() {
                 },
                 {
                   t: "Update the flagged details",
-                  d: "Reopen your application — your previous answers are still there to edit.",
+                  d: "Reopen your application - your previous answers are still there to edit.",
                 },
                 {
                   t: "Resubmit for review",
@@ -201,7 +201,7 @@ export default async function MerchantPendingPage() {
             While you wait
           </p>
           <h2 className="mt-3 font-display text-3xl font-semibold leading-tight tracking-[-0.02em]">
-            Get your first event live in 15 minutes — prep these now.
+            Get your first event live in 15 minutes - prep these now.
           </h2>
 
           <ol className="mt-6 grid gap-4">
@@ -224,7 +224,7 @@ export default async function MerchantPendingPage() {
               },
               {
                 t: "Tag richly",
-                d: "Users filter by tags. A cooking class can be Food + Social + Learning + Creative — pick all that fit.",
+                d: "Users filter by tags. A cooking class can be Food + Social + Learning + Creative - pick all that fit.",
               },
             ].map((step, idx) => (
               <li

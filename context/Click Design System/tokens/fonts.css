@@ -1,0 +1,7 @@
+/* Click - Webfonts (canonical · CLICK_TYPE.md)
+   Poppins (SemiBold 600) carries the wordmark, headings, and key UI labels.
+   Body + meta use the system font stack - no webfont needed. */
+
+/* Poppins - the wordmark + display face. Carries the lowercase `click` logotype
+   (with the lavender sparkle-pair i-dot) and the `c` mark. */
+@import url("https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap");

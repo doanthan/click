@@ -55,12 +55,12 @@ function AgendaSection({
 }) {
   return (
     <section>
-      <h2 className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+      <h2 className="text-xs font-bold tracking-[0.08em] uppercase text-[color:var(--slate)]">
         {title}
         <span className="ml-2 text-[color:var(--ink)]">{events.length}</span>
       </h2>
       {events.length === 0 ? (
-        <p className="mt-3 text-sm font-semibold text-[color:var(--mauve)]">{emptyLabel}</p>
+        <p className="mt-3 text-sm text-[color:var(--slate)]">{emptyLabel}</p>
       ) : (
         <ul className="mt-3 grid gap-2">
           {events.map((event) => (
@@ -80,27 +80,27 @@ function AgendaRow({ event, ended }: { event: EventItem; ended: boolean }) {
   return (
     <Link
       href={`/events/${event.id}`}
-      className="flex items-center justify-between gap-3 rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-2.5 hard-shadow-sm transition hover:-translate-y-[1px] hover:bg-[color:var(--peach)]"
+      className="flex items-center justify-between gap-3 rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] px-4 py-3 transition-colors hover:bg-[color:var(--lavender-100)]"
     >
       <div className="min-w-0">
         <p
-          className={`truncate text-sm font-bold leading-tight ${
-            isCancelled ? "text-[color:var(--mauve)] line-through" : "text-[color:var(--ink)]"
+          className={`font-display truncate text-sm font-semibold leading-tight ${
+            isCancelled ? "text-[color:var(--slate)] line-through" : "text-[color:var(--ink)]"
           }`}
         >
           {event.title}
         </p>
-        <p className="mt-0.5 font-mono text-[0.62rem] font-bold uppercase tracking-[0.14em] text-[color:var(--mauve)]">
+        <p className="mt-0.5 text-[12.5px] text-[color:var(--slate)]">
           {ROW_DATE_FORMATTER.format(new Date(event.startsAt))} · {event.time}
         </p>
       </div>
-      <span
-        className={`shrink-0 rounded-full border-2 border-[color:var(--line)] px-2.5 py-1 font-mono text-[0.58rem] font-bold uppercase tracking-[0.14em] ${
-          isCancelled || ended
-            ? "bg-[color:var(--cream)] text-[color:var(--mauve)]"
-            : "bg-[color:var(--peach)] text-[color:var(--surface-deep)]"
-        }`}
-      >
+      <span className={`ck-badge shrink-0 ${
+        isCancelled
+          ? "bg-[color-mix(in_srgb,var(--coral)_12%,var(--paper))] text-[color:var(--coral-ink)]"
+          : ended
+            ? "bg-[color:var(--mist)] text-[color:var(--slate)]"
+            : "bg-[color-mix(in_srgb,var(--sage)_14%,var(--paper))] text-[color:var(--sage)]"
+      }`}>
         {label}
       </span>
     </Link>

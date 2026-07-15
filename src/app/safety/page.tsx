@@ -11,14 +11,14 @@ export default function SafetyPage() {
       eyebrow="Trust & Safety"
       title="Safety Policy"
       lastUpdated="18 June 2026"
-      intro="Click is built so that connection happens through shared, real-world events — never through cold messages. Safety is our core promise. This policy explains the protections in place and what to do if something goes wrong."
+      intro="Click is built so that connection happens through shared, real-world events - never through cold messages. Safety is our core promise. This policy explains the protections in place and what to do if something goes wrong."
       sections={[
         {
           heading: "No messaging, by design",
           body: (
             <p>
               Click has no direct-message inbox. Nobody can send you unsolicited messages. You signal
-              interest in someone privately by &quot;clicking&quot; them after an event — and they only
+              interest in someone privately by &quot;clicking&quot; them after an event - and they only
               ever know if they click you back. This removes the most common harassment vector in social
               apps.
             </p>
@@ -56,7 +56,7 @@ export default function SafetyPage() {
               </p>
               <ul className="ml-5 list-disc space-y-1.5">
                 <li>a short safety briefing is shown before first use, with reminders to meet in public and tell a friend;</li>
-                <li>photo verification is encouraged so matches can trust who they are meeting;</li>
+                <li>photo verification is encouraged so the people you click with can trust who they are meeting;</li>
                 <li>reports involving unwanted contact are prioritised in the safety queue and reviewed promptly, with auto-muting applied while we investigate.</li>
               </ul>
             </>
@@ -76,7 +76,7 @@ export default function SafetyPage() {
                 <li>arrange your own transport to and from the venue so you can leave whenever you want;</li>
                 <li>keep your phone charged and look after your own drink;</li>
                 <li>don&apos;t share your home address or financial details, and never send money to someone you&apos;ve just met;</li>
-                <li>trust your instincts — you never have to stay, and you can leave at any time.</li>
+                <li>trust your instincts - you never have to stay, and you can leave at any time.</li>
               </ul>
             </>
           ),
@@ -97,7 +97,7 @@ export default function SafetyPage() {
           body: (
             <p>
               Your clicks are private and one-way interest is never revealed. We don&apos;t share your
-              contact details with other members, and we keep sensitive data protected — see our{" "}
+              contact details with other members, and we keep sensitive data protected - see our{" "}
               <a href="/privacy" className="font-bold underline">Privacy Policy</a> and{" "}
               <a href="/security" className="font-bold underline">Security Policy</a> for the detail.
             </p>

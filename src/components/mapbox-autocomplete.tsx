@@ -22,7 +22,7 @@ const SearchBox = dynamic(
       <input
         disabled
         placeholder="Loading address search…"
-        className="w-full rounded-lg border-2 border-[color:var(--line)] bg-[color:var(--champagne)]/60 px-4 py-3 text-sm font-bold text-[color:var(--mauve)]"
+        className="w-full rounded-xl border-[1.5px] border-[color:var(--mist)] bg-[color:var(--paper)] px-3.5 py-2.5 text-sm text-[color:var(--slate)]"
       />
     ),
   },
@@ -34,25 +34,26 @@ const TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 // `useEffect` on `theme`; a fresh object literal per render would re-assign the
 // theme on every keystroke and add churn to the underlying web component.
 const SEARCH_BOX_THEME = {
-  // Match the surrounding TextInput / StateSelect chrome exactly:
-  // rounded-xl (0.75rem), 2px ink border, champagne fill, cream hover,
-  // semibold ink text, px-4 py-3 padding, no shadow.
+  // The DS input: radius 12, a quiet Mist hairline (never a heavy border), white
+  // fill, Ink text, lavender hover. Deep Purple is the accent - it appears on
+  // focus/active only, and coral never appears here at all (status colours live
+  // on badges, never on chrome).
   variables: {
-    colorPrimary: "#E8674C",
-    colorText: "#3B2F81",
+    colorPrimary: "#3B2F81",
+    colorText: "#1C1830",
     colorBackground: "#FFFFFF",
-    colorBackgroundHover: "#F1ECFB",
-    colorBackgroundActive: "#F1ECFB",
-    border: "2px solid #3B2F81",
+    colorBackgroundHover: "#F1ECFD",
+    colorBackgroundActive: "#F1ECFD",
+    border: "1.5px solid #E8E4F0",
     borderRadius: "0.75rem",
     boxShadow: "none",
-    padding: "0.75em 1em",
+    padding: "0.7em 0.9em",
     fontFamily: "inherit",
-    fontWeight: "600",
-    fontWeightSemibold: "700",
-    fontWeightBold: "700",
+    fontWeight: "500",
+    fontWeightSemibold: "600",
+    fontWeightBold: "600",
     lineHeight: "1.5",
-    unit: "16px",
+    unit: "15px",
   },
   // The variables above style the wrapper. To make the typed value
   // ("48 Spencer Road") render with the same weight/colour as
@@ -219,7 +220,7 @@ export function MapboxAutocomplete({
         placeholder={`${placeholder} (set NEXT_PUBLIC_MAPBOX_TOKEN)`}
         className={
           className ??
-          "w-full rounded-lg border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 text-sm font-bold text-[color:var(--ink)] outline-none focus:border-[color:var(--rose)]"
+          "w-full rounded-xl border-[1.5px] border-[color:var(--mist)] bg-[color:var(--paper)] px-3.5 py-2.5 text-sm text-[color:var(--ink)] outline-none focus:border-[color:var(--purple)]"
         }
       />
     );

@@ -1,5 +1,5 @@
 import { Skeleton, SkeletonFilterBar, SkeletonMetricGrid, SkeletonTable } from "@/components/skeleton";
-import Link from "next/link";
+import { ButtonLink, Icon } from "@/components/ds";
 import type { ReactNode } from "react";
 import { getMerchantEvents } from "@/lib/event-repository";
 
@@ -18,8 +18,22 @@ export const dateTimeFormatter = new Intl.DateTimeFormat("en-AU", {
   minute: "2-digit",
 });
 
+/**
+ * An event's PRICE. "Free" is the right word here - it's what an attendee pays,
+ * and the DS prints it on the card exactly like this.
+ */
 export function formatPrice(cents: number) {
   if (cents === 0) return "Free";
+  return priceFormatter.format(cents / 100);
+}
+
+/**
+ * MONEY - revenue, payouts, refunds. Never "Free": a $0 revenue figure is a
+ * number, not a pricing model, and "Free" in a Revenue tile reads as a broken
+ * stat. Always "$0", and the StatCard's `note` carries the scope
+ * ("$0 · free events so far").
+ */
+export function formatMoney(cents: number) {
   return priceFormatter.format(cents / 100);
 }
 
@@ -31,7 +45,7 @@ export function TabHeaderSkeleton() {
   return (
     <div className="space-y-3">
       <Skeleton className="h-3 w-24 rounded-full" />
-      <Skeleton className="h-9 w-72 max-w-full rounded-lg sm:h-10" />
+      <Skeleton className="h-8 w-72 max-w-full rounded-xl" />
       <Skeleton className="h-3.5 w-full max-w-md rounded-full" />
     </div>
   );
@@ -39,9 +53,9 @@ export function TabHeaderSkeleton() {
 
 export function BookingsTabSkeleton() {
   return (
-    <div className="space-y-10 py-10">
+    <div className="space-y-8 py-8">
       <TabHeaderSkeleton />
-      <div className="space-y-6">
+      <div className="space-y-5">
         <SkeletonFilterBar pills={3} />
         <SkeletonTable rows={6} withThumb />
       </div>
@@ -51,7 +65,7 @@ export function BookingsTabSkeleton() {
 
 export function FinancesTabSkeleton() {
   return (
-    <div className="space-y-8 py-10">
+    <div className="space-y-7 py-8">
       <TabHeaderSkeleton />
       <SkeletonMetricGrid count={4} />
       <SkeletonTable rows={6} withThumb={false} />
@@ -59,8 +73,14 @@ export function FinancesTabSkeleton() {
   );
 }
 
-// Lightweight section header sized for the content column (the old SectionIntro
-// rendered 6xl display titles meant for full-bleed marketing sections).
+/**
+ * TabHeader - the one page head on every merchant surface: eyebrow → title →
+ * subline, with the page's single action on the right. Title is Poppins 600 at
+ * the app-compact size (h2, not display - display is reserved for marketing).
+ *
+ * `action` is the ONE call to action for the screen. Never pass a "Create event"
+ * button here AND render another one in a banner or an empty state below.
+ */
 export function TabHeader({
   eyebrow,
   title,
@@ -73,16 +93,14 @@ export function TabHeader({
   action?: ReactNode;
 }) {
   return (
-    <div className="flex flex-wrap items-start justify-between gap-4">
-      <div className="max-w-2xl">
+    <div className="flex flex-wrap items-end justify-between gap-4">
+      <div className="min-w-0 max-w-[560px]">
         <p className="eyebrow">{eyebrow}</p>
-        <h1 className="font-display mt-2 text-3xl font-bold leading-tight tracking-[-0.025em] text-[color:var(--ink)] sm:text-4xl">
+        <h1 className="font-display mt-2 text-[24px] font-semibold leading-[1.15] tracking-[-0.01em] text-[color:var(--ink)] sm:text-[30px]">
           {title}
         </h1>
         {body ? (
-          <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--mauve)]">
-            {body}
-          </p>
+          <p className="mt-2 text-sm leading-relaxed text-[color:var(--slate)]">{body}</p>
         ) : null}
       </div>
       {action ? <div className="shrink-0">{action}</div> : null}
@@ -90,15 +108,15 @@ export function TabHeader({
   );
 }
 
-// Primary CTA — the merchant portal's most important action, so it gets the
-// rose fill treatment and is reused in the dashboard header + empty states.
-export function CreateEventButton() {
+/**
+ * The portal's primary CTA. ONE per screen - the DS is explicit about it, and
+ * the old dashboard shipped three (banner + header + empty state) at once.
+ */
+export function CreateEventButton({ size = "sm" }: { size?: "sm" | "md" }) {
   return (
-    <Link
-      href="/merchant/events/create"
-      className="inline-flex shrink-0 items-center rounded-full border-2 border-[color:var(--surface-deep)] bg-[color:var(--rose)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
-    >
-      + Create event
-    </Link>
+    <ButtonLink href="/merchant/events/create" size={size}>
+      <Icon name="plus" size={16} />
+      Create event
+    </ButtonLink>
   );
 }

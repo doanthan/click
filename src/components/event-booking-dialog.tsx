@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { ckBtn } from "./ds";
 
 type EventBookingDialogProps = {
   triggerLabel: string;
@@ -33,15 +34,15 @@ export function EventBookingDialog({
     };
   }, [open]);
 
+  // The RSVP entry is the DS Button - radius 12, one footprint. "ink" is a
+  // quieter secondary for a full/waitlist context.
   const triggerClass =
-    triggerTone === "ink"
-      ? "rounded-full border-2 border-[color:var(--line)] bg-[color:var(--ink)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--on-deep)] hard-shadow-sm hover:bg-[color:var(--surface-deep)]"
-      : "rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]";
+    triggerTone === "ink" ? ckBtn("secondary", "lg", { full: true }) : ckBtn("primary", "lg", { full: true });
 
   return (
     <>
       <button type="button" onClick={() => setOpen(true)} className={triggerClass}>
-        {triggerLabel}
+        <span className="ck-btn__label">{triggerLabel}</span>
       </button>
 
       {open ? (
@@ -54,35 +55,30 @@ export function EventBookingDialog({
             if (e.target === e.currentTarget) setOpen(false);
           }}
         >
-          <div className="absolute inset-0 bg-[color:var(--surface-deep)]/60 backdrop-blur-sm" />
+          {/* Definite Ink scrim - the white card must separate clearly from the
+              cream page behind it. */}
+          <div className="absolute inset-0 bg-[rgba(28,24,48,0.5)]" />
           <div
             ref={dialogRef}
-            className="relative w-full max-w-md rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-6 hard-shadow"
+            className="relative w-full max-w-md rounded-[var(--radius-xl)] bg-[color:var(--paper)] p-6 shadow-[0_12px_32px_rgba(28,24,48,0.14),0_2px_6px_rgba(28,24,48,0.08)]"
           >
             <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
-                  Click ✷
-                </p>
-                <h2
-                  id="booking-dialog-title"
-                  className="font-display mt-2 text-3xl font-semibold leading-tight tracking-[-0.025em]"
-                >
-                  {title}
-                </h2>
-              </div>
+              <h2
+                id="booking-dialog-title"
+                className="font-display text-[1.3rem] leading-tight font-semibold tracking-[-0.01em] text-[color:var(--ink)]"
+              >
+                {title}
+              </h2>
               <button
                 type="button"
                 aria-label="Close"
                 onClick={() => setOpen(false)}
-                className="grid size-9 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+                className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[color:var(--lavender-100)] text-[color:var(--slate)] transition-colors hover:text-[color:var(--ink)]"
               >
                 ✕
               </button>
             </div>
-            <div className="mt-4 text-sm font-medium leading-6 text-[color:var(--mauve)]">
-              {body}
-            </div>
+            <div className="mt-3 text-sm leading-6 text-[color:var(--ink-soft)]">{body}</div>
             <div className="mt-6">{children}</div>
           </div>
         </div>

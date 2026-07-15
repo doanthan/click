@@ -11,7 +11,7 @@ export default function RefundPolicyPage() {
       eyebrow="Legal"
       title="Refund & Cancellation Policy"
       lastUpdated="18 June 2026"
-      intro="This policy explains when you can cancel a booking, when you are entitled to a refund, and how refunds are processed. It operates alongside your rights under the Australian Consumer Law, which cannot be excluded. Events are run by independent hosts, who may set their own cancellation terms — these are shown on the event before you book."
+      intro="This policy explains when you can cancel a booking, when you are entitled to a refund, and how refunds are processed. It operates alongside your rights under the Australian Consumer Law, which cannot be excluded. Events are run by independent hosts, who may set their own cancellation terms - these are shown on the event before you book."
       sections={[
         {
           heading: "Cancelling your booking",
@@ -23,10 +23,10 @@ export default function RefundPolicyPage() {
               </p>
               <ul className="ml-5 list-disc space-y-1.5">
                 <li><strong>More than 48 hours before the event start:</strong> full refund of the ticket price.</li>
-                <li><strong>Within 48 hours of the event start:</strong> the ticket price is generally non-refundable, because the host has committed resources — though we and the host may still offer a refund or credit at our discretion.</li>
+                <li><strong>Within 48 hours of the event start:</strong> the ticket price is generally non-refundable, because the host has committed resources - though we and the host may still offer a refund or credit at our discretion.</li>
               </ul>
               <p>
-                Free events can be cancelled at any time at no cost — please do cancel so your spot can
+                Free events can be cancelled at any time at no cost - please do cancel so your spot can
                 be offered to someone on the waitlist.
               </p>
             </>
@@ -59,7 +59,7 @@ export default function RefundPolicyPage() {
               If a seat frees up and you are offered it from the waitlist, the offer is time-limited
               (currently 30 minutes). For paid events you are only charged if you accept the offer and
               complete checkout within that window; if you do nothing, the offer lapses and is passed to
-              the next person — you are not charged.
+              the next person - you are not charged.
             </p>
           ),
         },

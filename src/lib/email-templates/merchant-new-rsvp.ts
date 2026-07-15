@@ -1,4 +1,4 @@
-// New RSVP notification (to merchant/host) — fires when an attendee lands
+// New RSVP notification (to merchant/host) - fires when an attendee lands
 // `status: 'confirmed'` on an event the merchant hosts. Voice + split-card
 // layout ported from `emails/rsvp-merchant.html`.
 
@@ -46,7 +46,7 @@ export function buildMerchantNewRsvpEmail(d: MerchantNewRsvpData) {
       <td class="px-gutter" style="padding:40px 40px 8px 40px;">
         ${eyebrow("Someone just RSVP'd")}
         ${heroTitle(`${escapeHtml(d.attendeeFirstName)} from ${escapeHtml(d.attendeeCity)} is going to ${escapeHtml(d.eventTitle)}.`)}
-        ${paragraph(`Hi ${escapeHtml(d.merchantFirstName)} &mdash; here's the quick read so you know where you stand on capacity and prep.`)}
+        ${paragraph(`Hi ${escapeHtml(d.merchantFirstName)} - here's the quick read so you know where you stand on capacity and prep.`)}
       </td>
     </tr>
 
@@ -106,7 +106,7 @@ export function buildMerchantNewRsvpEmail(d: MerchantNewRsvpData) {
       </td>
     </tr>
     ${renderNoteList("A small nudge", [
-      "First-timers turn up nervous. A short welcome message before the day — what to wear, where to park, what to expect at the door — goes a long way.",
+      "First-timers turn up nervous. A short welcome message before the day - what to wear, where to park, what to expect at the door - goes a long way.",
       'If capacity is filling fast, mark it "Almost full" or open a waitlist from the dashboard. Both make the card pop in discover.',
       "You'll get one of these emails per RSVP today, then we'll switch to a daily digest once you cross 10 bookings.",
     ])}

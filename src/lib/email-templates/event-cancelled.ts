@@ -1,4 +1,4 @@
-// Event cancelled (to attendee) — currently wired at `event-repository.ts:4242`.
+// Event cancelled (to attendee) - currently wired at `event-repository.ts:4242`.
 // Subject + text MUST match what `sendWorkflowEmail` already produces.
 
 import { escapeHtml, eyebrow, heroTitle, paragraph, renderButton, renderShell, renderCallout } from "./chrome";
@@ -30,7 +30,7 @@ export function buildEventCancelledEmail(d: EventCancelledData) {
         ${eyebrow("Plans changed")}
         ${heroTitle(`<span style="color:${ROSE};">${escapeHtml(d.eventTitle)}</span> isn't happening.`)}
         ${paragraph(
-          `Hi ${escapeHtml(d.firstName)} &mdash; the host has cancelled this event. Any payment/refund handling will follow the merchant policy for this event.${d.eventHostName ? ` Questions reach <strong>${escapeHtml(d.eventHostName)}</strong> fastest if you reply to this email.` : ""}`,
+          `Hi ${escapeHtml(d.firstName)} - the host has cancelled this event. Any payment/refund handling will follow the merchant policy for this event.${d.eventHostName ? ` Questions reach <strong>${escapeHtml(d.eventHostName)}</strong> fastest if you reply to this email.` : ""}`,
         )}
       </td>
     </tr>
@@ -48,7 +48,7 @@ export function buildEventCancelledEmail(d: EventCancelledData) {
       </td>
     </tr>
     ${renderCallout(
-      "Refund window &mdash;",
+      "Refund window -",
       "if you paid for this event, refunds for cancelled events are automatic and usually land in 5–10 business days. We'll email when yours processes.",
     )}
   `;

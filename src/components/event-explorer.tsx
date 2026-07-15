@@ -1,12 +1,11 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { categories, categorySlug, type EventItem } from "@/lib/click-data";
+import { categories, type EventItem } from "@/lib/click-data";
 import { haversineKm, roundKm, type LatLng } from "@/lib/geo";
+import { Button, CategoryCircle, Icon, categoryGlyphKey } from "./ds";
 import { EventCard } from "./event-card";
-import { FilterSelect } from "./filter-select";
 import { MapboxAutocomplete } from "./mapbox-autocomplete";
 
 // Top of the radius control. At the max we treat it as "any distance" so people
@@ -17,33 +16,25 @@ const MAX_DISTANCE_KM = 50;
 // on touch. The last entry maps to MAX_DISTANCE_KM ("any distance").
 const DISTANCE_OPTIONS = [2, 5, 10, 25, MAX_DISTANCE_KM] as const;
 
-// Emoji glyphs for the top category nav. Keys match the canonical category
-// names in click-data; unmapped (e.g. admin-added) categories fall back to a
-// neutral pin so the bar never renders a blank chip.
-const CATEGORY_ICONS: Record<string, string> = {
-  Social: "🎉",
-  Fitness: "🏋️",
-  Relationships: "💞",
-  Food: "🍽️",
-  Creative: "🎨",
-  Career: "💼",
-  Community: "🤝",
-  Family: "🧸",
-  Games: "🎲",
-  Learning: "📚",
-  Nightlife: "🌃",
-  Outdoors: "🏞️",
-  Sports: "⚽",
-  Travel: "✈️",
-  Wellness: "🧘",
-};
-const CATEGORY_ICON_FALLBACK = "📍";
-
 type DateWindow = "today" | "tomorrow" | "weekend" | "7" | "30" | "all";
 type SortMode = "soonest" | "nearest" | "popular";
 type TimeOfDay = "all" | "day" | "night";
-type ViewMode = "rails" | "grid";
 type LocationStatus = "idle" | "requesting" | "shared" | "denied" | "unsupported";
+
+const DATE_OPTIONS: Array<[DateWindow, string]> = [
+  ["all", "Any"],
+  ["today", "Today"],
+  ["tomorrow", "Tomorrow"],
+  ["weekend", "This weekend"],
+  ["7", "Next 7 days"],
+  ["30", "Next 30 days"],
+];
+
+const SORT_OPTIONS: Array<[SortMode, string]> = [
+  ["nearest", "Nearest"],
+  ["soonest", "Soonest"],
+  ["popular", "Trending"],
+];
 
 function daysUntil(startsAt: string, referenceTime: number) {
   const eventDate = new Date(startsAt);
@@ -77,6 +68,42 @@ function isNightEvent(startsAt: string) {
 
 function isFreeEvent(event: EventItem) {
   return !event.price || event.price.trim().toLowerCase() === "free";
+}
+
+/** The DS filter pill: white + Mist hairline, and Deep Purple + a tick when on. */
+function FilterPill({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={`font-display inline-flex min-h-9 items-center gap-1.5 rounded-full border-[1.5px] px-3.5 text-[13.5px] whitespace-nowrap transition-colors ${
+        active
+          ? "border-[color:var(--purple)] bg-[color:var(--purple)] font-semibold text-[color:var(--champagne)]"
+          : "border-[color:var(--line)] bg-[color:var(--paper)] font-medium text-[color:var(--ink-soft)] hover:border-[color:var(--slate)] hover:bg-[color:var(--lavender-100)]"
+      }`}
+    >
+      {active ? <Icon name="check" size={14} stroke={2.6} /> : null}
+      {children}
+    </button>
+  );
+}
+
+function FilterGroup({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="mb-6">
+      <p className="mb-2.5 text-xs font-bold tracking-[0.08em] uppercase text-[color:var(--slate)]">{label}</p>
+      {children}
+    </div>
+  );
 }
 
 export function EventExplorer({
@@ -117,11 +144,11 @@ export function EventExplorer({
   const [dateWindow, setDateWindow] = useState<DateWindow>("all");
   const [timeOfDay, setTimeOfDay] = useState<TimeOfDay>("all");
   const [freeOnly, setFreeOnly] = useState(false);
-  const [distanceKm, setDistanceKm] = useState(MAX_DISTANCE_KM);
+  const [distanceKm, setDistanceKm] = useState<number>(MAX_DISTANCE_KM);
   const [sortMode, setSortMode] = useState<SortMode>("nearest");
-  const [viewMode, setViewMode] = useState<ViewMode>("rails");
   const [tagFilter, setTagFilter] = useState(initialTag);
   const [categoryFilter, setCategoryFilter] = useState(initialCategory);
+  const [sheetOpen, setSheetOpen] = useState(false);
   const skipFirstSync = useRef(true);
 
   const todayTime = useMemo(() => {
@@ -155,13 +182,9 @@ export function EventExplorer({
           timeOfDay === "all" ||
           (timeOfDay === "night" ? isNightEvent(event.startsAt) : !isNightEvent(event.startsAt));
         const matchesFree = !freeOnly || isFreeEvent(event);
-        const matchesSuburb =
-          selectedSuburb === "All Sydney" || event.suburb === selectedSuburb;
-        const matchesDistance =
-          distanceKm >= MAX_DISTANCE_KM || event.distanceKm <= distanceKm;
-        const matchesTag =
-          !normalizedTag ||
-          event.tags.some((tag) => tag.toLowerCase() === normalizedTag);
+        const matchesSuburb = selectedSuburb === "All Sydney" || event.suburb === selectedSuburb;
+        const matchesDistance = distanceKm >= MAX_DISTANCE_KM || event.distanceKm <= distanceKm;
+        const matchesTag = !normalizedTag || event.tags.some((tag) => tag.toLowerCase() === normalizedTag);
         const matchesCategory = !categoryFilter || event.category === categoryFilter;
         const matchesSearch =
           !normalizedSearch ||
@@ -187,8 +210,7 @@ export function EventExplorer({
           return new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime();
         }
         if (sortMode === "soonest") {
-          const timeDelta =
-            new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime();
+          const timeDelta = new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime();
           if (timeDelta !== 0) return timeDelta;
           return left.distanceKm - right.distanceKm;
         }
@@ -211,12 +233,9 @@ export function EventExplorer({
     todayTime,
   ]);
 
-  // Predefined categories that actually have events (computed from the full
-  // set so the bar stays stable as other filters change), in canonical order,
-  // with any admin-added categories appended. Powers the icon nav at the top.
-  // Top category nav shows the full predefined set (with icons) so people can
-  // always browse by category, even categories that currently have no live
-  // event — plus any admin-added categories that do appear on events.
+  // The category strip shows the full predefined set (so you can always browse
+  // by category, even one with nothing live right now), plus any admin-added
+  // category that actually appears on an event.
   const availableCategories = useMemo(() => {
     const present = new Set(events.map((event) => event.category));
     const known = categories.filter((c) => c !== "All");
@@ -226,29 +245,7 @@ export function EventExplorer({
     return [...known, ...extra];
   }, [events]);
 
-  // Group filtered events under their category. We render every category that
-  // actually appears on a live event — known categories first (canonical
-  // order from click-data), then any others (e.g. admin-added categories like
-  // "Nightlife") appended alphabetically. Driving the rails off the real data
-  // instead of a hardcoded list means no live event is ever silently dropped
-  // just because its category isn't in the static list. Categories with no
-  // events (after filtering) still drop out so we don't render empty rails.
-  const groupedByCategory = useMemo(() => {
-    const known = categories.filter((c) => c !== "All");
-    const present = Array.from(new Set(filteredEvents.map((event) => event.category)));
-    const orderedCategories = [
-      ...known.filter((category) => present.includes(category)),
-      ...present.filter((category) => !known.includes(category)).sort(),
-    ];
-    return orderedCategories
-      .map((category) => ({
-        category,
-        events: filteredEvents.filter((event) => event.category === category),
-      }))
-      .filter((group) => group.events.length > 0);
-  }, [filteredEvents]);
-
-  // Sync tag filter to URL so deep links from /events?tag=… still work.
+  // Sync tag/category to the URL so deep links from /events?tag=… still work.
   useEffect(() => {
     if (skipFirstSync.current) {
       skipFirstSync.current = false;
@@ -270,452 +267,367 @@ export function EventExplorer({
     setLocationStatus("requesting");
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        setUserCoords({
-          lat: position.coords.latitude,
-          lng: position.coords.longitude,
-        });
+        setUserCoords({ lat: position.coords.latitude, lng: position.coords.longitude });
         setLocationStatus("shared");
         setLocationQuery("Your current location");
         setSelectedSuburb("All Sydney");
       },
-      () => {
-        setLocationStatus("denied");
-      },
+      () => setLocationStatus("denied"),
       { enableHighAccuracy: true, timeout: 8000, maximumAge: 60_000 },
     );
   }
 
-  function clearLocation() {
-    setUserCoords(null);
-    setLocationStatus("idle");
-    setLocationQuery("Sydney CBD");
-  }
-
   function resetFilters() {
-    setSearchQuery("");
     setSelectedSuburb("All Sydney");
     setDateWindow("all");
+    setTimeOfDay("all");
+    setFreeOnly(false);
     setDistanceKm(MAX_DISTANCE_KM);
     setTagFilter("");
+  }
+
+  function resetAll() {
+    resetFilters();
+    setSearchQuery("");
     setCategoryFilter("");
   }
 
   const totalCount = filteredEvents.length;
   const locationLabel = userCoords ? "from you" : "from Sydney CBD";
 
-  // Active, removable filter chips — gives an at-a-glance summary of what's
-  // narrowing the results, the way modern marketplaces do.
-  const activeChips: { key: string; label: string; clear: () => void }[] = [];
-  if (searchQuery.trim()) {
-    activeChips.push({ key: "search", label: `“${searchQuery.trim()}”`, clear: () => setSearchQuery("") });
-  }
+  const filterCount =
+    (freeOnly ? 1 : 0) +
+    (timeOfDay !== "all" ? 1 : 0) +
+    (dateWindow !== "all" ? 1 : 0) +
+    (distanceKm < MAX_DISTANCE_KM ? 1 : 0) +
+    (selectedSuburb !== "All Sydney" ? 1 : 0) +
+    (tagFilter.trim() ? 1 : 0);
+  const anyFilter = filterCount > 0 || !!searchQuery.trim() || !!categoryFilter;
+
+  // Applied-filter chips — the removable summary of what's narrowing the results.
+  const chips: Array<{ key: string; label: string; clear: () => void }> = [];
   if (selectedSuburb !== "All Sydney") {
-    activeChips.push({ key: "suburb", label: selectedSuburb, clear: () => setSelectedSuburb("All Sydney") });
+    chips.push({ key: "suburb", label: selectedSuburb, clear: () => setSelectedSuburb("All Sydney") });
   }
   if (dateWindow !== "all") {
-    const dateLabels: Record<Exclude<DateWindow, "all">, string> = {
-      today: "Today",
-      tomorrow: "Tomorrow",
-      weekend: "This weekend",
-      "7": "Next 7 days",
-      "30": "Next 30 days",
-    };
-    activeChips.push({
+    chips.push({
       key: "date",
-      label: dateLabels[dateWindow],
+      label: DATE_OPTIONS.find(([v]) => v === dateWindow)![1],
       clear: () => setDateWindow("all"),
     });
   }
   if (timeOfDay !== "all") {
-    activeChips.push({
+    chips.push({
       key: "time",
       label: timeOfDay === "night" ? "Night time" : "Daytime",
       clear: () => setTimeOfDay("all"),
     });
   }
-  if (freeOnly) {
-    activeChips.push({ key: "free", label: "Free only", clear: () => setFreeOnly(false) });
-  }
+  if (freeOnly) chips.push({ key: "free", label: "Free", clear: () => setFreeOnly(false) });
   if (distanceKm < MAX_DISTANCE_KM) {
-    activeChips.push({
-      key: "distance",
-      label: `Within ${distanceKm} km ${locationLabel}`,
-      clear: () => setDistanceKm(MAX_DISTANCE_KM),
-    });
+    chips.push({ key: "distance", label: `${distanceKm} km`, clear: () => setDistanceKm(MAX_DISTANCE_KM) });
   }
   if (tagFilter.trim()) {
-    activeChips.push({ key: "tag", label: `#${tagFilter.trim()}`, clear: () => setTagFilter("") });
-  }
-  if (categoryFilter) {
-    activeChips.push({ key: "category", label: categoryFilter, clear: () => setCategoryFilter("") });
+    chips.push({ key: "tag", label: tagFilter.trim(), clear: () => setTagFilter("") });
   }
 
+  // The filter body is authored ONCE and rendered in both homes - the desktop
+  // sidebar (>=1024) and the mobile bottom sheet - so the two can never drift.
+  const filterBody = (
+    <div>
+      <FilterGroup label="Type">
+        <div className="flex flex-wrap gap-2">
+          <FilterPill active={freeOnly} onClick={() => setFreeOnly((v) => !v)}>
+            Free
+          </FilterPill>
+          <FilterPill active={timeOfDay === "day"} onClick={() => setTimeOfDay((t) => (t === "day" ? "all" : "day"))}>
+            Daytime
+          </FilterPill>
+          <FilterPill
+            active={timeOfDay === "night"}
+            onClick={() => setTimeOfDay((t) => (t === "night" ? "all" : "night"))}
+          >
+            Night time
+          </FilterPill>
+        </div>
+      </FilterGroup>
+
+      <FilterGroup label="Date">
+        <div className="flex flex-wrap gap-2">
+          {DATE_OPTIONS.map(([value, label]) => (
+            <FilterPill key={value} active={dateWindow === value} onClick={() => setDateWindow(value)}>
+              {label}
+            </FilterPill>
+          ))}
+        </div>
+      </FilterGroup>
+
+      <FilterGroup label={`Distance ${locationLabel}`}>
+        <div className="flex flex-wrap gap-2">
+          {DISTANCE_OPTIONS.map((option) => (
+            <FilterPill key={option} active={distanceKm === option} onClick={() => setDistanceKm(option)}>
+              {option >= MAX_DISTANCE_KM ? "Any distance" : `${option} km`}
+            </FilterPill>
+          ))}
+        </div>
+      </FilterGroup>
+
+      <FilterGroup label="Where">
+        <MapboxAutocomplete
+          value={locationQuery}
+          onValueChange={setLocationQuery}
+          onSelect={(place) => {
+            // Picking a place mirrors GPS sharing — we centre the radius on the
+            // selected address so every distance is relative to it.
+            setUserCoords({ lat: place.lat, lng: place.lng });
+            setLocationStatus("shared");
+            setLocationQuery(place.suburb || place.name || place.address);
+            setSelectedSuburb("All Sydney");
+          }}
+          placeholder="Bondi, Parramatta, Sydney CBD"
+        />
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={requestLocation}
+            className="font-display inline-flex items-center gap-1.5 text-[13px] font-semibold text-[color:var(--purple)] hover:underline"
+          >
+            <Icon name="pin" size={14} stroke={2} />
+            {locationStatus === "requesting" ? "Locating…" : userCoords ? "Update location" : "Use my location"}
+          </button>
+        </div>
+        <select
+          aria-label="Filter by suburb"
+          value={selectedSuburb}
+          onChange={(e) => setSelectedSuburb(e.target.value)}
+          className="mt-3 h-11 w-full rounded-xl border border-[color:var(--line)] bg-[color:var(--paper)] px-3 text-sm text-[color:var(--ink)]"
+        >
+          {suburbs.map((suburb) => (
+            <option key={suburb} value={suburb}>
+              {suburb}
+            </option>
+          ))}
+        </select>
+      </FilterGroup>
+    </div>
+  );
+
+  const results =
+    totalCount > 0 ? (
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
+        {filteredEvents.map((event) => (
+          <EventCard
+            key={event.id}
+            event={event}
+            bookmarked={bookmarkedSet.has(event.id)}
+            registered={registeredSet.has(event.id)}
+            bookingStatus={bookingStatusFor(event.id)}
+          />
+        ))}
+      </div>
+    ) : (
+      <div className="rounded-[var(--radius-xl)] bg-[color:var(--lav-bg)] px-6 py-12 text-center">
+        <Icon name="compass" size={32} stroke={1.7} className="mx-auto text-[color:var(--purple-400)]" />
+        <h3 className="font-display mt-3.5 text-[17px] font-semibold text-[color:var(--ink)]">
+          Nothing matches those filters.
+        </h3>
+        <p className="mx-auto mt-2 max-w-[360px] text-sm leading-relaxed text-[color:var(--slate)]">
+          Try widening the date or distance - there&apos;s always more on next week.
+        </p>
+        <div className="mt-4 flex justify-center">
+          <Button variant="secondary" size="sm" onClick={resetAll}>
+            Clear filters
+          </Button>
+        </div>
+      </div>
+    );
+
   return (
-    <div className="flex flex-col gap-8">
-      {/* Category quick-nav — predefined categories with icons. Horizontal
-          scroll on narrow screens; each chip toggles a category filter. */}
+    <div>
+      <h1 className="font-display text-[length:var(--text-h1)] leading-[1.25] font-semibold tracking-[-0.02em] text-[color:var(--ink)]">
+        What&apos;s on near you
+      </h1>
+      <p className="mt-1 text-sm font-medium text-[color:var(--slate)]">
+        {events.length} {events.length === 1 ? "event" : "events"} on this week.
+      </p>
+
+      {/* Search */}
+      <label className="mt-4 flex h-12 w-full items-center gap-2.5 rounded-xl border-[1.5px] border-[color:var(--line)] bg-[color:var(--paper)] px-4 shadow-[var(--shadow-xs)] focus-within:border-[color:var(--purple)] focus-within:shadow-[0_0_0_4px_color-mix(in_srgb,var(--lavender)_42%,transparent)]">
+        <Icon name="search" size={19} className="text-[color:var(--slate)]" />
+        <input
+          type="search"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search events, venues, or interests…"
+          aria-label="Search events"
+          className="min-w-0 flex-1 bg-transparent text-[15px] text-[color:var(--ink)] outline-none placeholder:text-[color:var(--slate)]"
+        />
+      </label>
+
+      {/* The canonical category treatment: ONE purple line glyph on a lavender
+          disc; selected fills purple. Never an emoji, never a per-category hue. */}
       {availableCategories.length > 0 ? (
-        <nav aria-label="Browse by category" className="mr-4 sm:mr-6">
-          <ul className="flex gap-2 overflow-x-auto pb-2 [scrollbar-width:thin]">
-            <li>
-              <button
-                type="button"
-                aria-pressed={categoryFilter === ""}
-                onClick={() => setCategoryFilter("")}
-                className={`inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-full border-2 px-4 text-sm font-bold transition ${
-                  categoryFilter === ""
-                    ? "border-[color:var(--rose)] bg-[color:var(--rose)] text-[color:var(--on-deep)]"
-                    : "border-[color:var(--line)] bg-[color:var(--cream)] text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
-                }`}
-              >
-                <span aria-hidden>✨</span> All
-              </button>
-            </li>
-            {availableCategories.map((category) => {
-              const active = categoryFilter === category;
-              return (
-                <li key={category}>
-                  <button
-                    type="button"
-                    aria-pressed={active}
-                    onClick={() => setCategoryFilter(active ? "" : category)}
-                    className={`inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-full border-2 px-4 text-sm font-bold transition ${
-                      active
-                        ? "border-[color:var(--rose)] bg-[color:var(--rose)] text-[color:var(--on-deep)]"
-                        : "border-[color:var(--line)] bg-[color:var(--cream)] text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
-                    }`}
-                  >
-                    <span aria-hidden>{CATEGORY_ICONS[category] ?? CATEGORY_ICON_FALLBACK}</span>
-                    {category}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
+        <nav aria-label="Browse by category" className="ckRail mt-5 -mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1 lg:flex-wrap lg:overflow-visible">
+          <button
+            type="button"
+            aria-pressed={categoryFilter === ""}
+            onClick={() => setCategoryFilter("")}
+            className="group shrink-0"
+          >
+            <CategoryCircle name="all" label="All" active={categoryFilter === ""} />
+          </button>
+          {availableCategories.map((category) => (
+            <button
+              key={category}
+              type="button"
+              aria-pressed={categoryFilter === category}
+              onClick={() => setCategoryFilter(categoryFilter === category ? "" : category)}
+              className="group shrink-0"
+            >
+              <CategoryCircle
+                name={categoryGlyphKey(category)}
+                label={category}
+                active={categoryFilter === category}
+              />
+            </button>
+          ))}
         </nav>
       ) : null}
 
-      {/* Filter bar. Right margin keeps the chrome bounded while the rails
-          below bleed to the viewport edge. */}
-      <section className="mr-4 rounded-2xl border border-[color:var(--line)] bg-[color:var(--cream)] p-5 shadow-sm sm:mr-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-xs font-black uppercase tracking-[0.16em] text-[color:var(--rose)]">
-              Discover events
-            </p>
-            <h1 className="mt-1 text-3xl font-black leading-none sm:text-4xl">
-              Browse what&apos;s on around you.
-            </h1>
-            <p className="mt-2 text-sm font-bold text-[color:var(--mauve)]">
-              {totalCount} {totalCount === 1 ? "event" : "events"} matching your filters.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
+      <div className="mt-5 flex items-start gap-9">
+        {/* The filter sidebar appears only from 1024 up; below that the Filters
+            button → bottom sheet carries the same controls. */}
+        <aside className="sticky top-20 hidden w-[260px] shrink-0 lg:block">
+          {filterBody}
+          {anyFilter ? (
             <button
               type="button"
-              onClick={requestLocation}
-              className="min-h-11 rounded-full bg-[color:var(--rose)] px-5 text-sm font-black text-[color:var(--on-deep)] shadow-sm hover:opacity-90"
+              onClick={resetAll}
+              className="font-display inline-flex items-center gap-1.5 text-[13.5px] font-semibold text-[color:var(--purple)] hover:underline"
             >
-              {locationStatus === "requesting"
-                ? "Locating…"
-                : userCoords
-                  ? "Update location"
-                  : "Share my location"}
+              <Icon name="x" size={15} stroke={2.2} />
+              Reset all
             </button>
-            {userCoords ? (
+          ) : null}
+        </aside>
+
+        <div className="min-w-0 flex-1">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <span className="text-sm font-semibold text-[color:var(--ink)]">
+              {totalCount} {totalCount === 1 ? "event" : "events"}
+            </span>
+            <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={clearLocation}
-                className="min-h-11 rounded-full border border-[color:var(--line)] bg-[color:var(--champagne)] px-4 text-sm font-bold text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
-              >
-                Use Sydney CBD
-              </button>
-            ) : null}
-          </div>
-        </div>
-
-        {/* Keyword search — the primary entry point people reach for first. */}
-        <div className="relative mt-5">
-          <svg
-            viewBox="0 0 24 24"
-            className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[color:var(--mauve)]"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden
-          >
-            <circle cx="11" cy="11" r="7" />
-            <path d="M21 21l-4.3-4.3" />
-          </svg>
-          <input
-            type="search"
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
-            placeholder="Search events, hosts, or interests…"
-            aria-label="Search events"
-            className="min-h-12 w-full rounded-full border border-[color:var(--line)] bg-[color:var(--champagne)] pl-12 pr-4 text-base font-semibold text-[color:var(--ink)] placeholder:font-medium placeholder:text-[color:var(--mauve)] focus:border-[color:var(--rose)] focus:outline-none focus:ring-2 focus:ring-[color:var(--rose)]/30"
-          />
-        </div>
-
-        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <label className="grid gap-1.5 text-xs font-black uppercase tracking-[0.14em] text-[color:var(--mauve)]">
-            Location
-            <MapboxAutocomplete
-              value={locationQuery}
-              onValueChange={setLocationQuery}
-              onSelect={(place) => {
-                // Picking a place mirrors GPS sharing — we centre the radius on
-                // the selected address so every distance is relative to it.
-                setUserCoords({ lat: place.lat, lng: place.lng });
-                setLocationStatus("shared");
-                setLocationQuery(place.suburb || place.name || place.address);
-                setSelectedSuburb("All Sydney");
-              }}
-              placeholder="Bondi, Parramatta, Sydney CBD"
-            />
-          </label>
-
-          <div className="grid gap-1.5 text-xs font-black uppercase tracking-[0.14em] text-[color:var(--mauve)]">
-            Suburb
-            <FilterSelect
-              ariaLabel="Filter by suburb"
-              value={selectedSuburb}
-              onChange={setSelectedSuburb}
-              options={suburbs.map((suburb) => ({ value: suburb, label: suburb }))}
-            />
-          </div>
-
-          <div className="grid gap-1.5 text-xs font-black uppercase tracking-[0.14em] text-[color:var(--mauve)]">
-            Date
-            <FilterSelect
-              ariaLabel="Filter by date"
-              value={dateWindow}
-              onChange={(next) => setDateWindow(next as DateWindow)}
-              options={[
-                { value: "today", label: "Today" },
-                { value: "tomorrow", label: "Tomorrow" },
-                { value: "weekend", label: "This weekend" },
-                { value: "7", label: "Next 7 days" },
-                { value: "30", label: "Next 30 days" },
-                { value: "all", label: "Any upcoming date" },
-              ]}
-            />
-          </div>
-
-          <div className="grid gap-1.5 text-xs font-black uppercase tracking-[0.14em] text-[color:var(--mauve)]">
-            Time
-            <FilterSelect
-              ariaLabel="Filter by time of day"
-              value={timeOfDay}
-              onChange={(next) => setTimeOfDay(next as TimeOfDay)}
-              options={[
-                { value: "all", label: "Any time" },
-                { value: "day", label: "Daytime" },
-                { value: "night", label: "Night time" },
-              ]}
-            />
-          </div>
-
-          <div className="grid gap-1.5 text-xs font-black uppercase tracking-[0.14em] text-[color:var(--mauve)]">
-            Sort by
-            <FilterSelect
-              ariaLabel="Sort events"
-              value={sortMode}
-              onChange={(next) => setSortMode(next as SortMode)}
-              options={[
-                { value: "nearest", label: "Nearest first" },
-                { value: "soonest", label: "Soonest first" },
-                { value: "popular", label: "Trending (most popular)" },
-              ]}
-            />
-          </div>
-        </div>
-
-        {/* Quick toggles — free events + trending shortcut. */}
-        <div className="mt-5 flex flex-wrap items-center gap-2.5">
-          <button
-            type="button"
-            aria-pressed={freeOnly}
-            onClick={() => setFreeOnly((v) => !v)}
-            className={`min-h-9 rounded-full border px-4 text-sm font-bold transition ${
-              freeOnly
-                ? "border-[color:var(--rose)] bg-[color:var(--rose)] text-[color:var(--on-deep)]"
-                : "border-[color:var(--line)] bg-[color:var(--champagne)] text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
-            }`}
-          >
-            Free only
-          </button>
-          <button
-            type="button"
-            aria-pressed={sortMode === "popular"}
-            onClick={() => setSortMode((s) => (s === "popular" ? "nearest" : "popular"))}
-            className={`min-h-9 rounded-full border px-4 text-sm font-bold transition ${
-              sortMode === "popular"
-                ? "border-[color:var(--rose)] bg-[color:var(--rose)] text-[color:var(--on-deep)]"
-                : "border-[color:var(--line)] bg-[color:var(--champagne)] text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
-            }`}
-          >
-            🔥 Trending
-          </button>
-        </div>
-
-        {/* Distance presets — tap targets beat a slider on touch. */}
-        <div className="mt-5 flex flex-wrap items-center gap-2.5">
-          {/* Full-width on phone so the presets wrap onto their own line rather
-              than crowding the label inline (bug board #221). */}
-          <span className="mr-1 w-full text-xs font-black uppercase tracking-[0.14em] text-[color:var(--mauve)] sm:w-auto">
-            Distance {locationLabel}
-          </span>
-          {DISTANCE_OPTIONS.map((option) => {
-            const active = distanceKm === option;
-            const label = option >= MAX_DISTANCE_KM ? "Any" : `${option} km`;
-            return (
-              <button
-                key={option}
-                type="button"
-                aria-pressed={active}
-                onClick={() => setDistanceKm(option)}
-                className={`min-h-9 rounded-full border px-4 text-sm font-bold transition ${
-                  active
-                    ? "border-[color:var(--rose)] bg-[color:var(--rose)] text-[color:var(--on-deep)]"
-                    : "border-[color:var(--line)] bg-[color:var(--champagne)] text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+                onClick={() => setSheetOpen(true)}
+                className={`font-display inline-flex min-h-9 items-center gap-1.5 rounded-full border-[1.5px] px-3.5 text-[13.5px] font-semibold lg:hidden ${
+                  filterCount
+                    ? "border-[color:var(--purple)] bg-[color:var(--purple)] text-[color:var(--champagne)]"
+                    : "border-[color:var(--line)] bg-[color:var(--paper)] text-[color:var(--ink-soft)]"
                 }`}
               >
-                {label}
+                <Icon name="filter" size={16} stroke={2} />
+                Filters{filterCount ? ` · ${filterCount}` : ""}
               </button>
-            );
-          })}
-        </div>
-
-        {/* Active filter chips + view toggle (always shown — the toggle lives here). */}
-        <div className="mt-5 flex flex-wrap items-center gap-2.5 border-t border-[color:var(--line-soft)] pt-5">
-            {activeChips.length > 0 ? (
-              <>
-                {activeChips.map((chip) => (
-                  <button
-                    key={chip.key}
-                    type="button"
-                    onClick={chip.clear}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-[color:var(--line)] bg-[color:var(--champagne)] py-1.5 pl-3 pr-2 text-sm font-bold text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
-                  >
-                    {chip.label}
-                    <span aria-hidden className="text-[color:var(--mauve)]">×</span>
-                    <span className="sr-only">Remove filter</span>
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  onClick={resetFilters}
-                  className="rounded-full px-3 py-1.5 text-sm font-bold text-[color:var(--rose)] underline-offset-2 hover:underline"
+              <div className="relative inline-flex items-center">
+                <select
+                  aria-label="Sort events"
+                  value={sortMode}
+                  onChange={(e) => setSortMode(e.target.value as SortMode)}
+                  className="font-display h-9 appearance-none rounded-full border border-[color:var(--line)] bg-[color:var(--paper)] pr-8 pl-3.5 text-[13px] font-semibold text-[color:var(--ink)]"
                 >
-                  Clear all
-                </button>
-              </>
-            ) : (
-              <span className="text-sm font-semibold text-[color:var(--mauve)]">
-                No filters applied — showing everything nearby.
-              </span>
-            )}
-
-            {/* View toggle: category rails vs a flat grid of all matches. */}
-            <div className="ml-auto inline-flex rounded-full border border-[color:var(--line)] bg-[color:var(--champagne)] p-1">
-              {(
-                [
-                  { value: "rails", label: "By category" },
-                  { value: "grid", label: "All events" },
-                ] as const
-              ).map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  aria-pressed={viewMode === option.value}
-                  onClick={() => setViewMode(option.value)}
-                  className={`min-h-8 rounded-full px-3 text-xs font-black uppercase tracking-[0.1em] transition ${
-                    viewMode === option.value
-                      ? "bg-[color:var(--surface-deep)] text-[color:var(--on-deep)]"
-                      : "text-[color:var(--mauve)] hover:text-[color:var(--ink)]"
-                  }`}
-                >
-                  {option.label}
-                </button>
-              ))}
+                  {SORT_OPTIONS.map(([value, label]) => (
+                    <option key={value} value={value}>
+                      Sort · {label}
+                    </option>
+                  ))}
+                </select>
+                <Icon
+                  name="chevD"
+                  size={15}
+                  className="pointer-events-none absolute right-2.5 text-[color:var(--slate)]"
+                />
+              </div>
             </div>
           </div>
-      </section>
 
-      {totalCount === 0 ? (
-        <div className="mr-4 rounded-2xl border border-[color:var(--line)] bg-[color:var(--champagne)] p-8 text-center shadow-sm sm:mr-6">
-          <p className="text-3xl font-black leading-none text-[color:var(--ink)]">
-            No events match those filters.
-          </p>
-          <p className="mt-3 text-sm font-bold text-[color:var(--mauve)]">
-            Try a wider distance, all Sydney, or the next 30 days.
-          </p>
-          <button
-            type="button"
-            onClick={resetFilters}
-            className="mt-5 rounded-full bg-[color:var(--surface-deep)] px-5 py-3 text-sm font-black text-[color:var(--on-deep)] hover:opacity-90"
-          >
-            Reset filters
-          </button>
-        </div>
-      ) : viewMode === "grid" ? (
-        // Flat responsive grid of every match — ClassBento-style browse.
-        <div className="mr-4 grid grid-cols-1 gap-x-5 gap-y-8 sm:mr-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {filteredEvents.map((event) => (
-            <EventCard
-              key={event.id}
-              event={event}
-              compact
-              bookmarked={bookmarkedSet.has(event.id)}
-              registered={registeredSet.has(event.id)}
-              bookingStatus={bookingStatusFor(event.id)}
-            />
-          ))}
-        </div>
-      ) : (
-        // Category sections — one horizontal-scroll rail per category that has
-        // matching events. Cards peek off the right edge to signal more.
-        <div className="flex flex-col gap-10">
-          {groupedByCategory.map(({ category, events: categoryEvents }) => (
-            <section key={category}>
-              <div className="mr-4 flex items-baseline justify-between gap-3 sm:mr-6">
-                <Link
-                  href={`/categories/${categorySlug(category)}`}
-                  className="group/heading inline-flex items-baseline gap-2 text-2xl font-black text-[color:var(--ink)] hover:text-[color:var(--punch)] sm:text-3xl"
+          {chips.length > 0 ? (
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+              {chips.map((chip) => (
+                <span
+                  key={chip.key}
+                  className="font-display inline-flex items-center gap-1.5 rounded-full bg-[color:var(--lavender-100)] py-1.5 pr-1.5 pl-3 text-[13px] font-semibold text-[color:var(--purple-700)]"
                 >
-                  {category}
-                  <span
-                    aria-hidden
-                    className="text-lg transition-transform group-hover/heading:translate-x-1 sm:text-xl"
+                  {chip.label}
+                  <button
+                    type="button"
+                    onClick={chip.clear}
+                    aria-label={`Remove ${chip.label} filter`}
+                    className="flex size-[18px] items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--purple)_14%,transparent)]"
                   >
-                    →
-                  </span>
-                </Link>
-                <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
-                  {categoryEvents.length} {categoryEvents.length === 1 ? "event" : "events"}
+                    <Icon name="x" size={11} stroke={2.6} />
+                  </button>
                 </span>
-              </div>
-              <div className="mt-4 flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2 pr-4 [scrollbar-width:thin] sm:pr-6">
-                {categoryEvents.map((event) => (
-                  <div key={event.id} className="w-[19rem] shrink-0 snap-start sm:w-[21rem]">
-                    <EventCard
-                      event={event}
-                      compact
-                      bookmarked={bookmarkedSet.has(event.id)}
-                      registered={registeredSet.has(event.id)}
-                      bookingStatus={bookingStatusFor(event.id)}
-                    />
-                  </div>
-                ))}
-              </div>
-            </section>
-          ))}
+              ))}
+              <button
+                type="button"
+                onClick={resetFilters}
+                className="font-display px-1 text-[13px] font-semibold text-[color:var(--slate)] hover:underline"
+              >
+                Clear all
+              </button>
+            </div>
+          ) : null}
+
+          {results}
         </div>
-      )}
+      </div>
+
+      {/* Mobile filters — a bottom sheet with a grab handle, Reset / ✕ / scrim
+          close, and a sticky "Show N events" apply. */}
+      {sheetOpen ? (
+        <div
+          className="fixed inset-0 z-[70] flex items-end justify-center bg-[rgba(28,24,48,0.5)] lg:hidden"
+          onClick={() => setSheetOpen(false)}
+          role="presentation"
+        >
+          <div
+            className="flex max-h-[86%] w-full flex-col overflow-hidden rounded-t-[var(--radius-2xl)] bg-[color:var(--paper)] shadow-[var(--shadow-lg)]"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Filters"
+          >
+            <div className="flex justify-center pt-2">
+              <span className="h-[5px] w-10 rounded-full bg-[color:var(--mist-strong)]" />
+            </div>
+            <div className="flex items-center justify-between px-4 py-2">
+              <button
+                type="button"
+                onClick={resetFilters}
+                className="font-display min-h-11 text-[13.5px] font-semibold text-[color:var(--purple)]"
+              >
+                Reset
+              </button>
+              <h3 className="font-display text-[17px] font-semibold text-[color:var(--ink)]">Filters</h3>
+              <button
+                type="button"
+                onClick={() => setSheetOpen(false)}
+                aria-label="Close filters"
+                className="flex size-11 items-center justify-center text-[color:var(--ink-soft)]"
+              >
+                <Icon name="x" size={20} stroke={2.2} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-4 pb-2">{filterBody}</div>
+            <div className="border-t border-[color:var(--line-soft)] bg-[color:var(--paper)] p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+              <Button size="lg" full onClick={() => setSheetOpen(false)}>
+                Show {totalCount} {totalCount === 1 ? "event" : "events"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

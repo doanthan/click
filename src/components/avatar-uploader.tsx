@@ -18,6 +18,7 @@
 
 import { useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Button, Icon } from "@/components/ds";
 
 const ACCEPT = "image/jpeg,image/png,image/webp";
 const MAX_BYTES = 5 * 1024 * 1024;
@@ -94,50 +95,50 @@ export function AvatarUploader({ initialUrl, displayName }: AvatarUploaderProps)
 
   return (
     <div className="grid gap-3">
-      <span className="flex items-center gap-2 font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-        Profile photo
-        {saved ? <span className="text-[color:var(--rose)]">Saved ✓</span> : null}
+      <span className="flex items-center gap-2.5">
+        <span className="eyebrow">Profile photo</span>
+        {saved ? (
+          <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-[color:var(--sage)]">
+            <Icon name="check" size={13} stroke={2.6} />
+            Saved
+          </span>
+        ) : null}
       </span>
 
       <div className="flex items-center gap-4">
         <label
           htmlFor={inputId}
-          className={`relative grid size-20 cursor-pointer place-items-center overflow-hidden rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow-sm transition ${
-            pending ? "opacity-60" : "hover:bg-[color:var(--peach)]"
+          className={`relative grid size-20 cursor-pointer place-items-center overflow-hidden rounded-full bg-[color:var(--lavender-100)] shadow-[0_0_0_3px_var(--paper),0_0_0_4px_var(--lavender)] transition ${
+            pending ? "opacity-60" : "hover:bg-[color:var(--lavender-200)]"
           }`}
           aria-label="Choose a profile photo"
         >
           {url ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={url}
-              alt=""
-              width={80}
-              height={80}
-              className="size-full object-cover"
-            />
+            <img src={url} alt="" width={80} height={80} className="size-full object-cover" />
           ) : (
-            <span className="font-display text-3xl font-semibold text-[color:var(--ink)]">
+            <span className="font-display text-3xl font-semibold text-[color:var(--purple)]">
               {initial}
             </span>
           )}
           {pending ? (
-            <span className="absolute inset-0 grid place-items-center bg-[color:var(--cream)]/70 text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--ink)]">
+            <span className="absolute inset-0 grid place-items-center bg-[color:var(--paper)]/75 text-[11px] font-semibold text-[color:var(--ink)]">
               Uploading…
             </span>
           ) : null}
         </label>
 
         <div className="grid gap-1.5">
-          <button
+          <Button
             type="button"
+            variant="secondary"
+            size="sm"
             onClick={() => fileRef.current?.click()}
             disabled={pending}
-            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-2 text-xs font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {url ? "Replace photo" : "Upload photo"}
-          </button>
-          <span className="font-mono text-[0.6rem] uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+          </Button>
+          <span className="text-[12px] text-[color:var(--slate)]">
             JPG, PNG, or WEBP · up to 5 MB
           </span>
         </div>
@@ -161,14 +162,19 @@ export function AvatarUploader({ initialUrl, displayName }: AvatarUploaderProps)
           with the previous URL-text input so no action changes are needed. */}
       <input type="hidden" name="photo_url" value={url ?? ""} />
 
-      {error ? (
-        <p
-          role="alert"
-          className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-3 py-2 text-xs font-bold text-[color:var(--surface-deep)]"
-        >
-          {error}
-        </p>
-      ) : null}
+      {error ? <ErrorNote>{error}</ErrorNote> : null}
     </div>
+  );
+}
+
+/** Errors are Ink-on-tint, never a full red fill - calm, still unmissable. */
+export function ErrorNote({ children }: { children: React.ReactNode }) {
+  return (
+    <p
+      role="alert"
+      className="rounded-[12px] bg-[color-mix(in_srgb,var(--danger)_10%,var(--paper))] px-3.5 py-2.5 text-[13px] font-medium leading-5 text-[color:var(--danger)]"
+    >
+      {children}
+    </p>
   );
 }

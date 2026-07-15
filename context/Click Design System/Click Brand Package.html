@@ -1,0 +1,526 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Click - Brand Package</title>
+<link rel="stylesheet" href="styles.css" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" />
+<style>
+  :root{
+    --c-purple:#3B2F81; --c-deep:#2F2566; --c-lav:#C8B8F8; --c-cream:#F9F6F0;
+    --ink:#221B3D; --muted:#6E6688; --faint:#9C95B0; --line:#E7E0D6;
+    --ff:'Poppins',system-ui,sans-serif;
+  }
+  *{ box-sizing:border-box; }
+  html{ scroll-behavior:smooth; }
+  body{ margin:0; font-family:var(--ff); color:var(--ink); background:var(--c-cream); -webkit-font-smoothing:antialiased; }
+  .doc{ max-width:1080px; margin:0 auto; }
+
+  /* section scaffolding */
+  section{ padding:84px 56px; border-top:1px solid var(--line); }
+  section:first-of-type{ border-top:none; }
+  .lbl{ font-size:12px; font-weight:700; letter-spacing:.18em; text-transform:uppercase; color:var(--c-purple); margin:0 0 18px; }
+  h2{ margin:0 0 14px; font-size:30px; font-weight:700; letter-spacing:-.03em; }
+  .sub{ margin:0 0 38px; font-size:15.5px; line-height:1.62; color:var(--muted); max-width:620px; }
+  .sub b{ color:var(--ink); font-weight:600; }
+
+  /* cover */
+  .cover{ padding:120px 56px 96px; text-align:left; }
+  .cover .eyebrow{ font-size:12px; font-weight:700; letter-spacing:.2em; text-transform:uppercase; color:var(--c-purple); margin:0 0 30px; }
+  .cover .mark{ margin:0 0 40px; }
+  .cover h1{ margin:0 0 22px; font-size:48px; font-weight:700; letter-spacing:-.035em; line-height:1.05; max-width:680px; }
+  .cover p{ margin:0; font-size:18px; line-height:1.6; color:var(--muted); max-width:560px; }
+  .cover p b{ color:var(--ink); font-weight:600; }
+  .meta{ margin-top:46px; display:flex; gap:40px; flex-wrap:wrap; }
+  .meta div{ font-size:13px; color:var(--faint); }
+  .meta div b{ display:block; color:var(--ink); font-size:13px; font-weight:600; letter-spacing:.01em; margin-bottom:3px; }
+
+  /* generic plate */
+  .plate{ border-radius:8px; display:flex; align-items:center; justify-content:center; position:relative; }
+  .plate.cream{ background:var(--c-cream); border:1px solid var(--line); }
+  .plate.white{ background:#fff; border:1px solid var(--line); }
+  .plate.purple{ background:var(--c-purple); }
+  .plate.lav{ background:var(--c-lav); }
+  .tag{ position:absolute; left:16px; bottom:13px; font-size:10px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; }
+  .plate.cream .tag,.plate.white .tag{ color:var(--faint); }
+  .plate.purple .tag{ color:rgba(249,246,240,.5); }
+  .plate.lav .tag{ color:rgba(47,37,102,.5); }
+
+  .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:22px; }
+  .grid3{ display:grid; grid-template-columns:repeat(3,1fr); gap:22px; }
+  .grid4{ display:grid; grid-template-columns:repeat(4,1fr); gap:22px; }
+
+  /* clear space / construction */
+  .cs{ background:var(--c-cream); border:1px solid var(--line); border-radius:8px; padding:54px; display:flex; align-items:center; justify-content:center; }
+  .note{ margin-top:18px; font-size:13.5px; line-height:1.6; color:var(--muted); }
+  .note b{ color:var(--ink); font-weight:600; }
+
+  /* sizes */
+  .sizes{ display:flex; align-items:flex-end; gap:34px; flex-wrap:wrap; background:#fff; border:1px solid var(--line); border-radius:8px; padding:40px 44px; }
+  .sizes .it{ display:flex; flex-direction:column; align-items:center; gap:12px; }
+  .sizes .it .cap{ font-size:11px; color:var(--faint); font-weight:600; }
+  .chip{ background:var(--c-purple); display:flex; align-items:center; justify-content:center; box-shadow:var(--shadow-sm,0 1px 3px rgba(0,0,0,.08)); }
+
+  /* color */
+  .sw{ border-radius:8px; overflow:hidden; border:1px solid var(--line); }
+  .sw .fill{ height:150px; display:flex; align-items:flex-end; padding:14px; }
+  .sw .meta2{ background:#fff; padding:16px 18px; }
+  .sw .meta2 b{ display:block; font-size:15px; font-weight:600; letter-spacing:-.01em; }
+  .sw .meta2 code{ display:block; margin-top:5px; font-size:12px; color:var(--muted); font-family:ui-monospace,Menlo,monospace; }
+  .sw .meta2 em{ display:block; margin-top:9px; font-style:normal; font-size:12px; line-height:1.5; color:var(--faint); }
+  .sw .pct{ font-size:11px; font-weight:600; letter-spacing:.06em; }
+
+  /* type */
+  .typerow{ display:flex; align-items:baseline; gap:24px; padding:22px 0; border-bottom:1px solid var(--line); }
+  .typerow:last-child{ border-bottom:none; }
+  .typerow .name{ width:150px; flex:none; font-size:12px; color:var(--faint); font-weight:600; }
+  .typerow .name span{ display:block; color:var(--ink); font-size:13px; }
+  .typerow .demo{ color:var(--ink); letter-spacing:-.02em; line-height:1.05; }
+  .glyphset{ margin-top:30px; background:var(--c-purple); color:var(--c-cream); border-radius:8px; padding:30px 34px; font-size:34px; font-weight:600; letter-spacing:.02em; word-spacing:6px; line-height:1.5; }
+
+  /* misuse */
+  .dont{ background:#fff; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .dont .box{ height:150px; display:flex; align-items:center; justify-content:center; background:var(--c-cream); position:relative; }
+  .dont .x{ position:absolute; top:11px; right:11px; width:22px; height:22px; border-radius:50%; background:#C0533B; color:#fff; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700; }
+  .dont .cap{ padding:13px 16px; font-size:12.5px; line-height:1.45; color:var(--muted); }
+  .dont .cap b{ color:var(--ink); font-weight:600; }
+
+  /* applications */
+  .app-grid{ display:grid; grid-template-columns:1fr 1fr; gap:22px; }
+  .appcard{ background:#fff; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .appcard .stageA{ height:344px; display:flex; align-items:center; justify-content:center; position:relative; overflow:hidden; }
+  .appcard .cap{ padding:14px 18px; font-size:12.5px; color:var(--muted); border-top:1px solid var(--line); }
+  .appcard .cap b{ color:var(--ink); font-weight:600; }
+
+  /* phone */
+  .phone{ width:188px; height:300px; border-radius:30px; background:linear-gradient(160deg,#2A2150,#3B2F81); padding:14px; box-shadow:0 22px 50px rgba(25,19,58,.4); position:relative; }
+  .phone .notch{ position:absolute; top:14px; left:50%; transform:translateX(-50%); width:60px; height:6px; border-radius:6px; background:rgba(255,255,255,.25); }
+  .phone .apps{ margin-top:34px; display:grid; grid-template-columns:repeat(3,1fr); gap:16px 18px; justify-items:center; }
+  .phone .ai{ width:42px; height:42px; border-radius:11px; }
+  .phone .ai.ph{ background:rgba(255,255,255,.12); }
+  .phone .label{ margin-top:6px; font-size:9px; color:rgba(255,255,255,.8); text-align:center; }
+  .phone .real{ display:flex; flex-direction:column; align-items:center; }
+
+  /* browser */
+  .browser{ width:340px; border-radius:12px; overflow:hidden; box-shadow:0 18px 44px rgba(25,19,58,.22); background:#fff; }
+  .browser .bar{ background:#ECE6DC; padding:10px 12px 0; display:flex; align-items:flex-end; gap:7px; }
+  .browser .dots{ display:flex; gap:5px; padding:0 6px 9px; }
+  .browser .dots i{ width:9px; height:9px; border-radius:50%; display:block; }
+  .browser .tab{ background:#fff; border-radius:8px 8px 0 0; padding:8px 13px; display:flex; align-items:center; gap:8px; font-size:11.5px; color:var(--ink); font-weight:500; }
+  .browser .url{ background:#fff; padding:9px 14px; border-top:1px solid #F0EBE2; }
+  .browser .url div{ background:var(--c-cream); border-radius:20px; padding:6px 14px; font-size:11px; color:var(--muted); }
+  .browser .body{ height:120px; background:var(--c-cream); display:flex; align-items:center; justify-content:center; }
+
+  /* card */
+  .cardstack{ position:relative; width:300px; height:200px; }
+  .bizcard{ position:absolute; width:260px; height:152px; border-radius:11px; box-shadow:0 14px 34px rgba(25,19,58,.22); padding:22px; }
+  .bizcard.front{ background:var(--c-purple); top:0; left:0; z-index:2; display:flex; align-items:center; justify-content:center; }
+  .bizcard.back{ background:var(--c-cream); border:1px solid var(--line); bottom:0; right:0; transform:translate(6px,18px); }
+  .bizcard.back .nm{ font-size:14px; font-weight:600; }
+  .bizcard.back .ro{ font-size:11.5px; color:var(--muted); margin-top:1px; }
+  .bizcard.back .dt{ position:absolute; bottom:20px; left:22px; font-size:10.5px; color:var(--faint); line-height:1.6; }
+
+  /* avatar / sticker */
+  .avatar{ width:120px; height:120px; border-radius:50%; display:flex; align-items:center; justify-content:center; box-shadow:0 10px 26px rgba(25,19,58,.2); }
+  .sticker{ border-radius:18px; background:#fff; padding:10px; box-shadow:0 10px 26px rgba(25,19,58,.18); display:inline-flex; }
+  .sticker .inner{ border-radius:12px; display:flex; align-items:center; justify-content:center; }
+  .sticker.round{ border-radius:50%; padding:9px; }
+  .sticker.round .inner{ border-radius:50%; }
+
+  footer{ padding:56px; border-top:1px solid var(--line); display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:20px; }
+  footer .ft{ font-size:12px; color:var(--faint); line-height:1.6; }
+  footer .ft b{ color:var(--ink); font-weight:600; }
+
+  @media print{ section{ break-inside:avoid; } body{ background:#fff; } }
+</style>
+</head>
+<body>
+<div class="doc">
+
+  <!-- COVER -->
+  <section class="cover">
+    <p class="eyebrow">Brand Package · v1.0</p>
+    <div class="mark" id="cover-mark"></div>
+    <h1>click - the moment two people connect, made into a brand.</h1>
+    <p>An activity-first social platform built on <b>connection, belonging, and serendipity</b>. This package defines the wordmark, the spark, the palette, and how they live across every surface.</p>
+    <div class="meta">
+      <div><b>Wordmark</b>Poppins SemiBold, lowercase</div>
+      <div><b>Signature</b>Sparkle-pair i-dot</div>
+      <div><b>Palette</b>Purple · Lavender · Cream</div>
+    </div>
+  </section>
+
+  <!-- 1 · WORDMARK -->
+  <section id="s-wordmark">
+    <p class="lbl">01 - Primary wordmark</p>
+    <h2>The logotype</h2>
+    <p class="sub">Lowercase <b>click</b> in Poppins SemiBold with tight tracking. The i-dot is a <b>sparkle pair</b> - a large glint and a small companion - the instant two people click. It is the everyday brand signature; use it wherever space allows.</p>
+    <div class="grid3">
+      <div class="plate cream" style="height:200px" id="wm-cream"><span class="tag">on cream - primary</span></div>
+      <div class="plate purple" style="height:200px" id="wm-purple"><span class="tag">on deep purple</span></div>
+      <div class="plate white" style="height:200px" id="wm-white"><span class="tag">on white</span></div>
+    </div>
+  </section>
+
+  <!-- 2 · ICON -->
+  <section id="s-icon">
+    <p class="lbl">02 - The icon</p>
+    <h2>The c mark</h2>
+    <p class="sub">Where the full word won't fit, the bare <b>c</b> carries the sparkle pair in its aperture. It's a letterform first - never mistaken for an AI button - and the basis for the app icon, favicon, and avatar.</p>
+    <div class="grid4">
+      <div class="plate cream" style="aspect-ratio:1" id="ic-cream"><span class="tag">on cream</span></div>
+      <div class="plate purple" style="aspect-ratio:1" id="ic-purple"><span class="tag">on purple</span></div>
+      <div class="plate lav" style="aspect-ratio:1" id="ic-lav"><span class="tag">on lavender</span></div>
+      <div class="plate cream" style="aspect-ratio:1;background:transparent;border:none" id="ic-tile"><span class="tag">app tile</span></div>
+    </div>
+  </section>
+
+  <!-- 3 · CONSTRUCTION -->
+  <section id="s-construction">
+    <p class="lbl">03 - Construction &amp; clear space</p>
+    <h2>Give it room</h2>
+    <p class="sub">Minimum clear space on all sides equals the <b>height of the “c”</b> (marked <b>x</b>). Never crowd the mark with type, edges, or other logos.</p>
+    <div class="cs" id="clearspace"></div>
+    <p class="note"><b>Alignment.</b> The sparkle pair sits optically above the i-stem and leans up-right. Don't recentre, resize, or recolour it independently of the wordmark.</p>
+  </section>
+
+  <!-- 4 · SIZES -->
+  <section id="s-sizes">
+    <p class="lbl">04 - Minimum sizes &amp; favicon</p>
+    <h2>Holds from 16px up</h2>
+    <p class="sub">The <b>c</b> mark stays legible down to a 16px favicon. Below 90px wide, drop the wordmark and use the icon alone.</p>
+    <div class="sizes" id="favset"></div>
+    <p class="note"><b>Rule of thumb.</b> Wordmark minimum: <b>90px</b> wide on screen, 22mm in print. Icon minimum: <b>16px</b>.</p>
+  </section>
+
+  <!-- 5 · COLOR -->
+  <section id="s-color">
+    <p class="lbl">05 - Colour</p>
+    <h2>Three colours, no gradients</h2>
+    <p class="sub">Deep purple grounds the brand, cream is the canvas, and lavender is reserved - it appears <b>only as the spark</b>. Restraint is the point.</p>
+    <div class="grid3">
+      <div class="sw">
+        <div class="fill" style="background:#3B2F81"><span class="pct" style="color:rgba(255,255,255,.7)">~70% use</span></div>
+        <div class="meta2"><b>Deep Purple</b><code>#3B2F81 · rgb(59,47,129)</code><em>Primary. Wordmark, grounds, UI chrome, type on light.</em></div>
+      </div>
+      <div class="sw">
+        <div class="fill" style="background:#F9F6F0"><span class="pct" style="color:var(--faint)">~24% use</span></div>
+        <div class="meta2"><b>Cream</b><code>#F9F6F0 · rgb(249,246,240)</code><em>Background &amp; negative space. The default canvas.</em></div>
+      </div>
+      <div class="sw">
+        <div class="fill" style="background:#C8B8F8"><span class="pct" style="color:rgba(47,37,102,.6)">~6% use</span></div>
+        <div class="meta2"><b>Lavender</b><code>#C8B8F8 · rgb(200,184,248)</code><em>Accent - the spark only. Never for large fills or body text.</em></div>
+      </div>
+    </div>
+    <p class="note"><b>Support shade.</b> <code style="font-family:ui-monospace,monospace">#2F2566</code> (deeper purple) is allowed for depth - shadows, pressed states, secondary grounds - but it is not a brand colour in its own right.</p>
+  </section>
+
+  <!-- 6 · TYPE -->
+  <section id="s-type">
+    <p class="lbl">06 - Typography</p>
+    <h2>Poppins, throughout</h2>
+    <p class="sub">One geometric family carries the whole system. SemiBold for the logotype and headlines, Medium for subheads, Regular for body. Tight tracking on display, normal on text.</p>
+    <div id="typescale"></div>
+    <div class="glyphset">click · connect · belong · spark<br>abcdefghijklm nopqrstuvwxyz<br>0123456789 &amp; ! ?</div>
+  </section>
+
+  <!-- 7 · MISUSE -->
+  <section id="s-misuse">
+    <p class="lbl">07 - Misuse</p>
+    <h2>What never to do</h2>
+    <p class="sub">The mark earns its premium feel through discipline. Don't do any of these.</p>
+    <div class="grid4" id="donts"></div>
+  </section>
+
+  <!-- 8 · APPLICATIONS -->
+  <section id="s-apps">
+    <p class="lbl">08 - In the world</p>
+    <h2>Across every surface</h2>
+    <p class="sub">The system in use - app icon, browser favicon, social avatar, stationery, and merch. Same marks, same three colours, everywhere.</p>
+    <div class="app-grid">
+      <div class="appcard"><div class="stageA" style="background:linear-gradient(150deg,#efe9e0,#e6dccd)" id="ap-phone"></div><div class="cap"><b>App icon</b> - home-screen tile, deep purple ground</div></div>
+      <div class="appcard"><div class="stageA" style="background:#e9e3d8" id="ap-browser"></div><div class="cap"><b>Favicon</b> - the c holds in a browser tab</div></div>
+      <div class="appcard"><div class="stageA cream" style="background:var(--c-cream);gap:26px" id="ap-avatar"></div><div class="cap"><b>Social avatars</b> - circular, icon on purple &amp; lavender</div></div>
+      <div class="appcard"><div class="stageA" style="background:#e9e3d8" id="ap-card"></div><div class="cap"><b>Business card</b> - purple front, cream reverse</div></div>
+      <div class="appcard"><div class="stageA" style="background:var(--c-cream)" id="ap-merch"></div><div class="cap"><b>Merch</b> - tote &amp; tee in brand colours</div></div>
+      <div class="appcard"><div class="stageA" style="background:#e9e3d8;gap:22px" id="ap-sticker"></div><div class="cap"><b>Stickers</b> - die-cut, icon &amp; spark</div></div>
+    </div>
+  </section>
+
+  <footer>
+    <div id="ft-mark"></div>
+    <div class="ft"><b>Click Brand Package · v1.0</b><br>Poppins SemiBold · #3B2F81 / #C8B8F8 / #F9F6F0<br>Keep the spark lavender. Keep it singular. Give it room.</div>
+  </footer>
+
+</div>
+
+<script>
+var C = { purple:"#3B2F81", deep:"#2F2566", lav:"#C8B8F8", cream:"#F9F6F0" };
+
+var TWEAKS = /*EDITMODE-BEGIN*/{
+  "sparkX": -42,
+  "cGap": 0.47,
+  "sparkGap": -0.1,
+  "cBigTop": 0.11,
+  "cSmTop": -0.1
+}/*EDITMODE-END*/;
+
+/* ---------- mark drawing (locked geometry) ---------- */
+function svg(size, inner){ return '<svg width="'+size+'" height="'+size+'" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">'+inner+'</svg>'; }
+function path(d,fill){ return '<path d="'+d+'" fill="'+fill+'"/>'; }
+function spkPath(cx,cy,r,opt){ opt=opt||{}; var top=(opt.top||1)*r,right=(opt.right||1)*r,bot=(opt.bottom||1)*r,left=(opt.left||1)*r,w=opt.w==null?0.46:opt.w,p=opt.p==null?0.065:opt.p; function n(v){return Math.round(v*100)/100;} return 'M'+n(cx)+' '+n(cy-top)+' C'+n(cx+p*right)+' '+n(cy-w*top)+' '+n(cx+w*right)+' '+n(cy-p*top)+' '+n(cx+right)+' '+n(cy)+' C'+n(cx+w*right)+' '+n(cy+p*bot)+' '+n(cx+p*right)+' '+n(cy+w*bot)+' '+n(cx)+' '+n(cy+bot)+' C'+n(cx-p*left)+' '+n(cy+w*bot)+' '+n(cx-w*left)+' '+n(cy+p*bot)+' '+n(cx-left)+' '+n(cy)+' C'+n(cx-w*left)+' '+n(cy-p*top)+' '+n(cx-p*left)+' '+n(cy-w*top)+' '+n(cx)+' '+n(cy-top)+' Z'; }
+
+/* sparkle pair i-dot - big glint + small companion drifting up-right */
+function dblDot(size, fill, accent, off){
+  accent = accent || fill; off = off==null?0.75:off;
+  var sx = 50 + (82-50)*off, sy = 50 + (32-50)*off;
+  return svg(size, path(spkPath(46,66,34,{w:0.44}),fill) + path(spkPath(sx,sy,13,{w:0.40}),accent));
+}
+/* wordmark: dotless i + sparkle-pair dot. Locked: sparkSize .40, gap -.34, offset .75 */
+function wordmark(fontPx, textColor, accent){
+  var sp = Math.round(fontPx*0.40);
+  var gap = Math.round(fontPx*-0.34);
+  var dot = dblDot(sp, accent||C.lav, C.lav, 0.75);
+  return '<span style="font-family:\'Poppins\',sans-serif;font-weight:600;letter-spacing:-.02em;line-height:1;display:inline-flex;align-items:baseline;white-space:nowrap;font-size:'+fontPx+'px;color:'+textColor+'">'
+    + '<span>cl</span>'
+    + '<span style="position:relative;display:inline-block">\u0131<span class="wm-spark" style="position:absolute;left:50%;bottom:calc(100% + '+gap+'px);transform:translateX('+TWEAKS.sparkX+'%)">'+dot+'</span></span>'
+    + '<span>ck</span></span>';
+}
+/* c letterform with nested sparkle pair (app icon / favicon).
+   Spark spans sized & positioned in em off a wrapper whose font-size = size,
+   so geometry is identical at every scale (favicon 16px === app tile 140px). */
+function cmark(size, cColor, accent){
+  return '<span style="position:relative;display:inline-flex;align-items:center;justify-content:center;line-height:1;font-size:'+size+'px;">'
+    + '<span style="font-family:\'Poppins\',sans-serif;font-weight:600;font-size:1em;color:'+cColor+';letter-spacing:-.02em;">c</span>'
+    + '<span class="c-spk-big" style="position:absolute;left:'+TWEAKS.cGap+'em;top:'+TWEAKS.cBigTop+'em;width:0.34em;height:0.34em;line-height:0;">'+svg('100%',path(spkPath(50,50,44),accent))+'</span>'
+    + '<span class="c-spk-sm" style="position:absolute;left:'+(TWEAKS.cGap+0.34+TWEAKS.sparkGap)+'em;top:'+TWEAKS.cSmTop+'em;width:0.15em;height:0.15em;line-height:0;">'+svg('100%',path(spkPath(50,50,44,{w:0.40}),accent))+'</span></span>';
+}
+/* squircle app tile */
+function tile(px, bg, content){
+  return '<div style="width:'+px+'px;height:'+px+'px;border-radius:'+Math.round(px*0.225)+'px;background:'+bg+';display:flex;align-items:center;justify-content:center;box-shadow:0 10px 26px rgba(25,19,58,.22);">'+content+'</div>';
+}
+function set(id, html){ var el=document.getElementById(id); if(el) el.insertAdjacentHTML('afterbegin', html); }
+
+/* ---------- cover & wordmarks ---------- */
+set('cover-mark', wordmark(104, C.purple, C.lav));
+set('wm-cream', wordmark(78, C.purple, C.lav));
+set('wm-purple', wordmark(78, C.cream, C.lav));
+set('wm-white', wordmark(78, C.purple, C.lav));
+
+/* ---------- icon ---------- */
+set('ic-cream', cmark(108, C.purple, C.lav));
+set('ic-purple', cmark(108, C.cream, C.lav));
+set('ic-lav', cmark(108, C.purple, C.deep));
+set('ic-tile', tile(140, C.purple, cmark(78, C.cream, C.lav)));
+
+/* ---------- clear space diagram ---------- */
+(function(){
+  var x = 34; // = cap height unit, in px
+  var wrap = document.createElement('div');
+  wrap.style.cssText = 'position:relative;display:inline-block;padding:'+x+'px;';
+  // dashed clear-space box
+  wrap.innerHTML = '<div style="position:absolute;inset:0;border:1.5px dashed '+C.lav+';border-radius:6px;"></div>'
+    + '<div style="position:relative;">'+wordmark(96, C.purple, C.lav)+'</div>'
+    // x markers
+    + '<div style="position:absolute;left:6px;top:'+x+'px;height:'+x+'px;width:0;border-left:1.5px solid '+C.deep+';"></div>'
+    + '<div style="position:absolute;left:0;top:'+(x*1.5-9)+'px;font:600 12px Poppins;color:'+C.deep+';">x</div>'
+    + '<div style="position:absolute;top:6px;left:'+x+'px;width:'+x+'px;height:0;border-top:1.5px solid '+C.deep+';"></div>'
+    + '<div style="position:absolute;top:0;left:'+(x*1.5-4)+'px;font:600 12px Poppins;color:'+C.deep+';">x</div>';
+  document.getElementById('clearspace').appendChild(wrap);
+})();
+
+/* ---------- favicon / size set ---------- */
+(function(){
+  var sizes = [16,24,32,48,64,96];
+  var html = sizes.map(function(px){
+    var r = Math.max(3, Math.round(px*0.22));
+    return '<div class="it"><div class="chip" style="width:'+px+'px;height:'+px+'px;border-radius:'+r+'px;">'+cmark(Math.round(px*0.62), C.cream, C.lav)+'</div><div class="cap">'+px+'px</div></div>';
+  }).join('');
+  // plus a wordmark min-size sample
+  html += '<div class="it"><div style="padding:4px 0">'+wordmark(26, C.purple, C.lav)+'</div><div class="cap">wordmark · 90px</div></div>';
+  document.getElementById('favset').innerHTML = html;
+})();
+
+/* ---------- type scale ---------- */
+(function(){
+  var rows = [
+    ['Display / Logo','SemiBold 600','click', 52, 600, '-.03em'],
+    ['Headline','SemiBold 600','Find your people', 34, 600, '-.025em'],
+    ['Subhead','Medium 500','Activities, not algorithms', 22, 500, '-.01em'],
+    ['Body','Regular 400','Click connects people through shared real-world experiences - the things you actually want to do.', 16, 400, '0'],
+    ['Caption / UI','Medium 500','12 going · 3 spots left', 13, 500, '.01em']
+  ];
+  document.getElementById('typescale').innerHTML = rows.map(function(r){
+    return '<div class="typerow"><div class="name">'+r[0]+'<span>'+r[1]+'</span></div>'
+      + '<div class="demo" style="font-size:'+r[3]+'px;font-weight:'+r[4]+';letter-spacing:'+r[5]+'">'+r[2]+'</div></div>';
+  }).join('');
+})();
+
+/* ---------- misuse ---------- */
+(function(){
+  var items = [
+    { build:function(){ return '<span style="background:linear-gradient(90deg,#FF6B9D,#FEC868);-webkit-background-clip:text;background-clip:text;color:transparent;font:600 40px Poppins;letter-spacing:-.02em;">click</span>'; }, cap:'<b>Don\'t</b> recolour or add gradients.' },
+    { build:function(){ return '<span style="display:inline-block;transform:scaleX(1.5);">'+wordmark(40,C.purple,C.lav)+'</span>'; }, cap:'<b>Don\'t</b> stretch or distort.' },
+    { build:function(){ return wordmark(40, C.purple, '#3B2F81'); }, cap:'<b>Don\'t</b> change the spark colour.' },
+    { build:function(){ return '<span style="font:600 40px Georgia,serif;color:'+C.purple+';">click</span>'; }, cap:'<b>Don\'t</b> substitute the typeface.' }
+  ];
+  document.getElementById('donts').innerHTML = items.map(function(it){
+    return '<div class="dont"><div class="box"><div class="x">\u00d7</div>'+it.build()+'</div><div class="cap">'+it.cap+'</div></div>';
+  }).join('');
+})();
+
+/* ---------- applications ---------- */
+// phone home screen
+(function(){
+  var apps = '';
+  for(var i=0;i<5;i++) apps += '<div class="real"><div class="ai ph"></div></div>';
+  // insert the real click icon as the 3rd
+  var grid = '<div class="real">'+ '<div style="width:42px;height:42px;border-radius:11px;background:'+C.purple+';display:flex;align-items:center;justify-content:center;box-shadow:0 4px 10px rgba(0,0,0,.25)">'+cmark(24,C.cream,C.lav)+'</div>'+'<div class="label">click</div></div>';
+  var phone = '<div class="phone"><div class="notch"></div><div class="apps">'
+    + '<div class="real"><div class="ai ph"></div></div>'
+    + '<div class="real"><div class="ai ph"></div></div>'
+    + grid
+    + '<div class="real"><div class="ai ph"></div></div>'
+    + '<div class="real"><div class="ai ph"></div></div>'
+    + '<div class="real"><div class="ai ph"></div></div>'
+    + '</div></div>';
+  set('ap-phone', phone);
+})();
+// browser tab
+set('ap-browser',
+  '<div class="browser"><div class="bar"><div class="dots" style="align-self:center"><i style="background:#E66A5A"></i><i style="background:#E9B44C"></i><i style="background:#6BBF73"></i></div>'
+  + '<div class="tab">'+cmark(14,C.purple,C.lav)+'<span>click - find your people</span></div></div>'
+  + '<div class="url"><div>click.co</div></div>'
+  + '<div class="body">'+wordmark(34,C.purple,C.lav)+'</div></div>');
+// avatars
+set('ap-avatar',
+  '<div class="avatar" style="background:'+C.purple+'">'+cmark(58,C.cream,C.lav)+'</div>'
+  + '<div class="avatar" style="background:'+C.lav+'">'+cmark(58,C.purple,C.deep)+'</div>'
+  + '<div class="avatar" style="background:'+C.cream+';border:1px solid var(--line)">'+cmark(58,C.purple,C.lav)+'</div>');
+// business card
+set('ap-card',
+  '<div class="cardstack">'
+  + '<div class="bizcard back"><div class="nm">Ava Mendez</div><div class="ro">Community Lead</div><div class="dt">ava@click.co<br>click.co · @clickapp</div></div>'
+  + '<div class="bizcard front">'+wordmark(40,C.cream,C.lav)+'</div>'
+  + '</div>');
+// merch - tote + tee
+(function(){
+  // tote
+  var tote = '<svg width="150" height="170" viewBox="0 0 150 170" xmlns="http://www.w3.org/2000/svg">'
+    + '<path d="M48 44 C48 12 102 12 102 44" fill="none" stroke="'+C.purple+'" stroke-width="7" stroke-linecap="round"/>'
+    + '<rect x="22" y="42" width="106" height="116" rx="8" fill="'+C.purple+'"/></svg>';
+  var toteWrap = '<div style="position:relative;">'+tote+'<div style="position:absolute;left:50%;top:104px;transform:translate(-50%,-50%)">'+wordmark(26,C.cream,C.lav)+'</div></div>';
+  // tee
+  var tee = '<svg width="170" height="160" viewBox="0 0 200 190" xmlns="http://www.w3.org/2000/svg">'
+    + '<path d="M62 28 C70 44 130 44 138 28 L176 52 L156 86 L138 74 L138 180 L62 180 L62 74 L44 86 L24 52 Z" fill="'+C.cream+'" stroke="#E7E0D6" stroke-width="2"/></svg>';
+  var teeWrap = '<div style="position:relative;">'+tee+'<div style="position:absolute;left:50%;top:108px;transform:translate(-50%,-50%)">'+cmark(40,C.purple,C.lav)+'</div></div>';
+  set('ap-merch', '<div style="display:flex;align-items:flex-end;gap:30px;">'+toteWrap+teeWrap+'</div>');
+})();
+// stickers
+set('ap-sticker',
+  '<div class="sticker"><div class="inner" style="width:96px;height:96px;background:'+C.purple+'">'+cmark(54,C.cream,C.lav)+'</div></div>'
+  + '<div class="sticker round"><div class="inner" style="width:96px;height:96px;background:'+C.lav+'">'+cmark(54,C.purple,C.deep)+'</div></div>'
+  + '<div class="sticker"><div class="inner" style="width:120px;height:72px;background:'+C.cream+';border:1px solid var(--line)">'+wordmark(30,C.purple,C.lav)+'</div></div>');
+
+/* ---------- footer ---------- */
+set('ft-mark', '<div style="opacity:.9">'+cmark(40,C.purple,C.lav)+'</div>');
+
+/* ---------- Tweaks panel (vanilla host protocol) ---------- */
+(function(){
+  function applySparkX(v){
+    var spks = document.querySelectorAll('.wm-spark');
+    for(var i=0;i<spks.length;i++){ spks[i].style.transform = 'translateX('+v+'%)'; }
+  }
+  var panel = document.createElement('div');
+  panel.id = 'tweaks-panel';
+  panel.style.cssText = 'position:fixed;top:18px;right:18px;width:288px;z-index:9999;display:none;'
+    + 'background:#fff;border:1px solid #E7E0D6;border-radius:10px;'
+    + 'box-shadow:0 18px 50px rgba(25,19,58,.28);font-family:var(--ff);overflow:hidden;';
+  panel.innerHTML =
+    '<div style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;background:#3B2F81">'
+    + '<span style="font-size:13px;font-weight:700;letter-spacing:.02em;color:#F9F6F0">Tweaks</span>'
+    + '<button id="tw-close" style="border:none;background:transparent;color:rgba(249,246,240,.7);font-size:18px;line-height:1;cursor:pointer">\u00d7</button></div>'
+    + '<div style="padding:15px 16px">'
+    + '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">'
+    + '<span style="font-size:12.5px;font-weight:600;color:#221B3D">Spark horizontal position</span>'
+    + '<span id="v-sparkX" style="font-size:11px;font-family:ui-monospace,monospace;color:#6E6688">'+TWEAKS.sparkX+'%</span></div>'
+    + '<input id="sl-sparkX" type="range" min="-70" max="-20" step="1" value="'+TWEAKS.sparkX+'" style="width:100%;accent-color:#3B2F81;cursor:pointer"/>'
+    + '<p style="margin:9px 0 0;font-size:11.5px;line-height:1.5;color:#9C95B0">Left \u2192 right. At <b>-46%</b> the large sparkle\u2019s centre aligns with the i stem.</p>'
+    + '<div style="height:1px;background:#EFE9DF;margin:15px 0"></div>'
+    + '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">'
+    + '<span style="font-size:12.5px;font-weight:600;color:#221B3D">c to big spark spacing</span>'
+    + '<span id="v-cGap" style="font-size:11px;font-family:ui-monospace,monospace;color:#6E6688">'+TWEAKS.cGap.toFixed(2)+'em</span></div>'
+    + '<input id="sl-cGap" type="range" min="0.30" max="0.80" step="0.01" value="'+TWEAKS.cGap+'" style="width:100%;accent-color:#3B2F81;cursor:pointer"/>'
+    + '<div style="display:flex;justify-content:space-between;align-items:baseline;margin:15px 0 8px">'
+    + '<span style="font-size:12.5px;font-weight:600;color:#221B3D">Spacing between the sparks</span>'
+    + '<span id="v-sparkGap" style="font-size:11px;font-family:ui-monospace,monospace;color:#6E6688">'+TWEAKS.sparkGap.toFixed(2)+'em</span></div>'
+    + '<input id="sl-sparkGap" type="range" min="-0.10" max="0.40" step="0.01" value="'+TWEAKS.sparkGap+'" style="width:100%;accent-color:#3B2F81;cursor:pointer"/>'
+    + '<div style="display:flex;justify-content:space-between;align-items:baseline;margin:15px 0 8px">'
+    + '<span style="font-size:12.5px;font-weight:600;color:#221B3D">Big spark height</span>'
+    + '<span id="v-cBigTop" style="font-size:11px;font-family:ui-monospace,monospace;color:#6E6688">'+TWEAKS.cBigTop.toFixed(2)+'em</span></div>'
+    + '<input id="sl-cBigTop" type="range" min="-0.10" max="0.45" step="0.01" value="'+TWEAKS.cBigTop+'" style="width:100%;accent-color:#3B2F81;cursor:pointer"/>'
+    + '<div style="display:flex;justify-content:space-between;align-items:baseline;margin:15px 0 8px">'
+    + '<span style="font-size:12.5px;font-weight:600;color:#221B3D">Small spark height</span>'
+    + '<span id="v-cSmTop" style="font-size:11px;font-family:ui-monospace,monospace;color:#6E6688">'+TWEAKS.cSmTop.toFixed(2)+'em</span></div>'
+    + '<input id="sl-cSmTop" type="range" min="-0.20" max="0.30" step="0.01" value="'+TWEAKS.cSmTop+'" style="width:100%;accent-color:#3B2F81;cursor:pointer"/>'
+    + '<p style="margin:9px 0 0;font-size:11.5px;line-height:1.5;color:#9C95B0">Lower value = higher up. Heights apply to the c icon &amp; favicon.</p>'
+    + '</div>';
+  document.body.appendChild(panel);
+
+  document.getElementById('sl-sparkX').addEventListener('input', function(e){
+    var v = parseInt(e.target.value,10);
+    TWEAKS.sparkX = v;
+    document.getElementById('v-sparkX').textContent = v + '%';
+    applySparkX(v);
+    window.parent.postMessage({type:'__edit_mode_set_keys', edits:{sparkX:v}}, '*');
+  });
+  function applyCmark(){
+    var big = TWEAKS.cGap, sm = TWEAKS.cGap + 0.34 + TWEAKS.sparkGap;
+    document.querySelectorAll('.c-spk-big').forEach(function(el){ el.style.left = big.toFixed(3)+'em'; el.style.top = TWEAKS.cBigTop.toFixed(3)+'em'; });
+    document.querySelectorAll('.c-spk-sm').forEach(function(el){ el.style.left = sm.toFixed(3)+'em'; el.style.top = TWEAKS.cSmTop.toFixed(3)+'em'; });
+  }
+  document.getElementById('sl-cGap').addEventListener('input', function(e){
+    var v = parseFloat(e.target.value);
+    TWEAKS.cGap = v;
+    document.getElementById('v-cGap').textContent = v.toFixed(2)+'em';
+    applyCmark();
+    window.parent.postMessage({type:'__edit_mode_set_keys', edits:{cGap:v}}, '*');
+  });
+  document.getElementById('sl-sparkGap').addEventListener('input', function(e){
+    var v = parseFloat(e.target.value);
+    TWEAKS.sparkGap = v;
+    document.getElementById('v-sparkGap').textContent = v.toFixed(2)+'em';
+    applyCmark();
+    window.parent.postMessage({type:'__edit_mode_set_keys', edits:{sparkGap:v}}, '*');
+  });
+  document.getElementById('sl-cBigTop').addEventListener('input', function(e){
+    var v = parseFloat(e.target.value);
+    TWEAKS.cBigTop = v;
+    document.getElementById('v-cBigTop').textContent = v.toFixed(2)+'em';
+    applyCmark();
+    window.parent.postMessage({type:'__edit_mode_set_keys', edits:{cBigTop:v}}, '*');
+  });
+  document.getElementById('sl-cSmTop').addEventListener('input', function(e){
+    var v = parseFloat(e.target.value);
+    TWEAKS.cSmTop = v;
+    document.getElementById('v-cSmTop').textContent = v.toFixed(2)+'em';
+    applyCmark();
+    window.parent.postMessage({type:'__edit_mode_set_keys', edits:{cSmTop:v}}, '*');
+  });
+  document.getElementById('tw-close').addEventListener('click', function(){
+    panel.style.display='none';
+    window.parent.postMessage({type:'__edit_mode_dismissed'}, '*');
+  });
+  window.addEventListener('message', function(e){
+    var d = e.data || {};
+    if(d.type==='__activate_edit_mode'){ panel.style.display='block'; }
+    else if(d.type==='__deactivate_edit_mode'){ panel.style.display='none'; }
+  });
+  window.parent.postMessage({type:'__edit_mode_available'}, '*');
+})();
+</script>
+</body>
+</html>

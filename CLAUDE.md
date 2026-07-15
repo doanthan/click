@@ -22,6 +22,19 @@ This app has **not launched**. There are no real users, merchants, bookings, or 
 - Mapbox + Google Maps for geo
 - Supabase Storage for user-uploaded media. See **File storage** below.
 
+## Design system (binding)
+
+The canonical design system is **`context/Click Design System/`** (a claude.ai/design export - re-exports replace the folder wholesale; never hand-edit it). `README.md` in that folder is the spec mirror; `context/DESIGN.MD` (CLICK_PALETTE) is the palette canon. Invoke the **`click-design` skill** before designing or restyling any UI. Per-screen build prompts live in the bundle's `docs/`, target renders in `screenshots/`.
+
+Hard rules (fail on sight):
+
+- **Deep Purple `#3B2F81` is the ONLY primary-action / selected colour** - flat, never a gradient or glow. Status colours (coral / amber / sage / teal) appear on **badges only**, never a CTA or hero accent. Destructive = `--danger` `#B5362F`, never coral.
+- Cream `#F9F6F0` page ground (never stark white); white cards; Ink `#1C1830` text; Slate meta; Mist hairlines. Lavender `#C8B8F8` is an accent, **never a section-sized background** (big bands use `--lav-bg` `#F0ECF4`).
+- **Poppins** (SemiBold) = display/headings/wordmark; **body = the system font stack**. Never paragraphs in Poppins, never Poppins-less headings.
+- Buttons are **radius-12, never pills**; tags/avatars are the pills; badges ~8px rounded rects. Shadows soft, low, purple-tinted - never a glow.
+- Tokens live in `src/app/globals.css` - **names stay stable, values track the DS** (the historic accent role `--rose` now resolves to Deep Purple; `--coral` is status-only). Use `var(--token)`, never hardcoded hex.
+- **Language is binding:** it's a *mutual click*, never a "match"; always "click *with*", never "click on"; "click" is never a UI verb (use tap/select); no deficit or loss framing. Capital **Click** = platform, lowercase **click** = the feeling. **Hyphens ` - `, never em-dashes** - in copy, comments, docs, everywhere.
+
 ## File storage
 
 All uploads go to **Supabase Storage**, split by privacy into two buckets — pick by privacy, not convenience.

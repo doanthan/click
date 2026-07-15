@@ -220,7 +220,7 @@ export function EventRegistrationButton({
   // ----- Refund-aware cancel confirmation (paid bookings) -----
   if (state === "confirm-cancel") {
     return (
-      <div className="grid gap-2 rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-3 hard-shadow-sm">
+      <div className="grid gap-2 rounded-[var(--radius-md)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-3">
         <p className="text-sm font-bold text-[color:var(--surface-deep)]">
           Cancel your booking?
         </p>
@@ -236,14 +236,14 @@ export function EventRegistrationButton({
               setState("registered");
               setMessage("");
             }}
-            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-2.5 text-center text-sm font-bold text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--peach)]"
+            className="ck-btn ck-btn--md ck-btn--full ck-btn--secondary"
           >
             Keep my spot
           </button>
           <button
             type="button"
             onClick={() => void cancel()}
-            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-3 py-2.5 text-center text-sm font-bold text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)]"
+            className="ck-btn ck-btn--md ck-btn--full ck-btn--danger"
           >
             Cancel booking
           </button>
@@ -259,15 +259,15 @@ export function EventRegistrationButton({
   if (showOffer) {
     return (
       <div className="grid gap-2">
-        <div className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-3 text-xs font-bold text-[color:var(--surface-deep)] hard-shadow-sm">
+        <div className="rounded-[var(--radius-md)] bg-[color:var(--lav-bg)] p-3 text-[13px] text-[color:var(--ink-soft)]">
           {offerExpired ? (
-            <>⏳ Your offer just expired — refresh to see your place in the queue.</>
+            <>⏳ Your offer just expired - refresh to see your place in the queue.</>
           ) : (
             <>
               🎉 A seat opened up! Confirm your spot
               {countdown ? (
                 <>
-                  {" "}— <span className="font-mono">{countdown}</span> left
+                  {" "}- <span className="tabular-nums font-semibold">{countdown}</span> left
                 </>
               ) : holdLabel ? (
                 ` before ${holdLabel}`
@@ -280,7 +280,7 @@ export function EventRegistrationButton({
           type="button"
           onClick={confirmSpot}
           disabled={state === "confirming" || offerExpired}
-          className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-4 py-3 text-center text-sm font-bold text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)] disabled:cursor-not-allowed disabled:opacity-70"
+          className="ck-btn ck-btn--md ck-btn--full ck-btn--primary"
         >
           {state === "confirming" ? "Confirming…" : "Confirm your spot"}
         </button>
@@ -288,12 +288,12 @@ export function EventRegistrationButton({
           type="button"
           onClick={() => void cancel()}
           disabled={state === "confirming"}
-          className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-4 py-3 text-center text-sm font-bold text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--rose)] disabled:cursor-not-allowed disabled:opacity-70"
+          className="ck-btn ck-btn--md ck-btn--full ck-btn--secondary"
         >
           Leave waitlist
         </button>
         {message ? (
-          <p className="text-xs font-bold text-[color:var(--rose)]">{message}</p>
+          <p className="text-xs font-medium text-[color:var(--danger)]">{message}</p>
         ) : null}
       </div>
     );
@@ -321,7 +321,7 @@ export function EventRegistrationButton({
           type="button"
           onClick={onCancelClick}
           disabled={state === "cancelling" || state === "confirming"}
-          className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-4 py-3 text-center text-sm font-bold text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--rose)] disabled:cursor-not-allowed disabled:opacity-70"
+          className="ck-btn ck-btn--md ck-btn--full ck-btn--secondary"
         >
           {state === "cancelling"
             ? "Cancelling..."

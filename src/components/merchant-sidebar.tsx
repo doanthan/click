@@ -1,6 +1,7 @@
-import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode, SVGProps } from "react";
+import { Avatar, ButtonLink, Icon } from "./ds";
+import { mCard } from "./merchant-ds";
 import { PortalMobileNav, type PortalMobileNavItem } from "./portal-mobile-nav";
 
 // Merchant portal tab keys. Unlike the admin console (which uses real routes +
@@ -26,7 +27,7 @@ type NavItem = {
 
 const NAV_PRIMARY: NavItem[] = [
   { key: "dashboard", label: "Dashboard", icon: "dashboard" },
-  { key: "events", label: "Events & Venues", icon: "events" },
+  { key: "events", label: "Events & venues", icon: "events" },
   { key: "bookings", label: "Bookings", icon: "bookings" },
   { key: "finances", label: "Finances", icon: "finances" },
 ];
@@ -35,13 +36,12 @@ const NAV_SECONDARY: NavItem[] = [
   { key: "settings", label: "Settings", icon: "settings" },
 ];
 
+// Line glyphs in the DS voice: even 1.9px stroke, rounded joins, currentColor.
 const ICON_PATHS: Record<IconName, ReactNode> = {
   dashboard: (
     <>
-      <rect x="3" y="3" width="7" height="7" rx="1.5" />
-      <rect x="14" y="3" width="7" height="7" rx="1.5" />
-      <rect x="14" y="14" width="7" height="7" rx="1.5" />
-      <rect x="3" y="14" width="7" height="7" rx="1.5" />
+      <path d="M3 11l9-8 9 8" />
+      <path d="M5 9.5V21h14V9.5" />
     </>
   ),
   events: (
@@ -62,9 +62,8 @@ const ICON_PATHS: Record<IconName, ReactNode> = {
   ),
   finances: (
     <>
-      <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z" />
-      <path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8" />
-      <path d="M12 17.5v-11" />
+      <path d="M4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2 2 2 0 0 0 0 4 2 2 0 0 1-2 2H6a2 2 0 0 1-2-2 2 2 0 0 0 0-4Z" />
+      <path d="M12 8.5v7" />
     </>
   ),
   settings: (
@@ -75,7 +74,7 @@ const ICON_PATHS: Record<IconName, ReactNode> = {
   ),
 };
 
-function Icon({ name, ...props }: { name: IconName } & SVGProps<SVGSVGElement>) {
+function NavIcon({ name, ...props }: { name: IconName } & SVGProps<SVGSVGElement>) {
   return (
     <svg
       viewBox="0 0 24 24"
@@ -105,25 +104,30 @@ export function MerchantSidebar({
     const isActive = item.key === activeTab;
     const count = counts[item.key];
 
+    // Selected is ALWAYS Deep Purple - flat, no gradient, no glow, and never a
+    // status colour. Radius 12, matching the button footprint.
     return (
       <Link
         key={item.key}
         href={`/merchant?tab=${item.key}`}
         aria-current={isActive ? "page" : undefined}
-        className={`group flex w-full items-center gap-3 rounded-2xl border-2 px-3.5 py-2.5 text-left text-[0.92rem] font-bold transition ${
+        className={`flex min-h-[42px] w-full items-center gap-3 rounded-xl px-3 text-left text-sm transition-colors ${
           isActive
-            ? "border-[color:var(--line)] bg-[color:var(--ink)] text-[color:var(--champagne)] hard-shadow-sm"
-            : "border-transparent text-[color:var(--mauve)] hover:bg-[color:var(--cream)] hover:text-[color:var(--ink)]"
+            ? "bg-[color:var(--purple)] font-semibold text-[color:var(--champagne)]"
+            : "font-medium text-[color:var(--ink-soft)] hover:bg-[color:var(--lavender-100)]"
         }`}
       >
-        <Icon name={item.icon} className="size-5 shrink-0" />
+        <NavIcon
+          name={item.icon}
+          className={`size-[17px] shrink-0 ${isActive ? "" : "text-[color:var(--slate)]"}`}
+        />
         <span className="min-w-0 flex-1 truncate">{item.label}</span>
         {typeof count === "number" ? (
           <span
-            className={`rounded-full px-2 py-0.5 text-[0.65rem] font-black tabular-nums ${
+            className={`min-w-[20px] shrink-0 rounded-full px-1.5 text-center text-[11.5px] font-bold leading-5 tabular-nums ${
               isActive
-                ? "bg-[color:var(--champagne)] text-[color:var(--ink)]"
-                : "bg-[color:var(--cream)] text-[color:var(--ink)]"
+                ? "bg-[color:var(--champagne)]/20 text-[color:var(--champagne)]"
+                : "bg-[color:var(--lavender-100)] text-[color:var(--purple-700)]"
             }`}
           >
             {count}
@@ -146,43 +150,39 @@ export function MerchantSidebar({
   return (
     <>
       <PortalMobileNav
-        title="Merchant Portal"
+        title="Merchant portal"
         items={mobileItems}
-        cta={{ label: "+ Create event", href: "/merchant/events/create" }}
+        cta={{ label: "Create event", href: "/merchant/events/create" }}
       />
-      <aside className="hidden lg:sticky lg:top-6 lg:block lg:w-[17.5rem] lg:shrink-0">
-      <nav className="flex flex-col rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-3 pb-4 hard-shadow">
-        <div className="flex items-center gap-3 px-2 pb-4 pt-2">
-          <Image
-            src="/click_blob_mascot.svg"
-            alt=""
-            width={44}
-            height={44}
-            aria-hidden
-            className="h-11 w-11 shrink-0"
-          />
-          <span className="min-w-0">
-            <span className="block truncate text-lg font-extrabold leading-tight text-[color:var(--ink)]">
-              {businessName}
+      <aside className="hidden lg:sticky lg:top-6 lg:block lg:w-56 lg:shrink-0">
+        <nav className={`${mCard} flex flex-col gap-1 p-3.5`}>
+          <div className="flex items-center gap-2.5 px-1.5 pb-3 pt-1">
+            <Avatar name={businessName} size={38} />
+            <span className="min-w-0">
+              <span className="font-display block truncate text-[13.5px] font-semibold leading-tight text-[color:var(--ink)]">
+                {businessName}
+              </span>
+              <span className="mt-0.5 block text-[10.5px] font-bold uppercase tracking-[0.1em] text-[color:var(--purple-600)]">
+                Merchant portal
+              </span>
             </span>
-            <span className="eyebrow mt-0.5 block">Merchant Portal</span>
-          </span>
-        </div>
+          </div>
 
-        <div className="flex flex-col gap-1">{NAV_PRIMARY.map(renderItem)}</div>
+          {NAV_PRIMARY.map(renderItem)}
 
-        <div className="mx-1 my-3 border-t-2 border-[color:var(--line)]" />
+          <div className="mx-1 my-2 h-px bg-[color:var(--mist)]" />
 
-        <div className="flex flex-col gap-1">{NAV_SECONDARY.map(renderItem)}</div>
+          {NAV_SECONDARY.map(renderItem)}
 
-        <Link
-          href="/merchant/events/create"
-          className="mt-3 inline-flex items-center justify-center gap-2 rounded-2xl border-2 border-[color:var(--surface-deep)] bg-[color:var(--rose)] px-3.5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
-        >
-          + Create event
-        </Link>
-      </nav>
-    </aside>
+          {/* The portal's persistent create affordance. The content column below
+              carries exactly ONE more (its TabHeader action or its empty state) -
+              never both. */}
+          <ButtonLink href="/merchant/events/create" size="sm" full className="mt-2">
+            <Icon name="plus" size={15} />
+            Create event
+          </ButtonLink>
+        </nav>
+      </aside>
     </>
   );
 }

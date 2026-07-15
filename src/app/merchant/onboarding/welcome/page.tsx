@@ -6,7 +6,7 @@ const HIGHLIGHTS = [
     body: "A 5-step wizard (or a quick form) for the date, venue, capacity, and price. Submissions go live the moment they pass admin review.",
   },
   {
-    title: "Free or paid — your call",
+    title: "Free or paid - your call",
     body: "Run free meetups or sell tickets. For paid events, Click handles checkout; you connect your bank in the next step so funds land in your account.",
   },
   {

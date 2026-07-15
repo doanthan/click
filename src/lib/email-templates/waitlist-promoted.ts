@@ -1,4 +1,4 @@
-// Waitlist promotion — currently wired at `event-repository.ts:4102`.
+// Waitlist promotion - currently wired at `event-repository.ts:4102`.
 // Fires when a confirmed attendee cancels and the next waitlister is offered
 // the seat for 15 minutes. Subject + text MUST match what `sendWorkflowEmail`
 // already produces so swapping is a one-liner.
@@ -34,7 +34,7 @@ export function buildWaitlistPromotedEmail(d: WaitlistPromotedData) {
         ${eyebrow("A seat opened")}
         ${heroTitle(`Your turn for <span style="color:${ROSE};">${escapeHtml(d.eventTitle)}</span>.`)}
         ${paragraph(
-          `Hi ${escapeHtml(d.firstName)} &mdash; the next person on the waitlist is you. The seat is yours if you confirm before the timer runs out.`,
+          `Hi ${escapeHtml(d.firstName)} - the next person on the waitlist is you. The seat is yours if you confirm before the timer runs out.`,
         )}
       </td>
     </tr>
@@ -53,12 +53,12 @@ export function buildWaitlistPromotedEmail(d: WaitlistPromotedData) {
       <td class="px-gutter" style="padding:24px 40px 8px 40px;">
         ${renderButton({ href: d.eventDetailsUrl, label: "Claim the seat", tone: "rose" })}
         <p style="margin:14px 0 0 0;font:400 14px/1.5 ${FONT_SANS};color:${MAUVE};">
-          Don't want it after all? Just ignore this &mdash; the seat will offer to the next person automatically.
+          Don't want it after all? Just ignore this - the seat will offer to the next person automatically.
         </p>
       </td>
     </tr>
     ${renderCallout(
-      "Heads up &mdash;",
+      "Heads up -",
       "after the timer runs out we'll offer it to whoever's next. We won't bug you about it again unless you want it back on the waitlist.",
     )}
   `;

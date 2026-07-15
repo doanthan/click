@@ -134,7 +134,7 @@ export function ConnectPayoutsButton({
       }
       window.location.href = body.url;
     } catch {
-      setError("Network error — please try again.");
+      setError("Network error - please try again.");
       setBusy(false);
     }
   }

@@ -2,142 +2,155 @@ import Image from "next/image";
 import Link from "next/link";
 import { type EventItem, formatEventTimeRange } from "@/lib/click-data";
 import { formatCapacity } from "@/lib/click-matching";
-import { Pill } from "./click-ui";
-import { FaceStack } from "./face-stack";
+import { AvatarStack, Icon, StatusBadge, TagRow, type EventStatus } from "./ds";
 import { EventBookmarkButton } from "./event-bookmark-button";
 import { EventDetailModal } from "./event-detail-modal";
 
+/**
+ * The Event Card - the heart of the product, and the ONE card used identically
+ * on every surface (discovery, dashboard, landing, my-events, category pages).
+ * It is never restyled per page and never resized per page.
+ *
+ * Anatomy is locked by the DS (README §4):
+ *   cover 16:9 - ONE status badge (top-left) + Save (top-right), nothing else
+ *   16px body, grouped rhythm - NOT a stretched flex void before the footer:
+ *     Block 1 {date → title → location}  tight
+ *     12px
+ *     Block 2 {tags → going row}
+ *     16px
+ *     footer: 1px Mist hairline + 12px · price LEFT · CTA RIGHT
+ * Equal height across a row comes from the 16:9 cover + the title RESERVING two
+ * lines (min-height 48px), never from `flex:1` on the meta - hence align-self:
+ * start. Every non-title row is exactly ONE line and truncates; `min-w-0` on the
+ * flex children is what stops a long title or tag from forcing the card wider.
+ *
+ * ALL states (locked / booked / waitlist / saved) share this spacing and footer.
+ * They change ONLY the badge, the CTA label, and whether the venue is revealed.
+ */
 export function EventCard({
   event,
-  compact = false,
   bookmarked = false,
   registered = false,
   bookingStatus,
-  showLivePulse = false,
 }: {
   event: EventItem;
-  compact?: boolean;
   bookmarked?: boolean;
   registered?: boolean;
   // The viewer's actual booking state for this event, when known. Lets the
-  // card/modal show "View your booking" (confirmed) vs the waitlist state
-  // accurately instead of guessing from whether the event is full.
+  // card/modal show "You're going" (confirmed) vs the waitlist state accurately
+  // instead of guessing from whether the event is full.
   bookingStatus?: "confirmed" | "waitlisted";
-  // Opt-in (default off so every existing surface is unchanged): adds a small
-  // pulsing dot to the status badge of genuinely Live events. Used by the
-  // homepage party-board bento to make "happening now" read at a glance.
-  showLivePulse?: boolean;
 }) {
   const seatsLeft = Math.max(0, event.capacity - event.attendees);
   const isFull = seatsLeft === 0;
-  const isWaitlistEvent = event.status === "Waitlist" || isFull;
-  // Venue is private until the viewer RSVPs — show only the suburb otherwise
-  // (the precise venue name lives behind the RSVP, same gate as the address +
-  // map on the event detail page).
-  const venueHidden = !registered;
-  const statusLabel = isFull && event.status === "Live" ? "Full" : event.status;
-  const availabilityLabel = isFull
-    ? "Sold out"
-    : seatsLeft <= 3
-      ? `${seatsLeft} spots left`
-      : seatsLeft <= 8
-        ? "Almost full"
-        : `${seatsLeft} seats left`;
-  // Tone reads as a traffic light: peach = open, rose = limited/waitlist/full,
-  // ink = locked. A sold-out "Full" event must never wear the positive peach.
-  const statusTone =
-    isWaitlistEvent
-      ? "bg-[color:var(--rose)] text-[color:var(--surface-deep)]"
-      : event.status === "Locked"
-        ? "bg-[color:var(--ink)] text-[color:var(--champagne)]"
-        : "bg-[color:var(--peach)] text-[color:var(--surface-deep)]";
+  const isConfirmed = registered && bookingStatus !== "waitlisted";
+
+  // Venue privacy: the venue name is revealed only once the viewer has a
+  // confirmed seat. Until then the card shows suburb · distance + a lock glyph.
+  const venueRevealed = isConfirmed;
+
+  // ONE status badge, resolved by priority. Status colour appears NOWHERE else
+  // on the card - not on the CTA, not on a tag, not on the cover.
+  const status: EventStatus | null = isConfirmed
+    ? "going"
+    : isFull
+      ? "waitlist"
+      : seatsLeft <= 3
+        ? "spots"
+        : seatsLeft <= 8
+          ? "almostfull"
+          : event.status === "Featured"
+            ? "trending"
+            : isFreeEvent(event)
+              ? "free"
+              : null;
+
+  const goingCount = event.attendees;
+  const goingFaces = (event.attendeeAvatars ?? []).map((src) => ({ src }));
 
   return (
-    <article className="group relative flex h-full min-w-0 flex-col overflow-hidden rounded-lg border-2 border-[color:var(--line)] bg-[color:var(--champagne)] transition-transform duration-300 hover:-translate-y-1 hard-shadow-sm hover:[box-shadow:8px_8px_0_0_var(--shadow-ink)]">
-      <Link
-        href={`/events/${event.id}`}
-        className={`relative block overflow-hidden border-b-2 border-[color:var(--line)] ${compact ? "h-44" : "h-60"}`}
-      >
-        <Image
-          src={event.image}
-          alt={event.imageAlt}
-          fill
-          sizes="(min-width: 1024px) 32vw, 100vw"
-          className="object-cover transition duration-700 group-hover:scale-105"
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-[color:var(--ink)]/30 via-transparent to-transparent" />
-        <span
-          className={`absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full border-2 border-[color:var(--line)] ${statusTone} px-3 py-1.5 text-[0.68rem] font-bold uppercase tracking-wider hard-shadow-sm`}
-        >
-          {showLivePulse && event.status === "Live" ? (
-            <span className="relative inline-flex size-1.5" aria-hidden>
-              <span className="absolute inline-flex h-full w-full rounded-full bg-[color:var(--surface-deep)] pulse-ring" />
-              <span className="relative inline-flex size-1.5 rounded-full bg-[color:var(--surface-deep)]" />
-            </span>
-          ) : null}
-          {statusLabel}
-        </span>
-        <span className="absolute bottom-3 left-3 rounded-md border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-2 text-[0.72rem] font-black uppercase leading-tight tracking-[0.14em] text-[color:var(--ink)] hard-shadow-sm">
-          {event.date}
-          <span className="block font-mono text-[0.62rem] text-[color:var(--mauve)]">{formatEventTimeRange(event)}</span>
-        </span>
-        <span className="absolute bottom-3 right-3 max-w-[8rem] truncate rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-2.5 py-1.5 text-[0.62rem] font-bold uppercase tracking-wider text-[color:var(--ink)] hard-shadow-sm sm:max-w-none sm:px-3 sm:text-[0.68rem]">
-          {availabilityLabel}
-        </span>
-      </Link>
-      <div className="absolute right-3 top-3 z-10">
-        <EventBookmarkButton eventId={event.id} initiallySaved={bookmarked} compact />
-      </div>
-      <div className="flex flex-1 flex-col p-5">
-        <p className="font-mono break-words text-xs font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
-          {event.suburb} · {event.category} · {event.price}
-        </p>
-        <h3 className="font-display mt-2 line-clamp-2 text-[1.65rem] font-semibold leading-[1.04] tracking-[-0.025em] text-[color:var(--ink)]">
-          <Link href={`/events/${event.id}`} className="hover:underline">
-            {event.title}
-          </Link>
-        </h3>
-        <p className="mt-1 text-sm font-semibold text-[color:var(--mauve)]">
-          {venueHidden ? (
-            <span className="inline-flex items-center gap-1.5 text-[color:var(--ink)]">
-              <svg
-                viewBox="0 0 24 24"
-                className="h-3.5 w-3.5 shrink-0"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden
-              >
-                <rect x="4" y="11" width="16" height="9" rx="2" />
-                <path d="M8 11V8a4 4 0 018 0v3" />
-              </svg>
-              {event.suburb} · RSVP to unlock venue
-            </span>
-          ) : (
-            event.location
-          )}
-        </p>
-
-        <div className="mt-4 flex flex-wrap gap-1.5">
-          {event.tags.slice(0, compact ? 2 : 3).map((tag) => (
-            <Pill key={tag} href={`/events?tag=${encodeURIComponent(tag)}`}>
-              {tag}
-            </Pill>
-          ))}
-        </div>
-        <p className="sr-only">{formatCapacity(event)}</p>
-
-        {event.attendees > 2 && (event.attendeeAvatars?.length ?? 0) > 0 ? (
-          <FaceStack
-            className="mt-4"
-            avatars={event.attendeeAvatars!}
-            count={event.attendees}
+    <article className="flex min-w-0 flex-col self-start overflow-hidden rounded-[var(--radius-xl)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] shadow-[var(--shadow-sm)] transition duration-200 hover:-translate-y-[3px] hover:shadow-[var(--shadow-lg)]">
+      {/* Cover - 16:9 everywhere, so cards in a row are equal height */}
+      <div className="relative aspect-[16/9] w-full shrink-0 overflow-hidden bg-[color:var(--champagne-deep)]">
+        <Link href={`/events/${event.id}`} aria-label={event.title} className="block h-full w-full">
+          <Image
+            src={event.image}
+            alt={event.imageAlt}
+            fill
+            sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+            className="object-cover"
           />
+        </Link>
+        {status ? (
+          <span className="absolute left-3 top-3">
+            <StatusBadge status={status} spotsLeft={seatsLeft} />
+          </span>
         ) : null}
+        <span className="absolute right-3 top-3">
+          <EventBookmarkButton eventId={event.id} initiallySaved={bookmarked} variant="star" />
+        </span>
+      </div>
 
-        <div className="mt-auto pt-5">
+      <div className="flex flex-col p-4">
+        {/* Block 1 - date · title · location, tight */}
+        <div className="min-w-0">
+          <p className="flex min-w-0 items-center gap-1.5 truncate text-[13px] font-semibold text-[color:var(--slate)]">
+            <Icon name="calendar" size={13} stroke={2.1} />
+            {event.date} · {formatEventTimeRange(event)}
+          </p>
+          <h3 className="font-display mt-1 line-clamp-2 min-h-12 min-w-0 text-[length:var(--card-title)] font-semibold leading-6 tracking-[-0.01em] text-[color:var(--ink)]">
+            <Link href={`/events/${event.id}`} className="hover:underline">
+              {event.title}
+            </Link>
+          </h3>
+          <p className="mt-1 flex min-w-0 items-center gap-1.5 truncate text-[13.5px] font-medium text-[color:var(--slate)]">
+            <Icon name="pin" size={13} stroke={2.1} />
+            {venueRevealed ? (
+              <span className="truncate">{event.location}</span>
+            ) : (
+              <>
+                <span className="truncate">
+                  {event.suburb}
+                  {event.distanceKm ? ` · ${event.distanceKm}km` : ""}
+                </span>
+                <Icon
+                  name="lock"
+                  size={12}
+                  stroke={2.2}
+                  className="text-[color:var(--ink-faint)]"
+                  style={{ flex: "none" }}
+                />
+                <span className="sr-only">Venue shown when you RSVP</span>
+              </>
+            )}
+          </p>
+        </div>
+
+        {/* Block 2 - tags, then the going row. The tag row RESERVES its height
+            even when an event has no tags, so cards in a row keep their footers
+            on one line (the DS gets equal height by reserving, never by
+            stretching a flex gap). */}
+        <div className="mt-3 min-w-0">
+          <TagRow tags={event.tags} max={3} reserveHeight />
+          <div className="mt-2">
+            {goingCount >= 3 && goingFaces.length > 0 ? (
+              <AvatarStack people={goingFaces} max={4} size={26} label={`${goingCount} going`} />
+            ) : (
+              <span className="text-[13px] font-medium text-[color:var(--slate)]">Be one of the first</span>
+            )}
+          </div>
+          <p className="sr-only">{formatCapacity(event)}</p>
+        </div>
+
+        {/* Footer - hairline, then price left / CTA right */}
+        <div className="mt-4 flex items-center justify-between gap-2.5 border-t border-[color:var(--mist)] pt-3">
+          <span
+            className={`font-display text-base font-semibold ${
+              isFreeEvent(event) ? "text-[color:var(--sage)]" : "text-[color:var(--ink)]"
+            }`}
+          >
+            {isFreeEvent(event) ? "Free" : event.price}
+          </span>
           <EventDetailModal
             event={event}
             bookmarked={bookmarked}
@@ -148,4 +161,9 @@ export function EventCard({
       </div>
     </article>
   );
+}
+
+function isFreeEvent(event: EventItem) {
+  const p = (event.price ?? "").trim().toLowerCase();
+  return !p || p === "free" || p === "$0";
 }

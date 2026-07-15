@@ -11,7 +11,7 @@ export default function TermsPage() {
       eyebrow="Legal"
       title="Terms of Service"
       lastUpdated="18 June 2026"
-      intro="These Terms of Service ('Terms') govern your access to and use of Click — an event-first social connection platform operated in Sydney, Australia (the 'Platform'). By creating an account, booking an event, or otherwise using Click, you agree to these Terms. If you do not agree, do not use the Platform."
+      intro="These Terms of Service ('Terms') govern your access to and use of Click - an event-first social connection platform operated in Sydney, Australia (the 'Platform'). By creating an account, booking an event, or otherwise using Click, you agree to these Terms. If you do not agree, do not use the Platform."
       sections={[
         {
           heading: "Who we are",
@@ -25,7 +25,7 @@ export default function TermsPage() {
               </p>
               <p>
                 These Terms are governed by the laws of New South Wales, Australia. Click connects
-                people through shared real-world events. We are a technology platform — we are not
+                people through shared real-world events. We are a technology platform - we are not
                 the host, organiser, or insurer of the events listed, except where an event is
                 expressly marked as run by Click.
               </p>
@@ -71,13 +71,13 @@ export default function TermsPage() {
           ),
         },
         {
-          heading: "How Click works — connection by design",
+          heading: "How Click works - connection by design",
           body: (
             <>
               <p>
                 Click has <strong>no direct-messaging inbox</strong>. Nobody can send you unsolicited
                 messages. Connection happens through shared events and mutual interest. After an
-                event you may privately &quot;click&quot; another attendee to signal interest — that
+                event you may privately &quot;click&quot; another attendee to signal interest - that
                 signal stays private and the other person is only ever notified if they click you
                 back (a mutual click). We never reveal one-way interest.
               </p>
@@ -116,7 +116,7 @@ export default function TermsPage() {
           body: (
             <>
               <p>
-                You retain ownership of the content you submit — your profile details, photos,
+                You retain ownership of the content you submit - your profile details, photos,
                 prompts, quiz responses, and event submissions (&quot;Your Content&quot;). You grant
                 Click a worldwide, non-exclusive, royalty-free licence to host, store, reproduce,
                 adapt, and display Your Content for the purpose of operating, improving, and
@@ -153,7 +153,7 @@ export default function TermsPage() {
               </p>
               <p>
                 Where an event supports guest seats, the person who books and pays is responsible for
-                that booking and for any guests they add. Waitlist offers are time-limited — if you
+                that booking and for any guests they add. Waitlist offers are time-limited - if you
                 are offered a freed seat you must accept (and, for paid events, complete payment)
                 within the stated window or the offer lapses and is passed to the next person.
               </p>
@@ -210,7 +210,7 @@ export default function TermsPage() {
           heading: "Third-party services",
           body: (
             <p>
-              Click relies on third-party services to operate — including Stripe (payments and
+              Click relies on third-party services to operate - including Stripe (payments and
               payouts), Supabase (database and file storage), Mapbox and Google Maps (location and
               discovery), Google and Facebook (sign-in), and our email provider. Your use of those
               features may be subject to the relevant provider&apos;s own terms. We are not
@@ -229,8 +229,8 @@ export default function TermsPage() {
               You may stop using Click and request deletion of your account at any time. We may
               suspend or terminate your access if you breach these Terms or our policies, if required
               by law, or to protect the safety of our community. Provisions that by their nature
-              should survive termination — including content licences already granted, payment
-              obligations, disclaimers, and limitation of liability — will survive.
+              should survive termination - including content licences already granted, payment
+              obligations, disclaimers, and limitation of liability - will survive.
             </p>
           ),
         },
@@ -274,7 +274,7 @@ export default function TermsPage() {
             <p>
               To the extent permitted by law, you agree to indemnify Click against losses, claims,
               and reasonable costs arising from your breach of these Terms, your misuse of the
-              Platform, your content, or — if you are a merchant — the events you host.
+              Platform, your content, or - if you are a merchant - the events you host.
             </p>
           ),
         },

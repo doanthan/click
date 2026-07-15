@@ -32,7 +32,7 @@ export function LiveActivityMarquee({ items }: { items: string[] }) {
                 key={`${copy}-${i}`}
                 className="inline-flex items-center gap-2.5 whitespace-nowrap text-sm font-semibold text-[color:var(--ink)]"
               >
-                <span className="text-[color:var(--coral)]" aria-hidden>
+                <span className="text-[color:var(--purple)]" aria-hidden>
                   ✦
                 </span>
                 {item}

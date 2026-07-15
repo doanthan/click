@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { auth } from "@/auth";
+import { Icon } from "@/components/ds";
 import { EventCard } from "@/components/event-card";
 import { categories, categoryFromSlug, categorySlug } from "@/lib/click-data";
 import { getEventsForExplore, getProfileStatus } from "@/lib/event-repository";
@@ -57,56 +58,50 @@ export default async function CategoryPage({
       : undefined;
 
   return (
-    <main className="paper-noise min-h-screen bg-[color:var(--champagne)] text-[color:var(--ink)]">
-      <section className="px-4 py-8 sm:px-6 sm:py-10">
-        <div className="mx-auto max-w-7xl">
-          <Link
-            href="/discover"
-            className="inline-flex items-center gap-1 text-sm font-bold text-[color:var(--mauve)] hover:text-[color:var(--punch)]"
-          >
-            ← Back to discover
-          </Link>
+    <main className="min-h-screen bg-[color:var(--champagne)] pb-24 text-[color:var(--ink)]">
+      <div className="ck-page pt-6">
+        <Link
+          href="/discover"
+          className="font-display inline-flex items-center gap-1 text-[13.5px] font-semibold text-[color:var(--slate)] hover:text-[color:var(--ink)]"
+        >
+          <Icon name="chevL" size={16} stroke={2.2} /> Back to discover
+        </Link>
 
-          <div className="mt-4 flex items-baseline justify-between gap-3">
-            <h1 className="text-4xl font-black text-[color:var(--ink)] sm:text-5xl">
-              {category}
-            </h1>
-            <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
-              {categoryEvents.length} {categoryEvents.length === 1 ? "event" : "events"}
-            </span>
+        <div className="mt-4 flex items-baseline justify-between gap-3">
+          <h1 className="font-display text-[length:var(--text-h1)] leading-tight font-semibold tracking-[-0.02em] text-[color:var(--ink)]">
+            {category}
+          </h1>
+          <span className="shrink-0 text-[13px] font-medium text-[color:var(--slate)]">
+            {categoryEvents.length} {categoryEvents.length === 1 ? "event" : "events"}
+          </span>
+        </div>
+
+        {categoryEvents.length > 0 ? (
+          <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {categoryEvents.map((event) => (
+              <EventCard
+                key={event.id}
+                event={event}
+                bookmarked={bookmarkedSet.has(event.id)}
+                registered={registeredSet.has(event.id)}
+                bookingStatus={bookingStatusFor(event.id)}
+              />
+            ))}
           </div>
-
-          {categoryEvents.length > 0 ? (
-            <div className="mt-8 grid grid-cols-1 gap-x-5 gap-y-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {categoryEvents.map((event) => (
-                <EventCard
-                  key={event.id}
-                  event={event}
-                  compact
-                  bookmarked={bookmarkedSet.has(event.id)}
-                  registered={registeredSet.has(event.id)}
-                  bookingStatus={bookingStatusFor(event.id)}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="mt-8 rounded-2xl border border-[color:var(--line)] bg-[color:var(--cream)] p-8 text-center shadow-sm">
-              <p className="text-3xl font-black leading-none text-[color:var(--ink)]">
-                No {category.toLowerCase()} events yet.
-              </p>
-              <p className="mt-3 text-sm font-bold text-[color:var(--mauve)]">
-                Check back soon, or browse everything on discover.
-              </p>
-              <Link
-                href="/discover"
-                className="mt-5 inline-block rounded-full bg-[color:var(--surface-deep)] px-5 py-3 text-sm font-black text-[color:var(--on-deep)] hover:opacity-90"
-              >
-                Browse all events
+        ) : (
+          <div className="mt-6 rounded-[var(--radius-xl)] bg-[color:var(--lav-bg)] px-6 py-12 text-center">
+            <p className="font-display text-[1.15rem] font-semibold text-[color:var(--ink)]">
+              Nothing here yet.
+            </p>
+            <p className="mt-2 text-sm text-[color:var(--ink-soft)]">Check back soon, or browse everything on Discover.</p>
+            <div className="mt-4 flex justify-center">
+              <Link href="/discover" className="ck-btn ck-btn--sm ck-btn--primary">
+                <span className="ck-btn__label">Browse all events</span>
               </Link>
             </div>
-          )}
-        </div>
-      </section>
+          </div>
+        )}
+      </div>
     </main>
   );
 }

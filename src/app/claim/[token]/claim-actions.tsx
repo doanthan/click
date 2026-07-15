@@ -5,14 +5,14 @@ import { useState } from "react";
 
 type Action = "claim" | "release" | "remove";
 
-const SANS = '"Schibsted Grotesk", system-ui, -apple-system, sans-serif';
+const SANS = "var(--font-click-body), system-ui, -apple-system, sans-serif";
 
 const LABELS: Record<Action, { idle: string; busy: string; doneTitle: string; doneBody: string }> = {
   claim: {
     idle: "Claim my spot",
     busy: "Claiming…",
     doneTitle: "You're in 🎉",
-    doneBody: "Your spot is confirmed — find it in your upcoming events.",
+    doneBody: "Your spot is confirmed - find it in your upcoming events.",
   },
   release: {
     idle: "Hand the spot back",

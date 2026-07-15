@@ -162,7 +162,7 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
               </p>
             ) : null}
             <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--surface-deep)]/90">
-              Update the details below, then resubmit — it goes back into the
+              Update the details below, then resubmit - it goes back into the
               admin review queue and we&apos;ll email you the outcome.
             </p>
             <div className="mt-4">
@@ -224,7 +224,7 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
             <p className="text-base font-bold">
               {confirmedSeats} {confirmedSeats === 1 ? "seat" : "seats"} taken out of{" "}
               {event.capacity}
-              {isFull ? " — full" : ""}
+              {isFull ? " - full" : ""}
               {event.guestSeats > 0 ? (
                 <span className="font-semibold text-[color:var(--mauve)]">
                   {" "}
@@ -282,7 +282,7 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
                 </h2>
                 <p className="mt-2 text-sm font-semibold text-[color:var(--mauve)]">
                   Check guests in by first name. To protect them, we never share a
-                  guest&apos;s email or date of birth — just who&apos;s expected.
+                  guest&apos;s email or date of birth - just who&apos;s expected.
                 </p>
               </div>
               <Pill tone="peach">{event.guestSeats}</Pill>

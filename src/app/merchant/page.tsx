@@ -69,8 +69,10 @@ export default async function MerchantPage({ searchParams }: MerchantPageProps) 
   const chargesEnabled = status.merchantProfile.charges_enabled;
 
   return (
-    <main className="min-h-screen bg-[color:var(--champagne)] px-4 py-8 text-[color:var(--ink)] sm:px-6 lg:py-10">
-      <div className="mx-auto flex max-w-7xl flex-col gap-6 lg:flex-row lg:items-start lg:gap-8">
+    <main className="min-h-screen bg-[color:var(--champagne)] py-8 text-[color:var(--ink)] lg:py-10">
+      {/* The ONE shared container: same max-width and, crucially, the same LEFT
+          EDGE as every other page. */}
+      <div className="ck-page flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-7">
         <MerchantSidebar
           activeTab={tab}
           businessName={businessName}

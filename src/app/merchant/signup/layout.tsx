@@ -75,7 +75,7 @@ export default async function MerchantSignupLayout({
           <span aria-hidden="true" className="mt-0.5 text-base leading-none">ⓘ</span>
           <span>
             We&apos;re piloting in <span className="font-bold">Sydney</span> first. Outside Sydney?
-            Sign up anyway — we&apos;ll add you to the waitlist and email you when we launch in your city.
+            Sign up anyway - we&apos;ll add you to the waitlist and email you when we launch in your city.
           </span>
         </div>
 

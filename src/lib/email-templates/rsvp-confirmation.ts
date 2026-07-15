@@ -1,6 +1,6 @@
-// RSVP confirmed (to attendee) — fires when a user lands `status: 'confirmed'`
+// RSVP confirmed (to attendee) - fires when a user lands `status: 'confirmed'`
 // in `registerForEvent()`. Voice + meta-grid card ported from
-// `emails/rsvp-attendee.html`. Includes a social-signal flourish (a Schibsted
+// `emails/rsvp-attendee.html`. Includes a social-signal flourish (a Poppins
 // Grotesk line under the ticket meta) when present.
 
 import { escapeHtml, eyebrow, heroTitle, paragraph, renderButton, renderEventCard, renderNoteList, renderShell } from "./chrome";
@@ -33,7 +33,7 @@ export function buildRsvpConfirmationEmail(d: RsvpConfirmationData) {
   const text = [
     `Hi ${d.firstName},`,
     `You're confirmed for ${d.eventTitle} on ${d.eventLongDate}, ${d.eventStartTime}–${d.eventEndTime}.`,
-    `${d.eventVenue} — ${d.eventAddress}, ${d.eventCity}.`,
+    `${d.eventVenue} - ${d.eventAddress}, ${d.eventCity}.`,
     `Hosted by ${d.eventHostName}. ${d.eventPriceLabel}. ${d.eventSpotsFilledLabel}.`,
     `Event details: ${d.eventDetailsUrl}`,
     `Add to calendar: ${d.addToCalendarUrl}`,
@@ -72,9 +72,9 @@ export function buildRsvpConfirmationEmail(d: RsvpConfirmationData) {
       </td>
     </tr>
     ${renderNoteList("Good to know", [
-      "Plans change. If you can't make it, cancel as early as you can — it frees the seat for someone on the waitlist.",
+      "Plans change. If you can't make it, cancel as early as you can - it frees the seat for someone on the waitlist.",
       "Coming alone is the norm here, not the exception. Most people you'll meet are doing the same.",
-      "Questions about the event itself reach the host fastest — reply to this email and we'll route it.",
+      "Questions about the event itself reach the host fastest - reply to this email and we'll route it.",
     ])}
   `;
   void TEXT_BODY;

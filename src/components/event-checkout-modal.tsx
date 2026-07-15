@@ -67,7 +67,7 @@ export function EventCheckoutModal({
               Secure checkout
             </span>
             <p className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-              Card details go straight to Stripe — never our servers
+              Card details go straight to Stripe - never our servers
             </p>
           </div>
           <button

@@ -15,11 +15,11 @@ function seatStatusLabel(seat: MyGuestSeat): string {
     case "claimed":
       return "Joined Click";
     case "invited":
-      return "Invited — not joined yet";
+      return "Invited - not joined yet";
     case "released":
-      return "Handed back — held as an unnamed +1";
+      return "Handed back - held as an unnamed +1";
     case "removed":
-      return "Details removed — held as an unnamed +1";
+      return "Details removed - held as an unnamed +1";
     default:
       return "Unnamed +1";
   }
@@ -68,9 +68,9 @@ export function MyGuestSeats({
         setConfirmId(null);
         const r = payload.refund;
         if (r && !r.failed && r.refundCents > 0) {
-          toast.success(`Seat cancelled — ${formatAud(r.refundCents)} refund on the way.`);
+          toast.success(`Seat cancelled - ${formatAud(r.refundCents)} refund on the way.`);
         } else if (r && r.failed) {
-          toast.success("Seat cancelled — your refund is processing.");
+          toast.success("Seat cancelled - your refund is processing.");
         } else {
           toast.success("Seat cancelled.");
         }
@@ -89,7 +89,7 @@ export function MyGuestSeats({
         Your +1s
       </h2>
       <p className="mt-2 text-sm leading-6 text-[color:var(--mauve)]">
-        Seats you bought for friends. You can hand any one back — the refund goes to
+        Seats you bought for friends. You can hand any one back - the refund goes to
         your card per the cancellation policy.
       </p>
       <div className="mt-3 grid gap-2">

@@ -1,4 +1,4 @@
-// Shared email "chrome" — outer shell + reusable building blocks (header,
+// Shared email "chrome" - outer shell + reusable building blocks (header,
 // footer, button, event-card, paragraph). Every per-scenario template builds
 // its body rows and hands them to `renderShell`, which wraps them in the
 // 600px outer table, head metadata, Google Fonts link, mobile @media block,
@@ -6,16 +6,16 @@
 //
 // Email-safe rules baked in:
 //   - 600px outer <table role="presentation">, every cell uses inline styles
-//     (Gmail mobile drops classes inconsistently — inline is source of truth)
+//     (Gmail mobile drops classes inconsistently - inline is source of truth)
 //   - No flex / no grid / no SVG / no JS / no <form>
-//   - Buttons are <a> inside `bgcolor` <td> — never CSS-only background
+//   - Buttons are <a> inside `bgcolor` <td> - never CSS-only background
 //   - Hidden preheader as first body child, padded with zero-width chars
 //   - color-scheme: light so iOS Mail doesn't auto-invert
 //
 // Ported from the static drafts at `emails/account-welcome.html`,
-// `emails/rsvp-attendee.html`, etc., swapping Inter → Manrope to match the
-// in-app body font. Display headings use Schibsted Grotesk (a clean grotesque,
-// no serif) per the Soft Minimal concept — bold and tight, never italic.
+// `emails/rsvp-attendee.html`, etc., body on the system stack to match the
+// in-app body font. Display headings use Poppins (the Click DS face,
+// no serif) per the Soft Minimal concept - bold and tight, never italic.
 
 import {
   CHAMPAGNE,
@@ -54,7 +54,7 @@ function preheaderHtml(text: string): string {
 }
 
 type RenderHeaderOptions = {
-  /** When true, renders "Click for hosts" sub-brand — used on merchant emails. */
+  /** When true, renders "Click for hosts" sub-brand - used on merchant emails. */
   forHosts?: boolean;
   /** Tiny eyebrow text on the right side ("Welcome", "RSVP confirmed", etc.) */
   eyebrow: string;
@@ -124,7 +124,7 @@ export type ParagraphOpts = {
 
 /**
  * Inline-styled <p> so each template doesn't have to repeat the font stack.
- * `text` is treated as already-HTML — callers should escape user content
+ * `text` is treated as already-HTML - callers should escape user content
  * before composing (so `<strong>`/`<em>` interpolation still works).
  */
 export function paragraph(text: string, opts: ParagraphOpts = {}): string {
@@ -146,7 +146,7 @@ export function eyebrow(text: string): string {
 }
 
 /**
- * Hero heading — Schibsted Grotesk, bold + tight, ink. Pass `text` as
+ * Hero heading - Poppins, bold + tight, ink. Pass `text` as
  * already-HTML (interpolation safe) so callers can wrap a word in a coloured
  * `<span>` for coral/purple emphasis without losing escaping on surrounding
  * fragments. (No serif now, so emphasis is colour, not synthetic italic.)
@@ -192,7 +192,7 @@ export type RenderEventCardOpts = {
 };
 
 /**
- * Reusable ticket-stub card with the dashed indigo top border — matches the
+ * Reusable ticket-stub card with the dashed indigo top border - matches the
  * brand vocabulary used in `emails/rsvp-attendee.html`. Mid-card border + meta
  * grid stack on mobile via the `.stack` class set in `renderShell`.
  *
@@ -273,7 +273,7 @@ export function renderEventCard(opts: RenderEventCardOpts): string {
 }
 
 /**
- * "P.S." or "Heads up —" callout, Schibsted Grotesk, ink. Returns one <tr>.
+ * "P.S." or "Heads up" callout, Poppins, ink. Returns one <tr>.
  */
 export function renderCallout(leadHtml: string, bodyText: string): string {
   return `
@@ -356,7 +356,7 @@ export function renderShell(opts: RenderShellOptions): string {
     <title>${escapeHtml(title)}</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
       body { margin:0; padding:0; width:100% !important; background:${CHAMPAGNE}; -webkit-text-size-adjust:100%; -ms-text-size-adjust:100%; }
       table { border-collapse:collapse; mso-table-lspace:0pt; mso-table-rspace:0pt; }

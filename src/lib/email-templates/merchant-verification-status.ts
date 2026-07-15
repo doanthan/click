@@ -1,4 +1,4 @@
-// Merchant verification status change — currently wired at
+// Merchant verification status change - currently wired at
 // `event-repository.ts:1850`. Subject and the lead body line MUST match what
 // `sendWorkflowEmail` already produces for swap-in compatibility. The HTML
 // adds branded chrome, status-specific colour, and a next-step CTA.
@@ -58,7 +58,7 @@ export function buildMerchantVerificationStatusEmail(d: MerchantVerificationStat
     d.status === "approved"
       ? "First event tip: a real photo of last week's session, a sentence on who it's good for, and an accurate price. The card carries itself from there."
       : d.status === "suspended"
-        ? "Suspensions usually trace to a single thing — a card we couldn't read, a refund policy mismatch, an event that didn't run. Reply to this and we'll walk through it."
+        ? "Suspensions usually trace to a single thing - a card we couldn't read, a refund policy mismatch, an event that didn't run. Reply to this and we'll walk through it."
         : "Common reasons: an ABN that doesn't match the business name, a contact email we can't reach you on, or documents we couldn't read. Reply and we'll point you at the exact fix.";
 
   const body = `
@@ -91,7 +91,7 @@ export function buildMerchantVerificationStatusEmail(d: MerchantVerificationStat
     ${
       d.status === "approved"
         ? renderCallout(
-            "One more thing &mdash;",
+            "One more thing -",
             "set your Stripe Connect payouts in the dashboard before you publish a paid event. Free events can go live anytime.",
           )
         : ""
@@ -102,7 +102,7 @@ export function buildMerchantVerificationStatusEmail(d: MerchantVerificationStat
     title: subject,
     preheader:
       d.status === "approved"
-        ? `${d.businessName} is approved — your dashboard is unlocked.`
+        ? `${d.businessName} is approved - your dashboard is unlocked.`
         : d.status === "suspended"
           ? `${d.businessName} has been suspended. Your events are hidden until an admin reinstates the account.`
           : `${d.businessName} needs another review. Open your dashboard for the details.`,

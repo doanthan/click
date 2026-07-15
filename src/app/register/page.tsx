@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { AuthedRedirect } from "@/components/authed-redirect";
+import { AuthShell } from "@/components/auth-ui";
 import { RegisterForm } from "@/components/register-form";
 
 export const metadata = {
@@ -32,7 +33,7 @@ export default async function RegisterPage({ searchParams }: RegisterPageProps) 
   const params = await searchParams;
   const callbackUrl = safeCallbackUrl(params?.callbackUrl);
 
-  // Already signed in? Skip the signup form entirely — route through
+  // Already signed in? Skip the signup form entirely - route through
   // /post-login like the /login page does, so an authed visit never dead-ends
   // on an auth form.
   const session = await auth();
@@ -49,87 +50,25 @@ export default async function RegisterPage({ searchParams }: RegisterPageProps) 
   const metaConfigured = !!(process.env.AUTH_FACEBOOK_ID && process.env.AUTH_FACEBOOK_SECRET);
 
   return (
-    <main className="paper-noise relative min-h-screen overflow-hidden px-4 py-12 text-[color:var(--ink)] sm:px-6">
+    <AuthShell
+      title="Create your account"
+      sub="One step to real-life events near you."
+      footer={
+        <p className="text-center text-sm text-[color:var(--slate)]">
+          Already on Click?{" "}
+          <Link href="/login" className="font-semibold text-[color:var(--purple)] hover:underline">
+            Log in instead
+          </Link>
+        </p>
+      }
+    >
       <AuthedRedirect />
-
-      <section className="relative z-10 mx-auto grid max-w-7xl gap-10 lg:grid-cols-[0.85fr_1.15fr] lg:items-center">
-        <div className="relative">
-          <span className="sticker sticker--peach tilt-l-2 inline-flex">
-            <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
-            Click sign up · new here
-          </span>
-
-          <h1 className="font-display mt-6 text-5xl font-bold leading-[0.94] tracking-[-0.025em] text-[color:var(--ink)] sm:text-7xl">
-            Make your{" "}
-            <span className="text-[color:var(--coral)]">first Click</span>{" "}
-            in 30 seconds.
-          </h1>
-
-          <p className="mt-6 max-w-xl text-base font-medium leading-7 text-[color:var(--mauve)] sm:text-lg">
-            Tell us your name and continue with Google, Facebook, or Email.
-            We&apos;ll set up what you&apos;re here for and where you are in the
-            next step.
-          </p>
-
-          <ul className="mt-8 grid gap-3 text-sm font-semibold text-[color:var(--mauve)]">
-            <li className="flex items-start gap-3">
-              <span className="mt-1 grid size-6 shrink-0 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] text-xs font-bold text-[color:var(--surface-deep)]">
-                ✓
-              </span>
-              Location stays on your device unless you finish onboarding.
-            </li>
-            <li className="flex items-start gap-3">
-              <span className="mt-1 grid size-6 shrink-0 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] text-xs font-bold text-[color:var(--surface-deep)]">
-                ✓
-              </span>
-              Private Clicks stay private until there is mutual interest.
-            </li>
-            <li className="flex items-start gap-3">
-              <span className="mt-1 grid size-6 shrink-0 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] text-xs font-bold text-[color:var(--surface-deep)]">
-                ✓
-              </span>
-              You can edit every detail later from your dashboard.
-            </li>
-          </ul>
-
-          <p className="font-script mt-10 text-3xl text-[color:var(--rose)]">
-            welcome in ✷
-          </p>
-        </div>
-
-        <div className="relative rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow">
-          <div className="flex items-center justify-between gap-3 border-b-2 border-[color:var(--line)] bg-[color:var(--cream)] px-5 py-3">
-            <div className="flex items-center gap-2">
-              <span className="size-3 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)]" />
-              <span className="size-3 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--punch)]" />
-              <span className="size-3 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)]" />
-            </div>
-            <span className="font-mono hidden text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)] sm:block">
-              ✷ new account
-            </span>
-          </div>
-
-          <RegisterForm
-            callbackUrl={callbackUrl}
-            errorMessage={errorMessage}
-            googleConfigured={googleConfigured}
-            metaConfigured={metaConfigured}
-          />
-
-          <div className="border-t-2 border-[color:var(--line)] bg-[color:var(--cream)] px-6 py-4 sm:px-7">
-            <p className="text-sm font-medium text-[color:var(--mauve)]">
-              Already on Click?{" "}
-              <Link
-                href="/login"
-                className="font-bold text-[color:var(--ink)] underline decoration-2 underline-offset-4 hover:text-[color:var(--rose)]"
-              >
-                Log in instead
-              </Link>
-              .
-            </p>
-          </div>
-        </div>
-      </section>
-    </main>
+      <RegisterForm
+        callbackUrl={callbackUrl}
+        errorMessage={errorMessage}
+        googleConfigured={googleConfigured}
+        metaConfigured={metaConfigured}
+      />
+    </AuthShell>
   );
 }

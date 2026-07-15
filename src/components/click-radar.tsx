@@ -1,62 +1,63 @@
 import Link from "next/link";
 import type { EventItem } from "@/lib/click-data";
+import { Icon } from "./ds";
 
-// Click Radar surfaces EVENTS the viewer is likely to click with — RSVP'ing is
-// the on-ramp to meeting people (you can only Click someone after a shared
-// event), so the radar points at events, not people. Per 04_MATCHING_ALGORITHM_V2.md
-// §5.2 (`event_radar`), the suggestions are the personalised event candidates.
+/**
+ * Click Radar - a compact social-proof BAR, never a strip of event cards and
+ * never a dark block. One to three light, hairline-separated rows; each is an
+ * anonymous AGGREGATE line ("3 going also like hiking") tied to an event, and
+ * taps through to that event.
+ *
+ * Counts only - never names, never photos, and never below a floor of 3, so a
+ * line can't identify anyone. The same bar renders on the dashboard and on the
+ * click-with-someone page.
+ */
 export function ClickRadar({
   events,
   fomoBySlug = {},
 }: {
   events: EventItem[];
-  // Optional per-event FOMO signal (e.g. "2 going also like Hiking"), keyed by
-  // event id/slug. Surfaced under each event when present.
+  // Per-event aggregate signal (e.g. "2 going also like hiking"), keyed by event
+  // id. When absent, the row falls back to an honest "trending" line.
   fomoBySlug?: Record<string, string>;
 }) {
-  const top = events.slice(0, 4);
+  const rows = events.slice(0, 3);
+
+  if (rows.length === 0) {
+    return (
+      <div className="overflow-hidden rounded-[var(--radius-xl)] border border-[color:var(--line-soft)] bg-[color:var(--paper)]">
+        <div className="flex items-center gap-3.5 px-4 py-4">
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[color:var(--lavender-100)] text-[color:var(--purple)]">
+            <Icon name="trend" size={16} />
+          </span>
+          <p className="text-sm leading-snug text-[color:var(--ink-soft)]">
+            As you go to events, your radar sharpens.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <aside className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--ink)] p-5 text-[color:var(--on-deep)] hard-shadow">
-      <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--peach)]">
-        Click Radar
-      </span>
-      <h3 className="font-display mt-3 text-2xl font-semibold leading-tight tracking-[-0.02em]">
-        Events on your radar.
-      </h3>
-      <p className="mt-2 text-sm font-medium leading-6 opacity-80">
-        Picked from your interests and intent. RSVP — that&apos;s how you meet the
-        people you&apos;ll click with.
-      </p>
-      {top.length > 0 ? (
-        <ul className="mt-5 space-y-3">
-          {top.map((event) => (
-            <li
-              key={event.id}
-              className="rounded-2xl border-2 border-[color:var(--peach)] bg-[color:var(--surface-deep)] p-3"
-            >
-              <Link
-                href={`/events/${event.id}`}
-                className="block text-sm font-bold text-[color:var(--on-deep)] hover:text-[color:var(--peach)]"
-              >
-                {event.title}
-              </Link>
-              <p className="mt-1 text-xs font-medium text-[color:var(--peach)]">
-                {event.date}
-                {event.suburb ? ` · ${event.suburb}` : ""}
-              </p>
-              {fomoBySlug[event.id] ? (
-                <p className="mt-2 inline-flex rounded-full border-2 border-[color:var(--peach)] bg-[color:var(--ink)] px-2 py-0.5 text-[0.65rem] font-bold text-[color:var(--peach)]">
-                  ✷ {fomoBySlug[event.id]}
-                </p>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="mt-5 rounded-2xl border-2 border-dashed border-[color:var(--peach)] p-3 text-xs font-medium opacity-80">
-          Add a few interests in onboarding to light up your radar.
-        </p>
-      )}
-    </aside>
+    <div className="overflow-hidden rounded-[var(--radius-xl)] border border-[color:var(--line-soft)] bg-[color:var(--paper)]">
+      {rows.map((event, i) => (
+        <Link
+          key={event.id}
+          href={`/events/${event.id}`}
+          className={`flex items-center gap-3.5 px-4 py-4 transition-colors hover:bg-[color:var(--lavender-100)] ${
+            i > 0 ? "border-t border-[color:var(--line-soft)]" : ""
+          }`}
+        >
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[color:var(--lavender-100)] text-[color:var(--purple)]">
+            <Icon name={fomoBySlug[event.id] ? "users" : "trend"} size={16} />
+          </span>
+          <span className="min-w-0 flex-1 text-sm leading-snug text-[color:var(--ink-soft)]">
+            {fomoBySlug[event.id] ?? "Trending in Sydney"}{" "}
+            <span className="font-semibold text-[color:var(--ink)]">{event.title}</span>
+          </span>
+          <Icon name="chevR" size={16} stroke={2} className="text-[color:var(--slate)]" />
+        </Link>
+      ))}
+    </div>
   );
 }

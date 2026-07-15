@@ -7,7 +7,7 @@ export const metadata = {
 };
 
 // ---------------------------------------------------------------------------
-// Static capacity-planning content. No DB reads — numbers and diagrams live
+// Static capacity-planning content. No DB reads - numbers and diagrams live
 // here and are updated by editing this file. Mirrors the page conventions in
 // src/app/categories/page.tsx.
 // ---------------------------------------------------------------------------
@@ -59,15 +59,15 @@ const walls = [
     eyebrow: "Wall #1 · hits first",
     title: "Serverless connection fan-out",
     body:
-      "We already point DATABASE_URL at Supabase's transaction-mode pooler (PgBouncer, port 6543), so the Postgres-side connections are multiplexed. The remaining limit is the client side: src/lib/postgres.ts opens max: 5 per serverless instance, and Vercel fans out to many instances — enough cold instances and you still saturate the pooler's client slots.",
-    fix: "Cap serverless concurrency and right-size the per-instance max against the pooler's client limit. The pooler itself is already in place — this is tuning, not a rearchitecture.",
+      "We already point DATABASE_URL at Supabase's transaction-mode pooler (PgBouncer, port 6543), so the Postgres-side connections are multiplexed. The remaining limit is the client side: src/lib/postgres.ts opens max: 5 per serverless instance, and Vercel fans out to many instances - enough cold instances and you still saturate the pooler's client slots.",
+    fix: "Cap serverless concurrency and right-size the per-instance max against the pooler's client limit. The pooler itself is already in place - this is tuning, not a rearchitecture.",
     accent: "rose" as const,
   },
   {
     eyebrow: "Wall #2",
     title: "No read caching",
     body:
-      "getEventsForExplore and getEventCategories re-aggregate every request — count + array_agg over events × tags, with an unfiltered tags join. Every page view pays full freight.",
+      "getEventsForExplore and getEventCategories re-aggregate every request - count + array_agg over events × tags, with an unfiltered tags join. Every page view pays full freight.",
     fix: "Cache the explore/categories aggregations (unstable_cache or Vercel KV, ~5–10 min TTL), or build a materialized view refreshed by the hourly cron.",
     accent: "peach" as const,
   },
@@ -99,7 +99,7 @@ const walls = [
     eyebrow: "Wall #6 · scales with content, not load",
     title: "Double-metered image pipeline",
     body:
-      "Every event + avatar is an image, served Supabase Storage → Vercel Image Optimization → browser. That's two metered layers: Supabase egress (~$0.09/GB past the cap) and Vercel per-transform billing ($5/1k source images). The optimizer is largely redundant — avatar-storage.ts and event-image-storage.ts already pre-size with sharp (512² / 1600²), so we pay to re-optimize what's already optimized.",
+      "Every event + avatar is an image, served Supabase Storage → Vercel Image Optimization → browser. That's two metered layers: Supabase egress (~$0.09/GB past the cap) and Vercel per-transform billing ($5/1k source images). The optimizer is largely redundant - avatar-storage.ts and event-image-storage.ts already pre-size with sharp (512² / 1600²), so we pay to re-optimize what's already optimized.",
     fix: "Move public media to Cloudflare R2 (zero egress) behind the Cloudflare CDN, serve the pre-sized objects directly, and set unoptimized on those <Image>s to drop the Vercel transform bill to ~$0. The helpers already hide the backend, so the swap is contained.",
     accent: "peach" as const,
   },
@@ -140,7 +140,7 @@ const tiers = [
   },
 ];
 
-// Per-tier load — the numbers each tier carries. Columns mirror the cost
+// Per-tier load - the numbers each tier carries. Columns mirror the cost
 // tiers (Tier 0 / Tier 1 / Tier 2+) so the two tables read as a pair.
 const tierNumbers = [
   { metric: "Merchants (event hosts)", t0: "1–10", t1: "100", t2: "~1,000" },
@@ -155,7 +155,7 @@ const tierNumbers = [
 
 // Multi-region rollout.
 const regions = [
-  { city: "Sydney", role: "Write primary", code: "ap-southeast-2 · syd1", note: "Product is Sydney-first — home the primary here" },
+  { city: "Sydney", role: "Write primary", code: "ap-southeast-2 · syd1", note: "Product is Sydney-first - home the primary here" },
   { city: "Saigon", role: "Read replica", code: "ap-southeast-1 (Singapore)", note: "Nearest low-latency region to Vietnam" },
   { city: "London", role: "Read replica", code: "eu-west-2 · lhr1", note: "Serves European reads" },
 ];
@@ -164,7 +164,7 @@ const phases = [
   {
     phase: "Phase 1",
     title: "Stay single-region, get fast",
-    body: "Ship the pooler and read cache. This alone covers the 100 / 2000 target — no replicas yet.",
+    body: "Ship the pooler and read cache. This alone covers the 100 / 2000 target - no replicas yet.",
   },
   {
     phase: "Phase 2",
@@ -178,7 +178,7 @@ const phases = [
   },
 ];
 
-// Monthly infra cost per tier (USD, early 2026 — planning ranges, not quotes).
+// Monthly infra cost per tier (USD, early 2026 - planning ranges, not quotes).
 // Stripe is excluded here: it's per-transaction, modelled as a take-rate below.
 const costTiers = [
   {
@@ -192,7 +192,7 @@ const costTiers = [
       { svc: "Mapbox", plan: "Free tier", cost: "$0" },
       { svc: "Stripe", plan: "Pay-as-you-go", cost: "per-txn" },
     ],
-    caveat: "Free Supabase pauses after 7 days idle, no daily backups. Vercel Hobby bans commercial use — you're off it the moment you take real payments.",
+    caveat: "Free Supabase pauses after 7 days idle, no daily backups. Vercel Hobby bans commercial use - you're off it the moment you take real payments.",
     accent: "mauve" as const,
   },
   {
@@ -206,7 +206,7 @@ const costTiers = [
       { svc: "Media", plan: "Storage egress + Vercel image transforms", cost: "$20–150" },
       { svc: "Mapbox", plan: "Pay-as-you-go", cost: "$0–250" },
     ],
-    caveat: "The pooler is already on Pro (Wall #1). Two swing factors: Mapbox (map loads + search sessions), and the double-metered image pipeline (Wall #6) — moving public media to R2 + bypassing Vercel optimization collapses that media line to ~$1–10.",
+    caveat: "The pooler is already on Pro (Wall #1). Two swing factors: Mapbox (map loads + search sessions), and the double-metered image pipeline (Wall #6) - moving public media to R2 + bypassing Vercel optimization collapses that media line to ~$1–10.",
     accent: "rose" as const,
   },
   {
@@ -220,7 +220,7 @@ const costTiers = [
       { svc: "Media", plan: "R2 (zero egress) + Cloudflare CDN", cost: "$5–30" },
       { svc: "Mapbox", plan: "Scaled traffic", cost: "$250–1k+" },
     ],
-    caveat: "Each read replica is billed as its own compute instance, sized to the primary. The costly jump is Vercel Enterprise for multi-region functions — not the replicas. Note media barely moves once it's on R2: zero egress means image bandwidth no longer scales the bill.",
+    caveat: "Each read replica is billed as its own compute instance, sized to the primary. The costly jump is Vercel Enterprise for multi-region functions - not the replicas. Note media barely moves once it's on R2: zero egress means image bandwidth no longer scales the bill.",
     accent: "peach" as const,
   },
 ];
@@ -228,19 +228,19 @@ const costTiers = [
 // The two cost axes that don't behave like fixed infra.
 const costAxes = [
   {
-    title: "Mapbox — your biggest variable",
+    title: "Mapbox - your biggest variable",
     body:
-      "Two metered APIs: map loads (GL JS) free to 50k/mo then ~$5/1k, and search sessions free to ~100k/mo. 2,000 daily sessions each loading the /discover map = ~60k loads/mo — already over the free tier. Mitigate: lazy-mount the map, use static map images on cards, and debounce autocomplete to consolidate sessions.",
+      "Two metered APIs: map loads (GL JS) free to 50k/mo then ~$5/1k, and search sessions free to ~100k/mo. 2,000 daily sessions each loading the /discover map = ~60k loads/mo - already over the free tier. Mitigate: lazy-mount the map, use static map images on cards, and debounce autocomplete to consolidate sessions.",
   },
   {
-    title: "Stripe — scales with GMV, not load",
+    title: "Stripe - scales with GMV, not load",
     body:
       "No base fee. ~1.75% + A$0.30 domestic (2.9%+ international cards). Connect adds ~0.25% + payout fees and ~$2/active connected account. Model it as a ~2–3.5% take-rate out of transaction revenue, not fixed overhead.",
   },
   {
-    title: "Images — the double-metered line (fixable)",
+    title: "Images - the double-metered line (fixable)",
     body:
-      "Public media is served Supabase Storage → Vercel Image Optimization → browser, so it's billed twice: Supabase egress (~$0.09/GB past the cap) and Vercel per-transform ($5/1k source images). For an all-unique-images marketplace this grows with content, not traffic, and can rival the DB bill. We already pre-size with sharp, so the fix is cheap: move media to Cloudflare R2 (storage $0.015/GB, zero egress) behind the Cloudflare CDN and serve pre-sized objects directly — the helpers already abstract the backend. The app was on R2 before, so the surface is known.",
+      "Public media is served Supabase Storage → Vercel Image Optimization → browser, so it's billed twice: Supabase egress (~$0.09/GB past the cap) and Vercel per-transform ($5/1k source images). For an all-unique-images marketplace this grows with content, not traffic, and can rival the DB bill. We already pre-size with sharp, so the fix is cheap: move media to Cloudflare R2 (storage $0.015/GB, zero egress) behind the Cloudflare CDN and serve pre-sized objects directly - the helpers already abstract the backend. The app was on R2 before, so the surface is known.",
   },
 ];
 
@@ -272,7 +272,7 @@ export default function ScalePage() {
           </h1>
           <p className="mt-6 max-w-3xl text-base font-medium leading-7 text-[color:var(--mauve)] sm:text-lg">
             A look at the real stack at <strong>100 merchants</strong> and{" "}
-            <strong>2000 browsers</strong> — where it bends, what to fix in which
+            <strong>2000 browsers</strong> - where it bends, what to fix in which
             order, and the road to running in Saigon, Sydney, and London. Merchant ={" "}
             event host. Browser = a visitor session generating clicks.
           </p>
@@ -334,7 +334,7 @@ export default function ScalePage() {
           <SectionIntro
             eyebrow="The workload"
             title="100 merchants, 2000 browsers."
-            body="Translated into load: reads dominate, click writes are modest, and the heaviest table is user_clicks. None of this is a rewrite — it's a connection-pooling and caching problem."
+            body="Translated into load: reads dominate, click writes are modest, and the heaviest table is user_clicks. None of this is a rewrite - it's a connection-pooling and caching problem."
           />
 
           <div className="mt-10 overflow-hidden rounded-2xl border-2 border-[color:var(--line)] hard-shadow-sm">
@@ -362,7 +362,7 @@ export default function ScalePage() {
           <SectionIntro
             eyebrow="Bottlenecks"
             title="The walls, in order."
-            body="These are the limits in the real code, ranked by which one bites first. Each has a one-line fix — clear them top to bottom."
+            body="These are the limits in the real code, ranked by which one bites first. Each has a one-line fix - clear them top to bottom."
           />
 
           <div className="mt-10 grid gap-5 lg:grid-cols-2">
@@ -458,13 +458,13 @@ export default function ScalePage() {
         </div>
       </section>
 
-      {/* By the numbers — per-tier load */}
+      {/* By the numbers - per-tier load */}
       <section className="border-t-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-16 sm:px-6">
         <div className="mx-auto max-w-6xl">
           <SectionIntro
             eyebrow="By the numbers"
             title="What each tier carries."
-            body="The same three tiers as the bill, but in load instead of dollars — merchants, events, traffic, and where the database sits. Tier 1 is the asked-for target; Tier 2+ is roughly 10× beyond it."
+            body="The same three tiers as the bill, but in load instead of dollars - merchants, events, traffic, and where the database sits. Tier 1 is the asked-for target; Tier 2+ is roughly 10× beyond it."
           />
 
           {/* Header row */}
@@ -529,7 +529,7 @@ export default function ScalePage() {
           <SectionIntro
             eyebrow="Saigon · Sydney · London"
             title="One primary, replicas near readers."
-            body="Recommended path: keep a single write primary in Sydney and add read replicas where the readers are. Reads go to the nearest replica; writes always go to the primary. This avoids the latency and migration cost of a true multi-primary database — defer Neon / CockroachDB / Yugabyte until cross-region write latency genuinely hurts."
+            body="Recommended path: keep a single write primary in Sydney and add read replicas where the readers are. Reads go to the nearest replica; writes always go to the primary. This avoids the latency and migration cost of a true multi-primary database - defer Neon / CockroachDB / Yugabyte until cross-region write latency genuinely hurts."
           />
 
           <div className="mt-10 grid gap-5 sm:grid-cols-3">
@@ -587,7 +587,7 @@ export default function ScalePage() {
           <SectionIntro
             eyebrow="What it costs"
             title="The bill, per tier."
-            body="Monthly infra in USD (early 2026 — planning ranges, not quotes). Stripe is excluded here because it's per-transaction; it and Mapbox are the two costs that don't behave like fixed infra, called out below."
+            body="Monthly infra in USD (early 2026 - planning ranges, not quotes). Stripe is excluded here because it's per-transaction; it and Mapbox are the two costs that don't behave like fixed infra, called out below."
           />
 
           <div className="mt-10 grid gap-5 lg:grid-cols-3">
@@ -670,7 +670,7 @@ export default function ScalePage() {
           <SectionIntro
             eyebrow="Do this next"
             title="The short list."
-            body="In priority order. The first four clear the way to the 100 / 2000 target — the R2 move also cuts the fastest-growing cost line; the rest carry you to multi-region."
+            body="In priority order. The first four clear the way to the 100 / 2000 target - the R2 move also cuts the fastest-growing cost line; the rest carry you to multi-region."
           />
 
           <ol className="mt-10 grid gap-3">

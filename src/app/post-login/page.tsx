@@ -11,7 +11,7 @@ const KNOWN_PORTAL_ROOTS = ["/dashboard", "/admin", "/merchant", "/onboarding"];
 function safeNext(value: string | undefined | null) {
   if (!value) return null;
   if (!value.startsWith("/") || value.startsWith("//")) return null;
-  // The marketing home page is never a meaningful post-login destination —
+  // The marketing home page is never a meaningful post-login destination -
   // logging in from "/" should hand off to the role dispatch below (dashboard /
   // merchant / admin) rather than bouncing the user straight back to home.
   if (value === "/") return null;
@@ -45,7 +45,7 @@ export default async function PostLoginPage({ searchParams }: PostLoginPageProps
   }
 
   // Logins that started on the merchant surface (/merchant/login passes
-  // ?portal=merchant) land on the host portal — /merchant itself gates
+  // ?portal=merchant) land on the host portal - /merchant itself gates
   // pending/non-merchants onto the right holding page.
   if (params?.portal === "merchant") {
     redirect("/merchant");
@@ -53,8 +53,8 @@ export default async function PostLoginPage({ searchParams }: PostLoginPageProps
 
   const status = await getProfileStatus(session);
 
-  // Role-aware default (bug board #138): a user whose MAIN role is host — i.e.
-  // they hold an approved merchant profile — defaults straight to the host
+  // Role-aware default (bug board #138): a user whose MAIN role is host - i.e.
+  // they hold an approved merchant profile - defaults straight to the host
   // dashboard. /merchant runs its own onboarding/payout gating from there, and
   // dual-role users can still switch to the attendee side from the header menu.
   // Everyone else (attendees, and pending/rejected merchants who aren't active

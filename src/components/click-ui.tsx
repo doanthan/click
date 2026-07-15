@@ -47,7 +47,7 @@ type PageHeroProps = {
 };
 
 export function PageHero({ eyebrow, title, body, children }: PageHeroProps) {
-  // Tight by default — most pages just need a labelled title above content,
+  // Tight by default - most pages just need a labelled title above content,
   // not a full-screen marquee. Side content (children) gets equal weight on
   // wide screens; without it, the text column stays narrow and readable.
   return (
@@ -177,9 +177,9 @@ export function LinkButton({
   children: ReactNode;
   variant?: "primary" | "secondary" | "light" | "ink";
 }) {
-  // Soft Minimal button voice: solid CORAL primary (the concept's hero CTA),
-  // ghost hairline secondary, deep-ink "ink", and a white "light" pill that
-  // reads cleanly on the deep aubergine bands. Sentence-case, soft lift.
+  // Click DS button voice: flat Deep-Purple primary (never a gradient or
+  // glow), ghost hairline secondary, deep-ink "ink", and a white "light"
+  // button for the deep aubergine bands. Radius 12 per the DS - never a pill.
   const className =
     variant === "secondary"
       ? "border border-[color:var(--line-strong)] bg-transparent text-[color:var(--ink)] hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)] hover:border-transparent"
@@ -187,12 +187,12 @@ export function LinkButton({
         ? "bg-[color:var(--paper)] text-[color:var(--ink)] hover:bg-white shadow-[0_1px_2px_rgba(28,24,48,0.10),0_16px_30px_-16px_rgba(28,24,48,0.5)]"
         : variant === "ink"
           ? "bg-[color:var(--surface-deep)] text-[color:var(--on-deep)] hover:bg-[color:var(--ink-deep)] shadow-[0_1px_2px_rgba(28,24,48,0.10)]"
-          : "bg-[color:var(--coral)] text-[color:var(--surface-deep)] hover:bg-[color:var(--coral-deep)] shadow-[0_1px_2px_rgba(28,24,48,0.10),0_16px_30px_-16px_rgba(232,103,76,0.55)]";
+          : "bg-[color:var(--purple)] text-[color:var(--champagne)] hover:bg-[color:var(--purple-hover)] active:bg-[color:var(--purple-press)] shadow-[0_1px_2px_rgba(28,24,48,0.10),0_16px_30px_-16px_rgba(59,47,129,0.45)]";
 
   return (
     <Link
       href={href}
-      className={`group/btn inline-flex min-h-12 items-center gap-2 rounded-full px-6 text-[0.95rem] font-semibold tracking-[-0.005em] transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:brightness-[0.97] ${className}`}
+      className={`group/btn inline-flex min-h-12 items-center gap-2 rounded-xl px-6 text-[0.95rem] font-semibold tracking-[-0.005em] transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:brightness-[0.97] ${className}`}
     >
       {children}
       <span aria-hidden className="inline-block text-base transition-transform duration-300 group-hover/btn:translate-x-1">→</span>

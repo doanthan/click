@@ -57,7 +57,7 @@ export default async function OnboardingPayoutsPage({ searchParams }: PageProps)
         </h2>
         <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--mauve)]">
           Paid events run through Stripe. Connect your business and bank details
-          once — Stripe collects them securely (we never see your bank
+          once - Stripe collects them securely (we never see your bank
           numbers), and your event earnings pay out automatically.
         </p>
 
@@ -67,14 +67,14 @@ export default async function OnboardingPayoutsPage({ searchParams }: PageProps)
               Payments aren&apos;t enabled on this environment yet.
             </p>
             <p className="mt-1 text-sm font-medium leading-6 text-[color:var(--mauve)]">
-              You can keep going and run free events — connect payouts later from
+              You can keep going and run free events - connect payouts later from
               your dashboard.
             </p>
           </div>
         ) : payoutsEnabled ? (
           <div className="mt-6 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--peach)] p-4">
             <p className="text-sm font-bold text-[color:var(--surface-deep)]">
-              ✓ Payouts connected — you&apos;re ready to take payments.
+              ✓ Payouts connected - you&apos;re ready to take payments.
             </p>
           </div>
         ) : connected ? (
@@ -90,7 +90,7 @@ export default async function OnboardingPayoutsPage({ searchParams }: PageProps)
                 }`}
               >
                 {detailsSubmitted
-                  ? "✓ Details submitted — Stripe is verifying."
+                  ? "✓ Details submitted - Stripe is verifying."
                   : "You started setup but a few details are still needed."}
               </p>
               <p
@@ -99,7 +99,7 @@ export default async function OnboardingPayoutsPage({ searchParams }: PageProps)
                 }`}
               >
                 {detailsSubmitted
-                  ? "Nothing more to do on Stripe — this usually clears in a few minutes and we'll flip payouts on automatically. You're good to continue."
+                  ? "Nothing more to do on Stripe - this usually clears in a few minutes and we'll flip payouts on automatically. You're good to continue."
                   : "Pick up where you left off to finish connecting your bank."}
               </p>
             </div>
@@ -116,7 +116,7 @@ export default async function OnboardingPayoutsPage({ searchParams }: PageProps)
             <ul className="grid gap-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
               <li>• Business + bank details, collected securely by Stripe</li>
               <li>• Automatic payouts after each event wraps</li>
-              <li>• Takes about 5 minutes — you can skip and do it later</li>
+              <li>• Takes about 5 minutes - you can skip and do it later</li>
             </ul>
             <ConnectPayoutsButton />
           </div>

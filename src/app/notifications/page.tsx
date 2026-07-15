@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
-import { Pill } from "@/components/click-ui";
+import { Icon } from "@/components/ds";
 import { getNotificationsForSession } from "@/lib/event-repository";
 import { markAllReadAction, markReadAction } from "./actions";
 
@@ -28,67 +28,58 @@ export default async function NotificationsPage() {
   const read = notifications.filter((n) => n.readAt);
 
   return (
-    <main className="paper-noise min-h-screen bg-[color:var(--champagne)] px-4 py-12 text-[color:var(--ink)] sm:px-6">
-      <section className="mx-auto max-w-3xl">
-        <div className="flex flex-wrap items-end justify-between gap-4">
+    <main className="min-h-screen bg-[color:var(--champagne)] pb-24 text-[color:var(--ink)]">
+      <div className="ck-page max-w-[720px] pt-6">
+        <div className="flex flex-wrap items-baseline justify-between gap-4">
           <div>
-            <span className="sticker sticker--peach tilt-l-2 inline-flex">
-              <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
-              Inbox
-            </span>
-            <h1 className="mt-6 font-display text-5xl font-bold leading-[0.96] tracking-[-0.025em] sm:text-6xl">
+            <h1 className="font-display text-[length:var(--text-h1)] leading-tight font-semibold tracking-[-0.02em] text-[color:var(--ink)]">
               Notifications
             </h1>
-            <p className="mt-3 text-base font-medium leading-7 text-[color:var(--mauve)]">
-              Mutual Clicks, event reminders, and admin updates.
+            <p className="mt-1.5 text-sm font-medium text-[color:var(--slate)]">
+              Mutual clicks, event reminders, and updates - a calm, positive-only feed.
             </p>
           </div>
           {unread.length > 0 ? (
             <form action={markAllReadAction}>
               <button
                 type="submit"
-                className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-2 text-xs font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)]"
+                className="font-display text-[13px] font-semibold text-[color:var(--purple)] hover:underline"
               >
-                Mark all read
+                Mark all as read
               </button>
             </form>
           ) : null}
         </div>
 
-        <div className="mt-8">
-          <h2 className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
-            Unread <Pill tone="rose">{unread.length}</Pill>
-          </h2>
-          {unread.length > 0 ? (
-            <ul className="mt-4 space-y-3">
-              {unread.map((n) => (
-                <NotificationItem key={n.id} {...n} unread />
-              ))}
-            </ul>
-          ) : (
-            <p className="mt-4 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-5 text-sm font-medium leading-6 text-[color:var(--mauve)]">
-              All caught up.
-            </p>
-          )}
-        </div>
+        {notifications.length === 0 ? (
+          <div className="mt-8 rounded-[var(--radius-xl)] bg-[color:var(--lav-bg)] px-6 py-12 text-center">
+            <span className="mx-auto flex size-11 items-center justify-center rounded-full bg-[color:var(--lavender-200)] text-[color:var(--purple)]">
+              <Icon name="bell" size={20} />
+            </span>
+            <p className="mt-3 text-sm text-[color:var(--ink-soft)]">You&apos;re all caught up.</p>
+          </div>
+        ) : (
+          <div className="mt-7 overflow-hidden rounded-[var(--radius-xl)] border border-[color:var(--line-soft)] bg-[color:var(--paper)]">
+            {unread.length > 0 ? (
+              <p className="px-4 pt-4 pb-2 text-[11.5px] font-bold tracking-[0.08em] uppercase text-[color:var(--slate)]">
+                Unread
+              </p>
+            ) : null}
+            {unread.map((n, i) => (
+              <NotificationItem key={n.id} {...n} unread first={i === 0} />
+            ))}
 
-        <div className="mt-10">
-          <h2 className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-            Earlier <Pill tone="cream">{read.length}</Pill>
-          </h2>
-          {read.length > 0 ? (
-            <ul className="mt-4 space-y-3">
-              {read.map((n) => (
-                <NotificationItem key={n.id} {...n} unread={false} />
-              ))}
-            </ul>
-          ) : (
-            <p className="mt-4 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-5 text-sm font-medium leading-6 text-[color:var(--mauve)]">
-              Nothing yet. Notifications you read will land here.
-            </p>
-          )}
-        </div>
-      </section>
+            {read.length > 0 ? (
+              <p className="border-t border-[color:var(--line-soft)] px-4 pt-4 pb-2 text-[11.5px] font-bold tracking-[0.08em] uppercase text-[color:var(--slate)]">
+                Earlier
+              </p>
+            ) : null}
+            {read.map((n) => (
+              <NotificationItem key={n.id} {...n} unread={false} />
+            ))}
+          </div>
+        )}
+      </div>
     </main>
   );
 }
@@ -100,6 +91,7 @@ function NotificationItem({
   actionUrl,
   createdAt,
   unread,
+  first,
 }: {
   id: string;
   title: string;
@@ -107,47 +99,33 @@ function NotificationItem({
   actionUrl: string | null;
   createdAt: string;
   unread: boolean;
+  first?: boolean;
 }) {
   const ts = new Date(createdAt);
   return (
-    <li
-      className={`rounded-2xl border-2 border-[color:var(--line)] p-4 hard-shadow-sm ${
-        unread ? "bg-[color:var(--peach)]" : "bg-[color:var(--champagne)]"
+    <div
+      className={`flex items-start gap-3 px-4 py-3.5 ${first ? "" : "border-t border-[color:var(--line-soft)]"} ${
+        unread ? "bg-[color:var(--lavender-100)]" : ""
       }`}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="font-display text-lg font-semibold leading-snug text-[color:var(--ink)]">
-            {title}
-          </p>
-          <p className="mt-1 text-sm font-medium leading-6 text-[color:var(--mauve)]">
-            {body}
-          </p>
-          <p className="mt-2 font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-            {dateFormatter.format(ts)}
-          </p>
-        </div>
-        <div className="flex flex-col items-end gap-2 shrink-0">
-          {/* Primary action takes the user straight to the relevant page in-app
-              (e.g. the event for a waitlist "spot available" notification). The
-              email view is the secondary action. */}
+      <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full bg-[color:var(--lavender-100)] text-[color:var(--purple)]">
+        <Icon name="bell" size={17} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className={`text-sm leading-snug text-[color:var(--ink)] ${unread ? "font-semibold" : "font-medium"}`}>
+          {title}
+        </p>
+        {body ? <p className="mt-0.5 text-[13px] leading-relaxed text-[color:var(--slate)]">{body}</p> : null}
+        <p className="mt-1 text-[12px] text-[color:var(--ink-faint)]">{dateFormatter.format(ts)}</p>
+        <div className="mt-2 flex flex-wrap items-center gap-3">
           {actionUrl ? (
-            <Link
-              href={actionUrl}
-              className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
-            >
-              View
+            <Link href={actionUrl} className="font-display text-[13px] font-semibold text-[color:var(--purple)] hover:underline">
+              View →
             </Link>
           ) : null}
-          {/* "Open" renders the email that fired this notification. Falls back to
-              a notification-only view when no email_events row was logged. */}
           <Link
             href={`/notifications/${id}/email`}
-            className={`rounded-full border-2 border-[color:var(--line)] px-3 py-1.5 text-xs font-bold uppercase tracking-wide hard-shadow-sm ${
-              actionUrl
-                ? "bg-[color:var(--cream)] text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
-                : "bg-[color:var(--rose)] text-[color:var(--surface-deep)] hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
-            }`}
+            className="font-display text-[13px] font-semibold text-[color:var(--slate)] hover:text-[color:var(--ink)]"
           >
             Open
           </Link>
@@ -156,7 +134,7 @@ function NotificationItem({
               <input type="hidden" name="notification_id" value={id} />
               <button
                 type="submit"
-                className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)]"
+                className="font-display text-[13px] font-semibold text-[color:var(--slate)] hover:text-[color:var(--ink)]"
               >
                 Mark read
               </button>
@@ -164,6 +142,7 @@ function NotificationItem({
           ) : null}
         </div>
       </div>
-    </li>
+      {unread ? <span className="mt-2 size-2 shrink-0 rounded-full bg-[color:var(--purple)]" /> : null}
+    </div>
   );
 }

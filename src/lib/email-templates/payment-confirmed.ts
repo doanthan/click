@@ -1,4 +1,4 @@
-// Payment confirmed (to attendee) — currently wired at
+// Payment confirmed (to attendee) - currently wired at
 // `event-repository.ts:4479` from the Stripe webhook handler.
 // Subject + text MUST match what `sendWorkflowEmail` already produces.
 
@@ -57,8 +57,8 @@ export function buildPaymentConfirmedEmail(d: PaymentConfirmedData) {
       </td>
     </tr>
     ${renderCallout(
-      "Refund window &mdash;",
-      "cancel within the merchant's window to keep your full refund. Past that, the host's policy applies — it's visible on the event card if you scroll down.",
+      "Refund window -",
+      "cancel within the merchant's window to keep your full refund. Past that, the host's policy applies - it's visible on the event card if you scroll down.",
     )}
   `;
 

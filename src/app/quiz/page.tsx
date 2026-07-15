@@ -1,6 +1,6 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
+import { ButtonLink, Icon } from "@/components/ds";
 import { getLatestPersonaForSession } from "@/lib/event-repository";
 
 export const metadata = {
@@ -17,54 +17,44 @@ export default async function QuizIndexPage() {
   const persona = await getLatestPersonaForSession(session);
 
   return (
-    <main className="paper-noise min-h-screen bg-[color:var(--champagne)] px-4 py-12 text-[color:var(--ink)] sm:px-6">
-      <section className="mx-auto max-w-4xl">
-        <span className="sticker sticker--peach tilt-l-2 inline-flex">
-          <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
-          Quizzes
-        </span>
-        <h1 className="mt-6 font-display text-5xl font-bold leading-[0.96] tracking-[-0.025em] sm:text-6xl">
+    <main className="min-h-screen bg-[color:var(--champagne)] pb-24 text-[color:var(--ink)]">
+      <div className="ck-page max-w-[760px] pt-6">
+        <h1 className="font-display text-[length:var(--text-h1)] leading-tight font-semibold tracking-[-0.02em] text-[color:var(--ink)]">
           Two quick quizzes that change what Click suggests.
         </h1>
-        <p className="mt-4 max-w-2xl text-base font-medium leading-7 text-[color:var(--mauve)]">
-          Neither is required — both make our suggestions sharper. Three minutes
-          each, no right answers.
+        <p className="mt-2 max-w-[560px] text-sm leading-relaxed text-[color:var(--slate)]">
+          Neither is required - both make our suggestions sharper. Three minutes each, no right answers.
         </p>
 
         {persona ? (
-          <div className="mt-8 rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--rose)] p-5 text-[color:var(--surface-deep)] hard-shadow-sm">
-            <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em]">
-              Latest persona
-            </p>
-            <h2 className="font-display mt-2 text-3xl font-semibold leading-tight">
+          <div className="mt-6 rounded-[var(--radius-xl)] bg-[color:var(--lav-bg)] p-5">
+            <p className="text-xs font-bold tracking-[0.08em] uppercase text-[color:var(--purple-700)]">Latest persona</p>
+            <h2 className="font-display mt-1.5 text-[1.3rem] font-semibold text-[color:var(--ink)]">
               {persona.personaName}
             </h2>
-            <p className="mt-2 text-sm font-bold">
-              {persona.socialEnergy} · {persona.pace} pace · {persona.openness} ·
-              {" "}{persona.engagementFrequency}
+            <p className="mt-1.5 text-sm text-[color:var(--ink-soft)]">
+              {persona.socialEnergy} · {persona.pace} pace · {persona.openness} · {persona.engagementFrequency}
             </p>
           </div>
         ) : null}
 
-        <div className="mt-10 grid gap-6 md:grid-cols-2">
+        <div className="mt-8 grid gap-5 sm:grid-cols-2">
           <QuizCard
-            eyebrow="Life Quiz"
-            title="Where you’re at right now."
-            body="Life stage, availability, event style — adds 'life tags' that pull the right rooms toward you."
-            cta="Take the Life Quiz"
+            eyebrow="Life quiz"
+            title="Where you're at right now."
+            body="Life stage, availability, event style - so the right rooms come to you."
+            cta="Take the Life quiz"
             href="/quiz/life"
-            tone="peach"
           />
           <QuizCard
-            eyebrow="Personality Quiz"
+            eyebrow="Personality quiz"
             title="How you click with rooms."
-            body="Social energy, pace, openness, frequency. Writes a Click Persona we use to surface compatible plans."
-            cta="Take the Personality Quiz"
+            body="Social energy, pace, openness, frequency. Writes a Click persona we use to surface compatible plans."
+            cta="Take the Personality quiz"
             href="/quiz/personality"
-            tone="ink"
           />
         </div>
-      </section>
+      </div>
     </main>
   );
 }
@@ -75,31 +65,26 @@ function QuizCard({
   body,
   cta,
   href,
-  tone,
 }: {
   eyebrow: string;
   title: string;
   body: string;
   cta: string;
   href: string;
-  tone: "peach" | "ink";
 }) {
-  const bg = tone === "peach" ? "bg-[color:var(--peach)] text-[color:var(--surface-deep)]" : "bg-[color:var(--ink)] text-[color:var(--on-deep)]";
   return (
-    <div className={`rounded-3xl border-2 border-[color:var(--line)] p-6 hard-shadow ${bg}`}>
-      <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] opacity-80">
-        {eyebrow}
+    <div className="flex flex-col rounded-[var(--radius-xl)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-6 shadow-[var(--shadow-sm)]">
+      <span className="flex size-11 items-center justify-center rounded-full bg-[color:var(--lavender-100)] text-[color:var(--purple)]">
+        <Icon name="help" size={20} />
       </span>
-      <h3 className="font-display mt-3 text-3xl font-semibold leading-tight">
-        {title}
-      </h3>
-      <p className="mt-3 text-sm font-medium leading-6 opacity-90">{body}</p>
-      <Link
-        href={href}
-        className="mt-6 inline-flex rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--champagne)]"
-      >
-        {cta}
-      </Link>
+      <span className="mt-4 text-xs font-bold tracking-[0.08em] uppercase text-[color:var(--slate)]">{eyebrow}</span>
+      <h3 className="font-display mt-2 text-[1.3rem] leading-tight font-semibold text-[color:var(--ink)]">{title}</h3>
+      <p className="mt-2 flex-1 text-sm leading-6 text-[color:var(--ink-soft)]">{body}</p>
+      <div className="mt-5">
+        <ButtonLink href={href} size="sm">
+          {cta}
+        </ButtonLink>
+      </div>
     </div>
   );
 }

@@ -39,51 +39,33 @@ export default async function CalendarPage({ searchParams }: PageProps) {
   const calendarEvents = [...confirmed.upcoming, ...confirmed.past];
 
   return (
-    <main className="paper-noise min-h-screen bg-[color:var(--champagne)] px-4 py-12 text-[color:var(--ink)] sm:px-6">
-      <section className="mx-auto max-w-6xl">
+    <main className="min-h-screen bg-[color:var(--champagne)] pb-24 text-[color:var(--ink)]">
+      <div className="ck-page pt-6">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <span className="sticker sticker--peach tilt-l-2 inline-flex">
-              <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
-              Calendar
-            </span>
-            <h1 className="font-display mt-6 text-5xl font-bold leading-[0.96] tracking-[-0.025em] sm:text-6xl">
-              Your <span className="text-[color:var(--coral)]">plans</span>.
+            <h1 className="font-display text-[length:var(--text-h1)] leading-tight font-semibold tracking-[-0.02em] text-[color:var(--ink)]">
+              Your calendar
             </h1>
-            <p className="mt-4 max-w-2xl text-base font-medium leading-7 text-[color:var(--mauve)]">
-              Every event you&apos;ve booked or paid for, laid out by day. Tap an
-              event to see its details.
+            <p className="mt-1.5 max-w-[560px] text-sm leading-relaxed text-[color:var(--slate)]">
+              Every event you&apos;ve booked, laid out by day. Tap an event to see its details.
             </p>
           </div>
           <div className="flex gap-2">
-            <Link
-              href="/dashboard"
-              className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-2 text-xs font-bold text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
-            >
-              Back to dashboard
-            </Link>
-            <Link
-              href="/events"
-              className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-4 py-2 text-xs font-bold text-[color:var(--surface-deep)]"
-            >
-              Find more events
+            <Link href="/discover" className="ck-btn ck-btn--sm ck-btn--primary">
+              <span className="ck-btn__label">Find more events</span>
             </Link>
           </div>
         </div>
 
-        <div className="mt-10">
-          <UserCalendar
-            events={calendarEvents}
-            monthParam={search?.month}
-            bookedSlug={search?.booked}
-          />
+        <div className="mt-8">
+          <UserCalendar events={calendarEvents} monthParam={search?.month} bookedSlug={search?.booked} />
         </div>
 
         {calendarEvents.length === 0 ? (
-          <div className="mt-6 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-6">
-            <p className="text-base font-bold">No bookings yet.</p>
-            <p className="mt-2 text-sm font-semibold leading-6 text-[color:var(--mauve)]">
-              Browse events and reserve a spot — they&apos;ll show up here.
+          <div className="mt-6 rounded-[var(--radius-xl)] bg-[color:var(--lav-bg)] px-6 py-8 text-center">
+            <p className="font-display text-[1.05rem] font-semibold text-[color:var(--ink)]">No bookings yet.</p>
+            <p className="mx-auto mt-2 max-w-[380px] text-sm leading-relaxed text-[color:var(--ink-soft)]">
+              Browse events and reserve a spot - they&apos;ll show up here.
             </p>
           </div>
         ) : (
@@ -92,7 +74,7 @@ export default async function CalendarPage({ searchParams }: PageProps) {
           // otherwise sit behind the prev/next arrows.
           <EventAgendaList upcoming={confirmed.upcoming} past={confirmed.past} />
         )}
-      </section>
+      </div>
     </main>
   );
 }

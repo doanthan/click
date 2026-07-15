@@ -8,7 +8,7 @@ const STEPS = [
   {
     n: "01",
     title: "Basics",
-    body: "Name your event, pick a category, and write the description people read on Discover. Set the relationship goal so we match the right crowd.",
+    body: "Name your event, pick a category, and write the description people read on Discover. Set the relationship goal so we bring it to the right crowd.",
   },
   {
     n: "02",
@@ -18,7 +18,7 @@ const STEPS = [
   {
     n: "03",
     title: "Location",
-    body: "Search your venue with the address autocomplete — we drop the pin and fill suburb, state, and postcode so it shows on the map.",
+    body: "Search your venue with the address autocomplete - we drop the pin and fill suburb, state, and postcode so it shows on the map.",
   },
   {
     n: "04",

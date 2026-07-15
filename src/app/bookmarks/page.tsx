@@ -1,16 +1,12 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { EventCard } from "@/components/event-card";
-import { Pill } from "@/components/click-ui";
-import {
-  getBookmarkedEvents,
-  getProfileStatus,
-} from "@/lib/event-repository";
+import { ButtonLink } from "@/components/ds";
+import { getBookmarkedEvents, getProfileStatus } from "@/lib/event-repository";
 
 export const metadata = {
-  title: "Bookmarks | Click",
-  description: "Events you’ve saved for later on Click.",
+  title: "Saved | Click",
+  description: "Events you've saved for later on Click.",
 };
 
 export default async function BookmarksPage() {
@@ -26,7 +22,7 @@ export default async function BookmarksPage() {
   ]);
   const registeredSet = new Set(profileStatus.registeredEventIds);
   const waitlistedSet = new Set(profileStatus.waitlistedEventIds);
-  // Real seat state for the booking modal — without it a confirmed attendee
+  // Real seat state for the booking modal - without it a confirmed attendee
   // of a full event is inferred as "waitlisted" (bug board #163).
   const bookingStatusFor = (id: string): "confirmed" | "waitlisted" | undefined =>
     registeredSet.has(id)
@@ -36,27 +32,26 @@ export default async function BookmarksPage() {
       : undefined;
 
   return (
-    <main className="paper-noise min-h-screen bg-[color:var(--champagne)] px-4 py-12 text-[color:var(--ink)] sm:px-6">
-      <section className="mx-auto max-w-6xl">
-        <span className="sticker sticker--peach tilt-l-2 inline-flex">
-          <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
-          Saved
-        </span>
-        <div className="mt-6 flex flex-wrap items-end justify-between gap-4">
+    <main className="min-h-screen bg-[color:var(--champagne)] pb-24 text-[color:var(--ink)]">
+      <div className="ck-page pt-8">
+        <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h1 className="font-display text-5xl font-bold leading-[0.96] tracking-[-0.025em] sm:text-6xl">
-              Bookmarked plans.
+            <h1 className="font-display text-[length:var(--text-h1)] font-semibold leading-tight tracking-[-0.02em]">
+              Saved
             </h1>
-            <p className="mt-3 max-w-2xl text-base font-medium leading-7 text-[color:var(--mauve)]">
-              Events you’ve tapped to save. Tap the bookmark again on any card
-              to remove it.
+            <p className="mt-1.5 text-[15px] text-[color:var(--slate)]">
+              Events you&apos;ve kept for later. Tap the bookmark again on any card to let one go.
             </p>
           </div>
-          <Pill tone="peach">{bookmarks.length}</Pill>
+          {bookmarks.length > 0 ? (
+            <span className="font-display text-[13px] font-semibold tabular-nums text-[color:var(--slate)]">
+              {bookmarks.length} saved
+            </span>
+          ) : null}
         </div>
 
         {bookmarks.length > 0 ? (
-          <div className="mt-8 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-7 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {bookmarks.map((event) => (
               <EventCard
                 key={event.id}
@@ -68,22 +63,21 @@ export default async function BookmarksPage() {
             ))}
           </div>
         ) : (
-          <div className="mt-8 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-8 text-center">
-            <p className="font-display text-3xl font-semibold leading-tight tracking-[-0.02em]">
-              No bookmarks yet.
+          <div className="mt-7 rounded-[20px] bg-[color:var(--champagne-deep)] px-6 py-11 text-center">
+            <h2 className="font-display text-[17px] font-semibold text-[color:var(--ink)]">
+              Nothing saved yet
+            </h2>
+            <p className="mx-auto mt-2 max-w-[360px] text-[14.5px] leading-[1.55] text-[color:var(--slate)]">
+              Tap the bookmark on any event to keep it here.
             </p>
-            <p className="mt-3 text-sm font-semibold leading-6 text-[color:var(--mauve)]">
-              Tap the bookmark icon on any event card and it’ll land here.
-            </p>
-            <Link
-              href="/events"
-              className="mt-6 inline-flex rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
-            >
-              Browse events
-            </Link>
+            <div className="mt-5 flex justify-center">
+              <ButtonLink href="/discover" size="sm">
+                See what&apos;s on
+              </ButtonLink>
+            </div>
           </div>
         )}
-      </section>
+      </div>
     </main>
   );
 }

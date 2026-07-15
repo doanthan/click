@@ -3,22 +3,18 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { ClickRadar } from "@/components/click-radar";
 import { ClickWithSomeoneUserCard } from "@/components/click-with-someone-user-card";
-import { Pill } from "@/components/click-ui";
+import { Avatar, Icon } from "@/components/ds";
 import {
   getMutualClicksForSession,
   getPersonalizedDiscovery,
+  getProfileStatus,
   getSuggestedPeople,
 } from "@/lib/event-repository";
 
 export const metadata = {
-  title: "People | Click",
-  description: "Discover Click users with overlapping interests and mutual events.",
+  title: "click with someone | Click",
+  description: "A small, intentional set of people you might click with - no endless feed.",
 };
-
-const dateFormatter = new Intl.DateTimeFormat("en-AU", {
-  day: "numeric",
-  month: "short",
-});
 
 export default async function PeoplePage() {
   const session = await auth();
@@ -27,108 +23,205 @@ export default async function PeoplePage() {
     redirect("/login?callbackUrl=/people");
   }
 
-  const [suggested, mutuals, personalized] = await Promise.all([
+  const [suggested, mutuals, personalized, profileStatus] = await Promise.all([
     getSuggestedPeople(session),
     getMutualClicksForSession(session),
     getPersonalizedDiscovery(session),
+    getProfileStatus(session),
   ]);
 
+  // The daily set is a small, curated pool - a drip, not an endless feed.
+  const dailySet = suggested.slice(0, 3);
+
+  // Your clicks, grouped by state. A plan exists once both are going; everything
+  // else is a live mutual, which is ALWAYS the actionable "suggest a plan" card
+  // (there is no dormant / "no match" state - the user can always propose).
+  const plans = mutuals.filter((m) => m.bothGoingEventSlug);
+  const liveMutuals = mutuals.filter((m) => !m.bothGoingEventSlug);
+
   return (
-    <main className="paper-noise min-h-screen bg-[color:var(--champagne)] px-4 py-12 text-[color:var(--ink)] sm:px-6">
-      <section className="mx-auto max-w-6xl">
-        <span className="sticker sticker--peach tilt-l-2 inline-flex">
-          <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
-          People
-        </span>
-        <h1 className="mt-6 font-display text-5xl font-bold leading-[0.96] tracking-[-0.025em] sm:text-6xl">
-          People you might <span className="text-[color:var(--coral)]">click</span> with.
+    <main className="min-h-screen bg-[color:var(--champagne)] pb-24 text-[color:var(--ink)]">
+      <div className="ck-page max-w-[760px] pt-6">
+        {/* The mechanic chrome is lowercase - the feeling, not the platform. */}
+        <h1 className="font-display text-[length:var(--text-h1)] leading-tight font-semibold tracking-[-0.02em] text-[color:var(--ink)]">
+          click with someone
         </h1>
-        <p className="mt-3 max-w-2xl text-base font-medium leading-7 text-[color:var(--mauve)]">
-          Ranked by shared interest tags. Click on someone privately — nobody
-          sees it unless they Click you back.
+        <p className="mt-1.5 text-sm font-medium text-[color:var(--slate)]">
+          A small, intentional set - no endless feed.{" "}
+          <Link href="/how-it-works" className="font-semibold text-[color:var(--purple)] hover:underline">
+            How clicking works →
+          </Link>
         </p>
 
-        {mutuals.length > 0 ? (
-          <div className="mt-8 rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--rose)] p-5 text-[color:var(--surface-deep)] hard-shadow">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em]">
-                  Mutual Click
-                </p>
-                <h2 className="font-display mt-2 text-3xl font-semibold leading-tight tracking-[-0.02em]">
-                  You both tapped.
-                </h2>
-              </div>
-              <Pill tone="cream">{mutuals.length}</Pill>
-            </div>
-            <Link
-              href="/proposals"
-              className="mt-4 inline-flex rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-2 text-xs font-bold uppercase tracking-wide text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
-            >
-              Open your proposals →
-            </Link>
-            <ul className="mt-5 grid gap-3 md:grid-cols-2">
-              {mutuals.map((m) => (
-                <li
-                  key={m.otherProfileId}
-                  className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-4 text-[color:var(--ink)] hard-shadow-sm"
-                >
-                  <Link
-                    href={`/profile/${m.otherProfileId}`}
-                    className="font-display text-2xl font-semibold leading-tight tracking-[-0.02em] hover:text-[color:var(--rose)]"
-                  >
-                    {m.otherDisplayName}
-                  </Link>
-                  <p className="mt-1 font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-                    Matched {dateFormatter.format(new Date(m.createdAt))}
-                  </p>
-                  {m.suggestedEventSlug ? (
-                    <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--mauve)]">
-                      Suggested next:{" "}
-                      <Link
-                        href={`/events/${m.suggestedEventSlug}`}
-                        className="font-bold text-[color:var(--ink)] underline decoration-2 underline-offset-4 hover:text-[color:var(--rose)]"
-                      >
-                        {m.suggestedEventTitle ?? "an event"}
-                      </Link>
-                    </p>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-
-        <div className="mt-12 grid gap-8 lg:grid-cols-[2fr_1fr]">
-          <div>
-            <h2 className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
-              Suggested · {Math.min(suggested.length, 6)}
+        {/* ---- The daily set ---- */}
+        <section className="mt-7">
+          <div className="mb-4 flex items-baseline justify-between gap-4">
+            <h2 className="font-display text-[1.075rem] font-semibold tracking-[-0.01em] text-[color:var(--ink)] sm:text-[1.3rem]">
+              {dailySet.length > 0 ? `${dailySet.length} ${dailySet.length === 1 ? "person" : "people"} for you today` : "People for you"}
             </h2>
-            <h3 className="mt-2 font-display text-3xl font-semibold leading-tight tracking-[-0.02em] sm:text-4xl">
-              People sorted by overlap.
-            </h3>
-            {suggested.length > 0 ? (
-              <div className="mt-6 grid gap-5 md:grid-cols-2">
-                {suggested.slice(0, 6).map((person) => (
-                  <ClickWithSomeoneUserCard key={person.id} person={person} />
+            {dailySet.length > 0 ? (
+              <span className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[color:var(--slate)]">
+                <Icon name="trend" size={14} className="text-[color:var(--purple-400)]" />
+                Fresh today
+              </span>
+            ) : null}
+          </div>
+
+          {dailySet.length > 0 ? (
+            <>
+              <div className="grid gap-4">
+                {dailySet.map((person) => (
+                  <ClickWithSomeoneUserCard
+                    key={person.id}
+                    person={person}
+                    viewerOpenToDating={profileStatus.datingVisible}
+                  />
                 ))}
               </div>
-            ) : (
-              <p className="mt-6 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-6 text-sm font-medium leading-6 text-[color:var(--mauve)]">
-                Pick a few interest tags in{" "}
-                <Link
-                  href="/profile/edit"
-                  className="font-bold text-[color:var(--ink)] underline decoration-2 underline-offset-4 hover:text-[color:var(--rose)]"
-                >
+              {/* The anonymity reassurance shows ONCE at the top of the section,
+                  never under each card. */}
+              <p className="mt-4 flex items-start gap-[7px] px-0.5 text-[13px] leading-relaxed text-[color:var(--slate)]">
+                <Icon name="lock" size={14} className="mt-0.5" />
+                <span>Clicking is anonymous - we&apos;ll only show you if it&apos;s mutual.</span>
+              </p>
+            </>
+          ) : (
+            <div className="rounded-[var(--radius-xl)] bg-[color:var(--lav-bg)] px-6 py-8 text-center">
+              <p className="mx-auto max-w-[380px] text-sm leading-relaxed text-[color:var(--ink-soft)]">
+                Add a few interests to{" "}
+                <Link href="/profile/edit" className="font-semibold text-[color:var(--purple)]">
                   your profile
                 </Link>{" "}
-                so we can surface people with overlap.
+                and we&apos;ll start surfacing people you actually overlap with.
               </p>
-            )}
-          </div>
+            </div>
+          )}
+        </section>
+
+        {/* ---- On your radar ---- */}
+        <section className="mt-12">
+          <h2 className="font-display mb-1 text-[1.075rem] font-semibold tracking-[-0.01em] text-[color:var(--ink)] sm:text-[1.3rem]">
+            On your radar
+          </h2>
+          <p className="mb-4 text-[13.5px] font-medium text-[color:var(--slate)]">
+            People like you are showing up to these.
+          </p>
           <ClickRadar events={personalized?.events ?? []} />
-        </div>
-      </section>
+        </section>
+
+        {/* ---- Your clicks ---- */}
+        {mutuals.length > 0 ? (
+          <section className="mt-12">
+            <h2 className="font-display mb-4 text-[1.075rem] font-semibold tracking-[-0.01em] text-[color:var(--ink)] sm:text-[1.3rem]">
+              Your clicks
+            </h2>
+
+            {liveMutuals.length > 0 ? (
+              <div className="mb-6">
+                <p className="mb-2.5 text-xs font-bold tracking-[0.08em] uppercase text-[color:var(--slate)]">
+                  Live mutuals
+                </p>
+                <div className="grid gap-3">
+                  {liveMutuals.map((m) => (
+                    <YourClickRow
+                      key={m.otherProfileId}
+                      name={m.otherDisplayName}
+                      profileId={m.otherProfileId}
+                      // A live mutual is the your-move card - it earns the soft
+                      // lavender-wash fill; the action is always a purple verb.
+                      yourMove
+                      line={
+                        m.suggestedEventSlug
+                          ? m.suggestedByOther
+                            ? `${m.otherDisplayName.split(" ")[0]} suggested a plan`
+                            : "Waiting to hear back on your plan"
+                          : "Pick something you'd both enjoy"
+                      }
+                      actionLabel={
+                        m.suggestedEventSlug ? (m.suggestedByOther ? "See their plan →" : "See your plan →") : "Suggest a plan →"
+                      }
+                    />
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {plans.length > 0 ? (
+              <div>
+                <p className="mb-2.5 text-xs font-bold tracking-[0.08em] uppercase text-[color:var(--slate)]">Plans</p>
+                <div className="grid gap-3">
+                  {plans.map((m) => (
+                    <YourClickRow
+                      key={m.otherProfileId}
+                      name={m.otherDisplayName}
+                      profileId={m.otherProfileId}
+                      line={`Going to ${m.bothGoingEventTitle ?? "an event"} together`}
+                      actionLabel="See the plan →"
+                      going
+                    />
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </section>
+        ) : null}
+      </div>
     </main>
+  );
+}
+
+/**
+ * Your-clicks outcome card - the ONE list row for Live mutuals · Plans · Past.
+ * State is carried by three things only: the section header, an earned card
+ * accent (the soft lavender-wash fill on YOUR-MOVE cards), and the action verb.
+ * NO name-adjacent state pill, and NO spark on a list row (the spark is reserved
+ * for the three peaks). Sage is reserved for success - a confirmed plan's
+ * "going" marker - never the intent line.
+ */
+function YourClickRow({
+  name,
+  profileId,
+  line,
+  actionLabel,
+  yourMove,
+  going,
+}: {
+  name: string;
+  profileId: string;
+  line: string;
+  actionLabel: string;
+  yourMove?: boolean;
+  going?: boolean;
+}) {
+  return (
+    <article
+      className={`flex items-center gap-3.5 rounded-[var(--radius-lg)] border p-4 ${
+        yourMove
+          ? "border-transparent bg-[color:var(--lav-bg)]"
+          : "border-[color:var(--line-soft)] bg-[color:var(--paper)]"
+      }`}
+    >
+      <Avatar name={name} size={52} />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <Link
+            href={`/profile/${profileId}`}
+            className="font-display truncate text-[17px] font-semibold text-[color:var(--ink)] hover:underline"
+          >
+            {name}
+          </Link>
+          {going ? (
+            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[color-mix(in_srgb,var(--sage)_14%,var(--paper))] px-2 py-0.5 text-[11px] font-semibold text-[color:var(--sage)]">
+              <Icon name="check" size={11} stroke={3} />
+              going
+            </span>
+          ) : null}
+        </div>
+        <p className="mt-0.5 truncate text-[13px] text-[color:var(--slate)]">{line}</p>
+      </div>
+      <Link href="/proposals" className="ck-btn ck-btn--sm ck-btn--primary shrink-0">
+        <span className="ck-btn__label">{actionLabel}</span>
+      </Link>
+    </article>
   );
 }

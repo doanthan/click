@@ -11,7 +11,7 @@ export default function SecurityPage() {
       eyebrow="Trust & Safety"
       title="Security"
       lastUpdated="18 June 2026"
-      intro="Security and privacy are built into how Click works, not bolted on. This page explains the technical and organisational measures we use to protect your account, your data, and your payments — and how to report a security issue to us."
+      intro="Security and privacy are built into how Click works, not bolted on. This page explains the technical and organisational measures we use to protect your account, your data, and your payments - and how to report a security issue to us."
       sections={[
         {
           heading: "Our approach",
@@ -60,7 +60,7 @@ export default function SecurityPage() {
           body: (
             <p>
               All payments and merchant payouts are handled by Stripe, a PCI-DSS Level 1 certified
-              payment provider. Card details are entered directly with Stripe and are tokenised —
+              payment provider. Card details are entered directly with Stripe and are tokenised -
               Click never receives or stores your full card number. Merchant identity and bank
               verification (KYC) is performed by Stripe Connect under Stripe&apos;s own security
               controls.
@@ -87,7 +87,7 @@ export default function SecurityPage() {
           ),
         },
         {
-          heading: "Privacy by design — the click mechanic",
+          heading: "Privacy by design - the click mechanic",
           body: (
             <p>
               When you &quot;click&quot; someone, that interest signal is stored privately and is never
@@ -118,7 +118,7 @@ export default function SecurityPage() {
               <ul className="ml-5 list-disc space-y-1.5">
                 <li>Use a strong, unique password (or sign in with Google/Facebook) and enable two-factor authentication with your provider.</li>
                 <li>Keep your devices, browser, and email account secure, and sign out on shared devices.</li>
-                <li>Be cautious of phishing — Click will never ask for your password by email, and our emails come from a letsclick.app address.</li>
+                <li>Be cautious of phishing - Click will never ask for your password by email, and our emails come from a letsclick.app address.</li>
                 <li>Report anything suspicious to us straight away.</li>
               </ul>
             </>

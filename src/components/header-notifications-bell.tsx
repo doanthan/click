@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { Icon } from "./ds";
 
 export function HeaderNotificationsBell({ unreadCount }: { unreadCount: number }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   // The /notifications page only ever lists the latest 50, so cap the count
-  // surfaces here too — otherwise the bell claims a raw "1058 unread" the inbox
-  // can never show, which reads as a bug (bug board #222). Badge already caps.
+  // surfaced here too - otherwise the bell claims a raw "1058 unread" the inbox
+  // can never show, which reads as a bug (bug board #222).
   const countLabel = unreadCount > 99 ? "99+" : String(unreadCount);
 
   useEffect(() => {
@@ -28,26 +29,13 @@ export function HeaderNotificationsBell({ unreadCount }: { unreadCount: number }
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
-        className="relative rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-2 hard-shadow-sm hover:bg-[color:var(--peach)]"
+        className="relative flex size-9 items-center justify-center rounded-full text-[color:var(--ink-soft)] transition-colors hover:bg-[color:var(--lavender-100)]"
       >
-        <svg
-          width="20"
-          height="20"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="text-[color:var(--ink)]"
-          aria-hidden
-        >
-          <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
-          <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
-        </svg>
+        <Icon name="bell" size={20} />
+        {/* Unread dot is Deep Purple - the brand's one accent, never a status hue. */}
         {unreadCount > 0 ? (
-          <span className="absolute -right-1 -top-1 grid min-w-[1.25rem] place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-1 text-[0.6rem] font-bold text-[color:var(--surface-deep)]">
-            {unreadCount > 99 ? "99+" : unreadCount}
+          <span className="absolute top-1.5 right-1.5 grid min-w-[16px] place-items-center rounded-full bg-[color:var(--purple)] px-1 text-[10px] leading-4 font-bold text-[color:var(--champagne)] shadow-[0_0_0_2px_var(--champagne)]">
+            {unreadCount > 9 ? "9+" : unreadCount}
           </span>
         ) : null}
       </button>
@@ -55,30 +43,22 @@ export function HeaderNotificationsBell({ unreadCount }: { unreadCount: number }
       {open ? (
         <div
           role="menu"
-          className="absolute right-0 z-50 mt-3 w-72 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow"
+          className="absolute right-0 z-50 mt-2 w-72 overflow-hidden rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] shadow-[0_18px_44px_rgba(76,55,140,0.18)]"
         >
-          <div className="flex items-center justify-between gap-2 border-b-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-2">
-            <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-              Notifications
-            </span>
+          <div className="flex items-center justify-between gap-2 border-b border-[color:var(--line-soft)] px-4 py-3">
+            <span className="font-display text-[15px] font-semibold text-[color:var(--ink)]">Notifications</span>
             {unreadCount > 0 ? (
-              <span className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-2 py-0.5 text-[0.6rem] font-bold uppercase tracking-wide text-[color:var(--surface-deep)]">
-                {countLabel} unread
-              </span>
+              <span className="text-[12.5px] font-medium text-[color:var(--slate)]">{countLabel} unread</span>
             ) : null}
           </div>
-          <div className="space-y-2 p-4">
-            <p className="text-sm font-medium leading-6 text-[color:var(--mauve)]">
+          <div className="p-4">
+            <p className="text-sm leading-relaxed text-[color:var(--ink-soft)]">
               {unreadCount > 0
                 ? `You have ${countLabel} unread notification${unreadCount === 1 ? "" : "s"}.`
-                : "All caught up."}
+                : "You're all caught up."}
             </p>
-            <Link
-              href="/notifications"
-              onClick={() => setOpen(false)}
-              className="block rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-4 py-2 text-center text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
-            >
-              Open inbox
+            <Link href="/notifications" onClick={() => setOpen(false)} className="ck-btn ck-btn--sm ck-btn--primary mt-3 w-full">
+              <span className="ck-btn__label">Open inbox</span>
             </Link>
           </div>
         </div>

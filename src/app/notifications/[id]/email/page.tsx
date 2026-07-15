@@ -79,7 +79,7 @@ export default async function NotificationEmailPage({ params }: PageProps) {
               To
             </dt>
             <dd className="font-mono text-[0.85rem] text-[color:var(--ink)]">
-              {email?.toEmail ?? session.user.email ?? "—"}
+              {email?.toEmail ?? session.user.email ?? "-"}
             </dd>
             <dt className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
               Sent
@@ -139,7 +139,7 @@ export default async function NotificationEmailPage({ params }: PageProps) {
                 {notification.body}
               </p>
               <p className="rounded-xl border border-dashed border-[color:var(--line)] bg-[color:var(--champagne)] p-4 text-sm font-medium leading-6 text-[color:var(--mauve)]">
-                No rendered email is on file for this notification — the
+                No rendered email is on file for this notification - the
                 trigger that created it hasn&rsquo;t been wired to{" "}
                 <code className="font-mono">logEmailEvent</code> yet.
               </p>

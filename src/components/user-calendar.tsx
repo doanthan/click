@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Icon } from "@/components/ds";
 import type { EventItem } from "@/lib/click-data";
 
 const SYDNEY_TZ = "Australia/Sydney";
@@ -156,6 +157,9 @@ function buildCells(monthAnchor: Date, events: EventItem[], todayIso: string): C
   return cells;
 }
 
+// The chip vocabulary. Status colour lives here and nowhere else on the grid:
+// Waitlist → Amber · You're going → Sage · Saved → Lavender · ended/cancelled →
+// Slate on Mist. Never a coral, never a CTA colour.
 function chipMeta(
   event: EventItem,
   registeredEventIds?: Set<string>,
@@ -169,34 +173,33 @@ function chipMeta(
   const isSavedOnly =
     registeredEventIds !== undefined && !registeredEventIds.has(event.id);
 
+  const neutral = "bg-[color:var(--mist)] text-[color:var(--slate)]";
+
   // Cancelled events stay visible on the calendar (so a member isn't left
   // wondering where their RSVP went) but are clearly struck out, never shown as
   // "Waitlist"/"Confirmed".
   if (event.status === "Cancelled")
-    return {
-      label: "Cancelled",
-      className:
-        "bg-[color:var(--cream)] text-[color:var(--mauve)] line-through opacity-80",
-    };
+    return { label: "Cancelled", className: `${neutral} line-through` };
   // Past events are archived in-place as "Ended" so history reads clearly.
-  if (isPast)
-    return {
-      label: "Ended",
-      className: "bg-[color:var(--cream)] text-[color:var(--mauve)] opacity-90",
-    };
-  // A bookmarked event with no RSVP isn't "Confirmed"/"Waitlist" for this user —
-  // it's just saved. Distinct cream chip so it reads as a maybe, not a booking.
+  if (isPast) return { label: "Ended", className: neutral };
+  // A bookmarked event with no RSVP isn't "Confirmed"/"Waitlist" for this user -
+  // it's just saved. A lavender chip so it reads as a maybe, not a booking.
   if (isSavedOnly)
     return {
       label: "Saved",
-      className:
-        "bg-[color:var(--cream)] text-[color:var(--ink)] border-dashed",
+      className: "bg-[color:var(--lavender-100)] text-[color:var(--purple-700)]",
     };
   if (event.status === "Waitlist" || isFull)
-    return { label: "Waitlist", className: "bg-[color:var(--ink)] text-[color:var(--champagne)]" };
-  if (event.status === "Locked")
-    return { label: "Locked", className: "bg-[color:var(--ink)] text-[color:var(--champagne)]" };
-  return { label: "Confirmed", className: "bg-[color:var(--peach)] text-[color:var(--surface-deep)]" };
+    return {
+      label: "Waitlist",
+      className:
+        "bg-[color-mix(in_srgb,var(--amber)_16%,var(--paper))] text-[color:var(--amber-ink)]",
+    };
+  if (event.status === "Locked") return { label: "Locked", className: neutral };
+  return {
+    label: "You're going",
+    className: "bg-[color-mix(in_srgb,var(--sage)_14%,var(--paper))] text-[color:var(--sage)]",
+  };
 }
 
 export function UserCalendar({
@@ -239,74 +242,67 @@ export function UserCalendar({
   const bookedEvent = bookedSlug ? events.find((event) => event.id === bookedSlug) : null;
 
   return (
-    <article className="overflow-hidden rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow-sm">
+    <article className="overflow-hidden rounded-[20px] bg-[color:var(--paper)] shadow-[var(--shadow-sm)]">
       {bookedEvent ? (
-        <div className="border-b-2 border-[color:var(--line)] bg-[color:var(--peach)] px-5 py-3 text-sm font-bold text-[color:var(--surface-deep)]">
-          ✓ You&apos;re in for <span className="italic">{bookedEvent.title}</span>.
+        <div className="flex items-center gap-2 border-b border-[color:var(--mist)] bg-[color-mix(in_srgb,var(--sage)_10%,var(--paper))] px-5 py-3 text-[14px] font-semibold text-[color:var(--sage)]">
+          <Icon name="check" size={16} stroke={2.6} />
+          You&apos;re going to {bookedEvent.title}.
         </div>
       ) : null}
 
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-[color:var(--line)] bg-[color:var(--cream)] px-5 py-4">
+      <header className="flex flex-wrap items-center justify-between gap-3 px-5 pb-4 pt-5">
         <div>
-          <p className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-            Your bookings
-          </p>
-          <h3 className="font-display mt-1 text-2xl font-semibold tracking-[-0.025em] leading-tight text-[color:var(--ink)] sm:text-3xl">
+          <h3 className="font-display text-[length:var(--text-h3)] font-semibold leading-tight tracking-[-0.01em] text-[color:var(--ink)]">
             {heading}
           </h3>
+          <p className="mt-0.5 text-[13px] text-[color:var(--slate)]">
+            {monthEvents.length} event{monthEvents.length === 1 ? "" : "s"} this month
+          </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-1 text-xs font-bold text-[color:var(--mauve)]">
-            {monthEvents.length} event{monthEvents.length === 1 ? "" : "s"} this month
-          </span>
-          <div className="flex items-center gap-1.5">
-            <Link
-              href={monthHref(prevMonth)}
-              aria-label={
-                eventsBeforeCount > 0
-                  ? `Previous month (${eventsBeforeCount} earlier event${eventsBeforeCount === 1 ? "" : "s"})`
-                  : "Previous month"
-              }
-              className="relative grid size-9 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] text-sm font-bold text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
-            >
-              ←
-              {eventsBeforeCount > 0 ? <MonthEventDot count={eventsBeforeCount} /> : null}
-            </Link>
-            <Link
-              href={basePath}
-              className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-1.5 text-xs font-bold text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
-            >
-              Today
-            </Link>
-            <Link
-              href={monthHref(nextMonth)}
-              aria-label={
-                eventsAfterCount > 0
-                  ? `Next month (${eventsAfterCount} later event${eventsAfterCount === 1 ? "" : "s"})`
-                  : "Next month"
-              }
-              className="relative grid size-9 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] text-sm font-bold text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
-            >
-              →
-              {eventsAfterCount > 0 ? <MonthEventDot count={eventsAfterCount} /> : null}
-            </Link>
-          </div>
+        <div className="flex items-center gap-1.5">
+          <MonthNav
+            href={monthHref(prevMonth)}
+            icon="chevL"
+            count={eventsBeforeCount}
+            label={
+              eventsBeforeCount > 0
+                ? `Previous month (${eventsBeforeCount} earlier event${eventsBeforeCount === 1 ? "" : "s"})`
+                : "Previous month"
+            }
+          />
+          <Link
+            href={basePath}
+            className="font-display rounded-[10px] border border-[color:var(--mist-strong)] px-3 py-1.5 text-[13px] font-semibold text-[color:var(--ink-soft)] transition-colors hover:bg-[color:var(--lavender-100)]"
+          >
+            Today
+          </Link>
+          <MonthNav
+            href={monthHref(nextMonth)}
+            icon="chevR"
+            count={eventsAfterCount}
+            label={
+              eventsAfterCount > 0
+                ? `Next month (${eventsAfterCount} later event${eventsAfterCount === 1 ? "" : "s"})`
+                : "Next month"
+            }
+          />
         </div>
       </header>
 
-      <div className="grid grid-cols-7 border-b-2 border-[color:var(--line)] bg-[color:var(--surface-deep)] text-[color:var(--on-deep)]">
+      <div className="grid grid-cols-7 px-2">
         {WEEK_LABELS.map((label) => (
           <div
             key={label}
-            className="px-3 py-2 font-mono text-[0.62rem] font-bold uppercase tracking-[0.18em]"
+            className="pb-2 text-center text-[11.5px] font-semibold text-[color:var(--ink-faint)]"
           >
-            {label}
+            <span className="sm:hidden">{label[0]}</span>
+            <span className="max-sm:hidden">{label}</span>
           </div>
         ))}
       </div>
 
-      <div className="grid grid-cols-7">
+      <div className="grid grid-cols-7 gap-1 px-2 pb-3">
         {cells.map((cell) => (
           <CalendarDayCell
             key={cell.isoDate}
@@ -319,16 +315,35 @@ export function UserCalendar({
   );
 }
 
-// Small count badge pinned to a month-nav arrow, flagging that this many RSVPs
-// live in months you'd have to page to.
-function MonthEventDot({ count }: { count: number }) {
+// Month-nav arrow. The dot flags that this many RSVPs live in months you'd have
+// to page to - otherwise a plan booked further out looks like it never landed.
+function MonthNav({
+  href,
+  icon,
+  count,
+  label,
+}: {
+  href: string;
+  icon: "chevL" | "chevR";
+  count: number;
+  label: string;
+}) {
   return (
-    <span
-      aria-hidden
-      className="absolute -right-1 -top-1 grid min-w-4 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-1 font-mono text-[0.55rem] font-bold leading-none text-[color:var(--surface-deep)]"
+    <Link
+      href={href}
+      aria-label={label}
+      className="relative grid size-9 place-items-center rounded-[10px] border border-[color:var(--mist-strong)] text-[color:var(--slate)] transition-colors hover:bg-[color:var(--lavender-100)] hover:text-[color:var(--ink)]"
     >
-      {count > 9 ? "9+" : count}
-    </span>
+      <Icon name={icon} size={16} stroke={2.2} />
+      {count > 0 ? (
+        <span
+          aria-hidden
+          className="font-display absolute -right-1 -top-1 grid min-w-[17px] place-items-center rounded-full bg-[color:var(--purple)] px-1 text-[10px] font-bold leading-[17px] text-[color:var(--champagne)]"
+        >
+          {count > 9 ? "9+" : count}
+        </span>
+      ) : null}
+    </Link>
   );
 }
 
@@ -342,36 +357,37 @@ function CalendarDayCell({
   const dayNumber = DAY_LABEL_FORMATTER.format(cell.date);
   return (
     <div
-      className={`min-h-28 border-b-2 border-r-2 border-[color:var(--line)] p-2 ${
-        cell.isCurrentMonth
-          ? "bg-[color:var(--champagne)]"
-          : "bg-[color:var(--cream)]/60"
-      } last:border-r-0`}
+      className={`min-h-[104px] rounded-[11px] border p-1.5 ${
+        cell.isToday
+          ? "border-[color:var(--lavender)] bg-[color:var(--lavender-100)]"
+          : cell.isCurrentMonth
+            ? "border-[color:var(--mist)] bg-[color:var(--paper)]"
+            : "border-transparent bg-[color:var(--champagne)]/60"
+      }`}
     >
-      <div className="flex items-baseline justify-between gap-1">
+      <div className="flex items-baseline justify-between gap-1 px-0.5">
         <span
-          className={`font-mono text-[0.7rem] font-bold ${
+          className={`text-[13px] tabular-nums ${
             cell.isToday
-              ? "grid size-6 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] text-[color:var(--surface-deep)]"
+              ? "font-bold text-[color:var(--purple-700)]"
               : cell.isCurrentMonth
-                ? "text-[color:var(--ink)]"
-                : "text-[color:var(--mauve)]/55"
+                ? "font-medium text-[color:var(--ink-soft)]"
+                : "font-medium text-[color:var(--ink-faint)]"
           }`}
         >
           {dayNumber}
         </span>
         {cell.events.length > 0 ? (
           <span
-            className="font-mono text-[0.6rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]"
+            className="text-[11px] font-medium tabular-nums text-[color:var(--ink-faint)]"
             title={FULL_DATE_FORMATTER.format(cell.date)}
           >
             {cell.events.length}
-            {cell.events.length === 1 ? " plan" : " plans"}
           </span>
         ) : null}
       </div>
 
-      <div className="mt-1.5 grid gap-1">
+      <div className="mt-1 grid gap-1">
         {cell.events.slice(0, 3).map((event) => (
           <CalendarEventChip
             key={event.id}
@@ -380,7 +396,7 @@ function CalendarDayCell({
           />
         ))}
         {cell.events.length > 3 ? (
-          <p className="font-mono text-[0.6rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+          <p className="px-0.5 text-[11px] font-medium text-[color:var(--ink-faint)]">
             + {cell.events.length - 3} more
           </p>
         ) : null}
@@ -401,10 +417,11 @@ function CalendarEventChip({
   return (
     <Link
       href={`/events/${event.id}`}
-      className={`block rounded-md border-2 border-[color:var(--line)] px-1.5 py-1 hard-shadow-sm transition hover:-translate-y-[1px] hover:[box-shadow:3px_3px_0_0_var(--shadow-ink)] ${className}`}
+      title={`${event.title} · ${event.time} · ${label}`}
+      className={`block rounded-[7px] px-1.5 py-1 transition-opacity hover:opacity-80 ${className}`}
     >
-      <p className="line-clamp-1 text-[0.7rem] font-bold leading-tight">{event.title}</p>
-      <p className="mt-0.5 font-mono text-[0.6rem] font-bold uppercase tracking-[0.16em] opacity-80">
+      <p className="line-clamp-1 text-[11.5px] font-semibold leading-tight">{event.title}</p>
+      <p className="mt-px line-clamp-1 text-[10.5px] font-medium leading-tight opacity-85">
         {event.time} · {label}
       </p>
     </Link>

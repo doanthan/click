@@ -11,8 +11,10 @@ import {
 } from "react";
 import { toast } from "sonner";
 import {
+  banMemberAction,
   setMemberVerifiedAction,
   suspendMemberAction,
+  unbanMemberAction,
   unsuspendMemberAction,
 } from "@/app/admin/actions";
 import type { AdminMemberRow } from "@/lib/event-repository";
@@ -98,21 +100,29 @@ function EventCards({
 function MemberActions({
   member,
   suspended,
+  banned,
   isPending,
   onSuspend,
   onUnsuspend,
+  onBan,
+  onUnban,
   onToggleVerified,
 }: {
   member: AdminMemberRow;
   suspended: boolean;
+  banned: boolean;
   isPending: boolean;
   onSuspend: (reason: string) => void;
   onUnsuspend: () => void;
+  onBan: (reason: string) => void;
+  onUnban: () => void;
   onToggleVerified: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [banConfirming, setBanConfirming] = useState(false);
   const [reason, setReason] = useState("");
+  const [banReason, setBanReason] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -121,12 +131,14 @@ function MemberActions({
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
         setOpen(false);
         setConfirming(false);
+        setBanConfirming(false);
       }
     }
     function handleKey(event: KeyboardEvent) {
       if (event.key === "Escape") {
         setOpen(false);
         setConfirming(false);
+        setBanConfirming(false);
       }
     }
     document.addEventListener("mousedown", handlePointer);
@@ -221,6 +233,51 @@ function MemberActions({
               Suspend member
             </button>
           )}
+          {/* SAFE-06 — permanent ban: tears down every click/mutual/proposal. */}
+          {banned ? (
+            <button
+              type="button"
+              role="menuitem"
+              disabled={isPending}
+              onClick={() => {
+                onUnban();
+                setOpen(false);
+              }}
+              className="block w-full rounded-lg px-3 py-2 text-left text-xs font-bold text-[color:var(--ink)] transition-colors hover:bg-[color:var(--peach)] disabled:opacity-60"
+            >
+              Lift ban
+            </button>
+          ) : banConfirming ? (
+            <div className="grid gap-2 p-1">
+              <input
+                value={banReason}
+                onChange={(event) => setBanReason(event.target.value)}
+                placeholder="Ban reason (shown in audit log)"
+                className="rounded-md border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-2 py-1.5 text-xs"
+              />
+              <button
+                type="button"
+                disabled={isPending}
+                onClick={() => {
+                  onBan(banReason);
+                  setOpen(false);
+                  setBanConfirming(false);
+                }}
+                className="rounded-lg border-2 border-[color:var(--ink)] bg-[color:var(--ink)] px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-[color:var(--champagne)] hard-shadow-sm disabled:opacity-60"
+              >
+                Confirm ban — permanent
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => setBanConfirming(true)}
+              className="block w-full rounded-lg px-3 py-2 text-left text-xs font-black text-[color:var(--ink)] transition-colors hover:bg-[color:var(--ink)]/10"
+            >
+              Ban (permanent)
+            </button>
+          )}
         </div>
       ) : null}
     </div>
@@ -238,6 +295,7 @@ function MemberRow({
 }) {
   const [isPending, startTransition] = useTransition();
   const suspended = !!member.suspendedAt;
+  const banned = member.isBanned;
   const isSeed = !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
     member.id,
   );
@@ -269,6 +327,33 @@ function MemberRow({
     });
   }
 
+  function ban(reason: string) {
+    const form = new FormData();
+    form.set("profile_id", member.id);
+    form.set("reason", reason);
+    startTransition(async () => {
+      try {
+        await banMemberAction(form);
+        toast.success(`Banned ${member.displayName} — clicks & plans torn down.`);
+      } catch {
+        toast.error("Could not ban. Try again.");
+      }
+    });
+  }
+
+  function unban() {
+    const form = new FormData();
+    form.set("profile_id", member.id);
+    startTransition(async () => {
+      try {
+        await unbanMemberAction(form);
+        toast.success(`Lifted ban on ${member.displayName}.`);
+      } catch {
+        toast.error("Could not lift ban. Try again.");
+      }
+    });
+  }
+
   function toggleVerified() {
     const next = !member.photoVerified;
     const form = new FormData();
@@ -291,7 +376,7 @@ function MemberRow({
   return (
     <div
       className={`grid gap-3 border-b border-[color:var(--line)] px-5 py-4 text-sm font-medium text-[color:var(--mauve)] last:border-0 md:grid-cols-[1.4fr_0.6fr_0.8fr_0.8fr_0.7fr_0.6fr_0.7fr] md:items-center ${
-        suspended ? "bg-[color:var(--rose)]/10" : ""
+        banned ? "bg-[color:var(--ink)]/5" : suspended ? "bg-[color:var(--rose)]/10" : ""
       }`}
     >
       <div>
@@ -317,6 +402,11 @@ function MemberRow({
           </p>
         ) : null}
         <EventCards events={member.events} onSelect={onEventSelect} />
+        {banned ? (
+          <p className="mt-1 inline-flex rounded-full border-2 border-[color:var(--ink)] bg-[color:var(--ink)] px-2 py-0.5 text-[0.65rem] font-black uppercase tracking-wider text-[color:var(--champagne)]">
+            Banned · permanent
+          </p>
+        ) : null}
         {suspended && member.suspendedReason ? (
           <p className="mt-1 text-xs font-bold text-[color:var(--rose)]">
             Suspended: {member.suspendedReason}
@@ -362,9 +452,12 @@ function MemberRow({
         <MemberActions
           member={member}
           suspended={suspended}
+          banned={banned}
           isPending={isPending}
           onSuspend={suspend}
           onUnsuspend={unsuspend}
+          onBan={ban}
+          onUnban={unban}
           onToggleVerified={toggleVerified}
         />
       )}

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Spark } from "./ds";
 
 // Icon keys kept as a closed union so the server-built tab list can name an
 // icon without shipping a component across the server/client boundary.
@@ -40,8 +41,8 @@ export function MobileBottomNav({ tabs }: { tabs: BottomNavTab[] }) {
                 aria-current={active ? "page" : undefined}
                 className={`flex min-h-[56px] flex-col items-center justify-center gap-1 px-1 py-2 text-[0.68rem] font-semibold transition-colors ${
                   active
-                    ? "text-[color:var(--ink)]"
-                    : "text-[color:var(--mauve)] hover:text-[color:var(--ink)]"
+                    ? "text-[color:var(--purple)]"
+                    : "text-[color:var(--slate)] hover:text-[color:var(--ink)]"
                 }`}
               >
                 <BottomNavGlyph icon={tab.icon} active={active} />
@@ -56,7 +57,12 @@ export function MobileBottomNav({ tabs }: { tabs: BottomNavTab[] }) {
 }
 
 function BottomNavGlyph({ icon, active }: { icon: BottomNavIcon; active: boolean }) {
-  const stroke = active ? "var(--peach)" : "currentColor";
+  // The people tab is the one spark in the bar - the brand glyph, never a
+  // starburst of strokes and never the orange emoji.
+  if (icon === "spark") {
+    return <Spark size={24} tone={active ? "var(--purple)" : "var(--slate)"} toneSmall={active ? "var(--purple-400)" : "var(--slate)"} />;
+  }
+  const stroke = "currentColor";
   const common = {
     width: 24,
     height: 24,
@@ -110,12 +116,6 @@ function BottomNavGlyph({ icon, active }: { icon: BottomNavIcon; active: boolean
         <svg {...common}>
           <circle cx="12" cy="12" r="9" />
           <path d="M12 11v5M12 7.5h.01" />
-        </svg>
-      );
-    case "spark":
-      return (
-        <svg {...common}>
-          <path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M18 6l-2.5 2.5M8.5 15.5 6 18" />
         </svg>
       );
     default:

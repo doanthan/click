@@ -103,7 +103,7 @@ export function EventListCard({
 
         <div className="mt-auto flex flex-wrap items-center justify-between gap-3 pt-4">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm font-bold text-[color:var(--mauve)]">
-            <span>{event.attendees.toLocaleString()} interested</span>
+            <span>{event.attendees.toLocaleString()} going</span>
             <span
               className={`rounded-full px-2.5 py-0.5 text-xs font-black ${
                 isFull

@@ -1,0 +1,51 @@
+<!-- @dsCard group="Merchant" viewport="700x460" name="Merchant - stats, capacity, status, stepper" subtitle="The host-business console vocabulary: period-scoped KPI tiles, capacity meters, the single status pill set, and the wizard stepper." -->
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <link rel="stylesheet" href="../../styles.css" />
+  <style>
+    body { margin: 0; background: var(--cream); font-family: var(--font-sans); padding: 26px 28px; color: var(--text-strong); }
+    .ttl { font-size: 11px; font-weight: 700; letter-spacing: var(--tracking-overline); text-transform: uppercase; color: var(--text-muted); margin: 18px 0 8px; }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+    .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  </style>
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+  <script src="../../_ds_bundle.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { StatCard, CapacityMeter, StatusPill, WizardStepper } = window.ClickDesignSystem_51aca0;
+    function Demo() {
+      const [step, setStep] = React.useState(2);
+      return (
+        <div>
+          <p class="ttl" style={{marginTop:0}}>KPI tiles - one hero max, always period-scoped</p>
+          <div class="grid4">
+            <StatCard hero label="Upcoming" value="3" note="next: Wed 15 Jul" />
+            <StatCard label="Confirmed RSVPs" value="50" note="this month" />
+            <StatCard label="Fill rate" value="60%" note="upcoming events" />
+            <StatCard label="Revenue" value="$434" note="July · paid events" />
+          </div>
+          <p class="ttl">Capacity meters - coral above 85% full</p>
+          <div class="row" style={{gap: 28}}>
+            <CapacityMeter confirmed={4} cap={16} />
+            <CapacityMeter confirmed={11} cap={12} />
+            <CapacityMeter confirmed={14} cap={20} />
+          </div>
+          <p class="ttl">Status pills - events · bookings · money</p>
+          <div class="row">
+            <StatusPill status="live" /><StatusPill status="pending" /><StatusPill status="ended" /><StatusPill status="cancelled" /><StatusPill status="confirmed" /><StatusPill status="waitlist" /><StatusPill status="paid" /><StatusPill status="refunded" />
+          </div>
+          <p class="ttl">Wizard stepper - completed steps are clickable</p>
+          <WizardStepper steps={["Basics", "When & where", "Tickets", "Review"]} current={step} onStep={setStep} />
+        </div>
+      );
+    }
+    ReactDOM.createRoot(document.getElementById("root")).render(<Demo />);
+  </script>
+</body>
+</html>

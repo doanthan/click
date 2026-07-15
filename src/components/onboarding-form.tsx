@@ -1,11 +1,20 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { interestTagCategories } from "@/lib/click-data";
 import { regionFromPostcode } from "@/lib/geo";
 import { REGISTER_PREFILL_KEY, type RegisterPrefill } from "@/components/register-form";
 import { BirthDatePicker } from "@/components/birth-date-picker";
+import { AuthError, AuthNote, Field } from "@/components/auth-ui";
+import {
+  CatGlyph,
+  Icon,
+  Logo,
+  categoryGlyphKey,
+  ckBtn,
+  type IconName,
+} from "@/components/ds";
 
 type Intent =
   | "dating"
@@ -20,19 +29,21 @@ type Intent =
 type IntentOption = {
   value: Intent;
   label: string;
-  emoji: string;
   body: string;
+  /** The ONE icon treatment: a Deep-Purple line glyph on a lavender disc. Never an emoji. */
+  cat?: string;
+  icon?: IconName;
 };
 
 const INTENT_OPTIONS: IntentOption[] = [
-  { value: "friendship",  emoji: "🫶", label: "Friendship",  body: "Low-pressure plans to make new friends." },
-  { value: "dating",      emoji: "🌹", label: "Dating",      body: "Slow dating tables and relationship-minded events." },
-  { value: "networking",  emoji: "💼", label: "Networking",  body: "Career switchers, founders, peer support." },
-  { value: "hobbies",     emoji: "🎨", label: "Hobbies",     body: "Find people who share your craft — creative, sport, gaming, books." },
-  { value: "wellness",    emoji: "🧘", label: "Wellness",    body: "Slow mornings, mindful movement, sober-friendly nights." },
-  { value: "community",   emoji: "🏘️", label: "Community",   body: "Local meetups, volunteering, neighbourhood vibes." },
-  { value: "new_in_town", emoji: "🧭", label: "New in town", body: "Just relocated — looking to plug into Sydney fast." },
-  { value: "exploring",   emoji: "✨", label: "Exploring",   body: "Just curious — show me a bit of everything." },
+  { value: "friendship",  cat: "social",      label: "Friendship",  body: "Good people, low stakes, no agenda." },
+  { value: "dating",      cat: "dating",      label: "Dating",      body: "If you click with someone, see where it goes." },
+  { value: "networking",  cat: "networking",  label: "Networking",  body: "A few more good faces in your week." },
+  { value: "hobbies",     cat: "arts",        label: "Hobbies",     body: "Find the people who share your craft." },
+  { value: "wellness",    cat: "wellness",    label: "Wellness",    body: "Slow mornings, mindful movement, sober-friendly nights." },
+  { value: "community",   cat: "community",   label: "Community",   body: "Local meetups, volunteering, your neighbourhood." },
+  { value: "new_in_town", cat: "travel",      label: "New in town", body: "Find your feet, and your people nearby." },
+  { value: "exploring",   icon: "compass",    label: "Exploring",   body: "Curious - show me a bit of everything." },
 ];
 
 const STORAGE_KEY = "click:onboarding-draft";
@@ -59,7 +70,7 @@ type OnboardingFormProps = {
   initialName: string;
 };
 
-// 18 years ago today, ISO yyyy-mm-dd — the max value the <input type="date"> accepts.
+// 18 years ago today, ISO yyyy-mm-dd - the max value the <input type="date"> accepts.
 function getMaxBirthDate() {
   return new Date(Date.now() - 18 * 365.25 * 24 * 60 * 60 * 1000)
     .toISOString()
@@ -87,7 +98,7 @@ export function OnboardingForm({ initialName }: OnboardingFormProps) {
   const [postcode, setPostcode] = useState("");
   const [birthDate, setBirthDate] = useState("");
   const [intents, setIntents] = useState<Set<Intent>>(new Set(["friendship"]));
-  // Dating visibility default OFF — opt-in is the safer default on a
+  // Dating visibility default OFF - opt-in is the safer default on a
   // dating-adjacent product. Flexible discovery stays opt-out (true).
   const [datingVisible, setDatingVisible] = useState(false);
   const [flexibleDiscovery, setFlexibleDiscovery] = useState(true);
@@ -111,7 +122,7 @@ export function OnboardingForm({ initialName }: OnboardingFormProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   // Hydrate from sessionStorage (signup prefill) and localStorage (draft) once.
-  // This is the "synchronize React with an external store on mount" pattern —
+  // This is the "synchronize React with an external store on mount" pattern -
   // we can't lazy-init from browser storage without an SSR/CSR hydration
   // mismatch, so the one-render-cost from effect-driven setState is the lesser
   // evil. Rule disabled for the whole block intentionally.
@@ -131,7 +142,7 @@ export function OnboardingForm({ initialName }: OnboardingFormProps) {
         window.sessionStorage.removeItem(REGISTER_PREFILL_KEY);
       }
     } catch {
-      // sessionStorage / parse can fail in private mode — ignore.
+      // sessionStorage / parse can fail in private mode - ignore.
     }
 
     try {
@@ -178,7 +189,7 @@ export function OnboardingForm({ initialName }: OnboardingFormProps) {
       };
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(draft));
     } catch {
-      // localStorage can fail (quota, private mode) — ignore.
+      // localStorage can fail (quota, private mode) - ignore.
     }
   }, [displayName, postcode, birthDate, intents, datingVisible, flexibleDiscovery, tags, bio]);
 
@@ -236,7 +247,7 @@ export function OnboardingForm({ initialName }: OnboardingFormProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           displayName,
-          // Stored in profiles.suburb — we now collect a 4-digit AU postcode here.
+          // Stored in profiles.suburb - we now collect a 4-digit AU postcode here.
           suburb: postcode.trim(),
           age: "", // age is derived from birthDate server-side now
           bio,
@@ -276,93 +287,91 @@ export function OnboardingForm({ initialName }: OnboardingFormProps) {
     router.refresh();
   }
 
+  const picked = tags.size;
+
   return (
-    <section
-      className="flex min-h-[100dvh] flex-col lg:min-h-0 lg:rounded-2xl lg:border-2 lg:border-[color:var(--line)] lg:bg-[color:var(--cream)] lg:hard-shadow-sm lg:my-12 lg:overflow-hidden"
-      aria-label="Profile setup"
-    >
+    <section className="flex min-h-[100dvh] flex-col" aria-label="Profile setup">
       {/* ---------- Header ---------- */}
-      <header className="border-b-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 pt-[max(env(safe-area-inset-top),0.75rem)] pb-4 lg:rounded-t-2xl lg:px-6 lg:pt-5">
-        <p className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.2em] text-[color:var(--rose)]">
-          Set up your profile
-        </p>
-        <h2 className="font-display mt-2 text-3xl font-bold leading-[1.02] tracking-[-0.02em] sm:text-4xl">
-          A few quick taps. No quiz.
-        </h2>
-        <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
-          Everything&apos;s on one page — fill what matters, skip what doesn&apos;t, then
-          hit Finish. You can polish it all later from your dashboard.
-        </p>
+      <header className="flex-none px-5 pt-[max(env(safe-area-inset-top),1rem)] sm:px-8">
+        <div className="mx-auto w-full max-w-xl">
+          <Logo size={26} />
+        </div>
       </header>
 
       {/* ---------- Body: every section stacked on one scrollable page ---------- */}
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto px-4 py-8 sm:px-6 lg:px-8"
+        className="flex-1 overflow-y-auto px-5 py-8 sm:px-8"
         style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 7.5rem)" }}
       >
-        <div className="mx-auto grid w-full max-w-xl gap-12">
+        <div className="mx-auto grid w-full max-w-xl gap-11">
+          <div>
+            <p className="eyebrow">Set up your profile</p>
+            <h1 className="font-display mt-3 text-[length:var(--text-h1)] font-semibold leading-[1.12] tracking-[-0.02em] text-[color:var(--ink)]">
+              A few quick taps
+            </h1>
+            <p className="mt-2 text-base leading-[1.6] text-[color:var(--slate)]">
+              Fill what matters, skip what doesn&apos;t, then hit Finish. You can polish it all
+              later from your dashboard.
+            </p>
+          </div>
+
           {/* ----- About you ----- */}
           <Section
+            glyph={<Icon name="pin" size={19} />}
             eyebrow="About you"
-            title="What should we call you?"
-            subtitle="Just a name and a postcode so we can stop calling you 'new user'."
+            title="The basics"
+            subtitle="Just enough to find you good things nearby."
           >
-            <label className="grid gap-2 text-sm font-bold">
-              Display name
-              <input
-                required
-                autoComplete="given-name"
-                inputMode="text"
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-3 text-base font-semibold outline-none focus:border-[color:var(--rose)]"
-                placeholder="Jordan Lee"
-              />
-            </label>
-            <label className="grid gap-2 text-sm font-bold">
-              Postcode
-              <input
-                required
-                autoComplete="postal-code"
-                inputMode="numeric"
-                pattern="\d{4}"
-                maxLength={4}
-                value={postcode}
-                onChange={(e) => setPostcode(e.target.value.replace(/\D/g, "").slice(0, 4))}
-                className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-3 text-base font-semibold outline-none focus:border-[color:var(--rose)]"
-                placeholder="2204"
-              />
-            </label>
+            <Field
+              label="First name"
+              icon="user"
+              required
+              autoComplete="given-name"
+              inputMode="text"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              placeholder="Jordan"
+            />
+            <Field
+              label="Postcode"
+              icon="pin"
+              required
+              autoComplete="postal-code"
+              inputMode="numeric"
+              pattern="\d{4}"
+              maxLength={4}
+              value={postcode}
+              onChange={(e) => setPostcode(e.target.value.replace(/\D/g, "").slice(0, 4))}
+              placeholder="2204"
+              hint="Click is piloting in inner Sydney first. Pop in your postcode - we'll show you what's near."
+            />
             {outsidePilotArea ? (
-              <p className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-4 py-3 text-xs font-bold leading-5 text-[color:var(--surface-deep)] hard-shadow-sm">
-                <span className="font-mono mr-2 text-[0.65rem] font-bold uppercase tracking-[0.18em]">
-                  Heads up
-                </span>
-                Click is launching in Sydney first, so we&apos;re not live in your
-                area just yet. Finish signing up and we&apos;ll add you to the
-                waitlist — we&apos;ll email you the moment Click launches near you.
-              </p>
+              <AuthNote icon="pin">
+                You&apos;re outside our first suburbs - you&apos;re still in, and we&apos;ll tell
+                you the moment Click reaches your area.
+              </AuthNote>
             ) : null}
             {coords ? (
-              <p className="rounded-xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-3 text-xs font-semibold text-[color:var(--mauve)]">
-                <span className="font-mono mr-2 text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
-                  Location ✓
-                </span>
-                Using {coords.latitude.toFixed(3)}, {coords.longitude.toFixed(3)} to
-                sort events near you.
+              <p className="flex items-center gap-2 text-[12.5px] text-[color:var(--slate)]">
+                <Icon name="check" size={14} className="text-[color:var(--sage)]" />
+                Using {coords.latitude.toFixed(3)}, {coords.longitude.toFixed(3)} to sort events
+                near you.
               </p>
             ) : null}
           </Section>
 
           {/* ----- Birth date ----- */}
           <Section
+            glyph={<Icon name="calendar" size={19} />}
             eyebrow="Quick check"
             title="When were you born?"
-            subtitle="Click is 18+. We compute your age from this and never show your full DOB."
+            subtitle="Click is 18+. We work out your age from this and never show your full birth date."
           >
-            <div className="grid gap-2 text-sm font-bold">
-              <span id="birth-date-label">Birth date</span>
+            <div className="grid gap-1.5">
+              <span id="birth-date-label" className="text-[13.5px] font-semibold text-[color:var(--ink)]">
+                Birth date
+              </span>
               <BirthDatePicker
                 labelledBy="birth-date-label"
                 value={birthDate}
@@ -370,44 +379,56 @@ export function OnboardingForm({ initialName }: OnboardingFormProps) {
                 max={maxBirthDate}
                 describedBy="birth-date-hint"
               />
-              <span
-                id="birth-date-hint"
-                className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-[color:var(--mauve)]"
-              >
-                18+ only. Used once for the age gate, then hidden.
+              <span id="birth-date-hint" className="text-[12.5px] leading-[1.5] text-[color:var(--slate)]">
+                Used once for the age gate, then hidden.
               </span>
             </div>
           </Section>
 
           {/* ----- Intent ----- */}
           <Section
-            eyebrow="The fun bit"
-            title="Why are you here?"
-            subtitle="Pick one or more. We use this to keep you out of the wrong rooms."
+            glyph={<Icon name="users" size={19} />}
+            eyebrow="What you're after"
+            title="What brings you to Click?"
+            subtitle="Pick any that fit - it tunes what we show you. You can change it later."
           >
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-2.5 sm:grid-cols-2">
               {INTENT_OPTIONS.map((intent) => {
-                const checked = intents.has(intent.value);
+                const on = intents.has(intent.value);
                 return (
                   <button
                     key={intent.value}
                     type="button"
                     onClick={() => toggleIntent(intent.value)}
-                    aria-pressed={checked}
-                    className={`flex items-start gap-3 rounded-2xl border-2 px-4 py-4 text-left transition active:scale-[0.98] ${
-                      checked
-                        ? "border-[color:var(--rose)] bg-[color:var(--peach)] hard-shadow-sm"
-                        : "border-[color:var(--line)] bg-[color:var(--cream)] hover:bg-[color:var(--champagne)]"
+                    aria-pressed={on}
+                    className={`flex items-start gap-3 rounded-2xl border-[1.5px] px-4 py-3.5 text-left transition-colors ${
+                      on
+                        ? "border-[color:var(--purple-500)] bg-[color:var(--lavender-100)]"
+                        : "border-[color:var(--mist-strong)] bg-[color:var(--paper)] hover:bg-[color:var(--lavender-100)]"
                     }`}
                   >
-                    <span aria-hidden="true" className="text-2xl leading-none">
-                      {intent.emoji}
-                    </span>
-                    <span className="grid gap-1">
-                      <span className="block text-base font-bold">{intent.label}</span>
-                      <span className="block text-xs font-semibold leading-5 text-[color:var(--mauve)]">
+                    <Disc>
+                      {intent.cat ? (
+                        <CatGlyph name={intent.cat} size={19} />
+                      ) : (
+                        <Icon name={intent.icon ?? "compass"} size={19} />
+                      )}
+                    </Disc>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[15px] font-semibold text-[color:var(--ink)]">
+                        {intent.label}
+                      </span>
+                      <span className="mt-0.5 block text-[12.5px] leading-[1.45] text-[color:var(--slate)]">
                         {intent.body}
                       </span>
+                    </span>
+                    <span
+                      aria-hidden
+                      className={`mt-0.5 flex size-[22px] flex-none items-center justify-center rounded-full bg-[color:var(--purple)] text-[color:var(--champagne)] transition-opacity ${
+                        on ? "opacity-100" : "opacity-0"
+                      }`}
+                    >
+                      <Icon name="check" size={13} stroke={3} />
                     </span>
                   </button>
                 );
@@ -417,24 +438,25 @@ export function OnboardingForm({ initialName }: OnboardingFormProps) {
 
           {/* ----- Visibility ----- */}
           <Section
+            glyph={<Icon name="eye" size={19} />}
             eyebrow="Visibility"
             title="Who can see you?"
-            subtitle="Flip what you're comfortable with — you can change these later from settings."
+            subtitle="Set what you're comfortable with - you can change these anytime in settings."
           >
-            {/* Dating visibility is only meaningful to people who picked Dating —
+            {/* Dating visibility is only meaningful to people who picked Dating -
                 hide it entirely otherwise so non-dating users aren't asked about
                 a dating-only setting. */}
             {intents.has("dating") ? (
               <Toggle
-                label="Dating visibility"
-                description="Let people on Click who are dating-minded see you on profiles and Click Radar."
+                label="Show I'm open to dating"
+                description="Only people also open to dating ever see this."
                 checked={datingVisible}
                 onChange={setDatingVisible}
               />
             ) : null}
             <Toggle
               label="Flexible discovery"
-              description="Show me cross-intent events (e.g. friendship-tagged events even if my main intent is dating)."
+              description="Show me events across intents, not only the one I lead with."
               checked={flexibleDiscovery}
               onChange={setFlexibleDiscovery}
             />
@@ -442,17 +464,22 @@ export function OnboardingForm({ initialName }: OnboardingFormProps) {
 
           {/* ----- Interests (optional) ----- */}
           <Section
-            eyebrow="Optional"
-            title="What are you into?"
-            subtitle="Tap whatever fits. Skip what doesn't. These shape your recommendations — pick as many as you like, and you can always add more or edit this later from your dashboard."
+            glyph={<CatGlyph name="arts" size={19} />}
+            eyebrow="Interests"
+            title="What do you like doing?"
+            subtitle="Pick a few - three or more is the sweet spot. You can always add more later."
           >
-            <div className="grid gap-4">
+            <div className="grid gap-6">
               {interestTagCategories.map(([category, ...tagList]) => (
-                <div
-                  key={category}
-                  className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-4"
-                >
-                  <p className="text-sm font-bold">{category}</p>
+                <div key={category}>
+                  <div className="flex items-center gap-2.5">
+                    <Disc size={32}>
+                      <CatGlyph name={categoryGlyphKey(category)} size={16} />
+                    </Disc>
+                    <span className="text-[13px] font-semibold text-[color:var(--ink)]">
+                      {category}
+                    </span>
+                  </div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {tagList.map((tag) => {
                       const selected = tags.has(tag.toLowerCase());
@@ -462,10 +489,8 @@ export function OnboardingForm({ initialName }: OnboardingFormProps) {
                           type="button"
                           onClick={() => toggleTag(tag)}
                           aria-pressed={selected}
-                          className={`min-h-9 rounded-full border-2 px-3.5 py-1.5 text-xs font-bold transition active:scale-[0.97] ${
-                            selected
-                              ? "border-[color:var(--rose)] bg-[color:var(--rose)] text-[color:var(--surface-deep)]"
-                              : "border-[color:var(--line)] bg-[color:var(--champagne)] text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+                          className={`ck-tag ck-tag--select h-8 px-3.5 text-[13.5px] ${
+                            selected ? "ck-tag--selected" : ""
                           }`}
                         >
                           {tag}
@@ -476,39 +501,42 @@ export function OnboardingForm({ initialName }: OnboardingFormProps) {
                 </div>
               ))}
             </div>
+            <p className="text-[13.5px] font-medium text-[color:var(--slate)]">
+              {picked === 0
+                ? "Pick a few to get started."
+                : picked >= 3
+                  ? `Nice - ${picked} picked.`
+                  : `${picked} picked · pick ${3 - picked} more for better suggestions.`}
+            </p>
           </Section>
 
           {/* ----- Bio (optional) ----- */}
           <Section
+            glyph={<Icon name="user" size={19} />}
             eyebrow="Optional"
-            title="Anything we should know?"
-            subtitle="One line is fine. Helps us hand-pick early events for you. Totally skippable."
+            title="Anything you'd like us to know?"
+            subtitle="One line is plenty. It helps us hand-pick your first few events."
           >
-            <label className="grid gap-2 text-sm font-bold">
-              Tell us what you want
+            <label className="grid gap-1.5">
+              <span className="text-[13.5px] font-semibold text-[color:var(--ink)]">
+                Tell us what you want
+              </span>
               <textarea
                 value={bio}
                 onChange={(e) => setBio(e.target.value)}
-                className="min-h-32 rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-3 text-base font-semibold outline-none focus:border-[color:var(--rose)]"
-                placeholder="I want low-pressure ways to make friends after work."
+                className="min-h-28 rounded-xl border-[1.5px] border-[color:var(--mist-strong)] bg-[color:var(--paper)] px-3.5 py-3 text-base leading-[1.55] text-[color:var(--ink)] placeholder:text-[color:var(--ink-faint)]"
+                placeholder="I'd like low-pressure ways to meet people after work."
               />
             </label>
           </Section>
-        </div>
 
-        {message && (
-          <p
-            role="alert"
-            className="mx-auto mt-8 max-w-xl rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-4 py-3 text-sm font-bold text-[color:var(--surface-deep)]"
-          >
-            {message}
-          </p>
-        )}
+          {message ? <AuthError>{message}</AuthError> : null}
+        </div>
       </div>
 
       {/* ---------- Sticky footer: single Finish CTA ---------- */}
       <footer
-        className="sticky bottom-0 z-20 border-t-2 border-[color:var(--line)] bg-[color:var(--champagne)]/95 px-4 pt-3 backdrop-blur lg:rounded-b-2xl lg:px-6"
+        className="sticky bottom-0 z-20 flex-none border-t border-[color:var(--mist)] bg-[color:var(--champagne)] px-5 pt-3 sm:px-8"
         style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 0.75rem)" }}
       >
         <div className="mx-auto flex max-w-xl items-center justify-end">
@@ -516,9 +544,16 @@ export function OnboardingForm({ initialName }: OnboardingFormProps) {
             type="button"
             onClick={handleSubmit}
             disabled={state === "submitting"}
-            className="ml-auto rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-8 py-3 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+            aria-busy={state === "submitting" || undefined}
+            className={ckBtn("primary", "lg", {
+              className: state === "submitting" ? "ck-btn--loading" : "",
+            })}
           >
-            {state === "submitting" ? "Saving…" : "Finish"}
+            <span className="ck-btn__label">
+              Finish
+              <Icon name="arrowR" size={17} />
+            </span>
+            {state === "submitting" ? <span className="ck-btn__spinner" aria-hidden /> : null}
           </button>
         </div>
       </footer>
@@ -530,37 +565,53 @@ export function OnboardingForm({ initialName }: OnboardingFormProps) {
 // Subcomponents
 // ---------------------------------------------------------------------------
 
+/** The ONE icon treatment: a Deep-Purple line glyph on a soft lavender disc. */
+function Disc({ children, size = 40 }: { children: ReactNode; size?: number }) {
+  return (
+    <span
+      className="flex flex-none items-center justify-center rounded-full bg-[color:var(--lavender-100)] text-[color:var(--purple)]"
+      style={{ width: size, height: size }}
+    >
+      {children}
+    </span>
+  );
+}
+
 function Section({
+  glyph,
   eyebrow,
   title,
   subtitle,
   children,
 }: {
+  glyph: ReactNode;
   eyebrow: string;
   title: string;
   subtitle?: string;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <div className="grid w-full gap-5">
-      <div>
-        <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.2em] text-[color:var(--rose)]">
-          {eyebrow}
-        </p>
-        <h2 className="font-display mt-2 text-2xl font-semibold leading-[1.05] tracking-[-0.02em] sm:text-3xl">
-          {title}
-        </h2>
-        {subtitle ? (
-          <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
-            {subtitle}
-          </p>
-        ) : null}
+      <div className="flex items-start gap-3.5">
+        <Disc>{glyph}</Disc>
+        <div className="min-w-0">
+          <p className="eyebrow">{eyebrow}</p>
+          <h2 className="font-display mt-1.5 text-[length:var(--text-h3)] font-semibold leading-[1.2] tracking-[-0.02em] text-[color:var(--ink)]">
+            {title}
+          </h2>
+          {subtitle ? (
+            <p className="mt-1.5 text-[14.5px] leading-[1.55] text-[color:var(--slate)]">
+              {subtitle}
+            </p>
+          ) : null}
+        </div>
       </div>
       <div className="grid gap-4">{children}</div>
     </div>
   );
 }
 
+/** The DS switch - Deep Purple when on, never a status colour. */
 function Toggle({
   label,
   description,
@@ -578,25 +629,24 @@ function Toggle({
       role="switch"
       aria-checked={checked}
       onClick={() => onChange(!checked)}
-      className={`flex items-start justify-between gap-3 rounded-2xl border-2 px-4 py-4 text-left transition ${
-        checked
-          ? "border-[color:var(--rose)] bg-[color:var(--peach)]"
-          : "border-[color:var(--line)] bg-[color:var(--cream)]"
-      }`}
+      className="flex items-start justify-between gap-4 rounded-2xl border-[1.5px] border-[color:var(--mist-strong)] bg-[color:var(--paper)] px-4 py-3.5 text-left transition-colors hover:bg-[color:var(--lavender-100)]"
     >
-      <span className="grid gap-1">
-        <span className="text-base font-bold">{label}</span>
-        <span className="text-xs font-semibold leading-5 text-[color:var(--mauve)]">
+      <span className="min-w-0">
+        <span className="block text-[15px] font-semibold text-[color:var(--ink)]">{label}</span>
+        <span className="mt-0.5 block text-[12.5px] leading-[1.45] text-[color:var(--slate)]">
           {description}
         </span>
       </span>
       <span
-        aria-hidden="true"
-        className={`mt-0.5 inline-flex h-7 w-12 shrink-0 items-center rounded-full border-2 border-[color:var(--line)] p-0.5 transition ${
-          checked ? "bg-[color:var(--rose)] justify-end" : "bg-[color:var(--champagne)] justify-start"
+        aria-hidden
+        className={`relative mt-0.5 h-[26px] w-11 flex-none rounded-full transition-colors ${
+          checked ? "bg-[color:var(--purple)]" : "bg-[color:var(--mist-strong)]"
         }`}
       >
-        <span className="block size-5 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)]" />
+        <span
+          className="absolute top-[3px] size-5 rounded-full bg-[color:var(--paper)] shadow-[var(--shadow-xs)] transition-[left]"
+          style={{ left: checked ? 21 : 3 }}
+        />
       </span>
     </button>
   );

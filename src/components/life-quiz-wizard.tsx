@@ -9,8 +9,9 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { submitLifeQuizAction } from "@/app/quiz/life/actions";
+import { Icon, ckBtn, type IconName } from "@/components/ds";
 
-// Life quiz — multi-step wizard mirroring the /merchant/signup pattern. Each
+// Life quiz - multi-step wizard mirroring the /merchant/signup pattern. Each
 // section gets its own URL so users can bookmark, link to, and browser-back
 // through them:
 //   /quiz/life              · entry → redirects to the first step
@@ -22,16 +23,23 @@ import { submitLifeQuizAction } from "@/app/quiz/life/actions";
 // Selected tags live in a React context provided by <LifeQuizProvider> mounted
 // in the route's layout, so they persist across client-side navigation between
 // sibling step pages (App Router keeps shared layouts mounted). Each step page
-// renders <LifeQuizStep step={n} /> which surfaces the progress pills and
-// Back / Next / Save nav. Unlike the merchant wizard there's no per-step
-// validation — the quiz is opt-in ("tap what fits, skip what doesn't"), so
+// renders <LifeQuizStep step={n} /> which surfaces the progress bar and
+// Back / Skip / Next / Save nav. Unlike the merchant wizard there's no per-step
+// validation - the quiz is opt-in ("tap what fits, skip what doesn't"), so
 // every step is skippable and Save commits whatever's selected.
+//
+// Styling ports the DS quiz (`click-app-v2/quiz.jsx`): a Lucide line glyph on a
+// lavender disc (never a spark - that's rationed to the three mechanic peaks),
+// one neutral option pill whose selected state is a flat Deep-Purple fill with
+// NO tick, and an ENDOWED progress bar that starts pre-filled.
 
 // ---------- data ----------
 
 export type Section = {
   slug: string;
   title: string;
+  /** Plain line glyph on a lavender disc. Never a spark on a quiz surface. */
+  icon: IconName;
   output: string;
   options: { slug: string; label: string }[];
 };
@@ -40,6 +48,7 @@ export const SECTIONS: Section[] = [
   {
     slug: "life-stage",
     title: "Life stage",
+    icon: "user",
     output: "Pulls events tagged for similar moments.",
     options: [
       { slug: "student", label: "Student" },
@@ -58,7 +67,8 @@ export const SECTIONS: Section[] = [
   {
     slug: "availability",
     title: "Availability",
-    output: "When you’re likely to actually show up.",
+    icon: "calendar",
+    output: "When you're likely to actually show up.",
     options: [
       { slug: "weeknights", label: "Weeknights" },
       { slug: "weekends", label: "Weekends" },
@@ -69,7 +79,8 @@ export const SECTIONS: Section[] = [
   {
     slug: "event-style",
     title: "Event style",
-    output: "Rooms that match your energy.",
+    icon: "compass",
+    output: "Rooms that fit your energy.",
     options: [
       { slug: "small-table", label: "Small table" },
       { slug: "active", label: "Active / outdoors" },
@@ -81,7 +92,8 @@ export const SECTIONS: Section[] = [
   {
     slug: "energy",
     title: "Energy and mood",
-    output: "Where you’re at right now.",
+    icon: "radar",
+    output: "Where you're at right now.",
     options: [
       { slug: "curious", label: "Curious" },
       { slug: "cautious", label: "Cautious" },
@@ -93,6 +105,9 @@ export const SECTIONS: Section[] = [
 export const STEP_COUNT = SECTIONS.length;
 // Step paths line up index-for-index with SECTIONS.
 export const STEP_PATHS = SECTIONS.map((s) => `/quiz/life/${s.slug}`);
+// Endowed progress: the bar is already moving on step 1, and it's fast early /
+// slower late. It never starts at 0.
+const PCT = [26, 48, 72, 92];
 
 // ---------- state ----------
 
@@ -149,6 +164,7 @@ export function LifeQuizStep({ step }: { step: number }) {
 
   const section = SECTIONS[step];
   const isLast = step === STEP_COUNT - 1;
+  const answeredHere = section.options.some((o) => state.selected.includes(o.slug));
 
   function goNext() {
     router.push(STEP_PATHS[step + 1]);
@@ -167,42 +183,42 @@ export function LifeQuizStep({ step }: { step: number }) {
   }
 
   return (
-    <div className="mt-10">
-      {/* Progress pills */}
-      <ol className="flex items-center gap-2" aria-label="Progress">
-        {SECTIONS.map((s, i) => {
-          const done = i < step;
-          const here = i === step;
-          return (
-            <li key={s.slug} className="flex-1">
-              <button
-                type="button"
-                onClick={() => router.push(STEP_PATHS[i])}
-                aria-label={`Go to ${s.title}`}
-                aria-current={here ? "step" : undefined}
-                className={[
-                  "h-2 w-full rounded-full border-2 border-[color:var(--line)] transition-colors",
-                  done
-                    ? "bg-[color:var(--peach)]"
-                    : here
-                      ? "bg-[color:var(--rose)]"
-                      : "bg-[color:var(--cream)]",
-                ].join(" ")}
-              />
-            </li>
-          );
-        })}
-      </ol>
-      <p className="mt-3 font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-        Step {step + 1} of {STEP_COUNT} · {section.title}
+    <div className="mt-5">
+      {/* Step counter + endowed progress bar */}
+      <p className="font-display text-[12.5px] font-semibold text-[color:var(--slate)]">
+        Step {step + 1} of {STEP_COUNT}
       </p>
+      <div
+        className="mt-2 h-1.5 overflow-hidden rounded-full bg-[color:var(--lav-bg)]"
+        role="progressbar"
+        aria-valuenow={step + 1}
+        aria-valuemin={1}
+        aria-valuemax={STEP_COUNT}
+        aria-label={`Step ${step + 1} of ${STEP_COUNT}`}
+      >
+        <div
+          className="h-full rounded-full bg-[color:var(--purple)] transition-[width] duration-500 ease-out"
+          style={{ width: `${PCT[step]}%` }}
+        />
+      </div>
 
-      {/* Section card */}
-      <fieldset className="mt-6 rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-5 hard-shadow-sm">
-        <legend className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
-          {section.title} · {section.output}
-        </legend>
-        <div className="mt-4 flex flex-wrap gap-2">
+      {/* Section head - plain line glyph on a lavender disc, NEVER a spark */}
+      <div className="mt-8 text-center">
+        <span className="mx-auto flex size-11 items-center justify-center rounded-full bg-[color:var(--lavender-100)] text-[color:var(--purple)]">
+          <Icon name={section.icon} size={19} stroke={1.8} />
+        </span>
+        <h1 className="font-display mt-3.5 text-[length:var(--text-h3)] font-semibold leading-[1.2] tracking-[-0.02em] text-[color:var(--ink)]">
+          {section.title}
+        </h1>
+        <p className="mt-1.5 text-[14px] leading-[1.5] text-[color:var(--slate)]">
+          {section.output}
+        </p>
+      </div>
+
+      {/* Options - one neutral pill; selected = flat Deep-Purple fill, no tick */}
+      <fieldset className="mt-6">
+        <legend className="sr-only">{section.title}</legend>
+        <div className="flex flex-wrap justify-center gap-2">
           {section.options.map((opt) => {
             const selected = state.selected.includes(opt.slug);
             return (
@@ -211,12 +227,11 @@ export function LifeQuizStep({ step }: { step: number }) {
                 type="button"
                 aria-pressed={selected}
                 onClick={() => dispatch({ type: "toggle", slug: opt.slug })}
-                className={[
-                  "cursor-pointer rounded-full border-2 border-[color:var(--line)] px-4 py-2 text-sm font-bold hard-shadow-sm transition-colors",
+                className={`inline-flex min-h-11 items-center justify-center rounded-xl border-[1.5px] px-4 py-2.5 text-[14.5px] transition-colors ${
                   selected
-                    ? "bg-[color:var(--rose)] text-[color:var(--surface-deep)]"
-                    : "bg-[color:var(--champagne)] text-[color:var(--ink)] hover:bg-[color:var(--peach-soft)]",
-                ].join(" ")}
+                    ? "border-[color:var(--purple)] bg-[color:var(--purple)] font-semibold text-[color:var(--champagne)]"
+                    : "border-[color:var(--mist-strong)] bg-[color:var(--paper)] font-medium text-[color:var(--ink)] hover:bg-[color:var(--lavender-100)]"
+                }`}
               >
                 {opt.label}
               </button>
@@ -225,37 +240,54 @@ export function LifeQuizStep({ step }: { step: number }) {
         </div>
       </fieldset>
 
-      {/* Nav buttons */}
-      <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
-        <button
-          type="button"
-          onClick={goBack}
-          disabled={step === 0 || pending}
-          className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm disabled:cursor-not-allowed disabled:opacity-40 hover:bg-[color:var(--cream)]"
-        >
-          ← Back
-        </button>
+      <p className="mt-4 text-center text-[13px] text-[color:var(--slate)]">
+        {state.selected.length === 0
+          ? "Tap what fits. Skip what doesn't."
+          : `${state.selected.length} selected`}
+      </p>
 
-        <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
-          {state.selected.length} selected
-        </span>
-
+      {/* Nav */}
+      <div className="mt-7 flex items-center gap-3 border-t border-[color:var(--mist)] pt-5">
+        {step > 0 ? (
+          <button
+            type="button"
+            onClick={goBack}
+            disabled={pending}
+            className={ckBtn("secondary", "md")}
+          >
+            <span className="ck-btn__label">Back</span>
+          </button>
+        ) : null}
+        <div className="flex-1" />
+        {!isLast ? (
+          <button
+            type="button"
+            onClick={goNext}
+            className="font-display px-1 text-sm font-semibold text-[color:var(--slate)] hover:text-[color:var(--ink)]"
+          >
+            Skip
+          </button>
+        ) : null}
         {isLast ? (
           <button
             type="button"
             onClick={save}
             disabled={pending}
-            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-6 py-3 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm disabled:cursor-not-allowed disabled:opacity-60 hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
+            aria-busy={pending || undefined}
+            className={ckBtn("primary", "md", { className: pending ? "ck-btn--loading" : "" })}
           >
-            {pending ? "Saving…" : "Save Life Quiz tags"}
+            <span className="ck-btn__label">
+              Finish
+              <Icon name="arrowR" size={16} />
+            </span>
+            {pending ? <span className="ck-btn__spinner" aria-hidden /> : null}
           </button>
         ) : (
-          <button
-            type="button"
-            onClick={goNext}
-            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-6 py-3 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
-          >
-            Next →
+          <button type="button" onClick={goNext} className={ckBtn("primary", "md")}>
+            <span className="ck-btn__label">
+              {answeredHere ? "Next" : "Skip section"}
+              <Icon name="arrowR" size={16} />
+            </span>
           </button>
         )}
       </div>

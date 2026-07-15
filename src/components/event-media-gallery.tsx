@@ -66,16 +66,14 @@ export function EventMediaGallery({ items, statusLabel, categoryLabel }: EventMe
   // and lightbox without duplicating the markup.
   const chips =
     statusLabel || categoryLabel ? (
-      <div className="pointer-events-none absolute left-4 right-4 top-4 z-10 flex items-start justify-between gap-3">
+      <div className="pointer-events-none absolute left-3 right-3 top-3 z-10 flex items-start justify-between gap-3">
         {statusLabel ? (
-          <span className="pointer-events-auto rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-3 py-1.5 text-[0.7rem] font-bold uppercase tracking-wider text-[color:var(--surface-deep)] hard-shadow-sm">
-            {statusLabel}
-          </span>
+          <span className="ck-badge pointer-events-auto bg-[rgba(28,24,48,0.62)] text-white">{statusLabel}</span>
         ) : (
           <span />
         )}
         {categoryLabel ? (
-          <span className="pointer-events-auto rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-1.5 text-[0.7rem] font-bold uppercase tracking-wider hard-shadow-sm">
+          <span className="ck-badge pointer-events-auto bg-[color:var(--lavender-100)] text-[color:var(--purple-700)]">
             {categoryLabel}
           </span>
         ) : null}
@@ -209,7 +207,7 @@ export function EventMediaGallery({ items, statusLabel, categoryLabel }: EventMe
         <button
           type="button"
           onClick={() => setLightboxIndex(0)}
-          className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-2.5 text-xs font-bold uppercase tracking-wider hard-shadow-sm hover:bg-[color:var(--peach)]"
+          className="ck-btn ck-btn--sm ck-btn--secondary mt-3 w-full"
         >
           View all {items.length} photos
         </button>
@@ -219,7 +217,7 @@ export function EventMediaGallery({ items, statusLabel, categoryLabel }: EventMe
       <button
         type="button"
         onClick={() => setLightboxIndex(0)}
-        className="absolute bottom-4 right-4 z-10 hidden items-center gap-2 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-2 text-xs font-bold uppercase tracking-wider hard-shadow-sm transition hover:bg-[color:var(--peach)] sm:inline-flex"
+        className="absolute bottom-3 right-3 z-10 hidden items-center gap-2 rounded-full bg-[rgba(249,246,240,0.92)] px-4 py-2 text-[13px] font-semibold text-[color:var(--ink)] shadow-[var(--shadow-sm)] transition hover:bg-[color:var(--paper)] sm:inline-flex"
       >
         <GridIcon className="size-3.5" />
         View all {items.length}
@@ -256,7 +254,7 @@ function Tile({
     <button
       type="button"
       onClick={onOpen}
-      className={`group relative block overflow-hidden rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] hard-shadow-sm transition hover:-translate-y-0.5 hover:hard-shadow focus:outline-none focus-visible:ring-4 focus-visible:ring-[color:var(--rose)] ${className}`}
+      className={`group relative block overflow-hidden rounded-[var(--radius-lg)] bg-[color:var(--champagne-deep)] shadow-[var(--shadow-sm)] transition hover:-translate-y-0.5 hover:shadow-[var(--shadow-md)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--purple)] ${className}`}
       aria-label={item.kind === "video" ? `Play video: ${item.alt}` : `Open photo: ${item.alt}`}
     >
       <Image
@@ -269,7 +267,7 @@ function Tile({
       />
       {item.kind === "video" ? (
         <span className="absolute inset-0 flex items-center justify-center">
-          <span className="flex size-14 items-center justify-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow-sm transition group-hover:scale-110">
+          <span className="flex size-14 items-center justify-center rounded-full bg-[rgba(249,246,240,0.92)] shadow-[var(--shadow-sm)] transition group-hover:scale-110">
             <PlayIcon className="size-6 translate-x-0.5 text-[color:var(--ink)]" />
           </span>
         </span>
@@ -309,7 +307,7 @@ function Lightbox({
       aria-label="Event media viewer"
     >
       <div className="flex items-center justify-between px-4 py-3 text-[color:var(--on-deep)] sm:px-6">
-        <span className="font-mono text-xs font-bold uppercase tracking-[0.18em]">
+        <span className="text-xs font-semibold tracking-[0.12em] uppercase">
           {index + 1} / {items.length}
         </span>
         <button

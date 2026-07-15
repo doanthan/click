@@ -1,0 +1,81 @@
+<!-- @dsCard group="Components" viewport="700x500" name="Core - buttons, tags, avatars, badges" subtitle="Primary action set (real states), one neutral tag look, people avatars and rounded-rect status badges." -->
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <link rel="stylesheet" href="../../styles.css" />
+  <style>
+    body { margin: 0; background: var(--cream); font-family: var(--font-sans); padding: 26px 28px; color: var(--text-strong); }
+    .grid { display: flex; flex-direction: column; gap: 22px; }
+    .ttl { font-size: 11px; font-weight: 700; letter-spacing: var(--tracking-overline); text-transform: uppercase; color: var(--text-muted); margin: 0 0 12px; }
+    .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+    .sec + .sec { border-top: 1px solid var(--border-soft); padding-top: 20px; }
+  </style>
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+  <script src="../../_ds_bundle.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { Button, Tag, Avatar, AvatarStack, Badge } = window.ClickDesignSystem_51aca0;
+    function Demo() {
+      return (
+        <div className="grid">
+          <div className="sec">
+            <p className="ttl">Buttons</p>
+            <div className="row">
+              <Button>RSVP</Button>
+              <Button variant="secondary">View details</Button>
+              <Button variant="ghost">Not feeling it</Button>
+              <Button loading>Suggest</Button>
+              <Button disabled>Continue</Button>
+            </div>
+            <div className="row" style={{ marginTop: 12 }}>
+              <Button>click with Mia</Button>
+              <Button variant="pending">clicked</Button>
+              <Button variant="mutual">clicked ✨</Button>
+            </div>
+            <div className="row" style={{ marginTop: 12 }}>
+              <Button size="sm">Small</Button>
+              <Button size="md">Medium</Button>
+              <Button size="lg">Large</Button>
+            </div>
+          </div>
+          <div className="sec">
+            <p className="ttl">Tags - one neutral look; purple only when selected</p>
+            <div className="row">
+              <Tag>Ceramics</Tag>
+              <Tag>Natural wine</Tag>
+              <Tag>Run club</Tag>
+              <Tag selected>Pottery</Tag>
+              <Tag selected>Live music</Tag>
+            </div>
+          </div>
+          <div className="sec">
+            <p className="ttl">Badges - status colour lives here only (rounded rect)</p>
+            <div className="row">
+              <Badge tone="coral">Almost full</Badge>
+              <Badge tone="amber">Trending</Badge>
+              <Badge tone="sage">You're going</Badge>
+              <Badge tone="teal">New</Badge>
+              <Badge tone="onImage">Sat 21 Jun · 6:30pm</Badge>
+            </div>
+          </div>
+          <div className="sec">
+            <p className="ttl">Avatars</p>
+            <div className="row">
+              <Avatar name="Mia" />
+              <Avatar name="Jules" ring />
+              <Avatar name="Sam" size={52} />
+              <AvatarStack people={["Mia","Tom","Priya","Jules","Hassan","Bec"]} label="12 going" />
+            </div>
+          </div>
+        </div>
+      );
+    }
+    ReactDOM.createRoot(document.getElementById("root")).render(<Demo />);
+  </script>
+</body>
+</html>

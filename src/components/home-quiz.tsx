@@ -87,7 +87,7 @@ export function HomeQuiz({ isLoggedIn, persona = null }: HomeQuizProps) {
         title={
           <>
             You read as{" "}
-            <span className="font-script not-italic text-[color:var(--rose)]">
+            <span className="font-display font-semibold text-[color:var(--purple)]">
               {persona.personaName}
             </span>
             .
@@ -99,13 +99,13 @@ export function HomeQuiz({ isLoggedIn, persona = null }: HomeQuizProps) {
           <button
             type="button"
             onClick={() => setRetaking(true)}
-            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
+            className="ck-btn ck-btn--md ck-btn--primary"
           >
             Retake the quiz
           </button>
           <a
             href="/quiz/life"
-            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)] hover:text-[color:var(--surface-deep)]"
+            className="ck-btn ck-btn--md ck-btn--secondary"
           >
             Add life tags →
           </a>
@@ -119,11 +119,11 @@ export function HomeQuiz({ isLoggedIn, persona = null }: HomeQuizProps) {
       eyebrow="Pick your vibe"
       title={
         <>
-          A <span className="text-[color:var(--coral)]">tiny</span> quiz so Click can suggest{" "}
+          A <span className="text-[color:var(--purple)]">tiny</span> quiz so Click can suggest{" "}
           <span className="peach-highlight">rooms that fit you</span>.
         </>
       }
-      subtitle="Four taps. We write you a Click persona and use it to surface compatible events."
+      subtitle="Four taps. We write you a Click persona and lean your suggestions toward events that feel like you."
     >
       <QuizForm isLoggedIn={isLoggedIn} />
     </QuizFrame>
@@ -138,26 +138,26 @@ function LoggedOutQuizCta() {
 
   return (
     <>
-      <section className="border-b-2 border-[color:var(--line)] bg-[color:var(--cream)] px-5 py-10 sm:px-8 lg:px-12">
+      <section className="bg-[color:var(--lav-bg)] px-5 py-12 sm:px-8 lg:px-12">
         <div className="mx-auto max-w-6xl">
-          <div className="flex flex-wrap items-center justify-between gap-5 rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-6 hard-shadow sm:p-7">
+          <div className="flex flex-wrap items-center justify-between gap-5 rounded-[var(--radius-xl)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-6 shadow-[var(--shadow-sm)] sm:p-7">
             <div className="min-w-0 max-w-2xl">
-              <span className="sticker sticker--peach tilt-l-2 inline-flex">
+              <span className="text-xs font-bold tracking-[0.08em] uppercase text-[color:var(--purple-500)]">
                 Pick your vibe
               </span>
               <h2 className="font-display mt-4 text-2xl font-semibold leading-[1.05] tracking-[-0.02em] text-[color:var(--ink)] sm:text-3xl">
-                A <span className="text-[color:var(--coral)]">tiny</span> quiz so Click can suggest{" "}
+                A <span className="text-[color:var(--purple)]">tiny</span> quiz so Click can suggest{" "}
                 <span className="peach-highlight">rooms that fit you</span>.
               </h2>
               <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
-                Four taps · 30 seconds. We write you a Click persona and use it
-                to surface compatible events.
+                Four taps · 30 seconds. We write you a Click persona and lean
+                your suggestions toward events that feel like you.
               </p>
             </div>
             <button
               type="button"
               onClick={() => setOpen(true)}
-              className="shrink-0 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-6 py-3 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:-translate-x-[1px] hover:-translate-y-[1px] hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
+              className="ck-btn ck-btn--md ck-btn--primary shrink-0"
             >
               Take the quiz →
             </button>
@@ -195,19 +195,19 @@ function QuizModal({ onClose }: { onClose: () => void }) {
         type="button"
         aria-label="Close quiz"
         onClick={onClose}
-        className="absolute inset-0 cursor-default bg-[color:var(--ink)]/55 backdrop-blur-sm"
+        className="absolute inset-0 cursor-default bg-[rgba(28,24,48,0.5)]"
       />
 
-      <div className="relative z-10 max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow">
-        <div className="flex items-center justify-between gap-3 border-b-2 border-[color:var(--line)] bg-[color:var(--cream)] px-5 py-3">
-          <span className="sticker sticker--peach tilt-l-2 inline-flex">
+      <div className="relative z-10 max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-[var(--radius-xl)] bg-[color:var(--paper)] shadow-[0_12px_32px_rgba(28,24,48,0.14)]">
+        <div className="flex items-center justify-between gap-3 border-b border-[color:var(--line-soft)] px-5 py-3.5">
+          <span className="text-xs font-bold tracking-[0.08em] uppercase text-[color:var(--purple-500)]">
             Pick your vibe
           </span>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="grid size-7 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] text-sm font-bold text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+            className="grid size-8 place-items-center rounded-full bg-[color:var(--lavender-100)] text-sm text-[color:var(--slate)] hover:text-[color:var(--ink)]"
           >
             ✕
           </button>
@@ -218,12 +218,12 @@ function QuizModal({ onClose }: { onClose: () => void }) {
             id="home-quiz-modal-title"
             className="font-display text-3xl font-bold leading-[1.02] tracking-[-0.025em] text-[color:var(--ink)] sm:text-4xl"
           >
-            A <span className="text-[color:var(--coral)]">tiny</span> quiz so Click can suggest{" "}
+            A <span className="text-[color:var(--purple)]">tiny</span> quiz so Click can suggest{" "}
             <span className="peach-highlight">rooms that fit you</span>.
           </h2>
           <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--mauve)]">
-            Four taps. We write you a Click persona and use it to surface
-            compatible events.
+            Four taps. We write you a Click persona and lean your suggestions
+            toward events that feel like you.
           </p>
           <QuizForm isLoggedIn={false} onLoggedOutSubmit={onClose} />
         </div>
@@ -286,19 +286,19 @@ function QuizForm({
         {QUESTIONS.map((q) => (
           <fieldset
             key={q.name}
-            className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-4 hard-shadow-sm"
+            className="rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-4"
           >
-            <legend className="font-mono px-1 text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
+            <legend className="px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-[color:var(--purple-700)]">
               {q.legend}
             </legend>
-            <p className="mt-1 text-xs font-semibold text-[color:var(--mauve)]">
+            <p className="mt-1 text-xs text-[color:var(--slate)]">
               {q.hint}
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
               {q.options.map((opt) => (
                 <label
                   key={opt.value}
-                  className="cursor-pointer rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm has-[input:checked]:bg-[color:var(--rose)] has-[input:checked]:text-[color:var(--surface-deep)]"
+                  className="cursor-pointer rounded-xl border-[1.5px] border-[color:var(--mist-strong)] bg-[color:var(--paper)] px-3.5 py-2 text-[13px] font-medium text-[color:var(--ink)] transition-colors hover:border-[color:var(--slate)] has-[input:checked]:border-transparent has-[input:checked]:bg-[color:var(--purple)] has-[input:checked]:text-[color:var(--champagne)]"
                 >
                   <input
                     type="radio"
@@ -316,16 +316,16 @@ function QuizForm({
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-        <p className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+        <p className="text-[12px] text-[color:var(--slate)]">
           {isLoggedIn ? (
-            <>✷ takes 30 seconds · saved to your profile</>
+            <>Takes 30 seconds · saved to your profile</>
           ) : (
-            <>✷ log in to save your answers · 30 seconds total</>
+            <>Log in to save your answers · 30 seconds total</>
           )}
         </p>
         <button
           type="submit"
-          className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-6 py-3 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:-translate-x-[1px] hover:-translate-y-[1px] hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
+          className="ck-btn ck-btn--md ck-btn--primary"
         >
           {isLoggedIn ? "Save my persona →" : "Log in to save →"}
         </button>
@@ -346,11 +346,11 @@ function QuizFrame({
   children: React.ReactNode;
 }) {
   return (
-    <section className="border-b-2 border-[color:var(--line)] bg-[color:var(--cream)] px-5 py-10 sm:px-8 lg:px-12">
+    <section className="bg-[color:var(--lav-bg)] px-5 py-12 sm:px-8 lg:px-12">
       <div className="mx-auto max-w-6xl">
-        <div className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-6 hard-shadow sm:p-8">
+        <div className="rounded-[var(--radius-xl)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-6 shadow-[var(--shadow-sm)] sm:p-8">
           <div className="max-w-2xl">
-            <span className="sticker sticker--peach tilt-l-2 inline-flex">
+            <span className="text-xs font-bold tracking-[0.08em] uppercase text-[color:var(--purple-500)]">
               {eyebrow}
             </span>
             <h2 className="font-display mt-4 text-3xl font-bold leading-[1.02] tracking-[-0.025em] text-[color:var(--ink)] sm:text-4xl">

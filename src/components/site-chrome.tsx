@@ -1,38 +1,28 @@
 import Link from "next/link";
-import Image from "next/image";
 import { auth, isAdminEmail } from "@/auth";
-import {
-  getProfileStatus,
-  getUnreadNotificationCount,
-} from "@/lib/event-repository";
+import { getProfileStatus, getUnreadNotificationCount } from "@/lib/event-repository";
+import { ButtonLink, Logo } from "./ds";
+import { HeaderNav, type HeaderNavItem } from "./header-nav";
 import { HeaderNotificationsBell } from "./header-notifications-bell";
 import { HeaderRoleSwitcher, type PortalRole } from "./header-role-switcher";
 import { LoginTrigger } from "./login-trigger";
 import { MobileBottomNav, type BottomNavTab } from "./mobile-bottom-nav";
 
-// Static placeholder streamed while the real SiteHeader awaits its session +
-// profile queries. Mirrors the header chrome (same sticky bar, same logo
-// height) so there is no layout shift when the live header swaps in — only
-// the nav links and the action cluster pop in.
+const HEADER_SHELL =
+  "sticky top-0 z-50 border-b border-[color:var(--line-soft)] bg-[color:var(--champagne)]/90 backdrop-blur-xl";
+const HEADER_ROW = "mx-auto flex max-w-[1200px] items-center justify-between gap-4 px-5 py-3 sm:px-8 sm:py-3.5";
+
+/**
+ * Streamed placeholder for the real SiteHeader while it awaits its session +
+ * profile queries. Mirrors the chrome (same sticky bar, same wordmark size) so
+ * the live header swaps in with no layout shift.
+ */
 export function SiteHeaderShell() {
   return (
-    <header className="sticky top-0 z-50 border-b border-[color:var(--line)] bg-[color:var(--champagne)]/85 backdrop-blur-xl">
-      <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-2 sm:px-8 sm:py-3.5 lg:px-12">
-        <div className="flex items-center gap-1.5 sm:gap-2">
-          <Image
-            src="/click_blob_mascot.svg"
-            alt=""
-            width={44}
-            height={44}
-            aria-hidden
-            className="h-8 w-8 shrink-0 sm:h-10 sm:w-10"
-          />
-          <span className="click-wordmark text-[1.4rem] text-[color:var(--ink)] sm:text-[1.85rem]">
-            Click
-            <span className="click-wordmark__period" aria-hidden />
-          </span>
-        </div>
-        <div className="h-8 sm:h-10" aria-hidden />
+    <header className={HEADER_SHELL}>
+      <div className={HEADER_ROW}>
+        <Logo size={26} />
+        <div className="h-9" aria-hidden />
       </div>
     </header>
   );
@@ -47,213 +37,170 @@ export async function SiteHeader() {
   const avatarUrl = profileStatus?.photoUrl ?? session?.user?.image ?? null;
   const unreadCount = session?.user ? await getUnreadNotificationCount(session) : 0;
 
-  const portalRoles: PortalRole[] = [];
-  if (session?.user) portalRoles.push("user");
+  // Logged-out MARKETING header: no app nav, no repeated big logo - just a
+  // quiet "Log in" and the one primary "Sign up". The app nav belongs to
+  // signed-in surfaces only.
+  if (!session?.user) {
+    return (
+      <header className={HEADER_SHELL}>
+        <div className={HEADER_ROW}>
+          <Link href="/" aria-label="Click home" className="flex items-center">
+            <Logo size={26} />
+          </Link>
+          <div className="flex items-center gap-2">
+            <LoginTrigger className="rounded-xl px-4 py-2 text-sm font-semibold text-[color:var(--ink-soft)] transition-colors hover:text-[color:var(--purple)]" />
+            <ButtonLink href="/signup" size="sm">
+              Sign up
+            </ButtonLink>
+          </div>
+        </div>
+      </header>
+    );
+  }
+
+  const portalRoles: PortalRole[] = ["user"];
   if (hasMerchantProfile) portalRoles.push("merchant");
   if (isAdmin) portalRoles.push("admin");
 
-  // Logged-in users get the logo pointed at their portal home (admin → /admin,
-  // host → /merchant, otherwise the attendee dashboard) so the wordmark is a
-  // shortcut back to where they work, not the marketing landing page. Logged-out
-  // visitors still get the public home page.
-  const logoHref = !session?.user
-    ? "/"
-    : isAdmin
-      ? "/admin"
-      : hasMerchantProfile
-        ? "/merchant"
-        : "/dashboard";
+  // The wordmark points at the portal you actually work in (admin → /admin,
+  // host → /merchant, otherwise the attendee dashboard).
+  const logoHref = isAdmin ? "/admin" : hasMerchantProfile ? "/merchant" : "/dashboard";
 
-  const navItems: Array<{ label: string; href: string }> = [
-    { label: "Discover", href: "/discover" },
+  // App nav, per the DS: Discover · Dashboard · click (the people destination,
+  // carrying the header's one spark) · Events.
+  const navItems: HeaderNavItem[] = [
+    { label: "Discover", href: "/discover", icon: "compass" },
+    { label: "Dashboard", href: "/dashboard", icon: "home" },
+    { label: "click", href: "/people", icon: "spark" },
+    { label: "Events", href: "/confirmed-events", icon: "calendar" },
   ];
-  if (session?.user) {
-    navItems.push({ label: "Dashboard", href: "/dashboard" });
-    // "People" is the core click-with-someone loop; it had no global nav entry,
-    // so attendees on /discover couldn't find it (bug board #216).
-    navItems.push({ label: "People", href: "/people" });
-  }
-  // Existing hosts get a direct link to their portal in the nav, labelled "Host
-  // dashboard" so it reads as the management hub (the actual "Host an event" CTA
-  // lives on the dashboard + portal). Everyone else (logged-out visitors +
-  // attendees) gets the prominent "Host an event" button in the action cluster
-  // below instead, so the entry point is always visible.
-  if (hasMerchantProfile) {
-    navItems.push({ label: "Host dashboard", href: "/merchant" });
-  }
-  if (isAdmin) {
-    navItems.push({ label: "Admin", href: "/admin" });
-  }
+  if (hasMerchantProfile) navItems.push({ label: "Host", href: "/merchant", icon: "ticket" });
+  if (isAdmin) navItems.push({ label: "Admin", href: "/admin", icon: "settings" });
 
-  // Mobile bottom tab bar — the thumb-reachable replacement for the desktop nav
-  // (which is `hidden lg:flex`). Four slots, role-aware. The header bell already
-  // covers notifications on mobile, so it isn't duplicated here.
-  const bottomTabs: BottomNavTab[] = [{ label: "Find", href: "/discover", icon: "find" }];
-  if (session?.user) {
-    // People over Calendar in the 4 thumb slots: it's the core social loop and
-    // had no nav entry (bug board #216). Calendar stays reachable from the
-    // dashboard ("You" tab → "View calendar").
-    bottomTabs.push({ label: "People", href: "/people", icon: "people" });
-    bottomTabs.push({
-      label: "Host",
-      href: hasMerchantProfile ? "/merchant" : "/merchant/signup",
-      icon: "host",
-    });
-    bottomTabs.push({ label: "You", href: "/dashboard", icon: "you" });
-  } else {
-    bottomTabs.push({ label: "How it works", href: "/how-it-works", icon: "info" });
-    bottomTabs.push({ label: "Host", href: "/merchant/signup", icon: "host" });
-    bottomTabs.push({ label: "Sign up", href: "/signup", icon: "spark" });
-  }
+  // Mobile: a sticky bottom action bar (a web pattern, not a native tab bar) -
+  // the thumb-reachable stand-in for the desktop nav, which is hidden below lg.
+  const bottomTabs: BottomNavTab[] = [
+    { label: "Home", href: "/dashboard", icon: "you" },
+    { label: "Discover", href: "/discover", icon: "find" },
+    { label: "click", href: "/people", icon: "spark" },
+    { label: "Events", href: "/confirmed-events", icon: "calendar" },
+  ];
 
   return (
     <>
-      <header className="sticky top-0 z-50 border-b border-[color:var(--line)] bg-[color:var(--champagne)]/85 backdrop-blur-xl">
-      <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-2 sm:px-8 sm:py-3.5 lg:px-12">
-        <Link
-          href={logoHref}
-          className="group flex items-center gap-1.5 sm:gap-2"
-          aria-label="Click home"
-        >
-          <Image
-            src="/click_blob_mascot.svg"
-            alt=""
-            width={44}
-            height={44}
-            aria-hidden
-            className="h-8 w-8 shrink-0 transition-transform duration-300 group-hover:rotate-6 sm:h-10 sm:w-10"
-          />
-          <span className="click-wordmark text-[1.4rem] text-[color:var(--ink)] sm:text-[1.85rem]">
-            Click
-            <span className="click-wordmark__period" aria-hidden />
-          </span>
-        </Link>
+      <header className={HEADER_SHELL}>
+        <div className={HEADER_ROW}>
+          <Link href={logoHref} aria-label="Click home" className="flex items-center">
+            <Logo size={26} />
+          </Link>
 
-        <nav className="hidden items-center gap-8 text-[0.95rem] font-medium text-[color:var(--mauve)] lg:flex">
-          {navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="group/nav relative py-1 transition-colors hover:text-[color:var(--ink)]"
-            >
-              <span className="relative z-10">{item.label}</span>
-              <span className="absolute inset-x-0 -bottom-0.5 h-[3px] origin-left scale-x-0 rounded-full bg-[color:var(--peach)] transition-transform duration-300 group-hover/nav:scale-x-100" />
-            </Link>
-          ))}
-        </nav>
+          <HeaderNav items={navItems} />
 
-        <div className="flex items-center gap-2.5">
-          {/* Host entry — shown to logged-out visitors and attendees (anyone
-              who isn't already a host). Routes through login when needed and
-              brings them back to register as a host. */}
-          {!hasMerchantProfile && (
-            <Link
-              href="/merchant/signup"
-              className="hidden rounded-full border border-[color:var(--line-strong)] px-4 py-2 text-sm font-semibold text-[color:var(--ink)] transition-all duration-200 hover:-translate-y-0.5 hover:border-transparent hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)] sm:block"
-            >
-              Host an event
-            </Link>
-          )}
-          {session?.user ? (
-            <>
-              <HeaderNotificationsBell unreadCount={unreadCount} />
-              <HeaderRoleSwitcher roles={portalRoles} userLabel={userLabel} avatarUrl={avatarUrl} />
-            </>
-          ) : (
-            <>
-              <LoginTrigger className="hidden rounded-full px-4 py-2 text-sm font-semibold text-[color:var(--ink)] transition-colors hover:text-[color:var(--rose)] sm:block" />
-              <Link
-                href="/signup"
-                className="inline-flex items-center gap-1.5 rounded-full bg-[color:var(--surface-deep)] px-4 py-2 text-sm font-semibold text-[color:var(--on-deep)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-black"
-              >
-                Sign up
-                <span aria-hidden>→</span>
-              </Link>
-            </>
-          )}
+          <div className="flex items-center gap-2">
+            {!hasMerchantProfile ? (
+              <ButtonLink href="/merchant/signup" variant="secondary" size="sm" className="hidden sm:inline-flex">
+                Host an event
+              </ButtonLink>
+            ) : null}
+            <HeaderNotificationsBell unreadCount={unreadCount} />
+            <HeaderRoleSwitcher roles={portalRoles} userLabel={userLabel} avatarUrl={avatarUrl} />
+          </div>
         </div>
-      </div>
-    </header>
+      </header>
       <MobileBottomNav tabs={bottomTabs} />
     </>
   );
 }
 
+/**
+ * The global footer - EXACTLY two rows, no tagline, no divider between them, on
+ * the same cream canvas as the page. The old fat three-column dark band is gone
+ * by rule: supply is carried by the "Host an event" link, not a stacked band.
+ */
 export async function SiteFooter() {
-  const session = await auth();
-  const isAdmin = !!session?.user && isAdminEmail(session.user.email);
-
-  const footerGroups: Array<[string, ...string[]]> = [
-    ["Product", "Discover", "Dashboard"],
-    isAdmin
-      ? ["Platform", "Host events", "Admin", "Scale"]
-      : ["Platform", "Host events"],
-    ["Legal", "Terms", "Privacy", "Security", "Refunds", "Safety"],
+  const links: Array<[string, string]> = [
+    ["Discover", "/discover"],
+    ["How it works", "/how-it-works"],
+    ["Host an event", "/merchant"],
+    ["Safety", "/safety"],
+    ["Privacy", "/privacy"],
+    ["Terms", "/terms"],
   ];
 
   return (
-    <footer className="relative overflow-hidden bg-[color:var(--surface-deep)] text-[color:var(--on-deep)]">
-      <div className="h-1 w-full bg-[color:var(--coral)]" />
-      <div className="mx-auto grid max-w-7xl gap-10 px-5 py-16 sm:px-8 lg:px-12 md:grid-cols-[1.5fr_0.8fr_0.8fr_0.8fr]">
-        <div>
-          <span className="click-wordmark text-5xl text-[color:var(--on-deep)]">
-            Click
-            <span
-              className="click-wordmark__period"
-              aria-hidden
-              style={{ background: "var(--coral)" }}
-            />
-          </span>
-          <p className="mt-5 max-w-sm text-[0.95rem] leading-7 text-[color:var(--on-deep)]/65">
-            An event-first people platform for friendship, dating, local groups,
-            and shared-interest discovery in Sydney.
-          </p>
-          <p className="font-display mt-7 text-2xl font-semibold italic text-[color:var(--coral)]">
-            See you out there.
-          </p>
-        </div>
-        {footerGroups.map(([title, ...items]) => (
-          <div key={title}>
-            <p className="eyebrow text-[color:var(--on-deep)]/45">{title}</p>
-            <div className="mt-4 grid gap-2.5 text-[0.95rem] text-[color:var(--on-deep)]/65">
-              {items.map((item) => (
+    <footer className="border-t border-[color:var(--line-soft)] bg-[color:var(--champagne)]">
+      <div className="mx-auto flex max-w-[1200px] flex-col gap-2.5 px-5 py-6 sm:px-8">
+        {/* Row 1 - wordmark left, the essential links right */}
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <Logo size={22} />
+          <div className="flex flex-1 flex-wrap items-center justify-start gap-x-3.5 gap-y-1.5 sm:justify-end">
+            {links.map(([label, href], i) => (
+              <span key={href} className="flex items-center gap-3.5">
+                {i > 0 ? (
+                  <span aria-hidden className="text-xs text-[color:var(--ink-faint)]">
+                    ·
+                  </span>
+                ) : null}
                 <Link
-                  href={linkForFooterItem(item)}
-                  key={item}
-                  className="w-fit transition-colors hover:text-[color:var(--coral)]"
+                  href={href}
+                  className="text-[13px] font-medium whitespace-nowrap text-[color:var(--slate)] transition-colors hover:text-[color:var(--purple-700)]"
                 >
-                  {item}
+                  {label}
                 </Link>
-              ))}
-            </div>
+              </span>
+            ))}
           </div>
-        ))}
-      </div>
-      <div className="border-t border-[color:var(--on-deep)]/12">
-        <div className="mx-auto flex max-w-7xl flex-col items-start justify-between gap-2 px-5 py-6 font-condensed text-xs uppercase tracking-[0.18em] text-[color:var(--on-deep)]/45 sm:flex-row sm:items-center sm:px-8 lg:px-12">
-          <span>Made in Sydney · Click {new Date().getFullYear()}</span>
-          <span>People → Events → Familiar Faces</span>
+        </div>
+
+        {/* Row 2 - copyright left, social + email right */}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="text-[12.5px] whitespace-nowrap text-[color:var(--ink-faint)]">
+            © {new Date().getFullYear()} Click · Made in Sydney
+          </span>
+          <span className="inline-flex items-center gap-1.5 text-[12.5px] text-[color:var(--ink-faint)]">
+            <SocialLink label="Click's Instagram" href="https://instagram.com/click.irl">
+              <rect x="3" y="3" width="18" height="18" rx="5" />
+              <circle cx="12" cy="12" r="4" />
+              <circle cx="17" cy="7" r="1" fill="currentColor" stroke="none" />
+            </SocialLink>
+            <SocialLink label="Click's Threads" href="https://threads.net/@click.irl">
+              <path d="M12 21c-4.4 0-7-2.9-7-9s2.6-9 7-9c3.5 0 5.7 1.8 6.6 4.5" />
+              <path d="M16.5 11.5c-.2-3.1-2-4.7-4.6-4.7-2.4 0-4.3 1.5-4.3 3.8 0 2 1.5 3.3 3.6 3.3 2.4 0 3.6-1.6 3.6-3.9" />
+              <path d="M9.3 13.2c.6 1.2 1.8 1.6 3 1.5 2-.2 3-1.6 2.8-4" />
+            </SocialLink>
+            <a href="mailto:hello@click.au" className="ml-1.5 transition-colors hover:text-[color:var(--purple-700)]">
+              hello@click.au
+            </a>
+          </span>
         </div>
       </div>
     </footer>
   );
 }
 
-function linkForFooterItem(item: string) {
-  const normalized = item.toLowerCase();
-
-  if (normalized === "discover") return "/discover";
-  if (normalized === "events") return "/events";
-  if (normalized === "categories") return "/categories";
-  if (normalized === "dashboard") return "/dashboard";
-  if (normalized === "onboarding") return "/onboarding";
-  if (normalized === "host events" || normalized === "merchant") return "/merchant";
-  if (normalized === "admin") return "/admin";
-  if (normalized === "scale") return "/scale";
-  if (normalized === "terms") return "/terms";
-  if (normalized === "privacy") return "/privacy";
-  if (normalized === "security") return "/security";
-  if (normalized === "refunds") return "/refund-policy";
-  if (normalized === "safety") return "/safety";
-  return "/";
+/** Monochrome line icon - Slate, going Deep Purple on hover. Labelled link, hidden glyph. */
+function SocialLink({ label, href, children }: { label: string; href: string; children: React.ReactNode }) {
+  return (
+    <a
+      href={href}
+      aria-label={label}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex size-7 items-center justify-center transition-colors hover:text-[color:var(--purple-700)]"
+    >
+      <svg
+        width="18"
+        height="18"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden
+      >
+        {children}
+      </svg>
+    </a>
+  );
 }

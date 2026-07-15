@@ -1,5 +1,7 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
+import { Icon, Logo } from "@/components/ds";
 import { PersonalityQuizWizard } from "./wizard";
 
 export const metadata = {
@@ -20,22 +22,25 @@ export default async function PersonalityQuizPage({
   const params = await searchParams;
   const initialError = params?.error === "incomplete";
 
+  // Same chrome as the Life quiz: wordmark, one quiet back link, a narrow
+  // centred column. The step counter, endowed progress bar and footer nav live
+  // in the wizard, which knows the step.
   return (
-    <main className="paper-noise min-h-screen bg-[color:var(--champagne)] px-4 py-12 text-[color:var(--ink)] sm:px-6">
-      <section className="mx-auto max-w-3xl">
-        <span className="sticker sticker--peach tilt-l-2 inline-flex">
-          <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
-          Personality Quiz
-        </span>
-        <h1 className="mt-6 font-display text-5xl font-bold leading-[0.96] tracking-[-0.025em] sm:text-6xl">
-          One question at a time. <span className="text-[color:var(--coral)]">One persona.</span>
-        </h1>
-        <p className="mt-3 text-base font-medium leading-7 text-[color:var(--mauve)]">
-          Pick what feels true — we’ll write a Click Persona we use to surface compatible plans.
-        </p>
+    <main className="min-h-[100dvh] bg-[color:var(--champagne)] px-5 py-6 text-[color:var(--ink)] sm:py-8">
+      <div className="mx-auto w-full max-w-[520px]">
+        <div className="flex items-center justify-between gap-4">
+          <Logo size={26} />
+          <Link
+            href="/quiz"
+            className="flex items-center gap-1 text-[13px] font-semibold text-[color:var(--slate)] hover:text-[color:var(--ink)]"
+          >
+            <Icon name="chevL" size={15} stroke={2.2} />
+            Quizzes
+          </Link>
+        </div>
 
         <PersonalityQuizWizard initialError={initialError} />
-      </section>
+      </div>
     </main>
   );
 }

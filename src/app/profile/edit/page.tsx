@@ -1,5 +1,7 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
+import { Icon } from "@/components/ds";
 import { ProfileEditForm } from "@/components/profile-edit-form";
 import { getOwnProfile, getProfileTagOptions } from "@/lib/event-repository";
 
@@ -22,15 +24,29 @@ export default async function EditProfilePage() {
   const tagOptions = await getProfileTagOptions();
 
   return (
-    <main className="paper-noise min-h-screen bg-[color:var(--champagne)] px-4 py-8 text-[color:var(--ink)] sm:px-6">
-      <section className="mx-auto max-w-4xl">
-        <span className="sticker sticker--peach tilt-l-2 inline-flex">
-          <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
-          Edit profile
-        </span>
+    <main className="min-h-screen bg-[color:var(--champagne)] pb-8 text-[color:var(--ink)]">
+      <div className="ck-page pt-6">
+        {/* Sub-page: ONE quiet "back" link, top-left on its own row. */}
+        <Link
+          href="/profile"
+          className="font-display -ml-1 inline-flex items-center gap-1.5 px-1 py-1.5 text-[14px] font-semibold text-[color:var(--slate)] hover:text-[color:var(--ink)]"
+        >
+          <Icon name="chevL" size={18} stroke={2.4} />
+          Back to profile
+        </Link>
 
-        <ProfileEditForm profile={profile} tagOptions={tagOptions} />
-      </section>
+        {/* Narrow page: capped, LEFT-aligned at the container gutter. */}
+        <div className="max-w-[720px]">
+          <h1 className="font-display mt-1.5 text-[length:var(--text-h1)] font-semibold leading-tight tracking-[-0.02em]">
+            Edit profile
+          </h1>
+          <p className="mt-1.5 text-[15px] text-[color:var(--slate)]">
+            Your photos, your words, and the things you&apos;re into.
+          </p>
+
+          <ProfileEditForm profile={profile} tagOptions={tagOptions} />
+        </div>
+      </div>
     </main>
   );
 }

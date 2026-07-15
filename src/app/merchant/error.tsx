@@ -33,7 +33,7 @@ export default function MerchantError({
         </h1>
         <p className="mt-5 text-base font-medium leading-7 text-[color:var(--mauve)]">
           We couldn’t load this part of the merchant portal. It’s usually a
-          passing hiccup — give it another go, or head back to your dashboard.
+          passing hiccup - give it another go, or head back to your dashboard.
         </p>
         {error.digest ? (
           <p className="mt-4 font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">

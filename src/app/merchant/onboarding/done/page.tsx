@@ -13,11 +13,11 @@ export default function OnboardingDonePage() {
           ✷ You&apos;re all set
         </span>
         <h2 className="font-display mt-3 text-3xl font-semibold leading-tight">
-          That&apos;s the lap — go make something.
+          That&apos;s the lap - go make something.
         </h2>
         <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--mauve)]">
           Spin up your first event whenever you&apos;re ready. If you skipped
-          payouts, you&apos;ll find a one-click prompt on your dashboard to
+          payouts, you&apos;ll find a one-tap prompt on your dashboard to
           connect your bank before publishing a paid event.
         </p>
 

@@ -10,7 +10,7 @@ import { useState } from "react";
 // post-connection "view my payouts" path surfaced from the Finances tab.
 
 const dashboardBtn =
-  "inline-flex items-center justify-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--cream)] disabled:opacity-60 disabled:cursor-not-allowed";
+  "ck-btn ck-btn--sm ck-btn--secondary disabled:cursor-not-allowed";
 
 export function StripeDashboardButton({
   label = "Open Stripe dashboard →",
@@ -55,7 +55,7 @@ export function StripeDashboardButton({
       }
       window.location.href = body.url;
     } catch {
-      setError("Network error — please try again.");
+      setError("Network error - please try again.");
       setBusy(false);
     }
   }

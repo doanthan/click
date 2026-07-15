@@ -9,12 +9,12 @@ export function VerifiedTick({ className = "" }: { className?: string }) {
     <span
       title="Verified profile"
       aria-label="Verified profile"
-      className={`inline-grid size-[1.1em] shrink-0 place-items-center rounded-full bg-[color:var(--rose)] align-[-0.12em] ${className}`}
+      className={`inline-grid size-[1.1em] shrink-0 place-items-center rounded-full bg-[color:var(--purple)] align-[-0.12em] ${className}`}
     >
       <svg
         viewBox="0 0 20 20"
         fill="none"
-        stroke="var(--surface-deep)"
+        stroke="var(--champagne)"
         strokeWidth="3"
         strokeLinecap="round"
         strokeLinejoin="round"

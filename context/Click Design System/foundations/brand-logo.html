@@ -1,0 +1,41 @@
+<!-- @dsCard group="Brand" viewport="720x300" name="Logo - wordmark, c-mark & spark" subtitle="Poppins click with the lavender sparkle-pair i-dot, the c letterform, and the double spark." -->
+<!doctype html><html><head><meta charset="utf-8">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600&display=swap">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body{margin:0;background:var(--cream);font-family:var(--font-sans);padding:26px 28px;color:var(--text-strong)}
+  .grid{display:flex;gap:18px;align-items:stretch}
+  .cell{flex:1;border:1px solid var(--border-soft);border-radius:var(--radius-lg);background:var(--white);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:26px 12px;box-shadow:var(--shadow-xs)}
+  .cell.dark{background:var(--purple-700);border-color:transparent}
+  .cap{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-faint)}
+  .cell.dark .cap{color:rgba(253,250,246,.5)}
+  .tile{width:64px;height:64px;border-radius:16px;background:var(--purple-600);display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow-sm)}
+  .wm{font-family:'Poppins',sans-serif;font-weight:600;letter-spacing:-.02em;line-height:1;display:inline-flex;align-items:baseline;white-space:nowrap}
+  .cm{position:relative;display:inline-flex;align-items:center;justify-content:center;line-height:1;font-family:'Poppins',sans-serif;font-weight:600;letter-spacing:-.02em}
+</style></head>
+<body>
+  <div class="grid">
+    <div class="cell" style="flex:1.7"><div class="cap">Primary wordmark</div><div id="wm-a"></div></div>
+    <div class="cell"><div class="cap">The c-mark</div><div id="cm-a"></div></div>
+    <div class="cell"><div class="cap">The spark</div><div id="sp-a"></div></div>
+    <div class="cell"><div class="cap">App icon</div><div class="tile"><div id="cm-tile"></div></div></div>
+    <div class="cell dark" style="flex:1.4"><div class="cap">On purple</div><div id="wm-cream"></div></div>
+  </div>
+<script>
+const PURPLE="var(--purple-600)",CREAM="var(--cream)",LAV="var(--lavender-300)";
+const n=v=>Math.round(v*100)/100;
+function spkD(cx,cy,r,o){o=o||{};const top=(o.top||1)*r,right=(o.right||1)*r,bot=(o.bottom||1)*r,left=(o.left||1)*r,w=o.w==null?0.46:o.w,p=o.p==null?0.065:o.p;
+ return `M${n(cx)} ${n(cy-top)} C${n(cx+p*right)} ${n(cy-w*top)} ${n(cx+w*right)} ${n(cy-p*top)} ${n(cx+right)} ${n(cy)} C${n(cx+w*right)} ${n(cy+p*bot)} ${n(cx+p*right)} ${n(cy+w*bot)} ${n(cx)} ${n(cy+bot)} C${n(cx-p*left)} ${n(cy+w*bot)} ${n(cx-w*left)} ${n(cy+p*bot)} ${n(cx-left)} ${n(cy)} C${n(cx-w*left)} ${n(cy-p*top)} ${n(cx-p*left)} ${n(cy-w*top)} ${n(cx)} ${n(cy-top)} Z`;}
+function sparkSVG(size,color){const off=0.75,sx=50+(82-50)*off,sy=50+(32-50)*off;
+ return `<svg width="${size}" height="${size}" viewBox="0 0 100 100" fill="none"><path d="${spkD(46,66,34,{w:0.44})}" fill="${color}"/><path d="${spkD(sx,sy,13,{w:0.40})}" fill="${color}"/></svg>`;}
+function wordmark(px,col){const sp=Math.round(px*0.40),gap=Math.round(px*-0.34);
+ return `<span class="wm" style="font-size:${px}px;color:${col}"><span>cl</span><span style="position:relative;display:inline-block">\u0131<span style="position:absolute;left:50%;bottom:calc(100% + ${gap}px);transform:translateX(-42%)">${sparkSVG(sp,LAV)}</span></span><span>ck</span></span>`;}
+function cmark(px,cCol,acc){
+ return `<span class="cm" style="font-size:${px}px;color:${cCol}"><span>c</span><span style="position:absolute;left:.47em;top:.11em;width:.34em;height:.34em;line-height:0"><svg width="100%" height="100%" viewBox="0 0 100 100" fill="none"><path d="${spkD(50,50,44)}" fill="${acc}"/></svg></span><span style="position:absolute;left:.71em;top:-.1em;width:.15em;height:.15em;line-height:0"><svg width="100%" height="100%" viewBox="0 0 100 100" fill="none"><path d="${spkD(50,50,44,{w:0.40})}" fill="${acc}"/></svg></span></span>`;}
+document.getElementById('wm-a').innerHTML=wordmark(48,PURPLE);
+document.getElementById('cm-a').innerHTML=cmark(62,PURPLE,LAV);
+document.getElementById('sp-a').innerHTML=sparkSVG(46,LAV);
+document.getElementById('cm-tile').innerHTML=cmark(40,CREAM,LAV);
+document.getElementById('wm-cream').innerHTML=wordmark(40,CREAM);
+</script>
+</body></html>

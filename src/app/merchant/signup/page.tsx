@@ -38,8 +38,8 @@ function HostPitch() {
           <span className="text-[color:var(--coral)]">We bring the right people.</span>
         </h2>
         <p className="mt-6 max-w-2xl text-base font-medium leading-7 text-[color:var(--mauve)]">
-          List your event in minutes. Click matches it with users who already
-          care — by interest tag, suburb, life stage, and intent. Free events
+          List your event in minutes. Click puts it in front of locals who already
+          care - by interest tag, suburb, life stage, and intent. Free events
           are free to list. Paid events get Click-managed booking + secure
           payouts via Stripe.
         </p>

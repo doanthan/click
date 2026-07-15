@@ -10,7 +10,7 @@ import {
 
 export const metadata = {
   title: "Proposals | Click",
-  description: "Coordinate a shared follow-up event with people you've matched with.",
+  description: "Coordinate a shared follow-up event with people you've clicked with.",
 };
 
 export default async function ProposalsPage() {
@@ -25,7 +25,7 @@ export default async function ProposalsPage() {
   ]);
 
   // A confirmed plan whose event is still upcoming + bookable is the most
-  // actionable item on the page — both people still need to RSVP — so it stays
+  // actionable item on the page - both people still need to RSVP - so it stays
   // in the live list rather than getting buried under "Settled" (bug #199).
   // Only genuinely-done proposals (expired, or confirmed with no live event
   // left) drop to the settled list.
@@ -39,56 +39,49 @@ export default async function ProposalsPage() {
   active.sort((a, b) => Number(isLivePlan(b)) - Number(isLivePlan(a)));
 
   return (
-    <main className="paper-noise min-h-screen bg-[color:var(--champagne)] px-4 py-12 text-[color:var(--ink)] sm:px-6">
-      <section className="mx-auto max-w-4xl">
-        <span className="sticker sticker--rose tilt-r-2 inline-flex">
-          <span className="size-2 rounded-full bg-[color:var(--surface-deep)]" />
-          Proposals
-        </span>
-        <h1 className="mt-6 font-display text-5xl font-bold leading-[0.96] tracking-[-0.025em] sm:text-6xl">
-          Your shared <span className="text-[color:var(--coral)]">plans</span>.
+    <main className="min-h-screen bg-[color:var(--champagne)] pb-24 text-[color:var(--ink)]">
+      <div className="ck-page max-w-[760px] pt-6">
+        <h1 className="font-display text-[length:var(--text-h1)] leading-tight font-semibold tracking-[-0.02em] text-[color:var(--ink)]">
+          Your shared plans
         </h1>
-        <p className="mt-3 max-w-2xl text-base font-medium leading-7 text-[color:var(--mauve)]">
-          When you and someone else both click, we suggest a follow-up event. Either of you can
-          confirm it in one tap, or suggest an alternative from the catalogue. No messaging — just a
-          plan.
+        <p className="mt-2 max-w-[560px] text-sm leading-relaxed text-[color:var(--slate)]">
+          When you and someone else both click, we suggest a follow-up event. Either of you can confirm it in one tap, or
+          suggest another. No messaging - just a plan.
         </p>
 
         {active.length > 0 ? (
-          <ul className="mt-10 grid gap-5">
+          <ul className="mt-7 grid gap-4">
             {active.map((proposal) => (
               <ProposalCard key={proposal.id} proposal={proposal} catalogue={catalogue} />
             ))}
           </ul>
         ) : (
-          <div className="mt-10 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-6">
-            <p className="text-base font-bold">No active proposals yet.</p>
-            <p className="mt-2 text-sm font-semibold leading-6 text-[color:var(--mauve)]">
-              Attend an event, then click with someone afterwards. If they click you back, your first
-              proposal opens here.
+          <div className="mt-7 rounded-[var(--radius-xl)] bg-[color:var(--lav-bg)] px-6 py-8 text-center">
+            <p className="font-display text-[1.05rem] font-semibold text-[color:var(--ink)]">No live plans yet.</p>
+            <p className="mx-auto mt-2 max-w-[380px] text-sm leading-relaxed text-[color:var(--ink-soft)]">
+              Show up to an event, then click with someone afterwards. If they click you back, your first plan opens here.
             </p>
-            <Link
-              href="/events"
-              className="mt-4 inline-flex rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-5 py-2 text-sm font-bold text-[color:var(--surface-deep)]"
-            >
-              Find events
-            </Link>
+            <div className="mt-4 flex justify-center">
+              <Link href="/discover" className="ck-btn ck-btn--sm ck-btn--primary">
+                <span className="ck-btn__label">Find events</span>
+              </Link>
+            </div>
           </div>
         )}
 
         {past.length > 0 ? (
-          <div className="mt-12">
-            <h2 className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.2em] text-[color:var(--mauve)]">
-              Settled · {past.length}
-            </h2>
-            <ul className="mt-4 grid gap-4">
+          <div className="mt-10">
+            <p className="mb-3 text-xs font-bold tracking-[0.08em] uppercase text-[color:var(--slate)]">
+              Past clicks · {past.length}
+            </p>
+            <ul className="grid gap-4">
               {past.map((proposal) => (
                 <ProposalCard key={proposal.id} proposal={proposal} catalogue={catalogue} />
               ))}
             </ul>
           </div>
         ) : null}
-      </section>
+      </div>
     </main>
   );
 }

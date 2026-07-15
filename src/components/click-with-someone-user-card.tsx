@@ -2,106 +2,164 @@
 
 import Link from "next/link";
 import { useActionState } from "react";
-import { Pill } from "./click-ui";
 import { clickPersonAction } from "@/app/people/actions";
-import { formatIntent } from "@/lib/click-data";
 import type { SuggestedPerson } from "@/lib/event-repository";
+import { Avatar, Button, CommonalityLine, Spark, TagRow, ckBtn, commonality } from "./ds";
 
-export function ClickWithSomeoneUserCard({ person }: { person: SuggestedPerson }) {
-  const [state, formAction, pending] = useActionState(clickPersonAction, null);
-
-  const initials = person.displayName
-    .split(/\s+/)
-    .map((w) => w[0])
-    .filter(Boolean)
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
+/**
+ * The People Card - the canonical "person you can click with" card, used
+ * IDENTICALLY on every surface it appears on (the daily set on /people, the
+ * dashboard's rotated person, the who-was-there grid).
+ *
+ * The anatomy is INVARIANT; only the ACTION LAYOUT adapts to the width:
+ *   avatar LEFT (one size, 52 - never shrunk)
+ *   name + intent grouped TIGHT and INLINE (never stacked, intent never green)
+ *   a CONDITIONAL commonality line on a NON-interest axis (so it can never
+ *     restate the tags below it); omitted cleanly when there's no overlap
+ *   <=3 neutral interest tags, one line + "+N"
+ *   the stateful click button PAIRED with a quiet "View profile" ghost
+ *
+ * Not on this card, by rule: the age (that lives on the profile), the private
+ * quiz persona, life tags (private until mutual), and the anonymity
+ * reassurance - that shows ONCE at the top of the section, never per card.
+ */
+export function ClickWithSomeoneUserCard({
+  person,
+  layout = "row",
+  viewerOpenToDating = false,
+}: {
+  person: SuggestedPerson;
+  // "row"  - wide list rows: actions in a RIGHT column (discovery / people page)
+  // "grid" - narrow cards: actions PAIRED in a bottom row (who-was-there 2-up)
+  layout?: "row" | "grid";
+  // "Open to dating" may be shown ONLY when the viewer is also open to dating.
+  // A friends-only viewer never sees a dating label anywhere - so this defaults
+  // to false and the label simply doesn't render.
+  viewerOpenToDating?: boolean;
+}) {
+  const [state, formAction, submitting] = useActionState(clickPersonAction, null);
 
   // "sent" persists across reloads via person.alreadyClicked (a pending click
   // already recorded server-side), and also flips immediately after a fresh
   // successful submit in this session.
   const sent = state?.ok === true || person.alreadyClicked;
+  const firstName = person.displayName.split(/\s+/)[0] ?? person.displayName;
+  const intent = intentLine(person.intents, viewerOpenToDating);
+  const hook = commonality({
+    sharedEvent: person.sharedEvent,
+    proximity: person.nearby ? "you're both nearby" : null,
+  });
 
-  return (
-    <article className="flex flex-col rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-5 hard-shadow-sm">
-      <div className="flex items-start gap-4">
-        {person.photoUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={person.photoUrl}
-            alt={person.displayName}
-            className="size-14 shrink-0 rounded-full border-2 border-[color:var(--line)] object-cover"
-          />
-        ) : (
-          <div className="grid size-14 shrink-0 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] font-bold text-[color:var(--surface-deep)]">
-            {initials || "·"}
-          </div>
-        )}
-        <div className="min-w-0 flex-1">
-          <Link
-            href={`/profile/${person.id}`}
-            className="font-display block truncate text-2xl font-semibold leading-tight text-[color:var(--ink)] hover:text-[color:var(--rose)]"
-          >
-            {person.displayName}
-          </Link>
-          <p className="mt-1 text-xs font-mono font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-            {person.suburb ?? "Sydney"}
-            {person.age ? ` · ${person.age}` : ""}
-          </p>
-        </div>
+  // Identity pair - name and intent INLINE on the baseline, grouped tight.
+  const content = (
+    <div className="flex min-w-0 flex-1 flex-col gap-[7px]">
+      <div className="flex min-w-0 flex-wrap items-baseline gap-x-2.5 gap-y-1">
+        <span className="font-display truncate text-[17px] font-semibold leading-tight text-[color:var(--ink)]">
+          {firstName}
+        </span>
+        {intent ? (
+          <span className="text-[13px] font-medium leading-tight text-[color:var(--slate)]">{intent}</span>
+        ) : null}
       </div>
+      <CommonalityLine c={hook} />
+      <TagRow tags={person.sharedInterests} max={3} />
+    </div>
+  );
 
-      <div className="mt-4 flex flex-wrap gap-1.5">
-        {person.intents.slice(0, 3).map((intent) => (
-          <Pill key={intent} tone="cream">{formatIntent(intent)}</Pill>
-        ))}
-      </div>
-
-      {person.sharedInterests.length > 0 ? (
-        <div className="mt-4 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-3">
-          <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
-            Shared interests
+  // The action pair. ONE footprint across states: only the fill and the label
+  // change - "click with [name]" → the muted, unresolved "clicked" (no spark).
+  const actions = (
+    <form action={formAction} className={layout === "row" ? "contents sm:block" : "contents"}>
+      <input type="hidden" name="profile_id" value={person.id} />
+      <div className={layout === "row" ? "flex items-center gap-2 sm:flex-col sm:gap-2.5" : "flex items-center gap-2"}>
+        {sent ? (
+          <span className={ckBtn("pending", "sm", { full: true })} aria-live="polite">
+            <span className="ck-btn__label">clicked</span>
           </span>
-          <p className="mt-1 text-sm font-bold text-[color:var(--ink)]">
-            {person.sharedInterests.slice(0, 4).join(" · ")}
-          </p>
-        </div>
-      ) : null}
-
-      <form action={formAction} className="mt-5 flex items-center gap-3">
-        <input type="hidden" name="profile_id" value={person.id} />
-        <button
-          type="submit"
-          disabled={pending || sent}
-          className="flex-1 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-4 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)] disabled:cursor-not-allowed disabled:opacity-70 disabled:hover:bg-[color:var(--rose)] disabled:hover:text-[color:var(--surface-deep)]"
-        >
-          {sent
-            ? "Clicked privately ✓ — pending their Click"
-            : pending
-              ? "Sending…"
-              : "Click privately"}
-        </button>
-        <Link
-          href={`/profile/${person.id}`}
-          className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
-        >
-          View
+        ) : (
+          <Button type="submit" variant="primary" size="sm" full loading={submitting}>
+            click with {firstName}
+          </Button>
+        )}
+        <Link href={`/profile/${person.id}`} className={ckBtn("ghost", "sm", { full: layout === "row" })}>
+          <span className="ck-btn__label">View profile</span>
         </Link>
-      </form>
+      </div>
+    </form>
+  );
 
-      {state && state.message ? (
-        <p
-          role="status"
-          className={`mt-3 rounded-xl border-2 border-[color:var(--line)] px-3 py-2 text-xs font-bold leading-5 ${
-            state.ok
-              ? "bg-[color:var(--lav-bg)] text-[color:var(--surface-deep)]"
-              : "bg-[color:var(--cream)] text-[color:var(--mauve)]"
-          }`}
-        >
-          {state.message}
-        </p>
-      ) : null}
+  const card =
+    "rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] shadow-[var(--shadow-sm)]";
+
+  // WIDE ROW - avatar + content + a right-hand action column on desktop; the
+  // same card stacks to the paired bottom row on mobile.
+  if (layout === "row") {
+    return (
+      <article className={`${card} flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:gap-5 sm:p-5`}>
+        <div className="flex min-w-0 flex-1 items-start gap-3 sm:items-center">
+          <Avatar name={person.displayName} src={person.photoUrl} size={52} />
+          {content}
+        </div>
+        <div className="sm:w-[190px] sm:shrink-0">{actions}</div>
+        <Status state={state} />
+      </article>
+    );
+  }
+
+  // NARROW CARD - content on top, the action pair kept together in a bottom row
+  // (never split to opposite corners).
+  return (
+    <article className={`${card} flex h-full flex-col gap-3 p-4`}>
+      <div className="flex min-w-0 flex-1 items-start gap-3">
+        <Avatar name={person.displayName} src={person.photoUrl} size={52} />
+        {content}
+      </div>
+      {actions}
+      <Status state={state} />
     </article>
   );
+}
+
+/** The mutual marker - Sage "clicked ✨". The spark lands only on this peak. */
+export function MutualMarker() {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-[color-mix(in_srgb,var(--sage)_14%,var(--paper))] px-2 py-0.5 text-[11px] font-semibold text-[color:var(--sage)]">
+      clicked <Spark size={11} tone="var(--sage)" />
+    </span>
+  );
+}
+
+function Status({ state }: { state: { ok: boolean; message?: string } | null }) {
+  if (!state?.message) return null;
+  return (
+    <p role="status" className="text-xs leading-5 text-[color:var(--slate)]">
+      {state.message}
+    </p>
+  );
+}
+
+/**
+ * The solo intent line: "Here for friends" · "Open to dating".
+ *
+ * Dating is GATED - it renders only when the viewer is also open to dating
+ * (intent-neutral + mutual opt-in), so a friends-only viewer never sees a dating
+ * label. Non-dating intents are preferred when someone carries several, which
+ * keeps the set foregrounded on friends/activities rather than dating.
+ */
+function intentLine(intents: string[], viewerOpenToDating: boolean): string | null {
+  const visible = intents.filter((i) => i !== "dating" || viewerOpenToDating);
+  if (!visible.length) return null;
+  const chosen = visible.find((i) => i !== "dating") ?? visible[0];
+  switch (chosen) {
+    case "friendship":
+      return "Here for friends";
+    case "networking":
+      return "Here for networking";
+    case "exploring":
+      return "Here for the activities";
+    case "dating":
+      return "Open to dating";
+    default:
+      return null;
+  }
 }

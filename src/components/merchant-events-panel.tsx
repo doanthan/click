@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { MerchantEventSummary } from "@/lib/event-repository";
-import { Pill } from "./click-ui";
+import { Icon, Tag } from "./ds";
+import { CapacityMeter, StatusPill, mCard } from "./merchant-ds";
 
 const dateFormatter = new Intl.DateTimeFormat("en-AU", {
   weekday: "short",
@@ -20,14 +21,14 @@ const timeFormatter = new Intl.DateTimeFormat("en-AU", {
   timeZone: "Australia/Sydney",
 });
 
-// "Sat, May 31, 6:30 PM – 8:30 PM" when the event has a known end, else just
+// "Sat, 31 May, 6:30 pm - 8:30 pm" when the event has a known end, else just
 // the start. Mirrors formatEventTimeRange() used on the public cards.
 function formatWhen(startsAt: string, endsAt: string | null) {
   const start = dateFormatter.format(new Date(startsAt));
   if (!endsAt) return start;
   const end = new Date(endsAt);
   if (Number.isNaN(end.getTime())) return start;
-  return `${start} – ${timeFormatter.format(end)}`;
+  return `${start} - ${timeFormatter.format(end)}`;
 }
 
 const priceFormatter = new Intl.NumberFormat("en-AU", {
@@ -41,19 +42,19 @@ function formatPrice(cents: number) {
   return priceFormatter.format(cents / 100);
 }
 
-function statusTone(status: MerchantEventSummary["status"]): "rose" | "peach" | "cream" | "ink" {
-  if (status === "Pending") return "rose";
-  // A rejected event is "not live" and needs the merchant's attention — give it
-  // the alert tone instead of the neutral default it used to fall through to,
-  // which made it indistinguishable from a live event (#193).
-  if (status === "Rejected") return "rose";
-  if (status === "Waitlist") return "peach";
-  if (status === "Locked") return "ink";
-  return "cream";
-}
-
 function isPast(event: MerchantEventSummary) {
   return new Date(event.endsAt ?? event.startsAt).getTime() < Date.now();
+}
+
+// The status the merchant actually needs to read, in precedence order:
+// Rejected beats Ended (being "not live" matters more than being over, #193),
+// Cancelled beats everything, and a full live event reads "Full".
+function displayStatus(event: MerchantEventSummary): string {
+  if (event.status === "Cancelled") return "cancelled";
+  if (event.status === "Rejected") return "rejected";
+  if (isPast(event)) return "ended";
+  if (event.confirmed >= event.capacity && event.status === "Live") return "full";
+  return event.status;
 }
 
 // "YYYY-MM" for the event start, computed in the same Australia/Sydney timezone
@@ -85,6 +86,13 @@ function monthKeyLabel(monthKey: string) {
 
 type StatusFilter = "all" | "live" | "pending" | "cancelled" | "past";
 type SortKey = "date-asc" | "date-desc";
+
+const selectClass =
+  "h-9 rounded-xl border border-[color:var(--mist-strong)] bg-[color:var(--paper)] px-3 text-[13px] font-medium text-[color:var(--ink)] outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--purple)]";
+
+// Written out in full (not interpolated) so Tailwind's source scanner sees them.
+const HEAD_GRID = "grid grid-cols-[2.2fr_1.6fr_1fr_0.8fr_0.9fr]";
+const ROW_GRID = "grid md:grid-cols-[2.2fr_1.6fr_1fr_0.8fr_0.9fr]";
 
 export function MerchantEventsPanel({
   events,
@@ -131,13 +139,15 @@ export function MerchantEventsPanel({
 
   if (events.length === 0) {
     return (
-      <article className="rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-6">
-        <p className="text-base font-bold">You haven&apos;t created any events yet.</p>
-        <p className="mt-2 text-sm font-semibold leading-6 text-[color:var(--mauve)]">
-          Use the form below — every new event lands in pending status until
-          admin approves it.
+      <div className={`${mCard} p-6`}>
+        <p className="font-display text-base font-semibold text-[color:var(--ink)]">
+          You haven&apos;t created any events yet.
         </p>
-      </article>
+        <p className="mt-1.5 text-sm leading-relaxed text-[color:var(--slate)]">
+          Every new event lands in pending status until it passes review - then it&apos;s live on
+          Discover.
+        </p>
+      </div>
     );
   }
 
@@ -150,32 +160,37 @@ export function MerchantEventsPanel({
   ];
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3.5">
       {filterable ? (
-        <div className="flex flex-wrap items-center gap-3">
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search events…"
-            className="min-w-[12rem] flex-1 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-2 text-sm font-semibold text-[color:var(--ink)] placeholder:text-[color:var(--mauve)] focus:outline-none focus:ring-2 focus:ring-[color:var(--rose)]"
-          />
-          <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex h-10 min-w-[14rem] flex-1 items-center gap-2 rounded-xl border border-[color:var(--mist-strong)] bg-[color:var(--paper)] px-3 sm:max-w-[280px] sm:flex-none">
+            <Icon name="search" size={16} className="text-[color:var(--slate)]" />
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search events"
+              className="min-w-0 flex-1 border-none bg-transparent text-[13.5px] text-[color:var(--ink)] outline-none placeholder:text-[color:var(--slate)]"
+            />
+          </div>
+
+          {/* Selected filter = Deep Purple fill, no tick - the fill IS the signal. */}
+          <div className="ckRail flex gap-1.5 overflow-x-auto">
             {STATUS_TABS.map((t) => (
               <button
                 key={t.key}
                 type="button"
                 onClick={() => setStatusFilter(t.key)}
-                className={`rounded-full border-2 border-[color:var(--line)] px-3 py-1.5 text-xs font-bold uppercase tracking-wide hard-shadow-sm ${
-                  statusFilter === t.key
-                    ? "bg-[color:var(--rose)] text-[color:var(--surface-deep)]"
-                    : "bg-[color:var(--cream)] text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
-                }`}
+                aria-pressed={statusFilter === t.key}
+                className="flex-none"
               >
-                {t.label}
+                <Tag selected={statusFilter === t.key} className="ck-tag--select h-[30px] px-3.5">
+                  {t.label}
+                </Tag>
               </button>
             ))}
           </div>
+
           <label className="sr-only" htmlFor="merchant-events-month">
             Filter by month
           </label>
@@ -184,7 +199,7 @@ export function MerchantEventsPanel({
             aria-label="Filter by month"
             value={monthFilter}
             onChange={(e) => setMonthFilter(e.target.value)}
-            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)] focus:outline-none focus:ring-2 focus:ring-[color:var(--rose)]"
+            className={selectClass}
           >
             <option value="all">All months</option>
             {monthOptions.map((key) => (
@@ -193,18 +208,21 @@ export function MerchantEventsPanel({
               </option>
             ))}
           </select>
+
           <button
             type="button"
             onClick={() => setSort((s) => (s === "date-asc" ? "date-desc" : "date-asc"))}
-            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)]"
+            className={`${selectClass} inline-flex items-center gap-1.5 hover:bg-[color:var(--lavender-100)]`}
           >
             Date {sort === "date-asc" ? "↑" : "↓"}
           </button>
         </div>
       ) : null}
 
-      <div className="overflow-hidden rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow-sm">
-        <div className="grid grid-cols-[1.4fr_0.9fr_0.7fr_0.7fr_0.7fr] gap-3 border-b-2 border-[color:var(--line)] bg-[color:var(--surface-deep)] px-5 py-3 font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--on-deep)]/80 max-md:hidden">
+      <div className={`${mCard} overflow-hidden`}>
+        <div
+          className={`${HEAD_GRID} gap-3.5 border-b border-[color:var(--mist)] bg-[color:var(--lavender-100)] px-5 py-2.5 text-[11.5px] font-bold uppercase tracking-[0.08em] text-[color:var(--ink-faint)] max-md:hidden`}
+        >
           <span>Event</span>
           <span>When</span>
           <span>Confirmed</span>
@@ -213,76 +231,50 @@ export function MerchantEventsPanel({
         </div>
 
         {visible.length === 0 ? (
-          <p className="px-5 py-8 text-center text-sm font-semibold text-[color:var(--mauve)]">
-            No events match your filters.
+          <p className="px-5 py-7 text-[13.5px] text-[color:var(--slate)]">
+            No events match - clear the search or filters.
           </p>
         ) : (
-          visible.map((event) => {
-            const filled = Math.min((event.confirmed / event.capacity) * 100, 100);
-            const isFull = event.confirmed >= event.capacity;
-            const past = isPast(event);
-            const statusLabel =
-              event.status === "Cancelled"
-                ? "Cancelled"
-                : // Rejected takes precedence over "Ended": a past rejected event
-                  // should still read "Rejected", not look like it merely lapsed (#193).
-                  event.status === "Rejected"
-                  ? "Rejected"
-                  : past
-                    ? "Ended"
-                    : isFull && event.status === "Live"
-                      ? "Full"
-                      : event.status;
+          visible.map((event, i) => (
+            <Link
+              key={event.slug}
+              href={`/merchant/events/${event.slug}`}
+              className={`${ROW_GRID} gap-3 px-5 py-3.5 transition-colors hover:bg-[color:var(--lavender-100)] md:items-center ${
+                i > 0 ? "border-t border-[color:var(--mist)]" : ""
+              }`}
+            >
+              <div className="min-w-0">
+                <p className="truncate text-[14.5px] font-semibold text-[color:var(--ink)]">
+                  {event.title}
+                </p>
+                <p className="mt-0.5 truncate text-xs text-[color:var(--slate)]">
+                  {event.locationName}, {event.suburb} · {formatPrice(event.priceCents)} ·{" "}
+                  {event.category}
+                </p>
+              </div>
 
-            return (
-              <Link
-                key={event.slug}
-                href={`/merchant/events/${event.slug}`}
-                className="grid gap-3 border-t-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-4 transition hover:bg-[color:var(--peach)]/30 md:grid-cols-[1.4fr_0.9fr_0.7fr_0.7fr_0.7fr] md:items-center"
+              <p className="text-[13px] text-[color:var(--ink-soft)]">
+                {formatWhen(event.startsAt, event.endsAt)}
+              </p>
+
+              {/* CapacityMeter is the ONE way capacity renders. */}
+              <CapacityMeter confirmed={event.confirmed} cap={event.capacity} />
+
+              <p
+                className={`text-[13.5px] ${
+                  event.waitlisted > 0
+                    ? "font-semibold text-[color:var(--ink)]"
+                    : "text-[color:var(--ink-faint)]"
+                }`}
               >
-                <div>
-                  <p className="text-sm font-bold text-[color:var(--ink)]">{event.title}</p>
-                  <p className="mt-1 font-mono text-[0.65rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
-                    {event.suburb} · {formatPrice(event.priceCents)} · {event.category}
-                  </p>
-                </div>
+                {event.waitlisted > 0 ? event.waitlisted : "-"}
+              </p>
 
-                <p className="text-sm font-semibold text-[color:var(--mauve)]">
-                  {formatWhen(event.startsAt, event.endsAt)}
-                </p>
-
-                <div>
-                  <p className="text-sm font-bold text-[color:var(--ink)]">
-                    {event.confirmed} / {event.capacity}
-                  </p>
-                  <div className="mt-2 h-1.5 overflow-hidden rounded-full border border-[color:var(--line)] bg-[color:var(--cream)]">
-                    <div
-                      className={`h-full ${isFull ? "bg-[color:var(--ink)]" : "bg-[color:var(--rose)]"}`}
-                      style={{ width: `${filled}%` }}
-                    />
-                  </div>
-                </div>
-
-                <p className="text-sm font-semibold text-[color:var(--mauve)]">
-                  {event.waitlisted > 0 ? `${event.waitlisted} waiting` : "—"}
-                </p>
-
-                <Pill
-                  tone={
-                    // Rejected always keeps its alert tone, even when past — being
-                    // "not live" matters more than being over (#193).
-                    event.status === "Rejected"
-                      ? "rose"
-                      : past || event.status === "Cancelled"
-                        ? "cream"
-                        : statusTone(event.status)
-                  }
-                >
-                  {statusLabel}
-                </Pill>
-              </Link>
-            );
-          })
+              <span>
+                <StatusPill status={displayStatus(event)} />
+              </span>
+            </Link>
+          ))
         )}
       </div>
     </div>

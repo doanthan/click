@@ -5,7 +5,7 @@ import { ClickAuditReport } from "./audit-report";
 export const metadata = {
   title: "How a Click works | Click",
   description:
-    "A step-by-step walkthrough of the Click mechanic: a private tap, a mutual match, a shared plan — never a chat.",
+    "A step-by-step walkthrough of the Click mechanic: a private tap, a mutual click, a shared plan - never a chat.",
 };
 
 const MYTHS = ["not a notification to them", "not a DM", "not a chat request"];
@@ -19,21 +19,21 @@ const OUTCOMES = [
   {
     title: "Proposal lapses",
     clock: "7 days",
-    body: "If neither of you confirms within 7 days, the proposal dies and the mutual drops off your lists. There’s no reopen path today (the card’s “Click again to reopen” isn’t wired) — see the audit below.",
+    body: "If neither of you confirms within 7 days, the proposal dies and the mutual drops off your lists. There’s no reopen path today (the card’s “Click again to reopen” isn’t wired) - see the audit below.",
   },
   {
     title: "Event sold out",
-    clock: "—",
-    body: "At the proposal stage, if the suggested event fills up: “That event filled up — pick another plan.” You aren’t booked into anything you didn’t choose.",
+    clock: "-",
+    body: "At the proposal stage, if the suggested event fills up: “That event filled up - pick another plan.” You aren’t booked into anything you didn’t choose.",
   },
 ];
 
 const RECAP = [
-  "1 · Private pending — you tap, they never know · 30 days",
-  "2 · Mutual — you both tap; a plan + 7-day window opens",
-  "3 · Proposal — coordinate by taps, no chat ever",
-  "4 · Confirm — one tap by either of you; then you BOTH still RSVP",
-  "5 · Both going — both seats held 🎉",
+  "1 · Private pending - you tap, they never know · 30 days",
+  "2 · Mutual - you both tap; a plan + 7-day window opens",
+  "3 · Proposal - coordinate by taps, no chat ever",
+  "4 · Confirm - one tap by either of you; then you BOTH still RSVP",
+  "5 · Both going - both seats held 🎉",
 ];
 
 const RECAP_CLOCKS = ["12h post-event gate", "30-day click", "7-day proposal"];
@@ -41,7 +41,7 @@ const RECAP_CLOCKS = ["12h post-event gate", "30-day click", "7-day proposal"];
 export default function TestClickPage() {
   return (
     <main className="paper-noise min-h-screen text-[color:var(--ink)]">
-      {/* Section 1 — hero: the one-sentence reframe */}
+      {/* Section 1 - hero: the one-sentence reframe */}
       <section className="bg-[color:var(--champagne)] px-4 pb-12 pt-14 sm:px-6 lg:pt-16">
         <div className="mx-auto max-w-6xl">
           <span className="sticker sticker--peach tilt-l-2 inline-flex">
@@ -53,7 +53,7 @@ export default function TestClickPage() {
             <span className="text-[color:var(--coral)]">&ldquo;I&rsquo;d see you again.&rdquo;</span>
           </h1>
           <p className="mt-6 max-w-3xl text-base font-medium leading-7 text-[color:var(--mauve)] sm:text-lg">
-            It&rsquo;s invisible to them. It only ever shows up when it&rsquo;s mutual — and a mutual
+            It&rsquo;s invisible to them. It only ever shows up when it&rsquo;s mutual - and a mutual
             unlocks a <strong className="text-[color:var(--ink)]">plan</strong>, not a chat. There is no
             messaging anywhere in Click.
           </p>
@@ -76,7 +76,7 @@ export default function TestClickPage() {
       {/* Sections 2–4 (diagram + entry fork + interactive stepper) */}
       <ClickWalkthrough />
 
-      {/* Section 5 — what if nobody clicks back? */}
+      {/* Section 5 - what if nobody clicks back? */}
       <section className="border-t-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-16 sm:px-6">
         <div className="mx-auto max-w-6xl">
           <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
@@ -86,7 +86,7 @@ export default function TestClickPage() {
             It&rsquo;s safe to Click.
           </h2>
           <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-[color:var(--mauve)]">
-            The worst case is silence — and silence costs you nothing. Here&rsquo;s every dead-end,
+            The worst case is silence - and silence costs you nothing. Here&rsquo;s every dead-end,
             spelled out.
           </p>
           <div className="mt-8 grid gap-4 md:grid-cols-3">
@@ -110,15 +110,15 @@ export default function TestClickPage() {
             ))}
           </div>
           <p className="mt-6 text-sm font-bold leading-6 text-[color:var(--ink)]">
-            Worst case is silence. That&rsquo;s the whole point — Click privately, lose nothing.
+            Worst case is silence. That&rsquo;s the whole point - Click privately, lose nothing.
           </p>
         </div>
       </section>
 
-      {/* Engineering audit — accuracy, edge cases, gaps */}
+      {/* Engineering audit - accuracy, edge cases, gaps */}
       <ClickAuditReport />
 
-      {/* Section 6 — TL;DR recap + jump-off links */}
+      {/* Section 6 - TL;DR recap + jump-off links */}
       <section className="border-t-2 border-[color:var(--line)] bg-[color:var(--ink)] px-4 py-16 text-[color:var(--on-deep)] sm:px-6">
         <div className="mx-auto max-w-6xl">
           <span className="sticker sticker--peach tilt-r-2 inline-flex">

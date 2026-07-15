@@ -366,15 +366,15 @@ function formatAuPhone(raw: string): string {
 function auPhoneHint(raw: string): string {
   const digits = normalizeAuPhone(raw);
   if (/^0[2378]/.test(digits) && digits.length !== 10) {
-    return `Landlines need 10 digits including the area code — you've entered ${digits.length}. e.g. 02 9646 8888.`;
+    return `Landlines need 10 digits including the area code - you've entered ${digits.length}. e.g. 02 9646 8888.`;
   }
   if (/^04/.test(digits) && digits.length !== 10) {
-    return `Mobiles need 10 digits — you've entered ${digits.length}. e.g. 0412 345 678.`;
+    return `Mobiles need 10 digits - you've entered ${digits.length}. e.g. 0412 345 678.`;
   }
   if (/^1[38]00/.test(digits) && digits.length !== 10) {
-    return `1300/1800 numbers need 10 digits — you've entered ${digits.length}. e.g. 1300 123 456.`;
+    return `1300/1800 numbers need 10 digits - you've entered ${digits.length}. e.g. 1300 123 456.`;
   }
-  return "That doesn’t look like an AU number yet — try 0412 345 678, 02 9646 8888 or 1300 123 456.";
+  return "That doesn’t look like an AU number yet - try 0412 345 678, 02 9646 8888 or 1300 123 456.";
 }
 
 function isValidAuPhone(raw: string): boolean {
@@ -643,7 +643,7 @@ export function StepAuthCard({
         </h2>
         <p className="mt-4 text-sm font-medium leading-6 text-[color:var(--mauve)]">
           We use the same identity for your Click attendee profile and your merchant portal.
-          Sign in with Google, Facebook, or email — we’ll bring you straight back to the form.
+          Sign in with Google, Facebook, or email - we’ll bring you straight back to the form.
         </p>
         <p className="mt-4 text-sm font-medium leading-6 text-[color:var(--mauve)]">
           Already a host?{" "}
@@ -832,7 +832,7 @@ function CategoryPicker({
 
       {categories.length === 0 ? (
         <p className="text-sm font-medium text-[color:var(--mauve)]">
-          No categories available — check your database connection.
+          No categories available - check your database connection.
         </p>
       ) : (
         <>
@@ -867,7 +867,7 @@ function CategoryPicker({
             <p className="text-sm font-medium text-[color:var(--mauve)]">
               {q
                 ? `No categories match “${query}”.`
-                : "All categories selected — nice."}
+                : "All categories selected - nice."}
             </p>
           ) : (
             <div className="flex flex-wrap gap-2">
@@ -970,7 +970,7 @@ export function ContactSection() {
           />
           {state.phone.trim() === "" ? (
             <p className="text-[0.7rem] font-medium leading-5 text-[color:var(--mauve)]">
-              Mobile, landline or business line — e.g. 0412 345 678, 02 9646 8888 or 1300 123 456. Spaces, brackets and +61 are fine.
+              Mobile, landline or business line - e.g. 0412 345 678, 02 9646 8888 or 1300 123 456. Spaces, brackets and +61 are fine.
             </p>
           ) : isValidAuPhone(state.phone) ? (
             <p className="text-[0.7rem] font-bold leading-5 text-[color:var(--rose)]">
@@ -1017,7 +1017,7 @@ export function ContactSection() {
           ))}
         </div>
         <span className="text-xs font-medium text-[color:var(--mauve)]">
-          Add any networks you&apos;re on — handy for verifying hosts who don&apos;t have formal documents yet.
+          Add any networks you&apos;re on - handy for verifying hosts who don&apos;t have formal documents yet.
         </span>
       </div>
 
@@ -1027,7 +1027,7 @@ export function ContactSection() {
           value={state.addressStreet}
           onValueChange={(v) => dispatch({ type: "field", key: "addressStreet", value: v })}
           onSelect={handlePick}
-          placeholder="Start typing — e.g. 42 Crown Street, Surry Hills"
+          placeholder="Start typing - e.g. 42 Crown Street, Surry Hills"
         />
         <span className="text-xs font-medium text-[color:var(--mauve)]">
           Pick a suggestion and we&apos;ll fill in suburb, state &amp; postcode.
@@ -1070,7 +1070,7 @@ export function ContactSection() {
           className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-4 py-3 text-sm font-semibold leading-6 text-[color:var(--surface-deep)]"
         >
           <span className="font-bold">{areaLabel} is outside our Sydney pilot.</span>{" "}
-          You can still apply — we&apos;ll add you to the waitlist and email you the moment we launch in your area.
+          You can still apply - we&apos;ll add you to the waitlist and email you the moment we launch in your area.
         </p>
       ) : null}
     </div>
@@ -1124,7 +1124,7 @@ function StateSelect({
         }`}
       >
         <span className={value ? "" : "text-[color:var(--mauve)]"}>
-          {value || "—"}
+          {value || "-"}
         </span>
         <svg
           viewBox="0 0 12 8"

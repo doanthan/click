@@ -3,13 +3,17 @@
 /* ============================================================================
    DESIGN CONVENTIONS — the scale this app composes against. Keep new UI on it.
    ----------------------------------------------------------------------------
-   Color     : use color:var(--token), never hardcoded hex. Soft Minimal
-               (concept 06): --champagne (cream page), --cream/--paper (white
-               card), --ink (purple-tinted near-black text), --mauve/--slate
-               (2ndary text), --rose/--coral (THE coral accent + destructive),
-               --peach/--lavender (soft secondary pop — was lime; pairs with
-               dark text), --purple (emphasis), --lime (whisper only),
-               --line (hairline border).
+   Color     : use color:var(--token), never hardcoded hex. Click DS (canon:
+               context/Click Design System + context/DESIGN.MD): --champagne
+               (cream page), --cream/--paper (white card), --ink (purple-tinted
+               near-black text), --mauve/--slate (2ndary text), --rose/--purple
+               (THE Deep-Purple accent - CTAs, links, selected; hover
+               --rose-soft/--purple-hover, press --purple-press),
+               --peach/--lavender (lavender - accent on SMALL surfaces only),
+               --lav-bg (the one large-section wash), STATUS on badges only:
+               --coral (almost full) / --amber (waitlist, trending) / --sage
+               (success, going, mutual) / --teal (new), --danger (destructive
+               red - never coral), --line/--mist (hairlines).
    Radius     : rounded-full = pills / chips / buttons · rounded-2xl = standard
                 cards · rounded-3xl = large containers, modals, heroes, sidebars
                 · rounded-xl = small inset elements.
@@ -18,10 +22,11 @@
                 hairlines, --line-strong for emphasis.
    Elevation  : hard-shadow-sm = cards · hard-shadow = raised surfaces ·
                 hard-shadow-lg = modals / popovers.
-   Labels     : `.eyebrow` (Schibsted Grotesk 600, coral, with a leading rule)
-                is the CANONICAL section label; `.eyebrow--muted` for slate.
+   Labels     : `.eyebrow` (system font 600 micro-caps, slate, with a leading
+                rule) is the CANONICAL section label; `.eyebrow--muted` is now
+                a same-look legacy alias.
                 NOTE: many admin/merchant cards still use an ad-hoc
-                `font-mono ... text-[--rose]` label voice — a known divergence;
+                `font-mono ... text-[--rose]` label voice - a known divergence;
                 prefer `.eyebrow` for new work, and unify deliberately if asked.
    Numerals   : add `tabular-nums` to proportional-font (font-display) figures
                 that update or need to align in a column.
@@ -33,39 +38,51 @@
    ============================================================================ */
 
 :root {
-  /* Click — "Soft Minimal" (concept 06): airy white/cream canvas, a single
-     warm coral accent, soft lavender + deep purple as the secondary pop, lime
-     only as a whisper. Schibsted Grotesk display.
+  /* Click Design System (canon: context/Click Design System/ + context/DESIGN.MD):
+     warm cream canvas, Deep Purple #3B2F81 as the ONE primary/selected accent
+     (flat - never a gradient or glow), lavender as the soft small-surface
+     lift, status colours on badges only. Poppins display, system-stack body.
      Token NAMES are kept stable so the whole app re-skins coherently; only
-     their VALUES change. The old electric-lime role (--peach / --punch) now
-     resolves to soft LAVENDER — it was always paired with dark text, and
-     lavender keeps that contrast while matching the concept's lavender
-     highlight underline. --rose is the canonical coral. */
-  --ink: #1C1830;          /* Purple-tinted near-black — headings + body */
+     their VALUES change - the historic accent role --rose now RESOLVES to
+     Deep Purple (it carried the coral accent in the retired Soft Minimal
+     skin); --coral keeps the coral hex but is STATUS-ONLY from here on.
+     Light mode only - no dark theme in the DS, so no mode fork. */
+  --ink: #1C1830;          /* Purple-tinted near-black - headings + body */
   --ink-deep: #100B22;     /* Deepest ink for hover/contrast */
-  --rose: #E8674C;         /* Warm coral — THE accent (text + fill) */
-  --rose-soft: #ef8366;    /* Lighter coral for hovers */
-  --champagne: #F9F6F0;    /* Soft cream — page background */
-  --champagne-deep: #F0EBE2;
-  --peach: #C8B8F8;        /* LAVENDER — soft secondary pop (was lime) */
-  --peach-soft: #F1ECFB;   /* Pale lavender wash */
-  --mauve: #6B6580;        /* Slate (purple-tinted gray) — secondary text */
-  --cream: #FFFFFF;        /* White paper — elevated card surface */
+  --rose: #3B2F81;         /* THE accent role = Deep Purple (CTAs, links, selected) */
+  --rose-soft: #332873;    /* Accent hover - darkens one step (DS button hover) */
+  --champagne: #F9F6F0;    /* Cream - page background */
+  --champagne-deep: #F4EFE7; /* Sunken/sand surface (DS --sand-50) */
+  --peach: #C8B8F8;        /* LAVENDER - soft accent, small surfaces only */
+  --peach-soft: #F1ECFD;   /* Pale lavender tint (DS --lavender-100) */
+  --mauve: #6B6580;        /* Slate (purple-tinted gray) - secondary text */
+  --cream: #FFFFFF;        /* White paper - elevated card surface */
   --punch: #C8B8F8;        /* Accent → folds into the lavender */
 
-  /* New semantic tokens for hand-tuned Soft Minimal surfaces. */
-  --purple: #3B2F81;       /* Deep purple — heading emphasis */
+  /* Body type is the system stack per the DS (Poppins is display-only), so
+     the variable is defined here rather than via next/font. */
+  --font-click-body: system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+
+  /* Semantic tokens. */
+  --purple: #3B2F81;       /* Deep Purple - brand spine (= the accent role) */
+  --purple-hover: #332873; /* Primary button hover */
+  --purple-press: #2A2160; /* Primary button pressed */
   --lavender: #C8B8F8;     /* = --peach role, named for intent */
-  --lav-bg: #F1ECFB;       /* Pale lavender section/hover tint */
+  --lav-bg: #F0ECF4;       /* Lavender WASH - the only large-section tint (DS --lavender-wash; slate on it passes AA) */
   --paper: #FFFFFF;        /* Pure white card */
-  --coral: #E8674C;        /* = --rose, named for intent */
-  --coral-deep: #D3543B;   /* Coral hover/pressed */
-  --coral-ink: #B5442C;    /* AA-accessible coral for SMALL text (eyebrows) on light surfaces — ~5:1 on --champagne; plain --coral is only ~3:1 and fails WCAG AA at label sizes */
-  --lime: #D6F24E;         /* Whisper lime — rare */
-  --sage: #5B8C6E;
-  --teal: #2E7D8A;
+  --coral: #E8674C;        /* STATUS: almost full / urgent - badges only, never a CTA */
+  --coral-deep: #D3543B;   /* Coral hover/pressed (status contexts) */
+  --coral-ink: #B5442C;    /* AA-accessible coral for SMALL status text on light surfaces */
+  --amber: #E0A33A;        /* STATUS: trending / waitlist */
+  --amber-ink: #A86F12;    /* AA-accessible amber for SMALL status text on light surfaces */
+  --sage: #5B8C6E;         /* STATUS: free / going / mutual */
+  --teal: #2E7D8A;         /* STATUS: new */
+  --danger: #B5362F;       /* Destructive red (confirm-cancel, errors) - never coral */
+  --lime: #D6F24E;         /* DEPRECATED - no lime in the Click DS; migrate off */
   --slate: #6B6580;        /* = --mauve, named for intent */
-  --mist: #E8E4F0;
+  --mist: #E8E4F0;         /* Hairlines / dividers / disabled */
+  --mist-strong: #DDD7EA;  /* One-step-deeper Mist - defined chip hairlines on cream */
 
   /* Tokens that retain their meaning across modes */
   --noise-dot-a: rgba(28, 24, 48, 0.045);
@@ -73,17 +90,16 @@
   --grid-line: rgba(28, 24, 48, 0.045);
   --hairline: rgba(28, 24, 48, 0.09);
 
-  /* "Anchor dark" — the few sections we keep as deep bands ("Join once",
-     footer). Re-skinned to a soft deep aubergine-ink so they tie into the
-     purple/lavender accent system rather than reading as flat black. */
+  /* "Anchor dark" - the few sections we keep as deep bands ("Join once",
+     footer). Deep aubergine-ink so they tie into the purple system rather
+     than reading as flat black. */
   --surface-deep: #201A3A;     /* Deep aubergine-ink band */
   --surface-deep-2: #2C2552;   /* elevated card on deep surface */
   --on-deep: #F9F6F0;          /* foreground on deep surface */
   --on-deep-soft: rgba(249, 246, 240, 0.70);
 
-  /* Borders: Soft Minimal uses quiet, purple-tinted hairlines. --line is the
-     standard hairline; --line-strong is a restrained emphasis border (softer
-     than before so dashed/structural frames read refined, not heavy). */
+  /* Borders: quiet, purple-tinted hairlines. --line is the standard hairline;
+     --line-strong is a restrained emphasis border. */
   --line: rgba(28, 24, 48, 0.10);
   --line-strong: rgba(28, 24, 48, 0.42);
   --line-soft: rgba(28, 24, 48, 0.07);
@@ -92,53 +108,58 @@
   --background: var(--champagne);
   --foreground: var(--ink);
 
+  /* ---- DS scale tokens (context/Click Design System/tokens/) ----
+     The DS ramps, added under their OWN names so DS component specs port
+     literally. Two names collide with ours and are deliberately NOT imported:
+     the DS's --cream (page ground) is our --champagne, and its --white is our
+     --paper. Everything else below is the DS name, verbatim value. */
+  --purple-100: #E2DDF5;
+  --purple-200: #C5BBEA;
+  --purple-300: #A293DC;
+  --purple-400: #7B66C8;
+  --purple-500: #5746A6;
+  --purple-600: #3B2F81;   /* = --purple (brand primary) */
+  --purple-700: #2F2566;
+  --purple-800: #241C4E;
+  --lavender-100: #F1ECFD; /* palest tint - icon circles, pending fills */
+  --lavender-200: #E0D6FB;
+  --lavender-300: #C8B8F8; /* = --lavender (brand) */
+  --lavender-400: #A892F0;
+  --ink-soft: #3E3958;     /* body copy one step off --ink */
+  --ink-faint: #A8A2BC;    /* faintest meta - timestamps, +N */
+
+  /* Radii: inputs/buttons 12, cards 16-20. Buttons are NEVER pills; the pill
+     radius belongs to tags + avatars only. */
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-2xl: 24px;
+  --radius-pill: 999px;
+
+  /* Shadows: soft, low, purple-tinted - never a glow. Var forms of the
+     .hard-shadow-* classes so DS components can carry elevation inline. */
+  --shadow-xs: 0 1px 2px rgba(28, 24, 48, 0.05);
+  --shadow-sm: 0 1px 2px rgba(28, 24, 48, 0.05), 0 6px 16px -8px rgba(28, 24, 48, 0.12);
+  --shadow-md: 0 2px 6px rgba(28, 24, 48, 0.06), 0 12px 28px -12px rgba(28, 24, 48, 0.16);
+  --shadow-lg: 0 2px 6px rgba(28, 24, 48, 0.05), 0 30px 60px -22px rgba(28, 24, 48, 0.20);
+
+  /* Fluid type - clamp(mobile, fluid, desktop) so sizes scale with the
+     viewport instead of jumping at breakpoints. Body stays a flat 16px (never
+     clamped below 16: iOS zooms fields under it). */
+  --text-display: clamp(2rem, 1.15rem + 3.6vw, 4rem);        /* 32 → 64 */
+  --text-h1: clamp(1.75rem, 1.42rem + 1.4vw, 2.5rem);        /* 28 → 40 */
+  --text-h2: clamp(1.375rem, 1.29rem + 0.36vw, 1.5rem);      /* 22 → 24 */
+  --text-h3: clamp(1.125rem, 1.09rem + 0.16vw, 1.25rem);     /* 18 → 20 */
+  --card-title: clamp(1.0625rem, 1.05rem + 0.08vw, 1.125rem);/* 17 → 18 */
+
+  /* The ONE layout container - every page (and the header + footer) shares this
+     width and, crucially, this LEFT EDGE. A page title that doesn't line up with
+     the wordmark above it is the single most visible way a redesign drifts. */
+  --container-max: 1200px;
+
+  /* The DS is light-only; this also keeps UA form controls light for users
+     in system dark mode (the old duplicated dark-mode media block is gone). */
   color-scheme: light;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    /* Keep the event marketplace light even for users in system dark mode. */
-    --ink: #1C1830;
-    --ink-deep: #100B22;
-    --rose: #E8674C;
-    --rose-soft: #ef8366;
-    --champagne: #F9F6F0;
-    --champagne-deep: #F0EBE2;
-    --peach: #C8B8F8;
-    --peach-soft: #F1ECFB;
-    --mauve: #6B6580;
-    --cream: #FFFFFF;
-    --punch: #C8B8F8;
-
-    --purple: #3B2F81;
-    --lavender: #C8B8F8;
-    --lav-bg: #F1ECFB;
-    --paper: #FFFFFF;
-    --coral: #E8674C;
-    --coral-deep: #D3543B;
-    --lime: #D6F24E;
-    --sage: #5B8C6E;
-    --teal: #2E7D8A;
-    --slate: #6B6580;
-    --mist: #E8E4F0;
-
-    --noise-dot-a: rgba(28, 24, 48, 0.045);
-    --noise-dot-b: rgba(28, 24, 48, 0.03);
-    --grid-line: rgba(28, 24, 48, 0.045);
-    --hairline: rgba(28, 24, 48, 0.09);
-
-    --surface-deep: #201A3A;
-    --surface-deep-2: #2C2552;
-    --on-deep: #F9F6F0;
-    --on-deep-soft: rgba(249, 246, 240, 0.70);
-
-    --line: rgba(28, 24, 48, 0.10);
-    --line-strong: rgba(28, 24, 48, 0.42);
-    --line-soft: rgba(28, 24, 48, 0.07);
-    --shadow-ink: rgba(28, 24, 48, 0.10);
-
-    color-scheme: light;
-  }
 }
 
 @theme inline {
@@ -164,11 +185,32 @@
   --color-paper: var(--paper);
   --color-coral: var(--coral);
   --color-coral-deep: var(--coral-deep);
+  --color-coral-ink: var(--coral-ink);
+  --color-amber: var(--amber);
+  --color-danger: var(--danger);
+  --color-purple-hover: var(--purple-hover);
+  --color-purple-press: var(--purple-press);
+  --color-mist-strong: var(--mist-strong);
   --color-lime: var(--lime);
   --color-sage: var(--sage);
   --color-teal: var(--teal);
   --color-slate: var(--slate);
   --color-mist: var(--mist);
+  /* DS ramps as utilities: bg-lavender-100, text-purple-700, … */
+  --color-purple-100: var(--purple-100);
+  --color-purple-200: var(--purple-200);
+  --color-purple-300: var(--purple-300);
+  --color-purple-400: var(--purple-400);
+  --color-purple-500: var(--purple-500);
+  --color-purple-600: var(--purple-600);
+  --color-purple-700: var(--purple-700);
+  --color-purple-800: var(--purple-800);
+  --color-lavender-100: var(--lavender-100);
+  --color-lavender-200: var(--lavender-200);
+  --color-lavender-300: var(--lavender-300);
+  --color-lavender-400: var(--lavender-400);
+  --color-ink-soft: var(--ink-soft);
+  --color-ink-faint: var(--ink-faint);
   --color-line: var(--line);
   --color-line-strong: var(--line-strong);
   --color-line-soft: var(--line-soft);
@@ -207,11 +249,11 @@ body {
 ::selection { background: var(--peach); color: var(--surface-deep); }
 
 /* ---------- Typography helpers ----------
-   Display = Schibsted Grotesk, the Soft Minimal voice: a clean grotesque set
-   BIG, BOLD and TIGHT. Default weight is 700 so unstyled .font-display reads
-   confident; pages can still go heavier (800) or lighter inline. Headings that
-   used `font-light` (a serif-era device) should move toward 600–800 to match
-   the concept.
+   Display = Poppins, the Click DS face: headings H1-H3, the wordmark, primary
+   button + tab labels, big numbers (SemiBold 600 is the DS default; H1 may go
+   700). .font-display keeps a 700 default so existing unstyled headings stay
+   confident; new work should lean 600. Body/paragraphs = the system stack
+   (--font-click-body) - NEVER Poppins for paragraphs.
    These live in @layer components so inline Tailwind utilities (font-bold,
    tracking-[…], text-[color:…]) reliably WIN over the defaults below. */
 @layer components {
@@ -220,9 +262,9 @@ body {
   font-weight: 700;
   letter-spacing: -0.025em;
 }
-/* Legacy "script"/"brand" → resolve to Schibsted Grotesk (no serif). The
-   concept has no handwriting/serif voice, so these read as clean grotesque
-   accents: script = a soft 600, brand = a tight 700. */
+/* Legacy "script"/"brand" → resolve to Poppins (no serif). The DS has no
+   handwriting/serif voice, so these read as clean display accents:
+   script = a soft 600, brand = a tight 700. */
 .font-script  { font-family: var(--font-click-display), system-ui, sans-serif; font-weight: 600; letter-spacing: -0.015em; }
 .font-brand   { font-family: var(--font-click-display), system-ui, sans-serif; font-weight: 700; letter-spacing: -0.025em; }
 .font-mono    { font-family: var(--font-click-mono), ui-monospace, monospace; }
@@ -234,10 +276,13 @@ body {
   font-weight: 600;
 }
 
+/* Lowercase `click` wordmark - Poppins SemiBold per the DS; the dot is the
+   lavender spark stand-in (the real sparkle-pair SVG lives in the DS bundle's
+   assets/ and replaces this when site chrome is redesigned). */
 .click-wordmark {
   font-family: var(--font-click-display), system-ui, sans-serif;
-  font-weight: 800;
-  letter-spacing: -0.03em;
+  font-weight: 600;
+  letter-spacing: -0.02em;
   line-height: 0.9;
   display: inline-flex;
   align-items: baseline;
@@ -248,21 +293,21 @@ body {
   height: 0.22em;
   margin-left: 0.05em;
   border-radius: 999px;
-  background: var(--coral);
+  background: var(--lavender);
   align-self: flex-end;
   margin-bottom: 0.16em;
 }
 
-/* Eyebrow — Schibsted Grotesk, wide-tracked uppercase, coral, with a short
-   leading rule (the concept's signature label voice). The rule is an
-   inline-block ::before so it never changes the element's block flow. */
+/* Eyebrow - the DS overline voice: system font 600, wide-tracked micro-caps,
+   quiet SLATE (statuses never colour labels), with a short leading rule. The
+   rule is an inline-block ::before so it never changes the element's flow. */
 .eyebrow {
-  font-family: var(--font-click-display), var(--font-click-body), sans-serif;
+  font-family: var(--font-click-body), system-ui, sans-serif;
   font-weight: 600;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   font-size: 0.74rem;
-  color: var(--coral-ink);
+  color: var(--slate);
 }
 .eyebrow::before {
   content: "";
@@ -274,8 +319,157 @@ body {
   background: currentColor;
   opacity: 0.55;
 }
-/* Muted eyebrow variant — slate, no coral (for dense/secondary contexts). */
+/* Legacy alias - the default eyebrow is already slate now. */
 .eyebrow--muted { color: var(--slate); }
+
+/* ---------- DS components (context/Click Design System/components/core) ----------
+   Ported onto our token names. States are REAL CSS pseudo-classes, never JS
+   mouse handlers, so every control behaves the same on mouse, touch and
+   keyboard - and a server-rendered button needs no client bundle to feel alive.
+   In @layer components so inline Tailwind utilities still win over these. */
+
+/* ---- Button: radius 12, NEVER a pill. ONE footprint on every surface. ---- */
+.ck-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-sizing: border-box;
+  font-family: var(--font-click-display), system-ui, sans-serif;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  line-height: 1;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  transition: transform .14s ease, background-color .16s ease,
+              border-color .16s ease, color .16s ease;
+}
+.ck-btn:focus { outline: none; }
+.ck-btn:focus-visible { outline: 2px solid var(--purple); outline-offset: 2px; }
+
+/* sizes - heights on the 4/8 grid (44 = the min touch target) */
+.ck-btn--sm { min-height: 36px; padding: 0 16px; font-size: 14px; }
+.ck-btn--md { min-height: 44px; padding: 0 20px; font-size: 15px; }
+.ck-btn--lg { min-height: 52px; padding: 0 24px; font-size: 16px; }
+.ck-btn--full { width: 100%; }
+
+/* primary - the one flat Deep-Purple CTA. Never a gradient, never a glow. */
+.ck-btn--primary { background: var(--purple); color: var(--champagne); }
+.ck-btn--primary:hover:not([disabled]):not(.ck-btn--loading) { background: var(--purple-hover); transform: translateY(-1px); }
+.ck-btn--primary:active:not([disabled]):not(.ck-btn--loading) { background: var(--purple-press); transform: scale(.985); }
+
+/* secondary - white + mist hairline → lavender wash on hover */
+.ck-btn--secondary { background: var(--paper); color: var(--ink); border-color: var(--mist); box-shadow: var(--shadow-xs); }
+.ck-btn--secondary:hover:not([disabled]):not(.ck-btn--loading) { background: var(--lavender-100); border-color: var(--slate); }
+.ck-btn--secondary:active:not([disabled]):not(.ck-btn--loading) { transform: scale(.985); }
+
+/* ghost - the quiet partner action ("View profile") */
+.ck-btn--ghost { background: transparent; color: var(--purple); }
+.ck-btn--ghost:hover:not([disabled]):not(.ck-btn--loading) { background: var(--lavender-100); }
+.ck-btn--ghost:active:not([disabled]):not(.ck-btn--loading) { transform: scale(.985); }
+
+/* onPurple - a cream button standing on a deep purple field */
+.ck-btn--onPurple { background: var(--champagne); color: var(--purple-700); }
+.ck-btn--onPurple:hover:not([disabled]):not(.ck-btn--loading) { background: #fff; transform: translateY(-1px); }
+.ck-btn--onPurple:active:not([disabled]):not(.ck-btn--loading) { transform: scale(.985); }
+.ck-btn--onPurple:focus-visible { outline-color: var(--champagne); }
+
+/* danger - destructive only (cancel an RSVP). --danger red, NEVER coral. */
+.ck-btn--danger { background: var(--danger); color: var(--champagne); }
+.ck-btn--danger:hover:not([disabled]):not(.ck-btn--loading) { background: #9C2E28; transform: translateY(-1px); }
+
+/* ---- The stateful click-with / RSVP control: ONE footprint across states.
+   Only the fill + label change - never the size or shape. ---- */
+/* pending "clicked" - sent and waiting. Quiet, NOT celebratory, and NO spark. */
+.ck-btn--pending { background: var(--lavender-100); color: var(--purple-700); cursor: default; }
+.ck-btn--pending:active { transform: none; }
+/* mutual "clicked ✨" - Sage, the peak. Taps through to the mutual. */
+.ck-btn--mutual { background: color-mix(in srgb, var(--sage) 14%, var(--paper)); color: var(--sage); }
+.ck-btn--mutual:hover:not([disabled]) { background: color-mix(in srgb, var(--sage) 20%, var(--paper)); }
+.ck-btn--mutual:active:not([disabled]) { transform: scale(.985); }
+
+/* disabled - Mist fill + Slate text, still legible (never an opacity fade) */
+.ck-btn[disabled] { cursor: not-allowed; background: var(--mist); color: var(--slate); border-color: transparent; box-shadow: none; transform: none; }
+.ck-btn--ghost[disabled] { background: transparent; }
+
+/* loading - spinner replaces the label, width held, interaction blocked */
+.ck-btn--loading { cursor: progress; pointer-events: none; }
+.ck-btn__label { display: inline-flex; align-items: center; }
+.ck-btn__label > svg:first-child:not(:only-child) { margin-inline-end: 8px; }
+.ck-btn__label > svg:last-child:not(:only-child) { margin-inline-start: 8px; }
+.ck-btn--loading .ck-btn__label { visibility: hidden; }
+.ck-btn__spinner {
+  position: absolute;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  animation: ck-spin .7s linear infinite;
+}
+@keyframes ck-spin { to { transform: rotate(360deg); } }
+
+/* ---- Tag: ONE neutral look everywhere. White fill, mist hairline, ink text,
+   no dot. Selected = Deep-Purple fill, cream label, NO tick (the fill IS the
+   signal). Status colour NEVER lands on a tag. ---- */
+.ck-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--mist-strong);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-click-body), system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+}
+.ck-tag--dense { height: 22px; padding: 0 8px; }
+.ck-tag--selected { background: var(--purple); border-color: transparent; color: var(--champagne); }
+.ck-tag--select { cursor: pointer; transition: background-color .14s ease, border-color .14s ease; }
+.ck-tag--select:hover:not(.ck-tag--selected) { background: var(--lavender-100); border-color: var(--slate); }
+.ck-tag--select:focus-visible { outline: 2px solid var(--purple); outline-offset: 2px; }
+
+/* ---- Badge: STATUS ONLY. Rounded rect (~8px) so it never reads as a tag. ---- */
+.ck-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  box-sizing: border-box;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 8px;
+  font-family: var(--font-click-body), system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* ---- Horizontal rails (category strip, chip rows) hide their scrollbar ---- */
+.ckRail { scrollbar-width: none; -ms-overflow-style: none; }
+.ckRail::-webkit-scrollbar { display: none; }
+
+/* ---- The ONE signed-in layout container: same max-width and, crucially, the
+   same LEFT EDGE on every page. Narrow pages cap their content width and let
+   the whitespace fall to the RIGHT - never a column floating dead-centre. ---- */
+.ck-page {
+  width: 100%;
+  max-width: var(--container-max);
+  margin-inline: auto;
+  padding-inline: 20px;
+}
+@media (min-width: 640px) { .ck-page { padding-inline: 32px; } }
 }
 
 /* ---------- Highlight & marker ----------
@@ -356,7 +550,7 @@ body {
   box-shadow: 0 1px 2px rgba(28, 24, 48, 0.04), 0 14px 30px -14px rgba(28, 24, 48, 0.16);
 }
 .hard-shadow-rose {
-  box-shadow: 0 1px 2px rgba(28, 24, 48, 0.04), 0 16px 32px -16px rgba(232, 103, 76, 0.34);
+  box-shadow: 0 1px 2px rgba(28, 24, 48, 0.04), 0 16px 32px -16px rgba(59, 47, 129, 0.30);
 }
 .hard-shadow-peach {
   box-shadow: 0 1px 2px rgba(28, 24, 48, 0.04), 0 16px 32px -16px rgba(150, 130, 230, 0.34);
@@ -395,7 +589,7 @@ body {
 /* Press feedback — the soft elevation system implies physicality, so a pressed
    capsule settles back flush. */
 .sticker:active { transform: translateY(0); box-shadow: 0 1px 1px rgba(22, 24, 29, 0.06); }
-.sticker--rose { background: var(--rose); color: #fff; border-color: transparent; }
+.sticker--rose { background: var(--rose); color: var(--champagne); border-color: transparent; }
 /* --peach is the electric lime in both modes; pair it with the near-black
    --surface-deep so text stays legible on the bright accent. */
 .sticker--peach { background: var(--peach); color: var(--surface-deep); border-color: transparent; }
@@ -488,9 +682,11 @@ button, a, select, textarea, input {
     box-shadow 180ms ease;
 }
 
+/* DS focus treatment: 2px Deep-Purple ring + 2px offset (the gap shows the
+   cream page), keyboard-only via :focus-visible. */
 button:focus-visible, a:focus-visible, select:focus-visible, textarea:focus-visible, input:focus-visible {
-  outline: 3px solid var(--rose);
-  outline-offset: 3px;
+  outline: 2px solid var(--purple);
+  outline-offset: 2px;
   border-radius: 4px;
 }
 
@@ -522,7 +718,7 @@ button:focus-visible, a:focus-visible, select:focus-visible, textarea:focus-visi
 
 /* ---------- Squiggle underline (decorative) ---------- */
 .squiggle {
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='80' height='10' viewBox='0 0 80 10'><path d='M0 5 Q 10 0 20 5 T 40 5 T 60 5 T 80 5' stroke='%23E8674C' stroke-width='2.2' fill='none' stroke-linecap='round'/></svg>");
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='80' height='10' viewBox='0 0 80 10'><path d='M0 5 Q 10 0 20 5 T 40 5 T 60 5 T 80 5' stroke='%233B2F81' stroke-width='2.2' fill='none' stroke-linecap='round'/></svg>");
   background-repeat: repeat-x;
   background-position: 0 100%;
   background-size: 80px 10px;

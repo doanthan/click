@@ -186,7 +186,7 @@ export function EventPaymentButton({
   return (
     <div className="grid gap-2">
       {guestsEnabled ? (
-        <div className="grid gap-2 rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)]/40 p-3">
+        <div className="grid gap-2 rounded-[var(--radius-md)] bg-[color:var(--lav-bg)] p-3">
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)]">
               Tickets
@@ -252,7 +252,7 @@ export function EventPaymentButton({
                     className="rounded-md border border-[color:var(--line)] px-2 py-1.5 text-sm"
                   />
                   {rowErrors[i] ? (
-                    <p className="text-[11px] font-bold text-[color:var(--rose)]">{rowErrors[i]}</p>
+                    <p className="text-[11px] font-medium text-[color:var(--danger)]">{rowErrors[i]}</p>
                   ) : null}
                 </div>
               ))}
@@ -284,12 +284,12 @@ export function EventPaymentButton({
         type="button"
         onClick={startCheckout}
         disabled={disabled}
-        className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-4 py-3 text-center text-sm font-bold text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)] disabled:cursor-not-allowed disabled:opacity-70"
+        className="ck-btn ck-btn--md ck-btn--full ck-btn--primary"
       >
         {payLabel}
       </button>
       {message ? (
-        <p className="text-xs font-bold text-[color:var(--rose)]">{message}</p>
+        <p className="text-xs font-medium text-[color:var(--danger)]">{message}</p>
       ) : null}
       {clientSecret ? (
         <EventCheckoutModal clientSecret={clientSecret} onClose={closeModal} />

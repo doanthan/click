@@ -4,8 +4,10 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import {
+  banMemberAsAdmin,
   setMemberVerifiedAsAdmin,
   suspendMemberAsAdmin,
+  unbanMemberAsAdmin,
   unsuspendMemberAsAdmin,
   updateSystemSettingsAsAdmin,
 } from "@/lib/event-repository";
@@ -32,6 +34,30 @@ export async function unsuspendMemberAction(formData: FormData) {
   if (typeof id !== "string" || !UUID_RE.test(id)) return;
 
   await unsuspendMemberAsAdmin(session, id);
+  revalidatePath("/admin");
+}
+
+// SAFE-06 — permanent ban: flags the profile + tears down all clicks/mutuals/proposals.
+export async function banMemberAction(formData: FormData) {
+  const session = await auth();
+  if (!session?.user) redirect("/login?callbackUrl=/admin");
+
+  const id = formData.get("profile_id");
+  const reason = formData.get("reason");
+  if (typeof id !== "string" || !UUID_RE.test(id)) return;
+
+  await banMemberAsAdmin(session, id, typeof reason === "string" ? reason : "");
+  revalidatePath("/admin");
+}
+
+export async function unbanMemberAction(formData: FormData) {
+  const session = await auth();
+  if (!session?.user) redirect("/login?callbackUrl=/admin");
+
+  const id = formData.get("profile_id");
+  if (typeof id !== "string" || !UUID_RE.test(id)) return;
+
+  await unbanMemberAsAdmin(session, id);
   revalidatePath("/admin");
 }
 

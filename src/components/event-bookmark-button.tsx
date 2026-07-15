@@ -52,6 +52,9 @@ export function EventBookmarkButton({
 
   if (variant === "star") {
     return (
+      // The DS save affordance: a bookmark glyph on a translucent-cream disc,
+      // riding the card cover top-right. Fills Deep Purple once saved. No heavy
+      // border, no star (the DS icon set has no star).
       <button
         type="button"
         onClick={toggle}
@@ -59,23 +62,19 @@ export function EventBookmarkButton({
         aria-pressed={saved}
         aria-label={saved ? "Saved to bookmarks" : "Save event"}
         title={saved ? "Saved" : "Save"}
-        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 border-[color:var(--line)] transition disabled:cursor-not-allowed disabled:opacity-60 ${
-          saved
-            ? "bg-[color:var(--rose)] text-[color:var(--surface-deep)]"
-            : "bg-[color:var(--champagne)] text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
-        }`}
+        className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[rgba(249,246,240,0.92)] text-[color:var(--ink)] shadow-[var(--shadow-xs)] transition hover:bg-[color:var(--paper)] disabled:cursor-not-allowed disabled:opacity-60"
       >
         <svg
           viewBox="0 0 24 24"
-          className="h-4 w-4"
-          fill={saved ? "currentColor" : "none"}
-          stroke="currentColor"
+          className="size-[18px]"
+          fill={saved ? "var(--purple)" : "none"}
+          stroke={saved ? "var(--purple)" : "currentColor"}
           strokeWidth={2}
           strokeLinecap="round"
           strokeLinejoin="round"
           aria-hidden
         >
-          <path d="M12 17.3l-6.18 3.7 1.64-7.03L2 9.24l7.19-.61L12 2l2.81 6.63 7.19.61-5.46 4.73L18.18 21z" />
+          <path d="M6 4h12a1 1 0 0 1 1 1v15l-7-4-7 4V5a1 1 0 0 1 1-1Z" />
         </svg>
       </button>
     );

@@ -34,7 +34,7 @@ export function MerchantFinancesExport() {
         id="finances-export-period"
         value={period}
         onChange={(e) => setPeriod(e.target.value as Period)}
-        className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-2 text-xs font-bold text-[color:var(--ink)] hard-shadow-sm focus:outline-none"
+        className="h-9 rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] px-3 text-[13px] text-[color:var(--ink)] focus:border-[color:var(--purple)] focus:outline-none"
       >
         <option value="month">This month</option>
         <option value="year">This year</option>
@@ -43,7 +43,7 @@ export function MerchantFinancesExport() {
       <button
         type="button"
         onClick={exportCsv}
-        className="inline-flex shrink-0 items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-2 text-xs font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)]"
+        className="ck-btn ck-btn--sm ck-btn--secondary shrink-0"
       >
         Export CSV
       </button>

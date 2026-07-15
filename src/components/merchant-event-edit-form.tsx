@@ -326,7 +326,7 @@ export function MerchantEventEditForm({
 
           <p className="rounded-xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--champagne)] p-3 text-xs font-semibold leading-5 text-[color:var(--mauve)]">
             Changing the price, date/time or capacity affects people who may have
-            already booked — those need a review. Email support@click.local to
+            already booked - those need a review. Email support@click.local to
             request a change.
           </p>
 

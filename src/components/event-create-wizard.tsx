@@ -405,7 +405,7 @@ export function WizardShell({
 
   function goNext() {
     if (uploading) {
-      toast.error("Hang on — your photos are still uploading.");
+      toast.error("Hang on - your photos are still uploading.");
       return;
     }
     const err = validateStep(step, values);
@@ -555,7 +555,7 @@ export function WizardShell({
         toast.success(
           liveNow
             ? startsAtList.length === 1
-              ? `🎉 ${label} is live — members can find it on Discover now.`
+              ? `🎉 ${label} is live - members can find it on Discover now.`
               : `🎉 ${okCount} occurrences of ${label} are live on Discover.`
             : startsAtList.length === 1
               ? `${label} submitted for admin review.`
@@ -563,7 +563,7 @@ export function WizardShell({
         );
       } else {
         toast.success(`${okCount} of ${startsAtList.length} submitted`, {
-          description: `${errors.length} failed — retry from the merchant dashboard.`,
+          description: `${errors.length} failed - retry from the merchant dashboard.`,
         });
       }
       router.push("/merchant?tab=events");
@@ -844,7 +844,7 @@ function TagPicker({
                 ))}
                 {hiddenCount > 0 ? (
                   <li className="self-center font-mono text-[0.6rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
-                    +{hiddenCount} more — search to filter
+                    +{hiddenCount} more - search to filter
                   </li>
                 ) : null}
               </ul>
@@ -932,7 +932,7 @@ const EVENT_INTENTS: { label: string; emoji: string; phrase: string }[] = [
   { label: "Make friends", emoji: "🫶", phrase: "make new friends" },
   { label: "Dating", emoji: "🌹", phrase: "meet someone in a relaxed setting" },
   { label: "Networking", emoji: "💼", phrase: "network with like-minded people" },
-  { label: "Hobbies", emoji: "🎨", phrase: "connect over a shared hobby" },
+  { label: "Hobbies", emoji: "🎨", phrase: "bond over a shared hobby" },
   { label: "Wellness", emoji: "🧘", phrase: "unwind and look after themselves" },
   { label: "Community", emoji: "🏘️", phrase: "feel part of the local community" },
   { label: "New in town", emoji: "🧭", phrase: "settle into Sydney" },
@@ -980,7 +980,7 @@ export function BasicsSection() {
           What is this event?
         </h2>
         <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
-          Don&apos;t worry about getting it perfect — you can edit any of this later from your event page.
+          Don&apos;t worry about getting it perfect - you can edit any of this later from your event page.
         </p>
       </header>
       <div className="grid gap-4 md:grid-cols-2">
@@ -1031,7 +1031,7 @@ export function BasicsSection() {
       </div>
       <Field
         label="Who's this event for? (intent)"
-        hint="Pick one or more — we'll draft the goal line below, which you can edit."
+        hint="Pick one or more - we'll draft the goal line below, which you can edit."
       >
         <div className="flex flex-wrap gap-2">
           {EVENT_INTENTS.map((intent) => {
@@ -1576,7 +1576,7 @@ export function LocationSection() {
         </h2>
         <p className="mt-1 text-sm font-bold text-[color:var(--mauve)]">
           Search a street address to fill the suburb, pin it on the map, and
-          auto-fill the venue name — edit it below if needed.
+          auto-fill the venue name - edit it below if needed.
         </p>
       </header>
 
@@ -1635,20 +1635,20 @@ export function LocationSection() {
           ? // Number(...) guards against a stale sessionStorage duplicate draft
             // that seeded string coords before the #223 repository fix landed.
             `Pinned at ${Number(values.latitude).toFixed(5)}, ${Number(values.longitude).toFixed(5)}`
-          : "No coordinates yet — picking a suggestion will pin this on the map."}
+          : "No coordinates yet - picking a suggestion will pin this on the map."}
       </p>
 
       {outsidePilotArea ? (
         <div className="space-y-3 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--peach)] p-4 text-sm font-bold leading-6 text-[color:var(--surface-deep)] hard-shadow-sm">
           <p>
-            ⚠️ Heads up — this venue is about {Math.round(distanceFromSydneyKm!)} km
+            ⚠️ Heads up - this venue is about {Math.round(distanceFromSydneyKm!)} km
             from Sydney. Click is currently piloting in <strong>greater Sydney
             only</strong>. You can still publish, but reach will be limited until
             we launch in your area.
           </p>
           {waitlistState === "done" ? (
             <p className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-2 text-[color:var(--ink)]">
-              🎉 Thanks — you’re on the waitlist. We’ll email you the moment Click
+              🎉 Thanks - you’re on the waitlist. We’ll email you the moment Click
               launches near this venue.
             </p>
           ) : (
@@ -1663,7 +1663,7 @@ export function LocationSection() {
               </button>
               {waitlistState === "error" ? (
                 <span className="text-xs text-[color:var(--surface-deep)]">
-                  Couldn’t save that — try again.
+                  Couldn’t save that - try again.
                 </span>
               ) : null}
             </div>
@@ -1807,15 +1807,15 @@ export function MediaSection() {
       }
       for (const file of files) {
         if (remaining <= 0) {
-          toast.error(`Only the first ${MEDIA_MAX_PHOTOS} photos are kept — extras were skipped.`);
+          toast.error(`Only the first ${MEDIA_MAX_PHOTOS} photos are kept - extras were skipped.`);
           break;
         }
         if (!MEDIA_ACCEPTED_MIME.has(file.type)) {
-          toast.error(`${file.name || "Image"} — only JPG, PNG, or WEBP allowed.`);
+          toast.error(`${file.name || "Image"} - only JPG, PNG, or WEBP allowed.`);
           continue;
         }
         if (file.size > MEDIA_MAX_BYTES) {
-          toast.error(`${file.name || "Image"} — must be 10 MB or smaller.`);
+          toast.error(`${file.name || "Image"} - must be 10 MB or smaller.`);
           continue;
         }
         if (file.size === 0) continue;
@@ -1965,9 +1965,9 @@ export function MediaSection() {
           Drop in a few real photos.
         </h2>
         <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
-          Add up to {MEDIA_MAX_PHOTOS} photos. The first one is the cover — use{" "}
+          Add up to {MEDIA_MAX_PHOTOS} photos. The first one is the cover - use{" "}
           <span className="font-bold text-[color:var(--ink)]">Set cover</span> on
-          any tile (or drag to reorder) to choose it. Drop, paste, or click to
+          any tile (or drag to reorder) to choose it. Drop, paste, or tap to
           upload.
         </p>
       </header>
@@ -1977,7 +1977,7 @@ export function MediaSection() {
       <div
         tabIndex={0}
         role="button"
-        aria-label="Drop photos here, paste from clipboard, or click to pick files"
+        aria-label="Drop photos here, paste from clipboard, or tap to pick files"
         onClick={() => fileInputRef.current?.click()}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
@@ -1996,7 +1996,7 @@ export function MediaSection() {
         }`}
       >
         <span className="font-display text-2xl font-semibold leading-tight tracking-[-0.025em] text-[color:var(--ink)]">
-          Drop photos, paste, or click to upload
+          Drop photos, paste, or tap to upload
         </span>
         <span className="font-mono text-[0.7rem] uppercase tracking-[0.16em] text-[color:var(--mauve)]">
           JPG · PNG · WEBP · up to 10 MB each · {pending.length}/{MEDIA_MAX_PHOTOS} added
@@ -2044,7 +2044,7 @@ export function MediaSection() {
             ))}
           </div>
           <p className="text-xs font-medium leading-5 text-[color:var(--mauve)]">
-            You can swap it for your own photo any time — real photos always perform
+            You can swap it for your own photo any time - real photos always perform
             better.
           </p>
         </div>
@@ -2222,7 +2222,7 @@ export function ReviewSection() {
 
           <div className="p-5">
             <p className="font-mono break-words text-xs font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
-              {values.suburb || "—"} · {values.category || "—"} · {priceLabel}
+              {values.suburb || "-"} · {values.category || "-"} · {priceLabel}
             </p>
             <h3 className="font-display mt-2 text-[1.65rem] font-semibold leading-[1.04] tracking-[-0.025em] text-[color:var(--ink)]">
               {values.title || "Untitled event"}

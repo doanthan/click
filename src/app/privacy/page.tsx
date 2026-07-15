@@ -33,8 +33,8 @@ export default function PrivacyPage() {
               <ul className="ml-5 list-disc space-y-1.5">
                 <li><strong>Account &amp; profile:</strong> name, email, date of birth (to confirm you are 18+), suburb/postcode, profile photo and gallery photos, profile prompts, social handles, and (via Google/Facebook sign-in) the basic profile details those providers share.</li>
                 <li><strong>Preferences &amp; matching:</strong> your connection intent, interest tags, quiz responses (life stage, availability, event style, energy, personality), and derived matching features used to suggest people and events.</li>
-                <li><strong>Activity &amp; connection signals:</strong> the events you view, save, and book; your private &quot;clicks&quot; (interest signals) and mutual matches; proposals; and notifications.</li>
-                <li><strong>Bookings &amp; payments:</strong> your bookings, guest seats, waitlist offers, and payment metadata returned by Stripe. Click never receives or stores your full card number — card details are entered directly with Stripe.</li>
+                <li><strong>Activity &amp; connection signals:</strong> the events you view, save, and book; your private &quot;clicks&quot; (interest signals) and mutual clicks; proposals; and notifications.</li>
+                <li><strong>Bookings &amp; payments:</strong> your bookings, guest seats, waitlist offers, and payment metadata returned by Stripe. Click never receives or stores your full card number - card details are entered directly with Stripe.</li>
                 <li><strong>Location &amp; technical data:</strong> location and place data used for proximity and discovery (via Mapbox and Google Maps), plus device, browser, IP, and usage information collected automatically as you use the Platform.</li>
                 <li><strong>Support &amp; safety:</strong> bug reports you file (which may include a screenshot of your screen and recent console/network logs, with secrets redacted before they leave your device), and any safety reports or content you submit.</li>
                 <li><strong>Merchant information:</strong> if you host events, your business details and identity/bank-verification documents (KYC), some of which are held by Stripe and some in a private, access-controlled store.</li>
@@ -98,13 +98,13 @@ export default function PrivacyPage() {
                 Platform, only as needed to perform their function:
               </p>
               <ul className="ml-5 list-disc space-y-1.5">
-                <li><strong>Stripe</strong> — payment processing, receipts, and merchant payouts (Stripe Connect).</li>
-                <li><strong>Supabase</strong> — our database and file storage (profile data, photos, documents).</li>
-                <li><strong>Vercel</strong> — application hosting and delivery.</li>
-                <li><strong>Mapbox &amp; Google Maps</strong> — location, mapping, and proximity features.</li>
-                <li><strong>Google &amp; Facebook</strong> — optional social sign-in.</li>
-                <li><strong>Resend</strong> — transactional and marketing email delivery.</li>
-                <li><strong>Google Sheets</strong> — internal triage of bug reports you submit.</li>
+                <li><strong>Stripe</strong> - payment processing, receipts, and merchant payouts (Stripe Connect).</li>
+                <li><strong>Supabase</strong> - our database and file storage (profile data, photos, documents).</li>
+                <li><strong>Vercel</strong> - application hosting and delivery.</li>
+                <li><strong>Mapbox &amp; Google Maps</strong> - location, mapping, and proximity features.</li>
+                <li><strong>Google &amp; Facebook</strong> - optional social sign-in.</li>
+                <li><strong>Resend</strong> - transactional and marketing email delivery.</li>
+                <li><strong>Google Sheets</strong> - internal triage of bug reports you submit.</li>
               </ul>
               <p>
                 We also share attendee details that a <strong>host</strong> needs to run an event you
@@ -143,7 +143,7 @@ export default function PrivacyPage() {
           body: (
             <p>
               We take reasonable steps to protect your personal information from misuse, loss, and
-              unauthorised access — including encryption in transit, access controls, a private,
+              unauthorised access - including encryption in transit, access controls, a private,
               signed-URL store for sensitive merchant documents, and delegating card handling to
               Stripe. For more detail see our{" "}
               <a href="/security" className="font-bold underline">Security Policy</a>. No system is

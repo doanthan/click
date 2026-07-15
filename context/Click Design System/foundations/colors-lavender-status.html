@@ -1,0 +1,38 @@
+<!-- @dsCard group="Colors" viewport="700x210" name="Lavender & Status" subtitle="The soft lift (lavender #C8B8F8) and the four status colours - badges only, never CTAs." -->
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../styles.css">
+<style>
+  body{margin:0;background:var(--cream);font-family:var(--font-sans);padding:22px 24px;display:flex;gap:22px}
+  .group{flex:1}
+  .ttl{font-size:11px;font-weight:700;letter-spacing:var(--tracking-overline);text-transform:uppercase;color:var(--text-muted);margin:0 0 10px}
+  .row{display:flex;gap:0;border-radius:var(--radius-md);overflow:hidden;box-shadow:var(--shadow-sm)}
+  .sw{flex:1;height:72px;display:flex;align-items:flex-end;padding:7px 9px;font-size:11px;font-weight:600}
+  .cap{margin-top:9px;font-size:12px;color:var(--text-muted)}
+  .cap b{color:var(--text-strong)}
+  .badges{display:flex;flex-wrap:wrap;gap:8px}
+  .b{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 11px;border-radius:999px;font-size:12.5px;font-weight:600}
+  .b i{width:7px;height:7px;border-radius:50%}
+</style></head>
+<body>
+  <div class="group">
+    <p class="ttl">Lavender - the lift (accent, never a canvas)</p>
+    <div class="row">
+      <div class="sw" style="background:var(--lavender-wash);color:#5746A6">wash</div>
+      <div class="sw" style="background:var(--lavender-100);color:#5746A6">100</div>
+      <div class="sw" style="background:var(--lavender-200);color:#5746A6">200</div>
+      <div class="sw" style="background:var(--lavender-300);color:#241C4E">300 ★</div>
+      <div class="sw" style="background:var(--lavender-400);color:#fff">400</div>
+      <div class="sw" style="background:var(--lavender-500);color:#fff">500</div>
+    </div>
+    <p class="cap"><b>300</b> #C8B8F8 - accent only: circles, chips, highlights (never a section fill). <b>wash</b> #F0ECF4 (<code>--lavender-wash</code>) - LARGE section backgrounds; Slate on it passes AA (4.7:1).</p>
+  </div>
+  <div class="group">
+    <p class="ttl">Status - badges only, never a CTA</p>
+    <div class="badges">
+      <span class="b" style="background:color-mix(in srgb,var(--coral) 12%,#fff);color:var(--coral)"><i style="background:var(--coral)"></i>Almost full</span>
+      <span class="b" style="background:color-mix(in srgb,var(--amber) 14%,#fff);color:#a86f12"><i style="background:var(--amber)"></i>Trending</span>
+      <span class="b" style="background:color-mix(in srgb,var(--sage) 14%,#fff);color:var(--sage)"><i style="background:var(--sage)"></i>Free · Going · Mutual</span>
+      <span class="b" style="background:color-mix(in srgb,var(--teal) 12%,#fff);color:var(--teal)"><i style="background:var(--teal)"></i>New</span>
+    </div>
+    <p class="cap"><b>Coral</b> #E8674C · <b>Amber</b> #E0A33A · <b>Sage</b> #5B8C6E · <b>Teal</b> #2E7D8A</p>
+  </div>
+</body></html>

@@ -1,10 +1,6 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import {
-  Hanken_Grotesk,
-  IBM_Plex_Mono,
-  Schibsted_Grotesk,
-} from "next/font/google";
+import { IBM_Plex_Mono, Poppins } from "next/font/google";
 import { Toaster } from "sonner";
 import DevSupabaseDrawer from "@/components/dev-supabase-drawer";
 import SupportWidget from "@/components/support/support-widget";
@@ -15,21 +11,15 @@ import { SiteFooter, SiteHeader, SiteHeaderShell } from "@/components/site-chrom
 import { auth } from "@/auth";
 import "./globals.css";
 
-// Body / UI grotesque — calm, readable (Soft Minimal body voice).
-const hanken = Hanken_Grotesk({
-  variable: "--font-click-body",
-  subsets: ["latin"],
-  display: "swap",
-});
-
-// Display + label voice — Schibsted Grotesk, the Soft Minimal (concept 06)
-// face: a clean grotesque set big, bold and tight. Replaces the editorial
-// serif; also drives eyebrows/labels (no separate condensed face).
-const schibsted = Schibsted_Grotesk({
+// Display voice - Poppins, the Click DS face: headings, the lowercase
+// wordmark, primary-button + tab labels, big numbers (SemiBold-led).
+// Body/paragraphs are the SYSTEM font stack per the DS - --font-click-body
+// is defined in globals.css, so no body webfont is loaded at all.
+const poppins = Poppins({
   variable: "--font-click-display",
   subsets: ["latin"],
   display: "swap",
-  weight: ["400", "500", "600", "700", "800", "900"],
+  weight: ["400", "500", "600", "700", "800"],
 });
 
 const plexMono = IBM_Plex_Mono({
@@ -59,7 +49,7 @@ export default async function RootLayout({
     <html
       lang="en"
       data-scroll-behavior="smooth"
-      className={`${hanken.variable} ${schibsted.variable} ${plexMono.variable} h-full antialiased`}
+      className={`${poppins.variable} ${plexMono.variable} h-full antialiased`}
     >
       {/* suppressHydrationWarning: browser extensions (e.g. ColorZilla's
           cz-shortcut-listen, Grammarly) inject attributes onto <body> before
@@ -90,9 +80,9 @@ export default async function RootLayout({
           closeButton
           gap={10}
           toastOptions={{
-            // Re-skin sonner into the warm-editorial surface: cream card,
-            // hairline border, soft elevation, brand type — with rose for
-            // errors and electric-lime for success instead of stock red/green.
+            // Re-skin sonner into the DS surface: white card, hairline
+            // border, soft elevation, brand type - destructive red for
+            // errors and Sage for success per the DS status map.
             classNames: {
               toast:
                 "!bg-[color:var(--cream)] !border !border-[color:var(--line)] !text-[color:var(--ink)] !rounded-2xl !shadow-[0_12px_28px_-10px_rgba(22,24,29,0.18)]",
@@ -103,8 +93,8 @@ export default async function RootLayout({
               cancelButton: "!bg-transparent !text-[color:var(--mauve)] !rounded-full",
               closeButton:
                 "!bg-[color:var(--cream)] !border-[color:var(--line)] !text-[color:var(--mauve)] hover:!text-[color:var(--ink)]",
-              error: "!border-[color:var(--rose)] [&_[data-icon]]:!text-[color:var(--rose)]",
-              success: "[&_[data-icon]]:!text-[color:var(--ink)]",
+              error: "!border-[color:var(--danger)] [&_[data-icon]]:!text-[color:var(--danger)]",
+              success: "[&_[data-icon]]:!text-[color:var(--sage)]",
               info: "[&_[data-icon]]:!text-[color:var(--mauve)]",
             },
           }}

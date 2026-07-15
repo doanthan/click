@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { clickCoAttendeeAction } from "@/app/dashboard/actions";
 import type { PostEventClickPrompt } from "@/lib/event-repository";
+import { Avatar } from "./ds";
 
 const shortDate = new Intl.DateTimeFormat("en-AU", { day: "numeric", month: "short" });
 
@@ -9,51 +10,47 @@ export function PostEventClickCard({ prompt }: { prompt: PostEventClickPrompt })
   if (clickable.length === 0) return null;
 
   return (
-    <div className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--peach)] p-5 hard-shadow-sm">
-      <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-        You went to {shortDate.format(new Date(prompt.endedAt))}
+    <div className="rounded-[var(--radius-xl)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-5 shadow-[var(--shadow-sm)]">
+      <p className="text-xs font-semibold text-[color:var(--slate)]">
+        You were there · {shortDate.format(new Date(prompt.endedAt))}
       </p>
-      <h3 className="font-display mt-2 text-2xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)]">
+      <h3 className="font-display mt-1.5 text-[1.3rem] leading-tight font-semibold tracking-[-0.01em] text-[color:var(--ink)]">
         Did you click with anyone at{" "}
-        <Link href={`/events/${prompt.eventSlug}`} className="text-[color:var(--coral)] hover:text-[color:var(--coral-deep)]">
+        <Link href={`/events/${prompt.eventSlug}`} className="text-[color:var(--purple)] hover:underline">
           {prompt.eventTitle}
         </Link>
         ?
       </h3>
-      <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--ink)]/80">
-        Tap anyone you&apos;d like to see again. It&apos;s completely private — they only find out if
-        they click you back.
+      <p className="mt-1.5 text-sm leading-relaxed text-[color:var(--slate)]">
+        Tap anyone you&apos;d like to see again. It&apos;s completely private - they only ever hear about it if they
+        click you back.
       </p>
 
-      <ul className="mt-4 grid gap-2 sm:grid-cols-2">
-        {clickable.map((person) => (
-          <li
-            key={person.id}
-            className="flex items-center justify-between gap-3 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-3"
-          >
-            <Link
-              href={`/profile/${person.id}`}
-              className="min-w-0 flex-1 truncate text-sm font-bold text-[color:var(--ink)] hover:text-[color:var(--rose)]"
+      <ul className="mt-4 grid gap-2.5 sm:grid-cols-2">
+        {clickable.map((person) => {
+          const firstName = person.displayName.split(" ")[0];
+          return (
+            <li
+              key={person.id}
+              className="flex items-center gap-3 rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-3"
             >
-              {person.displayName}
-              {person.suburb ? (
-                <span className="ml-1 font-mono text-[0.65rem] font-bold uppercase tracking-wide text-[color:var(--mauve)]">
-                  · {person.suburb}
-                </span>
-              ) : null}
-            </Link>
-            <form action={clickCoAttendeeAction}>
-              <input type="hidden" name="profile_id" value={person.id} />
-              <input type="hidden" name="source_event" value={prompt.eventSlug} />
-              <button
-                type="submit"
-                className="shrink-0 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
+              <Avatar name={person.displayName} size={40} />
+              <Link
+                href={`/profile/${person.id}`}
+                className="font-display min-w-0 flex-1 truncate text-sm font-semibold text-[color:var(--ink)] hover:underline"
               >
-                Click
-              </button>
-            </form>
-          </li>
-        ))}
+                {firstName}
+              </Link>
+              <form action={clickCoAttendeeAction}>
+                <input type="hidden" name="profile_id" value={person.id} />
+                <input type="hidden" name="source_event" value={prompt.eventSlug} />
+                <button type="submit" className="ck-btn ck-btn--sm ck-btn--primary shrink-0">
+                  <span className="ck-btn__label">click with {firstName}</span>
+                </button>
+              </form>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

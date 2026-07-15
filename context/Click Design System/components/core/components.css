@@ -1,0 +1,120 @@
+/* Click - interactive component states.
+   States are REAL CSS pseudo-classes (hover / :focus-visible / :active / :disabled),
+   never JS mouse handlers, so every control behaves the same on mouse, touch and
+   keyboard. Imported by styles.css. Grounded in CLICK_PALETTE + WCAG 2.2 SC 2.5.8. */
+
+/* ============================ BUTTON ============================ */
+.ck-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-sizing: border-box;
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  line-height: 1;
+  border: 1.5px solid transparent;
+  border-radius: 12px;
+  cursor: pointer;
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  transition: transform .14s ease, background-color .16s ease,
+              border-color .16s ease, color .16s ease;
+}
+.ck-btn:focus { outline: none; }
+/* keyboard-only ring: Deep Purple + 2px cream offset gap (passes 3:1 on cream AND on a purple fill) */
+.ck-btn:focus-visible {
+  outline: 2px solid var(--purple-600);
+  outline-offset: 2px;
+}
+
+/* sizes - heights on the 4/8 grid, radius 12 */
+.ck-btn--sm { min-height: 36px; padding: 0 16px; font-size: 14px; }
+.ck-btn--md { min-height: 44px; padding: 0 20px; font-size: 15px; }
+.ck-btn--lg { min-height: 52px; padding: 0 24px; font-size: 16px; }
+.ck-btn--full { width: 100%; }
+
+/* Mobile density: shorter buttons on narrow containers (>=44px accessibility floor,
+   not the 52px desktop feel). Queries the app body container established in the shell. */
+@container (max-width: 520px) {
+  .ck-btn--lg { min-height: 46px; padding: 0 20px; font-size: 15px; }
+  .ck-btn--md { min-height: 44px; padding: 0 18px; font-size: 14.5px; }
+}
+
+/* primary - the one filled purple CTA */
+.ck-btn--primary { background: var(--purple-600); color: var(--text-on-purple); }
+.ck-btn--primary:hover:not([disabled]):not(.ck-btn--loading) { background: #332873; transform: translateY(-1px); }
+.ck-btn--primary:active:not([disabled]):not(.ck-btn--loading) { background: #2A2160; transform: scale(.985); }
+
+/* secondary - white + mist border */
+.ck-btn--secondary { background: var(--surface-card); color: var(--text-strong); border-color: var(--mist); box-shadow: var(--shadow-xs); }
+.ck-btn--secondary:hover:not([disabled]):not(.ck-btn--loading) { background: var(--lavender-100); border-color: var(--slate); }
+.ck-btn--secondary:active:not([disabled]):not(.ck-btn--loading) { transform: scale(.985); }
+
+/* ghost - quiet action ("Not feeling it") */
+.ck-btn--ghost { background: transparent; color: var(--purple-600); }
+.ck-btn--ghost:hover:not([disabled]):not(.ck-btn--loading) { background: var(--lavender-100); }
+.ck-btn--ghost:active:not([disabled]):not(.ck-btn--loading) { transform: scale(.985); }
+
+/* ---- STATEFUL ACTION BUTTON (click-with / RSVP) - ONE footprint across states ----
+   default(primary) → pending → mutual keep the SAME size/shape/radius; only the
+   fill colour + label change. Never swap for a smaller pill. Max one ✨ per state. */
+/* pending - "clicked": quiet/unresolved, NOT the filled go-state, NOT celebratory,
+   NO ✨ (the sparkle is reserved for the mutual peak). Soft lavender wash + Deep-Purple
+   label; reads as sent-and-waiting. */
+.ck-btn--pending {
+  background: var(--lavender-100);
+  color: var(--purple-700);
+  cursor: default;
+}
+.ck-btn--pending:active { transform: none; }
+/* mutual - "you two clicked ✨": Sage treatment; taps through to the mutual. */
+.ck-btn--mutual {
+  background: color-mix(in srgb, var(--sage) 14%, var(--white));
+  color: var(--sage);
+}
+.ck-btn--mutual:hover:not([disabled]):not(.ck-btn--loading) { background: color-mix(in srgb, var(--sage) 20%, var(--white)); }
+.ck-btn--mutual:active:not([disabled]):not(.ck-btn--loading) { transform: scale(.985); }
+
+/* onPurple - cream button on a purple field */
+.ck-btn--onPurple { background: var(--cream); color: var(--purple-700); }
+.ck-btn--onPurple:hover:not([disabled]):not(.ck-btn--loading) { background: #fff; transform: translateY(-1px); }
+.ck-btn--onPurple:active:not([disabled]):not(.ck-btn--loading) { transform: scale(.985); }
+.ck-btn--onPurple:focus-visible { outline-color: var(--cream); }
+
+/* disabled - Mist fill + Slate text, legible & in the DOM (not opacity-faded) */
+.ck-btn[disabled] { cursor: not-allowed; background: var(--mist); color: var(--slate); border-color: transparent; box-shadow: none; transform: none; }
+.ck-btn--ghost[disabled] { background: transparent; }
+
+/* loading - spinner replaces label, width held, interaction blocked */
+.ck-btn--loading { cursor: progress; pointer-events: none; }
+/* NO gap here - a gap turns each text run split by an interpolation ("Suggest this to {name}")
+   into a separate flex item, rendering as a spurious extra space before the name. Space the
+   leading/trailing ICON explicitly instead, so plain text labels read with a single space. */
+.ck-btn__label { display: inline-flex; align-items: center; }
+.ck-btn__label > svg:first-child:not(:only-child) { margin-inline-end: 8px; }
+.ck-btn__label > svg:last-child:not(:only-child) { margin-inline-start: 8px; }
+.ck-btn--loading .ck-btn__label { visibility: hidden; }
+.ck-btn__spinner {
+  position: absolute;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  animation: ck-spin .7s linear infinite;
+}
+@keyframes ck-spin { to { transform: rotate(360deg); } }
+
+/* ============================ TAG (selectable hover) ============================ */
+.ck-tag--select { cursor: pointer; transition: background-color .14s ease, border-color .14s ease; }
+.ck-tag--select:hover { background: var(--lavender-100); border-color: var(--slate); }
+.ck-tag--select:focus-visible { outline: 2px solid var(--purple-600); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ck-btn { transition: none; }
+  .ck-btn:hover { transform: none !important; }
+  .ck-btn__spinner { animation-duration: 1.4s; }
+}

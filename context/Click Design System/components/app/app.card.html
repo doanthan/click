@@ -1,0 +1,73 @@
+<!-- @dsCard group="Components" viewport="700x740" name="App - event card, attendee row, mutual" subtitle="The product-specific surfaces: discovery card (spots / booked / waitlist), Who's-going row, mutual payoff." -->
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <link rel="stylesheet" href="../../styles.css" />
+  <style>
+    body { margin: 0; background: var(--cream); font-family: var(--font-sans); padding: 26px 28px; color: var(--text-strong); }
+    .grid { display: grid; grid-template-columns: 360px 1fr; gap: 26px; align-items: start; }
+    .stack { display: flex; flex-direction: column; gap: 18px; }
+    .panel { background: var(--white); border: 1px solid var(--border-soft); border-radius: var(--radius-lg); padding: 6px 18px; box-shadow: var(--shadow-sm); }
+    .ttl { font-size: 11px; font-weight: 700; letter-spacing: var(--tracking-overline); text-transform: uppercase; color: var(--text-muted); margin: 16px 0 8px; }
+  </style>
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+  <script src="../../_ds_bundle.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { EventCard, AttendeeRow, MutualCard, IntentLine } = window.ClickDesignSystem_51aca0;
+    function Demo() {
+      const [clicked, setClicked] = React.useState(false);
+      return (
+        <div className="grid">
+          <div className="stack">
+            <EventCard
+              name="Wheel-throwing for total beginners"
+              venue="Clay & Co" suburb="Marrickville" dist="1.4km"
+              when="Sat · 6:30pm"
+              category="ceramics" tags={["Ceramics","Hands-on","BYO"]}
+              status="spots" spotsLeft={2} price="$110"
+              going={["Mia","Jules","Sam","Priya","Tom"]} goingCount={12}
+            />
+            <EventCard
+              name="Sunrise run club · 5k along the Cooks River"
+              venue="Steel Park" suburb="Marrickville"
+              when="Sun · 6:15am"
+              category="run" tags={["Running","Outdoors"]}
+              status="free" price="Free" booked saved
+              going={["Mia","Jules","Sam","Priya"]} goingCount={9}
+            />
+            <EventCard
+              name="Glass-blowing taster at the studio furnace"
+              suburb="Marrickville" dist="2.3km"
+              when="Sun · 11:00am"
+              category="art" tags={["Art & craft","Hands-on"]}
+              status="waitlist" price="$182"
+              going={["Daniel","Priya","Wren"]} goingCount={10}
+            />
+          </div>
+          <div className="stack">
+            <div>
+              <p className="ttl" style={{marginTop:0}}>Who's going</p>
+              <div className="panel">
+                <AttendeeRow name="Mia" intent="here for friends" tags={["Ceramics","Natural wine"]} clicked={clicked} onClick={() => setClicked(true)} />
+                <AttendeeRow name="Jules" intent="open to dating" tags={["Pottery","Live music"]} />
+              </div>
+            </div>
+            <MutualCard
+              name="Mia" event="Wheel-throwing for beginners"
+              yourIntent="friends" tags={["Ceramics", "Natural wine"]}
+              variant="preEvent"
+            />
+          </div>
+        </div>
+      );
+    }
+    ReactDOM.createRoot(document.getElementById("root")).render(<Demo />);
+  </script>
+</body>
+</html>

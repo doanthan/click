@@ -12,7 +12,7 @@ export function ProfilePhotoNudge() {
           ✷ Add a profile photo
         </p>
         <p className="mt-1.5 max-w-xl text-sm font-medium leading-6 text-[color:var(--mauve)]">
-          You&apos;re booked in — add a photo so the people you meet can
+          You&apos;re booked in - add a photo so the people you meet can
           recognise you at the event.
         </p>
       </div>

@@ -12,6 +12,8 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ErrorNote } from "@/components/avatar-uploader";
+import { Icon } from "@/components/ds";
 
 const ACCEPT = "image/jpeg,image/png,image/webp";
 const MAX_BYTES = 5 * 1024 * 1024;
@@ -68,7 +70,7 @@ export function ProfileGalleryUploader({ initialUrls }: { initialUrls: string[] 
       if (!response.ok || !Array.isArray(payload?.urls)) {
         setError(
           response.status === 503
-            ? "Photo uploads aren’t available right now — your other changes will still save."
+            ? "Photo uploads aren’t available right now - your other changes will still save."
             : payload?.error ?? "Upload failed. Try again.",
         );
         return;
@@ -143,20 +145,27 @@ export function ProfileGalleryUploader({ initialUrls }: { initialUrls: string[] 
 
   return (
     <div className="grid gap-3">
-      <span className="flex items-center gap-2 font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-        More photos · {urls.length}/{MAX_PHOTOS}
-        {saved ? <span className="text-[color:var(--rose)]">Saved ✓</span> : null}
+      <span className="flex items-center gap-2.5">
+        <span className="eyebrow">
+          More photos · {urls.length}/{MAX_PHOTOS}
+        </span>
+        {saved ? (
+          <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-[color:var(--sage)]">
+            <Icon name="check" size={13} stroke={2.6} />
+            Saved
+          </span>
+        ) : null}
       </span>
-      <p className="-mt-1 text-xs font-semibold text-[color:var(--mauve)]">
-        Add up to {MAX_PHOTOS} photos of you doing things you love — they show on your
-        profile alongside your prompts. Photos save automatically — no need to hit Save.
+      <p className="-mt-1 text-[13px] leading-[1.5] text-[color:var(--slate)]">
+        Add up to {MAX_PHOTOS} photos of you doing things you love - they show on your profile
+        alongside your prompts. Photos save on their own, no need to hit Save.
       </p>
 
       <div className="grid grid-cols-3 gap-3 sm:grid-cols-5">
         {urls.map((url) => (
           <div
             key={url}
-            className="group relative aspect-[4/5] overflow-hidden rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow-sm"
+            className="group relative aspect-[4/5] overflow-hidden rounded-[12px] bg-[color:var(--champagne-deep)]"
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={url} alt="" className="size-full object-cover" />
@@ -165,9 +174,9 @@ export function ProfileGalleryUploader({ initialUrls }: { initialUrls: string[] 
               onClick={() => void handleRemove(url)}
               disabled={removing === url}
               aria-label="Remove photo"
-              className="absolute right-1.5 top-1.5 grid size-7 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] text-xs font-bold text-[color:var(--ink)] hard-shadow-sm transition hover:bg-[color:var(--rose)] hover:text-[color:var(--surface-deep)] disabled:opacity-50"
+              className="absolute right-1.5 top-1.5 grid size-7 place-items-center rounded-full bg-[color:var(--paper)] text-[color:var(--ink)] shadow-[var(--shadow-xs)] transition hover:bg-[color:var(--lavender-100)] disabled:opacity-50"
             >
-              {removing === url ? "…" : "✕"}
+              {removing === url ? "…" : <Icon name="x" size={13} stroke={2.4} />}
             </button>
             {/* Choose this as the main avatar (bug board #220). */}
             <button
@@ -175,9 +184,9 @@ export function ProfileGalleryUploader({ initialUrls }: { initialUrls: string[] 
               onClick={() => void handleSetMain(url)}
               disabled={settingMain === url}
               aria-label="Set as main photo"
-              className="absolute inset-x-0 bottom-0 truncate bg-[color:var(--surface-deep)]/70 px-1 py-1 text-center text-[0.6rem] font-bold uppercase tracking-[0.1em] text-[color:var(--on-deep)] transition hover:bg-[color:var(--rose)] hover:text-[color:var(--surface-deep)] disabled:opacity-60"
+              className="absolute inset-x-0 bottom-0 truncate bg-[rgba(28,24,48,0.62)] px-1 py-1.5 text-center text-[11px] font-semibold text-white transition hover:bg-[color:var(--purple)] disabled:opacity-60"
             >
-              {settingMain === url ? "Setting…" : "★ Set as main"}
+              {settingMain === url ? "Setting…" : "Set as main"}
             </button>
           </div>
         ))}
@@ -187,11 +196,11 @@ export function ProfileGalleryUploader({ initialUrls }: { initialUrls: string[] 
             type="button"
             onClick={() => fileRef.current?.click()}
             disabled={pending}
-            className="grid aspect-[4/5] place-items-center rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--champagne)] text-[color:var(--mauve)] transition hover:bg-[color:var(--peach)] hover:text-[color:var(--ink)] disabled:cursor-not-allowed disabled:opacity-60"
+            className="grid aspect-[4/5] place-items-center rounded-[12px] border border-dashed border-[color:var(--mist-strong)] bg-[color:var(--champagne)] text-[color:var(--purple)] transition hover:bg-[color:var(--lavender-100)] disabled:cursor-not-allowed disabled:opacity-60"
           >
-            <span className="grid justify-items-center gap-1">
-              <span className="text-2xl leading-none">{pending ? "⏳" : "+"}</span>
-              <span className="font-mono text-[0.6rem] font-bold uppercase tracking-[0.14em]">
+            <span className="grid justify-items-center gap-1.5">
+              <Icon name="plus" size={20} />
+              <span className="text-[12px] font-semibold">
                 {pending ? "Uploading…" : "Add photo"}
               </span>
             </span>
@@ -212,14 +221,7 @@ export function ProfileGalleryUploader({ initialUrls }: { initialUrls: string[] 
         }}
       />
 
-      {error ? (
-        <p
-          role="alert"
-          className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-3 py-2 text-xs font-bold text-[color:var(--surface-deep)]"
-        >
-          {error}
-        </p>
-      ) : null}
+      {error ? <ErrorNote>{error}</ErrorNote> : null}
     </div>
   );
 }

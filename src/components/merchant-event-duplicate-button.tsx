@@ -21,7 +21,7 @@ export function MerchantEventDuplicateButton({ eventId }: { eventId: string }) {
 
   async function duplicateEvent() {
     const confirmed = window.confirm(
-      "Duplicate this event? We'll open a new event pre-filled with these details — pick a new date and publish when you're ready. (Any unsaved event draft will be replaced.)",
+      "Duplicate this event? We'll open a new event pre-filled with these details - pick a new date and publish when you're ready. (Any unsaved event draft will be replaced.)",
     );
     if (!confirmed) return;
 

@@ -1,0 +1,61 @@
+/* Click - Typography tokens (canonical · CLICK_TYPE.md)
+   Poppins (SemiBold 600) = wordmark / headings / primary-button + tab labels.
+   System font stack = body + meta workhorse. There is no serif: the editorial
+   'click' moment is Poppins. (Fraunces retired 27 Jun.) */
+:root {
+  /* CLICK_TYPE.md (canonical): Poppins = display/brand; system stack = body workhorse. */
+  --font-display: "Poppins", system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; /* headings, wordmark, key UI */
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif; /* body workhorse */
+  --font-body: var(--font-sans);
+  --font-wordmark: "Poppins", system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; /* the click logotype + c-mark */
+  --font-serif: var(--font-display); /* legacy alias - the editorial 'click' moment is Poppins, not a serif */
+
+  /* Weights */
+  --weight-regular: 400;
+  --weight-medium:  500;
+  --weight-semibold:600;
+  --weight-bold:    700;
+  --weight-extra:   800;
+
+  /* Type scale - FLUID: big tokens clamp(MIN=375 mobile, preferred rem + small vw, MAX=desktop)
+     so type scales smoothly with the viewport (no device jumps). rem base + vw term keeps user
+     zoom working. Body stays a FLAT 16px (never clamp below 16 - iOS zoom + readability). */
+  --text-display:  clamp(1.75rem, 1.16rem + 2.9cqi, 4rem)/* @kind other */;  /* 28 -> 64 hero (marketing/landing) */
+  --text-h1:       clamp(1.5rem, 1.22rem + 1.24cqi, 2rem)/* @kind other */;   /* 24 -> 32 (h1 32/40 desktop, 24/30 @375) */
+  --text-h2:       clamp(1.25rem, 1.05rem + 0.9cqi, 1.5rem)/* @kind other */;/* 20 -> 24 */
+  --text-h3:       clamp(1.0625rem, 1rem + 0.35cqi, 1.25rem)/* @kind other */;/* 17 -> 20 */
+  --card-title:    clamp(1rem, 0.94rem + 0.35cqi, 1.125rem)/* @kind other */;/* 16 -> 18 - event/people card titles */
+  --text-h4:       1.125rem; /* 18px */
+  --text-lead:     clamp(1.0625rem, 1rem + 0.5cqi, 1.1875rem)/* @kind other */;/* 17 -> 19 - subheads/lead */
+  --text-body-lg:  clamp(1rem, 0.95rem + 0.3cqi, 1.0625rem)/* @kind other */;/* 16 -> 17 - never below 16 */
+  --text-base:     1rem;     /* 16px - FLAT, never clamp */
+  --text-sm:       0.9375rem;/* 15px - body floor */
+  --text-xs:       0.8125rem;/* 13px - meta (Slate) */
+  --text-micro:    0.6875rem;/* 11px - overlines */
+
+  /* DENSITY (compact, locked 27 Jun): on APP surfaces the page/greeting heading is
+     h2 (24/32), NOT display; section headers h3 (20/28); card titles 18/24; body
+     15–16; meta 13. Reserve display (32–46) for marketing/landing only. */
+
+  /* Line heights */
+  --leading-tight:  1.08;
+  --leading-snug:   1.25;
+  --leading-normal: 1.5;
+  --leading-relaxed:1.65;
+
+  /* Letter spacing */
+  --tracking-tight:   -0.02em;
+  --tracking-snug:    -0.011em;
+  --tracking-normal:  0;
+  --tracking-wide:    0.04em;
+  --tracking-overline:0.12em; /* uppercase eyebrows */
+
+  /* ---- Semantic text roles ---- */
+  --role-display: var(--weight-extra) var(--text-display)/var(--leading-tight) var(--font-display);
+  --role-h1: var(--weight-bold) var(--text-h1)/var(--leading-tight) var(--font-display);
+  --role-h2: var(--weight-semibold) var(--text-h2)/var(--leading-snug) var(--font-display);
+  --role-h3: var(--weight-semibold) var(--text-h3)/var(--leading-snug) var(--font-display);
+  --role-card-title: var(--weight-semibold) var(--card-title)/var(--leading-snug) var(--font-display);
+  --role-body: var(--weight-regular) var(--text-base)/var(--leading-relaxed) var(--font-sans);
+  --role-overline: var(--weight-semibold) var(--text-micro)/1 var(--font-sans);
+}

@@ -1,0 +1,98 @@
+/* Click - Color tokens (canonical · CLICK_PALETTE.md)
+   Deep purple (#3B2F81) is the brand spine and the ONLY primary action / selected
+   colour - used flat, never as a gradient or glow. Cream is the page ground;
+   lavender the soft lift. Status colours (coral/amber/sage/teal) are functional
+   and appear on BADGES ONLY - never as a CTA, a hero accent, or a category. */
+:root {
+  /* ---- Purple - the brand spine (built around #3B2F81) ---- */
+  --purple-50:  #F1EFFA;
+  --purple-100: #E2DDF5;
+  --purple-200: #C5BBEA;
+  --purple-300: #A293DC;
+  --purple-400: #7B66C8;
+  --purple-500: #5746A6;
+  --purple-600: #3B2F81; /* BRAND PRIMARY - deep purple */
+  --purple-700: #2F2566;
+  --purple-800: #241C4E;
+  --purple-900: #1C1830; /* ink */
+
+  /* ---- Lavender - the soft accent (canonical #C8B8F8) ----
+         🔴 ACCENT / SMALL-SURFACE ONLY: icon circles, chips/tags, hover washes, the
+         swatch ramp, small highlights. Brand lavender (#C8B8F8) is NEVER a section
+         canvas - large section backgrounds use --cream or --lavender-wash. */
+  --lavender-100: #F1ECFD;
+  --lavender-200: #E0D6FB;
+  --lavender-300: #C8B8F8; /* BRAND lavender */
+  --lavender-400: #A892F0;
+  --lavender-500: #8A6FE6;
+
+  /* ---- Surface tints (DERIVED, not brand colours) ----
+         --lavender-wash: low-chroma, warmed lavender for LARGE section backgrounds only.
+         Bridges the cream→lavender→purple ramp (warm family, no warm-vs-cool jump).
+         Slate (#6B6580) on this wash = 4.7:1 (passes WCAG AA); on brand lavender it was
+         3.07:1 (fails). Recommended #F0ECF4; neutral fallback #ECE8F3. */
+  --lavender-wash: #F0ECF4;
+
+  /* ---- Cream & sand - warm neutral ground ---- */
+  --cream:    #F9F6F0; /* page background (canonical) */
+  --sand-50:  #F4EFE7;
+  --sand-100: #ECE5D9;
+  --sand-200: #E0D6C5;
+  --sand-300: #CDBFA8;
+  --sand-400: #B3A488;
+
+  /* ---- Ink / text neutrals (purple-tinted, never pure gray) ---- */
+  --ink:       #1C1830; /* canonical ink - never pure black */
+  --ink-soft:  #3E3958;
+  --ink-muted: #6B6580; /* Slate - meta text */
+  --ink-faint: #A8A2BC;
+  --slate:     #6B6580; /* alias - meta */
+  --mist:      #E8E4F0; /* hairlines */
+  --mist-strong: #DDD7EA; /* one-step-deeper Mist: defined tag/chip hairlines + dividers that plain Mist leaves too faint on cream (pair with a true-white chip fill) */
+  --white:     #FFFFFF;
+
+  /* ---- Status - the ONLY functional colours. BADGES ONLY.
+         Never a CTA, never a hero accent, never a category. ---- */
+  --coral: #E8674C; /* almost full / urgent */
+  --amber: #E0A33A; /* trending / waitlist */
+  --sage:  #5B8C6E; /* free / going / mutual */
+  --teal:  #2E7D8A; /* new */
+
+  /* ---- Semantic ---- */
+  --success: var(--sage);
+  --warning: var(--amber);
+  --error:   #B5362F;
+  --info:    var(--lavender-500);
+
+  /* =========================================================
+     Semantic aliases - reach for THESE in components
+     ========================================================= */
+  --bg-page:        var(--cream);
+  --bg-raised:      var(--white);
+  --bg-sunken:      var(--sand-50);
+  --bg-inverse:     var(--purple-600);
+  --bg-inverse-deep:var(--purple-900);
+
+  --surface-card:   var(--white);
+  --surface-tint:   var(--lavender-100);
+  --surface-section:var(--lavender-wash);   /* LARGE section bands/panels - use this, never brand lavender */
+
+  --text-strong:    var(--ink);
+  --text-body:      var(--ink-soft);
+  --text-muted:     var(--ink-muted);
+  --text-faint:     var(--ink-faint);
+  --text-on-purple: var(--cream);
+  --text-on-accent: var(--white);
+
+  --accent:         var(--purple-600);
+  --accent-hover:   var(--purple-700);
+  --accent-press:   var(--purple-800);
+  --accent-soft:    var(--lavender-300);
+
+  --border-soft:    rgba(28, 24, 48, 0.08);
+  --border-mid:     rgba(28, 24, 48, 0.13);
+  --border-strong:  rgba(28, 24, 48, 0.22);
+  --border-onpurple:rgba(249, 246, 240, 0.18);
+
+  --focus-ring:     var(--purple-600); /* keyboard focus - Deep Purple (lavender fails 3:1 on cream) */
+}

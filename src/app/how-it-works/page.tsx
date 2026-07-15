@@ -1,266 +1,219 @@
-import Link from "next/link";
-import { LinkButton, SectionIntro } from "@/components/click-ui";
-import { lifeQuizSections, onboardingSteps, roleCards } from "@/lib/click-data";
+import { ButtonLink, Icon, type IconName } from "@/components/ds";
 
 export const metadata = {
   title: "How Click works | Click",
   description:
-    "How Click works: pick your intent, take the quiz, find local events, and Click privately on the people you meet.",
+    "The best people you'll meet this year aren't on an app. They're across the room. Here's how Click works.",
 };
 
-const steps = [
+// The three-step model - one idea each, no paragraph over three lines. On
+// marketing surfaces the click stays curious: teased, never explained, with no
+// rejection on the page in either direction.
+const STEPS: Array<{ icon: IconName; title: string; body: string }> = [
   {
-    n: "01",
-    eyebrow: "Make your account",
-    title: "Sign up in 30 seconds.",
-    body: "Email or social login. Tell us your suburb, age, and what you’re here for. Your private Clicks stay private until there’s mutual interest.",
+    icon: "compass",
+    title: "Pick something good",
+    body: "Pottery in Newtown, a sunrise run, a wine-bar quiz. Real places, near you, this week.",
   },
   {
-    n: "02",
-    eyebrow: "Take the Life Quiz",
-    title: "We tag you with what makes you, you.",
-    body: "Life stage, energy, availability, event style. That’s how we surface the right rooms instead of dumping every event in your face.",
+    icon: "calendar",
+    title: "Show up",
+    body: "You click side by side, not face to face - and everyone in the room chose the same thing you did.",
   },
   {
-    n: "03",
-    eyebrow: "Find a plan",
-    title: "Browse, save, RSVP.",
-    body: "Filter by category, suburb, distance, or vibe. RSVP free, pay for paid events through Click, or bounce out to an external booking. Cancel anytime.",
-  },
-  {
-    n: "04",
-    eyebrow: "Show up",
-    title: "Meet people with a reason to talk.",
-    body: "Every event has a relationship goal — what people are there for — so chat isn’t cold. You can Click someone privately during or after the event.",
-  },
-  {
-    n: "05",
-    eyebrow: "Mutual or move on",
-    title: "Privacy is the default.",
-    body: "Nobody sees your Clicks until both of you tap. Mutual = a suggested next event to attend together. No mutual = nothing happens and nobody’s embarrassed.",
+    icon: "users",
+    title: "That's it",
+    body: "A great night, a thing you love, maybe someone you click with. Show up, and everything else is a bonus.",
   },
 ];
 
-const benefits = [
+const ON_PURPOSE: Array<{ icon: IconName; title: string; body: string }> = [
+  { icon: "check", title: "Only verified venues", body: "Every event is a real place run by real people." },
   {
-    title: "Built for ordinary people, not influencers.",
-    body: "Profiles are simple. Photos are optional. You don’t need a bio to RSVP.",
+    icon: "user",
+    title: "You're in control",
+    body: "What you do, who you click with, whether you're visible at all.",
   },
   {
-    title: "Real-world only.",
-    body: "Click is not a chat app. There is no DM until something happens in person, and even then chat lives outside Click.",
-  },
-  {
-    title: "Designed against ghosting.",
-    body: "Cancel an RSVP and the host gets a waitlist replacement. You can leave a slot without burning a bridge.",
-  },
-  {
-    title: "Hosts are vetted.",
-    body: "Every merchant goes through ABN verification before publishing. No mystery rooms.",
+    icon: "compass",
+    title: "Clicks are rare on purpose",
+    body: "No feed of faces to scroll. That's what makes one feel real.",
   },
 ];
+
+const INTENTS = [
+  "Here for the activities",
+  "Here for friends",
+  "New in town",
+  "Growing my circle",
+  "Here to meet people, not to date",
+  "Open to dating",
+];
+
+function Eyebrow({ children }: { children: string }) {
+  return (
+    <p className="mb-3 text-[12.5px] font-bold tracking-[0.12em] uppercase text-[color:var(--purple-500)]">{children}</p>
+  );
+}
 
 export default function HowItWorksPage() {
   return (
-    <main className="paper-noise min-h-screen overflow-hidden text-[color:var(--ink)]">
-      <section className="relative overflow-hidden bg-[color:var(--champagne)] px-4 pb-16 pt-16 sm:px-6 lg:pt-20">
-        <div className="relative z-10 mx-auto max-w-6xl">
-          <span className="sticker sticker--peach tilt-l-2 inline-flex">
-            <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
-            How Click works
-          </span>
-          <h1 className="font-display mt-6 max-w-4xl text-5xl font-bold leading-[0.94] tracking-[-0.025em] sm:text-7xl">
-            A burst of <span className="text-[color:var(--coral)]">YES</span>{" "}
-            — five honest steps from nervous to nearby.
+    <main className="bg-[color:var(--champagne)] text-[color:var(--ink)]">
+      {/* 1 · Hero */}
+      <section className="ck-page pt-12 pb-14 sm:pt-16">
+        <div className="max-w-[720px]">
+          <h1 className="font-display max-w-[660px] text-[length:var(--text-display)] leading-[1.06] font-semibold tracking-[-0.025em] text-balance text-[color:var(--ink)]">
+            The best people you&apos;ll meet this year aren&apos;t on an app. They&apos;re across the room.
           </h1>
-          <p className="mt-6 max-w-3xl text-base font-medium leading-7 text-[color:var(--mauve)] sm:text-lg">
-            Click is the antidote to scrolling. Pick your intent, take the Life
-            Quiz, RSVP to something nearby this week, and meet people with a
-            reason to talk. No DMs. No swiping. No vibes-only.
+          <p className="mt-4.5 max-w-[540px] text-[16.5px] leading-[1.55] text-[color:var(--ink-soft)] sm:text-[19px]">
+            Click gets you out doing things you love, in real life. The people you&apos;ll click with are already there.
           </p>
-          <div className="mt-8 flex flex-wrap gap-3">
-            <LinkButton href="/auth">Make an account</LinkButton>
-            <Link
-              href="/events"
-              className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)]"
-            >
-              Browse events first
-            </Link>
+          <div className="mt-6">
+            <ButtonLink href="/signup" size="lg">
+              Request an invite
+            </ButtonLink>
           </div>
         </div>
       </section>
 
-      <section className="border-t-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-16 sm:px-6">
-        <div className="mx-auto max-w-6xl">
-          <SectionIntro
-            eyebrow="Step by step"
-            title="From sign-up to mutual Click."
-            body="Five steps. None of them require a paid plan or a perfect bio."
-          />
-          <ol className="mt-12 grid gap-6 md:grid-cols-2">
-            {steps.map((step) => (
-              <li
-                key={step.n}
-                className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-6 hard-shadow-sm"
-              >
-                <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
-                  {step.n} · {step.eyebrow}
-                </span>
-                <h3 className="font-display mt-3 text-2xl font-semibold leading-tight tracking-[-0.02em]">
+      {/* 2 · How it works - three steps */}
+      <section className="bg-[color:var(--lav-bg)]">
+        <div className="ck-page py-12 sm:py-16">
+          <Eyebrow>How it works</Eyebrow>
+          <h2 className="font-display text-[length:var(--text-h2)] leading-[1.12] font-semibold tracking-[-0.02em] text-balance text-[color:var(--ink)]">
+            You don&apos;t click with a profile. You click in person.
+          </h2>
+          <p className="mt-3.5 max-w-[620px] text-[15.5px] leading-[1.6] text-[color:var(--ink-soft)] sm:text-[17px]">
+            Your closest people probably started as whoever kept showing up to the same thing you did. Psychologists call
+            it the proximity effect. Click just rebuilds the rooms where it happens.
+          </p>
+          <div className="mt-9 grid gap-8 sm:grid-cols-3">
+            {STEPS.map((step, i) => (
+              <div key={step.title}>
+                <div className="mb-3 flex items-center gap-3">
+                  <span className="flex size-12 shrink-0 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--lavender)_22%,var(--champagne))] text-[color:var(--purple)]">
+                    <Icon name={step.icon} size={22} stroke={1.9} />
+                  </span>
+                  <span className="font-display text-[27px] font-semibold text-[color:var(--purple-300)]">{i + 1}</span>
+                </div>
+                <h3 className="font-display text-[19px] leading-tight font-semibold tracking-[-0.01em] text-[color:var(--ink)]">
                   {step.title}
                 </h3>
-                <p className="mt-3 text-sm font-semibold leading-6 text-[color:var(--mauve)]">
-                  {step.body}
-                </p>
-              </li>
+                <p className="mt-2 text-[15px] leading-[1.58] text-[color:var(--ink-soft)]">{step.body}</p>
+              </div>
             ))}
-          </ol>
+          </div>
         </div>
       </section>
 
-      <section className="border-t-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-16 sm:px-6">
-        <div className="mx-auto max-w-6xl">
-          <SectionIntro
-            eyebrow="Two sides"
-            title="One platform, three perspectives."
-            body="Attendees, merchants, and admins each get their own view."
-          />
-          <div className="mt-12 grid gap-5 md:grid-cols-3">
-            {roleCards.map((role) => (
-              <div
-                key={role.title}
-                className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-6 hard-shadow-sm"
-              >
-                <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
-                  {role.eyebrow}
+      {/* 3 · The bonus - the click, teased, never explained */}
+      <section className="ck-page py-14 sm:py-[72px]">
+        <div className="max-w-[560px]">
+          <Eyebrow>The bonus</Eyebrow>
+          <h2 className="font-display text-[length:var(--text-h2)] leading-[1.08] font-semibold tracking-[-0.025em] text-balance text-[color:var(--ink)]">
+            And every so often, you just click with someone.
+          </h2>
+          <p className="mt-3.5 text-[15.5px] leading-[1.6] text-[color:var(--ink-soft)] sm:text-[17px]">
+            Same event, same odd sense of humour, same reason for being there. Let Click know, quietly - if it&apos;s
+            mutual, we suggest the next thing to do together.
+          </p>
+          <p className="mt-3.5 text-[15.5px] leading-[1.6] text-[color:var(--ink-soft)] sm:text-[17px]">
+            A new friend, a regular crew, sometimes something more. It all works the same.
+          </p>
+        </div>
+      </section>
+
+      {/* 4 · On purpose */}
+      <section className="bg-[color:var(--lav-bg)]">
+        <div className="ck-page py-12 sm:py-16">
+          <div className="max-w-[640px]">
+            <Eyebrow>On purpose</Eyebrow>
+            <h2 className="font-display text-[length:var(--text-h2)] leading-[1.12] font-semibold tracking-[-0.02em] text-balance text-[color:var(--ink)]">
+              No endless chat. Just real life.
+            </h2>
+            <p className="mt-3.5 text-[15.5px] leading-[1.6] text-[color:var(--ink-soft)] sm:text-[17px]">
+              When two people click, Click suggests something to do next - the plan <i>is</i> the conversation. The magic
+              was never in the app; it&apos;s in the room. We set the conditions, then get out of the way.
+            </p>
+          </div>
+          <div className="mt-8 grid gap-5 sm:grid-cols-3">
+            {ON_PURPOSE.map((item) => (
+              <div key={item.title} className="flex items-start gap-3">
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--lavender)_22%,var(--champagne))] text-[color:var(--purple)]">
+                  <Icon name={item.icon} size={19} stroke={1.9} />
                 </span>
-                <h3 className="font-display mt-3 text-2xl font-semibold leading-tight tracking-[-0.02em]">
-                  {role.title}
-                </h3>
-                <p className="mt-3 text-sm font-semibold leading-6 text-[color:var(--mauve)]">
-                  {role.body}
-                </p>
+                <div>
+                  <h3 className="font-display text-[16.5px] font-semibold text-[color:var(--ink)]">{item.title}</h3>
+                  <p className="mt-1 text-sm leading-[1.55] text-[color:var(--ink-soft)]">{item.body}</p>
+                </div>
               </div>
             ))}
-            <div className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--peach)] p-6 hard-shadow-sm">
-              <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--surface-deep)]">
-                Admins
-              </span>
-              <h3 className="font-display mt-3 text-2xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)]">
-                Click HQ
-              </h3>
-              <p className="mt-3 text-sm font-semibold leading-6 text-[color:var(--surface-deep)]">
-                Approve merchants and events, govern tags, watch the audit log,
-                keep the room civil.
-              </p>
+          </div>
+        </div>
+      </section>
+
+      {/* 5 · Come as you are - intents as quiet chips */}
+      <section className="ck-page py-12 sm:py-16">
+        <div className="max-w-[640px]">
+          <Eyebrow>Whatever you&apos;re here for</Eyebrow>
+          <h2 className="font-display text-[length:var(--text-h2)] leading-[1.12] font-semibold tracking-[-0.02em] text-[color:var(--ink)]">
+            Come as you are.
+          </h2>
+          <p className="mt-3.5 mb-5.5 text-[15.5px] leading-[1.6] text-[color:var(--slate)] sm:text-[17px]">
+            Friendship, community, romance - equal footing. Pick what fits, or don&apos;t, and just show up.
+          </p>
+        </div>
+        <div className="flex max-w-[720px] flex-wrap gap-2.5">
+          {INTENTS.map((intent) => (
+            <span
+              key={intent}
+              className="font-display inline-flex items-center rounded-full border border-[color:var(--mist-strong)] bg-[color:var(--paper)] px-4 py-2.5 text-[13.5px] font-semibold text-[color:var(--ink)] sm:text-[14.5px]"
+            >
+              {intent}
+            </span>
+          ))}
+        </div>
+      </section>
+
+      {/* 6 · For hosts */}
+      <section className="bg-[color:var(--lav-bg)]">
+        <div className="ck-page py-12 sm:py-14">
+          <div className="max-w-[640px]">
+            <Eyebrow>For hosts</Eyebrow>
+            <h2 className="font-display text-[length:var(--text-h2)] leading-[1.12] font-semibold tracking-[-0.02em] text-[color:var(--ink)]">
+              You bring the room. We fill it.
+            </h2>
+            <p className="mt-3.5 text-[15.5px] leading-[1.6] text-[color:var(--ink-soft)] sm:text-[17px]">
+              Run a studio, a bar, a run club? List your events on Click and meet a crowd that actually shows up - people
+              who picked your thing on purpose.
+            </p>
+            <p className="mt-3 text-[14px] leading-[1.6] text-[color:var(--slate)] sm:text-[15px]">
+              Free events cost nothing to host. Paid events run through Stripe with a flat 5% fee, paid out monthly.
+              Bookings, waitlists and door lists are handled for you.
+            </p>
+            <div className="mt-5">
+              <ButtonLink href="/merchant/signup" variant="secondary" size="sm">
+                Host on Click
+              </ButtonLink>
             </div>
           </div>
         </div>
       </section>
 
-      <section className="border-t-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-16 sm:px-6">
-        <div className="mx-auto max-w-6xl">
-          <SectionIntro
-            eyebrow="Why Click"
-            title="What makes this different."
-            body="Click is opinionated about what it isn’t."
-          />
-          <div className="mt-12 grid gap-5 md:grid-cols-2 lg:grid-cols-4">
-            {benefits.map((b) => (
-              <div
-                key={b.title}
-                className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-5 hard-shadow-sm"
-              >
-                <h3 className="font-display text-xl font-semibold leading-tight tracking-[-0.02em]">
-                  {b.title}
-                </h3>
-                <p className="mt-3 text-sm font-semibold leading-6 text-[color:var(--mauve)]">
-                  {b.body}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="border-t-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-16 sm:px-6">
-        <div className="mx-auto grid max-w-6xl gap-12 lg:grid-cols-[1.1fr_0.9fr]">
-          <div>
-            <SectionIntro
-              eyebrow="The Life Quiz"
-              title="It’s short and it matters."
-              body="Five quick sections that tag you with the things our matching algorithm actually uses."
-            />
-            <ul className="mt-8 grid gap-3">
-              {lifeQuizSections.map((q) => (
-                <li
-                  key={q.title}
-                  className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-4 hard-shadow-sm"
-                >
-                  <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
-                    {q.title}
-                  </p>
-                  <p className="mt-2 text-sm font-semibold leading-6 text-[color:var(--mauve)]">
-                    {q.output}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <div>
-            <SectionIntro
-              eyebrow="Onboarding"
-              title="What we ask for, in order."
-              body="Six steps. None of them are credit-card-first."
-            />
-            <ol className="mt-8 grid gap-3">
-              {onboardingSteps.map((s, i) => (
-                <li
-                  key={s}
-                  className="flex items-start gap-3 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-4 hard-shadow-sm"
-                >
-                  <span className="grid size-8 shrink-0 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] text-xs font-bold text-[color:var(--surface-deep)]">
-                    {i + 1}
-                  </span>
-                  <span className="text-sm font-bold text-[color:var(--ink)]">
-                    {s}
-                  </span>
-                </li>
-              ))}
-            </ol>
-          </div>
-        </div>
-      </section>
-
-      <section className="border-t-2 border-[color:var(--line)] bg-[color:var(--ink)] px-4 py-20 text-[color:var(--on-deep)] sm:px-6">
-        <div className="mx-auto max-w-4xl text-center">
-          <span className="sticker sticker--peach tilt-r-2 inline-flex">
-            <span className="size-2 rounded-full bg-[color:var(--rose)]" />
-            Ready?
-          </span>
-          <h2 className="font-display mt-6 text-4xl font-bold leading-tight tracking-[-0.025em] sm:text-6xl">
-            Pick a plan. Show up. <span className="text-[color:var(--coral)]">See what clicks.</span>
-          </h2>
-          <p className="mt-6 text-base font-medium leading-7 text-[color:var(--peach)] sm:text-lg">
-            30 seconds to make an account. No quiz required to RSVP your first
-            event.
-          </p>
-          <div className="mt-8 flex flex-wrap justify-center gap-3">
-            <Link
-              href="/auth"
-              className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-6 py-3 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--peach)]"
-            >
-              Make an account
-            </Link>
-            <Link
-              href="/merchant"
-              className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-6 py-3 text-sm font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)]"
-            >
-              Host events instead
-            </Link>
-          </div>
-        </div>
+      {/* 7 · Close */}
+      <section className="ck-page py-14 text-center sm:py-[72px]">
+        <h2 className="font-display mx-auto max-w-[620px] text-[length:var(--text-h1)] leading-[1.1] font-semibold tracking-[-0.025em] text-balance text-[color:var(--ink)]">
+          Something good is happening in Sydney this week.
+        </h2>
+        <p className="mx-auto mt-3 mb-6.5 max-w-[520px] text-[15.5px] leading-[1.6] text-[color:var(--ink-soft)] sm:text-[17px]">
+          Find it. Show up. Everything else is a bonus.
+        </p>
+        <ButtonLink href="/signup" size="lg">
+          Request an invite
+        </ButtonLink>
+        <p className="mx-auto mt-4.5 max-w-[460px] text-[13.5px] leading-[1.55] text-[color:var(--slate)]">
+          Somewhere else? Request an invite anyway - we&apos;ll tell you the moment Click reaches you.
+        </p>
       </section>
     </main>
   );

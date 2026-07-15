@@ -4,7 +4,8 @@ import { useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 import type { MerchantAllAttendeesRow } from "@/lib/event-repository";
 import { toggleAttendeeCheckInAction } from "@/app/merchant/actions";
-import { Pill } from "./click-ui";
+import { Avatar, Button, Icon } from "./ds";
+import { StatusPill, mCard } from "./merchant-ds";
 
 const dateTimeFormatter = new Intl.DateTimeFormat("en-AU", {
   day: "numeric",
@@ -19,6 +20,12 @@ function csvEscape(value: string) {
   }
   return value;
 }
+
+const selectClass =
+  "h-10 rounded-xl border border-[color:var(--mist-strong)] bg-[color:var(--paper)] px-3 text-[13px] font-medium text-[color:var(--ink)] outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--purple)]";
+
+// Written out in full (not interpolated) so Tailwind's source scanner sees it.
+const ROW_GRID = "grid-cols-[1.4fr_1.8fr_1.4fr_1fr_1.1fr_0.9fr]";
 
 export function MerchantAttendeesPanel({ rows }: { rows: MerchantAllAttendeesRow[] }) {
   const [query, setQuery] = useState("");
@@ -94,21 +101,45 @@ export function MerchantAttendeesPanel({ rows }: { rows: MerchantAllAttendeesRow
     });
   }
 
+  // Check-in is money-good/present → Sage (the `mutual` button variant). Offered
+  // ONLY on confirmed attendees (locked decision); everyone else shows a status.
+  // A plain function, not a nested component - a nested one would get a fresh
+  // identity every render and remount the button mid-transition.
+  function checkInCell(row: MerchantAllAttendeesRow) {
+    if (row.status !== "confirmed") {
+      return <StatusPill status={row.status} />;
+    }
+    return row.checkedInAt ? (
+      <Button variant="mutual" size="sm" onClick={() => checkIn(row)} disabled={isPending}>
+        <Icon name="check" size={14} stroke={2.6} />
+        In
+      </Button>
+    ) : (
+      <Button variant="secondary" size="sm" onClick={() => checkIn(row)} disabled={isPending}>
+        Check in
+      </Button>
+    );
+  }
+
   return (
-    <div className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] hard-shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <input
-            type="search"
-            placeholder="Search by name, email, event…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-2 text-sm font-semibold outline-none focus:bg-[color:var(--champagne)]"
-          />
+    <div className={`${mCard} overflow-hidden`}>
+      <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-[color:var(--mist)] px-4 py-3.5">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex h-10 min-w-[15rem] items-center gap-2 rounded-xl border border-[color:var(--mist-strong)] bg-[color:var(--paper)] px-3">
+            <Icon name="search" size={16} className="text-[color:var(--slate)]" />
+            <input
+              type="search"
+              placeholder="Search name or email"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="min-w-0 flex-1 border-none bg-transparent text-[13.5px] text-[color:var(--ink)] outline-none placeholder:text-[color:var(--slate)]"
+            />
+          </div>
           <select
+            aria-label="Filter by status"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-2 text-sm font-bold uppercase tracking-wide text-[color:var(--ink)]"
+            className={selectClass}
           >
             <option value="all">All statuses</option>
             <option value="confirmed">Confirmed</option>
@@ -117,9 +148,10 @@ export function MerchantAttendeesPanel({ rows }: { rows: MerchantAllAttendeesRow
             <option value="pending_payment">Pending payment</option>
           </select>
           <select
+            aria-label="Filter by event"
             value={eventFilter}
             onChange={(e) => setEventFilter(e.target.value)}
-            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-2 text-sm font-bold uppercase tracking-wide text-[color:var(--ink)] max-w-[16rem]"
+            className={`${selectClass} max-w-[16rem]`}
           >
             <option value="all">All events</option>
             {eventOptions.map(([slug, title]) => (
@@ -129,134 +161,81 @@ export function MerchantAttendeesPanel({ rows }: { rows: MerchantAllAttendeesRow
             ))}
           </select>
         </div>
-        <button
-          type="button"
-          onClick={exportCsv}
-          disabled={filtered.length === 0}
-          className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-4 py-2 text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)] disabled:opacity-60 disabled:cursor-not-allowed"
-        >
+        <Button variant="secondary" size="sm" onClick={exportCsv} disabled={filtered.length === 0}>
+          <Icon name="share" size={15} />
           Export CSV
-        </button>
+        </Button>
       </div>
 
       {filtered.length === 0 ? (
-        <p className="p-6 text-sm font-medium leading-6 text-[color:var(--mauve)]">
-          No attendees match your filters.
-        </p>
+        <p className="px-5 py-7 text-[13.5px] text-[color:var(--slate)]">No attendees match.</p>
       ) : (
         <>
-        {/* Mobile (< md): stacked cards so hosts can check people in on a phone
-            at the door without horizontal-scrolling a 6-column table. */}
-        <ul className="divide-y-2 divide-[color:var(--line-soft)] md:hidden">
-          {filtered.map((r) => (
-            <li key={r.attendeeId} className="flex flex-col gap-2 p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="truncate font-bold text-[color:var(--ink)]">
+          {/* Mobile: stacked rows so hosts can check people in on a phone at the
+              door without horizontal-scrolling a 6-column table. */}
+          <ul className="md:hidden">
+            {filtered.map((r, i) => (
+              <li
+                key={r.attendeeId}
+                className={`flex items-center gap-3 px-4 py-3.5 ${
+                  i > 0 ? "border-t border-[color:var(--mist)]" : ""
+                }`}
+              >
+                <Avatar name={r.displayName} size={38} />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-semibold text-[color:var(--ink)]">
                     {r.displayName}
                   </div>
-                  <div className="truncate font-mono text-xs text-[color:var(--mauve)]">
-                    {r.email}
+                  <div className="truncate text-xs text-[color:var(--slate)]">
+                    {r.eventTitle} · {dateTimeFormatter.format(new Date(r.rsvpAt))}
                   </div>
                 </div>
-                <Pill tone={statusTone(r.status)}>{r.status}</Pill>
-              </div>
-              <div className="text-sm font-semibold text-[color:var(--ink)]">
-                {r.eventTitle}
-              </div>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="font-mono text-[0.65rem] uppercase tracking-[0.16em] text-[color:var(--mauve)]">
-                  RSVP {dateTimeFormatter.format(new Date(r.rsvpAt))}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => checkIn(r)}
-                  disabled={isPending}
-                  className={`rounded-full border-2 border-[color:var(--line)] px-3 py-1 text-xs font-bold uppercase tracking-wide hard-shadow-sm ${
-                    r.checkedInAt
-                      ? "bg-[color:var(--rose)] text-[color:var(--surface-deep)]"
-                      : "bg-[color:var(--cream)] text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
-                  } disabled:opacity-60`}
-                >
-                  {r.checkedInAt ? "✓ Checked in" : "Check in"}
-                </button>
-              </div>
-            </li>
-          ))}
-        </ul>
+                {checkInCell(r)}
+              </li>
+            ))}
+          </ul>
 
-        {/* Desktop (md+): the full table. */}
-        <div className="hidden overflow-x-auto md:block">
-          <table className="w-full text-left text-sm">
-            <thead className="border-b-2 border-[color:var(--line)] bg-[color:var(--peach)] text-[color:var(--surface-deep)]">
-              <tr>
-                <Th>Event</Th>
-                <Th>Name</Th>
-                <Th>Email</Th>
-                <Th>Status</Th>
-                <Th>RSVP</Th>
-                <Th>Check-in</Th>
-              </tr>
-            </thead>
-            <tbody className="divide-y-2 divide-[color:var(--line-soft)]">
-              {filtered.map((r) => (
-                <tr key={r.attendeeId}>
-                  <Td>
-                    <div className="font-bold text-[color:var(--ink)]">
-                      {r.eventTitle}
-                    </div>
-                    <div className="font-mono text-[0.65rem] uppercase tracking-[0.16em] text-[color:var(--mauve)]">
-                      {dateTimeFormatter.format(new Date(r.eventStartsAt))}
-                    </div>
-                  </Td>
-                  <Td className="font-bold">{r.displayName}</Td>
-                  <Td className="font-mono text-xs break-all">{r.email}</Td>
-                  <Td>
-                    <Pill tone={statusTone(r.status)}>{r.status}</Pill>
-                  </Td>
-                  <Td className="font-mono text-[0.65rem] uppercase tracking-[0.16em] text-[color:var(--mauve)]">
-                    {dateTimeFormatter.format(new Date(r.rsvpAt))}
-                  </Td>
-                  <Td>
-                    <button
-                      type="button"
-                      onClick={() => checkIn(r)}
-                      disabled={isPending}
-                      className={`rounded-full border-2 border-[color:var(--line)] px-3 py-1 text-xs font-bold uppercase tracking-wide hard-shadow-sm ${
-                        r.checkedInAt
-                          ? "bg-[color:var(--rose)] text-[color:var(--surface-deep)]"
-                          : "bg-[color:var(--cream)] text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
-                      } disabled:opacity-60`}
-                    >
-                      {r.checkedInAt ? "✓ Checked in" : "Check in"}
-                    </button>
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+          {/* Desktop: the full door list. */}
+          <div className="hidden md:block">
+            <div
+              className={`grid ${ROW_GRID} gap-3.5 border-b border-[color:var(--mist)] bg-[color:var(--lavender-100)] px-5 py-2.5 text-[11.5px] font-bold uppercase tracking-[0.08em] text-[color:var(--ink-faint)]`}
+            >
+              <span>Name</span>
+              <span>Email</span>
+              <span>Event</span>
+              <span>Status</span>
+              <span>RSVP</span>
+              <span>Check-in</span>
+            </div>
+            {filtered.map((r, i) => (
+              <div
+                key={r.attendeeId}
+                className={`grid ${ROW_GRID} items-center gap-3.5 px-5 py-3 ${
+                  i > 0 ? "border-t border-[color:var(--mist)]" : ""
+                }`}
+              >
+                <span className="flex min-w-0 items-center gap-2.5">
+                  <Avatar name={r.displayName} size={30} />
+                  <span className="truncate text-[13.5px] font-semibold text-[color:var(--ink)]">
+                    {r.displayName}
+                  </span>
+                </span>
+                <span className="truncate text-[12.5px] text-[color:var(--slate)]">{r.email}</span>
+                <span className="truncate text-[12.5px] text-[color:var(--ink-soft)]">
+                  {r.eventTitle}
+                </span>
+                <span>
+                  <StatusPill status={r.status} />
+                </span>
+                <span className="text-[12.5px] text-[color:var(--slate)]">
+                  {dateTimeFormatter.format(new Date(r.rsvpAt))}
+                </span>
+                <span>{checkInCell(r)}</span>
+              </div>
+            ))}
+          </div>
         </>
       )}
     </div>
   );
-}
-
-function statusTone(status: string): "peach" | "rose" | "cream" | "ink" {
-  if (status === "confirmed") return "peach";
-  if (status === "waitlisted") return "rose";
-  if (status === "cancelled") return "cream";
-  return "ink";
-}
-
-function Th({ children }: { children: React.ReactNode }) {
-  return (
-    <th className="px-4 py-3 font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em]">
-      {children}
-    </th>
-  );
-}
-
-function Td({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <td className={`px-4 py-3 align-top ${className}`}>{children}</td>;
 }

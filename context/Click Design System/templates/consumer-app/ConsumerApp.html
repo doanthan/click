@@ -1,0 +1,51 @@
+<!-- @template name="Consumer app" description="The full Click consumer web app - landing, discovery, event detail, booking, dashboard, the click mechanic, mutual & coordination, My Events. Responsive (mobile + desktop). Mount and tweak the flow from the in-app Tweaks panel." -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Click - Consumer app</title>
+<link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" />
+<link rel="stylesheet" href="../../styles.css" />
+<style>
+  /* CLICK_TYPE.md: Poppins = display/headings/wordmark/buttons/tabs; system stack = body workhorse. */
+  :root {
+    --font-display: "Poppins", system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+    --font-serif: "Poppins", system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { background: var(--cream); font-family: var(--font-sans); color: var(--text-strong); -webkit-font-smoothing: antialiased; }
+  h1, h2, h3, h4 { font-family: var(--font-display); }
+  button { font-family: var(--font-display); }
+  input, select { font-family: var(--font-sans); }
+  input, select, button { font-size: 16px; }
+  ::-webkit-scrollbar { width: 0; height: 0; }
+  @media (prefers-reduced-motion: reduce) { * { transition-duration: .01ms !important; animation-duration: .01ms !important; } }
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<link id="gfont-Poppins" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&amp;display=swap">
+<link id="gfont-Open-Sans" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;500;600;700&amp;display=swap">
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel" src="../../click-app-v2/kit.jsx" data-presets="react"></script>
+  <script type="text/babel" src="../../click-app-v2/data.jsx" data-presets="react"></script>
+  <script type="text/babel" src="../../click-app-v2/app-screens.jsx" data-presets="react"></script>
+  <script type="text/babel" src="../../click-app-v2/mechanic-screens.jsx" data-presets="react"></script>
+  <script type="text/babel" src="../../click-app-v2/dashboard.jsx" data-presets="react"></script>
+  <script type="text/babel" src="../../click-app-v2/discovery.jsx" data-presets="react"></script>
+  <script type="text/babel" src="../../click-app-v2/onboarding.jsx" data-presets="react"></script>
+  <script type="text/babel" src="../../click-app-v2/howitworks.jsx" data-presets="react"></script>
+  <script type="text/babel" src="../../click-app-v2/coordination.jsx" data-presets="react"></script>
+  <script type="text/babel" src="../../click-app-v2/myevents.jsx" data-presets="react"></script>
+  <script type="text/babel" src="../../click-app-v2/tweaks-panel.jsx" data-presets="react"></script>
+  <script type="text/babel" src="../../click-app-v2/shell.jsx" data-presets="react"></script>
+</body>
+</html>

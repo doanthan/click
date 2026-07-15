@@ -6,7 +6,7 @@ import { OnboardingProgress } from "@/components/merchant-onboarding-wizard";
 export const metadata = {
   title: "Get set up | Click",
   description:
-    "Welcome aboard — learn how to create events and connect payouts so you can start taking payments on Click.",
+    "Welcome aboard - learn how to create events and connect payouts so you can start taking payments on Click.",
 };
 
 // Shared chrome + access gate for the post-approval onboarding. Mirrors the
