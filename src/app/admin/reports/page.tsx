@@ -166,7 +166,7 @@ function ReportCard({ report }: { report: AdminReportRow }) {
           <input type="hidden" name="resolution" value="dismissed" />
           <button
             type="submit"
-            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-2 text-xs font-bold uppercase tracking-wide text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+            className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-2 text-xs font-bold uppercase tracking-wide text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
           >
             Dismiss
           </button>
@@ -177,7 +177,7 @@ function ReportCard({ report }: { report: AdminReportRow }) {
           <input type="hidden" name="resolution" value="actioned" />
           <button
             type="submit"
-            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-2 text-xs font-bold uppercase tracking-wide text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+            className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-2 text-xs font-bold uppercase tracking-wide text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
           >
             Mark actioned
           </button>
@@ -194,7 +194,7 @@ function ReportCard({ report }: { report: AdminReportRow }) {
             />
             <button
               type="submit"
-              className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-4 py-2 text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
+              className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-4 py-2 text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
             >
               Suspend account
             </button>

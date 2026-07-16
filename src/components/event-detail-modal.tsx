@@ -306,7 +306,7 @@ export function EventDetailModal({
 
                 <Link
                   href={`/events/${data.id}`}
-                  className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 text-center text-sm font-bold text-[color:var(--ink)] hover:bg-[color:var(--peach)] hover:text-[color:var(--surface-deep)]"
+                  className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 text-center text-sm font-bold text-[color:var(--ink)] hover:bg-[color:var(--peach)] hover:text-[color:var(--surface-deep)]"
                 >
                   View full page
                 </Link>

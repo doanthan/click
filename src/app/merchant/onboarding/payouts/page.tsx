@@ -136,13 +136,13 @@ export default async function OnboardingPayoutsPage({ searchParams }: PageProps)
         <div className="flex flex-wrap items-center justify-between gap-3">
           <Link
             href="/merchant/onboarding/create-events"
-            className="inline-flex items-center justify-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-6 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--cream)]"
+            className="inline-flex items-center justify-center rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-6 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--cream)]"
           >
             ← Back
           </Link>
           <Link
             href="/merchant/onboarding/done"
-            className="inline-flex items-center justify-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-6 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--mauve)] hard-shadow-sm hover:bg-[color:var(--cream)]"
+            className="inline-flex items-center justify-center rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-6 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--mauve)] hard-shadow-sm hover:bg-[color:var(--cream)]"
           >
             Skip for now →
           </Link>

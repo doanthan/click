@@ -65,7 +65,7 @@ export default async function MerchantSignupLayout({
           Become a host
         </span>
         <h1 className="font-display mt-3 text-4xl font-bold leading-[0.96] tracking-[-0.025em] sm:text-5xl">
-          Tell us about <span className="text-[color:var(--coral)]">you</span>.
+          Tell us about <span className="text-[color:var(--rose)]">you</span>.
         </h1>
         <p className="mt-2 max-w-2xl text-sm font-medium leading-6 text-[color:var(--mauve)]">
           Your application goes to admin review and unlocks the portal once approved.

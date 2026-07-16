@@ -80,7 +80,7 @@ export default async function MerchantLoginPage({ searchParams }: LoginPageProps
 
           <h1 className="font-display mt-6 text-5xl font-bold leading-[0.94] tracking-[-0.025em] text-[color:var(--ink)] sm:text-7xl">
             Back to your{" "}
-            <span className="text-[color:var(--coral)]">guest list</span>
+            <span className="text-[color:var(--rose)]">guest list</span>
             .
           </h1>
 
@@ -136,7 +136,7 @@ export default async function MerchantLoginPage({ searchParams }: LoginPageProps
                   type="submit"
                   disabled={!googleConfigured}
                   aria-label="Continue with Google"
-                  className="group/btn flex min-h-[58px] w-full items-center justify-center gap-3 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-5 text-base font-bold text-[color:var(--ink)] hard-shadow-sm hover:-translate-x-[2px] hover:-translate-y-[2px] hover:[box-shadow:5px_5px_0_0_var(--shadow-ink)] hover:bg-[color:var(--cream)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-x-0 disabled:hover:translate-y-0"
+                  className="group/btn flex min-h-[58px] w-full items-center justify-center gap-3 rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-5 text-base font-bold text-[color:var(--ink)] hard-shadow-sm hover:-translate-x-[2px] hover:-translate-y-[2px] hover:[box-shadow:5px_5px_0_0_var(--shadow-ink)] hover:bg-[color:var(--cream)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-x-0 disabled:hover:translate-y-0"
                 >
                   <GoogleMark className="size-6 shrink-0" />
                   <span>{googleConfigured ? "Continue with Google" : "Google · setup required"}</span>
@@ -149,7 +149,7 @@ export default async function MerchantLoginPage({ searchParams }: LoginPageProps
                   type="submit"
                   disabled={!metaConfigured}
                   aria-label="Continue with Facebook"
-                  className="group/btn flex min-h-[58px] w-full items-center justify-center gap-3 rounded-full border-2 border-[color:var(--line)] bg-[#1877F2] px-5 text-base font-bold text-white hard-shadow-sm hover:-translate-x-[2px] hover:-translate-y-[2px] hover:[box-shadow:5px_5px_0_0_var(--shadow-ink)] hover:bg-[#1566d6] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-x-0 disabled:hover:translate-y-0"
+                  className="group/btn flex min-h-[58px] w-full items-center justify-center gap-3 rounded-xl border-2 border-[color:var(--line)] bg-[#1877F2] px-5 text-base font-bold text-white hard-shadow-sm hover:-translate-x-[2px] hover:-translate-y-[2px] hover:[box-shadow:5px_5px_0_0_var(--shadow-ink)] hover:bg-[#1566d6] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-x-0 disabled:hover:translate-y-0"
                 >
                   <FacebookMark className="size-6 shrink-0" />
                   <span>{metaConfigured ? "Continue with Facebook" : "Facebook · setup required"}</span>
@@ -194,7 +194,7 @@ export default async function MerchantLoginPage({ searchParams }: LoginPageProps
 
               <button
                 type="submit"
-                className="group/cta inline-flex min-h-[52px] items-center justify-center gap-2 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-6 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:-translate-x-[2px] hover:-translate-y-[2px] hover:[box-shadow:5px_5px_0_0_var(--shadow-ink)] hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)]"
+                className="group/cta inline-flex min-h-[52px] items-center justify-center gap-2 rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-6 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:-translate-x-[2px] hover:-translate-y-[2px] hover:[box-shadow:5px_5px_0_0_var(--shadow-ink)] hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)]"
               >
                 Continue with Email
                 <span aria-hidden className="transition-transform group-hover/cta:translate-x-1">→</span>

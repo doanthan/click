@@ -68,9 +68,9 @@ export function OnboardingProgress() {
 }
 
 const primaryBtn =
-  "inline-flex items-center justify-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-6 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)] disabled:cursor-not-allowed disabled:opacity-60";
+  "inline-flex items-center justify-center rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-6 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)] disabled:cursor-not-allowed disabled:opacity-60";
 const secondaryBtn =
-  "inline-flex items-center justify-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-6 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--cream)]";
+  "inline-flex items-center justify-center rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-6 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--cream)]";
 
 // Back / Next link row. Mostly-static steps use this; the payouts step swaps
 // Next for its own Skip/Continue controls.

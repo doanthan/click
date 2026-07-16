@@ -39,7 +39,7 @@ export default async function MerchantOnboardingLayout({
           You&apos;re approved
         </span>
         <h1 className="font-display mt-3 text-4xl font-bold leading-[0.96] tracking-[-0.025em] sm:text-5xl">
-          Let&apos;s get you <span className="text-[color:var(--coral)]">paid</span>.
+          Let&apos;s get you <span className="text-[color:var(--rose)]">paid</span>.
         </h1>
         <p className="mt-2 max-w-2xl text-sm font-medium leading-6 text-[color:var(--mauve)]">
           A quick lap around hosting on Click, then connect your bank so paid

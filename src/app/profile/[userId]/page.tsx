@@ -36,6 +36,14 @@ export default async function PublicProfilePage({ params }: PublicProfilePagePro
   const safetyState =
     session?.user && !isOwnProfile ? await getSafetyState(session, userId) : null;
 
+  // "Open to dating" is mutual opt-in (CLICK_LANGUAGE v14): the dating intent
+  // renders only when the owner has dating mode on AND the viewer is also open
+  // to dating. A friends-only or signed-out viewer never sees a dating label.
+  const viewerOpenToDating = ownProfile?.datingVisible === true;
+  const visibleIntents = profile.intents.filter(
+    (intent) => intent !== "dating" || (profile.datingVisible && viewerOpenToDating),
+  );
+
   return (
     <main className="min-h-screen bg-[color:var(--champagne)] pb-24 text-[color:var(--ink)]">
       <div className="ck-page pt-8">
@@ -76,9 +84,9 @@ export default async function PublicProfilePage({ params }: PublicProfilePagePro
             </Section>
 
             <Section label="Here for">
-              {profile.intents.length > 0 ? (
+              {visibleIntents.length > 0 ? (
                 <div className="flex flex-wrap gap-2">
-                  {profile.intents.map((intent) => (
+                  {visibleIntents.map((intent) => (
                     <IntentChip key={intent}>{formatIntent(intent)}</IntentChip>
                   ))}
                 </div>

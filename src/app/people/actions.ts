@@ -32,7 +32,7 @@ export async function clickPersonAction(
     const message =
       error instanceof Error && error.message
         ? error.message
-        : "Could not send your Click. Try again.";
+        : "Could not send your click. Try again.";
     return { ok: false, message };
   }
 
@@ -45,6 +45,6 @@ export async function clickPersonAction(
   // optimistic state below keeps the card mounted so that pending state shows.
   return {
     ok: true,
-    message: "Click sent privately. If they Click you back, you'll both see it.",
+    message: "Sent privately. If they click you back, you'll both see it.",
   };
 }

@@ -165,13 +165,13 @@ export function EventRsvpSuccessOverlay({
             href={details.calendarUrl}
             target="_blank"
             rel="noreferrer"
-            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-4 py-3 text-center text-sm font-bold text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)]"
+            className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-4 py-3 text-center text-sm font-bold text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)]"
           >
             Add to calendar
           </a>
           <Link
             href="/confirmed-events"
-            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-3 text-center text-sm font-bold text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)]"
+            className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-3 text-center text-sm font-bold text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)]"
           >
             See my confirmed events
           </Link>

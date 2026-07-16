@@ -79,7 +79,6 @@
   --sage: #5B8C6E;         /* STATUS: free / going / mutual */
   --teal: #2E7D8A;         /* STATUS: new */
   --danger: #B5362F;       /* Destructive red (confirm-cancel, errors) - never coral */
-  --lime: #D6F24E;         /* DEPRECATED - no lime in the Click DS; migrate off */
   --slate: #6B6580;        /* = --mauve, named for intent */
   --mist: #E8E4F0;         /* Hairlines / dividers / disabled */
   --mist-strong: #DDD7EA;  /* One-step-deeper Mist - defined chip hairlines on cream */
@@ -191,7 +190,6 @@
   --color-purple-hover: var(--purple-hover);
   --color-purple-press: var(--purple-press);
   --color-mist-strong: var(--mist-strong);
-  --color-lime: var(--lime);
   --color-sage: var(--sage);
   --color-teal: var(--teal);
   --color-slate: var(--slate);

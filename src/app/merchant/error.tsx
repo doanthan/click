@@ -29,7 +29,7 @@ export default function MerchantError({
           Something didn’t click
         </span>
         <h1 className="font-display mt-6 text-5xl font-bold leading-[0.96] tracking-[-0.025em] sm:text-6xl">
-          Your portal hit a <span className="text-[color:var(--coral)]">snag</span>.
+          Your portal hit a <span className="text-[color:var(--rose)]">snag</span>.
         </h1>
         <p className="mt-5 text-base font-medium leading-7 text-[color:var(--mauve)]">
           We couldn’t load this part of the merchant portal. It’s usually a
@@ -44,19 +44,19 @@ export default function MerchantError({
           <button
             type="button"
             onClick={() => reset()}
-            className="rounded-full border-2 border-[color:var(--surface-deep)] bg-[color:var(--rose)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm transition hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)] active:translate-y-px"
+            className="rounded-xl border-2 border-[color:var(--surface-deep)] bg-[color:var(--rose)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm transition hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)] active:translate-y-px"
           >
             Try again
           </button>
           <Link
             href="/merchant"
-            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)]"
+            className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)]"
           >
             Merchant dashboard
           </Link>
           <Link
             href="/"
-            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--cream)]"
+            className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--cream)]"
           >
             Home
           </Link>

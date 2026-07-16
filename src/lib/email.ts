@@ -121,19 +121,19 @@ const EMAILS_DIR = process.env.CLICK_EMAILS_DIR
 // Subject lines mirror /emails/README.md. Kept here (not in the .html) so the
 // drawer's header column is readable without parsing the body.
 const SUBJECTS: Record<EmailTemplate, (vars: Record<string, string>) => string> = {
-  "account-welcome": () => "Welcome to Click — let's find your people",
+  "account-welcome": () => "Welcome to Click - let's find your people",
   "rsvp-attendee": (v) =>
-    `You're in — ${v.eventTitle ?? "your event"}${v.eventShortDate ? `, ${v.eventShortDate}` : ""}`,
+    `You're in - ${v.eventTitle ?? "your event"}${v.eventShortDate ? `, ${v.eventShortDate}` : ""}`,
   "rsvp-merchant": (v) =>
-    `New RSVP — ${v.attendeeFirstName ?? "Someone"} is going to ${v.eventTitle ?? "your event"}`,
+    `New RSVP - ${v.attendeeFirstName ?? "Someone"} is going to ${v.eventTitle ?? "your event"}`,
   "rsvp-cancelled-attendee": (v) =>
-    `RSVP cancelled — ${v.eventTitle ?? "your event"}`,
+    `RSVP cancelled - ${v.eventTitle ?? "your event"}`,
   "rsvp-cancelled-merchant": (v) =>
     `${v.attendeeFirstName ?? "An attendee"} can't make ${v.eventTitle ?? "your event"}`,
   "event-reminder-attendee": (v) =>
-    `Tomorrow — ${v.eventTitle ?? "your event"}`,
+    `Tomorrow - ${v.eventTitle ?? "your event"}`,
   "event-created-merchant": (v) =>
-    `Your event is in review — ${v.eventTitle ?? ""}`.trim(),
+    `Your event is in review - ${v.eventTitle ?? ""}`.trim(),
   "event-approved-merchant": (v) =>
     `${v.eventTitle ?? "Your event"} is live`,
   "event-rejected-merchant": (v) =>
@@ -141,22 +141,22 @@ const SUBJECTS: Record<EmailTemplate, (vars: Record<string, string>) => string> 
   "event-cancelled-attendee": (v) =>
     `${v.eventTitle ?? "Your event"} has been cancelled`,
   "merchant-application-received": (v) =>
-    `We've got your application — ${v.businessName ?? "your business"}`,
+    `We've got your application - ${v.businessName ?? "your business"}`,
   "merchant-waitlisted-merchant": (v) =>
-    `You're on the Click waitlist — ${v.suburb ?? "your area"} is coming soon`,
+    `You're on the Click waitlist - ${v.suburb ?? "your area"} is coming soon`,
   "merchant-verified-merchant": (v) =>
-    `${v.businessName ?? "You're"} verified — post your first event`,
+    `${v.businessName ?? "You're"} verified - post your first event`,
   "merchant-rejected-merchant": (v) =>
-    `${v.businessName ?? "Your"} application — one small change`,
+    `${v.businessName ?? "Your"} application - one small change`,
   "password-reset": () => "Reset your Click password",
   "payment-receipt-attendee": (v) =>
-    `Receipt — ${v.eventTitle ?? "your event"}${v.totalLabel ? ` (${v.totalLabel})` : ""}`,
+    `Receipt - ${v.eventTitle ?? "your event"}${v.totalLabel ? ` (${v.totalLabel})` : ""}`,
   "report-received-admin": (v) =>
-    `[Safety] New report — ${v.reason ?? "review needed"}`,
+    `[Safety] New report - ${v.reason ?? "review needed"}`,
   "merchant-monthly-report": (v) =>
-    `Your ${v.monthLabel ?? "monthly"} on Click — ${v.eventsCount ?? "0"} events, ${v.revenueLabel ?? "$0"}`,
+    `Your ${v.monthLabel ?? "monthly"} on Click - ${v.eventsCount ?? "0"} events, ${v.revenueLabel ?? "$0"}`,
   "mutual-click-attendee": (v) =>
-    `It's mutual — you and ${v.otherName ?? "someone"} both clicked`,
+    `It's mutual - you clicked with ${v.otherName ?? "someone"}`,
   "guest-invite": (v) =>
     `${v.purchaserFirstName ?? "A friend"} saved you a spot`,
   "guest-spot-existing-user": (v) =>

@@ -334,7 +334,7 @@ export function EventRegistrationButton({
           type="button"
           onClick={register}
           disabled={state === "submitting"}
-          className={`rounded-full border-2 border-[color:var(--line)] px-4 py-3 text-center text-sm font-bold hard-shadow-sm disabled:cursor-not-allowed disabled:opacity-70 ${
+          className={`rounded-xl border-2 border-[color:var(--line)] px-4 py-3 text-center text-sm font-bold hard-shadow-sm disabled:cursor-not-allowed disabled:opacity-70 ${
             isWaitlist
               ? "bg-[color:var(--peach)] text-[color:var(--surface-deep)] hover:bg-[color:var(--rose)]"
               : "bg-[color:var(--rose)] text-[color:var(--surface-deep)] hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)]"

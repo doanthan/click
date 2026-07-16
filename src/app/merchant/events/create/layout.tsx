@@ -45,7 +45,7 @@ export default async function CreateEventLayout({
           </span>
           <h1 className="mt-6 font-display text-5xl font-bold leading-[0.96] tracking-[-0.025em] sm:text-6xl">
             Your merchant profile is{" "}
-            <span className="text-[color:var(--coral)]">{status.merchantProfile.verification_status}</span>.
+            <span className="text-[color:var(--rose)]">{status.merchantProfile.verification_status}</span>.
           </h1>
           <p className="mt-4 text-base font-medium leading-7 text-[color:var(--mauve)]">
             An admin needs to approve your business before you can publish events.
@@ -76,7 +76,7 @@ export default async function CreateEventLayout({
           </p>
           <a
             href="/merchant/onboarding/payouts"
-            className="mt-8 inline-flex items-center gap-2 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-6 py-3 text-sm font-bold uppercase tracking-wider text-[color:var(--on-deep)] hard-shadow-sm transition hover:-translate-y-0.5"
+            className="mt-8 inline-flex items-center gap-2 rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-6 py-3 text-sm font-bold uppercase tracking-wider text-[color:var(--on-deep)] hard-shadow-sm transition hover:-translate-y-0.5"
           >
             Set up payouts →
           </a>

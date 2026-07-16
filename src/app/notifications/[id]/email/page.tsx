@@ -103,7 +103,7 @@ export default async function NotificationEmailPage({ params }: PageProps) {
             <div className="mt-6">
               <Link
                 href={notification.actionUrl}
-                className="inline-flex items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-4 py-2 text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
+                className="inline-flex items-center rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-4 py-2 text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
               >
                 Take action
               </Link>

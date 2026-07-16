@@ -10315,6 +10315,10 @@ export type PublicProfile = {
   photoUrl: string | null;
   age: number | null;
   intents: string[];
+  // The owner's dating-mode visibility (migration 005). Gates the "dating"
+  // intent chip: it renders only on mutual dating opt-in (owner on AND the
+  // viewer open to dating) - a friends-only viewer never sees a dating label.
+  datingVisible: boolean;
   interests: { slug: string; label: string }[];
   attendedCount: number;
   // Up to 5 extra photos (migration 042), public `avatars` bucket gallery/ prefix.
@@ -10490,6 +10494,7 @@ export async function getPublicProfileById(profileId: string): Promise<PublicPro
         photo_url: string | null;
         age: number | null;
         connection_intents: string[];
+        dating_visible: boolean;
         show_suburb: boolean;
         show_attendance_count: boolean;
         gallery_photos: string[];
@@ -10499,6 +10504,7 @@ export async function getPublicProfileById(profileId: string): Promise<PublicPro
         `
           select id::text, display_name, city, suburb, bio, photo_url, age,
                  connection_intents::text[] as connection_intents,
+                 dating_visible,
                  show_suburb, show_attendance_count,
                  gallery_photos, prompts, photo_verified_at
           from profiles
@@ -10540,6 +10546,7 @@ export async function getPublicProfileById(profileId: string): Promise<PublicPro
       photoUrl: row.photo_url,
       age: row.age,
       intents: row.connection_intents ?? [],
+      datingVisible: Boolean(row.dating_visible),
       interests: tagsResult.rows.map((t) => ({ slug: t.slug, label: t.label })),
       attendedCount: row.show_attendance_count
         ? Number(attendedResult.rows[0]?.count ?? 0)

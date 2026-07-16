@@ -23,7 +23,7 @@ const STATUS_HEX: Record<EventStatus, { bg: string; fg: string }> = {
   Live: { bg: "var(--lavender)", fg: "var(--ink)" },
   Featured: { bg: "var(--purple)", fg: "var(--cream)" },
   Waitlist: { bg: "var(--lav-bg)", fg: "var(--purple)" },
-  Locked: { bg: "var(--lime)", fg: "var(--ink)" },
+  Locked: { bg: "var(--amber)", fg: "var(--ink)" },
   Rejected: { bg: "var(--mauve)", fg: "var(--cream)" },
   Cancelled: { bg: "var(--line-strong)", fg: "var(--ink)" },
 };

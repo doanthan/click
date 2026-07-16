@@ -35,7 +35,7 @@ function HostPitch() {
         </p>
         <h2 className="font-display mt-4 text-4xl font-bold leading-[0.95] tracking-[-0.025em] sm:text-5xl">
           You run the room.{" "}
-          <span className="text-[color:var(--coral)]">We bring the right people.</span>
+          <span className="text-[color:var(--rose)]">We bring the right people.</span>
         </h2>
         <p className="mt-6 max-w-2xl text-base font-medium leading-7 text-[color:var(--mauve)]">
           List your event in minutes. Click puts it in front of locals who already
@@ -67,14 +67,14 @@ function HostPitch() {
           {[
             ["7 days", "Avg. time to first booking"],
             ["94%", "Show-up rate"],
-            ["Free", "Listing fee for free events"],
+            ["$0", "Listing fee for free events"],
             ["2.9% + 30¢", "Click managed fee per paid ticket"],
           ].map(([num, label]) => (
             <div
               key={label}
               className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-4"
             >
-              <dt className="font-display text-3xl font-semibold leading-none text-[color:var(--coral)]">
+              <dt className="font-display text-3xl font-semibold leading-none text-[color:var(--rose)]">
                 {num}
               </dt>
               <dd className="font-mono mt-2 text-[0.65rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
