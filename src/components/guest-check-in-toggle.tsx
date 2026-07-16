@@ -43,11 +43,8 @@ export function GuestCheckInToggle({
       type="button"
       onClick={toggle}
       disabled={isPending}
-      className={`rounded-full border-2 border-[color:var(--line)] px-3 py-1 text-xs font-bold uppercase tracking-wide hard-shadow-sm ${
-        attended
-          ? "bg-[color:var(--rose)] text-[color:var(--surface-deep)]"
-          : "bg-[color:var(--cream)] text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
-      } disabled:opacity-60`}
+      aria-pressed={attended}
+      className={`ck-btn ck-btn--sm ${attended ? "ck-btn--mutual" : "ck-btn--secondary"}`}
     >
       {attended ? "✓ Checked in" : "Check in"}
     </button>

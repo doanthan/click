@@ -61,27 +61,24 @@ export default async function NotificationEmailPage({ params }: PageProps) {
       <section className="mx-auto max-w-3xl">
         <Link
           href="/notifications"
-          className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)] hover:text-[color:var(--ink)]"
+          className="text-[12.5px] font-semibold text-[color:var(--slate)] hover:text-[color:var(--ink)]"
         >
           ← Back to notifications
         </Link>
 
         <header className="mt-6">
-          <span className="sticker sticker--peach tilt-l-2 inline-flex">
-            <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
-            {email ? "Email" : "Notification"}
-          </span>
-          <h1 className="mt-6 font-display text-4xl font-bold leading-[0.98] tracking-[-0.025em] sm:text-5xl">
+          <p className="eyebrow">{email ? "Email" : "Notification"}</p>
+          <h1 className="mt-6 font-display text-3xl font-semibold leading-[1.1] tracking-[-0.02em] sm:text-4xl">
             {email?.subject ?? notification.title}
           </h1>
           <dl className="mt-5 grid gap-2 text-sm sm:grid-cols-[6rem_1fr]">
-            <dt className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+            <dt className="text-[12.5px] font-semibold text-[color:var(--slate)]">
               To
             </dt>
-            <dd className="font-mono text-[0.85rem] text-[color:var(--ink)]">
+            <dd className="text-[0.85rem] text-[color:var(--ink)]">
               {email?.toEmail ?? session.user.email ?? "-"}
             </dd>
-            <dt className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+            <dt className="text-[12.5px] font-semibold text-[color:var(--slate)]">
               Sent
             </dt>
             <dd className="font-semibold text-[color:var(--ink)]">
@@ -89,10 +86,10 @@ export default async function NotificationEmailPage({ params }: PageProps) {
             </dd>
             {email ? (
               <>
-                <dt className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+                <dt className="text-[12.5px] font-semibold text-[color:var(--slate)]">
                   Template
                 </dt>
-                <dd className="font-mono text-[0.85rem] text-[color:var(--ink)]">
+                <dd className="text-[0.85rem] text-[color:var(--ink)]">
                   {email.template}
                 </dd>
               </>
@@ -103,7 +100,7 @@ export default async function NotificationEmailPage({ params }: PageProps) {
             <div className="mt-6">
               <Link
                 href={notification.actionUrl}
-                className="inline-flex items-center rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-4 py-2 text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
+                className="ck-btn ck-btn--primary ck-btn--sm"
               >
                 Take action
               </Link>
@@ -111,7 +108,7 @@ export default async function NotificationEmailPage({ params }: PageProps) {
           ) : null}
         </header>
 
-        <div className="mt-8 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-4 hard-shadow-sm sm:p-6">
+        <div className="mt-8 rounded-2xl border border-[color:var(--line)] bg-[color:var(--cream)] p-4 sm:p-6">
           {email ? (
             <div className="flex justify-center">
               <iframe
@@ -141,7 +138,7 @@ export default async function NotificationEmailPage({ params }: PageProps) {
               <p className="rounded-xl border border-dashed border-[color:var(--line)] bg-[color:var(--champagne)] p-4 text-sm font-medium leading-6 text-[color:var(--mauve)]">
                 No rendered email is on file for this notification - the
                 trigger that created it hasn&rsquo;t been wired to{" "}
-                <code className="font-mono">logEmailEvent</code> yet.
+                <code>logEmailEvent</code> yet.
               </p>
             </div>
           )}

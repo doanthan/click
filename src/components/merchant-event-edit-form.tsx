@@ -5,6 +5,11 @@ import { useRouter } from "next/navigation";
 
 type Tag = { slug: string; label: string };
 
+const FIELD_LABEL_CLASS =
+  "text-[12.5px] font-semibold text-[color:var(--slate)]";
+const INPUT_CLASS =
+  "mt-1.5 w-full rounded-xl border border-[color:var(--mist)] bg-white px-3 py-2 text-base text-[color:var(--ink)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)]";
+
 // Merchant self-service editor for an event's SAFE fields (title, description,
 // street address, interest tags). Price / time / capacity are intentionally NOT
 // editable here — changing them after people have booked needs a review, so the
@@ -144,20 +149,18 @@ export function MerchantEventEditForm({
   }
 
   return (
-    <section className="mt-10 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-6 hard-shadow-sm">
+    <section className="mt-10 rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)] p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
-            Edit event
-          </p>
-          <p className="mt-1 text-sm font-semibold text-[color:var(--mauve)]">
+          <p className="eyebrow">Edit event</p>
+          <p className="mt-1 text-sm font-medium text-[color:var(--slate)]">
             Update the title, description, street address, photos and interest tags.
           </p>
         </div>
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-2 text-xs font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)]"
+          className="ck-btn ck-btn--secondary ck-btn--sm"
         >
           {open ? "Close" : "Edit details"}
         </button>
@@ -166,46 +169,40 @@ export function MerchantEventEditForm({
       {open ? (
         <div className="mt-5 space-y-5">
           <label className="block">
-            <span className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-              Title
-            </span>
+            <span className={FIELD_LABEL_CLASS}>Title</span>
             <input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="mt-1.5 w-full rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-2 text-sm font-semibold text-[color:var(--ink)] focus:outline-none focus:ring-2 focus:ring-[color:var(--rose)]"
+              className={INPUT_CLASS}
             />
           </label>
 
           <label className="block">
-            <span className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-              Description
-            </span>
+            <span className={FIELD_LABEL_CLASS}>Description</span>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={5}
-              className="mt-1.5 w-full rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-2 text-sm font-medium leading-6 text-[color:var(--ink)] focus:outline-none focus:ring-2 focus:ring-[color:var(--rose)]"
+              className={`${INPUT_CLASS} leading-6`}
             />
           </label>
 
           <label className="block">
-            <span className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-              Street address
-            </span>
+            <span className={FIELD_LABEL_CLASS}>Street address</span>
             <input
               value={address}
               onChange={(e) => setAddress(e.target.value)}
               placeholder="Unit 6/29 Bridge Rd, Stanmore NSW 2048"
-              className="mt-1.5 w-full rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-2 text-sm font-semibold text-[color:var(--ink)] focus:outline-none focus:ring-2 focus:ring-[color:var(--rose)]"
+              className={INPUT_CLASS}
             />
-            <span className="mt-1 block text-xs font-medium text-[color:var(--mauve)]">
+            <span className="mt-1 block text-xs text-[color:var(--slate)]">
               Shown to confirmed attendees on the event page.
               {addressNeedsReview
                 ? " This event is already live, so changing the address needs admin review before it goes live."
                 : ""}
             </span>
             {pendingAddress ? (
-              <span className="mt-2 block rounded-xl border-2 border-dashed border-[color:var(--rose)] bg-[color:var(--champagne)] px-3 py-2 text-xs font-bold text-[color:var(--ink)]">
+              <span className="mt-2 block rounded-xl bg-[color:var(--lavender-100)] px-3 py-2 text-xs font-medium text-[color:var(--purple-700)]">
                 Pending admin review: <span className="italic">{pendingAddress}</span>. The
                 current address stays live until it&apos;s approved.
               </span>
@@ -213,10 +210,10 @@ export function MerchantEventEditForm({
           </label>
 
           <div>
-            <span className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+            <span className={FIELD_LABEL_CLASS}>
               Photos ({images.length}/{MAX_PHOTOS})
             </span>
-            <p className="mt-1 text-xs font-medium text-[color:var(--mauve)]">
+            <p className="mt-1 text-xs text-[color:var(--slate)]">
               First photo is the cover. JPG / PNG / WEBP, up to {MAX_PHOTOS}.
             </p>
             <ul className="mt-2 flex flex-wrap gap-2">
@@ -226,10 +223,10 @@ export function MerchantEventEditForm({
                   <img
                     src={url}
                     alt={`Event photo ${idx + 1}`}
-                    className="size-20 rounded-xl border-2 border-[color:var(--line)] object-cover"
+                    className="size-20 rounded-xl border border-[color:var(--line)] object-cover"
                   />
                   {idx === 0 ? (
-                    <span className="absolute left-1 top-1 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-1.5 text-[0.55rem] font-bold uppercase text-[color:var(--surface-deep)]">
+                    <span className="absolute left-1 top-1 rounded-md bg-[color:var(--lavender-100)] px-1.5 py-0.5 text-[0.6rem] font-semibold text-[color:var(--purple-700)]">
                       Cover
                     </span>
                   ) : null}
@@ -237,7 +234,7 @@ export function MerchantEventEditForm({
                     type="button"
                     onClick={() => removeImage(url)}
                     aria-label={`Remove photo ${idx + 1}`}
-                    className="absolute -right-1.5 -top-1.5 grid size-6 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] text-xs font-bold text-[color:var(--ink)] hover:bg-[color:var(--rose)]"
+                    className="absolute -right-1.5 -top-1.5 grid size-6 place-items-center rounded-lg border border-[color:var(--mist)] bg-white text-xs font-semibold text-[color:var(--slate)] shadow-[var(--shadow-xs)] hover:text-[color:var(--danger)]"
                   >
                     ×
                   </button>
@@ -246,7 +243,7 @@ export function MerchantEventEditForm({
               {images.length < MAX_PHOTOS ? (
                 <li>
                   <label
-                    className={`grid size-20 cursor-pointer place-items-center rounded-xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--champagne)] text-center text-[0.6rem] font-bold uppercase text-[color:var(--mauve)] hover:bg-[color:var(--peach)] ${
+                    className={`grid size-20 cursor-pointer place-items-center rounded-xl border border-dashed border-[color:var(--mist-strong)] bg-white text-center text-xs font-semibold text-[color:var(--slate)] hover:bg-[color:var(--lavender-100)] ${
                       uploading ? "pointer-events-none opacity-60" : ""
                     }`}
                   >
@@ -266,27 +263,25 @@ export function MerchantEventEditForm({
               ) : null}
             </ul>
             {uploadError ? (
-              <p className="mt-2 text-xs font-bold text-[color:var(--rose)]">{uploadError}</p>
+              <p className="mt-2 text-xs font-semibold text-[color:var(--danger)]">{uploadError}</p>
             ) : null}
           </div>
 
           <div>
-            <span className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-              Interest tags
-            </span>
+            <span className={FIELD_LABEL_CLASS}>Interest tags</span>
             <ul className="mt-1.5 flex flex-wrap items-center gap-1.5">
               {tags.length === 0 ? (
-                <li className="text-xs font-semibold text-[color:var(--mauve)]">None yet.</li>
+                <li className="text-xs font-medium text-[color:var(--slate)]">None yet.</li>
               ) : (
                 tags.map((tag) => (
                   <li key={tag.slug}>
-                    <span className="inline-flex items-center gap-1 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-2.5 py-0.5 text-xs font-bold text-[color:var(--surface-deep)]">
+                    <span className="ck-tag ck-tag--selected">
                       {tag.label}
                       <button
                         type="button"
                         onClick={() => removeTag(tag.slug)}
                         aria-label={`Remove ${tag.label}`}
-                        className="leading-none hover:text-[color:var(--ink)]"
+                        className="leading-none opacity-80 hover:opacity-100"
                       >
                         ×
                       </button>
@@ -300,12 +295,12 @@ export function MerchantEventEditForm({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search tags to add…"
-              className="mt-2 w-full rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-2 text-sm font-semibold text-[color:var(--ink)] focus:outline-none focus:ring-2 focus:ring-[color:var(--rose)]"
+              className={INPUT_CLASS}
             />
             {query.trim() ? (
               <div className="mt-2 flex max-h-40 flex-wrap gap-1.5 overflow-y-auto">
                 {available.length === 0 ? (
-                  <span className="text-xs font-semibold text-[color:var(--mauve)]">
+                  <span className="text-xs font-medium text-[color:var(--slate)]">
                     No matching tags.
                   </span>
                 ) : (
@@ -314,7 +309,7 @@ export function MerchantEventEditForm({
                       key={tag.slug}
                       type="button"
                       onClick={() => addTag(tag)}
-                      className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-2.5 py-0.5 text-xs font-bold text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+                      className="ck-tag ck-tag--select"
                     >
                       + {tag.label}
                     </button>
@@ -324,7 +319,7 @@ export function MerchantEventEditForm({
             ) : null}
           </div>
 
-          <p className="rounded-xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--champagne)] p-3 text-xs font-semibold leading-5 text-[color:var(--mauve)]">
+          <p className="rounded-xl border border-dashed border-[color:var(--mist-strong)] bg-[color:var(--champagne)] p-3 text-xs leading-5 text-[color:var(--slate)]">
             Changing the price, date/time or capacity affects people who may have
             already booked - those need a review. Email support@click.local to
             request a change.
@@ -335,16 +330,16 @@ export function MerchantEventEditForm({
               type="button"
               onClick={save}
               disabled={saving || uploading || !title.trim()}
-              className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-5 py-2 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)] disabled:cursor-not-allowed disabled:opacity-50"
+              className="ck-btn ck-btn--primary ck-btn--md"
             >
               {saving ? "Saving…" : "Save changes"}
             </button>
             {message ? (
               <span
-                className={`text-sm font-bold ${
+                className={`text-sm font-medium ${
                   message.kind === "ok"
                     ? "text-[color:var(--ink)]"
-                    : "text-[color:var(--rose)]"
+                    : "text-[color:var(--danger)]"
                 }`}
               >
                 {message.text}

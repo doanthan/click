@@ -221,13 +221,13 @@ export function EventRegistrationButton({
   if (state === "confirm-cancel") {
     return (
       <div className="grid gap-2 rounded-[var(--radius-md)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-3">
-        <p className="text-sm font-bold text-[color:var(--surface-deep)]">
+        <p className="text-sm font-semibold text-[color:var(--ink)]">
           Cancel your booking?
         </p>
-        <p className="text-xs font-bold text-[color:var(--mauve)]">
+        <p className="text-xs font-medium text-[color:var(--slate)]">
           {cancelRefundLabel}
           <br />
-          Refunds take 3–5 business days to process.
+          Refunds take 3-5 business days to process.
         </p>
         <div className="grid grid-cols-2 gap-2">
           <button
@@ -261,10 +261,10 @@ export function EventRegistrationButton({
       <div className="grid gap-2">
         <div className="rounded-[var(--radius-md)] bg-[color:var(--lav-bg)] p-3 text-[13px] text-[color:var(--ink-soft)]">
           {offerExpired ? (
-            <>⏳ Your offer just expired - refresh to see your place in the queue.</>
+            <>Your offer just expired - refresh to see your place in the queue.</>
           ) : (
             <>
-              🎉 A seat opened up! Confirm your spot
+              A seat opened up! Confirm your spot
               {countdown ? (
                 <>
                   {" "}- <span className="tabular-nums font-semibold">{countdown}</span> left
@@ -334,11 +334,7 @@ export function EventRegistrationButton({
           type="button"
           onClick={register}
           disabled={state === "submitting"}
-          className={`rounded-xl border-2 border-[color:var(--line)] px-4 py-3 text-center text-sm font-bold hard-shadow-sm disabled:cursor-not-allowed disabled:opacity-70 ${
-            isWaitlist
-              ? "bg-[color:var(--peach)] text-[color:var(--surface-deep)] hover:bg-[color:var(--rose)]"
-              : "bg-[color:var(--rose)] text-[color:var(--surface-deep)] hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)]"
-          }`}
+          className="ck-btn ck-btn--md ck-btn--full ck-btn--primary"
         >
           {state === "submitting"
             ? isWaitlist
@@ -355,8 +351,8 @@ export function EventRegistrationButton({
       )}
       {message ? (
         <p
-          className={`text-xs font-bold ${
-            state === "error" ? "text-[color:var(--rose)]" : "text-[color:var(--mauve)]"
+          className={`text-xs font-medium ${
+            state === "error" ? "text-[color:var(--danger)]" : "text-[color:var(--slate)]"
           }`}
         >
           {message}

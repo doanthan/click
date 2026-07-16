@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import type { AdminMerchantRow } from "@/lib/event-repository";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { EmptyState } from "@/components/empty-state";
+import { Badge, type BadgeTone } from "@/components/ds";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -18,12 +19,12 @@ const dateFormatter = new Intl.DateTimeFormat("en-AU", {
   year: "numeric",
 });
 
-function statusTone(status: string) {
-  if (status === "approved") return "bg-[color:var(--peach)] text-[color:var(--surface-deep)]";
-  if (status === "rejected") return "bg-[color:var(--ink)] text-[color:var(--champagne)]";
-  if (status === "suspended") return "bg-[color:var(--rose)] text-[color:var(--surface-deep)]";
+function statusTone(status: string): BadgeTone {
+  if (status === "approved") return "sage";
+  if (status === "rejected") return "coral";
+  if (status === "suspended") return "neutral";
   // pending
-  return "bg-[color:var(--cream)] text-[color:var(--ink)]";
+  return "amber";
 }
 
 function MerchantActions({
@@ -88,7 +89,7 @@ function MerchantActions({
         aria-expanded={open}
         aria-label={`Actions for ${merchant.businessName}`}
         onClick={() => setOpen((value) => !value)}
-        className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] text-[color:var(--ink)] transition-colors hover:bg-[color:var(--cream)]"
+        className="flex h-8 w-8 items-center justify-center rounded-lg border border-[color:var(--mist)] bg-[color:var(--paper)] text-[color:var(--slate)] transition-colors hover:bg-[color:var(--lavender-100)] hover:text-[color:var(--ink)]"
       >
         <svg viewBox="0 0 20 20" className="h-4 w-4" fill="currentColor" aria-hidden="true">
           <circle cx="10" cy="4" r="1.6" />
@@ -99,13 +100,13 @@ function MerchantActions({
       {open ? (
         <div
           role="menu"
-          className="absolute right-0 top-10 z-20 w-56 rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-2 text-left hard-shadow-sm"
+          className="absolute right-0 top-10 z-20 w-56 rounded-xl bg-[color:var(--paper)] p-2 text-left shadow-[var(--shadow-md)]"
         >
           {UUID_RE.test(merchant.id) ? (
             <Link
               href={`/admin/merchants/${merchant.id}`}
               role="menuitem"
-              className="block rounded-lg px-3 py-2 text-xs font-bold text-[color:var(--ink)] transition-colors hover:bg-[color:var(--cream)]"
+              className="block rounded-lg px-3 py-2 text-[13px] font-medium text-[color:var(--ink)] transition-colors hover:bg-[color:var(--lavender-100)]"
             >
               View profile
             </Link>
@@ -115,7 +116,7 @@ function MerchantActions({
               type="button"
               role="menuitem"
               onClick={() => run("approved")}
-              className="block w-full rounded-lg px-3 py-2 text-left text-xs font-bold text-[color:var(--ink)] transition-colors hover:bg-[color:var(--peach)]"
+              className="block w-full rounded-lg px-3 py-2 text-left text-[13px] font-medium text-[color:var(--ink)] transition-colors hover:bg-[color:var(--lavender-100)]"
             >
               {status === "suspended" ? "Reinstate merchant" : "Approve merchant"}
             </button>
@@ -125,7 +126,7 @@ function MerchantActions({
               type="button"
               role="menuitem"
               onClick={() => run("suspended")}
-              className="block w-full rounded-lg px-3 py-2 text-left text-xs font-bold text-[color:var(--rose)] transition-colors hover:bg-[color:var(--rose)]/10"
+              className="block w-full rounded-lg px-3 py-2 text-left text-[13px] font-medium text-[color:var(--danger)] transition-colors hover:bg-[color:var(--danger)]/10"
             >
               Suspend merchant
             </button>
@@ -135,7 +136,7 @@ function MerchantActions({
               type="button"
               role="menuitem"
               onClick={() => run("rejected")}
-              className="block w-full rounded-lg px-3 py-2 text-left text-xs font-bold text-[color:var(--ink)] transition-colors hover:bg-[color:var(--cream)]"
+              className="block w-full rounded-lg px-3 py-2 text-left text-[13px] font-medium text-[color:var(--ink)] transition-colors hover:bg-[color:var(--lavender-100)]"
             >
               Reject merchant
             </button>
@@ -145,18 +146,18 @@ function MerchantActions({
               type="button"
               role="menuitem"
               onClick={() => runTrust(!merchant.autoApproveEvents)}
-              className="block w-full rounded-lg px-3 py-2 text-left text-xs font-bold text-[color:var(--ink)] transition-colors hover:bg-[color:var(--peach)]"
+              className="block w-full rounded-lg px-3 py-2 text-left text-[13px] font-medium text-[color:var(--ink)] transition-colors hover:bg-[color:var(--lavender-100)]"
             >
               {merchant.autoApproveEvents ? "Require event review" : "Trust merchant"}
             </button>
           ) : null}
           {canTrust && merchant.autoApproveEvents ? (
-            <p className="mt-1 px-3 py-1 text-[0.6rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]/80">
+            <p className="mt-1 px-3 py-1 text-[11px] font-semibold text-[color:var(--slate)]">
               Events auto-publish (no review)
             </p>
           ) : null}
           {status === "suspended" ? (
-            <p className="mt-1 px-3 py-1 text-[0.6rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]/80">
+            <p className="mt-1 px-3 py-1 text-[11px] font-semibold text-[color:var(--slate)]">
               Events hidden from Discover
             </p>
           ) : null}
@@ -283,7 +284,7 @@ export function AdminMerchantsTable({ merchants }: { merchants: AdminMerchantRow
           : merchant,
       ),
     );
-    toast.success(applied ? "Trusted — events auto-publish." : "Review required for future events.");
+    toast.success(applied ? "Trusted - events auto-publish." : "Review required for future events.");
     setBusyId(null);
   }
 
@@ -296,11 +297,7 @@ export function AdminMerchantsTable({ merchants }: { merchants: AdminMerchantRow
               key={option.value}
               type="button"
               onClick={() => setStatus(option.value)}
-              className={`rounded-full border-2 border-[color:var(--line)] px-4 py-1.5 text-xs font-bold uppercase tracking-wider hard-shadow-sm transition ${
-                status === option.value
-                  ? "bg-[color:var(--ink)] text-[color:var(--champagne)]"
-                  : "bg-[color:var(--champagne)] text-[color:var(--ink)] hover:bg-[color:var(--cream)]"
-              }`}
+              className={`ck-tag ck-tag--select ${status === option.value ? "ck-tag--selected" : ""}`}
             >
               {option.label} <span className="opacity-60">({option.count})</span>
             </button>
@@ -311,14 +308,14 @@ export function AdminMerchantsTable({ merchants }: { merchants: AdminMerchantRow
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search business, contact, owner…"
-          className="w-full rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-2 text-sm font-medium text-[color:var(--ink)] placeholder:text-[color:var(--mauve)]/70 sm:w-72"
+          className="w-full rounded-xl border border-[color:var(--mist)] bg-white px-4 py-2 text-sm text-[color:var(--ink)] placeholder:text-[color:var(--slate)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)] sm:w-72"
         />
       </div>
 
       {/* overflow-visible so the row's dropdown menu can render outside the
           card edge instead of being clipped by overflow-hidden. */}
-      <div className="mt-6 overflow-visible rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow-sm">
-        <div className="hidden grid-cols-[1.4fr_0.8fr_1fr_0.7fr_0.8fr_0.3fr] gap-4 bg-[color:var(--surface-deep)] px-5 py-3 text-xs font-black uppercase tracking-[0.14em] text-[color:var(--on-deep)] md:grid">
+      <div className="mt-6 overflow-visible rounded-2xl bg-[color:var(--paper)] shadow-[var(--shadow-sm)]">
+        <div className="hidden grid-cols-[1.4fr_0.8fr_1fr_0.7fr_0.8fr_0.3fr] gap-4 border-b border-[color:var(--line)] px-5 py-3 text-xs font-semibold text-[color:var(--slate)] md:grid">
           <span>Business</span>
           <span>Status</span>
           <span>Owner</span>
@@ -344,50 +341,48 @@ export function AdminMerchantsTable({ merchants }: { merchants: AdminMerchantRow
           filtered.map((merchant) => (
             <div
               key={merchant.id}
-              className="grid gap-3 border-b border-[color:var(--line)] px-5 py-4 text-sm font-medium text-[color:var(--mauve)] last:border-0 md:grid-cols-[1.4fr_0.8fr_1fr_0.7fr_0.8fr_0.3fr] md:items-center"
+              className="grid gap-3 border-b border-[color:var(--line)] px-5 py-4 text-sm text-[color:var(--slate)] last:border-0 md:grid-cols-[1.4fr_0.8fr_1fr_0.7fr_0.8fr_0.3fr] md:items-center"
             >
               <div>
                 {UUID_RE.test(merchant.id) ? (
                   <Link
                     href={`/admin/merchants/${merchant.id}`}
-                    className="font-black text-[color:var(--ink)] hover:underline"
+                    className="font-semibold text-[color:var(--ink)] hover:underline"
                   >
                     {merchant.businessName}
                   </Link>
                 ) : (
-                  <p className="font-black text-[color:var(--ink)]">
+                  <p className="font-semibold text-[color:var(--ink)]">
                     {merchant.businessName}
                   </p>
                 )}
-                <p className="text-xs font-medium">{merchant.contactEmail}</p>
+                <p className="text-xs">{merchant.contactEmail}</p>
                 {merchant.websiteUrl ? (
                   <a
                     href={merchant.websiteUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="text-[0.7rem] font-bold uppercase tracking-wider text-[color:var(--ink)] underline"
+                    className="text-xs text-[color:var(--purple)] underline"
                   >
                     {merchant.websiteUrl.replace(/^https?:\/\//, "")}
                   </a>
                 ) : null}
               </div>
               <div>
-                <span
-                  className={`inline-flex rounded-full border-2 border-[color:var(--line)] px-2.5 py-0.5 text-[0.65rem] font-black uppercase tracking-wider ${statusTone(merchant.verificationStatus)}`}
-                >
+                <Badge tone={statusTone(merchant.verificationStatus)}>
                   {merchant.verificationStatus}
-                </span>
+                </Badge>
                 {merchant.abn ? (
-                  <p className="mt-1 text-[0.65rem] font-bold uppercase tracking-wider text-[color:var(--mauve)]/80">
+                  <p className="mt-1 text-[11px] text-[color:var(--slate)]">
                     ABN {merchant.abn}
                   </p>
                 ) : null}
               </div>
               <div>
-                <p className="font-black text-[color:var(--ink)]">{merchant.ownerName}</p>
-                <p className="text-[0.7rem]">{merchant.ownerEmail}</p>
+                <p className="font-semibold text-[color:var(--ink)]">{merchant.ownerName}</p>
+                <p className="text-xs">{merchant.ownerEmail}</p>
               </div>
-              <span className="font-bold text-[color:var(--ink)]">{merchant.eventsHosted}</span>
+              <span className="font-semibold text-[color:var(--ink)]">{merchant.eventsHosted}</span>
               <span>{dateFormatter.format(new Date(merchant.createdAt))}</span>
               <MerchantActions
                 merchant={merchant}

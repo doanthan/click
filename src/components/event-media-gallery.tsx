@@ -19,8 +19,8 @@ type EventMediaGalleryProps = {
  * - Desktop (lg+): 4-col × 2-row mosaic — small | hero(2×2) | small | small,
  *                  with the second small column stacked below the first.
  *
- * Each tile is an independent card (rounded-3xl + 2px ink border + hard-shadow)
- * to match the Click brand instead of the tight-edged stock-photo mosaic.
+ * Each tile is an independent card (radius-lg + soft shadow) to match the
+ * Click DS instead of the tight-edged stock-photo mosaic.
  * Video tiles render a play affordance over the poster image; clicking opens
  * a fullscreen `<video controls autoplay>` in the lightbox.
  */
@@ -217,7 +217,7 @@ export function EventMediaGallery({ items, statusLabel, categoryLabel }: EventMe
       <button
         type="button"
         onClick={() => setLightboxIndex(0)}
-        className="absolute bottom-3 right-3 z-10 hidden items-center gap-2 rounded-full bg-[rgba(249,246,240,0.92)] px-4 py-2 text-[13px] font-semibold text-[color:var(--ink)] shadow-[var(--shadow-sm)] transition hover:bg-[color:var(--paper)] sm:inline-flex"
+        className="absolute bottom-3 right-3 z-10 hidden items-center gap-2 rounded-[var(--radius-md)] bg-[color-mix(in_srgb,var(--champagne)_92%,transparent)] px-4 py-2 text-[13px] font-semibold text-[color:var(--ink)] shadow-[var(--shadow-sm)] transition hover:bg-[color:var(--paper)] sm:inline-flex"
       >
         <GridIcon className="size-3.5" />
         View all {items.length}
@@ -267,7 +267,7 @@ function Tile({
       />
       {item.kind === "video" ? (
         <span className="absolute inset-0 flex items-center justify-center">
-          <span className="flex size-14 items-center justify-center rounded-full bg-[rgba(249,246,240,0.92)] shadow-[var(--shadow-sm)] transition group-hover:scale-110">
+          <span className="flex size-14 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--champagne)_92%,transparent)] shadow-[var(--shadow-sm)] transition group-hover:scale-110">
             <PlayIcon className="size-6 translate-x-0.5 text-[color:var(--ink)]" />
           </span>
         </span>
@@ -307,13 +307,13 @@ function Lightbox({
       aria-label="Event media viewer"
     >
       <div className="flex items-center justify-between px-4 py-3 text-[color:var(--on-deep)] sm:px-6">
-        <span className="text-xs font-semibold tracking-[0.12em] uppercase">
+        <span className="text-xs font-semibold tabular-nums">
           {index + 1} / {items.length}
         </span>
         <button
           type="button"
           onClick={onClose}
-          className="rounded-full border-2 border-[color:var(--on-deep)]/40 bg-[color:var(--ink-deep)] px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-[color:var(--on-deep)] transition hover:bg-[color:var(--on-deep)] hover:text-[color:var(--ink)]"
+          className="rounded-[var(--radius-md)] bg-[color-mix(in_srgb,var(--champagne)_14%,transparent)] px-4 py-1.5 text-[13px] font-semibold text-[color:var(--on-deep)] transition hover:bg-[color-mix(in_srgb,var(--champagne)_26%,transparent)]"
         >
           Close
         </button>
@@ -325,7 +325,7 @@ function Lightbox({
             type="button"
             onClick={onPrev}
             aria-label="Previous"
-            className="absolute left-2 z-10 flex size-11 items-center justify-center rounded-full border-2 border-[color:var(--on-deep)]/40 bg-[color:var(--ink-deep)] text-[color:var(--on-deep)] transition hover:bg-[color:var(--on-deep)] hover:text-[color:var(--ink)] sm:left-6"
+            className="absolute left-2 z-10 flex size-11 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--champagne)_14%,transparent)] text-[color:var(--on-deep)] transition hover:bg-[color-mix(in_srgb,var(--champagne)_26%,transparent)] sm:left-6"
           >
             <ChevronIcon className="size-5 rotate-180" />
           </button>
@@ -339,7 +339,7 @@ function Lightbox({
               autoPlay
               playsInline
               poster={item.posterUrl}
-              className="h-full w-full rounded-2xl border-2 border-[color:var(--on-deep)]/30 bg-black object-contain"
+              className="h-full w-full rounded-2xl bg-black object-contain"
             >
               <source src={item.url} />
               Your browser can&apos;t play this video.
@@ -351,7 +351,7 @@ function Lightbox({
               alt={item.alt}
               fill
               sizes="(min-width: 1024px) 960px, 100vw"
-              className="rounded-2xl border-2 border-[color:var(--on-deep)]/30 object-contain"
+              className="rounded-2xl object-contain"
               priority
             />
           )}
@@ -362,7 +362,7 @@ function Lightbox({
             type="button"
             onClick={onNext}
             aria-label="Next"
-            className="absolute right-2 z-10 flex size-11 items-center justify-center rounded-full border-2 border-[color:var(--on-deep)]/40 bg-[color:var(--ink-deep)] text-[color:var(--on-deep)] transition hover:bg-[color:var(--on-deep)] hover:text-[color:var(--ink)] sm:right-6"
+            className="absolute right-2 z-10 flex size-11 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--champagne)_14%,transparent)] text-[color:var(--on-deep)] transition hover:bg-[color-mix(in_srgb,var(--champagne)_26%,transparent)] sm:right-6"
           >
             <ChevronIcon className="size-5" />
           </button>

@@ -16,11 +16,11 @@ import { Skeleton } from "@/components/skeleton";
 // swap-in doesn't shift layout while mapbox-gl loads.
 function MapSkeleton() {
   return (
-    <div className="mt-6 overflow-hidden rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow-sm">
-      {/* Mirror the real map card's dark header strip so the swap-in doesn't shift. */}
-      <div className="flex items-center justify-between gap-3 border-b-2 border-[color:var(--line)] bg-[color:var(--surface-deep)] px-5 py-3">
-        <Skeleton deep className="h-3.5 w-40 rounded-full" />
-        <Skeleton deep className="h-6 w-24 rounded-full" />
+    <div className="mt-6 overflow-hidden rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)]">
+      {/* Mirror the real map card's header strip so the swap-in doesn't shift. */}
+      <div className="flex items-center justify-between gap-3 border-b border-[color:var(--line)] bg-[color:var(--paper)] px-5 py-3">
+        <Skeleton className="h-3.5 w-40 rounded-full" />
+        <Skeleton className="h-6 w-24 rounded-full" />
       </div>
       <Skeleton className="h-[32rem] w-full rounded-none" />
     </div>
@@ -130,9 +130,9 @@ const dateOrder: { value: DateFilter; label: string }[] = [
 ];
 
 function regionTone(region: Region) {
-  if (region === "Sydney") return "bg-[color:var(--peach)] text-[color:var(--surface-deep)]";
-  if (region === "Melbourne") return "bg-[color:var(--rose)] text-[color:var(--surface-deep)]";
-  return "bg-[color:var(--cream)] text-[color:var(--ink)]";
+  if (region === "Sydney") return "bg-[color:var(--lavender-100)] text-[color:var(--purple-700)]";
+  if (region === "Melbourne") return "bg-[color:var(--lavender-200)] text-[color:var(--purple-700)]";
+  return "bg-[color:var(--champagne-deep)] text-[color:var(--slate)]";
 }
 
 const dateFormatter = new Intl.DateTimeFormat("en-AU", {
@@ -161,12 +161,12 @@ const statusOptions: { value: StatusFilter; label: string }[] = [
 ];
 
 function statusTone(status: EventStatus) {
-  if (status === "Pending") return "bg-[color:var(--rose)] text-[color:var(--surface-deep)]";
-  if (status === "Live") return "bg-[color:var(--peach)] text-[color:var(--surface-deep)]";
-  if (status === "Featured") return "bg-[color:var(--ink)] text-[color:var(--champagne)]";
-  if (status === "Waitlist") return "bg-[color:var(--cream)] text-[color:var(--ink)]";
-  if (status === "Rejected") return "bg-[color:var(--mauve)] text-[color:var(--champagne)]";
-  return "bg-[color:var(--champagne)] text-[color:var(--ink)]";
+  if (status === "Pending") return "bg-[color:var(--amber)]/15 text-[color:var(--amber-ink)]";
+  if (status === "Live") return "bg-[color:var(--sage)]/15 text-[color:var(--sage-ink)]";
+  if (status === "Featured") return "bg-[color:var(--lavender-100)] text-[color:var(--purple-700)]";
+  if (status === "Waitlist") return "bg-[color:var(--amber)]/10 text-[color:var(--amber-ink)]";
+  if (status === "Rejected") return "bg-[color:var(--coral)]/12 text-[color:var(--coral-ink)]";
+  return "bg-[color:var(--champagne-deep)] text-[color:var(--slate)]";
 }
 
 export function AdminEventQueue({
@@ -534,17 +534,14 @@ export function AdminEventQueue({
     <div className="mt-10">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
-          <label
-            htmlFor="status-filter"
-            className="text-[0.65rem] font-black uppercase tracking-[0.18em] text-[color:var(--mauve)]"
-          >
+          <label htmlFor="status-filter" className="eyebrow">
             Status
           </label>
           <select
             id="status-filter"
             value={filter}
             onChange={(event) => setFilterAndReset(event.target.value as StatusFilter)}
-            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-[color:var(--ink)] hard-shadow-sm transition hover:bg-[color:var(--cream)]"
+            className="rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] px-4 py-1.5 text-sm text-[color:var(--ink)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)]"
           >
             {statusOptions.map((option) => (
               <option key={option.value} value={option.value}>
@@ -554,17 +551,17 @@ export function AdminEventQueue({
           </select>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-0.5 hard-shadow-sm">
+          <div className="flex rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] p-0.5">
             {(["table", "map"] as ViewMode[]).map((mode) => (
               <button
                 key={mode}
                 type="button"
                 onClick={() => setViewMode(mode)}
                 aria-pressed={view === mode}
-                className={`rounded-full px-3 py-1 text-[0.65rem] font-black uppercase tracking-wider transition ${
+                className={`rounded-[9px] px-3 py-1 text-xs font-semibold transition ${
                   view === mode
-                    ? "bg-[color:var(--ink)] text-[color:var(--champagne)]"
-                    : "text-[color:var(--ink)] hover:bg-[color:var(--cream)]"
+                    ? "bg-[color:var(--purple)] text-[color:var(--champagne)]"
+                    : "text-[color:var(--ink)] hover:bg-[color:var(--lavender-100)]"
                 }`}
               >
                 {mode === "table" ? "Table" : "Map"}
@@ -576,25 +573,20 @@ export function AdminEventQueue({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search title, host, suburb, category…"
-            className="w-full rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-2 text-sm font-medium text-[color:var(--ink)] placeholder:text-[color:var(--mauve)]/70 sm:w-72"
+            className="w-full rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] px-4 py-2 text-sm text-[color:var(--ink)] placeholder:text-[color:var(--slate)]/70 focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)] sm:w-72"
           />
         </div>
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <span className="text-[0.65rem] font-black uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-          When
-        </span>
+        <span className="eyebrow">When</span>
         {dateOrder.map((option) => (
           <button
             key={option.value}
             type="button"
             onClick={() => setDateAndReset(option.value)}
-            className={`rounded-full border-2 border-[color:var(--line)] px-3 py-1 text-[0.65rem] font-black uppercase tracking-wider hard-shadow-sm transition ${
-              dateFilter === option.value
-                ? "bg-[color:var(--ink)] text-[color:var(--champagne)]"
-                : "bg-[color:var(--champagne)] text-[color:var(--ink)] hover:bg-[color:var(--cream)]"
-            }`}
+            aria-pressed={dateFilter === option.value}
+            className={`ck-tag ck-tag--select ${dateFilter === option.value ? "ck-tag--selected" : ""}`}
           >
             {option.label}
           </button>
@@ -602,19 +594,14 @@ export function AdminEventQueue({
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <span className="text-[0.65rem] font-black uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-          Region
-        </span>
+        <span className="eyebrow">Region</span>
         {regionOrder.map((option) => (
           <button
             key={option}
             type="button"
             onClick={() => setRegionAndReset(option)}
-            className={`rounded-full border-2 border-[color:var(--line)] px-3 py-1 text-[0.65rem] font-black uppercase tracking-wider hard-shadow-sm transition ${
-              regionFilter === option
-                ? "bg-[color:var(--ink)] text-[color:var(--champagne)]"
-                : "bg-[color:var(--champagne)] text-[color:var(--ink)] hover:bg-[color:var(--cream)]"
-            }`}
+            aria-pressed={regionFilter === option}
+            className={`ck-tag ck-tag--select ${regionFilter === option ? "ck-tag--selected" : ""}`}
           >
             {option === "all" ? "All" : option}{" "}
             <span className="opacity-60">({regionCounts.get(option) ?? 0})</span>
@@ -626,9 +613,9 @@ export function AdminEventQueue({
         <AdminEventsMap events={sorted} />
       ) : (
         // overflow-visible so the row's 3-dot menu can render outside the card edge.
-        <div className="mt-6 overflow-visible rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow-sm">
+        <div className="mt-6 overflow-visible rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)]">
         {filtered.length > 0 ? (
-          <div className="hidden grid-cols-[1.2fr_0.7fr_0.7fr_0.85fr_0.85fr_0.6fr_0.4fr] gap-4 bg-[color:var(--surface-deep)] px-5 py-3 text-xs font-black uppercase tracking-[0.14em] text-[color:var(--on-deep)] md:grid">
+          <div className="hidden grid-cols-[1.2fr_0.7fr_0.7fr_0.85fr_0.85fr_0.6fr_0.4fr] gap-4 border-b border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-[color:var(--slate)] md:grid">
             <SortHeader label="Event"    sortKey="title"     activeKey={sortKey} dir={sortDir} onClick={toggleSort} />
             <SortHeader label="Status"   sortKey="status"    activeKey={sortKey} dir={sortDir} onClick={toggleSort} />
             <SortHeader label="Category" sortKey="category"  activeKey={sortKey} dir={sortDir} onClick={toggleSort} />
@@ -664,13 +651,13 @@ export function AdminEventQueue({
                 key={event.id}
                 className="border-b border-[color:var(--line)] last:border-0"
               >
-                <div className="grid gap-3 px-5 py-4 text-sm font-medium text-[color:var(--mauve)] md:grid-cols-[1.2fr_0.7fr_0.7fr_0.85fr_0.85fr_0.6fr_0.4fr] md:items-center">
+                <div className="grid gap-3 px-5 py-4 text-sm font-medium text-[color:var(--slate)] md:grid-cols-[1.2fr_0.7fr_0.7fr_0.85fr_0.85fr_0.6fr_0.4fr] md:items-center">
                   <div className="text-left">
                     <Link
                       href={`/events/${event.id}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 font-black text-[color:var(--ink)] underline-offset-2 hover:underline"
+                      className="inline-flex items-center gap-1.5 font-semibold text-[color:var(--ink)] underline-offset-2 hover:underline"
                       title="Open event in a new tab"
                     >
                       {event.title}
@@ -692,30 +679,30 @@ export function AdminEventQueue({
                       </svg>
                       <span className="sr-only">(opens in a new tab)</span>
                     </Link>
-                    <p className="text-xs font-medium text-[color:var(--mauve)]">
+                    <p className="text-xs font-medium text-[color:var(--slate)]">
                       Hosted by {event.host}
                     </p>
-                    <p className="mt-1 flex flex-wrap items-center gap-1.5 text-[0.65rem] font-black uppercase tracking-wider">
+                    <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs font-semibold">
                       <span
-                        className={`inline-flex rounded-full border-2 border-[color:var(--line)] px-2 py-0.5 ${regionTone(event.region)}`}
+                        className={`inline-flex rounded-lg px-2 py-0.5 ${regionTone(event.region)}`}
                       >
                         {event.region}
                       </span>
                       {event.suburb ? (
-                        <span className="text-[color:var(--mauve)]">· {event.suburb}</span>
+                        <span className="font-medium text-[color:var(--slate)]">· {event.suburb}</span>
                       ) : null}
                     </p>
                   </div>
                   <span className="flex flex-col items-start gap-1">
                     <span
-                      className={`inline-flex rounded-full border-2 border-[color:var(--line)] px-2.5 py-0.5 text-[0.65rem] font-black uppercase tracking-wider ${statusTone(event.status)}`}
+                      className={`inline-flex rounded-lg px-2.5 py-0.5 text-xs font-semibold ${statusTone(event.status)}`}
                     >
                       {event.status}
                     </span>
                     {event.payoutsNotConnected ? (
                       <span
                         title="This event charges a price but the merchant hasn't connected Stripe payouts. Approving publishes an event no one can pay for until they finish payout setup."
-                        className="inline-flex items-center gap-1 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-2 py-0.5 text-[0.6rem] font-black uppercase tracking-wider text-[color:var(--surface-deep)]"
+                        className="inline-flex items-center gap-1 rounded-lg bg-[color:var(--amber)]/15 px-2 py-0.5 text-[11px] font-semibold text-[color:var(--amber-ink)]"
                       >
                         ⚠ No payouts
                       </span>
@@ -724,7 +711,7 @@ export function AdminEventQueue({
                   <span>{event.category}</span>
                   <span>{startsLabel}</span>
                   <span>{createdLabel}</span>
-                  <span className="font-bold text-[color:var(--ink)]">
+                  <span className="font-semibold text-[color:var(--ink)]">
                     {event.attendees}/{event.capacity}
                   </span>
                   <EventActions
@@ -737,13 +724,11 @@ export function AdminEventQueue({
                   />
                 </div>
                 {event.pendingAddress ? (
-                  <div className="flex flex-col gap-3 border-t-2 border-[color:var(--line)] bg-[color:var(--peach)]/40 px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="text-xs font-bold normal-case tracking-normal text-[color:var(--ink)]">
-                      <p className="font-mono text-[0.6rem] font-black uppercase tracking-[0.18em] text-[color:var(--rose)]">
-                        Address change awaiting review
-                      </p>
+                  <div className="flex flex-col gap-3 border-t border-[color:var(--line)] bg-[color:var(--lavender-100)] px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="text-xs font-medium text-[color:var(--ink)]">
+                      <p className="eyebrow">Address change awaiting review</p>
                       <p className="mt-1">
-                        <span className="text-[color:var(--mauve)] line-through">
+                        <span className="text-[color:var(--slate)] line-through">
                           {event.address ?? "No address set"}
                         </span>{" "}
                         → <span className="text-[color:var(--ink)]">{event.pendingAddress}</span>
@@ -754,7 +739,7 @@ export function AdminEventQueue({
                         type="button"
                         onClick={() => decideAddress(event.id, "approve")}
                         disabled={busyId === event.id}
-                        className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-3 py-1.5 text-xs font-black uppercase tracking-wider text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)] disabled:cursor-not-allowed disabled:opacity-50"
+                        className="ck-btn ck-btn--primary ck-btn--sm"
                       >
                         Approve move
                       </button>
@@ -762,7 +747,7 @@ export function AdminEventQueue({
                         type="button"
                         onClick={() => decideAddress(event.id, "reject")}
                         disabled={busyId === event.id}
-                        className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-1.5 text-xs font-black uppercase tracking-wider text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--cream)] disabled:cursor-not-allowed disabled:opacity-50"
+                        className="ck-btn ck-btn--secondary ck-btn--sm"
                       >
                         Decline
                       </button>
@@ -770,36 +755,36 @@ export function AdminEventQueue({
                   </div>
                 ) : null}
                 {isExpanded ? (
-                  <dl className="grid gap-3 border-t border-dashed border-[color:var(--line)] bg-[color:var(--cream)]/40 px-5 py-4 text-xs font-bold uppercase tracking-wider text-[color:var(--mauve)] sm:grid-cols-4">
+                  <dl className="grid gap-3 border-t border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-4 text-xs text-[color:var(--slate)] sm:grid-cols-4">
                     <div>
-                      <dt className="opacity-60">Slug</dt>
-                      <dd className="mt-1 font-mono text-[color:var(--ink)]">{event.id}</dd>
+                      <dt className="font-semibold text-[color:var(--slate)]">Slug</dt>
+                      <dd className="mt-1 text-[color:var(--ink)]">{event.id}</dd>
                     </div>
                     <div>
-                      <dt className="opacity-60">Booking model</dt>
+                      <dt className="font-semibold text-[color:var(--slate)]">Booking model</dt>
                       <dd className="mt-1 text-[color:var(--ink)]">{event.booking}</dd>
                     </div>
                     <div>
-                      <dt className="opacity-60">Capacity</dt>
+                      <dt className="font-semibold text-[color:var(--slate)]">Capacity</dt>
                       <dd className="mt-1 text-[color:var(--ink)]">
                         {event.capacity} seats · {event.attendees} confirmed
                       </dd>
                     </div>
                     <div>
-                      <dt className="opacity-60">Starts</dt>
+                      <dt className="font-semibold text-[color:var(--slate)]">Starts</dt>
                       <dd className="mt-1 text-[color:var(--ink)]">{startsLabel}</dd>
                     </div>
                     <div className="sm:col-span-4">
-                      <dt className="opacity-60">Where</dt>
-                      <dd className="mt-1 normal-case tracking-normal text-[color:var(--ink)]">
-                        <span className="font-black uppercase tracking-wider">{event.region}</span>
+                      <dt className="font-semibold text-[color:var(--slate)]">Where</dt>
+                      <dd className="mt-1 text-[color:var(--ink)]">
+                        <span className="font-semibold">{event.region}</span>
                         {event.suburb ? ` · ${event.suburb}` : ""}
                         {event.locationName ? ` · ${event.locationName}` : ""}
                       </dd>
                     </div>
                     <div className="sm:col-span-4">
-                      <dt className="opacity-60">Interest tags</dt>
-                      <dd className="mt-1.5 normal-case tracking-normal text-[color:var(--ink)]">
+                      <dt className="font-semibold text-[color:var(--slate)]">Interest tags</dt>
+                      <dd className="mt-1.5 text-[color:var(--ink)]">
                         <EventTagEditor
                           eventTags={event.tags}
                           options={tagOptions}
@@ -817,9 +802,9 @@ export function AdminEventQueue({
         {filtered.length > PAGE_SIZE ? (
           <nav
             aria-label="Pagination"
-            className="flex flex-wrap items-center justify-between gap-3 border-t-2 border-[color:var(--line)] bg-[color:var(--cream)]/40 px-5 py-3"
+            className="flex flex-wrap items-center justify-between gap-3 border-t border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-3"
           >
-            <p className="text-[0.7rem] font-black uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+            <p className="text-xs font-medium text-[color:var(--slate)]">
               Showing {pageStart}–{pageEnd} of {filtered.length}
             </p>
             <div className="flex items-center gap-2">
@@ -827,19 +812,19 @@ export function AdminEventQueue({
                 type="button"
                 onClick={() => goToPage(Math.max(1, safePage - 1))}
                 disabled={safePage <= 1}
-                className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-1.5 text-xs font-black uppercase tracking-wider text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--cream)] disabled:cursor-not-allowed disabled:opacity-40"
+                className="ck-btn ck-btn--secondary ck-btn--sm"
                 aria-label="Previous page"
               >
                 ← Prev
               </button>
-              <span className="font-mono text-xs font-black text-[color:var(--ink)]">
+              <span className="text-xs font-semibold tabular-nums text-[color:var(--ink)]">
                 {safePage} / {pageCount}
               </span>
               <button
                 type="button"
                 onClick={() => goToPage(Math.min(pageCount, safePage + 1))}
                 disabled={safePage >= pageCount}
-                className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-1.5 text-xs font-black uppercase tracking-wider text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--cream)] disabled:cursor-not-allowed disabled:opacity-40"
+                className="ck-btn ck-btn--secondary ck-btn--sm"
                 aria-label="Next page"
               >
                 Next →
@@ -928,7 +913,7 @@ function EventActions({
         aria-expanded={open}
         aria-label={`Actions for ${event.title}`}
         onClick={() => setOpen((v) => !v)}
-        className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] text-[color:var(--ink)] transition-colors hover:bg-[color:var(--cream)]"
+        className="flex h-8 w-8 items-center justify-center rounded-lg border border-[color:var(--mist)] bg-[color:var(--paper)] text-[color:var(--ink)] transition-colors hover:bg-[color:var(--lavender-100)]"
       >
         <svg viewBox="0 0 20 20" className="h-4 w-4" fill="currentColor" aria-hidden="true">
           <circle cx="10" cy="4" r="1.6" />
@@ -939,18 +924,18 @@ function EventActions({
       {open ? (
         <div
           role="menu"
-          className="absolute right-0 top-10 z-20 w-56 rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-2 text-left hard-shadow-sm"
+          className="absolute right-0 top-10 z-20 w-56 rounded-xl bg-[color:var(--paper)] p-2 text-left shadow-[var(--shadow-md)]"
         >
           {event.status === "Pending" ? (
             <>
               {event.payoutsNotConnected ? (
-                <p className="mb-1 rounded-lg bg-[color:var(--peach)] px-3 py-2 text-[0.65rem] font-bold leading-snug text-[color:var(--surface-deep)]">
+                <p className="mb-1 rounded-lg bg-[color:var(--amber)]/15 px-3 py-2 text-[0.65rem] font-medium leading-snug text-[color:var(--amber-ink)]">
                   ⚠ Paid event, but the merchant hasn&rsquo;t connected payouts.
                   Approving publishes it; no one can pay until they finish setup.
                 </p>
               ) : null}
               {!event.approvable ? (
-                <p className="mb-1 rounded-lg bg-[color:var(--cream)] px-3 py-2 text-[0.65rem] font-bold leading-snug text-[color:var(--mauve)]">
+                <p className="mb-1 rounded-lg bg-[color:var(--champagne)] px-3 py-2 text-[0.65rem] font-medium leading-snug text-[color:var(--slate)]">
                   This event has already passed, so it can no longer be approved.
                   Only upcoming events can go live.
                 </p>
@@ -965,7 +950,7 @@ function EventActions({
                     ? undefined
                     : "This event has already passed and can no longer be approved."
                 }
-                className="block w-full rounded-lg px-3 py-2 text-left text-xs font-bold text-[color:var(--ink)] transition-colors hover:bg-[color:var(--peach)] disabled:cursor-not-allowed disabled:opacity-60"
+                className="block w-full rounded-lg px-3 py-2 text-left text-[13px] font-medium text-[color:var(--ink)] transition-colors hover:bg-[color:var(--lavender-100)] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isBusy ? "Approving…" : "Approve event"}
               </button>
@@ -974,7 +959,7 @@ function EventActions({
                 role="menuitem"
                 onClick={() => run(onReject)}
                 disabled={isBusy}
-                className="block w-full rounded-lg px-3 py-2 text-left text-xs font-bold text-[color:var(--rose)] transition-colors hover:bg-[color:var(--rose)] hover:text-[color:var(--surface-deep)] disabled:opacity-60"
+                className="block w-full rounded-lg px-3 py-2 text-left text-[13px] font-medium text-[color:var(--danger)] transition-colors hover:bg-[color:var(--danger)]/10 disabled:opacity-60"
               >
                 {isBusy ? "Working…" : "Reject event"}
               </button>
@@ -984,7 +969,7 @@ function EventActions({
             type="button"
             role="menuitem"
             onClick={() => run(onToggleExpand)}
-            className="block w-full rounded-lg px-3 py-2 text-left text-xs font-bold text-[color:var(--ink)] transition-colors hover:bg-[color:var(--cream)]"
+            className="block w-full rounded-lg px-3 py-2 text-left text-[13px] font-medium text-[color:var(--ink)] transition-colors hover:bg-[color:var(--lavender-100)]"
           >
             {isExpanded ? "Hide details" : "Inspect details"}
           </button>
@@ -994,7 +979,7 @@ function EventActions({
             rel="noopener noreferrer"
             role="menuitem"
             onClick={() => setOpen(false)}
-            className="block rounded-lg px-3 py-2 text-xs font-bold text-[color:var(--ink)] transition-colors hover:bg-[color:var(--cream)]"
+            className="block rounded-lg px-3 py-2 text-[13px] font-medium text-[color:var(--ink)] transition-colors hover:bg-[color:var(--lavender-100)]"
           >
             Open in new tab ↗
           </Link>
@@ -1026,8 +1011,8 @@ function SortHeader({
       type="button"
       onClick={() => onClick(sortKey)}
       aria-sort={active ? (dir === "asc" ? "ascending" : "descending") : "none"}
-      className={`flex items-center gap-1 text-left uppercase tracking-[0.14em] transition hover:text-[color:var(--champagne)] ${
-        active ? "text-[color:var(--champagne)]" : "text-[color:var(--on-deep)]"
+      className={`flex items-center gap-1 text-left uppercase tracking-[0.1em] transition hover:text-[color:var(--ink)] ${
+        active ? "text-[color:var(--ink)]" : "text-[color:var(--slate)]"
       }`}
     >
       <span>{label}</span>
@@ -1105,17 +1090,17 @@ function EventTagEditor({
     <div className="space-y-2">
       <ul className="flex flex-wrap items-center gap-1.5">
         {selected.length === 0 ? (
-          <li className="text-xs font-semibold text-[color:var(--mauve)]">No interest tags yet.</li>
+          <li className="text-xs font-medium text-[color:var(--slate)]">No interest tags yet.</li>
         ) : (
           selected.map((tag) => (
             <li key={tag.slug}>
-              <span className="inline-flex items-center gap-1 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-2.5 py-0.5 text-xs font-bold text-[color:var(--surface-deep)]">
+              <span className="ck-tag">
                 {tag.label}
                 <button
                   type="button"
                   onClick={() => remove(tag.slug)}
                   aria-label={`Remove ${tag.label}`}
-                  className="leading-none hover:text-[color:var(--ink)]"
+                  className="leading-none text-[color:var(--slate)] hover:text-[color:var(--ink)]"
                 >
                   ×
                 </button>
@@ -1127,7 +1112,7 @@ function EventTagEditor({
           <button
             type="button"
             onClick={() => setAdding((v) => !v)}
-            className="rounded-full border-2 border-dashed border-[color:var(--line)] bg-[color:var(--champagne)] px-2.5 py-0.5 text-xs font-bold text-[color:var(--ink)] hover:bg-[color:var(--cream)]"
+            className="ck-tag ck-tag--select border-dashed"
           >
             {adding ? "Done adding" : "+ Add tag"}
           </button>
@@ -1135,17 +1120,17 @@ function EventTagEditor({
       </ul>
 
       {adding ? (
-        <div className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-2">
+        <div className="rounded-xl border border-[color:var(--line)] bg-[color:var(--paper)] p-2">
           <input
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search interest tags…"
-            className="mb-2 w-full rounded-lg border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-2.5 py-1.5 text-xs font-semibold text-[color:var(--ink)] focus:outline-none focus:ring-2 focus:ring-[color:var(--rose)]"
+            className="mb-2 w-full rounded-lg border border-[color:var(--mist)] bg-[color:var(--paper)] px-2.5 py-1.5 text-xs text-[color:var(--ink)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)]"
           />
           <div className="flex max-h-40 flex-wrap gap-1.5 overflow-y-auto">
             {available.length === 0 ? (
-              <span className="text-xs font-semibold text-[color:var(--mauve)]">
+              <span className="text-xs font-medium text-[color:var(--slate)]">
                 No matching tags.
               </span>
             ) : (
@@ -1154,7 +1139,7 @@ function EventTagEditor({
                   key={tag.slug}
                   type="button"
                   onClick={() => add(tag)}
-                  className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-2.5 py-0.5 text-xs font-bold text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+                  className="ck-tag ck-tag--select"
                 >
                   + {tag.label}
                 </button>
@@ -1170,7 +1155,7 @@ function EventTagEditor({
             type="button"
             onClick={save}
             disabled={disabled || saving}
-            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-3 py-1 text-xs font-black uppercase tracking-wider text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)] disabled:cursor-not-allowed disabled:opacity-50"
+            className="ck-btn ck-btn--primary ck-btn--sm"
           >
             {saving ? "Saving…" : "Save tags"}
           </button>
@@ -1178,7 +1163,7 @@ function EventTagEditor({
             type="button"
             onClick={() => setSelected(eventTags)}
             disabled={saving}
-            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-1 text-xs font-black uppercase tracking-wider text-[color:var(--ink)] hover:bg-[color:var(--cream)]"
+            className="ck-btn ck-btn--ghost ck-btn--sm"
           >
             Reset
           </button>

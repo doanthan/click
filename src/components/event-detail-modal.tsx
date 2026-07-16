@@ -177,8 +177,8 @@ export function EventDetailModal({
           }}
         >
           <div className="absolute inset-0 bg-black/50" />
-          <div className="relative my-auto flex max-h-[calc(100dvh-2rem)] w-full max-w-3xl flex-col overflow-hidden rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow">
-            <div className="relative h-52 w-full shrink-0 overflow-hidden border-b-2 border-[color:var(--line)] sm:h-72">
+          <div className="relative my-auto flex max-h-[calc(100dvh-2rem)] w-full max-w-3xl flex-col overflow-hidden rounded-[var(--radius-xl)] bg-[color:var(--paper)] shadow-[var(--shadow-lg)]">
+            <div className="relative h-52 w-full shrink-0 overflow-hidden sm:h-72">
               <Image
                 src={data.image}
                 alt={data.imageAlt}
@@ -187,31 +187,31 @@ export function EventDetailModal({
                 className="object-cover"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-[color:var(--ink)]/40 via-transparent to-transparent" />
-              <span className="absolute left-4 top-4 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-3 py-1.5 text-[0.68rem] font-bold uppercase tracking-wider text-[color:var(--surface-deep)] hard-shadow-sm">
+              <span className="absolute left-4 top-4 rounded-lg bg-[color:var(--paper)] px-2.5 py-1.5 text-[12px] font-semibold text-[color:var(--ink)] shadow-[var(--shadow-xs)]">
                 {data.status}
               </span>
               <button
                 type="button"
                 aria-label="Close"
                 onClick={() => setOpen(false)}
-                className="absolute right-4 top-4 grid size-9 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+                className="absolute right-4 top-4 grid size-9 place-items-center rounded-lg bg-[color:var(--paper)] text-[color:var(--ink)] shadow-[var(--shadow-sm)] hover:bg-[color:var(--lavender-100)]"
               >
                 ✕
               </button>
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 sm:p-8">
-              <p className="font-mono text-xs font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+              <p className="eyebrow">
                 {data.date} · {data.time} · {data.category}
                 {loading ? " · refreshing…" : ""}
               </p>
               <h2
                 id="event-modal-title"
-                className="font-display mt-2 text-3xl font-bold leading-tight tracking-[-0.025em] sm:text-4xl"
+                className="font-display mt-2 text-3xl font-semibold leading-tight tracking-[-0.025em] text-[color:var(--ink)] sm:text-4xl"
               >
                 {data.title}
               </h2>
-              <p className="mt-2 text-sm font-semibold text-[color:var(--mauve)]">
+              <p className="mt-2 text-sm font-medium text-[color:var(--slate)]">
                 Hosted by {data.host} <span className="opacity-50">·</span> {data.group}
               </p>
 
@@ -220,11 +220,9 @@ export function EventDetailModal({
               </p>
 
               {data.relationshipGoal ? (
-                <div className="mt-4 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-4">
-                  <p className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-                    Why this event ✷
-                  </p>
-                  <p className="mt-1 text-sm font-bold leading-6">{data.relationshipGoal}</p>
+                <div className="mt-4 rounded-2xl bg-[color:var(--lav-bg)] p-4">
+                  <p className="eyebrow">Why this event</p>
+                  <p className="mt-1 text-sm font-medium leading-6 text-[color:var(--ink)]">{data.relationshipGoal}</p>
                 </div>
               ) : null}
 
@@ -240,45 +238,41 @@ export function EventDetailModal({
 
               <div className="mt-5 grid gap-4 sm:grid-cols-2">
                 <div>
-                  <p className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-                    Location
-                  </p>
+                  <p className="eyebrow">Location</p>
                   {isLockedEvent ? (
-                    <p className="mt-1 text-sm font-bold leading-6">
-                      🔒 {data.suburb}. Venue revealed after RSVP.
+                    <p className="mt-1 text-sm font-semibold leading-6 text-[color:var(--ink)]">
+                      {data.suburb}. Venue revealed after RSVP.
                     </p>
                   ) : (
                     <>
-                      <p className="mt-1 text-sm font-bold leading-6">{data.location}</p>
+                      <p className="mt-1 text-sm font-semibold leading-6 text-[color:var(--ink)]">{data.location}</p>
                       {data.address ? (
-                        <p className="text-sm font-medium text-[color:var(--mauve)]">
+                        <p className="text-sm font-medium text-[color:var(--slate)]">
                           {data.address}
                         </p>
                       ) : null}
-                      <p className="text-sm font-medium text-[color:var(--mauve)]">
+                      <p className="text-sm font-medium text-[color:var(--slate)]">
                         {data.suburb}
                       </p>
                     </>
                   )}
                 </div>
                 <div>
-                  <p className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-                    Price
-                  </p>
-                  <p className="font-display mt-1 text-2xl font-semibold leading-tight tracking-[-0.025em]">
+                  <p className="eyebrow">Price</p>
+                  <p className="font-display mt-1 text-2xl font-semibold leading-tight tracking-[-0.025em] text-[color:var(--ink)]">
                     {data.price}
                   </p>
                 </div>
               </div>
 
               <div className="mt-5">
-                <div className="flex justify-between text-xs font-bold text-[color:var(--mauve)]">
+                <div className="flex justify-between text-[12.5px] font-semibold text-[color:var(--slate)]">
                   <span>Seats</span>
                   <span>{isFull ? "Full" : `${seatsLeft} of ${data.capacity} left`}</span>
                 </div>
-                <div className="mt-2 h-2 overflow-hidden rounded-full border border-[color:var(--line)] bg-[color:var(--champagne)]">
+                <div className="mt-2 h-2 overflow-hidden rounded-full bg-[color:var(--mist)]">
                   <div
-                    className={`h-full rounded-full ${isFull ? "bg-[color:var(--ink)]" : "bg-[color:var(--rose)]"}`}
+                    className={`h-full rounded-full ${isFull ? "bg-[color:var(--ink)]" : "bg-[color:var(--purple)]"}`}
                     style={{ width: `${fullness}%` }}
                   />
                 </div>
@@ -306,7 +300,7 @@ export function EventDetailModal({
 
                 <Link
                   href={`/events/${data.id}`}
-                  className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 text-center text-sm font-bold text-[color:var(--ink)] hover:bg-[color:var(--peach)] hover:text-[color:var(--surface-deep)]"
+                  className="ck-btn ck-btn--md ck-btn--full ck-btn--secondary"
                 >
                   View full page
                 </Link>

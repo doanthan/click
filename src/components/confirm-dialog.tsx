@@ -6,11 +6,11 @@ import { createPortal } from "react-dom";
 /**
  * Branded replacement for window.confirm / window.prompt.
  *
- * Why: native dialogs are an off-brand, jarring break in the warm-editorial
- * surface and can't carry a reason field cleanly. This is a controlled modal —
- * drive it with local state — that covers both a plain confirm and a "prompt"
- * (reject reason) in one component, styled on the not-found.tsx vocabulary
- * (champagne card, border-2 border-line, hard-shadow-lg, sticker header).
+ * Why: native dialogs are an off-brand, jarring break in the warm surface and
+ * can't carry a reason field cleanly. This is a controlled modal - drive it
+ * with local state - that covers both a plain confirm and a "prompt" (reject
+ * reason) in one component, styled on the Click DS (white card, soft shadow,
+ * eyebrow header, ck-btn actions).
  *
  * Usage (confirm):
  *   const [open, setOpen] = useState(false);
@@ -42,7 +42,7 @@ type ConfirmDialogProps = {
   tone?: Tone;
   /** Disables the buttons + shows a working state (e.g. during the await). */
   busy?: boolean;
-  /** Small sticker label in the header; defaults from tone. */
+  /** Small eyebrow label in the header; defaults from tone. */
   badge?: string;
   /** When set, renders an input/textarea and passes its value to onConfirm. */
   promptLabel?: string;
@@ -154,12 +154,9 @@ function ConfirmDialogBody({
 
   const headerBadge = badge ?? (tone === "peach" ? "Heads up" : "Confirm");
 
-  const confirmClasses =
-    tone === "rose"
-      ? "bg-[color:var(--rose)] text-white hover:bg-[color:var(--ink)]"
-      : tone === "peach"
-        ? "bg-[color:var(--peach)] text-[color:var(--surface-deep)] hover:brightness-95"
-        : "bg-[color:var(--surface-deep)] text-[color:var(--on-deep)] hover:bg-black";
+  // rose = destructive -> danger red; ink/peach = neutral/affirmative -> the
+  // one Deep Purple primary. Status colours never land on a CTA.
+  const confirmClasses = tone === "rose" ? "ck-btn--danger" : "ck-btn--primary";
 
   return createPortal(
     <div
@@ -179,12 +176,9 @@ function ConfirmDialogBody({
       />
       <div
         ref={cardRef}
-        className="step-enter-fwd relative z-10 w-full max-w-md rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-6 hard-shadow-lg sm:p-7"
+        className="step-enter-fwd relative z-10 w-full max-w-md rounded-[20px] bg-[color:var(--paper)] p-6 shadow-[var(--shadow-lg)] sm:p-7"
       >
-        <span className={`sticker ${tone === "peach" ? "sticker--peach" : "sticker--rose"} inline-flex`}>
-          <span className="size-2 rounded-full bg-current opacity-80" />
-          {headerBadge}
-        </span>
+        <span className="eyebrow">{headerBadge}</span>
         <h2
           id={titleId}
           className="font-display mt-4 text-2xl font-semibold leading-tight tracking-[-0.025em] text-[color:var(--ink)] sm:text-3xl"
@@ -199,7 +193,7 @@ function ConfirmDialogBody({
 
         {promptLabel ? (
           <label className="mt-5 block">
-            <span className="font-condensed text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+            <span className="text-[12.5px] font-semibold text-[color:var(--slate)]">
               {promptLabel}
             </span>
             {promptMultiline ? (
@@ -212,7 +206,7 @@ function ConfirmDialogBody({
                 placeholder={promptPlaceholder}
                 rows={3}
                 disabled={busy}
-                className="mt-2 w-full resize-none rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-3 text-sm font-medium leading-6 text-[color:var(--ink)] placeholder:text-[color:var(--mauve)]/60 disabled:opacity-60"
+                className="mt-2 w-full resize-none rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] px-4 py-3 text-base leading-6 text-[color:var(--ink)] placeholder:text-[color:var(--ink-faint)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)] disabled:opacity-60"
               />
             ) : (
               <input
@@ -224,7 +218,7 @@ function ConfirmDialogBody({
                 placeholder={promptPlaceholder}
                 disabled={busy}
                 onKeyDown={(e) => e.key === "Enter" && submit()}
-                className="mt-2 w-full rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-3 text-sm font-medium text-[color:var(--ink)] placeholder:text-[color:var(--mauve)]/60 disabled:opacity-60"
+                className="mt-2 w-full rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] px-4 py-3 text-base text-[color:var(--ink)] placeholder:text-[color:var(--ink-faint)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)] disabled:opacity-60"
               />
             )}
           </label>
@@ -242,7 +236,7 @@ function ConfirmDialogBody({
             type="button"
             onClick={() => !busy && onCancel()}
             disabled={busy}
-            className="rounded-full border-2 border-[color:var(--line-strong)] bg-transparent px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--ink)] transition hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)] active:translate-y-px disabled:opacity-50"
+            className="ck-btn ck-btn--secondary ck-btn--md"
           >
             {cancelLabel}
           </button>
@@ -250,7 +244,7 @@ function ConfirmDialogBody({
             type="button"
             onClick={submit}
             disabled={confirmDisabled}
-            className={`rounded-full border-2 border-transparent px-5 py-2.5 text-sm font-bold uppercase tracking-wide transition hard-shadow-sm active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50 ${confirmClasses}`}
+            className={`ck-btn ck-btn--md ${confirmClasses}`}
           >
             {busy ? "Working…" : confirmLabel}
           </button>

@@ -17,6 +17,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { toast } from "sonner";
+import { Badge } from "./ds";
 import { MapboxAutocomplete, type MapboxPlace } from "./mapbox-autocomplete";
 import { toTitleCase } from "@/lib/text-format";
 import { EVENT_CREATE_STORAGE_KEY } from "@/lib/event-create-storage";
@@ -578,7 +579,7 @@ export function WizardShell({
   }
 
   return (
-    <div className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] hard-shadow-sm">
+    <div className="rounded-2xl bg-[color:var(--paper)] shadow-[var(--shadow-sm)]">
       <StepIndicator current={step} />
 
       <div className="space-y-5 p-6">
@@ -589,7 +590,7 @@ export function WizardShell({
             ref={errorRef}
             tabIndex={-1}
             role="alert"
-            className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-4 py-3 text-sm font-bold text-[color:var(--surface-deep)] outline-none"
+            className="rounded-xl bg-[color:var(--danger)]/10 px-4 py-3 text-sm font-semibold text-[color:var(--danger)] outline-none"
           >
             {stepError}
           </p>
@@ -600,7 +601,7 @@ export function WizardShell({
             type="button"
             onClick={goBack}
             disabled={step === 0 || submitting}
-            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)] disabled:opacity-50 disabled:cursor-not-allowed"
+            className="ck-btn ck-btn--secondary ck-btn--md"
           >
             ← Back
           </button>
@@ -609,7 +610,7 @@ export function WizardShell({
               type="button"
               onClick={submit}
               disabled={submitting}
-              className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-6 py-3 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)] disabled:opacity-60 disabled:cursor-not-allowed"
+              className="ck-btn ck-btn--primary ck-btn--md"
             >
               {submitting ? "Submitting…" : "Submit for review"}
             </button>
@@ -618,7 +619,7 @@ export function WizardShell({
               type="button"
               onClick={goNext}
               disabled={uploading}
-              className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-6 py-3 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)] disabled:opacity-60 disabled:cursor-not-allowed"
+              className="ck-btn ck-btn--primary ck-btn--md"
             >
               {uploading ? "Uploading…" : "Next →"}
             </button>
@@ -636,29 +637,39 @@ function StepIndicator({ current }: { current: StepIndex }) {
   // and rebounces them to the offending step if any are still incomplete.
   // The current step links to itself (idempotent) just to keep the markup
   // uniform; aria-current marks it for screen readers.
+  // Visual vocabulary matches the merchant-console WizardStepper: completed
+  // steps sage with a check, current step Deep Purple, upcoming a quiet outline.
   return (
-    <ol className="flex flex-wrap items-center gap-2 border-b-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-4">
+    <ol className="flex flex-wrap items-center gap-3 border-b border-[color:var(--mist)] px-5 py-4">
       {STEP_TITLES.map((title, idx) => {
         const active = idx === current;
         const done = idx < current;
-        const className = `flex cursor-pointer items-center gap-2 rounded-full border-2 border-[color:var(--line)] px-3 py-1.5 text-xs font-bold uppercase tracking-wide hard-shadow-sm transition-colors hover:bg-[color:var(--rose)] hover:text-[color:var(--surface-deep)] ${
-          active
-            ? "bg-[color:var(--rose)] text-[color:var(--surface-deep)]"
-            : done
-              ? "bg-[color:var(--peach)] text-[color:var(--surface-deep)]"
-              : "bg-[color:var(--cream)] text-[color:var(--mauve)]"
-        }`;
         return (
           <li key={title}>
             <Link
               href={STEP_PATHS[idx]}
               aria-label={`Go to ${title}`}
               aria-current={active ? "step" : undefined}
-              className={className}
+              className="inline-flex items-center gap-2 rounded-full transition-opacity hover:opacity-75 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--purple)]"
             >
-              <span className="font-mono">{idx + 1}</span>
-              {title}
-              {done ? <span aria-hidden>✓</span> : null}
+              <span
+                className={`inline-flex size-6 flex-none items-center justify-center rounded-full text-[12px] font-semibold tabular-nums ${
+                  done
+                    ? "bg-[color:var(--sage)] text-[color:var(--champagne)]"
+                    : active
+                      ? "bg-[color:var(--purple)] text-[color:var(--champagne)]"
+                      : "border-[1.5px] border-[color:var(--mist-strong)] bg-[color:var(--paper)] text-[color:var(--slate)]"
+                }`}
+              >
+                {done ? <span aria-hidden>✓</span> : idx + 1}
+              </span>
+              <span
+                className={`text-[12.5px] font-semibold ${
+                  active ? "text-[color:var(--purple-700)]" : "text-[color:var(--slate)]"
+                }`}
+              >
+                {title}
+              </span>
             </Link>
           </li>
         );
@@ -677,13 +688,13 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <label className="grid gap-2 text-sm font-bold text-[color:var(--ink)]">
-      <span className="font-mono text-[0.7rem] uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+    <label className="grid gap-2 text-sm text-[color:var(--ink)]">
+      <span className="text-[12.5px] font-semibold text-[color:var(--slate)]">
         {label}
       </span>
       {children}
       {hint ? (
-        <span className="font-mono text-[0.65rem] uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+        <span className="text-xs font-medium leading-5 text-[color:var(--slate)]">
           {hint}
         </span>
       ) : null}
@@ -692,7 +703,7 @@ function Field({
 }
 
 function inputClass() {
-  return "rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 text-base font-semibold text-[color:var(--ink)] outline-none focus:bg-[color:var(--cream)]";
+  return "rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] px-4 py-3 text-base text-[color:var(--ink)] outline-none focus:border-[color:var(--purple)] focus:ring-2 focus:ring-[color:var(--lavender-100)]";
 }
 
 // Max tags the merchant can attach. Mirrors the server-side `.slice(0, 8)` in
@@ -785,13 +796,13 @@ function TagPicker({
         <ul className="flex flex-wrap gap-2">
           {selected.map((tag) => (
             <li key={tag.toLowerCase()}>
-              <span className="inline-flex items-center gap-1.5 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] py-1 pl-3 pr-1.5 text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)]">
+              <span className="ck-tag ck-tag--selected">
                 {tag}
                 <button
                   type="button"
                   onClick={() => removeTag(tag)}
                   aria-label={`Remove ${tag}`}
-                  className="grid size-4 place-items-center rounded-full bg-[color:var(--surface-deep)] text-[0.7rem] leading-none text-[color:var(--peach)] hover:opacity-80"
+                  className="grid size-4 place-items-center rounded-full text-[0.75rem] leading-none text-[color:var(--champagne)] hover:opacity-75"
                 >
                   ×
                 </button>
@@ -827,23 +838,23 @@ function TagPicker({
           const hiddenCount = browsable.length - visibleTags.length;
           return (
             <div className="mt-1">
-              <p className="mb-2 font-mono text-[0.6rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+              <p className="mb-2 text-[12.5px] font-semibold text-[color:var(--slate)]">
                 {query.trim() ? `Matching tags (${browsable.length})` : `Tap to add · ${browsable.length}`}
               </p>
-              <ul className="flex flex-wrap gap-2 rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--cream)]/40 p-2">
+              <ul className="flex flex-wrap gap-2 rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] p-2">
                 {visibleTags.map((opt) => (
                   <li key={opt}>
                     <button
                       type="button"
                       onClick={() => addTag(opt)}
-                      className="inline-flex touch-manipulation items-center gap-1 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+                      className="ck-tag ck-tag--select touch-manipulation"
                     >
-                      <span aria-hidden className="text-[color:var(--mauve)]">+</span> {opt}
+                      <span aria-hidden className="text-[color:var(--slate)]">+</span> {opt}
                     </button>
                   </li>
                 ))}
                 {hiddenCount > 0 ? (
-                  <li className="self-center font-mono text-[0.6rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+                  <li className="self-center text-[12.5px] font-semibold text-[color:var(--slate)]">
                     +{hiddenCount} more - search to filter
                   </li>
                 ) : null}
@@ -902,7 +913,7 @@ function Combobox({
         required={required}
       />
       {open && suggestions.length > 0 ? (
-        <ul className="absolute left-0 right-0 top-full z-20 mt-1 max-h-56 overflow-auto rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] py-1 hard-shadow-sm">
+        <ul className="absolute left-0 right-0 top-full z-20 mt-1 max-h-56 overflow-auto rounded-xl bg-[color:var(--paper)] py-1 shadow-[var(--shadow-md)]">
           {suggestions.map((opt) => (
             <li key={opt}>
               <button
@@ -914,7 +925,7 @@ function Combobox({
                   onChange(opt);
                   setOpen(false);
                 }}
-                className="block w-full px-4 py-2 text-left text-sm font-semibold text-[color:var(--ink)] hover:bg-[color:var(--champagne)]"
+                className="block w-full px-4 py-2 text-left text-sm font-medium text-[color:var(--ink)] hover:bg-[color:var(--lavender-100)]"
               >
                 {opt}
               </button>
@@ -928,14 +939,14 @@ function Combobox({
 
 // Mirrors the connection intents members pick in onboarding, so a merchant can
 // quickly say who an event is for instead of writing the goal sentence by hand.
-const EVENT_INTENTS: { label: string; emoji: string; phrase: string }[] = [
-  { label: "Make friends", emoji: "🫶", phrase: "make new friends" },
-  { label: "Dating", emoji: "🌹", phrase: "meet someone in a relaxed setting" },
-  { label: "Networking", emoji: "💼", phrase: "network with like-minded people" },
-  { label: "Hobbies", emoji: "🎨", phrase: "bond over a shared hobby" },
-  { label: "Wellness", emoji: "🧘", phrase: "unwind and look after themselves" },
-  { label: "Community", emoji: "🏘️", phrase: "feel part of the local community" },
-  { label: "New in town", emoji: "🧭", phrase: "settle into Sydney" },
+const EVENT_INTENTS: { label: string; phrase: string }[] = [
+  { label: "Make friends", phrase: "make new friends" },
+  { label: "Dating", phrase: "meet someone in a relaxed setting" },
+  { label: "Networking", phrase: "network with like-minded people" },
+  { label: "Hobbies", phrase: "bond over a shared hobby" },
+  { label: "Wellness", phrase: "unwind and look after themselves" },
+  { label: "Community", phrase: "feel part of the local community" },
+  { label: "New in town", phrase: "settle into Sydney" },
 ];
 
 function composeGoalFromIntents(labels: string[]): string {
@@ -973,13 +984,11 @@ export function BasicsSection() {
   return (
     <div className="space-y-5">
       <header>
-        <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
-          Step 1 · Basics
-        </p>
-        <h2 className="font-display mt-2 text-3xl font-semibold leading-tight tracking-[-0.025em]">
+        <p className="eyebrow">Step 1 · Basics</p>
+        <h2 className="font-display mt-2 text-3xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)]">
           What is this event?
         </h2>
-        <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+        <p className="mt-2 text-sm leading-6 text-[color:var(--slate)]">
           Don&apos;t worry about getting it perfect - you can edit any of this later from your event page.
         </p>
       </header>
@@ -1042,13 +1051,13 @@ export function BasicsSection() {
                 type="button"
                 aria-pressed={active}
                 onClick={() => toggleIntent(intent.label)}
-                className={`min-h-9 rounded-full border-2 px-3 text-sm font-bold transition ${
+                className={`min-h-11 rounded-xl border px-4 text-sm font-medium transition-colors ${
                   active
-                    ? "border-[color:var(--rose)] bg-[color:var(--rose)] text-[color:var(--on-deep)]"
-                    : "border-[color:var(--line)] bg-[color:var(--champagne)] text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+                    ? "border-transparent bg-[color:var(--purple)] text-[color:var(--champagne)]"
+                    : "border-[color:var(--mist)] bg-[color:var(--paper)] text-[color:var(--ink)] hover:bg-[color:var(--lavender-100)]"
                 }`}
               >
-                {intent.emoji} {intent.label}
+                {intent.label}
               </button>
             );
           })}
@@ -1080,10 +1089,8 @@ export function ScheduleSection() {
   return (
     <div className="space-y-4">
       <header>
-        <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
-          Step 2 · Schedule
-        </p>
-        <h2 className="font-display mt-1 text-2xl font-semibold leading-tight tracking-[-0.025em]">
+        <p className="eyebrow">Step 2 · Schedule</p>
+        <h2 className="font-display mt-1 text-2xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)]">
           When + how many?
         </h2>
       </header>
@@ -1147,7 +1154,7 @@ export function ScheduleSection() {
 
 // Inline month-view calendar + time controls. Replaces the native
 // <input type="datetime-local"> so the picker matches the rest of the
-// wizard's sticker / hard-shadow styling and so past days are visually
+// wizard's DS styling and so past days are visually
 // disabled in addition to validateStep rejecting them.
 function DateTimePicker({
   value,
@@ -1209,12 +1216,12 @@ function DateTimePicker({
     : null;
 
   return (
-    <fieldset className="mx-auto w-full max-w-sm rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 hard-shadow-sm md:max-w-2xl">
+    <fieldset className="mx-auto w-full max-w-sm rounded-2xl border border-[color:var(--mist)] bg-[color:var(--champagne)] px-4 py-3 md:max-w-2xl">
       <legend className="flex flex-wrap items-baseline justify-between gap-2 px-2">
-        <span className="font-mono text-[0.7rem] uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+        <span className="text-[12.5px] font-semibold text-[color:var(--slate)]">
           Start time
         </span>
-        <span className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.14em] text-[color:var(--rose)]">
+        <span className="text-[12.5px] font-semibold text-[color:var(--purple)]">
           {summary ?? "Pick a day + time"}
         </span>
       </legend>
@@ -1227,18 +1234,18 @@ function DateTimePicker({
           onClick={() => setCursor((c) => addMonths(c, -1))}
           disabled={!canGoBackMonth}
           aria-label="Previous month"
-          className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-1.5 text-sm font-bold text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)] disabled:opacity-40 disabled:cursor-not-allowed"
+          className="rounded-lg border border-[color:var(--mist)] bg-[color:var(--paper)] px-3 py-1.5 text-sm font-semibold text-[color:var(--ink)] hover:bg-[color:var(--lavender-100)] disabled:opacity-40 disabled:cursor-not-allowed"
         >
           ←
         </button>
-        <span className="font-display text-xl font-semibold leading-none tracking-[-0.025em]">
+        <span className="font-display text-xl font-semibold leading-none tracking-[-0.02em] text-[color:var(--ink)]">
           {MONTH_NAMES[cursorMonth]} {cursorYear}
         </span>
         <button
           type="button"
           onClick={() => setCursor((c) => addMonths(c, 1))}
           aria-label="Next month"
-          className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-1.5 text-sm font-bold text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)]"
+          className="rounded-lg border border-[color:var(--mist)] bg-[color:var(--paper)] px-3 py-1.5 text-sm font-semibold text-[color:var(--ink)] hover:bg-[color:var(--lavender-100)]"
         >
           →
         </button>
@@ -1248,7 +1255,7 @@ function DateTimePicker({
         {WEEKDAY_LABELS.map((w) => (
           <span
             key={w}
-            className="font-mono text-[0.6rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]"
+            className="text-[11px] font-semibold text-[color:var(--slate)]"
           >
             {w}
           </span>
@@ -1261,16 +1268,16 @@ function DateTimePicker({
           const isToday = sameDay(date, today);
           const isSelected = selectedDate ? sameDay(date, selectedDate) : false;
           const base =
-            "h-8 flex items-center justify-center rounded-lg border-2 text-xs font-bold transition-colors";
+            "h-8 flex items-center justify-center rounded-lg text-xs font-semibold transition-colors";
           const stateClass = isSelected
-            ? "bg-[color:var(--rose)] text-[color:var(--surface-deep)] border-[color:var(--line)] hard-shadow-sm"
+            ? "bg-[color:var(--purple)] text-[color:var(--champagne)]"
             : isPast
-              ? "bg-transparent text-[color:var(--mauve)]/40 border-transparent cursor-not-allowed"
+              ? "bg-transparent text-[color:var(--slate)]/40 cursor-not-allowed"
               : inMonth
-                ? `bg-[color:var(--cream)] border-[color:var(--line)]/30 text-[color:var(--ink)] hover:bg-[color:var(--peach)] ${
-                    isToday ? "ring-2 ring-[color:var(--rose)]" : ""
+                ? `bg-[color:var(--paper)] text-[color:var(--ink)] hover:bg-[color:var(--lavender-100)] ${
+                    isToday ? "ring-1 ring-[color:var(--purple)]" : ""
                   }`
-                : "bg-transparent text-[color:var(--mauve)]/50 border-transparent hover:bg-[color:var(--peach)]/40";
+                : "bg-transparent text-[color:var(--slate)]/50 hover:bg-[color:var(--lavender-100)]";
           return (
             <button
               key={i}
@@ -1289,8 +1296,8 @@ function DateTimePicker({
 
       </div>
 
-      <div className="border-t-2 border-dashed border-[color:var(--line)]/40 pt-3 md:mt-0 md:w-60 md:border-l-2 md:border-t-0 md:pl-5 md:pt-0">
-        <span className="block font-mono text-[0.65rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+      <div className="border-t border-[color:var(--mist)] pt-3 md:mt-0 md:w-60 md:border-l md:border-t-0 md:pl-5 md:pt-0">
+        <span className="block text-[12.5px] font-semibold text-[color:var(--slate)]">
           Time
         </span>
         {(() => {
@@ -1299,7 +1306,7 @@ function DateTimePicker({
             const to24 = (h12: number, pm: boolean) =>
               pm ? (h12 === 12 ? 12 : h12 + 12) : h12 === 12 ? 0 : h12;
             const selectClass =
-              "min-w-0 flex-1 rounded-lg border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-2 py-2 text-sm font-bold text-[color:var(--ink)] outline-none focus:bg-[color:var(--champagne)]";
+              "min-w-0 flex-1 rounded-lg border border-[color:var(--mist)] bg-[color:var(--paper)] px-2 py-2 text-sm font-medium text-[color:var(--ink)] outline-none focus:border-[color:var(--purple)] focus:ring-2 focus:ring-[color:var(--lavender-100)]";
             return (
               <div className="mt-2 flex flex-nowrap items-center gap-1.5">
                 <select
@@ -1316,7 +1323,7 @@ function DateTimePicker({
                     </option>
                   ))}
                 </select>
-                <span className="font-bold text-[color:var(--ink)]">:</span>
+                <span className="font-semibold text-[color:var(--ink)]">:</span>
                 <select
                   aria-label="Minute"
                   value={selectedMinute}
@@ -1353,11 +1360,7 @@ function DateTimePicker({
                 key={t.label}
                 type="button"
                 onClick={() => pickTime(t.hour, t.minute)}
-                className={`rounded-full border-2 border-[color:var(--line)] px-3 py-1.5 text-xs font-bold uppercase tracking-wide hard-shadow-sm transition-colors ${
-                  active
-                    ? "bg-[color:var(--rose)] text-[color:var(--surface-deep)]"
-                    : "bg-[color:var(--cream)] text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
-                }`}
+                className={`ck-tag ck-tag--select ${active ? "ck-tag--selected" : ""}`}
               >
                 {t.label}
               </button>
@@ -1391,12 +1394,12 @@ function RecurrencePicker({
   const showPreview = freq !== "none" && occurrences.length > 0;
 
   return (
-    <fieldset className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-4 hard-shadow-sm">
+    <fieldset className="rounded-2xl border border-[color:var(--mist)] bg-[color:var(--champagne)] px-5 py-4">
       <legend className="flex flex-wrap items-baseline justify-between gap-2 px-2">
-        <span className="font-mono text-[0.7rem] uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+        <span className="text-[12.5px] font-semibold text-[color:var(--slate)]">
           Repeat
         </span>
-        <span className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.14em] text-[color:var(--mauve)]">
+        <span className="text-[12.5px] font-semibold text-[color:var(--slate)]">
           {freq === "none" ? "One event" : `${n} events on submit`}
         </span>
       </legend>
@@ -1423,10 +1426,10 @@ function RecurrencePicker({
                   onCountChange("4");
                 }
               }}
-              className={`rounded-full border-2 border-[color:var(--line)] px-3.5 py-1.5 text-xs font-bold uppercase tracking-[0.1em] hard-shadow-sm transition-colors ${
+              className={`min-h-11 rounded-xl border px-4 text-sm font-medium transition-colors ${
                 active
-                  ? "bg-[color:var(--rose)] text-[color:var(--surface-deep)]"
-                  : "bg-[color:var(--cream)] text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+                  ? "border-transparent bg-[color:var(--purple)] text-[color:var(--champagne)]"
+                  : "border-[color:var(--mist)] bg-[color:var(--paper)] text-[color:var(--ink)] hover:bg-[color:var(--lavender-100)]"
               }`}
             >
               {opt.label}
@@ -1437,8 +1440,8 @@ function RecurrencePicker({
 
       {freq !== "none" ? (
         <div className="mt-4 flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-2 text-sm font-bold text-[color:var(--ink)]">
-            <span className="font-mono text-[0.65rem] uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+          <label className="flex items-center gap-2 text-sm text-[color:var(--ink)]">
+            <span className="text-[12.5px] font-semibold text-[color:var(--slate)]">
               How many?
             </span>
             <input
@@ -1447,26 +1450,23 @@ function RecurrencePicker({
               max={26}
               value={count}
               onChange={(e) => onCountChange(e.target.value)}
-              className="w-20 rounded-lg border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-2 text-base font-bold text-[color:var(--ink)] outline-none focus:bg-[color:var(--champagne)]"
+              className="w-20 rounded-lg border border-[color:var(--mist)] bg-[color:var(--paper)] px-3 py-2 text-base text-[color:var(--ink)] outline-none focus:border-[color:var(--purple)] focus:ring-2 focus:ring-[color:var(--lavender-100)]"
             />
           </label>
-          <span className="font-mono text-[0.65rem] uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+          <span className="text-xs font-medium text-[color:var(--slate)]">
             Max 26 · one event row per date below.
           </span>
         </div>
       ) : null}
 
       {showPreview ? (
-        <div className="mt-4 rounded-xl border-2 border-dashed border-[color:var(--line)]/50 bg-[color:var(--cream)] p-3">
-          <p className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+        <div className="mt-4 rounded-xl bg-[color:var(--paper)] p-3">
+          <p className="text-[12.5px] font-semibold text-[color:var(--slate)]">
             Will create
           </p>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {occurrences.slice(0, 12).map((d, i) => (
-              <span
-                key={i}
-                className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-2.5 py-1 font-mono text-[0.65rem] font-bold uppercase tracking-wide text-[color:var(--ink)]"
-              >
+              <span key={i} className="ck-tag">
                 {new Intl.DateTimeFormat("en-AU", {
                   month: "short",
                   day: "numeric",
@@ -1474,7 +1474,7 @@ function RecurrencePicker({
               </span>
             ))}
             {occurrences.length > 12 ? (
-              <span className="font-mono text-[0.65rem] font-bold uppercase tracking-wide text-[color:var(--mauve)]">
+              <span className="text-xs font-medium text-[color:var(--slate)]">
                 +{occurrences.length - 12} more
               </span>
             ) : null}
@@ -1568,13 +1568,11 @@ export function LocationSection() {
   return (
     <div className="space-y-5">
       <header>
-        <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
-          Step 3 · Location
-        </p>
-        <h2 className="font-display mt-2 text-3xl font-semibold leading-tight tracking-[-0.025em]">
+        <p className="eyebrow">Step 3 · Location</p>
+        <h2 className="font-display mt-2 text-3xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)]">
           Where in Sydney?
         </h2>
-        <p className="mt-1 text-sm font-bold text-[color:var(--mauve)]">
+        <p className="mt-1 text-sm leading-6 text-[color:var(--slate)]">
           Search a street address to fill the suburb, pin it on the map, and
           auto-fill the venue name - edit it below if needed.
         </p>
@@ -1627,8 +1625,8 @@ export function LocationSection() {
       </Field>
 
       <p
-        className={`font-mono text-[0.7rem] uppercase tracking-[0.14em] ${
-          pinned ? "text-[color:var(--rose)]" : "text-[color:var(--mauve)]/70"
+        className={`text-xs font-medium ${
+          pinned ? "text-[color:var(--purple)]" : "text-[color:var(--slate)]"
         }`}
       >
         {pinned
@@ -1639,16 +1637,16 @@ export function LocationSection() {
       </p>
 
       {outsidePilotArea ? (
-        <div className="space-y-3 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--peach)] p-4 text-sm font-bold leading-6 text-[color:var(--surface-deep)] hard-shadow-sm">
+        <div className="space-y-3 rounded-2xl bg-[color:var(--lavender-100)] p-4 text-sm leading-6 text-[color:var(--ink)]">
           <p>
-            ⚠️ Heads up - this venue is about {Math.round(distanceFromSydneyKm!)} km
+            Heads up - this venue is about {Math.round(distanceFromSydneyKm!)} km
             from Sydney. Click is currently piloting in <strong>greater Sydney
             only</strong>. You can still publish, but reach will be limited until
             we launch in your area.
           </p>
           {waitlistState === "done" ? (
-            <p className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-2 text-[color:var(--ink)]">
-              🎉 Thanks - you’re on the waitlist. We’ll email you the moment Click
+            <p className="rounded-xl bg-[color:var(--paper)] px-3 py-2 text-[color:var(--ink)]">
+              Thanks - you&rsquo;re on the waitlist. We&rsquo;ll email you the moment Click
               launches near this venue.
             </p>
           ) : (
@@ -1657,13 +1655,13 @@ export function LocationSection() {
                 type="button"
                 onClick={() => void joinLocationWaitlist()}
                 disabled={waitlistState === "saving"}
-                className="inline-flex shrink-0 items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--ink)] px-4 py-2 text-xs font-bold uppercase tracking-wide text-[color:var(--champagne)] hard-shadow-sm hover:bg-[color:var(--rose)] hover:text-[color:var(--surface-deep)] disabled:opacity-60"
+                className="ck-btn ck-btn--primary ck-btn--sm shrink-0"
               >
                 {waitlistState === "saving" ? "Adding…" : "Notify me when you launch here"}
               </button>
               {waitlistState === "error" ? (
-                <span className="text-xs text-[color:var(--surface-deep)]">
-                  Couldn’t save that - try again.
+                <span className="text-xs font-medium text-[color:var(--danger)]">
+                  Couldn&rsquo;t save that - try again.
                 </span>
               ) : null}
             </div>
@@ -1958,15 +1956,13 @@ export function MediaSection() {
   return (
     <div className="space-y-5">
       <header>
-        <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
-          Step 4 · Media
-        </p>
-        <h2 className="font-display mt-2 text-3xl font-semibold leading-tight tracking-[-0.025em]">
+        <p className="eyebrow">Step 4 · Media</p>
+        <h2 className="font-display mt-2 text-3xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)]">
           Drop in a few real photos.
         </h2>
-        <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+        <p className="mt-2 text-sm leading-6 text-[color:var(--slate)]">
           Add up to {MEDIA_MAX_PHOTOS} photos. The first one is the cover - use{" "}
-          <span className="font-bold text-[color:var(--ink)]">Set cover</span> on
+          <span className="font-semibold text-[color:var(--ink)]">Set cover</span> on
           any tile (or drag to reorder) to choose it. Drop, paste, or tap to
           upload.
         </p>
@@ -1989,16 +1985,16 @@ export function MediaSection() {
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onPaste={handlePaste}
-        className={`grid place-items-center gap-3 rounded-2xl border-2 border-dashed px-6 py-10 text-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--rose)] ${
+        className={`grid place-items-center gap-3 rounded-2xl border border-dashed px-6 py-10 text-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--purple)] ${
           dropping
-            ? "border-[color:var(--rose)] bg-[color:var(--peach)]"
-            : "border-[color:var(--line)] bg-[color:var(--champagne)] hover:bg-[color:var(--peach)]/40"
+            ? "border-[color:var(--purple)] bg-[color:var(--lavender-100)]"
+            : "border-[color:var(--mist-strong)] bg-[color:var(--champagne)] hover:bg-[color:var(--lavender-100)]/60"
         }`}
       >
-        <span className="font-display text-2xl font-semibold leading-tight tracking-[-0.025em] text-[color:var(--ink)]">
+        <span className="font-display text-2xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)]">
           Drop photos, paste, or tap to upload
         </span>
-        <span className="font-mono text-[0.7rem] uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+        <span className="text-xs font-medium text-[color:var(--slate)]">
           JPG · PNG · WEBP · up to 10 MB each · {pending.length}/{MEDIA_MAX_PHOTOS} added
         </span>
         <input
@@ -2016,7 +2012,7 @@ export function MediaSection() {
           use next/image so the (large) source files are served resized. */}
       {pending.length === 0 ? (
         <div className="space-y-2">
-          <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+          <p className="text-[12.5px] font-semibold text-[color:var(--slate)]">
             No photos? Pick a sample to start
           </p>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -2025,7 +2021,7 @@ export function MediaSection() {
                 key={sample.url}
                 type="button"
                 onClick={() => addSample(sample)}
-                className="group overflow-hidden rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] text-left hard-shadow-sm transition hover:border-[color:var(--rose)]"
+                className="group overflow-hidden rounded-2xl border border-[color:var(--mist)] bg-[color:var(--paper)] text-left transition-colors hover:border-[color:var(--purple)]"
               >
                 <div className="aspect-[4/3] w-full overflow-hidden bg-[color:var(--champagne)]">
                   <Image
@@ -2037,13 +2033,13 @@ export function MediaSection() {
                     className="size-full object-cover transition group-hover:scale-[1.03]"
                   />
                 </div>
-                <span className="block px-2 py-1.5 text-xs font-bold text-[color:var(--ink)]">
+                <span className="block px-2 py-1.5 text-xs font-semibold text-[color:var(--ink)]">
                   {sample.name}
                 </span>
               </button>
             ))}
           </div>
-          <p className="text-xs font-medium leading-5 text-[color:var(--mauve)]">
+          <p className="text-xs font-medium leading-5 text-[color:var(--slate)]">
             You can swap it for your own photo any time - real photos always perform
             better.
           </p>
@@ -2063,7 +2059,7 @@ export function MediaSection() {
                 onDragStart={onTileDragStart(idx)}
                 onDragOver={onTileDragOver}
                 onDrop={onTileDrop(idx)}
-                className="group relative overflow-hidden rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] hard-shadow-sm"
+                className="group relative overflow-hidden rounded-2xl bg-[color:var(--paper)] shadow-[var(--shadow-sm)]"
               >
                 <div className="aspect-[4/3] w-full overflow-hidden bg-[color:var(--champagne)]">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -2076,22 +2072,22 @@ export function MediaSection() {
                   />
                 </div>
                 {isCover ? (
-                  <span className="absolute left-2 top-2 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-2 py-0.5 font-mono text-[0.65rem] font-bold uppercase tracking-[0.14em] text-[color:var(--surface-deep)] hard-shadow-sm">
+                  <span className="absolute left-2 top-2 rounded-lg bg-[color:var(--purple)] px-2 py-1 text-[11px] font-semibold leading-none text-[color:var(--champagne)]">
                     Cover
                   </span>
                 ) : null}
                 {tile.status === "uploading" ? (
-                  <span className="absolute right-2 top-2 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-2 py-0.5 font-mono text-[0.65rem] font-bold uppercase tracking-[0.14em] text-[color:var(--mauve)]">
+                  <span className="absolute right-2 top-2 rounded-lg bg-[color:var(--paper)]/90 px-2 py-1 text-[11px] font-semibold leading-none text-[color:var(--slate)]">
                     Uploading…
                   </span>
                 ) : null}
                 {tile.status === "error" ? (
-                  <span className="absolute right-2 top-2 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-2 py-0.5 font-mono text-[0.65rem] font-bold uppercase tracking-[0.14em] text-[color:var(--surface-deep)]">
+                  <span className="absolute right-2 top-2 rounded-lg bg-[color:var(--danger)] px-2 py-1 text-[11px] font-semibold leading-none text-[color:var(--champagne)]">
                     Failed
                   </span>
                 ) : null}
-                <div className="flex items-center justify-between gap-2 border-t-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-2">
-                  <span className="truncate font-mono text-[0.65rem] font-bold uppercase tracking-[0.14em] text-[color:var(--mauve)]">
+                <div className="flex items-center justify-between gap-2 border-t border-[color:var(--mist)] px-3 py-2">
+                  <span className="truncate text-xs font-medium text-[color:var(--slate)]">
                     {tile.name}
                   </span>
                   <div className="flex shrink-0 items-center gap-1.5">
@@ -2099,7 +2095,7 @@ export function MediaSection() {
                       <button
                         type="button"
                         onClick={() => makeCover(tile.id)}
-                        className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-2 py-0.5 font-mono text-[0.65rem] font-bold uppercase tracking-[0.14em] text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)]"
+                        className="rounded-lg border border-[color:var(--mist)] bg-[color:var(--paper)] px-2 py-1 text-[11px] font-semibold text-[color:var(--ink)] hover:bg-[color:var(--lavender-100)]"
                         aria-label={`Set ${tile.name} as cover`}
                       >
                         Set cover
@@ -2108,7 +2104,7 @@ export function MediaSection() {
                     <button
                       type="button"
                       onClick={() => removeTile(tile.id)}
-                      className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-2 py-0.5 font-mono text-[0.65rem] font-bold uppercase tracking-[0.14em] text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--rose)] hover:text-[color:var(--surface-deep)]"
+                      className="rounded-lg border border-[color:var(--mist)] bg-[color:var(--paper)] px-2 py-1 text-[11px] font-semibold text-[color:var(--danger)] hover:bg-[color:var(--danger)]/10"
                       aria-label={`Remove ${tile.name}`}
                     >
                       Remove
@@ -2174,21 +2170,19 @@ export function ReviewSection() {
   return (
     <div className="space-y-5">
       <header>
-        <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
-          Step 5 · Review
-        </p>
-        <h2 className="font-display mt-2 text-3xl font-semibold leading-tight tracking-[-0.025em]">
+        <p className="eyebrow">Step 5 · Review</p>
+        <h2 className="font-display mt-2 text-3xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)]">
           Looks good?
         </h2>
-        <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+        <p className="mt-2 text-sm leading-6 text-[color:var(--slate)]">
           This is how your event card will look on Click. Submissions go to admin
           for approval before going live.
         </p>
       </header>
 
       <div className="mx-auto w-full max-w-sm">
-        <article className="group relative min-w-0 overflow-hidden rounded-lg border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow-sm">
-          <div className="relative block h-60 overflow-hidden border-b-2 border-[color:var(--line)]">
+        <article className="group relative min-w-0 overflow-hidden rounded-2xl bg-[color:var(--paper)] shadow-[var(--shadow-sm)]">
+          <div className="relative block h-60 overflow-hidden">
             {cover ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
@@ -2197,8 +2191,8 @@ export function ReviewSection() {
                 className="size-full object-cover"
               />
             ) : (
-              <div className="grid size-full place-items-center bg-[color:var(--peach)] px-6 text-center">
-                <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--surface-deep)]">
+              <div className="grid size-full place-items-center bg-[color:var(--lavender-100)] px-6 text-center">
+                <span className="text-[12.5px] font-semibold text-[color:var(--slate)]">
                   {values.category
                     ? `${values.category} · cover photo`
                     : "Add a cover photo on the media step"}
@@ -2206,56 +2200,53 @@ export function ReviewSection() {
               </div>
             )}
             <div className="absolute inset-0 bg-gradient-to-t from-[color:var(--ink)]/30 via-transparent to-transparent" />
-            <span className="absolute left-3 top-3 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-3 py-1.5 text-[0.68rem] font-bold uppercase tracking-wider text-[color:var(--surface-deep)] hard-shadow-sm">
-              Pending review
+            <span className="absolute left-3 top-3">
+              <Badge tone="amber">Pending review</Badge>
             </span>
-            <span className="absolute bottom-3 left-3 rounded-md border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-2 text-[0.72rem] font-black uppercase leading-tight tracking-[0.14em] text-[color:var(--ink)] hard-shadow-sm">
+            <span className="absolute bottom-3 left-3 rounded-lg bg-[color:var(--paper)]/95 px-3 py-2 text-xs font-semibold leading-tight text-[color:var(--ink)] shadow-[var(--shadow-xs)]">
               {dateLabel}
-              <span className="block font-mono text-[0.62rem] text-[color:var(--mauve)]">
+              <span className="block text-[11px] font-medium text-[color:var(--slate)]">
                 {timeLabel}
               </span>
             </span>
-            <span className="absolute bottom-3 right-3 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-1.5 text-[0.68rem] font-bold uppercase tracking-wider text-[color:var(--ink)] hard-shadow-sm">
+            <span className="absolute bottom-3 right-3 rounded-lg bg-[color:var(--paper)]/95 px-2.5 py-1.5 text-[11px] font-semibold text-[color:var(--ink)] shadow-[var(--shadow-xs)]">
               {seatsLabel}
             </span>
           </div>
 
           <div className="p-5">
-            <p className="font-mono break-words text-xs font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+            <p className="break-words text-[12.5px] font-semibold text-[color:var(--slate)]">
               {values.suburb || "-"} · {values.category || "-"} · {priceLabel}
             </p>
-            <h3 className="font-display mt-2 text-[1.65rem] font-semibold leading-[1.04] tracking-[-0.025em] text-[color:var(--ink)]">
+            <h3 className="font-display mt-2 text-[length:var(--card-title)] font-semibold leading-snug tracking-[-0.02em] text-[color:var(--ink)]">
               {values.title || "Untitled event"}
             </h3>
-            <p className="mt-1 text-sm font-semibold text-[color:var(--mauve)]">
+            <p className="mt-1 text-sm font-medium text-[color:var(--slate)]">
               {location}
             </p>
             {values.groupName ? (
-              <p className="mt-1 font-mono text-[0.65rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+              <p className="mt-1 text-xs font-medium text-[color:var(--slate)]">
                 Hosted by {values.groupName}
               </p>
             ) : null}
-            <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+            <p className="mt-3 text-sm leading-6 text-[color:var(--slate)]">
               {values.description || "Add a description on the basics step."}
             </p>
             <div className="mt-4 flex flex-wrap gap-1.5">
               {values.recurrenceFreq !== "none" ? (
-                <span className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-3 py-1 text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)]">
+                <span className="ck-tag">
                   {values.recurrenceCount}× {values.recurrenceFreq}
                 </span>
               ) : null}
               {tagsPreview.map((t) => (
-                <span
-                  key={t}
-                  className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-1 text-xs font-bold uppercase tracking-wide text-[color:var(--ink)]"
-                >
+                <span key={t} className="ck-tag">
                   {t}
                 </span>
               ))}
             </div>
           </div>
         </article>
-        <p className="mt-3 text-center font-mono text-[0.62rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+        <p className="mt-3 text-center text-xs font-medium text-[color:var(--slate)]">
           Preview · public listing card
         </p>
       </div>

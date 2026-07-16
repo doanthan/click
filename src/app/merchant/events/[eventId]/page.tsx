@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/auth";
-import { LinkButton, MetricCard, Pill } from "@/components/click-ui";
+import { Badge, ButtonLink, Tag, type BadgeTone } from "@/components/ds";
 import { MerchantEventCancelButton } from "@/components/merchant-event-cancel-button";
 import { MerchantEventDuplicateButton } from "@/components/merchant-event-duplicate-button";
 import { MerchantEventEditForm } from "@/components/merchant-event-edit-form";
@@ -60,11 +60,21 @@ function formatPrice(cents: number) {
   }).format(cents / 100);
 }
 
+// DS merchant status vocabulary: confirmed lavender, pending/waitlist amber.
 function attendeeRowTone(status: MerchantAttendeeRow["status"]) {
-  if (status === "confirmed") return "cream" as const;
-  if (status === "pending_payment") return "rose" as const;
-  if (status === "waitlisted") return "peach" as const;
-  return "ink" as const;
+  if (status === "confirmed") return "lavender" as const;
+  if (status === "pending_payment") return "amber" as const;
+  if (status === "waitlisted") return "amber" as const;
+  return "neutral" as const;
+}
+
+// Event status badge: live/featured sage, pending/waitlist amber, cancelled/
+// rejected coral - status colours live on badges only.
+function eventStatusTone(status: string): BadgeTone {
+  if (status === "Live" || status === "Featured") return "sage";
+  if (status === "Pending" || status === "Waitlist") return "amber";
+  if (status === "Cancelled" || status === "Rejected") return "coral";
+  return "lavender";
 }
 
 export default async function MerchantEventDetailPage({ params }: PageProps) {
@@ -115,24 +125,22 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
   );
 
   return (
-    <main className="paper-noise min-h-screen bg-[color:var(--champagne)] px-4 py-10 text-[color:var(--ink)] sm:px-6">
+    <main className="min-h-screen bg-[color:var(--champagne)] px-4 py-10 text-[color:var(--ink)] sm:px-6">
       <section className="mx-auto max-w-6xl">
         <Link
           href="/merchant"
-          className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)] hover:text-[color:var(--rose)]"
+          className="text-[12.5px] font-semibold text-[color:var(--slate)] hover:text-[color:var(--purple)]"
         >
           ← All my events
         </Link>
 
         <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <Pill tone={event.status === "Pending" ? "rose" : "peach"}>
-              {event.status}
-            </Pill>
-            <h1 className="font-display mt-4 text-4xl font-bold leading-[0.96] tracking-[-0.025em] sm:text-5xl">
+            <Badge tone={eventStatusTone(event.status)}>{event.status}</Badge>
+            <h1 className="font-display mt-4 text-4xl font-semibold leading-[1.05] tracking-[-0.02em] text-[color:var(--ink)] sm:text-5xl">
               {event.title}
             </h1>
-            <p className="mt-3 text-sm font-bold leading-6 text-[color:var(--mauve)]">
+            <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--slate)]">
               {formatWhen(event.startsAt, event.endsAt)} ·{" "}
               {event.locationName} · {event.suburb}
             </p>
@@ -140,28 +148,26 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
           <div className="flex gap-2">
             <MerchantEventDuplicateButton eventId={event.slug} />
             <MerchantEventCancelButton eventId={event.slug} status={event.status} />
-            <LinkButton href="/merchant" variant="secondary">
+            <ButtonLink href="/merchant" variant="secondary">
               Back to portal
-            </LinkButton>
+            </ButtonLink>
           </div>
         </div>
 
         {/* Rejected: surface the admin's reason and a one-tap resubmit so the
             merchant can fix + reapply for review (bug board #217). */}
         {event.status === "Rejected" ? (
-          <div className="mt-6 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--peach)] p-5 hard-shadow-sm">
-            <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--surface-deep)]">
-              Not approved yet
-            </p>
-            <h2 className="mt-2 font-display text-2xl font-semibold leading-tight text-[color:var(--surface-deep)]">
+          <div className="mt-6 rounded-2xl bg-[color:var(--paper)] p-5 shadow-[var(--shadow-sm)]">
+            <p className="eyebrow">Not approved yet</p>
+            <h2 className="font-display mt-2 text-2xl font-semibold leading-tight text-[color:var(--ink)]">
               Fix the below and resubmit for review.
             </h2>
             {event.rejectionReason ? (
-              <p className="mt-2 text-sm font-bold leading-6 text-[color:var(--surface-deep)]">
+              <p className="mt-2 text-sm font-semibold leading-6 text-[color:var(--ink)]">
                 Admin note: {event.rejectionReason}
               </p>
             ) : null}
-            <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--surface-deep)]/90">
+            <p className="mt-2 text-sm leading-6 text-[color:var(--slate)]">
               Update the details below, then resubmit - it goes back into the
               admin review queue and we&apos;ll email you the outcome.
             </p>
@@ -173,7 +179,7 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
 
         {event.images.length > 0 ? (
           <div className="mt-8 grid gap-3 sm:grid-cols-[2fr_1fr]">
-            <div className="overflow-hidden rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] hard-shadow-sm">
+            <div className="overflow-hidden rounded-2xl bg-[color:var(--paper)] shadow-[var(--shadow-sm)]">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={event.images[0]}
@@ -186,7 +192,7 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
                 {event.images.slice(1, 5).map((src, index) => (
                   <div
                     key={src}
-                    className="overflow-hidden rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] hard-shadow-sm"
+                    className="overflow-hidden rounded-2xl bg-[color:var(--paper)] shadow-[var(--shadow-sm)]"
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
@@ -202,43 +208,36 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
         ) : null}
 
         <div className="mt-8 grid gap-3 sm:grid-cols-4">
-          <MetricCard
-            label="Confirmed"
-            value={`${confirmedSeats} / ${event.capacity}`}
-            tone="peach"
-          />
-          <MetricCard label="Waitlist" value={event.waitlisted.toString()} tone="rose" />
-          <MetricCard
+          <Metric label="Confirmed" value={`${confirmedSeats} / ${event.capacity}`} />
+          <Metric label="Waitlist" value={event.waitlisted.toString()} />
+          <Metric
             label="Seats left"
             value={Math.max(0, event.capacity - confirmedSeats).toString()}
-            tone="cream"
           />
-          <MetricCard label="Price" value={formatPrice(event.priceCents)} tone="ink" />
+          <Metric label="Price" value={formatPrice(event.priceCents)} />
         </div>
 
-        <div className="mt-6 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-5">
-          <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-            Capacity
-          </p>
+        <div className="mt-6 rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)] p-5">
+          <p className="eyebrow">Capacity</p>
           <div className="mt-3 flex items-end justify-between gap-3">
-            <p className="text-base font-bold">
+            <p className="text-base font-semibold text-[color:var(--ink)]">
               {confirmedSeats} {confirmedSeats === 1 ? "seat" : "seats"} taken out of{" "}
               {event.capacity}
               {isFull ? " - full" : ""}
               {event.guestSeats > 0 ? (
-                <span className="font-semibold text-[color:var(--mauve)]">
+                <span className="font-medium text-[color:var(--slate)]">
                   {" "}
                   ({event.confirmed} confirmed + {event.guestSeats} +1{event.guestSeats === 1 ? "" : "s"})
                 </span>
               ) : null}
             </p>
-            <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+            <p className="text-[12.5px] font-semibold text-[color:var(--slate)]">
               {Math.round(filledPercent)}%
             </p>
           </div>
-          <div className="mt-2 h-3 overflow-hidden rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)]">
+          <div className="mt-2 h-3 overflow-hidden rounded-full bg-[color:var(--mist)]">
             <div
-              className={`h-full ${isFull ? "bg-[color:var(--ink)]" : "bg-[color:var(--rose)]"}`}
+              className={`h-full rounded-full ${isFull ? "bg-[color:var(--ink)]" : "bg-[color:var(--purple)]"}`}
               style={{ width: `${filledPercent}%` }}
             />
           </div>
@@ -247,22 +246,20 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
         <section className="mt-10">
           <div className="flex items-end justify-between gap-4">
             <div>
-              <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
-                Confirmed attendees
-              </p>
-              <h2 className="font-display mt-2 text-3xl font-semibold leading-tight">
+              <p className="eyebrow">Confirmed attendees</p>
+              <h2 className="font-display mt-2 text-3xl font-semibold leading-tight text-[color:var(--ink)]">
                 {confirmedAttendees.length === 0
                   ? "No confirmed attendees yet."
                   : `${confirmedAttendees.length} ${confirmedAttendees.length === 1 ? "person" : "people"} confirmed.`}
               </h2>
             </div>
-            <Pill tone="peach">{confirmedAttendees.length}</Pill>
+            <Badge tone="lavender">{confirmedAttendees.length}</Badge>
           </div>
 
           {confirmedAttendees.length > 0 ? (
             <AttendeeTable rows={confirmedAttendees} />
           ) : (
-            <p className="mt-4 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-5 text-sm font-semibold text-[color:var(--mauve)]">
+            <p className="mt-4 rounded-2xl border border-dashed border-[color:var(--mist-strong)] bg-[color:var(--paper)] p-5 text-sm font-medium text-[color:var(--slate)]">
               When attendees RSVP they appear here with name and contact email
               so you can prep the room.
             </p>
@@ -273,19 +270,17 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
           <section className="mt-10">
             <div className="flex items-end justify-between gap-4">
               <div>
-                <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
-                  +1 guests
-                </p>
-                <h2 className="font-display mt-2 text-3xl font-semibold leading-tight">
+                <p className="eyebrow">+1 guests</p>
+                <h2 className="font-display mt-2 text-3xl font-semibold leading-tight text-[color:var(--ink)]">
                   {event.guestSeats} +1 {event.guestSeats === 1 ? "seat" : "seats"} on
                   confirmed bookings
                 </h2>
-                <p className="mt-2 text-sm font-semibold text-[color:var(--mauve)]">
+                <p className="mt-2 text-sm font-medium text-[color:var(--slate)]">
                   Check guests in by first name. To protect them, we never share a
                   guest&apos;s email or date of birth - just who&apos;s expected.
                 </p>
               </div>
-              <Pill tone="peach">{event.guestSeats}</Pill>
+              <Badge tone="lavender">{event.guestSeats}</Badge>
             </div>
 
             {event.guests.length > 0 ? (
@@ -293,7 +288,7 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
             ) : null}
 
             {unnamedGuestSeats > 0 ? (
-              <p className="mt-3 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-5 text-sm font-semibold text-[color:var(--mauve)]">
+              <p className="mt-3 rounded-2xl border border-dashed border-[color:var(--mist-strong)] bg-[color:var(--paper)] p-5 text-sm font-medium text-[color:var(--slate)]">
                 + {unnamedGuestSeats} unnamed +1{" "}
                 {unnamedGuestSeats === 1 ? "seat" : "seats"} reserved. The buyer can
                 name them anytime before the event.
@@ -306,21 +301,19 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
           <section className="mt-10">
             <div className="flex items-end justify-between gap-4">
               <div>
-                <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
-                  Awaiting payment
-                </p>
-                <h2 className="font-display mt-2 text-3xl font-semibold leading-tight">
+                <p className="eyebrow">Awaiting payment</p>
+                <h2 className="font-display mt-2 text-3xl font-semibold leading-tight text-[color:var(--ink)]">
                   {awaitingPaymentAttendees.length}{" "}
                   {awaitingPaymentAttendees.length === 1 ? "seat" : "seats"}{" "}
                   reserved, payment in progress
                 </h2>
-                <p className="mt-2 text-sm font-semibold text-[color:var(--mauve)]">
+                <p className="mt-2 text-sm font-medium text-[color:var(--slate)]">
                   These seats count toward your capacity while the buyer
                   completes checkout. They confirm automatically once payment
                   clears, or free up if the hold expires.
                 </p>
               </div>
-              <Pill tone="rose">{awaitingPaymentAttendees.length}</Pill>
+              <Badge tone="amber">{awaitingPaymentAttendees.length}</Badge>
             </div>
             <AttendeeTable rows={awaitingPaymentAttendees} />
           </section>
@@ -330,32 +323,26 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
           <section className="mt-10">
             <div className="flex items-end justify-between gap-4">
               <div>
-                <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
-                  Waitlist
-                </p>
-                <h2 className="font-display mt-2 text-3xl font-semibold leading-tight">
+                <p className="eyebrow">Waitlist</p>
+                <h2 className="font-display mt-2 text-3xl font-semibold leading-tight text-[color:var(--ink)]">
                   {waitlistedAttendees.length}{" "}
                   {waitlistedAttendees.length === 1 ? "person" : "people"}{" "}
                   waiting
                 </h2>
               </div>
-              <Pill tone="rose">{waitlistedAttendees.length}</Pill>
+              <Badge tone="amber">{waitlistedAttendees.length}</Badge>
             </div>
             <AttendeeTable rows={waitlistedAttendees} />
           </section>
         ) : null}
 
-        <section className="mt-10 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-6 hard-shadow-sm">
-          <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-            Description
-          </p>
-          <p className="mt-3 text-base font-medium leading-7">{event.description}</p>
+        <section className="mt-10 rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)] p-6">
+          <p className="eyebrow">Description</p>
+          <p className="mt-3 text-base leading-7 text-[color:var(--ink)]">{event.description}</p>
           {event.tags.length > 0 ? (
             <div className="mt-4 flex flex-wrap gap-1.5">
               {event.tags.map((tag) => (
-                <Pill key={tag.slug} tone="cream">
-                  {tag.label}
-                </Pill>
+                <Tag key={tag.slug}>{tag.label}</Tag>
               ))}
             </div>
           ) : null}
@@ -380,10 +367,21 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
   );
 }
 
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <article className="rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)] p-5">
+      <p className="eyebrow">{label}</p>
+      <p className="font-display mt-2 text-4xl font-semibold leading-none tracking-[-0.02em] tabular-nums text-[color:var(--ink)]">
+        {value}
+      </p>
+    </article>
+  );
+}
+
 function AttendeeTable({ rows }: { rows: MerchantAttendeeRow[] }) {
   return (
-    <div className="mt-4 overflow-hidden rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow-sm">
-      <div className="grid grid-cols-[1.4fr_1.4fr_0.7fr_0.7fr] gap-3 border-b-2 border-[color:var(--line)] bg-[color:var(--surface-deep)] px-5 py-3 font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--on-deep)]/80 max-md:hidden">
+    <div className="mt-4 overflow-hidden rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)]">
+      <div className="grid grid-cols-[1.4fr_1.4fr_0.7fr_0.7fr] gap-3 border-b border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-3 text-xs font-semibold text-[color:var(--slate)] max-md:hidden">
         <span>Name</span>
         <span>Email</span>
         <span>RSVP&apos;d</span>
@@ -392,22 +390,24 @@ function AttendeeTable({ rows }: { rows: MerchantAttendeeRow[] }) {
       {rows.map((attendee) => (
         <div
           key={attendee.attendeeId}
-          className="grid gap-3 border-t-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-4 md:grid-cols-[1.4fr_1.4fr_0.7fr_0.7fr] md:items-center"
+          className="grid gap-3 border-t border-[color:var(--line-soft)] px-5 py-4 md:grid-cols-[1.4fr_1.4fr_0.7fr_0.7fr] md:items-center"
         >
           <div className="flex items-center gap-3">
             <AttendeeAvatar
               displayName={attendee.displayName}
               photoUrl={attendee.photoUrl}
             />
-            <p className="text-sm font-bold text-[color:var(--ink)]">{attendee.displayName}</p>
+            <p className="text-sm font-semibold text-[color:var(--ink)]">{attendee.displayName}</p>
           </div>
-          <p className="break-all font-mono text-[0.75rem] text-[color:var(--mauve)]">
+          <p className="break-all text-[13px] text-[color:var(--slate)]">
             {attendee.email}
           </p>
-          <p className="text-sm font-semibold text-[color:var(--mauve)]">
+          <p className="text-sm text-[color:var(--slate)]">
             {rsvpDateFormatter.format(new Date(attendee.rsvpAt))}
           </p>
-          <Pill tone={attendeeRowTone(attendee.status)}>{attendee.status}</Pill>
+          <div>
+            <Badge tone={attendeeRowTone(attendee.status)}>{attendee.status}</Badge>
+          </div>
         </div>
       ))}
     </div>
@@ -419,8 +419,8 @@ function AttendeeTable({ rows }: { rows: MerchantAttendeeRow[] }) {
 // footprint of a guest. Check-in writes guest_spots.attended (§9).
 function GuestList({ rows, eventSlug }: { rows: MerchantGuestRow[]; eventSlug: string }) {
   return (
-    <div className="mt-4 overflow-hidden rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow-sm">
-      <div className="grid grid-cols-[1.3fr_1.3fr_0.8fr_0.8fr] gap-3 border-b-2 border-[color:var(--line)] bg-[color:var(--surface-deep)] px-5 py-3 font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--on-deep)]/80 max-md:hidden">
+    <div className="mt-4 overflow-hidden rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)]">
+      <div className="grid grid-cols-[1.3fr_1.3fr_0.8fr_0.8fr] gap-3 border-b border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-3 text-xs font-semibold text-[color:var(--slate)] max-md:hidden">
         <span>Guest</span>
         <span>Invited by</span>
         <span>Status</span>
@@ -429,20 +429,22 @@ function GuestList({ rows, eventSlug }: { rows: MerchantGuestRow[]; eventSlug: s
       {rows.map((guest) => (
         <div
           key={guest.guestId}
-          className="grid gap-3 border-t-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-4 md:grid-cols-[1.3fr_1.3fr_0.8fr_0.8fr] md:items-center"
+          className="grid gap-3 border-t border-[color:var(--line-soft)] px-5 py-4 md:grid-cols-[1.3fr_1.3fr_0.8fr_0.8fr] md:items-center"
         >
           <div className="flex items-center gap-3">
             <AttendeeAvatar displayName={guest.firstName ?? "Guest"} photoUrl={null} />
-            <p className="text-sm font-bold text-[color:var(--ink)]">
+            <p className="text-sm font-semibold text-[color:var(--ink)]">
               {guest.firstName ?? "Guest"}
             </p>
           </div>
-          <p className="text-sm font-semibold text-[color:var(--mauve)]">
+          <p className="text-sm text-[color:var(--slate)]">
             {guest.purchasedBy}
           </p>
-          <Pill tone={guest.status === "claimed" ? "peach" : "cream"}>
-            {guest.status === "claimed" ? "joined Click" : "invited"}
-          </Pill>
+          <div>
+            <Badge tone={guest.status === "claimed" ? "lavender" : "neutral"}>
+              {guest.status === "claimed" ? "joined Click" : "invited"}
+            </Badge>
+          </div>
           <GuestCheckInToggle
             guestId={guest.guestId}
             eventSlug={eventSlug}
@@ -469,12 +471,12 @@ function AttendeeAvatar({
       <img
         src={photoUrl}
         alt={displayName}
-        className="h-9 w-9 shrink-0 rounded-full border-2 border-[color:var(--line)] object-cover"
+        className="h-9 w-9 shrink-0 rounded-full object-cover"
       />
     );
   }
   return (
-    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] text-sm font-bold text-[color:var(--ink)]">
+    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[color:var(--lavender-100)] text-sm font-semibold text-[color:var(--purple-600)]">
       {initial}
     </span>
   );

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { auth } from "@/auth";
+import { Badge } from "@/components/ds";
 import { getAdminReports, type AdminReportRow } from "@/lib/event-repository";
 import { resolveReportAction, suspendFromReportAction } from "./actions";
 
@@ -37,25 +38,23 @@ export default async function AdminReportsPage() {
   return (
     <div className="space-y-8 py-6">
       <header>
-        <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.2em] text-[color:var(--rose)]">
-          Trust &amp; Safety
-        </span>
-        <h1 className="font-display mt-2 text-4xl font-bold leading-tight tracking-[-0.025em] sm:text-5xl">
-          Safety Reports
+        <span className="eyebrow">Trust &amp; safety</span>
+        <h1 className="font-display mt-2 text-4xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)] sm:text-5xl">
+          Safety reports
         </h1>
-        <p className="mt-3 max-w-2xl text-sm font-medium leading-6 text-[color:var(--mauve)]">
+        <p className="mt-3 max-w-2xl text-sm leading-6 text-[color:var(--slate)]">
           User reports awaiting review. Target SLA is 24 hours. Resolving a report either dismisses
-          it (no action) or marks it actioned — you can also suspend the reported account directly.
+          it (no action) or marks it actioned - you can also suspend the reported account directly.
         </p>
       </header>
 
       <section>
-        <h2 className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.2em] text-[color:var(--ink)]">
+        <h2 className="eyebrow text-[color:var(--ink)]">
           Open · {open.length}
         </h2>
         {open.length === 0 ? (
-          <p className="mt-4 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-6 text-sm font-medium text-[color:var(--mauve)]">
-            No open reports. 🎉
+          <p className="mt-4 rounded-[18px] border border-dashed border-[color:var(--line)] bg-[color:var(--paper)] p-6 text-sm text-[color:var(--slate)]">
+            No open reports.
           </p>
         ) : (
           <ul className="mt-4 space-y-4">
@@ -68,34 +67,28 @@ export default async function AdminReportsPage() {
 
       {resolved.length > 0 ? (
         <section>
-          <h2 className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.2em] text-[color:var(--mauve)]">
+          <h2 className="eyebrow">
             Resolved · {resolved.length}
           </h2>
           <ul className="mt-4 space-y-3">
             {resolved.map((report) => (
               <li
                 key={report.id}
-                className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-4 text-sm"
+                className="rounded-[18px] border border-[color:var(--line)] bg-[color:var(--paper)] p-4 text-sm"
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="font-bold text-[color:var(--ink)]">
+                  <span className="font-semibold text-[color:var(--ink)]">
                     {report.reportedName}{" "}
-                    <span className="font-mono text-xs font-bold uppercase tracking-wide text-[color:var(--mauve)]">
+                    <span className="text-xs font-medium text-[color:var(--slate)]">
                       · {REASON_LABELS[report.reason] ?? report.reason}
                     </span>
                   </span>
-                  <span
-                    className={`rounded-full border-2 border-[color:var(--line)] px-2.5 py-0.5 text-[0.65rem] font-black uppercase tracking-wider ${
-                      report.status === "actioned"
-                        ? "bg-[color:var(--rose)] text-[color:var(--surface-deep)]"
-                        : "bg-[color:var(--cream)] text-[color:var(--mauve)]"
-                    }`}
-                  >
+                  <Badge tone={report.status === "actioned" ? "sage" : "neutral"}>
                     {report.status}
-                  </span>
+                  </Badge>
                 </div>
                 {report.resolutionNote ? (
-                  <p className="mt-1 text-xs font-medium text-[color:var(--mauve)]">
+                  <p className="mt-1 text-xs text-[color:var(--slate)]">
                     {report.resolutionNote}
                   </p>
                 ) : null}
@@ -114,48 +107,40 @@ function ReportCard({ report }: { report: AdminReportRow }) {
   const alreadySuspended = Boolean(report.reportedSuspendedAt);
 
   return (
-    <li className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-5 hard-shadow-sm">
+    <li className="rounded-[18px] bg-[color:var(--paper)] p-5 shadow-[var(--shadow-sm)]">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <span className="inline-flex rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-2.5 py-0.5 text-[0.65rem] font-black uppercase tracking-wider text-[color:var(--surface-deep)]">
-            {REASON_LABELS[report.reason] ?? report.reason}
-          </span>
-          <h3 className="font-display mt-2 text-2xl font-semibold leading-tight">
+          <Badge tone="coral">{REASON_LABELS[report.reason] ?? report.reason}</Badge>
+          <h3 className="font-display mt-2 text-2xl font-semibold leading-tight text-[color:var(--ink)]">
             <Link
               href={`/profile/${report.reportedId}`}
-              className="hover:text-[color:var(--rose)]"
+              className="hover:text-[color:var(--purple)]"
             >
               {report.reportedName}
             </Link>
           </h3>
-          <p className="mt-1 text-xs font-medium text-[color:var(--mauve)]">
+          <p className="mt-1 text-xs text-[color:var(--slate)]">
             Reported by{" "}
-            <Link href={`/profile/${report.reporterId}`} className="font-bold underline">
+            <Link href={`/profile/${report.reporterId}`} className="font-semibold underline">
               {report.reporterName}
             </Link>
             {report.sourceEventTitle ? ` · at ${report.sourceEventTitle}` : ""} ·{" "}
             {dateFormatter.format(new Date(report.createdAt))}
           </p>
         </div>
-        <span
-          className={`rounded-full px-2.5 py-1 text-[0.65rem] font-black uppercase tracking-wider ${
-            breached
-              ? "bg-[color:var(--rose)] text-[color:var(--surface-deep)]"
-              : "bg-[color:var(--cream)] text-[color:var(--ink)]"
-          }`}
-        >
+        <Badge tone={breached ? "coral" : "neutral"}>
           {age}h ago{breached ? " · SLA" : ""}
-        </span>
+        </Badge>
       </div>
 
       {report.details ? (
-        <p className="mt-3 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-3 text-sm font-medium leading-6 text-[color:var(--ink)]">
+        <p className="mt-3 rounded-xl border border-[color:var(--line-soft)] bg-[color:var(--champagne)] p-3 text-sm leading-6 text-[color:var(--ink)]">
           {report.details}
         </p>
       ) : null}
 
       {alreadySuspended ? (
-        <p className="mt-3 text-xs font-bold uppercase tracking-wide text-[color:var(--rose)]">
+        <p className="mt-3 text-xs font-semibold text-[color:var(--danger)]">
           Reported account is already suspended.
         </p>
       ) : null}
@@ -166,7 +151,7 @@ function ReportCard({ report }: { report: AdminReportRow }) {
           <input type="hidden" name="resolution" value="dismissed" />
           <button
             type="submit"
-            className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-2 text-xs font-bold uppercase tracking-wide text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+            className="ck-btn ck-btn--secondary ck-btn--sm"
           >
             Dismiss
           </button>
@@ -177,7 +162,7 @@ function ReportCard({ report }: { report: AdminReportRow }) {
           <input type="hidden" name="resolution" value="actioned" />
           <button
             type="submit"
-            className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-2 text-xs font-bold uppercase tracking-wide text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+            className="ck-btn ck-btn--primary ck-btn--sm"
           >
             Mark actioned
           </button>
@@ -194,7 +179,7 @@ function ReportCard({ report }: { report: AdminReportRow }) {
             />
             <button
               type="submit"
-              className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-4 py-2 text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
+              className="ck-btn ck-btn--danger ck-btn--sm"
             >
               Suspend account
             </button>

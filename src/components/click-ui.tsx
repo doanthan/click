@@ -19,7 +19,7 @@ export function SectionIntro({ eyebrow, title, body, invert = false }: SectionIn
           <p className={`eyebrow ${invert ? "!text-[color:var(--lavender)]" : ""}`}>{eyebrow}</p>
         ) : null}
         <h2
-          className={`font-display mt-4 text-[2.4rem] font-bold leading-[1.04] tracking-[-0.025em] sm:text-[3rem] ${
+          className={`font-display mt-4 text-[2.4rem] font-semibold leading-[1.04] tracking-[-0.025em] sm:text-[3rem] ${
             invert ? "text-[color:var(--on-deep)]" : "text-[color:var(--ink)]"
           }`}
         >
@@ -59,7 +59,7 @@ export function PageHero({ eyebrow, title, body, children }: PageHeroProps) {
       >
         <div>
           <p className="eyebrow">{eyebrow}</p>
-          <h1 className="font-display mt-3 text-[2rem] font-bold leading-[1.02] tracking-[-0.025em] text-[color:var(--ink)] sm:text-[2.6rem]">
+          <h1 className="font-display mt-3 text-[2rem] font-semibold leading-[1.02] tracking-[-0.025em] text-[color:var(--ink)] sm:text-[2.6rem]">
             {title}
           </h1>
           <p className="mt-3 max-w-2xl text-sm leading-7 text-[color:var(--mauve)] sm:text-base">
@@ -75,21 +75,21 @@ export function PageHero({ eyebrow, title, body, children }: PageHeroProps) {
 type MetricTone = "peach" | "rose" | "cream" | "ink" | "aqua" | "pink" | "white";
 
 export function MetricCard({ label, value, tone = "peach" }: { label: string; value: string; tone?: MetricTone }) {
-  // legacy aliases → new palette
+  // legacy aliases → new palette (purple fills take cream text - never dark-on-purple)
   const t = tone === "aqua" ? "peach" : tone === "pink" ? "rose" : tone === "white" ? "cream" : tone;
   const palette =
     t === "rose"
-      ? "bg-[color:var(--rose)] text-[color:var(--surface-deep)] border-[color:var(--line)]"
+      ? "bg-[color:var(--purple)] text-[color:var(--champagne)]"
       : t === "cream"
-        ? "bg-[color:var(--cream)] text-[color:var(--ink)] border-[color:var(--line)]"
+        ? "bg-[color:var(--paper)] text-[color:var(--ink)]"
         : t === "ink"
-          ? "bg-[color:var(--ink)] text-[color:var(--champagne)] border-[color:var(--line)]"
-          : "bg-[color:var(--peach)] text-[color:var(--surface-deep)] border-[color:var(--line)]";
+          ? "bg-[color:var(--surface-deep)] text-[color:var(--on-deep)]"
+          : "bg-[color:var(--lavender-100)] text-[color:var(--ink)]";
 
   return (
-    <article className={`rounded-2xl border ${palette} hard-shadow-sm p-5`}>
-      <p className="font-condensed text-[0.72rem] font-semibold uppercase tracking-[0.16em] opacity-70">{label}</p>
-      <p className="font-display mt-2 text-5xl font-bold leading-none tracking-[-0.03em] tabular-nums">{value}</p>
+    <article className={`rounded-2xl ${palette} p-5 shadow-[var(--shadow-sm)]`}>
+      <p className="text-[12.5px] font-semibold opacity-70">{label}</p>
+      <p className="font-display mt-2 text-5xl font-semibold leading-none tracking-[-0.03em] tabular-nums">{value}</p>
     </article>
   );
 }
@@ -119,10 +119,10 @@ export function InfoCard({
           : "bg-[color:var(--peach)]";
 
   return (
-    <article className="group relative rounded-2xl border border-[color:var(--line)] bg-[color:var(--cream)] p-6 transition-all duration-300 hover:-translate-y-1 hard-shadow-sm hover:hard-shadow">
+    <article className="group relative rounded-2xl bg-[color:var(--paper)] p-6 shadow-[var(--shadow-sm)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[var(--shadow-md)]">
       <span className={`block h-1.5 w-12 rounded-full ${accentBar}`} />
       {eyebrow ? <p className="eyebrow mt-5">{eyebrow}</p> : null}
-      <h3 className="font-display mt-3 text-[1.7rem] font-bold leading-[1.08] tracking-[-0.025em] text-[color:var(--ink)]">
+      <h3 className="font-display mt-3 text-[1.7rem] font-semibold leading-[1.08] tracking-[-0.025em] text-[color:var(--ink)]">
         {title}
       </h3>
       <p className="mt-3 text-[0.95rem] leading-7 text-[color:var(--mauve)]">{body}</p>
@@ -141,24 +141,27 @@ export function Pill({
   tone?: PillTone;
   href?: string;
 }) {
-  // legacy aliases → new palette
+  // legacy aliases → new palette. The DS tag voice: white fill, mist hairline,
+  // ink text; the "selected"/accent tone is a flat purple fill with cream text.
   const t = tone === "aqua" ? "peach" : tone === "pink" ? "rose" : tone === "white" ? "cream" : tone;
   const palette =
     t === "rose"
-      ? "bg-[color:var(--rose)] text-[color:var(--surface-deep)]"
+      ? "border-transparent bg-[color:var(--purple)] text-[color:var(--champagne)]"
       : t === "ink"
-        ? "bg-[color:var(--ink)] text-[color:var(--champagne)]"
+        ? "border-transparent bg-[color:var(--ink)] text-[color:var(--champagne)]"
         : t === "peach"
-          ? "bg-[color:var(--peach)] text-[color:var(--surface-deep)]"
-          : "bg-[color:var(--cream)] text-[color:var(--ink)]";
+          ? "border-transparent bg-[color:var(--lavender-100)] text-[color:var(--purple-700)]"
+          : "border-[color:var(--mist-strong)] bg-[color:var(--paper)] text-[color:var(--ink)]";
 
-  const base = `inline-flex max-w-full min-w-0 items-center whitespace-normal break-words rounded-full border border-[color:var(--line)] ${palette} px-3.5 py-1.5 text-left font-condensed text-[0.72rem] font-semibold uppercase tracking-[0.12em]`;
+  const base = `inline-flex max-w-full min-w-0 items-center whitespace-normal break-words rounded-full border ${palette} px-3 py-1 text-left text-[12px] font-medium`;
 
   if (href) {
     return (
       <Link
         href={href}
-        className={`${base} transition-all duration-200 hover:-translate-y-0.5 hover:border-[color:var(--ink)] active:translate-y-0 active:brightness-[0.97]`}
+        className={`${base} transition-colors duration-150 ${
+          t === "cream" ? "hover:border-[color:var(--slate)] hover:bg-[color:var(--lavender-100)]" : ""
+        }`}
       >
         {children}
       </Link>
@@ -177,23 +180,19 @@ export function LinkButton({
   children: ReactNode;
   variant?: "primary" | "secondary" | "light" | "ink";
 }) {
-  // Click DS button voice: flat Deep-Purple primary (never a gradient or
-  // glow), ghost hairline secondary, deep-ink "ink", and a white "light"
-  // button for the deep aubergine bands. Radius 12 per the DS - never a pill.
-  const className =
+  // Click DS button voice via the canonical .ck-btn classes: flat Deep-Purple
+  // primary, white + hairline secondary, and cream "light" (onPurple) for the
+  // deep aubergine bands. Radius 12 built in - never a pill. The legacy "ink"
+  // variant folds into primary: Deep Purple is the ONE primary-action colour.
+  const variantClass =
     variant === "secondary"
-      ? "border border-[color:var(--line-strong)] bg-transparent text-[color:var(--ink)] hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)] hover:border-transparent"
+      ? "ck-btn--secondary"
       : variant === "light"
-        ? "bg-[color:var(--paper)] text-[color:var(--ink)] hover:bg-white shadow-[0_1px_2px_rgba(28,24,48,0.10),0_16px_30px_-16px_rgba(28,24,48,0.5)]"
-        : variant === "ink"
-          ? "bg-[color:var(--surface-deep)] text-[color:var(--on-deep)] hover:bg-[color:var(--ink-deep)] shadow-[0_1px_2px_rgba(28,24,48,0.10)]"
-          : "bg-[color:var(--purple)] text-[color:var(--champagne)] hover:bg-[color:var(--purple-hover)] active:bg-[color:var(--purple-press)] shadow-[0_1px_2px_rgba(28,24,48,0.10),0_16px_30px_-16px_rgba(59,47,129,0.45)]";
+        ? "ck-btn--onPurple"
+        : "ck-btn--primary";
 
   return (
-    <Link
-      href={href}
-      className={`group/btn inline-flex min-h-12 items-center gap-2 rounded-xl px-6 text-[0.95rem] font-semibold tracking-[-0.005em] transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:brightness-[0.97] ${className}`}
-    >
+    <Link href={href} className={`ck-btn ck-btn--lg ${variantClass} group/btn`}>
       {children}
       <span aria-hidden className="inline-block text-base transition-transform duration-300 group-hover/btn:translate-x-1">→</span>
     </Link>

@@ -119,18 +119,20 @@ function isPastEvent(event: MerchantEventSummary) {
   return new Date(event.endsAt ?? event.startsAt).getTime() < Date.now();
 }
 
+// DS status tints (badge vocabulary): live sage, pending/waitlist amber,
+// cancelled/ended neutral, locked lavender. Status colour stays on these chips.
 function statusBadgeClass(event: MerchantEventSummary) {
   const isFull = event.confirmed >= event.capacity;
   if (event.status === "Cancelled")
-    return "bg-[color:var(--cream)] text-[color:var(--mauve)] line-through opacity-80";
+    return "bg-[color:var(--mist)] text-[color:var(--slate)] line-through";
   // Past events read as muted "Ended" chips so the merchant can still see their
   // history on the calendar without it competing with live/upcoming events.
-  if (isPastEvent(event)) return "bg-[color:var(--cream)] text-[color:var(--mauve)] opacity-90";
-  if (event.status === "Pending") return "bg-[color:var(--rose)] text-[color:var(--surface-deep)]";
-  if (isFull || event.status === "Waitlist")
-    return "bg-[color:var(--ink)] text-[color:var(--champagne)]";
-  if (event.status === "Locked") return "bg-[color:var(--ink)] text-[color:var(--champagne)]";
-  return "bg-[color:var(--peach)] text-[color:var(--surface-deep)]";
+  if (isPastEvent(event)) return "bg-[color:var(--mist)] text-[color:var(--slate)]";
+  if (event.status === "Pending" || isFull || event.status === "Waitlist")
+    return "bg-[color-mix(in_srgb,var(--amber)_16%,var(--paper))] text-[color:var(--amber-ink)]";
+  if (event.status === "Locked")
+    return "bg-[color:var(--lavender-100)] text-[color:var(--purple-700)]";
+  return "bg-[color-mix(in_srgb,var(--sage)_14%,var(--paper))] text-[color:var(--sage-ink)]";
 }
 
 export function MerchantCalendar({ events, monthParam }: MerchantCalendarProps) {
@@ -181,19 +183,17 @@ export function MerchantCalendar({ events, monthParam }: MerchantCalendarProps) 
     : null;
 
   return (
-    <article className="overflow-hidden rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow-sm">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-[color:var(--line)] bg-[color:var(--cream)] px-5 py-4">
+    <article className="overflow-hidden rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)]">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[color:var(--line)] px-5 py-4">
         <div>
-          <p className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-            Hosting calendar
-          </p>
+          <p className="eyebrow">Hosting calendar</p>
           <h3 className="font-display mt-1 text-2xl font-semibold leading-tight text-[color:var(--ink)] sm:text-3xl">
             {heading}
           </h3>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-1 text-xs font-bold text-[color:var(--mauve)]">
+          <span className="inline-flex items-center rounded-full border border-[color:var(--mist-strong)] bg-[color:var(--paper)] px-3 py-1 text-xs font-medium text-[color:var(--slate)]">
             {monthEvents.length} event{monthEvents.length === 1 ? "" : "s"} ·{" "}
             {monthConfirmed}/{monthCapacity} booked
           </span>
@@ -205,20 +205,20 @@ export function MerchantCalendar({ events, monthParam }: MerchantCalendarProps) 
             <Link
               href={`/merchant?month=${prevMonth}`}
               aria-label="Previous month"
-              className="grid size-9 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] text-sm font-bold text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+              className="grid size-9 place-items-center rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] text-sm font-semibold text-[color:var(--ink)] hover:bg-[color:var(--lavender-100)]"
             >
               ←
             </Link>
             <Link
               href="/merchant"
-              className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-1.5 text-xs font-bold text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+              className="rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] px-3 py-1.5 text-xs font-semibold text-[color:var(--ink)] hover:bg-[color:var(--lavender-100)]"
             >
               Today
             </Link>
             <Link
               href={`/merchant?month=${nextMonth}`}
               aria-label="Next month"
-              className="grid size-9 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] text-sm font-bold text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+              className="grid size-9 place-items-center rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] text-sm font-semibold text-[color:var(--ink)] hover:bg-[color:var(--lavender-100)]"
             >
               →
             </Link>
@@ -227,24 +227,24 @@ export function MerchantCalendar({ events, monthParam }: MerchantCalendarProps) 
       </header>
 
       {nearestEvent && nearestMonthParam ? (
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b-2 border-[color:var(--line)] bg-[color:var(--peach)]/40 px-5 py-3">
-          <p className="text-sm font-bold text-[color:var(--surface-deep)]">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[color:var(--line)] bg-[color:var(--lavender-100)] px-5 py-3">
+          <p className="text-sm font-medium text-[color:var(--ink)]">
             No events in {heading}. Your nearest events are in {nearestMonthLabel}.
           </p>
           <Link
             href={`/merchant?month=${nearestMonthParam}`}
-            className="inline-flex shrink-0 items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--ink)] px-4 py-1.5 text-xs font-bold uppercase tracking-wide text-[color:var(--champagne)] hover:bg-[color:var(--rose)] hover:text-[color:var(--surface-deep)]"
+            className="ck-btn ck-btn--primary ck-btn--sm shrink-0"
           >
             Jump to {nearestMonthLabel} →
           </Link>
         </div>
       ) : null}
 
-      <div className="grid grid-cols-7 border-b-2 border-[color:var(--line)] bg-[color:var(--surface-deep)] text-[color:var(--on-deep)]">
+      <div className="grid grid-cols-7 border-b border-[color:var(--line)] bg-[color:var(--champagne)]">
         {WEEK_LABELS.map((label) => (
           <div
             key={label}
-            className="px-3 py-2 font-mono text-[0.62rem] font-bold uppercase tracking-[0.18em]"
+            className="px-3 py-2 text-xs font-semibold text-[color:var(--slate)]"
           >
             {label}
           </div>
@@ -264,27 +264,27 @@ function CalendarDayCell({ cell }: { cell: CalendarCell }) {
   const dayNumber = DAY_LABEL_FORMATTER.format(cell.date);
   return (
     <div
-      className={`min-h-28 border-b-2 border-r-2 border-[color:var(--line)] p-2 ${
+      className={`min-h-28 border-b border-r border-[color:var(--line-soft)] p-2 ${
         cell.isCurrentMonth
-          ? "bg-[color:var(--champagne)]"
-          : "bg-[color:var(--cream)]/60"
+          ? "bg-[color:var(--paper)]"
+          : "bg-[color:var(--champagne)]"
       } last:border-r-0`}
     >
       <div className="flex items-baseline justify-between gap-1">
         <span
-          className={`font-mono text-[0.7rem] font-bold ${
+          className={`text-xs font-semibold ${
             cell.isToday
-              ? "grid size-6 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] text-[color:var(--surface-deep)]"
+              ? "grid size-6 place-items-center rounded-full bg-[color:var(--purple)] text-[color:var(--champagne)]"
               : cell.isCurrentMonth
                 ? "text-[color:var(--ink)]"
-                : "text-[color:var(--mauve)]/55"
+                : "text-[color:var(--slate)]/60"
           }`}
         >
           {dayNumber}
         </span>
         {cell.events.length > 0 ? (
           <span
-            className="font-mono text-[0.6rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]"
+            className="text-[11px] font-medium text-[color:var(--slate)]"
             title={FULL_DATE_FORMATTER.format(cell.date)}
           >
             {cell.events.length}
@@ -298,7 +298,7 @@ function CalendarDayCell({ cell }: { cell: CalendarCell }) {
           <CalendarEventChip key={event.slug} event={event} />
         ))}
         {cell.events.length > 3 ? (
-          <p className="font-mono text-[0.6rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+          <p className="text-[11px] font-medium text-[color:var(--slate)]">
             + {cell.events.length - 3} more
           </p>
         ) : null}
@@ -321,10 +321,10 @@ function CalendarEventChip({ event }: { event: MerchantEventSummary }) {
   return (
     <Link
       href={`/merchant/events/${event.slug}`}
-      className={`block rounded-md border-2 border-[color:var(--line)] px-1.5 py-1 hard-shadow-sm transition hover:-translate-y-[1px] hover:[box-shadow:3px_3px_0_0_var(--shadow-ink)] ${statusBadgeClass(event)}`}
+      className={`block rounded-lg px-1.5 py-1 transition hover:-translate-y-[1px] hover:shadow-[var(--shadow-xs)] ${statusBadgeClass(event)}`}
     >
-      <p className="line-clamp-1 text-[0.7rem] font-bold leading-tight">{event.title}</p>
-      <p className="mt-0.5 font-mono text-[0.6rem] font-bold uppercase tracking-[0.16em] opacity-80">
+      <p className="line-clamp-1 text-[0.7rem] font-semibold leading-tight">{event.title}</p>
+      <p className="mt-0.5 text-[0.62rem] font-medium text-[color:var(--ink)]">
         {event.confirmed}/{event.capacity} · {display}
       </p>
     </Link>

@@ -15,6 +15,7 @@ import type {
   AdminTransactionRow,
 } from "@/lib/event-repository";
 import { EmptyState } from "@/components/empty-state";
+import { Badge, type BadgeTone } from "@/components/ds";
 
 // /admin/transactions client UI:
 // • A 30-day default view of payment_transactions joined with event + attendee
@@ -64,33 +65,33 @@ function formatMoney(amountCents: number | null | undefined, currency: string) {
   }).format(amountCents / 100);
 }
 
-function statusTone(status: string) {
+function statusTone(status: string): BadgeTone {
   switch (status) {
     case "paid":
-      return "bg-[color:var(--peach)] text-[color:var(--surface-deep)]";
+      return "sage";
     case "partially_refunded":
-      return "bg-[color:var(--cream)] text-[color:var(--ink)]";
+      return "amber";
     case "refunded":
-      return "bg-[color:var(--ink)] text-[color:var(--champagne)]";
+      return "neutral";
     case "failed":
-      return "bg-[color:var(--rose)] text-[color:var(--surface-deep)]";
+      return "coral";
     default:
-      return "bg-[color:var(--champagne)] text-[color:var(--ink)]";
+      return "lavender"; // pending
   }
 }
 
-function payoutStatusTone(status: string) {
+function payoutStatusTone(status: string): BadgeTone {
   switch (status) {
     case "paid":
-      return "bg-[color:var(--peach)] text-[color:var(--surface-deep)]";
+      return "sage";
     case "in_transit":
-      return "bg-[color:var(--cream)] text-[color:var(--ink)]";
+      return "lavender";
     case "failed":
-      return "bg-[color:var(--rose)] text-[color:var(--surface-deep)]";
+      return "coral";
     case "canceled":
-      return "bg-[color:var(--ink)] text-[color:var(--champagne)]";
+      return "neutral";
     default:
-      return "bg-[color:var(--champagne)] text-[color:var(--ink)]";
+      return "lavender";
   }
 }
 
@@ -285,14 +286,11 @@ export function AdminTransactionsTable({
     <div className="space-y-6">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <span className="sticker sticker--cream tilt-l-1 inline-flex">
-            <span className="size-2 rounded-full bg-[color:var(--surface-deep)]" />
-            Transactions
-          </span>
-          <h1 className="font-display mt-3 text-4xl font-bold leading-tight tracking-[-0.025em] text-[color:var(--ink)]">
+          <span className="eyebrow">Transactions</span>
+          <h1 className="font-display mt-3 text-4xl font-semibold leading-tight tracking-[-0.025em] text-[color:var(--ink)]">
             Stripe ledger
           </h1>
-          <p className="mt-1 max-w-xl text-sm font-medium text-[color:var(--mauve)]">
+          <p className="mt-1 max-w-xl text-sm text-[color:var(--slate)]">
             Last 30 days from <code className="font-mono">payment_transactions</code>. Use{" "}
             <strong>Sync from Stripe</strong> to backfill anything the webhook missed.
           </p>
@@ -302,12 +300,12 @@ export function AdminTransactionsTable({
             type="button"
             onClick={runSync}
             disabled={syncing}
-            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm transition hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)] disabled:opacity-60"
+            className="ck-btn ck-btn--primary ck-btn--sm"
           >
             {syncing ? "Syncing…" : "Sync from Stripe"}
           </button>
           {syncMessage ? (
-            <p className="max-w-md text-right text-[0.7rem] font-bold text-[color:var(--mauve)]">
+            <p className="max-w-md text-right text-xs font-medium text-[color:var(--slate)]">
               {syncMessage}
             </p>
           ) : null}
@@ -315,10 +313,10 @@ export function AdminTransactionsTable({
       </header>
 
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Kpi label="Gross volume (filtered)" value={formatMoney(kpis.gross, "AUD")} note={`${kpis.paidCount} paid txns`} tilt="tilt-r-1" tone="peach" />
-        <Kpi label="Refunded" value={formatMoney(kpis.refunded, "AUD")} note="includes partial refunds" tilt="tilt-l-1" tone="rose" />
-        <Kpi label="Net to merchants" value={formatMoney(kpis.net, "AUD")} note="gross minus refunds" tilt="tilt-r-1" tone="cream" />
-        <Kpi label="Platform fees" value={formatMoney(kpis.fees, "AUD")} note="from Stripe Connect" tilt="tilt-l-1" tone="champagne" />
+        <Kpi label="Gross volume (filtered)" value={formatMoney(kpis.gross, "AUD")} note={`${kpis.paidCount} paid txns`} />
+        <Kpi label="Refunded" value={formatMoney(kpis.refunded, "AUD")} note="includes partial refunds" />
+        <Kpi label="Net to merchants" value={formatMoney(kpis.net, "AUD")} note="gross minus refunds" />
+        <Kpi label="Platform fees" value={formatMoney(kpis.fees, "AUD")} note="from Stripe Connect" />
       </section>
 
       <nav className="flex gap-2">
@@ -333,11 +331,7 @@ export function AdminTransactionsTable({
             key={value}
             type="button"
             onClick={() => setTab(value)}
-            className={`rounded-full border-2 border-[color:var(--line)] px-4 py-1.5 text-xs font-bold uppercase tracking-wider hard-shadow-sm transition ${
-              tab === value
-                ? "bg-[color:var(--ink)] text-[color:var(--champagne)]"
-                : "bg-[color:var(--champagne)] text-[color:var(--ink)] hover:bg-[color:var(--cream)]"
-            }`}
+            className={`ck-tag ck-tag--select ${tab === value ? "ck-tag--selected" : ""}`}
           >
             {label}
           </button>
@@ -358,11 +352,7 @@ export function AdminTransactionsTable({
                     key={option.value}
                     type="button"
                     onClick={() => setStatus(option.value)}
-                    className={`rounded-full border-2 border-[color:var(--line)] px-4 py-1.5 text-xs font-bold uppercase tracking-wider hard-shadow-sm transition ${
-                      status === option.value
-                        ? "bg-[color:var(--ink)] text-[color:var(--champagne)]"
-                        : "bg-[color:var(--champagne)] text-[color:var(--ink)] hover:bg-[color:var(--cream)]"
-                    }`}
+                    className={`ck-tag ck-tag--select ${status === option.value ? "ck-tag--selected" : ""}`}
                   >
                     {option.label} <span className="opacity-60">({count})</span>
                   </button>
@@ -373,7 +363,7 @@ export function AdminTransactionsTable({
               <select
                 value={merchantFilter}
                 onChange={(e) => setMerchantFilter(e.target.value)}
-                className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-2 text-sm font-medium text-[color:var(--ink)]"
+                className="rounded-xl border border-[color:var(--mist)] bg-white px-4 py-2 text-sm text-[color:var(--ink)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)]"
               >
                 <option value="all">All merchants</option>
                 {merchants.map((m) => (
@@ -387,13 +377,13 @@ export function AdminTransactionsTable({
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Event, attendee, merchant, pi_…"
-                className="w-full rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-2 text-sm font-medium text-[color:var(--ink)] placeholder:text-[color:var(--mauve)]/70 sm:w-80"
+                className="w-full rounded-xl border border-[color:var(--mist)] bg-white px-4 py-2 text-sm text-[color:var(--ink)] placeholder:text-[color:var(--slate)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)] sm:w-80"
               />
             </div>
           </div>
 
-          <div className="overflow-visible rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow-sm">
-            <div className="hidden grid-cols-[1.1fr_1.4fr_1.3fr_1.1fr_0.9fr_0.9fr_0.9fr_0.4fr] gap-4 bg-[color:var(--surface-deep)] px-5 py-3 text-xs font-black uppercase tracking-[0.14em] text-[color:var(--on-deep)] lg:grid">
+          <div className="overflow-visible rounded-2xl bg-[color:var(--paper)] shadow-[var(--shadow-sm)]">
+            <div className="hidden grid-cols-[1.1fr_1.4fr_1.3fr_1.1fr_0.9fr_0.9fr_0.9fr_0.4fr] gap-4 border-b border-[color:var(--line)] px-5 py-3 text-xs font-semibold text-[color:var(--slate)] lg:grid">
               <span>Date</span>
               <span>Event · Attendee</span>
               <span>Merchant</span>
@@ -420,7 +410,7 @@ export function AdminTransactionsTable({
                       <button
                         type="button"
                         onClick={clearFilters}
-                        className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--ink)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--on-deep)] transition hard-shadow-sm hover:bg-black active:translate-y-px"
+                        className="ck-btn ck-btn--secondary ck-btn--sm"
                       >
                         Clear filters
                       </button>
@@ -437,55 +427,53 @@ export function AdminTransactionsTable({
                     <button
                       type="button"
                       onClick={() => setOpenRow(isOpen ? null : t.id)}
-                      className="grid w-full gap-3 px-5 py-4 text-left text-sm font-medium text-[color:var(--mauve)] transition-colors hover:bg-[color:var(--cream)] lg:grid-cols-[1.1fr_1.4fr_1.3fr_1.1fr_0.9fr_0.9fr_0.9fr_0.4fr] lg:items-center"
+                      className="grid w-full gap-3 px-5 py-4 text-left text-sm text-[color:var(--slate)] transition-colors hover:bg-[color:var(--lavender-100)]/50 lg:grid-cols-[1.1fr_1.4fr_1.3fr_1.1fr_0.9fr_0.9fr_0.9fr_0.4fr] lg:items-center"
                     >
                       <div>
-                        <p className="font-black text-[color:var(--ink)]">
+                        <p className="font-semibold text-[color:var(--ink)]">
                           {d.dateLabel}
                         </p>
-                        <p className="text-[0.65rem] uppercase tracking-wider">
+                        <p className="text-[11px]">
                           {d.timeLabel}
                         </p>
                       </div>
                       <div>
-                        <p className="font-black text-[color:var(--ink)]">
+                        <p className="font-semibold text-[color:var(--ink)]">
                           {t.eventTitle ?? "—"}
                         </p>
                         <p className="text-xs">{t.attendeeName ?? "(unknown)"}</p>
-                        <p className="text-[0.65rem]">{t.attendeeEmail ?? ""}</p>
+                        <p className="text-[11px]">{t.attendeeEmail ?? ""}</p>
                       </div>
                       <div>
-                        <p className="font-bold text-[color:var(--ink)]">
+                        <p className="font-semibold text-[color:var(--ink)]">
                           {t.merchantName ?? "—"}
                         </p>
                       </div>
                       <div>
-                        <p className="font-black text-[color:var(--ink)]">
+                        <p className="font-semibold text-[color:var(--ink)]">
                           {d.amountLabel}
                         </p>
-                        <p className="text-[0.65rem] uppercase tracking-wider">{t.currency}</p>
+                        <p className="text-[11px] uppercase">{t.currency}</p>
                       </div>
                       <div>
-                        <p className="text-[0.7rem]">
+                        <p className="text-xs">
                           fee {d.feeLabel}
                         </p>
-                        <p className="text-[0.7rem] font-bold text-[color:var(--ink)]">
+                        <p className="text-xs font-semibold text-[color:var(--ink)]">
                           net {d.netLabel}
                         </p>
                       </div>
                       <div>
-                        <p className="font-bold text-[color:var(--ink)]">
+                        <p className="font-semibold text-[color:var(--ink)]">
                           {d.refundedLabel}
                         </p>
                       </div>
                       <div>
-                        <span
-                          className={`inline-flex rounded-full border-2 border-[color:var(--line)] px-2.5 py-0.5 text-[0.65rem] font-black uppercase tracking-wider ${statusTone(t.status)}`}
-                        >
+                        <Badge tone={statusTone(t.status)}>
                           {t.status.replace("_", " ")}
-                        </span>
+                        </Badge>
                       </div>
-                      <div className="text-right text-[0.65rem] font-mono text-[color:var(--mauve)]">
+                      <div className="text-right font-mono text-[11px] text-[color:var(--slate)]">
                         {d.piLabel}
                       </div>
                     </button>
@@ -516,32 +504,18 @@ function Kpi({
   label,
   value,
   note,
-  tilt,
-  tone,
 }: {
   label: string;
   value: string;
   note: string;
-  tilt: string;
-  tone: "peach" | "rose" | "cream" | "champagne";
 }) {
-  const bg =
-    tone === "peach"
-      ? "bg-[color:var(--peach)]"
-      : tone === "rose"
-        ? "bg-[color:var(--rose)]"
-        : tone === "cream"
-          ? "bg-[color:var(--cream)]"
-          : "bg-[color:var(--champagne)]";
   return (
-    <div className={`rounded-2xl border-2 border-[color:var(--line)] px-5 py-4 hard-shadow-sm ${bg} ${tilt}`}>
-      <p className="text-[0.65rem] font-black uppercase tracking-[0.18em] text-[color:var(--surface-deep)]/80">
-        {label}
-      </p>
+    <div className="rounded-2xl bg-[color:var(--paper)] px-5 py-4 shadow-[var(--shadow-sm)]">
+      <p className="text-[11px] font-semibold text-[color:var(--slate)]">{label}</p>
       <p className="font-display mt-1 text-2xl font-semibold leading-tight text-[color:var(--ink)]">
         {value}
       </p>
-      <p className="mt-1 text-[0.7rem] font-bold text-[color:var(--surface-deep)]/80">{note}</p>
+      <p className="mt-1 text-xs text-[color:var(--slate)]">{note}</p>
     </div>
   );
 }
@@ -587,7 +561,7 @@ function TransactionDetail({
         return;
       }
       setSuccess(
-        `Refunded ${formatMoney(cents, row.currency)} — new status: ${body.refund.newStatus.replace("_", " ")}.`,
+        `Refunded ${formatMoney(cents, row.currency)} - new status: ${body.refund.newStatus.replace("_", " ")}.`,
       );
       onRefundComplete(body.refund.refundedAmountCents, body.refund.newStatus);
       const newRefundable = Math.max(row.amountCents - body.refund.refundedAmountCents, 0);
@@ -602,12 +576,10 @@ function TransactionDetail({
   const canRefund = refundable > 0 && (row.status === "paid" || row.status === "partially_refunded");
 
   return (
-    <div className="border-t-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] px-5 py-5 text-sm text-[color:var(--mauve)]">
+    <div className="border-t border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-5 text-sm text-[color:var(--slate)]">
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="space-y-2">
-          <p className="text-[0.65rem] font-black uppercase tracking-[0.16em] text-[color:var(--ink)]">
-            Details
-          </p>
+          <p className="eyebrow">Details</p>
           <Detail
             k="Charge"
             v={row.stripeChargeId ?? "(not synced yet)"}
@@ -627,7 +599,7 @@ function TransactionDetail({
             <Detail
               k="Event"
               v={
-                <Link className="font-bold underline" href={`/events/${row.eventSlug}`}>
+                <Link className="font-semibold text-[color:var(--purple)] underline" href={`/events/${row.eventSlug}`}>
                   {row.eventTitle ?? row.eventSlug}
                 </Link>
               }
@@ -638,7 +610,7 @@ function TransactionDetail({
               k="Merchant"
               v={
                 <Link
-                  className="font-bold underline"
+                  className="font-semibold text-[color:var(--purple)] underline"
                   href={`/admin/merchants/${row.merchantProfileId}`}
                 >
                   {row.merchantName ?? "Open merchant"}
@@ -651,7 +623,7 @@ function TransactionDetail({
               k="Attendee"
               v={
                 <Link
-                  className="font-bold underline"
+                  className="font-semibold text-[color:var(--purple)] underline"
                   href={`/admin/members/${row.attendeeId}`}
                 >
                   {row.attendeeName ?? row.attendeeEmail ?? "Open profile"}
@@ -661,28 +633,26 @@ function TransactionDetail({
           ) : null}
         </div>
         <div className="space-y-3">
-          <p className="text-[0.65rem] font-black uppercase tracking-[0.16em] text-[color:var(--ink)]">
-            Refund
-          </p>
+          <p className="eyebrow">Refund</p>
           {canRefund ? (
             <>
               <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
-                <label className="block text-xs font-bold text-[color:var(--ink)]">
+                <label className="block text-[12.5px] font-semibold text-[color:var(--slate)]">
                   Amount ({row.currency})
                   <input
                     type="text"
                     inputMode="decimal"
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
-                    className="mt-1 w-full rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-2 font-mono text-sm font-bold"
+                    className="mt-1 w-full rounded-xl border border-[color:var(--mist)] bg-white px-4 py-2 text-sm tabular-nums text-[color:var(--ink)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)]"
                   />
                 </label>
-                <label className="block text-xs font-bold text-[color:var(--ink)]">
+                <label className="block text-[12.5px] font-semibold text-[color:var(--slate)]">
                   Reason
                   <select
                     value={reason}
                     onChange={(e) => setReason(e.target.value as RefundReason | "")}
-                    className="mt-1 w-full rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-2 text-sm font-medium"
+                    className="mt-1 w-full rounded-xl border border-[color:var(--mist)] bg-white px-4 py-2 text-sm text-[color:var(--ink)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)]"
                   >
                     <option value="">— select —</option>
                     <option value="requested_by_customer">Requested by customer</option>
@@ -694,34 +664,34 @@ function TransactionDetail({
                   type="button"
                   onClick={submit}
                   disabled={submitting}
-                  className="self-end rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-5 py-2 text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)] disabled:opacity-60"
+                  className="ck-btn ck-btn--primary ck-btn--sm self-end"
                 >
                   {submitting ? "Refunding…" : "Issue refund"}
                 </button>
               </div>
-              <p className="text-[0.7rem] font-bold">
+              <p className="text-xs font-medium">
                 Refundable: {formatMoney(refundable, row.currency)}{" "}
                 {refundable_lt_total ? `(of ${formatMoney(row.amountCents, row.currency)})` : null}
               </p>
             </>
           ) : (
-            <p className="text-[0.75rem] font-bold">
+            <p className="text-xs font-medium">
               {row.status === "refunded"
-                ? "Fully refunded — no remaining balance."
+                ? "Fully refunded - no remaining balance."
                 : row.status === "failed"
-                  ? "Charge failed — nothing to refund."
+                  ? "Charge failed - nothing to refund."
                   : row.status === "pending"
-                    ? "Charge not yet captured — refund unavailable."
+                    ? "Charge not yet captured - refund unavailable."
                     : "Refund unavailable."}
             </p>
           )}
           {error ? (
-            <p className="rounded-lg border-2 border-[color:var(--rose)] bg-[color:var(--rose)]/10 px-3 py-2 text-xs font-bold text-[color:var(--ink)]">
+            <p className="rounded-lg border border-[color:var(--danger)]/40 bg-[color:var(--danger)]/5 px-3 py-2 text-xs font-medium text-[color:var(--danger)]">
               {error}
             </p>
           ) : null}
           {success ? (
-            <p className="rounded-lg border-2 border-[color:var(--peach)] bg-[color:var(--peach)]/30 px-3 py-2 text-xs font-bold text-[color:var(--ink)]">
+            <p className="rounded-lg bg-[color:var(--sage)]/12 px-3 py-2 text-xs font-medium text-[color:var(--ink)]">
               {success}
             </p>
           ) : null}
@@ -734,7 +704,8 @@ function TransactionDetail({
 function Detail({ k, v, mono }: { k: string; v: ReactNode; mono?: boolean }) {
   return (
     <div className="grid grid-cols-[140px_1fr] gap-3 text-xs">
-      <span className="font-black uppercase tracking-wider text-[color:var(--mauve)]">{k}</span>
+      <span className="font-semibold text-[color:var(--slate)]">{k}</span>
+      {/* Stripe IDs stay mono - they're data literals, not label voice. */}
       <span className={`text-[color:var(--ink)] ${mono ? "font-mono" : "font-medium"}`}>{v}</span>
     </div>
   );
@@ -743,8 +714,8 @@ function Detail({ k, v, mono }: { k: string; v: ReactNode; mono?: boolean }) {
 function PayoutsView({ payouts }: { payouts: AdminPayoutRow[] }) {
   if (payouts.length === 0) {
     return (
-      <div className="rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] px-6 py-12 text-center hard-shadow-sm">
-        <p className="font-bold text-[color:var(--mauve)]">
+      <div className="rounded-2xl border border-dashed border-[color:var(--line)] bg-[color:var(--paper)] px-6 py-12 text-center">
+        <p className="text-sm text-[color:var(--slate)]">
           No payouts synced yet. Run <strong>Sync from Stripe</strong> to pull recent
           payouts from connected accounts.
         </p>
@@ -752,8 +723,8 @@ function PayoutsView({ payouts }: { payouts: AdminPayoutRow[] }) {
     );
   }
   return (
-    <div className="overflow-visible rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow-sm">
-      <div className="hidden grid-cols-[1fr_1.6fr_1fr_1fr_1fr_1.2fr] gap-4 bg-[color:var(--surface-deep)] px-5 py-3 text-xs font-black uppercase tracking-[0.14em] text-[color:var(--on-deep)] lg:grid">
+    <div className="overflow-visible rounded-2xl bg-[color:var(--paper)] shadow-[var(--shadow-sm)]">
+      <div className="hidden grid-cols-[1fr_1.6fr_1fr_1fr_1fr_1.2fr] gap-4 border-b border-[color:var(--line)] px-5 py-3 text-xs font-semibold text-[color:var(--slate)] lg:grid">
         <span>Created</span>
         <span>Merchant</span>
         <span>Amount</span>
@@ -764,33 +735,31 @@ function PayoutsView({ payouts }: { payouts: AdminPayoutRow[] }) {
       {payouts.map((p) => (
         <div
           key={p.id}
-          className="grid gap-3 border-b border-[color:var(--line)] px-5 py-4 text-sm font-medium text-[color:var(--mauve)] last:border-0 lg:grid-cols-[1fr_1.6fr_1fr_1fr_1fr_1.2fr] lg:items-center"
+          className="grid gap-3 border-b border-[color:var(--line)] px-5 py-4 text-sm text-[color:var(--slate)] last:border-0 lg:grid-cols-[1fr_1.6fr_1fr_1fr_1fr_1.2fr] lg:items-center"
         >
           <span>{dateOnlyFormatter.format(new Date(p.createdAt))}</span>
           <div>
-            <p className="font-black text-[color:var(--ink)]">{p.merchantName ?? "—"}</p>
-            <p className="text-[0.65rem] font-mono">
+            <p className="font-semibold text-[color:var(--ink)]">{p.merchantName ?? "—"}</p>
+            <p className="font-mono text-[11px]">
               {truncate(p.stripeConnectAccountId)}
             </p>
           </div>
-          <p className="font-bold text-[color:var(--ink)]">
+          <p className="font-semibold text-[color:var(--ink)]">
             {formatMoney(p.amountCents, p.currency)}
           </p>
           <div>
-            <span
-              className={`inline-flex rounded-full border-2 border-[color:var(--line)] px-2.5 py-0.5 text-[0.65rem] font-black uppercase tracking-wider ${payoutStatusTone(p.status)}`}
-            >
+            <Badge tone={payoutStatusTone(p.status)}>
               {p.status.replace("_", " ")}
-            </span>
+            </Badge>
             {p.failureMessage ? (
-              <p className="mt-1 text-[0.65rem]">{p.failureMessage}</p>
+              <p className="mt-1 text-[11px]">{p.failureMessage}</p>
             ) : null}
           </div>
-          <span className="text-[0.75rem]">
+          <span className="text-xs">
             {p.arrivalDate ? dateOnlyFormatter.format(new Date(p.arrivalDate)) : "—"}
             {p.bankLast4 ? ` · •${p.bankLast4}` : ""}
           </span>
-          <span className="font-mono text-[0.65rem]">{truncate(p.stripePayoutId, 10, 4)}</span>
+          <span className="font-mono text-[11px]">{truncate(p.stripePayoutId, 10, 4)}</span>
         </div>
       ))}
     </div>
@@ -800,16 +769,16 @@ function PayoutsView({ payouts }: { payouts: AdminPayoutRow[] }) {
 function ConnectAccountsView({ accounts }: { accounts: AdminConnectAccountRow[] }) {
   if (accounts.length === 0) {
     return (
-      <div className="rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] px-6 py-12 text-center hard-shadow-sm">
-        <p className="font-bold text-[color:var(--mauve)]">
+      <div className="rounded-2xl border border-dashed border-[color:var(--line)] bg-[color:var(--paper)] px-6 py-12 text-center">
+        <p className="text-sm text-[color:var(--slate)]">
           No merchants have a Stripe Connect account yet.
         </p>
       </div>
     );
   }
   return (
-    <div className="overflow-visible rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow-sm">
-      <div className="hidden grid-cols-[1.6fr_1fr_1fr_1fr_1.2fr] gap-4 bg-[color:var(--surface-deep)] px-5 py-3 text-xs font-black uppercase tracking-[0.14em] text-[color:var(--on-deep)] lg:grid">
+    <div className="overflow-visible rounded-2xl bg-[color:var(--paper)] shadow-[var(--shadow-sm)]">
+      <div className="hidden grid-cols-[1.6fr_1fr_1fr_1fr_1.2fr] gap-4 border-b border-[color:var(--line)] px-5 py-3 text-xs font-semibold text-[color:var(--slate)] lg:grid">
         <span>Merchant</span>
         <span>Charges</span>
         <span>Payouts</span>
@@ -819,23 +788,23 @@ function ConnectAccountsView({ accounts }: { accounts: AdminConnectAccountRow[] 
       {accounts.map((a) => (
         <div
           key={a.merchantProfileId}
-          className="grid gap-3 border-b border-[color:var(--line)] px-5 py-4 text-sm font-medium text-[color:var(--mauve)] last:border-0 lg:grid-cols-[1.6fr_1fr_1fr_1fr_1.2fr] lg:items-center"
+          className="grid gap-3 border-b border-[color:var(--line)] px-5 py-4 text-sm text-[color:var(--slate)] last:border-0 lg:grid-cols-[1.6fr_1fr_1fr_1fr_1.2fr] lg:items-center"
         >
           <div>
             <Link
               href={`/admin/merchants/${a.merchantProfileId}`}
-              className="font-black text-[color:var(--ink)] hover:underline"
+              className="font-semibold text-[color:var(--ink)] hover:underline"
             >
               {a.businessName}
             </Link>
-            <p className="text-[0.65rem] uppercase tracking-wider">
+            <p className="text-[11px]">
               {a.verificationStatus}
             </p>
           </div>
           <CapabilityBadge enabled={a.chargesEnabled} label="charges" />
           <CapabilityBadge enabled={a.payoutsEnabled} label="payouts" />
           <CapabilityBadge enabled={a.detailsSubmitted} label="details" />
-          <span className="font-mono text-[0.7rem]">{truncate(a.stripeConnectAccountId, 10, 4)}</span>
+          <span className="font-mono text-xs">{truncate(a.stripeConnectAccountId, 10, 4)}</span>
         </div>
       ))}
     </div>
@@ -844,15 +813,10 @@ function ConnectAccountsView({ accounts }: { accounts: AdminConnectAccountRow[] 
 
 function CapabilityBadge({ enabled, label }: { enabled: boolean; label: string }) {
   return (
-    <span
-      className={`inline-flex w-fit items-center gap-1 rounded-full border-2 border-[color:var(--line)] px-2.5 py-0.5 text-[0.65rem] font-black uppercase tracking-wider ${
-        enabled
-          ? "bg-[color:var(--peach)] text-[color:var(--surface-deep)]"
-          : "bg-[color:var(--rose)] text-[color:var(--surface-deep)]"
-      }`}
-    >
-      <span className={`size-1.5 rounded-full ${enabled ? "bg-[color:var(--surface-deep)]" : "bg-[color:var(--champagne)]"}`} />
-      {enabled ? `${label} on` : `${label} off`}
+    <span className="inline-flex w-fit">
+      <Badge tone={enabled ? "sage" : "neutral"}>
+        {enabled ? `${label} on` : `${label} off`}
+      </Badge>
     </span>
   );
 }

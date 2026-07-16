@@ -67,11 +67,11 @@ export function ProposalCard({
   return (
     <li className="rounded-[var(--radius-xl)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-5 shadow-[var(--shadow-sm)]">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs font-bold tracking-[0.08em] uppercase text-[color:var(--purple-700)]">
+        <p className="text-[12.5px] font-semibold text-[color:var(--slate)]">
           You +{" "}
           <Link
             href={`/profile/${proposal.otherId}`}
-            className="underline decoration-dotted underline-offset-2 hover:text-[color:var(--ink)]"
+            className="text-[color:var(--purple)] underline decoration-dotted underline-offset-2 hover:text-[color:var(--ink)]"
           >
             {proposal.otherName}
           </Link>
@@ -108,10 +108,10 @@ export function ProposalCard({
           Neither person is attending it, so spell that out and steer them to
           "Suggest alternative" rather than leaving a dead, disabled card. */}
       {proposal.suggestionUnavailable && !settled ? (
-        <p className="mt-3 rounded-2xl border-2 border-dashed border-[color:var(--rose)] bg-[color:var(--cream)] p-3 text-sm font-medium text-[color:var(--mauve)]">
+        <p className="mt-3 rounded-2xl bg-[color:var(--lav-bg)] p-3 text-sm font-medium text-[color:var(--ink-soft)]">
           The event you were eyeing is now full or no longer available - you
           aren&apos;t booked into anything. Tap{" "}
-          <span className="font-bold text-[color:var(--ink)]">Suggest alternative</span>{" "}
+          <span className="font-semibold text-[color:var(--ink)]">Suggest alternative</span>{" "}
           to pick a new plan together.
         </p>
       ) : null}
@@ -119,10 +119,10 @@ export function ProposalCard({
       {proposal.status === "confirmed" ? (
         proposal.suggestedEventSlug ? (
           <div className="mt-4 rounded-[var(--radius-lg)] bg-[color:var(--lav-bg)] p-3">
-            <p className="text-sm font-bold text-[color:var(--ink)]">
+            <p className="text-sm font-semibold text-[color:var(--ink)]">
               {proposal.confirmedByMe
                 ? "You're in - now lock in your seat."
-                : `${proposal.otherName} confirmed this plan 🎉`}
+                : `${proposal.otherName} confirmed this plan`}
             </p>
             <p className="mt-1 text-sm font-medium text-[color:var(--ink)]/80">
               {proposal.confirmedByMe ? (
@@ -145,14 +145,14 @@ export function ProposalCard({
             </Link>
           </div>
         ) : (
-          <p className="mt-4 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-3 text-sm font-medium text-[color:var(--mauve)]">
+          <p className="mt-4 rounded-2xl bg-[color:var(--lav-bg)] p-3 text-sm font-medium text-[color:var(--ink-soft)]">
             You and {proposal.otherName} agreed on a plan, but that event
             isn&apos;t available anymore. Click again at a future event to make a
             new one.
           </p>
         )
       ) : proposal.isExpired ? (
-        <p className="mt-4 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-3 text-sm font-medium text-[color:var(--mauve)]">
+        <p className="mt-4 rounded-2xl bg-[color:var(--lav-bg)] p-3 text-sm font-medium text-[color:var(--ink-soft)]">
           This proposal expired. Click again at a future event to reopen it.
         </p>
       ) : (
@@ -192,14 +192,14 @@ export function ProposalCard({
               className="mt-4 rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-4"
             >
               <input type="hidden" name="proposal_id" value={proposal.id} />
-              <label className="block text-xs font-bold tracking-[0.08em] uppercase text-[color:var(--slate)]">
+              <label className="eyebrow block">
                 Choose from the Click catalogue
               </label>
               <select
                 name="event_slug"
                 required
                 defaultValue=""
-                className="mt-2 h-11 w-full rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] px-3 text-sm text-[color:var(--ink)] focus:border-[color:var(--purple)] focus:outline-none"
+                className="mt-2 h-11 w-full rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] px-3 text-sm text-[color:var(--ink)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)]"
               >
                 <option value="" disabled>
                   Pick an event…
@@ -224,7 +224,7 @@ export function ProposalCard({
                 </button>
               </div>
               {proposeState.error ? (
-                <p className="mt-3 text-xs font-bold text-[color:var(--rose)]">
+                <p className="mt-3 text-xs font-medium text-[color:var(--danger)]">
                   {proposeState.error}
                 </p>
               ) : null}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Icon } from "./ds";
 
 // Share an event via the device's native share sheet (text / email / WhatsApp /
 // Messenger / Instagram etc. on mobile) with a desktop fallback menu of direct
@@ -81,22 +82,23 @@ export function ShareEventButton({
         onClick={handleClick}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="inline-flex items-center gap-1.5 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-1.5 text-[0.7rem] font-bold uppercase tracking-wide text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+        className="ck-btn ck-btn--secondary ck-btn--sm"
       >
-        ↗ Share event
+        <Icon name="share" size={14} />
+        Share event
       </button>
 
       {open ? (
         <div
           role="menu"
-          className="absolute left-0 top-full z-50 mt-2 w-56 overflow-hidden rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow"
+          className="absolute left-0 top-full z-50 mt-2 w-56 overflow-hidden rounded-xl border border-[color:var(--line)] bg-[color:var(--paper)] shadow-[var(--shadow-md)]"
         >
           <button
             type="button"
             onClick={copyLink}
-            className="block w-full px-4 py-2.5 text-left text-sm font-bold text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+            className="block w-full px-4 py-2.5 text-left text-sm font-medium text-[color:var(--ink)] hover:bg-[color:var(--lavender-100)]"
           >
-            {copied ? "✓ Link copied" : "Copy link"}
+            {copied ? "Link copied" : "Copy link"}
           </button>
           {links.map((link) => (
             <a
@@ -104,7 +106,7 @@ export function ShareEventButton({
               href={link.href}
               target="_blank"
               rel="noopener noreferrer"
-              className="block px-4 py-2.5 text-sm font-bold text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+              className="block px-4 py-2.5 text-sm font-medium text-[color:var(--ink)] hover:bg-[color:var(--lavender-100)]"
             >
               {link.label}
             </a>

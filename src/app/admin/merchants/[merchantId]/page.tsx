@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AdminMerchantAutoApprove } from "@/components/admin-merchant-auto-approve";
 import { AdminMerchantVerification } from "@/components/admin-merchant-verification";
+import { Badge, type BadgeTone } from "@/components/ds";
 import {
   getAdminMerchantDetail,
   getMerchantDocumentsForAdmin,
@@ -59,30 +60,26 @@ function titleCase(value: string) {
     .join(" ");
 }
 
-function statusTone(status: string) {
+function statusTone(status: string): BadgeTone {
   const s = status.toLowerCase();
-  if (s === "approved") return "bg-[color:var(--peach)] text-[color:var(--surface-deep)]";
-  if (s === "rejected") return "bg-[color:var(--ink)] text-[color:var(--champagne)]";
-  return "bg-[color:var(--rose)] text-[color:var(--surface-deep)]";
+  if (s === "approved") return "sage";
+  if (s === "rejected") return "coral";
+  return "amber";
 }
 
-function eventStatusTone(status: string) {
+function eventStatusTone(status: string): BadgeTone {
   const s = status.toLowerCase();
-  if (s === "live" || s === "featured")
-    return "bg-[color:var(--peach)] text-[color:var(--surface-deep)]";
-  if (s === "cancelled" || s === "locked")
-    return "bg-[color:var(--ink)] text-[color:var(--champagne)]";
-  if (s === "pending") return "bg-[color:var(--rose)] text-[color:var(--surface-deep)]";
-  return "bg-[color:var(--cream)] text-[color:var(--ink)]";
+  if (s === "live" || s === "featured") return "sage";
+  if (s === "cancelled" || s === "locked") return "neutral";
+  if (s === "pending") return "amber";
+  return "neutral";
 }
 
-function transactionTone(status: string) {
+function transactionTone(status: string): BadgeTone {
   const s = status.toLowerCase();
-  if (s === "paid" || s === "succeeded")
-    return "bg-[color:var(--peach)] text-[color:var(--surface-deep)]";
-  if (s === "refunded" || s === "failed" || s === "cancelled")
-    return "bg-[color:var(--rose)] text-[color:var(--surface-deep)]";
-  return "bg-[color:var(--cream)] text-[color:var(--ink)]";
+  if (s === "paid" || s === "succeeded") return "sage";
+  if (s === "refunded" || s === "failed" || s === "cancelled") return "coral";
+  return "neutral";
 }
 
 function socialUrl(platform: string | null, handle: string): string | null {
@@ -151,30 +148,25 @@ export default async function AdminMerchantDetailPage({
 
   return (
     <div className="space-y-8 py-10">
-      <Link
-        href="/admin/merchants"
-        className="inline-flex items-center gap-2 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)]"
-      >
+      <Link href="/admin/merchants" className="ck-btn ck-btn--secondary ck-btn--sm">
         ← All merchants
       </Link>
 
-      <header className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-6 hard-shadow-sm sm:p-8">
+      <header className="rounded-[18px] bg-[color:var(--paper)] p-6 shadow-[var(--shadow-sm)] sm:p-8">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
-            <span
-              className={`inline-flex rounded-full border-2 border-[color:var(--line)] px-2.5 py-0.5 text-[0.65rem] font-black uppercase tracking-wider ${statusTone(merchant.verificationStatus)}`}
-            >
-              {merchant.verificationStatus}
-            </span>
-            <h1 className="font-display mt-3 text-4xl font-bold leading-[1.05] tracking-[-0.025em] sm:text-5xl">
+            <Badge tone={statusTone(merchant.verificationStatus)}>
+              {titleCase(merchant.verificationStatus)}
+            </Badge>
+            <h1 className="font-display mt-3 text-4xl font-semibold leading-[1.05] tracking-[-0.02em] text-[color:var(--ink)] sm:text-5xl">
               {merchant.businessName}
             </h1>
             {merchant.tradingName && merchant.tradingName !== merchant.businessName ? (
-              <p className="mt-1 text-sm font-medium text-[color:var(--mauve)]">
+              <p className="mt-1 text-sm text-[color:var(--slate)]">
                 Trading as {merchant.tradingName}
               </p>
             ) : null}
-            <p className="mt-2 font-mono text-xs font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+            <p className="mt-2 text-sm text-[color:var(--slate)]">
               {merchant.contactEmail}
             </p>
             <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1">
@@ -183,7 +175,7 @@ export default async function AdminMerchantDetailPage({
                   href={merchant.websiteUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-block text-xs font-bold uppercase tracking-wider text-[color:var(--ink)] underline"
+                  className="inline-block text-xs font-semibold text-[color:var(--purple)] underline underline-offset-2"
                 >
                   {merchant.websiteUrl.replace(/^https?:\/\//, "")}
                 </a>
@@ -195,14 +187,14 @@ export default async function AdminMerchantDetailPage({
                     href={social.url}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-block text-xs font-bold uppercase tracking-wider text-[color:var(--ink)] underline"
+                    className="inline-block text-xs font-semibold text-[color:var(--purple)] underline underline-offset-2"
                   >
                     {social.label}
                   </a>
                 ) : (
                   <span
                     key={social.platform}
-                    className="inline-block text-xs font-bold uppercase tracking-wider text-[color:var(--mauve)]"
+                    className="inline-block text-xs font-semibold text-[color:var(--slate)]"
                   >
                     {social.label}
                   </span>
@@ -231,7 +223,7 @@ export default async function AdminMerchantDetailPage({
                   href={abrSearchUrl(merchant.abn)}
                   target="_blank"
                   rel="noreferrer"
-                  className="text-[0.65rem] font-bold uppercase tracking-wider text-[color:var(--rose)] underline"
+                  className="text-xs font-semibold text-[color:var(--purple)] underline underline-offset-2"
                 >
                   Verify on ABR ↗
                 </a>
@@ -270,7 +262,7 @@ export default async function AdminMerchantDetailPage({
               <img
                 src={merchant.owner.photoUrl}
                 alt={merchant.owner.displayName}
-                className="size-16 rounded-2xl border-2 border-[color:var(--line)] object-cover hard-shadow-sm"
+                className="size-16 rounded-2xl border border-[color:var(--line)] object-cover"
               />
             ) : null}
             <div className="min-w-0">
@@ -280,12 +272,12 @@ export default async function AdminMerchantDetailPage({
               >
                 {merchant.owner.displayName}
               </Link>
-              <p className="mt-1 font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+              <p className="mt-1 text-sm text-[color:var(--slate)]">
                 {merchant.owner.email}
               </p>
               <Link
                 href={`/admin/members/${merchant.owner.id}`}
-                className="mt-3 inline-flex rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-1 text-[0.65rem] font-bold uppercase tracking-wider text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+                className="ck-btn ck-btn--ghost ck-btn--sm mt-3"
               >
                 View attendee profile →
               </Link>
@@ -342,7 +334,7 @@ export default async function AdminMerchantDetailPage({
 
       <Card title={`Documents (${documents.length})`}>
         {documents.length === 0 ? (
-          <p className="text-sm font-medium text-[color:var(--mauve)]">
+          <p className="text-sm text-[color:var(--slate)]">
             No documents uploaded.
           </p>
         ) : (
@@ -357,7 +349,7 @@ export default async function AdminMerchantDetailPage({
       <section className="grid gap-6 lg:grid-cols-2">
         <Card title={`Upcoming events (${merchant.upcomingEvents.length})`}>
           {merchant.upcomingEvents.length === 0 ? (
-            <p className="text-sm font-medium text-[color:var(--mauve)]">
+            <p className="text-sm text-[color:var(--slate)]">
               No upcoming events scheduled.
             </p>
           ) : (
@@ -371,7 +363,7 @@ export default async function AdminMerchantDetailPage({
 
         <Card title={`Past events (${merchant.pastEvents.length})`}>
           {merchant.pastEvents.length === 0 ? (
-            <p className="text-sm font-medium text-[color:var(--mauve)]">
+            <p className="text-sm text-[color:var(--slate)]">
               No past events yet.
             </p>
           ) : (
@@ -386,14 +378,14 @@ export default async function AdminMerchantDetailPage({
 
       <Card title={`Transactions (${merchant.transactions.length})`}>
         {merchant.transactions.length === 0 ? (
-          <p className="text-sm font-medium text-[color:var(--mauve)]">
+          <p className="text-sm text-[color:var(--slate)]">
             No transactions yet.
           </p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-sm">
               <thead>
-                <tr className="text-left font-mono text-[0.6rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+                <tr className="text-left text-[12.5px] font-semibold text-[color:var(--slate)]">
                   <th className="pb-2 pr-4">Date</th>
                   <th className="pb-2 pr-4">Event</th>
                   <th className="pb-2 pr-4">Attendee</th>
@@ -405,10 +397,10 @@ export default async function AdminMerchantDetailPage({
               <tbody className="divide-y divide-[color:var(--line-soft)]">
                 {merchant.transactions.map((txn) => (
                   <tr key={txn.id}>
-                    <td className="py-3 pr-4 font-mono text-xs text-[color:var(--mauve)] whitespace-nowrap">
+                    <td className="py-3 pr-4 text-xs text-[color:var(--slate)] whitespace-nowrap">
                       {dateTimeFormatter.format(new Date(txn.createdAt))}
                     </td>
-                    <td className="py-3 pr-4 font-bold text-[color:var(--ink)]">
+                    <td className="py-3 pr-4 font-semibold text-[color:var(--ink)]">
                       {txn.eventSlug && txn.eventTitle ? (
                         <Link
                           href={`/events/${txn.eventSlug}`}
@@ -423,22 +415,18 @@ export default async function AdminMerchantDetailPage({
                     <td className="py-3 pr-4 text-[color:var(--ink)]">
                       {txn.attendeeName ?? "—"}
                       {txn.attendeeEmail ? (
-                        <span className="block font-mono text-[0.65rem] text-[color:var(--mauve)]">
+                        <span className="block text-[11px] text-[color:var(--slate)]">
                           {txn.attendeeEmail}
                         </span>
                       ) : null}
                     </td>
-                    <td className="py-3 pr-4 font-bold text-[color:var(--ink)] whitespace-nowrap">
+                    <td className="py-3 pr-4 font-semibold text-[color:var(--ink)] whitespace-nowrap">
                       {formatMoney(txn.amountCents, txn.currency)}
                     </td>
                     <td className="py-3 pr-4">
-                      <span
-                        className={`inline-flex rounded-full border-2 border-[color:var(--line)] px-2.5 py-0.5 text-[0.6rem] font-black uppercase tracking-wider ${transactionTone(txn.status)}`}
-                      >
-                        {txn.status}
-                      </span>
+                      <Badge tone={transactionTone(txn.status)}>{txn.status}</Badge>
                     </td>
-                    <td className="py-3 font-mono text-[0.65rem] text-[color:var(--mauve)]">
+                    <td className="py-3 text-[11px] text-[color:var(--slate)]">
                       {txn.stripePaymentIntentId ?? "—"}
                     </td>
                   </tr>
@@ -457,8 +445,8 @@ function DocumentRow({ doc }: { doc: AdminMerchantDocument }) {
   return (
     <li className="flex items-center justify-between gap-3 py-3">
       <div className="min-w-0">
-        <p className="font-bold text-[color:var(--ink)]">{label}</p>
-        <p className="mt-1 truncate font-mono text-[0.65rem] font-bold uppercase tracking-wider text-[color:var(--mauve)]">
+        <p className="font-semibold text-[color:var(--ink)]">{label}</p>
+        <p className="mt-1 truncate text-xs text-[color:var(--slate)]">
           {doc.file_name} · {dateFormatter.format(new Date(doc.uploaded_at))}
         </p>
       </div>
@@ -467,12 +455,12 @@ function DocumentRow({ doc }: { doc: AdminMerchantDocument }) {
           href={doc.signedUrl}
           target="_blank"
           rel="noreferrer"
-          className="shrink-0 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-3 py-1 text-[0.65rem] font-bold uppercase tracking-wider text-[color:var(--surface-deep)] hover:bg-[color:var(--rose)]"
+          className="ck-btn ck-btn--secondary ck-btn--sm shrink-0"
         >
           View ↗
         </a>
       ) : (
-        <span className="shrink-0 font-mono text-[0.6rem] font-bold uppercase tracking-wider text-[color:var(--mauve)]">
+        <span className="shrink-0 text-xs font-semibold text-[color:var(--slate)]">
           Storage off
         </span>
       )}
@@ -491,17 +479,17 @@ function EventRow({ event }: { event: AdminMerchantDetailEvent }) {
         <div className="min-w-0">
           <Link
             href={`/events/${event.slug}`}
-            className="block font-bold text-[color:var(--ink)] hover:underline"
+            className="block font-semibold text-[color:var(--ink)] hover:underline"
           >
             {event.title}
           </Link>
-          <p className="mt-1 font-mono text-[0.65rem] font-bold uppercase tracking-wider text-[color:var(--mauve)]">
+          <p className="mt-1 text-xs text-[color:var(--slate)]">
             {event.startsAt
               ? dateFormatter.format(new Date(event.startsAt))
               : "TBD"}
             {event.suburb ? ` · ${event.suburb}` : ""}
           </p>
-          <p className="mt-1 text-xs font-bold text-[color:var(--ink)]">
+          <p className="mt-1 text-xs font-medium text-[color:var(--ink)]">
             {capacityLabel} confirmed
             {event.waitlistedAttendees > 0
               ? ` · ${event.waitlistedAttendees} waitlist`
@@ -511,10 +499,8 @@ function EventRow({ event }: { event: AdminMerchantDetailEvent }) {
               : ""}
           </p>
         </div>
-        <span
-          className={`shrink-0 rounded-full border-2 border-[color:var(--line)] px-2.5 py-0.5 text-[0.6rem] font-black uppercase tracking-wider ${eventStatusTone(event.status)}`}
-        >
-          {event.status}
+        <span className="shrink-0">
+          <Badge tone={eventStatusTone(event.status)}>{event.status}</Badge>
         </span>
       </div>
     </li>
@@ -532,10 +518,10 @@ function Stat({
 }) {
   return (
     <div>
-      <dt className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+      <dt className="text-[12.5px] font-semibold text-[color:var(--slate)]">
         {label}
       </dt>
-      <dd className="mt-1 break-words font-bold text-[color:var(--ink)]">
+      <dd className="mt-1 break-words font-semibold text-[color:var(--ink)]">
         {value}
         {action ? <span className="ml-2 font-normal">{action}</span> : null}
       </dd>
@@ -556,25 +542,25 @@ function Metric({
 }) {
   const toneClass =
     tone === "peach"
-      ? "bg-[color:var(--peach)]"
+      ? "bg-[color:var(--lavender-100)]"
       : tone === "cream"
-        ? "bg-[color:var(--cream)]"
+        ? "bg-[color:var(--paper)]"
         : tone === "rose"
-          ? "bg-[color:var(--rose)]/40"
+          ? "bg-[color:var(--mist)]"
           : "bg-[color:var(--champagne)]";
   return (
     <div
-      className={`rounded-xl border-2 border-[color:var(--line)] p-3 ${toneClass}`}
+      className={`rounded-xl border border-[color:var(--line-soft)] p-3 ${toneClass}`}
       title={hint}
     >
-      <p className="font-mono text-[0.6rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+      <p className="text-[12.5px] font-semibold text-[color:var(--slate)]">
         {label}
       </p>
       <p className="mt-1 font-display text-xl font-semibold tracking-tight text-[color:var(--ink)]">
         {value}
       </p>
       {hint ? (
-        <p className="mt-0.5 truncate text-[0.65rem] font-medium text-[color:var(--mauve)]">
+        <p className="mt-0.5 truncate text-[11px] text-[color:var(--slate)]">
           {hint}
         </p>
       ) : null}
@@ -584,10 +570,8 @@ function Metric({
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-5 hard-shadow-sm">
-      <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
-        {title}
-      </p>
+    <div className="rounded-[18px] bg-[color:var(--paper)] p-5 shadow-[var(--shadow-sm)]">
+      <p className="eyebrow">{title}</p>
       <div className="mt-3">{children}</div>
     </div>
   );

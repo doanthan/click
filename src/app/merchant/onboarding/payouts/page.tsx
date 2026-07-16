@@ -16,7 +16,7 @@ import {
 export const dynamic = "force-dynamic";
 
 const cardClass =
-  "rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-6 hard-shadow sm:p-8";
+  "rounded-[18px] bg-[color:var(--paper)] p-6 shadow-[var(--shadow-sm)] sm:p-8";
 
 type PageProps = {
   searchParams?: Promise<{ stripe?: string }>;
@@ -52,50 +52,48 @@ export default async function OnboardingPayoutsPage({ searchParams }: PageProps)
   return (
     <div className="grid gap-6">
       <div className={cardClass}>
-        <h2 className="font-display text-3xl font-semibold leading-tight">
+        <h2 className="font-display text-3xl font-semibold leading-tight text-[color:var(--ink)]">
           Connect payouts.
         </h2>
-        <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+        <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--slate)]">
           Paid events run through Stripe. Connect your business and bank details
           once - Stripe collects them securely (we never see your bank
           numbers), and your event earnings pay out automatically.
         </p>
 
         {!stripeConfigured ? (
-          <div className="mt-6 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-4">
-            <p className="text-sm font-bold text-[color:var(--ink)]">
+          <div className="mt-6 rounded-2xl border border-[color:var(--line)] bg-[color:var(--champagne)] p-4">
+            <p className="text-sm font-semibold text-[color:var(--ink)]">
               Payments aren&apos;t enabled on this environment yet.
             </p>
-            <p className="mt-1 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+            <p className="mt-1 text-sm font-medium leading-6 text-[color:var(--slate)]">
               You can keep going and run free events - connect payouts later from
               your dashboard.
             </p>
           </div>
         ) : payoutsEnabled ? (
-          <div className="mt-6 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--peach)] p-4">
-            <p className="text-sm font-bold text-[color:var(--surface-deep)]">
+          <div className="mt-6 rounded-2xl bg-[color:var(--lavender-100)] p-4">
+            <p className="text-sm font-semibold text-[color:var(--ink)]">
               ✓ Payouts connected - you&apos;re ready to take payments.
             </p>
           </div>
         ) : connected ? (
           <div className="mt-6 grid gap-4">
             <div
-              className={`rounded-2xl border-2 border-[color:var(--line)] p-4 ${
-                detailsSubmitted ? "bg-[color:var(--peach)]" : "bg-[color:var(--champagne)]"
+              className={`rounded-2xl p-4 ${
+                detailsSubmitted
+                  ? "bg-[color:var(--lavender-100)]"
+                  : "border border-[color:var(--line)] bg-[color:var(--champagne)]"
               }`}
             >
-              <p
-                className={`text-sm font-bold ${
-                  detailsSubmitted ? "text-[color:var(--surface-deep)]" : "text-[color:var(--ink)]"
-                }`}
-              >
+              <p className="text-sm font-semibold text-[color:var(--ink)]">
                 {detailsSubmitted
                   ? "✓ Details submitted - Stripe is verifying."
                   : "You started setup but a few details are still needed."}
               </p>
               <p
                 className={`mt-1 text-sm font-medium leading-6 ${
-                  detailsSubmitted ? "text-[color:var(--surface-deep)]" : "text-[color:var(--mauve)]"
+                  detailsSubmitted ? "text-[color:var(--ink-soft)]" : "text-[color:var(--slate)]"
                 }`}
               >
                 {detailsSubmitted
@@ -113,7 +111,7 @@ export default async function OnboardingPayoutsPage({ searchParams }: PageProps)
           </div>
         ) : (
           <div className="mt-6 grid gap-4">
-            <ul className="grid gap-2 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+            <ul className="grid gap-2 text-sm font-medium leading-6 text-[color:var(--slate)]">
               <li>• Business + bank details, collected securely by Stripe</li>
               <li>• Automatic payouts after each event wraps</li>
               <li>• Takes about 5 minutes - you can skip and do it later</li>
@@ -136,13 +134,13 @@ export default async function OnboardingPayoutsPage({ searchParams }: PageProps)
         <div className="flex flex-wrap items-center justify-between gap-3">
           <Link
             href="/merchant/onboarding/create-events"
-            className="inline-flex items-center justify-center rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-6 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--cream)]"
+            className="ck-btn ck-btn--secondary ck-btn--md"
           >
             ← Back
           </Link>
           <Link
             href="/merchant/onboarding/done"
-            className="inline-flex items-center justify-center rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-6 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--mauve)] hard-shadow-sm hover:bg-[color:var(--cream)]"
+            className="ck-btn ck-btn--ghost ck-btn--md"
           >
             Skip for now →
           </Link>

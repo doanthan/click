@@ -2,6 +2,7 @@
 
 import "mapbox-gl/dist/mapbox-gl.css";
 import Map, { Marker, NavigationControl } from "react-map-gl/mapbox";
+import { Icon } from "./ds";
 
 const TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 const STYLE = "mapbox://styles/mapbox/streets-v12";
@@ -21,7 +22,7 @@ export function EventVenueMap({
   mapsUrl: string;
 }) {
   return (
-    <div className="mt-4 overflow-hidden rounded-xl border-2 border-[color:var(--line)] hard-shadow-sm">
+    <div className="mt-4 overflow-hidden rounded-2xl border border-[color:var(--line)]">
       <div className="relative h-44">
         {TOKEN ? (
           <Map
@@ -36,9 +37,9 @@ export function EventVenueMap({
             <Marker longitude={lng} latitude={lat} anchor="bottom">
               <span
                 title={label}
-                className="flex size-7 items-center justify-center rounded-full border-2 border-[color:var(--ink)] bg-[color:var(--rose)] text-sm shadow"
+                className="flex size-7 items-center justify-center rounded-full bg-[color:var(--purple)] text-[color:var(--champagne)] shadow-[var(--shadow-sm)]"
               >
-                📍
+                <Icon name="pin" size={15} />
               </span>
             </Marker>
           </Map>
@@ -47,12 +48,12 @@ export function EventVenueMap({
             href={mapsUrl}
             target="_blank"
             rel="noreferrer"
-            className="flex h-full flex-col items-center justify-center gap-1 bg-[color:var(--cream)] px-4 text-center"
+            className="flex h-full flex-col items-center justify-center gap-1 bg-[color:var(--paper)] px-4 text-center"
           >
-            <span className="text-sm font-bold text-[color:var(--ink)]">
+            <span className="text-sm font-semibold text-[color:var(--ink)]">
               Open the venue in Maps →
             </span>
-            <span className="text-xs font-medium text-[color:var(--mauve)]">
+            <span className="text-xs text-[color:var(--slate)]">
               {label}
             </span>
           </a>
@@ -62,7 +63,7 @@ export function EventVenueMap({
             href={mapsUrl}
             target="_blank"
             rel="noreferrer"
-            className="absolute left-2 top-2 z-10 rounded-lg border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-2.5 py-1.5 text-[0.7rem] font-bold text-[color:var(--ink)] shadow hover:bg-[color:var(--peach)]"
+            className="absolute left-2 top-2 z-10 rounded-lg bg-[color:var(--paper)] px-2.5 py-1.5 text-xs font-semibold text-[color:var(--ink)] shadow-[var(--shadow-sm)] hover:bg-[color:var(--lavender-100)]"
           >
             Open in Maps
           </a>

@@ -46,7 +46,7 @@ export function MerchantEventResubmitButton({ eventId }: { eventId: string }) {
         type="button"
         onClick={resubmit}
         disabled={state === "submitting" || state === "done"}
-        className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)] disabled:cursor-not-allowed disabled:opacity-60"
+        className="ck-btn ck-btn--primary ck-btn--md"
       >
         {state === "submitting"
           ? "Resubmitting…"

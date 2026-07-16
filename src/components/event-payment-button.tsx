@@ -40,7 +40,7 @@ function rowError(row: GuestRow, eventDateISO: string | undefined): string | nul
   const started = row.firstName || row.email || row.dob;
   if (!started) return null;
   const name = row.firstName.trim();
-  if (name.length < 2 || name.length > 50) return "First name must be 2–50 characters.";
+  if (name.length < 2 || name.length > 50) return "First name must be 2-50 characters.";
   if (!EMAIL_RE.test(row.email.trim())) return "Enter a valid email.";
   if (!row.dob) return "Date of birth is required.";
   if (eventDateISO) {
@@ -188,19 +188,20 @@ export function EventPaymentButton({
       {guestsEnabled ? (
         <div className="grid gap-2 rounded-[var(--radius-md)] bg-[color:var(--lav-bg)] p-3">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)]">
+            <span className="text-[12.5px] font-semibold text-[color:var(--slate)]">
               Tickets
             </span>
-            <div className="flex gap-1">
+            <div className="flex gap-1.5">
               {Array.from({ length: maxTickets }, (_, i) => i + 1).map((n) => (
                 <button
                   key={n}
                   type="button"
                   onClick={() => setTicketCount(n)}
-                  className={`h-8 w-8 rounded-full border-2 border-[color:var(--line)] text-sm font-bold ${
+                  aria-pressed={tickets === n}
+                  className={`size-11 rounded-xl text-sm font-semibold transition-colors ${
                     tickets === n
-                      ? "bg-[color:var(--ink)] text-[color:var(--champagne)]"
-                      : "bg-[color:var(--surface)] text-[color:var(--surface-deep)]"
+                      ? "bg-[color:var(--purple)] text-[color:var(--champagne)]"
+                      : "border border-[color:var(--mist)] bg-[color:var(--paper)] text-[color:var(--ink)] hover:bg-[color:var(--lavender-100)]"
                   }`}
                 >
                   {n}
@@ -210,7 +211,7 @@ export function EventPaymentButton({
           </div>
 
           {tickets > 1 ? (
-            <label className="flex items-start gap-2 text-xs font-semibold text-[color:var(--surface-deep)]">
+            <label className="flex items-start gap-2 text-xs font-medium text-[color:var(--ink-soft)]">
               <input
                 type="checkbox"
                 checked={namingOn}
@@ -223,25 +224,25 @@ export function EventPaymentButton({
 
           {namingOn && tickets > 1 ? (
             <div className="grid gap-3">
-              <p className="text-[11px] font-semibold text-[color:var(--surface-deep)]/70">
+              <p className="text-[11px] font-medium text-[color:var(--slate)]">
                 You can name up to {tickets - 1} friend{tickets - 1 === 1 ? "" : "s"}. Leave a
                 slot blank to bring an unnamed +1.
               </p>
               {rows.map((row, i) => (
-                <div key={i} className="grid gap-1 rounded-lg border border-[color:var(--line)] bg-[color:var(--surface)] p-2">
-                  <div className="grid grid-cols-2 gap-1">
+                <div key={i} className="grid gap-1.5 rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] p-2">
+                  <div className="grid grid-cols-2 gap-1.5">
                     <input
                       value={row.firstName}
                       onChange={(e) => updateRow(i, { firstName: e.target.value })}
                       placeholder="First name"
-                      className="rounded-md border border-[color:var(--line)] px-2 py-1.5 text-sm"
+                      className="rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] px-3 py-2 text-base text-[color:var(--ink)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)]"
                     />
                     <input
                       type="date"
                       value={row.dob}
                       onChange={(e) => updateRow(i, { dob: e.target.value })}
                       aria-label="Guest date of birth"
-                      className="rounded-md border border-[color:var(--line)] px-2 py-1.5 text-sm"
+                      className="rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] px-3 py-2 text-base text-[color:var(--ink)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)]"
                     />
                   </div>
                   <input
@@ -249,7 +250,7 @@ export function EventPaymentButton({
                     value={row.email}
                     onChange={(e) => updateRow(i, { email: e.target.value })}
                     placeholder="Email"
-                    className="rounded-md border border-[color:var(--line)] px-2 py-1.5 text-sm"
+                    className="rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] px-3 py-2 text-base text-[color:var(--ink)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)]"
                   />
                   {rowErrors[i] ? (
                     <p className="text-[11px] font-medium text-[color:var(--danger)]">{rowErrors[i]}</p>
@@ -257,7 +258,7 @@ export function EventPaymentButton({
                 </div>
               ))}
               {namedRows.length > 0 ? (
-                <label className="flex items-start gap-2 text-[11px] font-semibold text-[color:var(--surface-deep)]">
+                <label className="flex items-start gap-2 text-[11px] font-medium text-[color:var(--ink-soft)]">
                   <input
                     type="checkbox"
                     checked={consent}
@@ -270,7 +271,7 @@ export function EventPaymentButton({
                   </span>
                 </label>
               ) : null}
-              <p className="text-[11px] text-[color:var(--surface-deep)]/70">
+              <p className="text-[11px] text-[color:var(--slate)]">
                 Refunds always go to your payment method and follow the standard cancellation
                 policy. Your friend can hand their spot back anytime. Spots aren&apos;t
                 transferable without cancelling first.

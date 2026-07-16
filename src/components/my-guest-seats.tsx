@@ -85,10 +85,8 @@ export function MyGuestSeats({
 
   return (
     <section className="mt-8">
-      <h2 className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-        Your +1s
-      </h2>
-      <p className="mt-2 text-sm leading-6 text-[color:var(--mauve)]">
+      <h2 className="eyebrow">Your +1s</h2>
+      <p className="mt-2 text-sm leading-6 text-[color:var(--slate)]">
         Seats you bought for friends. You can hand any one back - the refund goes to
         your card per the cancellation policy.
       </p>
@@ -99,12 +97,12 @@ export function MyGuestSeats({
           return (
             <div
               key={seat.guestSpotId}
-              className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-3"
+              className="rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)] p-3"
             >
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-sm font-bold text-[color:var(--ink)]">{name}</p>
-                  <p className="text-xs font-semibold text-[color:var(--mauve)]">
+                  <p className="text-sm font-semibold text-[color:var(--ink)]">{name}</p>
+                  <p className="text-xs font-medium text-[color:var(--slate)]">
                     {seatStatusLabel(seat)}
                   </p>
                 </div>
@@ -113,15 +111,15 @@ export function MyGuestSeats({
                     type="button"
                     onClick={() => setConfirmId(seat.guestSpotId)}
                     disabled={isPending}
-                    className="shrink-0 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[color:var(--ink)] hover:bg-[color:var(--rose)] hover:text-[color:var(--surface-deep)] disabled:opacity-60"
+                    className="ck-btn ck-btn--sm ck-btn--secondary shrink-0"
                   >
                     Cancel seat
                   </button>
                 ) : null}
               </div>
               {confirming ? (
-                <div className="mt-3 rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-3">
-                  <p className="text-xs font-bold leading-5 text-[color:var(--surface-deep)]">
+                <div className="mt-3 rounded-xl bg-[color:var(--champagne-deep)] p-3">
+                  <p className="text-xs font-medium leading-5 text-[color:var(--ink)]">
                     Cancel {name}&apos;s seat? {refundLabel}.
                     {seat.claimed
                       ? " They’ll be told their spot is no longer held."
@@ -132,7 +130,7 @@ export function MyGuestSeats({
                       type="button"
                       onClick={() => cancelSeat(seat)}
                       disabled={isPending}
-                      className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm disabled:opacity-60"
+                      className="ck-btn ck-btn--sm ck-btn--danger"
                     >
                       {isPending ? "Cancelling…" : "Yes, cancel"}
                     </button>
@@ -140,7 +138,7 @@ export function MyGuestSeats({
                       type="button"
                       onClick={() => setConfirmId(null)}
                       disabled={isPending}
-                      className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[color:var(--ink)] disabled:opacity-60"
+                      className="ck-btn ck-btn--sm ck-btn--secondary"
                     >
                       Keep it
                     </button>

@@ -133,41 +133,37 @@ export function AdminTagManager({ tags }: { tags: AdminTagRow[] }) {
     <div className="grid gap-6 lg:grid-cols-[0.85fr_1.15fr]">
       <form
         onSubmit={submit}
-        className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-5 hard-shadow-sm"
+        className="rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)] p-5"
       >
         <h3 className="font-display text-3xl font-semibold leading-none text-[color:var(--ink)]">
           {editingId ? "Edit tag" : "Add or update tag"}
         </h3>
         {editingId ? (
-          <p className="mt-2 text-xs font-bold text-[color:var(--mauve)]">
+          <p className="mt-2 text-xs font-medium text-[color:var(--slate)]">
             Editing keeps the slug stable so existing events and members stay linked.
           </p>
         ) : null}
         <div className="mt-5 grid gap-4">
-          <label className="grid gap-2 text-sm font-bold text-[color:var(--ink)]">
-            <span className="font-mono text-[0.7rem] uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-              Label
-            </span>
+          <label className="grid gap-2 text-sm text-[color:var(--ink)]">
+            <span className="eyebrow">Label</span>
             <input
               value={label}
               onChange={(event) => setLabel(event.target.value)}
               required
               placeholder="Trail Running"
-              className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-3 text-sm font-semibold outline-none"
+              className="rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] px-4 py-3 text-sm text-[color:var(--ink)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)]"
             />
           </label>
 
-          <label className="grid gap-2 text-sm font-bold text-[color:var(--ink)]">
-            <span className="font-mono text-[0.7rem] uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-              Category
-            </span>
+          <label className="grid gap-2 text-sm text-[color:var(--ink)]">
+            <span className="eyebrow">Category</span>
             <input
               value={categoryName}
               onChange={(event) => setCategoryName(event.target.value)}
               required
               placeholder="Fitness"
               list="admin-tag-categories"
-              className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-3 text-sm font-semibold outline-none"
+              className="rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] px-4 py-3 text-sm text-[color:var(--ink)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)]"
             />
             <datalist id="admin-tag-categories">
               {categories.map((category) => (
@@ -176,14 +172,12 @@ export function AdminTagManager({ tags }: { tags: AdminTagRow[] }) {
             </datalist>
           </label>
 
-          <label className="grid gap-2 text-sm font-bold text-[color:var(--ink)]">
-            <span className="font-mono text-[0.7rem] uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-              Type
-            </span>
+          <label className="grid gap-2 text-sm text-[color:var(--ink)]">
+            <span className="eyebrow">Type</span>
             <select
               value={tagType}
               onChange={(event) => setTagType(event.target.value as typeof tagType)}
-              className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-3 text-sm font-semibold outline-none"
+              className="rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] px-4 py-3 text-sm text-[color:var(--ink)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)]"
             >
               {tagTypeOptions.map((type) => (
                 <option key={type} value={type}>
@@ -197,7 +191,7 @@ export function AdminTagManager({ tags }: { tags: AdminTagRow[] }) {
             <button
               type="submit"
               disabled={submitting}
-              className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-5 py-3 text-sm font-black uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)] disabled:cursor-not-allowed disabled:opacity-60"
+              className="ck-btn ck-btn--primary ck-btn--md"
             >
               {submitting
                 ? "Saving..."
@@ -209,7 +203,7 @@ export function AdminTagManager({ tags }: { tags: AdminTagRow[] }) {
               <button
                 type="button"
                 onClick={resetForm}
-                className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-5 py-3 text-sm font-black uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)]"
+                className="ck-btn ck-btn--secondary ck-btn--md"
               >
                 Cancel
               </button>
@@ -218,13 +212,13 @@ export function AdminTagManager({ tags }: { tags: AdminTagRow[] }) {
         </div>
       </form>
 
-      <div className="overflow-hidden rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow-sm">
-        <div className="flex flex-wrap items-center gap-3 border-b-2 border-[color:var(--line)] bg-[color:var(--cream)] px-5 py-3">
+      <div className="overflow-hidden rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)]">
+        <div className="flex flex-wrap items-center gap-3 border-b border-[color:var(--line)] px-5 py-3">
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search tags, slugs, categories…"
-            className="min-w-0 flex-1 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-2 text-sm font-semibold outline-none"
+            className="min-w-0 flex-1 rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] px-4 py-2 text-sm text-[color:var(--ink)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)]"
           />
           <div className="flex flex-wrap gap-1.5">
             {(["all", ...tagTypeOptions] as const).map((type) => (
@@ -232,21 +226,18 @@ export function AdminTagManager({ tags }: { tags: AdminTagRow[] }) {
                 key={type}
                 type="button"
                 onClick={() => setTypeFilter(type)}
-                className={`rounded-full border-2 border-[color:var(--line)] px-3 py-1 text-[0.65rem] font-black uppercase tracking-wider ${
-                  typeFilter === type
-                    ? "bg-[color:var(--ink)] text-[color:var(--champagne)]"
-                    : "bg-[color:var(--champagne)] text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
-                }`}
+                aria-pressed={typeFilter === type}
+                className={`ck-tag ck-tag--select ${typeFilter === type ? "ck-tag--selected" : ""}`}
               >
                 {type}
               </button>
             ))}
           </div>
-          <span className="font-mono text-[0.65rem] font-bold uppercase tracking-wider text-[color:var(--mauve)]">
+          <span className="text-[12px] font-semibold text-[color:var(--slate)]">
             {filtered.length} of {rows.length}
           </span>
         </div>
-        <div className="grid grid-cols-[1.1fr_0.8fr_0.6fr_0.4fr_0.7fr] gap-3 bg-[color:var(--surface-deep)] px-5 py-3 text-xs font-black uppercase tracking-[0.14em] text-[color:var(--on-deep)] max-sm:hidden">
+        <div className="grid grid-cols-[1.1fr_0.8fr_0.6fr_0.4fr_0.7fr] gap-3 border-b border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-[color:var(--slate)] max-sm:hidden">
           <span>Tag</span>
           <span>Category</span>
           <span>Type</span>
@@ -271,26 +262,26 @@ export function AdminTagManager({ tags }: { tags: AdminTagRow[] }) {
         {filtered.map((tag) => (
           <div
             key={tag.id}
-            className="grid gap-2 border-b border-[color:var(--line)] px-5 py-4 text-sm font-medium text-[color:var(--mauve)] last:border-0 sm:grid-cols-[1.1fr_0.8fr_0.6fr_0.4fr_0.7fr] sm:items-center"
+            className="grid gap-2 border-b border-[color:var(--line)] px-5 py-4 text-sm font-medium text-[color:var(--slate)] last:border-0 sm:grid-cols-[1.1fr_0.8fr_0.6fr_0.4fr_0.7fr] sm:items-center"
           >
             <div>
-              <p className="font-black text-[color:var(--ink)]">{tag.label}</p>
-              <p className="font-mono text-[0.65rem] uppercase tracking-wider">
+              <p className="font-semibold text-[color:var(--ink)]">{tag.label}</p>
+              <p className="text-[11px] text-[color:var(--ink-faint)]">
                 {tag.slug}
               </p>
             </div>
-            <span className="font-bold text-[color:var(--ink)]">
+            <span className="font-medium text-[color:var(--ink)]">
               {tag.categoryName ?? "Uncategorised"}
             </span>
-            <span className="justify-self-start rounded-full border border-[color:var(--line)] bg-[color:var(--cream)] px-2.5 py-1 text-[0.65rem] font-black uppercase tracking-wider text-[color:var(--ink)]">
+            <span className="ck-tag justify-self-start">
               {tag.tagType}
             </span>
-            <span className="font-black text-[color:var(--ink)]">{tag.usageCount}</span>
+            <span className="font-semibold text-[color:var(--ink)]">{tag.usageCount}</span>
             <div className="flex gap-2 sm:justify-end">
               <button
                 type="button"
                 onClick={() => startEdit(tag)}
-                className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-1 text-[0.65rem] font-black uppercase tracking-wider text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+                className="ck-btn ck-btn--secondary ck-btn--sm"
               >
                 Edit
               </button>
@@ -298,7 +289,7 @@ export function AdminTagManager({ tags }: { tags: AdminTagRow[] }) {
                 type="button"
                 onClick={() => setPendingDelete(tag)}
                 disabled={deletingId === tag.id}
-                className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-1 text-[0.65rem] font-black uppercase tracking-wider text-[color:var(--punch)] hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)] disabled:cursor-not-allowed disabled:opacity-60"
+                className="ck-btn ck-btn--ghost ck-btn--sm text-[color:var(--danger)]"
               >
                 {deletingId === tag.id ? "…" : "Delete"}
               </button>

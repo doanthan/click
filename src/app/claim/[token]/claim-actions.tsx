@@ -79,7 +79,7 @@ export function GuestClaimActions({
   if (state === "done") {
     return (
       <div style={{ textAlign: "center" }}>
-        <p style={{ fontFamily: SANS, fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em", color: "var(--ink)", margin: "0 0 8px" }}>
+        <p style={{ fontFamily: "var(--font-click-display), system-ui, sans-serif", fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", color: "var(--ink)", margin: "0 0 8px" }}>
           {copy.doneTitle}
         </p>
         <p style={{ fontFamily: SANS, fontSize: 15, color: "var(--mauve)", margin: 0 }}>
@@ -99,20 +99,20 @@ export function GuestClaimActions({
           appearance: "none",
           border: "none",
           cursor: state === "busy" ? "default" : "pointer",
-          background: action === "remove" ? "var(--surface-deep)" : "var(--purple)",
-          color: "var(--cream)",
+          background: action === "remove" ? "var(--danger)" : "var(--purple)",
+          color: "var(--champagne)",
           fontFamily: SANS,
           fontSize: 16,
           fontWeight: 600,
           padding: "14px 28px",
-          borderRadius: 8,
+          borderRadius: 12,
           opacity: state === "busy" ? 0.7 : 1,
         }}
       >
         {state === "busy" ? copy.busy : copy.idle}
       </button>
       {state === "error" && message ? (
-        <p style={{ fontFamily: SANS, fontSize: 14, color: "var(--coral)", margin: "14px 0 0" }}>
+        <p style={{ fontFamily: SANS, fontSize: 14, color: "var(--danger)", margin: "14px 0 0" }}>
           {message}
         </p>
       ) : null}

@@ -62,7 +62,7 @@ export function EventBookmarkButton({
         aria-pressed={saved}
         aria-label={saved ? "Saved to bookmarks" : "Save event"}
         title={saved ? "Saved" : "Save"}
-        className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[rgba(249,246,240,0.92)] text-[color:var(--ink)] shadow-[var(--shadow-xs)] transition hover:bg-[color:var(--paper)] disabled:cursor-not-allowed disabled:opacity-60"
+        className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--champagne)_92%,transparent)] text-[color:var(--ink)] shadow-[var(--shadow-xs)] transition hover:bg-[color:var(--paper)] disabled:cursor-not-allowed disabled:opacity-60"
       >
         <svg
           viewBox="0 0 24 24"
@@ -87,18 +87,14 @@ export function EventBookmarkButton({
         onClick={toggle}
         disabled={state === "submitting"}
         aria-pressed={saved}
-        className={`rounded-full border-2 border-[color:var(--line)] text-center font-bold transition disabled:cursor-not-allowed disabled:opacity-60 ${
-          compact ? "px-3 py-1.5 text-[0.68rem] uppercase tracking-wider hard-shadow-sm" : "px-4 py-3 text-sm"
-        } ${
-          saved
-            ? "bg-[color:var(--peach)] text-[color:var(--surface-deep)] hover:bg-[color:var(--rose)]"
-            : "bg-[color:var(--champagne)] text-[color:var(--ink)] hover:bg-[color:var(--peach)] hover:text-[color:var(--surface-deep)]"
+        className={`ck-btn ${compact ? "ck-btn--sm" : "ck-btn--md ck-btn--full"} ${
+          saved ? "ck-btn--primary" : "ck-btn--secondary"
         }`}
       >
         {state === "submitting" ? "Saving..." : saved ? "Saved" : "Save"}
       </button>
       {message && !compact ? (
-        <p className="text-xs font-bold text-[color:var(--rose)]">{message}</p>
+        <p className="text-xs font-semibold text-[color:var(--danger)]">{message}</p>
       ) : null}
     </div>
   );

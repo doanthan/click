@@ -16,7 +16,7 @@ export const metadata = {
 
 // Shared chrome + state provider for the whole /merchant/signup flow. The
 // provider is mounted here (not in each step page) so that wizard state
-// survives client-side navigation between sibling step pages — App Router
+// survives client-side navigation between sibling step pages - App Router
 // keeps layouts mounted across child page transitions, so the useReducer
 // inside the provider doesn't unmount/reset when you go Business → Contact
 // → Documents.
@@ -36,7 +36,7 @@ export default async function MerchantSignupLayout({
   let isRejectedResubmit = false;
   if (session?.user) {
     const status = await getProfileStatus(session);
-    // Approved/pending merchants belong in their portal — but a REJECTED merchant
+    // Approved/pending merchants belong in their portal - but a REJECTED merchant
     // must be let back into the wizard to edit + resubmit, otherwise the "Resubmit
     // application" CTA bounces straight back to /merchant (bug board #203/#204).
     if (status.merchantProfile && status.merchantProfile.verification_status !== "rejected") {
@@ -46,7 +46,7 @@ export default async function MerchantSignupLayout({
   }
 
   // Provider data is only meaningful once authed. For the auth-gate page the
-  // empty arrays are harmless — StepAuthCard doesn't consume the context. A
+  // empty arrays are harmless - StepAuthCard doesn't consume the context. A
   // rejected merchant resubmitting also gets their saved answers pre-filled
   // (bug board #203).
   const [categories, existingDocs, existingProfile] = session?.user
@@ -58,23 +58,20 @@ export default async function MerchantSignupLayout({
     : [[], [], null];
 
   return (
-    <main className="paper-noise min-h-screen bg-[color:var(--champagne)] px-4 pb-12 pt-2 text-[color:var(--ink)] sm:px-6">
+    <main className="min-h-screen bg-[color:var(--champagne)] px-4 pb-12 pt-2 text-[color:var(--ink)] sm:px-6">
       <section className="mx-auto max-w-5xl">
-        <span className="sticker sticker--peach tilt-l-1 inline-flex">
-          <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
-          Become a host
-        </span>
-        <h1 className="font-display mt-3 text-4xl font-bold leading-[0.96] tracking-[-0.025em] sm:text-5xl">
-          Tell us about <span className="text-[color:var(--rose)]">you</span>.
+        <span className="eyebrow">Become a host</span>
+        <h1 className="font-display mt-3 text-4xl font-semibold leading-tight tracking-[-0.025em] sm:text-5xl">
+          Tell us about <span className="text-[color:var(--purple)]">you</span>.
         </h1>
-        <p className="mt-2 max-w-2xl text-sm font-medium leading-6 text-[color:var(--mauve)]">
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-[color:var(--slate)]">
           Your application goes to admin review and unlocks the portal once approved.
         </p>
 
-        <div className="mt-4 flex max-w-2xl items-start gap-3 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-4 py-3 text-sm font-semibold leading-6 text-[color:var(--surface-deep)] hard-shadow-sm">
-          <span aria-hidden="true" className="mt-0.5 text-base leading-none">ⓘ</span>
+        <div className="mt-4 flex max-w-2xl items-start gap-3 rounded-xl border border-[color:var(--line)] bg-[color:var(--lavender-100)] px-4 py-3 text-sm leading-6 text-[color:var(--ink)]">
+          <span aria-hidden="true" className="mt-0.5 text-base leading-none text-[color:var(--purple)]">ⓘ</span>
           <span>
-            We&apos;re piloting in <span className="font-bold">Sydney</span> first. Outside Sydney?
+            We&apos;re piloting in <span className="font-semibold">Sydney</span> first. Outside Sydney?
             Sign up anyway - we&apos;ll add you to the waitlist and email you when we launch in your city.
           </span>
         </div>

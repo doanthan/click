@@ -43,13 +43,11 @@ export default async function AdminMatchingPage() {
   return (
     <div className="space-y-8 py-6">
       <header>
-        <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.2em] text-[color:var(--rose)]">
-          Discovery
-        </span>
-        <h1 className="font-display mt-2 text-4xl font-bold leading-tight tracking-[-0.025em] sm:text-5xl">
+        <span className="eyebrow">Discovery</span>
+        <h1 className="font-display mt-2 text-4xl font-semibold leading-tight tracking-[-0.025em] text-[color:var(--ink)] sm:text-5xl">
           Matching Formula
         </h1>
-        <p className="mt-3 max-w-2xl text-sm font-medium leading-6 text-[color:var(--mauve)]">
+        <p className="mt-3 max-w-2xl text-sm font-medium leading-6 text-[color:var(--slate)]">
           Tune how events are ranked in each member&apos;s personalised feed. Members below the
           readiness threshold see the editorial fallback feed (popular events) instead.
         </p>
@@ -58,17 +56,15 @@ export default async function AdminMatchingPage() {
       <div className="grid gap-8 lg:grid-cols-[1fr_1fr]">
         <form
           action={updateMatchingWeightsAction}
-          className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-6 hard-shadow-sm"
+          className="rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)] p-6"
         >
-          <h2 className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.2em] text-[color:var(--ink)]">
-            Signal weights
-          </h2>
+          <h2 className="eyebrow">Signal weights</h2>
           <div className="mt-4 space-y-4">
             {WEIGHT_FIELDS.map((field) => (
               <label key={field.key} className="block">
                 <span className="flex items-baseline justify-between">
-                  <span className="text-sm font-bold text-[color:var(--ink)]">{field.label}</span>
-                  <span className="font-mono text-[0.65rem] uppercase tracking-wide text-[color:var(--mauve)]">
+                  <span className="text-sm font-semibold text-[color:var(--ink)]">{field.label}</span>
+                  <span className="text-[11px] font-medium text-[color:var(--slate)]">
                     {field.hint}
                   </span>
                 </span>
@@ -79,17 +75,17 @@ export default async function AdminMatchingPage() {
                   max={field.max}
                   step={0.5}
                   defaultValue={weights[field.key as keyof typeof weights]}
-                  className="mt-1 w-full rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-2 text-sm font-semibold text-[color:var(--ink)]"
+                  className="mt-1 w-full rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] px-3 py-2 text-sm text-[color:var(--ink)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)]"
                 />
               </label>
             ))}
 
-            <label className="block border-t-2 border-dashed border-[color:var(--line)] pt-4">
+            <label className="block border-t border-[color:var(--line)] pt-4">
               <span className="flex items-baseline justify-between">
-                <span className="text-sm font-bold text-[color:var(--ink)]">
+                <span className="text-sm font-semibold text-[color:var(--ink)]">
                   Readiness threshold
                 </span>
-                <span className="font-mono text-[0.65rem] uppercase tracking-wide text-[color:var(--mauve)]">
+                <span className="text-[11px] font-medium text-[color:var(--slate)]">
                   Below this → fallback feed (0–100)
                 </span>
               </span>
@@ -100,26 +96,24 @@ export default async function AdminMatchingPage() {
                 max={100}
                 step={1}
                 defaultValue={weights.readinessThreshold}
-                className="mt-1 w-full rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-2 text-sm font-semibold text-[color:var(--ink)]"
+                className="mt-1 w-full rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] px-3 py-2 text-sm text-[color:var(--ink)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)]"
               />
             </label>
           </div>
 
           <button
             type="submit"
-            className="mt-6 w-full rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
+            className="ck-btn ck-btn--primary ck-btn--md mt-6 w-full"
           >
             Save weights
           </button>
         </form>
 
-        <div className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-6 hard-shadow-sm">
-          <h2 className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.2em] text-[color:var(--ink)]">
-            Live preview
-          </h2>
-          <p className="mt-2 text-xs font-medium leading-5 text-[color:var(--mauve)]">
+        <div className="rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)] p-6">
+          <h2 className="eyebrow">Live preview</h2>
+          <p className="mt-2 text-xs font-medium leading-5 text-[color:var(--slate)]">
             Top events for a sample member interested in{" "}
-            <span className="font-bold text-[color:var(--ink)]">
+            <span className="font-semibold text-[color:var(--ink)]">
               {sampleTags.length > 0 ? sampleTags.join(", ") : "the most common tags"}
             </span>
             , ranked with the currently saved weights.
@@ -129,27 +123,27 @@ export default async function AdminMatchingPage() {
               {preview.map((scored, i) => (
                 <li
                   key={scored.event.id}
-                  className="flex items-center gap-3 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-3"
+                  className="flex items-center gap-3 rounded-xl bg-[color:var(--champagne)] p-3"
                 >
-                  <span className="grid size-7 shrink-0 place-items-center rounded-full bg-[color:var(--ink)] text-xs font-black text-[color:var(--champagne)]">
+                  <span className="grid size-7 shrink-0 place-items-center rounded-full bg-[color:var(--purple)] text-xs font-semibold text-[color:var(--champagne)]">
                     {i + 1}
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-bold text-[color:var(--ink)]">
+                    <span className="block truncate text-sm font-semibold text-[color:var(--ink)]">
                       {scored.event.title}
                     </span>
-                    <span className="block truncate font-mono text-[0.62rem] uppercase tracking-wide text-[color:var(--mauve)]">
+                    <span className="block truncate text-[11px] font-medium text-[color:var(--slate)]">
                       {scored.reasons.length > 0 ? scored.reasons.join(" · ") : scored.event.category}
                     </span>
                   </span>
-                  <span className="shrink-0 font-mono text-xs font-black tabular-nums text-[color:var(--rose)]">
+                  <span className="shrink-0 text-xs font-semibold tabular-nums text-[color:var(--purple)]">
                     {scored.score.toFixed(1)}
                   </span>
                 </li>
               ))}
             </ol>
           ) : (
-            <p className="mt-4 text-sm font-medium text-[color:var(--mauve)]">
+            <p className="mt-4 text-sm font-medium text-[color:var(--slate)]">
               No live events to preview yet.
             </p>
           )}

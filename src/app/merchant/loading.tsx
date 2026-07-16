@@ -19,8 +19,8 @@ export default function MerchantLoading() {
     <main className="min-h-screen bg-[color:var(--champagne)] px-4 py-8 text-[color:var(--ink)] sm:px-6 lg:py-10">
       <div className="mx-auto flex max-w-7xl flex-col gap-6 lg:flex-row lg:items-start lg:gap-8">
         {/* Sidebar shell — mirrors <MerchantSidebar>'s desktop aside. */}
-        <aside className="hidden lg:sticky lg:top-6 lg:block lg:w-[17.5rem] lg:shrink-0">
-          <nav className="flex flex-col rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-3 pb-4 hard-shadow">
+        <aside className="hidden lg:sticky lg:top-6 lg:block lg:w-56 lg:shrink-0">
+          <nav className="flex flex-col rounded-2xl bg-[color:var(--paper)] p-3 pb-4 shadow-[var(--shadow-sm)]">
             <div className="flex items-center gap-3 px-2 pb-4 pt-2">
               <Skeleton className="size-11 shrink-0 rounded-xl" />
               <div className="min-w-0 flex-1">
@@ -30,12 +30,12 @@ export default function MerchantLoading() {
             </div>
             <div className="flex flex-col gap-2">
               {Array.from({ length: 4 }).map((_, i) => (
-                <Skeleton key={i} className="h-11 w-full rounded-2xl" />
+                <Skeleton key={i} className="h-11 w-full rounded-xl" />
               ))}
             </div>
-            <div className="mx-1 my-3 border-t-2 border-[color:var(--line)]" />
-            <Skeleton className="h-11 w-full rounded-2xl" />
-            <Skeleton className="mt-3 h-11 w-full rounded-2xl" />
+            <div className="mx-1 my-3 h-px bg-[color:var(--mist)]" />
+            <Skeleton className="h-11 w-full rounded-xl" />
+            <Skeleton className="mt-3 h-11 w-full rounded-xl" />
           </nav>
         </aside>
 
@@ -47,7 +47,7 @@ export default function MerchantLoading() {
               <Skeleton className="mt-3 h-10 w-72 max-w-full rounded-lg sm:h-12 sm:w-96" />
               <Skeleton className="mt-4 h-3.5 w-full max-w-md rounded-full" />
             </div>
-            <Skeleton className="h-11 w-36 rounded-full" />
+            <Skeleton className="h-11 w-36 rounded-xl" />
           </div>
           <SkeletonMetricGrid count={4} />
           <SkeletonTable rows={6} withThumb />

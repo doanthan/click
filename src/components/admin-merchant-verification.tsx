@@ -7,7 +7,7 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 
 type Status = "pending" | "approved" | "rejected" | "suspended";
 
-// Approve / Decline control for the merchant review page — the first step of the
+// Approve / Decline control for the merchant review page - the first step of the
 // review process is eyeballing the merchant's details, so the decision lives
 // right here (bug board #178). POSTs to the existing verification route, which
 // also emails the merchant (verified / rejected) via updateMerchantVerificationForAdmin.
@@ -66,20 +66,18 @@ export function AdminMerchantVerification({
   const isRejected = status === "rejected";
 
   return (
-    <div className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-5 hard-shadow-sm">
+    <div className="rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)] p-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
-          <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
-            Verification decision
-          </p>
-          <p className="mt-2 text-sm font-bold text-[color:var(--ink)]">
+          <p className="eyebrow">Verification decision</p>
+          <p className="mt-2 text-sm font-semibold text-[color:var(--ink)]">
             {isApproved
-              ? "Approved & trusted — their events now publish without per-event review."
+              ? "Approved & trusted - their events now publish without per-event review."
               : isRejected
-                ? "Declined — this merchant cannot publish events."
+                ? "Declined - this merchant cannot publish events."
                 : "Review the details, documents and ABN above, then approve or decline."}
           </p>
-          <p className="mt-1 text-xs font-medium text-[color:var(--mauve)]">
+          <p className="mt-1 text-xs text-[color:var(--slate)]">
             Approving auto-trusts this merchant, so their events publish straight
             to live (no per-event review) and sends an approval email. Need manual
             review instead? Flip the trust toggle below. Declining notifies them
@@ -91,7 +89,7 @@ export function AdminMerchantVerification({
             type="button"
             onClick={() => decide("approved")}
             disabled={saving !== null || isApproved}
-            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-5 py-2.5 text-xs font-black uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--rose)] disabled:cursor-not-allowed disabled:opacity-60"
+            className="ck-btn ck-btn--primary ck-btn--sm disabled:cursor-not-allowed"
           >
             {saving === "approved" ? "Approving…" : isApproved ? "Approved ✓" : "Approve"}
           </button>
@@ -99,7 +97,7 @@ export function AdminMerchantVerification({
             type="button"
             onClick={() => decide("rejected")}
             disabled={saving !== null || isRejected}
-            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-5 py-2.5 text-xs font-black uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)] disabled:cursor-not-allowed disabled:opacity-60"
+            className="ck-btn ck-btn--secondary ck-btn--sm disabled:cursor-not-allowed"
           >
             {saving === "rejected" ? "Declining…" : isRejected ? "Declined" : "Decline"}
           </button>
@@ -109,7 +107,7 @@ export function AdminMerchantVerification({
       <ConfirmDialog
         open={pending === "approved"}
         title="Approve this merchant?"
-        description="They'll be approved AND auto-trusted — their events publish straight to live without per-event review (you can switch them back to manual review with the trust toggle). They'll get an approval email. You can change this later."
+        description="They'll be approved AND auto-trusted - their events publish straight to live without per-event review (you can switch them back to manual review with the trust toggle). They'll get an approval email. You can change this later."
         confirmLabel="Approve merchant"
         tone="peach"
         busy={saving === "approved"}

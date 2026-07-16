@@ -35,17 +35,15 @@ export default async function MatchingLabPage() {
   return (
     <div className="space-y-8 py-6">
       <header>
-        <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.2em] text-[color:var(--rose)]">
-          Matching v2 · Stage 6
-        </span>
-        <h1 className="font-display mt-2 text-4xl font-bold leading-tight tracking-[-0.025em] sm:text-5xl">
+        <span className="eyebrow">Matching v2 · Stage 6</span>
+        <h1 className="font-display mt-2 text-4xl font-semibold leading-tight tracking-[-0.025em] text-[color:var(--ink)] sm:text-5xl">
           Matching Lab
         </h1>
-        <p className="mt-3 max-w-2xl text-sm font-medium leading-6 text-[color:var(--mauve)]">
+        <p className="mt-3 max-w-2xl text-sm font-medium leading-6 text-[color:var(--slate)]">
           Cold-start curation + the training/eval loop. Human judgments here keep matching active at
           zero behavioural data and become the training set that replaces the hand-curated cohort
           weights. The inspector lives at{" "}
-          <a href="/algo" className="text-[color:var(--rose)] underline">
+          <a href="/algo" className="text-[color:var(--purple)] underline">
             /algo
           </a>
           .
@@ -55,9 +53,7 @@ export default async function MatchingLabPage() {
       {/* Eval snapshot */}
       {stats && (
         <section>
-          <h2 className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.2em] text-[color:var(--ink)]">
-            Eval snapshot
-          </h2>
+          <h2 className="eyebrow">Eval snapshot</h2>
           <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Stat label="Mutual-click rate" value={`${(stats.mutualRate * 100).toFixed(0)}%`} sub={`${stats.mutualClicks} / ${stats.clicksMade} clicks`} />
             <Stat label="Clicks made" value={stats.clicksMade} sub="one-way clicks" />
@@ -69,11 +65,9 @@ export default async function MatchingLabPage() {
 
       {/* Training readiness */}
       {stats && (
-        <section className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-6 hard-shadow-sm">
-          <h2 className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.2em] text-[color:var(--ink)]">
-            Training readiness
-          </h2>
-          <p className="mt-1 text-xs font-medium text-[color:var(--mauve)]">
+        <section className="rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)] p-6">
+          <h2 className="eyebrow">Training readiness</h2>
+          <p className="mt-1 text-xs font-medium text-[color:var(--slate)]">
             A cohort can fit learned weights once it has ≥ {stats.labelThreshold} curated labels{" "}
             <em>and</em> ≥ {stats.mutualThreshold} mutual clicks (spec §4.3). Until then it uses the
             hand-curated prior.
@@ -82,9 +76,9 @@ export default async function MatchingLabPage() {
             <Progress label="Curated labels" have={stats.totalLabels} need={stats.labelThreshold} />
             <Progress label="Mutual clicks" have={stats.mutualClicks} need={stats.mutualThreshold} />
           </div>
-          <p className="mt-4 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--champagne)] p-3 text-[0.78rem] font-medium leading-5 text-[color:var(--ink)]">
+          <p className="mt-4 rounded-xl bg-[color:var(--champagne)] p-3 text-[0.78rem] font-medium leading-5 text-[color:var(--ink)]">
             The fitting job itself (L2 logistic regression per cohort, AUC gate ≥ 0.60, versioned
-            rows into <code className="font-mono">cohort_weights</code>) is an external Python worker —
+            rows into <code>cohort_weights</code>) is an external Python worker -
             not built. This page collects and gates its inputs.
           </p>
         </section>
@@ -92,10 +86,8 @@ export default async function MatchingLabPage() {
 
       {/* Curated labeling tool */}
       <section>
-        <h2 className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.2em] text-[color:var(--ink)]">
-          Curate a pair
-        </h2>
-        <p className="mt-1 max-w-2xl text-xs font-medium text-[color:var(--mauve)]">
+        <h2 className="eyebrow">Curate a pair</h2>
+        <p className="mt-1 max-w-2xl text-xs font-medium text-[color:var(--slate)]">
           &ldquo;Would you introduce these two?&rdquo; Your call is stored with the feature vector at
           label time. The viewer&apos;s cohort drives the predicted score.
         </p>
@@ -103,7 +95,7 @@ export default async function MatchingLabPage() {
         {pair ? (
           <form
             action={submitLabelAction}
-            className="mt-4 rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-6 hard-shadow-sm"
+            className="mt-4 rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)] p-6"
           >
             <input type="hidden" name="profileA" value={pair.a.id} />
             <input type="hidden" name="profileB" value={pair.b.id} />
@@ -113,10 +105,10 @@ export default async function MatchingLabPage() {
             <div className="grid gap-4 sm:grid-cols-[1fr_auto_1fr]">
               <MemberCard member={pair.a} tag="viewer" />
               <div className="flex flex-col items-center justify-center">
-                <span className="font-mono text-[0.6rem] uppercase tracking-wide text-[color:var(--mauve)]">
+                <span className="text-[11px] font-semibold text-[color:var(--slate)]">
                   predicted
                 </span>
-                <span className="font-display text-4xl font-bold text-[color:var(--coral)]">
+                <span className="font-display text-4xl font-semibold text-[color:var(--purple)]">
                   {pair.score.toFixed(0)}
                 </span>
               </div>
@@ -124,13 +116,13 @@ export default async function MatchingLabPage() {
             </div>
 
             {/* Feature vector */}
-            <div className="mt-4 flex flex-wrap gap-1.5 border-t-2 border-[color:var(--line)] pt-4">
+            <div className="mt-4 flex flex-wrap gap-1.5 border-t border-[color:var(--line)] pt-4">
               {Object.entries(pair.features)
                 .sort((a, b) => b[1] - a[1])
                 .map(([k, v]) => (
                   <span
                     key={k}
-                    className="rounded-full border border-[color:var(--line)] bg-[color:var(--cream)] px-2 py-0.5 font-mono text-[0.6rem] font-bold text-[color:var(--ink)]"
+                    className="ck-tag ck-tag--dense tabular-nums"
                     style={{ opacity: v > 0 ? 1 : 0.4 }}
                   >
                     {PRETTY[k] ?? k} {v.toFixed(2)}
@@ -139,12 +131,12 @@ export default async function MatchingLabPage() {
             </div>
 
             <label className="mt-4 block">
-              <span className="text-xs font-bold text-[color:var(--ink)]">Why? (optional)</span>
+              <span className="text-xs font-semibold text-[color:var(--ink)]">Why? (optional)</span>
               <input
                 name="reason"
                 type="text"
                 placeholder="e.g. both new to town, strong shared interests"
-                className="mt-1 w-full rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-2 text-sm font-semibold text-[color:var(--ink)]"
+                className="mt-1 w-full rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] px-3 py-2 text-sm text-[color:var(--ink)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)]"
               />
             </label>
 
@@ -153,7 +145,7 @@ export default async function MatchingLabPage() {
                 type="submit"
                 name="judgment"
                 value="strong_fit"
-                className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-5 py-2 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
+                className="ck-btn ck-btn--primary ck-btn--sm"
               >
                 Strong fit
               </button>
@@ -161,7 +153,7 @@ export default async function MatchingLabPage() {
                 type="submit"
                 name="judgment"
                 value="maybe"
-                className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-2 text-sm font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--cream)]"
+                className="ck-btn ck-btn--secondary ck-btn--sm"
               >
                 Maybe
               </button>
@@ -169,20 +161,20 @@ export default async function MatchingLabPage() {
                 type="submit"
                 name="judgment"
                 value="not_a_fit"
-                className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-5 py-2 text-sm font-bold uppercase tracking-wide text-[color:var(--mauve)] hard-shadow-sm hover:text-[color:var(--ink)]"
+                className="ck-btn ck-btn--ghost ck-btn--sm text-[color:var(--slate)]"
               >
                 Not a fit
               </button>
-              <span className="ml-auto self-center font-mono text-[0.6rem] uppercase tracking-wide text-[color:var(--mauve)]">
+              <span className="ml-auto self-center text-[11px] font-medium text-[color:var(--slate)]">
                 saves → next pair
               </span>
             </div>
           </form>
         ) : (
-          <p className="mt-4 rounded-3xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--champagne)] p-6 text-sm font-medium text-[color:var(--mauve)]">
-            No unlabeled pairs available right now — either everything reachable has been judged, or
+          <p className="mt-4 rounded-2xl border border-dashed border-[color:var(--line)] bg-[color:var(--paper)] p-6 text-sm font-medium text-[color:var(--slate)]">
+            No unlabeled pairs available right now - either everything reachable has been judged, or
             the feature store is too sparse to generate candidates. Run{" "}
-            <code className="font-mono text-[color:var(--ink)]">/api/cron/refresh-matching-features</code>{" "}
+            <code className="text-[color:var(--ink)]">/api/cron/refresh-matching-features</code>{" "}
             and reload.
           </p>
         )}
@@ -193,10 +185,10 @@ export default async function MatchingLabPage() {
 
 function Stat({ label, value, sub }: { label: string; value: string | number; sub: string }) {
   return (
-    <div className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-4 hard-shadow-sm">
-      <p className="font-mono text-[0.58rem] uppercase tracking-wide text-[color:var(--mauve)]">{label}</p>
+    <div className="rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)] p-4">
+      <p className="text-[11px] font-semibold text-[color:var(--slate)]">{label}</p>
       <p className="mt-1 font-display text-3xl font-semibold text-[color:var(--ink)]">{value}</p>
-      <p className="mt-0.5 text-[0.68rem] font-medium text-[color:var(--mauve)]">{sub}</p>
+      <p className="mt-0.5 text-[0.68rem] font-medium text-[color:var(--slate)]">{sub}</p>
     </div>
   );
 }
@@ -205,13 +197,13 @@ function Progress({ label, have, need }: { label: string; have: number; need: nu
   return (
     <div>
       <div className="flex items-baseline justify-between">
-        <span className="text-xs font-bold text-[color:var(--ink)]">{label}</span>
-        <span className="font-mono text-[0.68rem] font-bold text-[color:var(--ink)]">
+        <span className="text-xs font-semibold text-[color:var(--ink)]">{label}</span>
+        <span className="text-[0.68rem] font-semibold tabular-nums text-[color:var(--ink)]">
           {have} / {need}
         </span>
       </div>
-      <div className="mt-1.5 h-2.5 overflow-hidden rounded-full border border-[color:var(--line)] bg-[color:var(--champagne)]">
-        <div className="h-full bg-[color:var(--rose)]" style={{ width: `${pct(have, need)}%` }} />
+      <div className="mt-1.5 h-2.5 overflow-hidden rounded-full bg-[color:var(--mist)]">
+        <div className="h-full rounded-full bg-[color:var(--purple)]" style={{ width: `${pct(have, need)}%` }} />
       </div>
     </div>
   );
@@ -219,22 +211,22 @@ function Progress({ label, have, need }: { label: string; have: number; need: nu
 
 function MemberCard({ member, tag }: { member: LabelMember; tag: string }) {
   return (
-    <div className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-4">
+    <div className="rounded-xl bg-[color:var(--champagne)] p-4">
       <div className="flex items-center justify-between">
-        <span className="font-mono text-[0.55rem] uppercase tracking-wide text-[color:var(--mauve)]">
+        <span className="text-[11px] font-semibold text-[color:var(--slate)]">
           {tag}
         </span>
-        <span className="rounded-full bg-[color:var(--ink)] px-2 py-0.5 font-mono text-[0.55rem] uppercase tracking-wide text-[color:var(--on-deep)]">
+        <span className="rounded-full bg-[color:var(--lavender-100)] px-2 py-0.5 text-[10px] font-semibold text-[color:var(--purple-700)]">
           {member.cohort ?? "—"}
         </span>
       </div>
-      <p className="mt-1 text-lg font-bold text-[color:var(--ink)]">{member.displayName}</p>
-      <p className="text-[0.72rem] font-medium text-[color:var(--mauve)]">
+      <p className="mt-1 text-lg font-semibold text-[color:var(--ink)]">{member.displayName}</p>
+      <p className="text-[0.72rem] font-medium text-[color:var(--slate)]">
         {[member.age ? `${member.age}` : null, member.suburb, member.socialEnergy]
           .filter(Boolean)
           .join(" · ") || "sparse profile"}
       </p>
-      <p className="mt-1.5 font-mono text-[0.6rem] uppercase tracking-wide text-[color:var(--mauve)]">
+      <p className="mt-1.5 text-[11px] font-medium text-[color:var(--slate)]">
         {member.interests} interests · {member.intents.join("/") || "no intent"}
       </p>
       {member.lifeTags.length > 0 && (

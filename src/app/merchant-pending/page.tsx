@@ -26,30 +26,24 @@ function AccessDenied({
 }) {
   return (
     <main className="paper-noise grid min-h-screen place-items-center bg-[color:var(--champagne)] px-4 py-12 text-[color:var(--ink)] sm:px-6">
-      <section className="mx-auto w-full max-w-xl rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-8 text-center hard-shadow sm:p-10">
-        <span className="sticker sticker--rose tilt-l-2 inline-flex">
-          <span className="size-2 rounded-full bg-[color:var(--punch)]" />
+      <section className="mx-auto w-full max-w-xl rounded-[18px] bg-[color:var(--paper)] p-8 text-center shadow-[var(--shadow-sm)] sm:p-10">
+        <span className="sticker sticker--rose inline-flex">
+          <span className="size-2 rounded-full bg-[color:var(--champagne)]" />
           No access
         </span>
-        <h1 className="font-display mt-6 text-4xl font-semibold leading-[0.98] tracking-[-0.025em] sm:text-5xl">
+        <h1 className="font-display mt-6 text-4xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)] sm:text-5xl">
           {showHostCta ? "Want to host on Click?" : "You don’t have access to this page."}
         </h1>
-        <p className="mt-5 text-base font-medium leading-7 text-[color:var(--mauve)]">
+        <p className="mt-5 text-base font-medium leading-7 text-[color:var(--slate)]">
           {reason}
         </p>
         <div className="mt-8 flex flex-wrap justify-center gap-3">
           {showHostCta ? (
-            <Link
-              href="/merchant/signup"
-              className="inline-flex items-center gap-2 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)]"
-            >
+            <Link href="/merchant/signup" className="ck-btn ck-btn--primary ck-btn--md">
               Start hosting →
             </Link>
           ) : null}
-          <Link
-            href="/"
-            className="inline-flex items-center gap-2 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-2.5 text-sm font-bold text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--cream)]"
-          >
+          <Link href="/" className="ck-btn ck-btn--secondary ck-btn--md">
             ← Back to Click
           </Link>
         </div>
@@ -92,48 +86,42 @@ export default async function MerchantPendingPage() {
     <main className="paper-noise min-h-screen bg-[color:var(--champagne)] px-4 py-12 text-[color:var(--ink)] sm:px-6">
       <section className="mx-auto grid max-w-5xl gap-10 lg:grid-cols-[0.5fr_0.5fr] lg:items-start">
         <div className="lg:sticky lg:top-24">
-          <span className={`sticker ${rejected ? "sticker--rose" : "sticker--peach"} tilt-l-2 inline-flex`}>
-            <span className={`size-2 rounded-full ${rejected ? "bg-[color:var(--punch)]" : "bg-[color:var(--rose)] pulse-ring"}`} />
+          <span className={`sticker ${rejected ? "sticker--rose" : "sticker--peach"} inline-flex`}>
+            <span className={`size-2 rounded-full ${rejected ? "bg-[color:var(--champagne)]" : "bg-[color:var(--purple)] pulse-ring"}`} />
             {rejected ? "Application needs another look" : "Application received"}
           </span>
 
-          <h1 className="font-display mt-6 text-5xl font-bold leading-[0.96] tracking-[-0.025em] sm:text-6xl">
+          <h1 className="font-display mt-6 text-5xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)] sm:text-6xl">
             {rejected ? (
               <>
-                We need to <span className="text-[color:var(--coral)]">talk it over</span>.
+                We need to <span className="text-[color:var(--purple)]">talk it over</span>.
               </>
             ) : (
               <>
-                Thanks, <span className="text-[color:var(--coral)]">we’re on it</span>.
+                Thanks, <span className="text-[color:var(--purple)]">we’re on it</span>.
               </>
             )}
           </h1>
 
-          <p className="mt-6 max-w-xl text-base font-medium leading-7 text-[color:var(--mauve)]">
+          <p className="mt-6 max-w-xl text-base font-medium leading-7 text-[color:var(--slate)]">
             {rejected
               ? "An admin reviewed your application and flagged something. Check your email for the reason and resubmit when you’ve addressed it."
               : "Your merchant application is in the admin queue. We aim to review new merchants within 1 business day. We’ll email you the moment your portal unlocks."}
           </p>
 
-          <p className="mt-6 text-sm font-bold text-[color:var(--ink)]">
+          <p className="mt-6 text-sm font-semibold text-[color:var(--ink)]">
             Application for: <span className="font-display font-semibold text-[color:var(--purple)]">{merchantProfile.business_name}</span>
           </p>
-          <p className="mt-1 text-sm font-medium text-[color:var(--mauve)]">
+          <p className="mt-1 text-sm font-medium text-[color:var(--slate)]">
             Contact email on file: {merchantProfile.contact_email}
           </p>
 
           <div className="mt-8 flex flex-wrap gap-3">
-            <Link
-              href="/dashboard"
-              className="inline-flex items-center gap-2 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-2.5 text-sm font-bold text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--cream)]"
-            >
+            <Link href="/dashboard" className="ck-btn ck-btn--secondary ck-btn--md">
               ← Use Click as an attendee
             </Link>
             {rejected ? (
-              <Link
-                href="/merchant/signup"
-                className="inline-flex items-center gap-2 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)]"
-              >
+              <Link href="/merchant/signup" className="ck-btn ck-btn--primary ck-btn--md">
                 Resubmit application →
               </Link>
             ) : null}
@@ -146,14 +134,12 @@ export default async function MerchantPendingPage() {
           they can't (bug board #204). Steer them to fix + resubmit instead.
         */}
         {rejected ? (
-          <div className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-6 hard-shadow">
-            <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-              What happens next
-            </p>
-            <h2 className="mt-3 font-display text-3xl font-semibold leading-tight tracking-[-0.02em]">
+          <div className="rounded-[18px] bg-[color:var(--paper)] p-6 shadow-[var(--shadow-sm)]">
+            <p className="eyebrow">What happens next</p>
+            <h2 className="mt-3 font-display text-3xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)]">
               Update your application and resubmit.
             </h2>
-            <p className="mt-4 text-sm font-medium leading-7 text-[color:var(--mauve)]">
+            <p className="mt-4 text-sm font-medium leading-7 text-[color:var(--slate)]">
               Your application isn’t live yet, so you can’t create events until it’s
               approved. Check the rejection email for the specific reason, fix that in
               your application, and send it back for review.
@@ -175,32 +161,30 @@ export default async function MerchantPendingPage() {
               ].map((step, idx) => (
                 <li
                   key={step.t}
-                  className="flex gap-4 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-4"
+                  className="flex gap-4 rounded-2xl border border-[color:var(--line)] bg-[color:var(--champagne)] p-4"
                 >
-                  <span className="grid size-8 shrink-0 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] font-mono text-sm font-bold text-[color:var(--surface-deep)]">
+                  <span className="grid size-8 shrink-0 place-items-center rounded-full bg-[color:var(--lavender-100)] text-sm font-semibold text-[color:var(--purple-700)]">
                     {idx + 1}
                   </span>
                   <div>
-                    <p className="font-bold text-[color:var(--ink)]">{step.t}</p>
-                    <p className="mt-1 text-sm font-medium leading-6 text-[color:var(--mauve)]">{step.d}</p>
+                    <p className="font-semibold text-[color:var(--ink)]">{step.t}</p>
+                    <p className="mt-1 text-sm font-medium leading-6 text-[color:var(--slate)]">{step.d}</p>
                   </div>
                 </li>
               ))}
             </ol>
             <Link
               href="/merchant/signup"
-              className="mt-6 inline-flex items-center gap-2 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)]"
+              className="ck-btn ck-btn--primary ck-btn--md mt-6"
             >
               Resubmit application →
             </Link>
           </div>
         ) : (
         /* First-event prep checklist per spec §1 post-submission. */
-        <div className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-6 hard-shadow">
-          <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-            While you wait
-          </p>
-          <h2 className="mt-3 font-display text-3xl font-semibold leading-tight tracking-[-0.02em]">
+        <div className="rounded-[18px] bg-[color:var(--paper)] p-6 shadow-[var(--shadow-sm)]">
+          <p className="eyebrow">While you wait</p>
+          <h2 className="mt-3 font-display text-3xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)]">
             Get your first event live in 15 minutes - prep these now.
           </h2>
 
@@ -229,21 +213,21 @@ export default async function MerchantPendingPage() {
             ].map((step, idx) => (
               <li
                 key={step.t}
-                className="flex gap-4 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-4"
+                className="flex gap-4 rounded-2xl border border-[color:var(--line)] bg-[color:var(--champagne)] p-4"
               >
-                <span className="grid size-8 shrink-0 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] font-mono text-sm font-bold text-[color:var(--surface-deep)]">
+                <span className="grid size-8 shrink-0 place-items-center rounded-full bg-[color:var(--lavender-100)] text-sm font-semibold text-[color:var(--purple-700)]">
                   {idx + 1}
                 </span>
                 <div>
-                  <p className="font-bold text-[color:var(--ink)]">{step.t}</p>
-                  <p className="mt-1 text-sm font-medium leading-6 text-[color:var(--mauve)]">{step.d}</p>
+                  <p className="font-semibold text-[color:var(--ink)]">{step.t}</p>
+                  <p className="mt-1 text-sm font-medium leading-6 text-[color:var(--slate)]">{step.d}</p>
                 </div>
               </li>
             ))}
           </ol>
 
-          <p className="mt-6 font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]/70">
-            ✷ We’ll email you when approval lands ✷
+          <p className="mt-6 text-[12.5px] font-semibold text-[color:var(--slate)]">
+            We’ll email you when approval lands
           </p>
         </div>
         )}

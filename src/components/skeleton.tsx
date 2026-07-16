@@ -58,7 +58,7 @@ export function SkeletonText({
 /** Mirrors <MetricCard>: rounded-2xl cream card, small label, big value. */
 export function SkeletonMetricCard() {
   return (
-    <article className="rounded-2xl border border-[color:var(--line)] bg-[color:var(--cream)] p-5 hard-shadow-sm">
+    <article className="rounded-2xl border border-[color:var(--line)] bg-[color:var(--cream)] p-5">
       <Skeleton className="h-3 w-20 rounded-full" />
       <Skeleton className="mt-3 h-9 w-24 rounded-lg" />
     </article>
@@ -85,7 +85,7 @@ export function SkeletonPageHeader({ description = true }: { description?: boole
         <Skeleton className="mt-3 h-10 w-64 max-w-full rounded-lg sm:h-12 sm:w-80" />
         {description ? <Skeleton className="mt-4 h-3.5 w-full max-w-md rounded-full" /> : null}
       </div>
-      <Skeleton className="h-11 w-32 rounded-full" />
+      <Skeleton className="h-11 w-32 rounded-xl" />
     </div>
   );
 }
@@ -97,7 +97,7 @@ export function SkeletonChart({ panels = 4 }: { panels?: number }) {
       {Array.from({ length: panels }).map((_, p) => (
         <div
           key={p}
-          className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-5 hard-shadow-sm"
+          className="rounded-2xl border border-[color:var(--line)] bg-[color:var(--cream)] p-5"
         >
           <div className="flex items-baseline justify-between gap-2">
             <Skeleton className="h-3 w-24 rounded-full" />
@@ -130,7 +130,7 @@ export function SkeletonInfoCardGrid({ count = 6 }: { count?: number }) {
       {Array.from({ length: count }).map((_, i) => (
         <article
           key={i}
-          className="rounded-2xl border border-[color:var(--line)] bg-[color:var(--cream)] p-6 hard-shadow-sm"
+          className="rounded-2xl border border-[color:var(--line)] bg-[color:var(--cream)] p-6"
         >
           <Skeleton className="h-1.5 w-12 rounded-full" />
           <Skeleton className="mt-5 h-7 w-3/4 rounded-md" />
@@ -145,7 +145,7 @@ export function SkeletonInfoCardGrid({ count = 6 }: { count?: number }) {
 export function SkeletonFilterBar({ pills = 5 }: { pills?: number }) {
   return (
     <div className="flex flex-wrap items-center gap-3">
-      <Skeleton className="h-11 w-full max-w-xs rounded-full" />
+      <Skeleton className="h-11 w-full max-w-xs rounded-xl" />
       <div className="flex flex-wrap gap-2">
         {Array.from({ length: pills }).map((_, i) => (
           <Skeleton key={i} className="h-8 w-20 rounded-full" />
@@ -168,7 +168,7 @@ export function SkeletonTable({
   withThumb?: boolean;
 }) {
   return (
-    <div className="overflow-hidden rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow">
+    <div className="overflow-hidden rounded-2xl border border-[color:var(--line)] bg-[color:var(--cream)]">
       {Array.from({ length: rows }).map((_, i) => (
         <div
           key={i}
@@ -202,7 +202,7 @@ export function SkeletonCardGrid({
       {Array.from({ length: count }).map((_, i) => (
         <article
           key={i}
-          className="overflow-hidden rounded-2xl border border-[color:var(--line)] bg-[color:var(--cream)] hard-shadow-sm"
+          className="overflow-hidden rounded-2xl border border-[color:var(--line)] bg-[color:var(--cream)]"
         >
           <Skeleton className="aspect-[3/2] w-full rounded-none" />
           <div className="p-5">

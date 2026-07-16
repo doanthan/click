@@ -100,7 +100,7 @@ function FilterPill({
 function FilterGroup({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="mb-6">
-      <p className="mb-2.5 text-xs font-bold tracking-[0.08em] uppercase text-[color:var(--slate)]">{label}</p>
+      <p className="mb-2.5 text-xs font-semibold tracking-[0.08em] uppercase text-[color:var(--slate)]">{label}</p>
       {children}
     </div>
   );

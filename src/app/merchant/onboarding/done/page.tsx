@@ -8,14 +8,12 @@ import { FinishOnboardingButton } from "@/components/merchant-onboarding-wizard"
 export default function OnboardingDonePage() {
   return (
     <div className="grid gap-6">
-      <div className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-6 hard-shadow sm:p-8">
-        <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
-          ✷ You&apos;re all set
-        </span>
-        <h2 className="font-display mt-3 text-3xl font-semibold leading-tight">
+      <div className="rounded-[18px] bg-[color:var(--paper)] p-6 shadow-[var(--shadow-sm)] sm:p-8">
+        <p className="eyebrow">You&apos;re all set</p>
+        <h2 className="font-display mt-3 text-3xl font-semibold leading-tight text-[color:var(--ink)]">
           That&apos;s the lap - go make something.
         </h2>
-        <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+        <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--slate)]">
           Spin up your first event whenever you&apos;re ready. If you skipped
           payouts, you&apos;ll find a one-tap prompt on your dashboard to
           connect your bank before publishing a paid event.

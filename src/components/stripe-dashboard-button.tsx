@@ -4,9 +4,9 @@ import { useState } from "react";
 
 // One-shot Stripe Express dashboard login. POSTs to
 // /api/merchant/stripe/dashboard which mints a fresh URL via
-// stripe.accounts.createLoginLink — the URL expires in ~5 minutes and is
+// stripe.accounts.createLoginLink - the URL expires in ~5 minutes and is
 // never cached client-side. Sibling to <ConnectPayoutsButton /> in
-// merchant-onboarding-wizard.tsx (initial onboarding) — this one is for the
+// merchant-onboarding-wizard.tsx (initial onboarding) - this one is for the
 // post-connection "view my payouts" path surfaced from the Finances tab.
 
 const dashboardBtn =
@@ -37,7 +37,7 @@ export function StripeDashboardButton({
         return;
       }
       // Server can tell us to send the merchant somewhere else (e.g. finish
-      // onboarding first) — follow that link instead of surfacing as an
+      // onboarding first) - follow that link instead of surfacing as an
       // error.
       if (!response.ok) {
         if (body.redirect) {
@@ -66,7 +66,7 @@ export function StripeDashboardButton({
         {busy ? "Opening Stripe…" : label}
       </button>
       {error ? (
-        <p role="alert" className="text-xs font-bold text-[color:var(--surface-deep)]">
+        <p role="alert" className="text-xs font-semibold text-[color:var(--danger)]">
           {error}
         </p>
       ) : null}

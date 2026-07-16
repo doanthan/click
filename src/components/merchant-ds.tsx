@@ -245,7 +245,7 @@ export function WizardStepper({
             <Link
               href={paths[i]}
               aria-label={`Go back to ${title}`}
-              className="inline-flex items-center gap-[7px] rounded-full outline-none transition-opacity hover:opacity-75 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--purple)]"
+              className="inline-flex items-center gap-[7px] rounded-full transition-opacity hover:opacity-75 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--purple)]"
             >
               {dot}
               {label}

@@ -19,16 +19,16 @@ type Metric = {
 };
 
 const metrics: Metric[] = [
-  { key: "members", label: "New members", format: (n) => n.toLocaleString(), bar: "bg-[color:var(--peach)]" },
-  { key: "events", label: "New events", format: (n) => n.toLocaleString(), bar: "bg-[color:var(--rose)]" },
-  { key: "rsvps", label: "RSVPs", format: (n) => n.toLocaleString(), bar: "bg-[color:var(--ink)]" },
-  { key: "revenueCents", label: "Paid revenue", format: (n) => priceFormatter.format(n / 100), bar: "bg-[color:var(--punch)]" },
+  { key: "members", label: "New members", format: (n) => n.toLocaleString(), bar: "border border-[color:var(--line-strong)] bg-[color:var(--lavender-300)]" },
+  { key: "events", label: "New events", format: (n) => n.toLocaleString(), bar: "bg-[color:var(--purple-600)]" },
+  { key: "rsvps", label: "RSVPs", format: (n) => n.toLocaleString(), bar: "bg-[color:var(--purple-400)]" },
+  { key: "revenueCents", label: "Paid revenue", format: (n) => priceFormatter.format(n / 100), bar: "border border-[color:var(--line-strong)] bg-[color:var(--lavender-400)]" },
 ];
 
 export function AdminTrendChart({ buckets }: { buckets: AdminTrendBucket[] }) {
   if (buckets.length === 0) {
     return (
-      <div className="rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-6 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+      <div className="rounded-2xl border border-dashed border-[color:var(--line)] bg-[color:var(--paper)] p-6 text-sm leading-6 text-[color:var(--slate)]">
         No trend data yet. Buckets populate as activity accrues.
       </div>
     );
@@ -43,12 +43,10 @@ export function AdminTrendChart({ buckets }: { buckets: AdminTrendBucket[] }) {
         return (
           <div
             key={m.key}
-            className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-5 hard-shadow-sm"
+            className="rounded-2xl bg-[color:var(--paper)] p-5 shadow-[var(--shadow-sm)]"
           >
             <div className="flex items-baseline justify-between gap-2">
-              <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
-                {m.label}
-              </span>
+              <span className="eyebrow">{m.label}</span>
               <span className="font-display text-2xl font-semibold leading-none tabular-nums text-[color:var(--ink)]">
                 {m.format(total)}
               </span>
@@ -74,11 +72,11 @@ export function AdminTrendChart({ buckets }: { buckets: AdminTrendBucket[] }) {
                     {/* CSS-only brand popover: hidden by default, revealed on
                         hover/focus of this `group` wrapper. Positioned above the
                         bar, centered, never intercepts pointer events. */}
-                    <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 whitespace-nowrap rounded-lg border border-[color:var(--line)] bg-[color:var(--cream)] px-2 py-1 text-center opacity-0 transition-opacity duration-150 hard-shadow-sm group-hover:opacity-100 group-focus-within:opacity-100">
-                      <span className="block font-condensed text-[0.6rem] font-bold uppercase tracking-[0.14em] text-[color:var(--mauve)]">
+                    <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 whitespace-nowrap rounded-lg bg-[color:var(--paper)] px-2 py-1 text-center opacity-0 shadow-[var(--shadow-md)] transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
+                      <span className="block text-[11px] font-semibold text-[color:var(--slate)]">
                         {dateFormatter.format(new Date(b.week))}
                       </span>
-                      <span className="block font-condensed text-[0.8rem] font-bold tabular-nums text-[color:var(--ink)]">
+                      <span className="block text-[13px] font-semibold tabular-nums text-[color:var(--ink)]">
                         {m.format(v)}
                       </span>
                     </div>
@@ -86,7 +84,7 @@ export function AdminTrendChart({ buckets }: { buckets: AdminTrendBucket[] }) {
                       className={
                         isEmpty
                           ? "w-full rounded-t-md border border-dashed border-[color:var(--line)] bg-transparent"
-                          : `w-full rounded-t-md border border-[color:var(--line)] ${m.bar}`
+                          : `w-full rounded-t-md ${m.bar}`
                       }
                       style={{ height: `${pct}%` }}
                     />
@@ -94,7 +92,7 @@ export function AdminTrendChart({ buckets }: { buckets: AdminTrendBucket[] }) {
                 );
               })}
             </div>
-            <div className="mt-2 flex justify-between font-mono text-[0.6rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+            <div className="mt-2 flex justify-between text-[11px] font-semibold text-[color:var(--slate)]">
               <span>{dateFormatter.format(new Date(buckets[0].week))}</span>
               <span>now</span>
             </div>

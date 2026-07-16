@@ -42,7 +42,7 @@ type NavItem = {
   href: string;
 };
 
-// Labels are deliberately concise — the full descriptive title ("Events
+// Labels are deliberately concise - the full descriptive title ("Events
 // Management", etc.) lives in each page's H1 (AdminPageHeader). Short labels
 // keep the sidebar scannable and the mobile dropdown tidy.
 const NAV_PRIMARY: NavItem[] = [
@@ -186,20 +186,23 @@ export function AdminSidebar({ counts }: { counts: AdminSidebarCounts }) {
         key={item.key}
         href={item.href}
         aria-current={isActive ? "page" : undefined}
-        className={`group flex w-full items-center gap-3 rounded-2xl border-2 px-3.5 py-2.5 text-left text-[0.92rem] font-bold transition active:translate-y-px ${
+        className={`group flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-left text-sm transition-colors ${
           isActive
-            ? "border-[color:var(--line)] bg-[color:var(--ink)] text-[color:var(--champagne)] hard-shadow-sm"
-            : "border-transparent text-[color:var(--mauve)] hover:bg-[color:var(--cream)] hover:text-[color:var(--ink)]"
+            ? "bg-[color:var(--purple)] font-semibold text-[color:var(--champagne)]"
+            : "font-medium text-[color:var(--ink-soft)] hover:bg-[color:var(--lavender-100)] hover:text-[color:var(--ink)]"
         }`}
       >
-        <Icon name={item.icon} className="size-5 shrink-0" />
+        <Icon
+          name={item.icon}
+          className={`size-5 shrink-0 ${isActive ? "" : "text-[color:var(--slate)]"}`}
+        />
         <span className="min-w-0 flex-1 truncate">{item.label}</span>
         {typeof count === "number" ? (
           <span
-            className={`rounded-full px-2 py-0.5 text-[0.65rem] font-black tabular-nums ${
+            className={`rounded-full px-2 py-0.5 text-[0.65rem] font-semibold tabular-nums ${
               isActive
-                ? "bg-[color:var(--champagne)] text-[color:var(--ink)]"
-                : "bg-[color:var(--cream)] text-[color:var(--ink)]"
+                ? "bg-[color:var(--champagne)]/20 text-[color:var(--champagne)]"
+                : "bg-[color:var(--lavender-100)] text-[color:var(--purple-700)]"
             }`}
           >
             {count}
@@ -223,7 +226,7 @@ export function AdminSidebar({ counts }: { counts: AdminSidebarCounts }) {
     <>
       <PortalMobileNav title="Admin Console" items={mobileItems} />
       <aside className="hidden lg:sticky lg:top-6 lg:block lg:w-[17.5rem] lg:shrink-0">
-      <nav className="flex flex-col rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-3 hard-shadow">
+      <nav className="flex flex-col rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)] p-3">
         <div className="flex items-center gap-3 px-2 pb-4 pt-2">
           <Image
             src="/click_blob_mascot.svg"
@@ -243,7 +246,7 @@ export function AdminSidebar({ counts }: { counts: AdminSidebarCounts }) {
 
         <div className="flex flex-col gap-1">{NAV_PRIMARY.map(renderItem)}</div>
 
-        <div className="mx-1 my-3 border-t-2 border-[color:var(--line)]" />
+        <div className="mx-1 my-3 border-t border-[color:var(--line)]" />
 
         <div className="flex flex-col gap-1">{NAV_SECONDARY.map(renderItem)}</div>
       </nav>

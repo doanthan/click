@@ -21,7 +21,9 @@ function runConfetti(canvas: HTMLCanvasElement) {
   if (!ctx) return () => {};
   const g = ctx; // non-null capture so nested closures keep the narrowing
 
-  const colors = ["#f6c1c8", "#e9a23b", "#c98bdb", "#9bd6c0", "#f4e2b8"];
+  // Canvas needs literal colours - these mirror the DS tokens (--lavender,
+  // --purple, --sage, --amber, --coral) since var() can't reach into 2D paint.
+  const colors = ["#C8B8F8", "#3B2F81", "#5B8C6E", "#E0A33A", "#E8674C"];
   const dpr = window.devicePixelRatio || 1;
 
   function resize() {
@@ -122,40 +124,38 @@ export function EventRsvpSuccessOverlay({
         aria-hidden
       />
 
-      <div className="relative w-full max-w-md rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-7 text-center hard-shadow">
+      <div className="relative w-full max-w-md rounded-[var(--radius-xl)] bg-[color:var(--paper)] p-7 text-center shadow-[var(--shadow-lg)]">
         <button
           type="button"
           aria-label="Close"
           onClick={onClose}
-          className="absolute right-4 top-4 grid size-9 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+          className="absolute right-4 top-4 grid size-9 place-items-center rounded-lg text-[color:var(--slate)] hover:bg-[color:var(--lavender-100)] hover:text-[color:var(--ink)]"
         >
           ✕
         </button>
 
-        <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
-          Click ✷
-        </p>
+        <p className="eyebrow">Click ✷</p>
         <h2
           id="rsvp-success-title"
-          className="font-display mt-2 text-4xl font-bold leading-tight tracking-[-0.025em]"
+          className="font-display mt-2 text-4xl font-semibold leading-tight tracking-[-0.025em] text-[color:var(--ink)]"
         >
-          🎉 You&apos;re in! 🎉
+          You&apos;re in!
         </h2>
 
-        <div className="mt-5 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-5 text-left">
-          <p className="font-display text-2xl font-semibold leading-tight tracking-[-0.025em]">
+        <div className="mt-5 rounded-2xl bg-[color:var(--champagne-deep)] p-5 text-left">
+          <p className="font-display text-2xl font-semibold leading-tight tracking-[-0.025em] text-[color:var(--ink)]">
             {details.title}
           </p>
-          <p className="mt-3 text-sm font-bold text-[color:var(--ink)]">
+          <p className="mt-3 text-sm font-semibold text-[color:var(--ink)]">
             {details.dateLabel}
           </p>
-          <p className="text-sm font-medium text-[color:var(--mauve)]">
+          <p className="text-sm font-medium text-[color:var(--slate)]">
             {details.timeLabel}
           </p>
-          <p className="mt-2 text-sm font-bold text-[color:var(--ink)]">
-            📍 {details.location}
+          <p className="mt-2 text-sm font-semibold text-[color:var(--ink)]">
+            {details.location}
           </p>
-          <p className="text-sm font-medium text-[color:var(--mauve)]">
+          <p className="text-sm font-medium text-[color:var(--slate)]">
             {details.suburb}
           </p>
         </div>
@@ -165,20 +165,20 @@ export function EventRsvpSuccessOverlay({
             href={details.calendarUrl}
             target="_blank"
             rel="noreferrer"
-            className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-4 py-3 text-center text-sm font-bold text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)]"
+            className="ck-btn ck-btn--md ck-btn--full ck-btn--primary"
           >
             Add to calendar
           </a>
           <Link
             href="/confirmed-events"
-            className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-3 text-center text-sm font-bold text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)]"
+            className="ck-btn ck-btn--md ck-btn--full ck-btn--secondary"
           >
             See my confirmed events
           </Link>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full px-4 py-2 text-center text-sm font-bold text-[color:var(--mauve)] hover:text-[color:var(--ink)]"
+            className="ck-btn ck-btn--md ck-btn--full ck-btn--ghost"
           >
             Done
           </button>

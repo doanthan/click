@@ -59,12 +59,12 @@ export function MerchantEventDuplicateButton({ eventId }: { eventId: string }) {
         type="button"
         onClick={duplicateEvent}
         disabled={state === "loading"}
-        className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 text-sm font-bold text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)] disabled:cursor-not-allowed disabled:opacity-60"
+        className="ck-btn ck-btn--secondary ck-btn--md"
       >
         {state === "loading" ? "Opening copy..." : "Duplicate event"}
       </button>
       {message ? (
-        <p className="text-xs font-bold text-[color:var(--rose)]">{message}</p>
+        <p className="text-xs font-semibold text-[color:var(--danger)]">{message}</p>
       ) : null}
     </div>
   );

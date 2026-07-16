@@ -76,6 +76,7 @@
   --coral-ink: #B5442C;    /* AA-accessible coral for SMALL status text on light surfaces */
   --amber: #E0A33A;        /* STATUS: trending / waitlist */
   --amber-ink: #A86F12;    /* AA-accessible amber for SMALL status text on light surfaces */
+  --sage-ink: #476E55;     /* AA-accessible sage for SMALL status text on light surfaces */
   --sage: #5B8C6E;         /* STATUS: free / going / mutual */
   --teal: #2E7D8A;         /* STATUS: new */
   --danger: #B5362F;       /* Destructive red (confirm-cancel, errors) - never coral */
@@ -185,6 +186,7 @@
   --color-coral: var(--coral);
   --color-coral-deep: var(--coral-deep);
   --color-coral-ink: var(--coral-ink);
+  --color-sage-ink: var(--sage-ink);
   --color-amber: var(--amber);
   --color-danger: var(--danger);
   --color-purple-hover: var(--purple-hover);
@@ -388,7 +390,7 @@ body {
 .ck-btn--pending { background: var(--lavender-100); color: var(--purple-700); cursor: default; }
 .ck-btn--pending:active { transform: none; }
 /* mutual "clicked ✨" - Sage, the peak. Taps through to the mutual. */
-.ck-btn--mutual { background: color-mix(in srgb, var(--sage) 14%, var(--paper)); color: var(--sage); }
+.ck-btn--mutual { background: color-mix(in srgb, var(--sage) 14%, var(--paper)); color: var(--sage-ink); }
 .ck-btn--mutual:hover:not([disabled]) { background: color-mix(in srgb, var(--sage) 20%, var(--paper)); }
 .ck-btn--mutual:active:not([disabled]) { transform: scale(.985); }
 

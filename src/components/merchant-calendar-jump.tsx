@@ -18,7 +18,7 @@ const MONTH_NAMES = [
 ];
 
 const SELECT_CLASS =
-  "rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-1.5 text-xs font-bold text-[color:var(--ink)] hover:bg-[color:var(--peach)] focus:outline-none focus:ring-2 focus:ring-[color:var(--rose)]";
+  "rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] px-3 py-1.5 text-xs font-semibold text-[color:var(--ink)] hover:bg-[color:var(--lavender-100)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)]";
 
 type MerchantCalendarJumpProps = {
   // 1-based month (1 = January) and full year currently being viewed.

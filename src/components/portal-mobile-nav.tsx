@@ -57,13 +57,13 @@ export function PortalMobileNav({
       ref={ref}
       className="sticky top-[49px] z-40 -mx-4 mb-2 sm:top-[69px] sm:-mx-6 lg:hidden"
     >
-      <div className="border-b-2 border-[color:var(--line)] bg-[color:var(--champagne)]/95 px-4 py-2 backdrop-blur-xl sm:px-6">
+      <div className="border-b border-[color:var(--line)] bg-[color:var(--champagne)]/95 px-4 py-2 backdrop-blur-xl sm:px-6">
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
           aria-haspopup="menu"
           aria-expanded={open}
-          className="flex w-full items-center gap-3 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-2.5 text-left font-bold text-[color:var(--ink)] hard-shadow-sm"
+          className="flex w-full items-center gap-3 rounded-xl border border-[color:var(--line)] bg-[color:var(--paper)] px-3 py-2.5 text-left font-semibold text-[color:var(--ink)]"
         >
           <Image
             src="/click_blob_mascot.svg"
@@ -80,7 +80,7 @@ export function PortalMobileNav({
             </span>
           </span>
           {typeof activeItem?.count === "number" ? (
-            <span className="rounded-full bg-[color:var(--peach)] px-2 py-0.5 text-[0.65rem] font-black tabular-nums text-[color:var(--ink)]">
+            <span className="rounded-full bg-[color:var(--lavender-100)] px-2 py-0.5 text-[0.65rem] font-semibold tabular-nums text-[color:var(--purple-700)]">
               {activeItem.count}
             </span>
           ) : null}
@@ -104,7 +104,7 @@ export function PortalMobileNav({
       {open ? (
         <div
           role="menu"
-          className="absolute inset-x-4 z-50 mt-1 max-h-[70vh] overflow-y-auto rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-2 hard-shadow sm:inset-x-6"
+          className="absolute inset-x-4 z-50 mt-1 max-h-[70vh] overflow-y-auto rounded-2xl bg-[color:var(--paper)] p-2 shadow-[var(--shadow-md)] sm:inset-x-6"
         >
           <ul className="flex flex-col gap-1">
             {items.map((item) => (
@@ -113,19 +113,19 @@ export function PortalMobileNav({
                   href={item.href}
                   aria-current={item.active ? "page" : undefined}
                   onClick={() => setOpen(false)}
-                  className={`flex w-full items-center gap-3 rounded-xl border-2 px-3.5 py-2.5 text-[0.92rem] font-bold transition ${
+                  className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-[0.92rem] font-semibold transition ${
                     item.active
-                      ? "border-[color:var(--line)] bg-[color:var(--ink)] text-[color:var(--champagne)] hard-shadow-sm"
-                      : "border-transparent text-[color:var(--mauve)] hover:bg-[color:var(--cream)] hover:text-[color:var(--ink)]"
+                      ? "bg-[color:var(--purple)] text-[color:var(--champagne)]"
+                      : "text-[color:var(--slate)] hover:bg-[color:var(--lavender-100)] hover:text-[color:var(--ink)]"
                   }`}
                 >
                   <span className="min-w-0 flex-1 truncate">{item.label}</span>
                   {typeof item.count === "number" ? (
                     <span
-                      className={`rounded-full px-2 py-0.5 text-[0.65rem] font-black tabular-nums ${
+                      className={`rounded-full px-2 py-0.5 text-[0.65rem] font-semibold tabular-nums ${
                         item.active
-                          ? "bg-[color:var(--champagne)] text-[color:var(--ink)]"
-                          : "bg-[color:var(--cream)] text-[color:var(--ink)]"
+                          ? "bg-[color:var(--champagne)] text-[color:var(--purple-700)]"
+                          : "bg-[color:var(--lavender-100)] text-[color:var(--purple-700)]"
                       }`}
                     >
                       {item.count}
@@ -140,7 +140,7 @@ export function PortalMobileNav({
             <Link
               href={cta.href}
               onClick={() => setOpen(false)}
-              className="mt-2 flex items-center justify-center gap-2 rounded-xl border-2 border-[color:var(--surface-deep)] bg-[color:var(--rose)] px-3.5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
+              className="ck-btn ck-btn--primary ck-btn--md ck-btn--full mt-2"
             >
               {cta.label}
             </Link>

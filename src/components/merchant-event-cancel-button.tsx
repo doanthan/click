@@ -58,7 +58,7 @@ export function MerchantEventCancelButton({
         type="button"
         onClick={cancelEvent}
         disabled={disabled}
-        className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 text-sm font-bold text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--rose)] hover:text-[color:var(--surface-deep)] disabled:cursor-not-allowed disabled:opacity-60"
+        className="ck-btn ck-btn--danger ck-btn--md"
       >
         {status === "Cancelled"
           ? "Event cancelled"

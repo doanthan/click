@@ -19,34 +19,28 @@ export default async function AdminLayout({ children }: { children: ReactNode })
 
   if (!isAdminEmail(session.user.email)) {
     return (
-      <main className="paper-noise relative min-h-screen overflow-hidden px-4 py-20 text-[color:var(--ink)] sm:px-6">
-        <section className="relative z-10 mx-auto max-w-2xl rounded-3xl border border-[color:var(--line)] bg-[color:var(--champagne)] p-10 hard-shadow">
-          <span className="sticker sticker--rose tilt-r-1 inline-flex">
-            <span className="size-2 rounded-full bg-[color:var(--surface-deep)]" />
-            Access denied
-          </span>
-          <h1 className="font-display mt-6 text-4xl font-bold leading-tight tracking-[-0.025em] sm:text-5xl">
+      <main className="relative min-h-screen bg-[color:var(--champagne)] px-4 py-20 text-[color:var(--ink)] sm:px-6">
+        <section className="relative z-10 mx-auto max-w-2xl rounded-2xl bg-[color:var(--paper)] p-10 shadow-[var(--shadow-sm)]">
+          <span className="eyebrow">Access denied</span>
+          <h1 className="font-display mt-6 text-4xl font-semibold leading-tight tracking-[-0.025em] sm:text-5xl">
             This account doesn’t have admin access.
           </h1>
-          <p className="mt-5 text-base font-medium leading-7 text-[color:var(--mauve)]">
+          <p className="mt-5 text-base leading-7 text-[color:var(--slate)]">
             You’re signed in as{" "}
-            <span className="font-mono font-bold text-[color:var(--ink)]">
+            <span className="font-semibold text-[color:var(--ink)]">
               {session.user.email}
             </span>
             . The admin portal is restricted to accounts configured in
-            <span className="font-mono"> ADMIN_EMAILS</span>. If you need access,
+            <span className="font-semibold text-[color:var(--ink)]"> ADMIN_EMAILS</span>. If you need access,
             ask an existing admin to add your address.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
-            <Link
-              href="/dashboard"
-              className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
-            >
+            <Link href="/dashboard" className="ck-btn ck-btn--primary ck-btn--md">
               Back to dashboard
             </Link>
             <Link
               href="/login?callbackUrl=/admin"
-              className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)]"
+              className="ck-btn ck-btn--secondary ck-btn--md"
             >
               Sign in as a different account
             </Link>

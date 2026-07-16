@@ -16,16 +16,16 @@ const TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 const STYLE = "mapbox://styles/mapbox/streets-v12";
 const SYDNEY = { lat: -33.8856, lng: 151.21 };
 
-// Hex equivalents of the brand status tones used in the table pills, so a
-// marker reads the same status at a glance on the map.
+// Mirrors the DS badge vocabulary used by the restyled queue table (soft
+// status tint + AA ink), so a marker reads the same status in both views.
 const STATUS_HEX: Record<EventStatus, { bg: string; fg: string }> = {
-  Pending: { bg: "var(--coral)", fg: "var(--cream)" },
-  Live: { bg: "var(--lavender)", fg: "var(--ink)" },
-  Featured: { bg: "var(--purple)", fg: "var(--cream)" },
-  Waitlist: { bg: "var(--lav-bg)", fg: "var(--purple)" },
+  Pending: { bg: "color-mix(in srgb, var(--amber) 16%, var(--paper))", fg: "var(--amber-ink)" },
+  Live: { bg: "color-mix(in srgb, var(--sage) 14%, var(--paper))", fg: "var(--sage-ink)" },
+  Featured: { bg: "var(--purple)", fg: "var(--champagne)" },
+  Waitlist: { bg: "color-mix(in srgb, var(--amber) 10%, var(--paper))", fg: "var(--amber-ink)" },
   Locked: { bg: "var(--amber)", fg: "var(--ink)" },
-  Rejected: { bg: "var(--mauve)", fg: "var(--cream)" },
-  Cancelled: { bg: "var(--line-strong)", fg: "var(--ink)" },
+  Rejected: { bg: "color-mix(in srgb, var(--coral) 12%, var(--paper))", fg: "var(--coral-ink)" },
+  Cancelled: { bg: "var(--mist)", fg: "var(--ink)" },
 };
 
 const popupDateFormatter = new Intl.DateTimeFormat("en-AU", {
@@ -90,12 +90,10 @@ export function AdminEventsMap({ events }: { events: AdminEventRow[] }) {
   const missing = events.length - located.length;
 
   return (
-    <div className="mt-6 overflow-hidden rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-[color:var(--line)] bg-[color:var(--surface-deep)] px-5 py-3">
-        <span className="text-xs font-black uppercase tracking-[0.16em] text-[color:var(--on-deep)]">
-          Events map
-        </span>
-        <span className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-3 py-1 text-[0.65rem] font-black uppercase tracking-wider text-[color:var(--surface-deep)]">
+    <div className="mt-6 overflow-hidden rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)]">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[color:var(--line)] bg-[color:var(--paper)] px-5 py-3">
+        <span className="eyebrow">Events map</span>
+        <span className="rounded-full bg-[color:var(--lavender-100)] px-3 py-1 text-[12px] font-semibold leading-none text-[color:var(--purple-700)]">
           {located.length} mapped{missing > 0 ? ` · ${missing} without coords` : ""}
         </span>
       </div>
@@ -128,9 +126,9 @@ export function AdminEventsMap({ events }: { events: AdminEventRow[] }) {
                 >
                   <button
                     type="button"
-                    aria-label={`${event.title} — ${event.status}`}
+                    aria-label={`${event.title} - ${event.status}`}
                     title={`${event.title} · ${event.suburb ?? ""}`}
-                    className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-[color:var(--ink)] text-[0.6rem] font-black shadow transition hover:scale-110"
+                    className="flex h-7 w-7 items-center justify-center rounded-full text-[0.6rem] font-semibold shadow-[var(--shadow-sm)] ring-2 ring-white transition hover:scale-110"
                     style={{ backgroundColor: tone.bg, color: tone.fg }}
                   >
                     {event.attendees}
@@ -151,8 +149,8 @@ export function AdminEventsMap({ events }: { events: AdminEventRow[] }) {
                 maxWidth="260px"
               >
                 <div className="text-[color:var(--ink)]">
-                  <p className="text-sm font-black leading-tight">{activeEvent.title}</p>
-                  <p className="mt-0.5 text-xs font-bold uppercase tracking-wider text-[color:var(--mauve)]">
+                  <p className="text-sm font-semibold leading-tight">{activeEvent.title}</p>
+                  <p className="mt-0.5 text-xs font-medium text-[color:var(--slate)]">
                     {activeEvent.status} · {activeEvent.category}
                   </p>
                   {activeEvent.address ? (
@@ -160,7 +158,7 @@ export function AdminEventsMap({ events }: { events: AdminEventRow[] }) {
                   ) : activeEvent.locationName ? (
                     <p className="mt-1 text-xs">{activeEvent.locationName}</p>
                   ) : null}
-                  <p className="mt-1 text-xs text-[color:var(--mauve)]">
+                  <p className="mt-1 text-xs text-[color:var(--slate)]">
                     {popupDateFormatter.format(new Date(activeEvent.startsAt))} ·{" "}
                     {activeEvent.attendees}/{activeEvent.capacity} going
                   </p>
@@ -168,7 +166,7 @@ export function AdminEventsMap({ events }: { events: AdminEventRow[] }) {
                     href={`/events/${activeEvent.id}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="mt-2 inline-block text-xs font-black text-[color:var(--coral)]"
+                    className="mt-2 inline-block text-xs font-semibold text-[color:var(--purple)]"
                   >
                     View event ↗
                   </Link>
@@ -178,10 +176,10 @@ export function AdminEventsMap({ events }: { events: AdminEventRow[] }) {
           </Map>
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
-            <p className="text-sm font-black text-[color:var(--ink)]">
+            <p className="text-sm font-semibold text-[color:var(--ink)]">
               Add a Mapbox public token to load the map
             </p>
-            <p className="text-xs text-[color:var(--mauve)]">
+            <p className="text-xs text-[color:var(--slate)]">
               Paste your <code>pk.*</code> token as <code>NEXT_PUBLIC_MAPBOX_TOKEN</code> in{" "}
               <code>.env.local</code> and restart the dev server.
             </p>

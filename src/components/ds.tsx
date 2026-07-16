@@ -355,7 +355,7 @@ const BADGE_TONE: Record<BadgeTone, CSSProperties> = {
   // tint is too light to read at 12px.
   coral: { background: "color-mix(in srgb, var(--coral) 12%, var(--paper))", color: "var(--coral-ink)" },
   amber: { background: "color-mix(in srgb, var(--amber) 16%, var(--paper))", color: "var(--amber-ink)" },
-  sage: { background: "color-mix(in srgb, var(--sage) 14%, var(--paper))", color: "var(--sage)" },
+  sage: { background: "color-mix(in srgb, var(--sage) 14%, var(--paper))", color: "var(--sage-ink)" },
   teal: { background: "color-mix(in srgb, var(--teal) 12%, var(--paper))", color: "var(--teal)" },
   lavender: { background: "var(--lavender-100)", color: "var(--purple-700)" },
   neutral: { background: "var(--mist)", color: "var(--slate)" },

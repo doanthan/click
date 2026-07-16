@@ -20,6 +20,7 @@ import {
 import type { AdminMemberRow } from "@/lib/event-repository";
 import { formatIntent } from "@/lib/click-data";
 import { EmptyState } from "@/components/empty-state";
+import { Badge, type BadgeTone } from "@/components/ds";
 
 type RoleFilter = "all" | "attendee" | "merchant" | "admin";
 
@@ -36,10 +37,10 @@ const dateFormatter = new Intl.DateTimeFormat("en-AU", {
 
 const countFormatter = new Intl.NumberFormat("en-AU");
 
-function roleTone(role: AdminMemberRow["role"]) {
-  if (role === "admin") return "bg-[color:var(--ink)] text-[color:var(--champagne)]";
-  if (role === "merchant") return "bg-[color:var(--rose)] text-[color:var(--surface-deep)]";
-  return "bg-[color:var(--peach)] text-[color:var(--surface-deep)]";
+function roleTone(role: AdminMemberRow["role"]): BadgeTone {
+  if (role === "admin") return "lavender";
+  if (role === "merchant") return "teal";
+  return "neutral";
 }
 
 const MAX_EVENT_CARDS = 4;
@@ -59,7 +60,7 @@ function EventCards({
 
   return (
     <div className="mt-2">
-      <p className="text-[0.6rem] font-black uppercase tracking-[0.16em] text-[color:var(--mauve)]/80">
+      <p className="text-[11px] font-semibold text-[color:var(--slate)]">
         Events
       </p>
       <div className="mt-1.5 flex flex-wrap gap-1.5">
@@ -69,7 +70,7 @@ function EventCards({
             type="button"
             onClick={() => onSelect?.(event.slug)}
             title={event.title}
-            className="max-w-[14rem] truncate rounded-lg border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-2.5 py-1 text-[0.7rem] font-bold text-[color:var(--ink)] transition-colors hover:bg-[color:var(--peach)]"
+            className="max-w-[14rem] truncate rounded-lg border border-[color:var(--mist)] bg-[color:var(--paper)] px-2.5 py-1 text-xs font-medium text-[color:var(--ink)] transition-colors hover:bg-[color:var(--lavender-100)]"
           >
             {event.title}
           </button>
@@ -78,7 +79,7 @@ function EventCards({
           <button
             type="button"
             onClick={() => setExpanded(true)}
-            className="rounded-lg border-2 border-dashed border-[color:var(--line)] bg-transparent px-2.5 py-1 text-[0.7rem] font-bold text-[color:var(--mauve)] transition-colors hover:bg-[color:var(--cream)]"
+            className="rounded-lg border border-dashed border-[color:var(--mist)] bg-transparent px-2.5 py-1 text-xs font-medium text-[color:var(--slate)] transition-colors hover:bg-[color:var(--lavender-100)]"
           >
             +{hidden} more
           </button>
@@ -87,7 +88,7 @@ function EventCards({
           <button
             type="button"
             onClick={() => setExpanded(false)}
-            className="rounded-lg border-2 border-dashed border-[color:var(--line)] bg-transparent px-2.5 py-1 text-[0.7rem] font-bold text-[color:var(--mauve)] transition-colors hover:bg-[color:var(--cream)]"
+            className="rounded-lg border border-dashed border-[color:var(--mist)] bg-transparent px-2.5 py-1 text-xs font-medium text-[color:var(--slate)] transition-colors hover:bg-[color:var(--lavender-100)]"
           >
             Show less
           </button>
@@ -157,7 +158,7 @@ function MemberActions({
         aria-expanded={open}
         aria-label={`Actions for ${member.displayName}`}
         onClick={() => setOpen((value) => !value)}
-        className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] text-[color:var(--ink)] transition-colors hover:bg-[color:var(--cream)]"
+        className="flex h-8 w-8 items-center justify-center rounded-lg border border-[color:var(--mist)] bg-[color:var(--paper)] text-[color:var(--slate)] transition-colors hover:bg-[color:var(--lavender-100)] hover:text-[color:var(--ink)]"
       >
         <svg viewBox="0 0 20 20" className="h-4 w-4" fill="currentColor" aria-hidden="true">
           <circle cx="10" cy="4" r="1.6" />
@@ -168,12 +169,12 @@ function MemberActions({
       {open ? (
         <div
           role="menu"
-          className="absolute right-0 top-10 z-20 w-56 rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-2 text-left hard-shadow-sm"
+          className="absolute right-0 top-10 z-20 w-56 rounded-xl bg-[color:var(--paper)] p-2 text-left shadow-[var(--shadow-md)]"
         >
           <Link
             href={`/admin/members/${member.id}`}
             role="menuitem"
-            className="block rounded-lg px-3 py-2 text-xs font-bold text-[color:var(--ink)] transition-colors hover:bg-[color:var(--cream)]"
+            className="block rounded-lg px-3 py-2 text-[13px] font-medium text-[color:var(--ink)] transition-colors hover:bg-[color:var(--lavender-100)]"
           >
             View profile
           </Link>
@@ -185,7 +186,7 @@ function MemberActions({
               onToggleVerified();
               setOpen(false);
             }}
-            className="block w-full rounded-lg px-3 py-2 text-left text-xs font-bold text-[color:var(--ink)] transition-colors hover:bg-[color:var(--cream)] disabled:opacity-60"
+            className="block w-full rounded-lg px-3 py-2 text-left text-[13px] font-medium text-[color:var(--ink)] transition-colors hover:bg-[color:var(--lavender-100)] disabled:opacity-60"
           >
             {member.photoVerified ? "Remove verified tick" : "Mark verified ✓"}
           </button>
@@ -198,7 +199,7 @@ function MemberActions({
                 onUnsuspend();
                 setOpen(false);
               }}
-              className="block w-full rounded-lg px-3 py-2 text-left text-xs font-bold text-[color:var(--ink)] transition-colors hover:bg-[color:var(--peach)] disabled:opacity-60"
+              className="block w-full rounded-lg px-3 py-2 text-left text-[13px] font-medium text-[color:var(--ink)] transition-colors hover:bg-[color:var(--lavender-100)] disabled:opacity-60"
             >
               Unsuspend member
             </button>
@@ -208,7 +209,7 @@ function MemberActions({
                 value={reason}
                 onChange={(event) => setReason(event.target.value)}
                 placeholder="Reason (shown in audit log)"
-                className="rounded-md border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-2 py-1.5 text-xs"
+                className="rounded-lg border border-[color:var(--mist)] bg-white px-2 py-1.5 text-xs text-[color:var(--ink)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)]"
               />
               <button
                 type="button"
@@ -218,7 +219,7 @@ function MemberActions({
                   setOpen(false);
                   setConfirming(false);
                 }}
-                className="rounded-lg border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-[color:var(--surface-deep)] hard-shadow-sm disabled:opacity-60"
+                className="ck-btn ck-btn--danger ck-btn--sm"
               >
                 Confirm suspend
               </button>
@@ -228,7 +229,7 @@ function MemberActions({
               type="button"
               role="menuitem"
               onClick={() => setConfirming(true)}
-              className="block w-full rounded-lg px-3 py-2 text-left text-xs font-bold text-[color:var(--rose)] transition-colors hover:bg-[color:var(--rose)]/10"
+              className="block w-full rounded-lg px-3 py-2 text-left text-[13px] font-medium text-[color:var(--danger)] transition-colors hover:bg-[color:var(--danger)]/10"
             >
               Suspend member
             </button>
@@ -243,7 +244,7 @@ function MemberActions({
                 onUnban();
                 setOpen(false);
               }}
-              className="block w-full rounded-lg px-3 py-2 text-left text-xs font-bold text-[color:var(--ink)] transition-colors hover:bg-[color:var(--peach)] disabled:opacity-60"
+              className="block w-full rounded-lg px-3 py-2 text-left text-[13px] font-medium text-[color:var(--ink)] transition-colors hover:bg-[color:var(--lavender-100)] disabled:opacity-60"
             >
               Lift ban
             </button>
@@ -253,7 +254,7 @@ function MemberActions({
                 value={banReason}
                 onChange={(event) => setBanReason(event.target.value)}
                 placeholder="Ban reason (shown in audit log)"
-                className="rounded-md border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-2 py-1.5 text-xs"
+                className="rounded-lg border border-[color:var(--mist)] bg-white px-2 py-1.5 text-xs text-[color:var(--ink)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)]"
               />
               <button
                 type="button"
@@ -263,9 +264,9 @@ function MemberActions({
                   setOpen(false);
                   setBanConfirming(false);
                 }}
-                className="rounded-lg border-2 border-[color:var(--ink)] bg-[color:var(--ink)] px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-[color:var(--champagne)] hard-shadow-sm disabled:opacity-60"
+                className="ck-btn ck-btn--danger ck-btn--sm"
               >
-                Confirm ban — permanent
+                Confirm ban - permanent
               </button>
             </div>
           ) : (
@@ -273,7 +274,7 @@ function MemberActions({
               type="button"
               role="menuitem"
               onClick={() => setBanConfirming(true)}
-              className="block w-full rounded-lg px-3 py-2 text-left text-xs font-black text-[color:var(--ink)] transition-colors hover:bg-[color:var(--ink)]/10"
+              className="block w-full rounded-lg px-3 py-2 text-left text-[13px] font-medium text-[color:var(--danger)] transition-colors hover:bg-[color:var(--danger)]/10"
             >
               Ban (permanent)
             </button>
@@ -334,7 +335,7 @@ function MemberRow({
     startTransition(async () => {
       try {
         await banMemberAction(form);
-        toast.success(`Banned ${member.displayName} — clicks & plans torn down.`);
+        toast.success(`Banned ${member.displayName} - clicks & plans torn down.`);
       } catch {
         toast.error("Could not ban. Try again.");
       }
@@ -375,77 +376,73 @@ function MemberRow({
 
   return (
     <div
-      className={`grid gap-3 border-b border-[color:var(--line)] px-5 py-4 text-sm font-medium text-[color:var(--mauve)] last:border-0 md:grid-cols-[1.4fr_0.6fr_0.8fr_0.8fr_0.7fr_0.6fr_0.7fr] md:items-center ${
-        banned ? "bg-[color:var(--ink)]/5" : suspended ? "bg-[color:var(--rose)]/10" : ""
+      className={`grid gap-3 border-b border-[color:var(--line)] px-5 py-4 text-sm text-[color:var(--slate)] last:border-0 md:grid-cols-[1.4fr_0.6fr_0.8fr_0.8fr_0.7fr_0.6fr_0.7fr] md:items-center ${
+        banned ? "bg-[color:var(--ink)]/5" : suspended ? "bg-[color:var(--danger)]/5" : ""
       }`}
     >
       <div>
         {isSeed ? (
-          <p className="font-black text-[color:var(--ink)]">{member.displayName}</p>
+          <p className="font-semibold text-[color:var(--ink)]">{member.displayName}</p>
         ) : (
           <Link
             href={`/admin/members/${member.id}`}
-            className="font-black text-[color:var(--ink)] hover:underline"
+            className="font-semibold text-[color:var(--ink)] hover:underline"
           >
             {member.displayName}
           </Link>
         )}
-        <p className="text-xs font-medium text-[color:var(--mauve)]">{member.email}</p>
+        <p className="text-xs text-[color:var(--slate)]">{member.email}</p>
         {!member.onboardingComplete ? (
-          <p className="mt-1 text-[0.7rem] font-bold uppercase tracking-wider text-[color:var(--rose)]">
-            Onboarding incomplete — not counted as attendee
+          <p className="mt-1 text-xs font-semibold text-[color:var(--coral-ink)]">
+            Onboarding incomplete - not counted as attendee
           </p>
         ) : null}
         {member.intents.length > 0 ? (
-          <p className="mt-1 text-[0.7rem] font-bold uppercase tracking-wider text-[color:var(--mauve)]/80">
+          <p className="mt-1 text-xs text-[color:var(--slate)]">
             {member.intents.map(formatIntent).join(" · ")}
           </p>
         ) : null}
         <EventCards events={member.events} onSelect={onEventSelect} />
         {banned ? (
-          <p className="mt-1 inline-flex rounded-full border-2 border-[color:var(--ink)] bg-[color:var(--ink)] px-2 py-0.5 text-[0.65rem] font-black uppercase tracking-wider text-[color:var(--champagne)]">
-            Banned · permanent
+          <p className="mt-1 inline-flex">
+            <Badge tone="coral">Banned · permanent</Badge>
           </p>
         ) : null}
         {suspended && member.suspendedReason ? (
-          <p className="mt-1 text-xs font-bold text-[color:var(--rose)]">
+          <p className="mt-1 text-xs font-semibold text-[color:var(--danger)]">
             Suspended: {member.suspendedReason}
           </p>
         ) : null}
       </div>
       <div>
-        <span
-          className={`inline-flex rounded-full border-2 border-[color:var(--line)] px-2.5 py-0.5 text-[0.65rem] font-black uppercase tracking-wider ${roleTone(member.role)}`}
-        >
-          {member.role}
-        </span>
+        <Badge tone={roleTone(member.role)}>{member.role}</Badge>
       </div>
       <span>
-        <span className="font-mono text-[0.6rem] uppercase tracking-wider text-[color:var(--mauve)]/70 md:hidden">
+        <span className="text-[11px] font-semibold text-[color:var(--slate)] md:hidden">
           Suburb:{" "}
         </span>
         {member.suburb ?? "—"}
       </span>
-      <span className="font-bold text-[color:var(--ink)]">
+      <span className="font-semibold text-[color:var(--ink)]">
         {member.registrations} RSVP · {member.bookmarks} saved
       </span>
-      <span className="text-xs font-bold uppercase tracking-wide">
-        <span className={member.emailVerified ? "text-[color:var(--ink)]" : "text-[color:var(--mauve)]/70"}>
+      <span className="text-xs">
+        <span className={member.emailVerified ? "font-semibold text-[color:var(--ink)]" : "text-[color:var(--slate)]"}>
           Email{member.emailVerified ? " ✓" : " —"}
         </span>
         <span className="mx-1 opacity-30">·</span>
-        <span className={member.photoVerified ? "text-[color:var(--ink)]" : "text-[color:var(--mauve)]/70"}>
+        <span className={member.photoVerified ? "font-semibold text-[color:var(--ink)]" : "text-[color:var(--slate)]"}>
           Photo{member.photoVerified ? " ✓" : " —"}
         </span>
       </span>
       <span>
-        <span className="font-mono text-[0.6rem] uppercase tracking-wider text-[color:var(--mauve)]/70 md:hidden">
+        <span className="text-[11px] font-semibold text-[color:var(--slate)] md:hidden">
           Joined:{" "}
         </span>
         {joinedLabel}
       </span>
       {isSeed ? (
-        <span className="font-mono text-[0.6rem] uppercase tracking-[0.16em] text-[color:var(--mauve)] md:text-right">
+        <span className="text-[11px] font-semibold text-[color:var(--slate)] md:text-right">
           seed data
         </span>
       ) : (
@@ -578,11 +575,7 @@ export function AdminMembersTable({
               key={option.value}
               type="button"
               onClick={() => setRole(option.value)}
-              className={`rounded-full border-2 border-[color:var(--line)] px-4 py-1.5 text-xs font-bold uppercase tracking-wider hard-shadow-sm transition ${
-                role === option.value
-                  ? "bg-[color:var(--ink)] text-[color:var(--champagne)]"
-                  : "bg-[color:var(--champagne)] text-[color:var(--ink)] hover:bg-[color:var(--cream)]"
-              }`}
+              className={`ck-tag ck-tag--select ${role === option.value ? "ck-tag--selected" : ""}`}
             >
               {option.label} <span className="opacity-60">({option.count})</span>
             </button>
@@ -596,7 +589,7 @@ export function AdminMembersTable({
             id="admin-members-event-filter"
             value={eventFilter}
             onChange={(event) => setEventFilter(event.target.value)}
-            className="w-full rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-2 text-sm font-bold text-[color:var(--ink)] sm:w-64"
+            className="w-full rounded-xl border border-[color:var(--mist)] bg-white px-4 py-2 text-sm text-[color:var(--ink)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)] sm:w-64"
           >
             <option value="all">All events</option>
             {eventDropdownOptions.map((option) => (
@@ -610,13 +603,13 @@ export function AdminMembersTable({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search name, email, suburb, event…"
-            className="w-full rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-2 text-sm font-medium text-[color:var(--ink)] placeholder:text-[color:var(--mauve)]/70 sm:w-72"
+            className="w-full rounded-xl border border-[color:var(--mist)] bg-white px-4 py-2 text-sm text-[color:var(--ink)] placeholder:text-[color:var(--slate)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)] sm:w-72"
           />
         </div>
       </div>
 
-      <div className="mt-6 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] hard-shadow-sm">
-        <div className="hidden grid-cols-[1.4fr_0.6fr_0.8fr_0.8fr_0.7fr_0.6fr_0.7fr] gap-4 rounded-t-2xl bg-[color:var(--surface-deep)] px-5 py-3 text-xs font-black uppercase tracking-[0.14em] text-[color:var(--on-deep)] md:grid">
+      <div className="mt-6 rounded-2xl bg-[color:var(--paper)] shadow-[var(--shadow-sm)]">
+        <div className="hidden grid-cols-[1.4fr_0.6fr_0.8fr_0.8fr_0.7fr_0.6fr_0.7fr] gap-4 border-b border-[color:var(--line)] px-5 py-3 text-xs font-semibold text-[color:var(--slate)] md:grid">
           <span>Member</span>
           <span>Role</span>
           <span>Suburb</span>
@@ -642,7 +635,7 @@ export function AdminMembersTable({
                   <button
                     type="button"
                     onClick={clearFilters}
-                    className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--ink)] px-5 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--on-deep)] transition hard-shadow-sm hover:bg-black active:translate-y-px"
+                    className="ck-btn ck-btn--secondary ck-btn--sm"
                   >
                     Clear filters
                   </button>
@@ -663,18 +656,18 @@ export function AdminMembersTable({
       </div>
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-        <p className="font-mono text-[0.7rem] font-bold uppercase tracking-wider text-[color:var(--mauve)]">
+        <p className="text-xs font-semibold text-[color:var(--slate)]">
           {filtered.length === 0
             ? "0 members"
             : `${countFormatter.format(startRow)}–${countFormatter.format(endIndex)} of ${countFormatter.format(filtered.length)}`}
         </p>
         <div className="flex items-center gap-2">
-          <label className="font-mono text-[0.7rem] font-bold uppercase tracking-wider text-[color:var(--mauve)]">
+          <label className="text-xs font-semibold text-[color:var(--slate)]">
             <span className="sr-only">Rows per page</span>
             <select
               value={pageSize}
               onChange={(event) => setPageSize(Number(event.target.value))}
-              className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-1 font-mono text-[0.7rem] font-bold text-[color:var(--ink)]"
+              className="rounded-xl border border-[color:var(--mist)] bg-white px-3 py-1.5 text-xs font-semibold text-[color:var(--ink)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)]"
             >
               {PAGE_SIZES.map((size) => (
                 <option key={size} value={size}>
@@ -687,18 +680,18 @@ export function AdminMembersTable({
             type="button"
             disabled={currentPage <= 1}
             onClick={() => setPage((current) => Math.max(1, current - 1))}
-            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-1 font-mono text-[0.7rem] font-bold uppercase tracking-wider text-[color:var(--ink)] transition-colors hover:bg-[color:var(--champagne)] disabled:cursor-not-allowed disabled:opacity-40"
+            className="ck-btn ck-btn--secondary ck-btn--sm"
           >
             Prev
           </button>
-          <span className="font-mono text-[0.7rem] font-bold uppercase tracking-wider text-[color:var(--ink)]">
+          <span className="text-xs font-semibold text-[color:var(--ink)]">
             {currentPage} / {pageCount}
           </span>
           <button
             type="button"
             disabled={currentPage >= pageCount}
             onClick={() => setPage((current) => Math.min(pageCount, current + 1))}
-            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-4 py-1 font-mono text-[0.7rem] font-bold uppercase tracking-wider text-[color:var(--ink)] transition-colors hover:bg-[color:var(--champagne)] disabled:cursor-not-allowed disabled:opacity-40"
+            className="ck-btn ck-btn--secondary ck-btn--sm"
           >
             Next
           </button>

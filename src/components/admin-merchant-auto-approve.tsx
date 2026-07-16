@@ -42,33 +42,29 @@ export function AdminMerchantAutoApprove({
   }
 
   return (
-    <div className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-5 hard-shadow-sm">
+    <div className="rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)] p-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
-          <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--rose)]">
-            Event review
-          </p>
-          <p className="mt-2 text-sm font-bold text-[color:var(--ink)]">
+          <p className="eyebrow">Event review</p>
+          <p className="mt-2 text-sm font-semibold text-[color:var(--ink)]">
             {enabled
-              ? "Trusted — new events publish live without review."
-              : "Manual review — every new event waits in the pending queue."}
+              ? "Trusted - new events publish live without review."
+              : "Manual review - every new event waits in the pending queue."}
           </p>
-          <p className="mt-1 text-xs font-medium text-[color:var(--mauve)]">
+          <p className="mt-1 text-xs text-[color:var(--slate)]">
             Approving any one of this merchant&apos;s events turns this on
             automatically. Turn it off to send them back to manual review.
           </p>
           {error ? (
-            <p className="mt-2 text-xs font-bold text-[color:var(--punch)]">{error}</p>
+            <p className="mt-2 text-xs font-semibold text-[color:var(--danger)]">{error}</p>
           ) : null}
         </div>
         <button
           type="button"
           onClick={toggle}
           disabled={saving}
-          className={`shrink-0 rounded-full border-2 border-[color:var(--line)] px-5 py-2.5 text-xs font-black uppercase tracking-wide hard-shadow-sm disabled:cursor-not-allowed disabled:opacity-60 ${
-            enabled
-              ? "bg-[color:var(--cream)] text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
-              : "bg-[color:var(--rose)] text-[color:var(--surface-deep)] hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)]"
+          className={`shrink-0 disabled:cursor-not-allowed ck-btn ck-btn--sm ${
+            enabled ? "ck-btn--secondary" : "ck-btn--primary"
           }`}
         >
           {saving

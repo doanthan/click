@@ -19,11 +19,7 @@ export default function V2Toggle({ enabled }: { enabled: boolean }) {
         <button
           type="submit"
           disabled={pending}
-          className={`rounded-full border-2 border-[color:var(--line)] px-4 py-1.5 text-xs font-bold uppercase tracking-wide hard-shadow-sm transition disabled:opacity-50 ${
-            enabled
-              ? "bg-[color:var(--champagne)] text-[color:var(--ink)] hover:bg-[color:var(--cream)]"
-              : "bg-[color:var(--rose)] text-[color:var(--surface-deep)] hover:bg-[color:var(--ink)] hover:text-[color:var(--on-deep)]"
-          }`}
+          className={`ck-btn ck-btn--sm ${enabled ? "ck-btn--secondary" : "ck-btn--primary"}`}
         >
           {pending ? "Saving…" : enabled ? "Disable v2 (revert to v1)" : "Enable v2 live"}
         </button>
@@ -31,7 +27,7 @@ export default function V2Toggle({ enabled }: { enabled: boolean }) {
       {state && (
         <p
           className={`text-xs font-semibold ${
-            state.ok ? "text-[color:var(--ink)]" : "text-[color:var(--rose)]"
+            state.ok ? "text-[color:var(--ink)]" : "text-[color:var(--danger)]"
           }`}
         >
           {state.message} <span className="opacity-60">(reload to see the new state)</span>

@@ -45,12 +45,12 @@ export function EventCheckoutModal({
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-xl rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-4 hard-shadow sm:p-6"
+        className="relative w-full max-w-xl rounded-[var(--radius-xl)] bg-[color:var(--paper)] p-4 shadow-[var(--shadow-lg)] sm:p-6"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="mb-4 flex items-start justify-between gap-3">
           <div className="grid gap-2">
-            <span className="inline-flex w-fit items-center gap-1.5 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-3 py-1.5 text-[0.68rem] font-bold uppercase tracking-wider text-[color:var(--surface-deep)] hard-shadow-sm">
+            <span className="inline-flex w-fit items-center gap-1.5 rounded-lg bg-[color:var(--lavender-100)] px-2.5 py-1.5 text-xs font-semibold text-[color:var(--purple-700)]">
               <svg
                 viewBox="0 0 24 24"
                 aria-hidden="true"
@@ -66,7 +66,7 @@ export function EventCheckoutModal({
               </svg>
               Secure checkout
             </span>
-            <p className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+            <p className="text-xs font-medium text-[color:var(--slate)]">
               Card details go straight to Stripe - never our servers
             </p>
           </div>
@@ -74,13 +74,13 @@ export function EventCheckoutModal({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="grid size-9 shrink-0 place-items-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--peach)]"
+            className="grid size-9 shrink-0 place-items-center rounded-lg text-[color:var(--slate)] hover:bg-[color:var(--lavender-100)] hover:text-[color:var(--ink)]"
           >
             ✕
           </button>
         </div>
         {stripePromise ? (
-          <div className="overflow-hidden rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-2 sm:p-3">
+          <div className="overflow-hidden rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)] p-2 sm:p-3">
             <EmbeddedCheckoutProvider
               stripe={stripePromise}
               options={{ clientSecret }}
@@ -89,11 +89,11 @@ export function EventCheckoutModal({
             </EmbeddedCheckoutProvider>
           </div>
         ) : (
-          <p className="p-4 text-sm font-bold text-[color:var(--rose)]">
+          <p className="p-4 text-sm font-medium text-[color:var(--danger)]">
             Payments aren&apos;t configured in this environment.
           </p>
         )}
-        <p className="mt-3 text-center font-mono text-[0.62rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+        <p className="mt-3 text-center text-xs font-medium text-[color:var(--slate)]">
           Powered by Stripe · Press Esc to cancel
         </p>
       </div>

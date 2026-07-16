@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { WizardStepper } from "./merchant-ds";
 
 // Post-approval merchant onboarding — a short, mostly-informational walkthrough
 // shown once after an admin approves a merchant. Each step has its own URL so
@@ -32,45 +33,14 @@ export function OnboardingProgress() {
     ONBOARDING_STEPS.findIndex((s) => pathname.startsWith(s.path)),
   );
 
+  // Read-only progress (no paths) - onboarding steps navigate via the page CTAs.
   return (
-    <ol className="flex items-center gap-2 sm:gap-3">
-      {ONBOARDING_STEPS.map((step, i) => {
-        const isDone = i < current;
-        const isActive = i === current;
-        const circleClass = `flex size-8 flex-none items-center justify-center rounded-full border-2 border-[color:var(--line)] text-xs font-bold ${
-          isActive
-            ? "bg-[color:var(--rose)] text-[color:var(--surface-deep)] hard-shadow-sm"
-            : isDone
-              ? "bg-[color:var(--peach)] text-[color:var(--surface-deep)]"
-              : "bg-[color:var(--champagne)] text-[color:var(--mauve)]"
-        }`;
-        const labelClass = `hidden sm:inline font-mono text-[0.7rem] font-bold uppercase tracking-[0.16em] ${
-          isActive ? "text-[color:var(--ink)]" : "text-[color:var(--mauve)]"
-        }`;
-        return (
-          <li key={step.path} className="flex flex-1 items-center gap-2 sm:gap-3">
-            <span className={circleClass} aria-current={isActive ? "step" : undefined}>
-              {isDone ? "✓" : i + 1}
-            </span>
-            <span className={labelClass}>{step.title}</span>
-            {i < ONBOARDING_STEPS.length - 1 ? (
-              <span
-                className={`h-[2px] flex-1 ${
-                  isDone ? "bg-[color:var(--peach)]" : "bg-[color:var(--line-soft)]"
-                }`}
-              />
-            ) : null}
-          </li>
-        );
-      })}
-    </ol>
+    <WizardStepper steps={ONBOARDING_STEPS.map((s) => s.title)} current={current} />
   );
 }
 
-const primaryBtn =
-  "inline-flex items-center justify-center rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-6 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)] disabled:cursor-not-allowed disabled:opacity-60";
-const secondaryBtn =
-  "inline-flex items-center justify-center rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-6 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm hover:bg-[color:var(--cream)]";
+const primaryBtn = "ck-btn ck-btn--primary ck-btn--md";
+const secondaryBtn = "ck-btn ck-btn--secondary ck-btn--md";
 
 // Back / Next link row. Mostly-static steps use this; the payouts step swaps
 // Next for its own Skip/Continue controls.
@@ -145,7 +115,7 @@ export function ConnectPayoutsButton({
         {busy ? "Opening Stripe…" : label}
       </button>
       {error ? (
-        <p role="alert" className="text-xs font-bold text-[color:var(--surface-deep)]">
+        <p role="alert" className="text-xs font-semibold text-[color:var(--danger)]">
           {error}
         </p>
       ) : null}

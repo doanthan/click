@@ -25,6 +25,7 @@ import {
   validateOptionalAcn,
 } from "@/lib/abn";
 import { MapboxAutocomplete, type MapboxPlace } from "./mapbox-autocomplete";
+import { WizardStepper } from "./merchant-ds";
 
 // Merchant signup — multi-step wizard covering spec §1. Each step has its own
 // URL so users can bookmark, link to, and browser-back through them:
@@ -512,7 +513,7 @@ export function WizardShell({
       {state.submitMessage ? (
         <p
           role="alert"
-          className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-4 py-3 text-sm font-bold text-[color:var(--surface-deep)]"
+          className="rounded-xl bg-[color-mix(in_srgb,var(--danger)_8%,var(--paper))] px-4 py-3 text-sm font-semibold text-[color:var(--danger)]"
         >
           {state.submitMessage}
         </p>
@@ -523,12 +524,12 @@ export function WizardShell({
           type="button"
           onClick={goBack}
           disabled={step === 0 || state.submitState === "submitting"}
-          className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-6 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm disabled:cursor-not-allowed disabled:opacity-40 hover:bg-[color:var(--cream)]"
+          className="ck-btn ck-btn--secondary ck-btn--md"
         >
           ← Back
         </button>
 
-        <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+        <span className="text-[12.5px] font-semibold text-[color:var(--slate)]">
           Step {step + 1} of {STEP_COUNT} · {STEP_TITLES[step]}
         </span>
 
@@ -537,7 +538,7 @@ export function WizardShell({
             type="button"
             onClick={submit}
             disabled={state.submitState === "submitting"}
-            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-6 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm disabled:cursor-not-allowed disabled:opacity-60 hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)]"
+            className="ck-btn ck-btn--primary ck-btn--md"
           >
             {state.submitState === "submitting" ? "Submitting…" : "Submit application →"}
           </button>
@@ -545,7 +546,7 @@ export function WizardShell({
           <button
             type="button"
             onClick={goNext}
-            className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-6 py-2.5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)]"
+            className="ck-btn ck-btn--primary ck-btn--md"
           >
             Next →
           </button>
@@ -561,60 +562,13 @@ function StepIndicator({ current }: { current: StepIndex }) {
   // behaviour above (backward nav skips per-step validation; forward nav is
   // still gated by the Next button). Active and not-yet-reached steps stay
   // as plain spans so users can't skip ahead past unvalidated input.
-  return (
-    <ol className="flex items-center gap-2 sm:gap-3">
-      {STEP_TITLES.map((title, i) => {
-        const isDone = i < current;
-        const isActive = i === current;
-        const circleClass = `flex size-8 flex-none items-center justify-center rounded-full border-2 border-[color:var(--line)] text-xs font-bold ${
-          isActive
-            ? "bg-[color:var(--rose)] text-[color:var(--surface-deep)] hard-shadow-sm"
-            : isDone
-              ? "bg-[color:var(--peach)] text-[color:var(--surface-deep)]"
-              : "bg-[color:var(--champagne)] text-[color:var(--mauve)]"
-        }`;
-        const labelClass = `hidden sm:inline font-mono text-[0.7rem] font-bold uppercase tracking-[0.16em] ${
-          isActive ? "text-[color:var(--ink)]" : "text-[color:var(--mauve)]"
-        }`;
-
-        const stepContent = isDone ? (
-          <Link
-            href={STEP_PATHS[i]}
-            aria-label={`Go back to ${title}`}
-            className="flex items-center gap-2 sm:gap-3 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--champagne)] hover:opacity-80"
-          >
-            <span className={circleClass}>✓</span>
-            <span className={labelClass}>{title}</span>
-          </Link>
-        ) : (
-          <>
-            <span className={circleClass} aria-current={isActive ? "step" : undefined}>
-              {i + 1}
-            </span>
-            <span className={labelClass}>{title}</span>
-          </>
-        );
-
-        return (
-          <li key={title} className="flex flex-1 items-center gap-2 sm:gap-3">
-            {stepContent}
-            {i < STEP_TITLES.length - 1 ? (
-              <span
-                className={`h-[2px] flex-1 ${
-                  isDone ? "bg-[color:var(--peach)]" : "bg-[color:var(--line-soft)]"
-                }`}
-              />
-            ) : null}
-          </li>
-        );
-      })}
-    </ol>
-  );
+  // Rendering is delegated to the shared merchant-ds WizardStepper.
+  return <WizardStepper steps={STEP_TITLES} current={current} paths={STEP_PATHS} />;
 }
 
 function SectionCard({ children }: { children: React.ReactNode }) {
   return (
-    <div className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-6 hard-shadow sm:p-8">
+    <div className="rounded-[18px] bg-[color:var(--paper)] p-6 shadow-[var(--shadow-sm)] sm:p-8">
       {children}
     </div>
   );
@@ -635,32 +589,30 @@ export function StepAuthCard({
   return (
     <div className="grid gap-6 lg:grid-cols-[0.45fr_0.55fr] lg:items-start">
       <div>
-        <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-          Sign in first
-        </p>
-        <h2 className="mt-3 font-display text-3xl font-semibold leading-tight">
+        <p className="eyebrow">Sign in first</p>
+        <h2 className="mt-3 font-display text-3xl font-semibold leading-tight text-[color:var(--ink)]">
           One account for hosting and attending.
         </h2>
-        <p className="mt-4 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+        <p className="mt-4 text-sm font-medium leading-6 text-[color:var(--slate)]">
           We use the same identity for your Click attendee profile and your merchant portal.
           Sign in with Google, Facebook, or email - we’ll bring you straight back to the form.
         </p>
-        <p className="mt-4 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+        <p className="mt-4 text-sm font-medium leading-6 text-[color:var(--slate)]">
           Already a host?{" "}
-          <Link href="/merchant/login" className="font-bold text-[color:var(--ink)] underline decoration-2 underline-offset-4 hover:text-[color:var(--rose)]">
+          <Link href="/merchant/login" className="font-semibold text-[color:var(--purple)] underline underline-offset-4 hover:text-[color:var(--purple-hover)]">
             Log in to the host portal
           </Link>{" "}
           instead.
         </p>
       </div>
 
-      <div className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-6 hard-shadow">
+      <div className="rounded-[18px] bg-[color:var(--paper)] p-6 shadow-[var(--shadow-sm)]">
         <form action={signInWithGoogle} className="grid gap-3">
           <input type="hidden" name="callbackUrl" value={callbackUrl} />
           <button
             type="submit"
             disabled={!googleConfigured}
-            className="flex min-h-[52px] w-full items-center justify-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-5 text-sm font-bold uppercase tracking-wide text-[color:var(--ink)] hard-shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+            className="ck-btn ck-btn--secondary ck-btn--lg ck-btn--full"
           >
             {googleConfigured ? "Continue with Google" : "Google · setup required"}
           </button>
@@ -671,23 +623,23 @@ export function StepAuthCard({
           <button
             type="submit"
             disabled={!metaConfigured}
-            className="flex min-h-[52px] w-full items-center justify-center rounded-full border-2 border-[color:var(--line)] bg-[#1877F2] px-5 text-sm font-bold uppercase tracking-wide text-white hard-shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+            className="flex min-h-[52px] w-full items-center justify-center rounded-xl bg-[#1877F2] px-5 text-[15px] font-semibold text-white transition hover:bg-[#1566d6] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {metaConfigured ? "Continue with Facebook" : "Facebook · setup required"}
           </button>
         </form>
 
         <div className="my-5 flex items-center gap-3">
-          <span className="h-[2px] flex-1 bg-[color:var(--line-soft)]" />
-          <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
+          <span className="h-px flex-1 bg-[color:var(--mist)]" />
+          <span className="text-[12.5px] font-semibold text-[color:var(--slate)]">
             or with email
           </span>
-          <span className="h-[2px] flex-1 bg-[color:var(--line-soft)]" />
+          <span className="h-px flex-1 bg-[color:var(--mist)]" />
         </div>
 
         <form action={signInWithEmail} className="grid gap-3">
           <input type="hidden" name="callbackUrl" value={callbackUrl} />
-          <label className="grid gap-2 text-xs font-bold uppercase tracking-[0.12em] text-[color:var(--mauve)]">
+          <label className="grid gap-2 text-[12.5px] font-semibold text-[color:var(--slate)]">
             Business email
             <input
               name="email"
@@ -695,13 +647,10 @@ export function StepAuthCard({
               required
               autoComplete="email"
               placeholder="you@yourbusiness.com"
-              className="rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 text-base font-semibold text-[color:var(--ink)] outline-none focus:bg-[color:var(--cream)]"
+              className="rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] px-4 py-3 text-base text-[color:var(--ink)] outline-none focus:border-[color:var(--purple)] focus:ring-2 focus:ring-[color:var(--lavender-100)]"
             />
           </label>
-          <button
-            type="submit"
-            className="inline-flex min-h-[52px] items-center justify-center rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-5 text-sm font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)]"
-          >
+          <button type="submit" className="ck-btn ck-btn--primary ck-btn--lg">
             Continue →
           </button>
         </form>
@@ -714,7 +663,7 @@ export function StepAuthCard({
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
-    <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.16em] text-[color:var(--mauve)]">
+    <span className="text-[12.5px] font-semibold text-[color:var(--slate)]">
       {children}
     </span>
   );
@@ -724,7 +673,7 @@ function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
       {...props}
-      className={`rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-3 text-base font-semibold text-[color:var(--ink)] outline-none focus:bg-[color:var(--cream)] ${props.className ?? ""}`}
+      className={`rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] px-4 py-3 text-base text-[color:var(--ink)] outline-none focus:border-[color:var(--purple)] focus:ring-2 focus:ring-[color:var(--lavender-100)] ${props.className ?? ""}`}
     />
   );
 }
@@ -825,13 +774,13 @@ function CategoryPicker({
     <fieldset className="grid gap-3">
       <legend className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
         <FieldLabel>Event categories you host * (pick at least one)</FieldLabel>
-        <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.14em] text-[color:var(--mauve)]">
+        <span className="text-[12.5px] font-semibold text-[color:var(--slate)]">
           {selectedIds.length} selected
         </span>
       </legend>
 
       {categories.length === 0 ? (
-        <p className="text-sm font-medium text-[color:var(--mauve)]">
+        <p className="text-sm font-medium text-[color:var(--slate)]">
           No categories available - check your database connection.
         </p>
       ) : (
@@ -843,10 +792,10 @@ function CategoryPicker({
                   key={cat.id}
                   type="button"
                   onClick={() => onToggle(cat.id)}
-                  className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-3.5 py-1.5 text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--surface-deep)] hover:bg-[color:var(--rose)]"
+                  className="ck-tag ck-tag--select ck-tag--selected"
                   aria-label={`Remove ${cat.name}`}
                 >
-                  ✓ {cat.name} ×
+                  {cat.name} ×
                 </button>
               ))}
             </div>
@@ -859,12 +808,12 @@ function CategoryPicker({
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search categories…"
               aria-label="Search event categories"
-              className="w-full rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-2.5 text-sm font-semibold text-[color:var(--ink)] outline-none focus:bg-[color:var(--cream)]"
+              className="w-full rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] px-4 py-2.5 text-base text-[color:var(--ink)] outline-none focus:border-[color:var(--purple)] focus:ring-2 focus:ring-[color:var(--lavender-100)]"
             />
           </div>
 
           {available.length === 0 ? (
-            <p className="text-sm font-medium text-[color:var(--mauve)]">
+            <p className="text-sm font-medium text-[color:var(--slate)]">
               {q
                 ? `No categories match “${query}”.`
                 : "All categories selected - nice."}
@@ -876,7 +825,7 @@ function CategoryPicker({
                   key={cat.id}
                   type="button"
                   onClick={() => onToggle(cat.id)}
-                  className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3.5 py-1.5 text-xs font-bold uppercase tracking-[0.1em] text-[color:var(--ink)] hover:bg-[color:var(--cream)]"
+                  className="ck-tag ck-tag--select"
                 >
                   {cat.name}
                 </button>
@@ -969,15 +918,15 @@ export function ContactSection() {
             required
           />
           {state.phone.trim() === "" ? (
-            <p className="text-[0.7rem] font-medium leading-5 text-[color:var(--mauve)]">
+            <p className="text-xs font-medium leading-5 text-[color:var(--slate)]">
               Mobile, landline or business line - e.g. 0412 345 678, 02 9646 8888 or 1300 123 456. Spaces, brackets and +61 are fine.
             </p>
           ) : isValidAuPhone(state.phone) ? (
-            <p className="text-[0.7rem] font-bold leading-5 text-[color:var(--rose)]">
+            <p className="text-xs font-semibold leading-5 text-[color:var(--purple)]">
               ✓ Looks good.
             </p>
           ) : (
-            <p className="text-[0.7rem] font-bold leading-5 text-[color:var(--punch)]">
+            <p className="text-xs font-semibold leading-5 text-[color:var(--danger)]">
               {auPhoneHint(state.phone)}
             </p>
           )}
@@ -1002,7 +951,7 @@ export function ContactSection() {
               key={opt.value}
               className="grid gap-1.5 sm:grid-cols-[7rem_1fr] sm:items-center sm:gap-3"
             >
-              <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.14em] text-[color:var(--mauve)]">
+              <span className="text-[12.5px] font-semibold text-[color:var(--slate)]">
                 {opt.label}
               </span>
               <TextInput
@@ -1067,9 +1016,9 @@ export function ContactSection() {
       {outsidePilot ? (
         <p
           role="status"
-          className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-4 py-3 text-sm font-semibold leading-6 text-[color:var(--surface-deep)]"
+          className="rounded-xl bg-[color:var(--lavender-100)] px-4 py-3 text-sm leading-6 text-[color:var(--ink)]"
         >
-          <span className="font-bold">{areaLabel} is outside our Sydney pilot.</span>{" "}
+          <span className="font-semibold">{areaLabel} is outside our Sydney pilot.</span>{" "}
           You can still apply - we&apos;ll add you to the waitlist and email you the moment we launch in your area.
         </p>
       ) : null}
@@ -1117,13 +1066,13 @@ function StateSelect({
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className={`flex w-full items-center justify-between gap-2 rounded-xl border-2 border-[color:var(--line)] px-4 py-3 text-base font-semibold outline-none hard-shadow-sm ${
+        className={`flex w-full items-center justify-between gap-2 rounded-xl border bg-[color:var(--paper)] px-4 py-3 text-base text-[color:var(--ink)] outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--purple)] ${
           open
-            ? "bg-[color:var(--cream)] text-[color:var(--ink)]"
-            : "bg-[color:var(--champagne)] text-[color:var(--ink)] hover:bg-[color:var(--cream)]"
+            ? "border-[color:var(--purple)]"
+            : "border-[color:var(--mist)] hover:border-[color:var(--slate)]"
         }`}
       >
-        <span className={value ? "" : "text-[color:var(--mauve)]"}>
+        <span className={value ? "" : "text-[color:var(--slate)]"}>
           {value || "-"}
         </span>
         <svg
@@ -1148,7 +1097,7 @@ function StateSelect({
         <div
           role="listbox"
           aria-label="Australian state or territory"
-          className="absolute left-0 right-0 top-full z-20 mt-2 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-2 hard-shadow"
+          className="absolute left-0 right-0 top-full z-20 mt-2 rounded-2xl bg-[color:var(--paper)] p-2 shadow-[var(--shadow-md)]"
         >
           <ul className="grid grid-cols-2 gap-1.5">
             {AU_STATES.map((s) => {
@@ -1163,16 +1112,16 @@ function StateSelect({
                       onChange(s);
                       setOpen(false);
                     }}
-                    className={`flex w-full flex-col items-start gap-0.5 rounded-xl border-2 border-[color:var(--line)] px-2.5 py-1.5 text-left ${
+                    className={`flex w-full flex-col items-start gap-0.5 rounded-xl border px-2.5 py-1.5 text-left ${
                       selected
-                        ? "bg-[color:var(--rose)] text-[color:var(--surface-deep)]"
-                        : "bg-[color:var(--champagne)] text-[color:var(--ink)] hover:bg-[color:var(--peach)]"
+                        ? "border-transparent bg-[color:var(--purple)] text-[color:var(--champagne)]"
+                        : "border-[color:var(--mist)] bg-[color:var(--paper)] text-[color:var(--ink)] hover:bg-[color:var(--lavender-100)]"
                     }`}
                   >
-                    <span className="text-sm font-bold leading-tight">{s}</span>
+                    <span className="text-sm font-semibold leading-tight">{s}</span>
                     <span
-                      className={`font-mono text-[0.6rem] font-bold uppercase tracking-[0.1em] leading-tight ${
-                        selected ? "text-[color:var(--surface-deep)]" : "text-[color:var(--mauve)]"
+                      className={`text-[11px] font-medium leading-tight ${
+                        selected ? "text-[color:var(--champagne)]/80" : "text-[color:var(--slate)]"
                       }`}
                     >
                       {AU_STATE_NAMES[s]}
@@ -1265,12 +1214,12 @@ function DocumentUploadRow({
   }
 
   return (
-    <div className="grid gap-3 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-4">
+    <div className="grid gap-3 rounded-2xl border border-[color:var(--line)] bg-[color:var(--champagne)] p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-3">
         <FieldLabel>{label}</FieldLabel>
         {existing ? (
-          <span className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.14em] text-[color:var(--peach)]">
-            ✓ uploaded
+          <span className="inline-flex items-center rounded-lg bg-[color-mix(in_srgb,var(--sage)_14%,var(--paper))] px-2 py-0.5 text-xs font-semibold text-[color:var(--sage)]">
+            Uploaded
           </span>
         ) : null}
       </div>
@@ -1282,13 +1231,13 @@ function DocumentUploadRow({
         accept="application/pdf,image/jpeg,image/png"
         onChange={onChange}
         disabled={busy}
-        className="text-sm font-medium text-[color:var(--ink)] file:mr-3 file:rounded-full file:border-2 file:border-[color:var(--line)] file:bg-[color:var(--cream)] file:px-4 file:py-2 file:text-xs file:font-bold file:uppercase file:tracking-[0.12em] file:text-[color:var(--ink)] hover:file:bg-[color:var(--champagne)]"
+        className="text-sm font-medium text-[color:var(--ink)] file:mr-3 file:rounded-xl file:border file:border-[color:var(--mist)] file:bg-[color:var(--paper)] file:px-4 file:py-2 file:text-xs file:font-semibold file:text-[color:var(--ink)] hover:file:bg-[color:var(--lavender-100)]"
       />
       {busy ? (
-        <p className="text-xs font-medium text-[color:var(--mauve)]">Uploading…</p>
+        <p className="text-xs font-medium text-[color:var(--slate)]">Uploading…</p>
       ) : null}
       {error ? (
-        <p className="text-xs font-bold text-[color:var(--surface-deep)]">{error}</p>
+        <p className="text-xs font-semibold text-[color:var(--danger)]">{error}</p>
       ) : null}
     </div>
   );

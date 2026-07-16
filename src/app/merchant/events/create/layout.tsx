@@ -39,15 +39,12 @@ export default async function CreateEventLayout({
     return (
       <main className="min-h-screen bg-[color:var(--champagne)] px-4 py-12 text-[color:var(--ink)] sm:px-6">
         <section className="mx-auto max-w-3xl">
-          <span className="sticker sticker--peach tilt-l-1 inline-flex">
-            <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
-            Approval required
-          </span>
-          <h1 className="mt-6 font-display text-5xl font-bold leading-[0.96] tracking-[-0.025em] sm:text-6xl">
+          <p className="eyebrow">Approval required</p>
+          <h1 className="mt-6 font-display text-3xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)] sm:text-4xl">
             Your merchant profile is{" "}
             <span className="text-[color:var(--rose)]">{status.merchantProfile.verification_status}</span>.
           </h1>
-          <p className="mt-4 text-base font-medium leading-7 text-[color:var(--mauve)]">
+          <p className="mt-4 text-base leading-7 text-[color:var(--slate)]">
             An admin needs to approve your business before you can publish events.
           </p>
         </section>
@@ -62,23 +59,20 @@ export default async function CreateEventLayout({
     return (
       <main className="min-h-screen bg-[color:var(--champagne)] px-4 py-12 text-[color:var(--ink)] sm:px-6">
         <section className="mx-auto max-w-3xl">
-          <span className="sticker sticker--peach tilt-l-1 inline-flex">
-            <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
-            Connect payments first
-          </span>
-          <h1 className="mt-6 font-display text-5xl font-bold leading-[0.96] tracking-[-0.025em] sm:text-6xl">
+          <p className="eyebrow">Connect payments first</p>
+          <h1 className="mt-6 font-display text-3xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)] sm:text-4xl">
             Set up payouts before you create events.
           </h1>
-          <p className="mt-4 text-base font-medium leading-7 text-[color:var(--mauve)]">
+          <p className="mt-4 text-base leading-7 text-[color:var(--slate)]">
             We collect ticket payments through Stripe and pay them out to your
             connected account. Finish Stripe onboarding and you can publish your
             first event right after.
           </p>
           <a
             href="/merchant/onboarding/payouts"
-            className="mt-8 inline-flex items-center gap-2 rounded-xl border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-6 py-3 text-sm font-bold uppercase tracking-wider text-[color:var(--on-deep)] hard-shadow-sm transition hover:-translate-y-0.5"
+            className="ck-btn ck-btn--primary ck-btn--md mt-8"
           >
-            Set up payouts →
+            Set up payouts
           </a>
         </section>
       </main>

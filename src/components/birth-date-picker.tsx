@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 
-// Editorial-zine birth date picker. Mirrors the form's <input type="date">
-// contract — `value` and `onChange` speak ISO yyyy-mm-dd, empty string for
-// "no date" — but renders a custom calendar popover so it stops looking like
+// Click DS birth date picker. Mirrors the form's <input type="date">
+// contract - `value` and `onChange` speak ISO yyyy-mm-dd, empty string for
+// "no date" - but renders a custom calendar popover so it stops looking like
 // the OS native dropdown.
 
 type Mode = "days" | "years";
@@ -355,10 +355,10 @@ export function BirthDatePicker({
     <div className="relative">
       <div
         ref={wrapperRef}
-        className={`flex w-full items-center justify-between gap-3 rounded-xl border-2 bg-[color:var(--cream)] px-4 py-3 transition ${
+        className={`flex w-full items-center justify-between gap-3 rounded-xl border-[1.5px] bg-[color:var(--paper)] px-4 py-3 transition ${
           open || focused
-            ? "border-[color:var(--rose)]"
-            : "border-[color:var(--line)] hover:bg-[color:var(--champagne)]"
+            ? "border-[color:var(--purple)]"
+            : "border-[color:var(--mist-strong)]"
         }`}
       >
         <input
@@ -383,8 +383,8 @@ export function BirthDatePicker({
               commitText();
             }
           }}
-          className={`tabular-nums w-full bg-transparent text-base font-semibold tracking-[0.04em] outline-none placeholder:text-[color:var(--mauve)] ${
-            text ? "text-[color:var(--ink)]" : "text-[color:var(--mauve)]"
+          className={`tabular-nums w-full bg-transparent text-base tracking-[0.04em] outline-none placeholder:text-[color:var(--ink-faint)] ${
+            text ? "text-[color:var(--ink)]" : "text-[color:var(--slate)]"
           }`}
         />
         <button
@@ -400,7 +400,7 @@ export function BirthDatePicker({
         >
           <CalendarIcon
             className={
-              open ? "text-[color:var(--rose)]" : "text-[color:var(--ink)]"
+              open ? "text-[color:var(--purple)]" : "text-[color:var(--ink)]"
             }
           />
         </button>
@@ -411,7 +411,7 @@ export function BirthDatePicker({
           ref={popoverRef}
           role="dialog"
           aria-label="Choose your birth date"
-          className="absolute left-0 top-[calc(100%+0.5rem)] z-30 w-[min(20rem,calc(100vw-2rem))] rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-3 hard-shadow-sm"
+          className="absolute left-0 top-[calc(100%+0.5rem)] z-30 w-[min(20rem,calc(100vw-2rem))] rounded-2xl bg-[color:var(--paper)] p-3 shadow-[var(--shadow-md)]"
         >
           {/* Header — month label doubles as a toggle to the year grid */}
           <div className="mb-2 flex items-center justify-between gap-1">
@@ -458,7 +458,7 @@ export function BirthDatePicker({
                 {DOW.map((label, i) => (
                   <span
                     key={`${label}-${i}`}
-                    className="font-mono text-center text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]"
+                    className="text-center text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-[color:var(--slate)]"
                   >
                     {label}
                   </span>
@@ -484,9 +484,9 @@ export function BirthDatePicker({
                       disabled={disabled}
                       onClick={() => pick(date)}
                       onFocus={() => setCursor(date)}
-                      className={`tabular-nums grid h-9 w-full place-items-center rounded-lg text-sm font-semibold outline-none transition focus-visible:ring-2 focus-visible:ring-[color:var(--ink)]/40 ${
+                      className={`tabular-nums grid h-9 w-full place-items-center rounded-lg text-sm font-semibold outline-none transition focus-visible:ring-2 focus-visible:ring-[color:var(--purple)]/40 ${
                         isSelected
-                          ? "bg-[color:var(--rose)] text-[color:var(--surface-deep)] hard-shadow-sm"
+                          ? "bg-[color:var(--purple)] text-[color:var(--champagne)]"
                           : disabled
                             ? "cursor-not-allowed text-[color:var(--mauve)]/35 line-through"
                             : inMonth
@@ -494,7 +494,7 @@ export function BirthDatePicker({
                               : "text-[color:var(--mauve)]/55 hover:bg-[color:var(--peach-soft)]/60"
                       } ${
                         isCursor && !isSelected && !disabled
-                          ? "ring-2 ring-[color:var(--ink)]/30"
+                          ? "ring-2 ring-[color:var(--purple)]/30"
                           : ""
                       }`}
                     >
@@ -522,11 +522,11 @@ export function BirthDatePicker({
                     role="gridcell"
                     disabled={disabled}
                     onClick={() => chooseYear(y)}
-                    className={`tabular-nums h-10 rounded-lg text-sm font-bold transition ${
+                    className={`tabular-nums h-10 rounded-lg text-sm font-semibold transition ${
                       isSelected
-                        ? "bg-[color:var(--rose)] text-[color:var(--surface-deep)] hard-shadow-sm"
+                        ? "bg-[color:var(--purple)] text-[color:var(--champagne)]"
                         : isCurrent
-                          ? "bg-[color:var(--peach)] text-[color:var(--ink)]"
+                          ? "bg-[color:var(--lavender-100)] text-[color:var(--purple-700)]"
                           : disabled
                             ? "cursor-not-allowed text-[color:var(--mauve)]/30"
                             : "text-[color:var(--ink)] hover:bg-[color:var(--peach-soft)]"
@@ -539,15 +539,15 @@ export function BirthDatePicker({
             </div>
           )}
 
-          <div className="mt-2 flex items-center justify-between border-t-2 border-[color:var(--line-soft)] px-1 pt-2">
+          <div className="mt-2 flex items-center justify-between border-t border-[color:var(--line-soft)] px-1 pt-2">
             <button
               type="button"
               onClick={clear}
-              className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)] transition hover:text-[color:var(--rose)]"
+              className="text-[12.5px] font-semibold text-[color:var(--slate)] transition hover:text-[color:var(--purple)]"
             >
               Clear
             </button>
-            <span className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]/70">
+            <span className="text-[12.5px] font-semibold text-[color:var(--slate)]">
               18+ only
             </span>
           </div>
