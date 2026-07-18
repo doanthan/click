@@ -658,6 +658,23 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 .rise { animation: rise 900ms cubic-bezier(.2,.7,.2,1) both; }
+
+/* The DS-calm 8px rise for load-in stagger. Defined BEFORE the .rise-d*
+   delay classes so their animation-delay longhand wins over this shorthand
+   (a shorthand later in the sheet would reset every delay to 0). Pure CSS so
+   it plays before hydration; the global reduced-motion block collapses it. */
+@keyframes rise-soft {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.rise-soft { animation: rise-soft 240ms cubic-bezier(.2,.7,.2,1) both; }
+
+@keyframes draw-line {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+.draw-line { animation: draw-line 240ms cubic-bezier(.2,.7,.2,1) both; transform-origin: left; }
+
 .rise-d1 { animation-delay: 80ms; }
 .rise-d2 { animation-delay: 180ms; }
 .rise-d3 { animation-delay: 280ms; }
@@ -671,6 +688,31 @@ body {
   100% { opacity: 1; transform: scale(1) rotate(var(--pop-rot, 0deg)); }
 }
 .pop-in { animation: pop-in 700ms cubic-bezier(.34,1.56,.64,1) both; }
+
+/* ---------- Reveal on scroll (progressive enhancement) ----------
+   The hidden state applies ONLY when JS is running AND the visitor accepts
+   motion - so no-JS and reduced-motion visitors always see content (the 2 Jul
+   audit rule: never gate visibility on an animation). The <Reveal> island
+   adds .is-in when the element enters the viewport. */
+@media (scripting: enabled) and (prefers-reduced-motion: no-preference) {
+  .reveal {
+    opacity: 0;
+    transform: translateY(8px);
+    transition:
+      opacity 240ms cubic-bezier(.2,.7,.2,1) var(--reveal-delay, 0ms),
+      transform 240ms cubic-bezier(.2,.7,.2,1) var(--reveal-delay, 0ms);
+  }
+  /* Opacity-only variant for wrappers whose children may open fixed overlays -
+     an animating ancestor transform would become their containing block. */
+  .reveal--fade { transform: none; }
+  .reveal.is-in { opacity: 1; transform: none; }
+  /* Safety valve: (scripting: enabled) still matches when the bundle itself
+     never runs (chunk 404 after a deploy, hydration crash). Un-hide everything
+     after 2.5s; the <Reveal> island stamps .js-live on mount, cancelling this
+     so the scroll choreography is preserved when JS is healthy. */
+  .reveal:not(.js-live) { animation: reveal-fallback 0s 2.5s forwards; }
+  @keyframes reveal-fallback { to { opacity: 1; transform: none; } }
+}
 
 /* ---------- Buttons / inputs ---------- */
 button, a, select, textarea, input {

@@ -32,10 +32,14 @@ export function EventCard({
   bookmarked = false,
   registered = false,
   bookingStatus,
+  priority = false,
 }: {
   event: EventItem;
   bookmarked?: boolean;
   registered?: boolean;
+  // Set on the card most likely to be the page's LCP element (e.g. first card
+  // of the landing strip) so its cover loads eagerly.
+  priority?: boolean;
   // The viewer's actual booking state for this event, when known. Lets the
   // card/modal show "You're going" (confirmed) vs the waitlist state accurately
   // instead of guessing from whether the event is full.
@@ -69,16 +73,17 @@ export function EventCard({
   const goingFaces = (event.attendeeAvatars ?? []).map((src) => ({ src }));
 
   return (
-    <article className="flex min-w-0 flex-col self-start overflow-hidden rounded-[var(--radius-xl)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] shadow-[var(--shadow-sm)] transition duration-200 hover:-translate-y-[3px] hover:shadow-[var(--shadow-lg)]">
+    <article className="group flex min-w-0 flex-col self-start overflow-hidden rounded-[var(--radius-xl)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] shadow-[var(--shadow-sm)] transition duration-200 hover:-translate-y-[3px] hover:shadow-[var(--shadow-lg)]">
       {/* Cover - 16:9 everywhere, so cards in a row are equal height */}
       <div className="relative aspect-[16/9] w-full shrink-0 overflow-hidden bg-[color:var(--champagne-deep)]">
-        <Link href={`/events/${event.id}`} aria-label={event.title} className="block h-full w-full">
+        <Link href={`/events/${event.id}`} aria-label={event.title} className="relative block h-full w-full">
           <Image
             src={event.image}
             alt={event.imageAlt}
             fill
+            priority={priority}
             sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
-            className="object-cover"
+            className="object-cover transition-transform duration-200 ease-out group-hover:scale-[1.04]"
           />
         </Link>
         {status ? (

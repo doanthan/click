@@ -6,6 +6,7 @@ import { ButtonLink, Logo } from "@/components/ds";
 import { EventCard } from "@/components/event-card";
 import { LiveActivityMarquee } from "@/components/live-activity-marquee";
 import { HomeQuiz } from "@/components/home-quiz";
+import { Reveal } from "@/components/reveal";
 import {
   getEventsForExplore,
   getLatestPersonaForSession,
@@ -83,19 +84,22 @@ export default async function Home() {
           numbered sense, an example sentence in italics, a short rule, then the
           positioning line. No feature grid, no hero image. */}
       <section className="ck-page grid items-start gap-10 pt-8 pb-12 lg:grid-cols-[1.1fr_0.9fr] lg:gap-[72px] lg:pt-14">
+        {/* The dictionary entry composes itself in reading order - a pure-CSS
+            cascade (rise-soft + the shared rise-d* delays) so it plays before
+            hydration and collapses to instant under reduced motion. */}
         <div className="max-w-[560px]">
-          <span className="lg:hidden">
+          <span className="rise-soft lg:hidden">
             <Logo size={74} />
           </span>
-          <span className="hidden lg:inline-flex">
+          <span className="rise-soft hidden lg:inline-flex">
             <Logo size={104} />
           </span>
 
-          <p className="mt-3.5 text-base text-[color:var(--slate)] lg:mt-4.5 lg:text-[19px]">
+          <p className="rise-soft rise-d1 mt-3.5 text-base text-[color:var(--slate)] lg:mt-4.5 lg:text-[19px]">
             /klɪk/ · <span className="italic">verb</span>
           </p>
 
-          <div className="mt-4.5 flex gap-3">
+          <div className="rise-soft rise-d2 mt-4.5 flex gap-3">
             <span className="font-display shrink-0 text-[21px] leading-[1.5] font-semibold text-[color:var(--purple-500)] lg:text-[28px]">
               1.
             </span>
@@ -104,19 +108,19 @@ export default async function Home() {
             </p>
           </div>
 
-          <p className="mt-3 ml-9 text-[14.5px] leading-[1.55] text-pretty text-[color:var(--slate)] italic lg:text-base">
+          <p className="rise-soft rise-d3 mt-3 ml-9 text-[14.5px] leading-[1.55] text-pretty text-[color:var(--slate)] italic lg:text-base">
             &ldquo;we met at pickleball and just clicked!&rdquo;
           </p>
 
-          <hr className="mt-7 w-[110px] border-0 border-t border-[color:var(--mist-strong)]" />
+          <hr className="draw-line rise-d4 mt-7 w-[110px] border-0 border-t border-[color:var(--mist-strong)]" />
 
-          <p className="font-display mt-6 max-w-[440px] text-[17px] leading-[1.45] font-medium text-pretty text-[color:var(--ink)] lg:text-[19px]">
+          <p className="rise-soft rise-d5 font-display mt-6 max-w-[440px] text-[17px] leading-[1.45] font-medium text-pretty text-[color:var(--ink)] lg:text-[19px]">
             We help people click in real life - not just online.
           </p>
         </div>
 
         {/* Action column */}
-        <div className="lg:mt-1.5">
+        <div className="rise-soft rise-d6 lg:mt-1.5">
           <ButtonLink href={isLoggedIn ? "/discover" : "/signup"} size="lg">
             {isLoggedIn ? "See what's on" : "Get in"}
           </ButtonLink>
@@ -138,20 +142,24 @@ export default async function Home() {
       {/* ===================== What's on ===================== */}
       {strip.length > 0 ? (
         <section className="ck-page pt-12">
-          <div className="mb-4 flex items-baseline justify-between gap-4">
-            <h2 className="font-display text-[length:var(--text-h2)] font-semibold tracking-[-0.01em] text-[color:var(--ink)]">
-              What&apos;s on near you this week
-            </h2>
-            <Link
-              href="/discover"
-              className="font-display shrink-0 text-[13.5px] font-semibold whitespace-nowrap text-[color:var(--purple)] hover:underline"
-            >
-              See everything near you →
-            </Link>
-          </div>
+          <Reveal>
+            <div className="mb-4 flex items-baseline justify-between gap-4">
+              <h2 className="font-display text-[length:var(--text-h2)] font-semibold tracking-[-0.01em] text-[color:var(--ink)]">
+                What&apos;s on near you this week
+              </h2>
+              <Link
+                href="/discover"
+                className="font-display shrink-0 text-[13.5px] font-semibold whitespace-nowrap text-[color:var(--purple)] hover:underline"
+              >
+                See everything near you →
+              </Link>
+            </div>
+          </Reveal>
           <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {strip.map((event) => (
-              <EventCard key={event.id} event={event} />
+            {strip.map((event, i) => (
+              <Reveal key={event.id} delay={i * 90} className="min-w-0">
+                <EventCard event={event} priority={i === 0} />
+              </Reveal>
             ))}
           </div>
         </section>
@@ -160,7 +168,8 @@ export default async function Home() {
       {/* ===================== Real life, real places ===================== */}
       {band ? (
         <section className="ck-page py-12">
-          <div className="relative flex min-h-[320px] items-end overflow-hidden rounded-[var(--radius-2xl)] shadow-[var(--shadow-md)] lg:min-h-[300px]">
+          <Reveal>
+            <div className="relative flex min-h-[320px] items-end overflow-hidden rounded-[var(--radius-2xl)] shadow-[var(--shadow-md)] lg:min-h-[300px]">
             <Image src={band.image} alt="" fill sizes="100vw" className="object-cover" />
             <span className="absolute inset-0 bg-[linear-gradient(90deg,rgba(38,20,10,0.66),rgba(38,20,10,0.14)_58%,transparent)]" />
             <div className="relative max-w-[520px] p-6 sm:p-9">
@@ -173,11 +182,14 @@ export default async function Home() {
                 </p>
               ) : null}
             </div>
-          </div>
+            </div>
+          </Reveal>
         </section>
       ) : null}
 
-      <HomeQuiz isLoggedIn={isLoggedIn} persona={persona} />
+      <Reveal className="reveal--fade">
+        <HomeQuiz isLoggedIn={isLoggedIn} persona={persona} />
+      </Reveal>
     </main>
   );
 }
