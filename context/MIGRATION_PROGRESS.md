@@ -65,7 +65,20 @@ All five launch-blocking 🔴 safety defects + the 🟠 read/cron/in-flow gaps c
 
 ---
 
-## ⏳ Next: Step 2.4 — Timers / windows
-Collapse the four overlapping post-event windows into one gate (TW-4); move the post-event prompt to `event_end + 2h` with 09:00-local deferral, superseding the old +12h (TW-3); confirm discovery 7d / post-event `event_end+48h` (done in 2.1 — verify no +12h/+30d stragglers remain, TW-1/2). Respect TW-5 (read-time-only expiry — **do NOT add a load-bearing correctness cron**).
+## ✅ Step 2.4 — Timers / windows (DONE, verified 2026-07-24)
 
-Then 2.5 surfaces → 2.6 UIUX/language. Matching findings (§6) remain out of scope pending Doan.
+Pure code (no migration — `events.timezone` already exists, default `Australia/Sydney`; the existing `notifications.action_url` dedupe is kept as the idempotency key, functionally equal to the spec's `post_event_prompts_sent` table per the audit's own note). 4 edits in `event-repository.ts`.
+
+- **TW-3 — prompt fires at +2h, not +12h.** New `POST_EVENT_PROMPT_DELAY_HOURS` (=2) imported from `clicks/constants.ts` and used as the lower gate at all three prompt sites. `getPostEventClickPromptForEvent` gained the lower gate it never had (the audit's named bug: the event-page button showed from `event_end` while submit opened later, so a tap was rejected).
+- **TW-3 — quiet-hours deferral.** `notifyPostEventClickPrompts` now sends only when `extract(hour from now() at time zone e.timezone)` is in `[9, 22)` — a prompt whose +2h lands in the 22:00–09:00 event-local band simply stays eligible until the next run past 09:00 (deferral = leave-eligible, no second job; action_url idempotency prevents double-send on the re-fire).
+- **TW-4 — four-window soup collapsed to ONE gate.** All three prompt functions (dashboard rail `getPostEventClickPrompts`, event page `getPostEventClickPromptForEvent`, push cron `notifyPostEventClickPrompts`) now share the identical window: **`event_end + 2h <= now() < event_end + 48h`** — exactly the who-was-there click-accept surface's live window (`event-repository.ts:7383`, from 2.1). Retired the disagreeing upper bounds (dashboard `−14d`, event-page `−30d`, cron `−7d`).
+  - **Decision (Doan, 2026-07-24):** cron upper bound unified to **+48h** (not retention `§2.1`'s literal 7-day self-heal lookback). Rationale: the who-was-there surface closes at +48h, so a day-3 notification would open a dead surface; the 48h window (`21 §B3.2`) is the newer binding constraint. `§2.1`'s 7d predates it.
+- **TW-1 / TW-2 — verified no stragglers.** Send-layer expiry (discovery `created_at+7d`, post-event `event_end+48h`) was already correct from 2.1; grep confirms no `12 hours` / `14 days` / `30 days` post-event bounds remain in the live path. (The `interval '7 days'` at `:5940` is an unrelated rolling-activity count; the `test-click` audit-report / `md` coverage docs still describe the OLD windows by design — historical audit records, not live gates.)
+- **TW-5 — respected.** No correctness cron added; expiry stays read-time-only.
+
+**Tests/verification:** `tsc --noEmit` clean · new `scripts/test-click-timers.mjs` PASS (both window edges +2h open / +48h close, plus the four quiet-hours boundary conversions incl. the 09:00 open + 22:00 close edges) · `test-click-concurrency.mjs` 30/30 + `test-click-safety.mjs` + `test-click-capacity.mjs` all still PASS (no regression).
+
+---
+
+## ⏳ Next: Step 2.5 — New surfaces
+The biggest remaining piece and effectively launch-blocking (the 2 Jul audit found the live coordination modals frozen at `opacity: 0` — the core mechanic is unusable). Build the **coordination drawer + one-time reveal** (`UIUX/COORDINATION_MODAL_SYSTEM.md` v1): one progressing drawer that's a pure projection of `coord_state`, base state fully visible (no opacity-gated entrance that restarts on re-render), `reveal_seen` persisted per user+mutual so the reveal fires exactly once. Plus: decline-proposal as a first-class state (not block-as-exit); report/block inside the mutual + proposal flow; C11 (already-booked side shows "I'm in", never a live RSVP button); C12 (a dead agreed event routes back to `open`/`dormant`, never a stuck terminal — do NOT add a delete button). Then 2.6 UIUX/language → Step 3 teardown. Matching findings (§6) + the 11 "beyond the mechanic" tasks remain out of scope pending Doan.

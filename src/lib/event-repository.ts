@@ -46,6 +46,7 @@ import { regionForEvent, type Region } from "./geo";
 import {
   DISCOVERY_CLICK_WINDOW_DAYS,
   POST_EVENT_CLICK_WINDOW_HOURS,
+  POST_EVENT_PROMPT_DELAY_HOURS,
   POST_EVENT_CLICK_CAP,
   DISCOVERY_CLICK_CAP,
   MUTUAL_CLOCK_DAYS,
@@ -11675,8 +11676,8 @@ export async function getPostEventClickPrompts(
           and theirs.status = 'confirmed' and theirs.profile_id <> $1::uuid
         join profiles other on other.id = theirs.profile_id
           and other.role = 'attendee' and other.suspended_at is null and other.is_banned = false
-        where coalesce(e.ends_at, e.starts_at) + interval '12 hours' <= now()
-          and coalesce(e.ends_at, e.starts_at) >= now() - interval '14 days'
+        where coalesce(e.ends_at, e.starts_at) + interval '${POST_EVENT_PROMPT_DELAY_HOURS} hours' <= now()
+          and coalesce(e.ends_at, e.starts_at) + interval '${POST_EVENT_CLICK_WINDOW_HOURS} hours' > now()
           and not exists (
             select 1 from user_blocks b
             where (b.blocker_profile_id = $1::uuid and b.blocked_profile_id = other.id)
@@ -11712,10 +11713,11 @@ export async function getPostEventClickPrompts(
   }
 }
 
-// Post-event click prompt for ONE event, shown on the event detail page once it
-// has ended (looser window than the dashboard rail: any time after the event
-// ends, up to 30 days). Returns null when the viewer didn't attend, the event
-// hasn't ended, or there are no clickable co-attendees.
+// Post-event click prompt for ONE event, shown on the event detail page during
+// the same single window as the dashboard rail and the push cron (TW-4 collapse):
+// event_end + 2h until event_end + 48h — i.e. exactly the who-was-there click
+// surface's live window (§6.8 / §B3.2). Returns null when the viewer didn't
+// attend, the window isn't open, or there are no clickable co-attendees.
 export async function getPostEventClickPromptForEvent(
   slug: string,
   session: Session | null,
@@ -11754,8 +11756,8 @@ export async function getPostEventClickPromptForEvent(
         join profiles other on other.id = theirs.profile_id
           and other.role = 'attendee' and other.suspended_at is null and other.is_banned = false
         where e.slug = $2
-          and coalesce(e.ends_at, e.starts_at) <= now()
-          and coalesce(e.ends_at, e.starts_at) >= now() - interval '30 days'
+          and coalesce(e.ends_at, e.starts_at) + interval '${POST_EVENT_PROMPT_DELAY_HOURS} hours' <= now()
+          and coalesce(e.ends_at, e.starts_at) + interval '${POST_EVENT_CLICK_WINDOW_HOURS} hours' > now()
           and not exists (
             select 1 from user_blocks b
             where (b.blocker_profile_id = $1::uuid and b.blocked_profile_id = other.id)
@@ -11786,12 +11788,14 @@ export async function getPostEventClickPromptForEvent(
 }
 
 // Push the post-event "did you click with anyone?" prompt as a notification,
-// once per (attendee, event), for events that have crossed the 12-hour Click
-// window in the last 7 days and where the attendee still has un-clicked
-// co-attendees. Idempotent: the action_url marker doubles as the dedupe key, so
-// running the cron every few minutes never double-notifies. Returns the count
-// of notifications created. (Bug board #85 — the pull-based card already exists
-// on the dashboard + event page; this is the missing push.)
+// once per (attendee, event), inside the single collapsed window (TW-3/TW-4):
+// event_end + 2h until event_end + 48h, and only when "now" is outside 22:00–
+// 09:00 event-local (§6.8 quiet-hours deferral). A prompt whose +2h lands in the
+// quiet band simply stays eligible until the next run past 09:00 — no second job.
+// Idempotent: the action_url marker doubles as the dedupe key, so running the
+// cron every few minutes (and re-firing a deferred row) never double-notifies.
+// Returns the count of notifications created. (Bug board #85 — the pull-based
+// card already exists on the dashboard + event page; this is the missing push.)
 export async function notifyPostEventClickPrompts(): Promise<number> {
   const pool = getPostgresPool();
   if (!pool) throw databaseUnavailableError();
@@ -11806,8 +11810,10 @@ export async function notifyPostEventClickPrompts(): Promise<number> {
         '/events/' || e.slug || '?from=post-event-click'
       from events e
       join event_attendees mine on mine.event_id = e.id and mine.status = 'confirmed'
-      where coalesce(e.ends_at, e.starts_at) + interval '12 hours' <= now()
-        and coalesce(e.ends_at, e.starts_at) >= now() - interval '7 days'
+      where coalesce(e.ends_at, e.starts_at) + interval '${POST_EVENT_PROMPT_DELAY_HOURS} hours' <= now()
+        and coalesce(e.ends_at, e.starts_at) + interval '${POST_EVENT_CLICK_WINDOW_HOURS} hours' > now()
+        and extract(hour from now() at time zone e.timezone) >= 9
+        and extract(hour from now() at time zone e.timezone) < 22
         and exists (
           select 1
           from event_attendees theirs
