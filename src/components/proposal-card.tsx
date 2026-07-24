@@ -62,7 +62,53 @@ export function ProposalCard({
     if (proposeState.ok) setPicking(false);
   }
 
-  const settled = proposal.status === "confirmed" || proposal.isExpired;
+  // C12: a confirmed plan whose event has died (no live suggested event) is NOT a
+  // terminal — it drops to a re-suggest recovery below, never a "Wrapped" dead end.
+  const agreedEventGone = proposal.status === "confirmed" && !proposal.suggestedEventSlug;
+  const settled = (proposal.status === "confirmed" && !agreedEventGone) || proposal.isExpired;
+
+  // The catalogue picker is shared by the pending action row AND the C12 recovery.
+  const picker = picking ? (
+    <form
+      action={proposeAction}
+      className="mt-4 rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-4"
+    >
+      <input type="hidden" name="proposal_id" value={proposal.id} />
+      <label className="eyebrow block">Choose from the Click catalogue</label>
+      <select
+        name="event_slug"
+        required
+        defaultValue=""
+        className="mt-2 h-11 w-full rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] px-3 text-sm text-[color:var(--ink)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)]"
+      >
+        <option value="" disabled>
+          Pick an event…
+        </option>
+        {catalogue.map((event) => (
+          <option key={event.slug} value={event.slug}>
+            {event.title} · {event.suburb} · {longDate.format(new Date(event.startsAt))}
+          </option>
+        ))}
+      </select>
+      <div className="mt-3 flex gap-2">
+        <SubmitButton className="ck-btn ck-btn--sm ck-btn--primary disabled:cursor-not-allowed">
+          Send suggestion
+        </SubmitButton>
+        <button
+          type="button"
+          onClick={() => setPicking(false)}
+          className="ck-btn ck-btn--sm ck-btn--secondary"
+        >
+          Cancel
+        </button>
+      </div>
+      {proposeState.error ? (
+        <p className="mt-3 text-xs font-medium text-[color:var(--danger)]">
+          {proposeState.error}
+        </p>
+      ) : null}
+    </form>
+  ) : null;
 
   return (
     <li className="rounded-[var(--radius-xl)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-5 shadow-[var(--shadow-sm)]">
@@ -90,8 +136,8 @@ export function ProposalCard({
               {proposal.suggestedEventTitle}
             </Link>
           </>
-        ) : proposal.suggestionUnavailable ? (
-          "That event filled up - pick another plan."
+        ) : proposal.suggestionUnavailable || agreedEventGone ? (
+          "That plan fell through - pick another together."
         ) : proposal.status === "confirmed" ? (
           <>Your plan with {proposal.otherName}.</>
         ) : (
@@ -107,17 +153,44 @@ export function ProposalCard({
       {/* The suggested event sold out (or was cancelled) since it was proposed.
           Neither person is attending it, so spell that out and steer them to
           "Suggest alternative" rather than leaving a dead, disabled card. */}
-      {proposal.suggestionUnavailable && !settled ? (
+      {(proposal.suggestionUnavailable || agreedEventGone) && !settled ? (
         <p className="mt-3 rounded-2xl bg-[color:var(--lav-bg)] p-3 text-sm font-medium text-[color:var(--ink-soft)]">
-          The event you were eyeing is now full or no longer available - you
-          aren&apos;t booked into anything. Tap{" "}
-          <span className="font-semibold text-[color:var(--ink)]">Suggest alternative</span>{" "}
-          to pick a new plan together.
+          {agreedEventGone
+            ? "The event you two agreed on isn't available anymore, so nothing's booked - pick another plan together and you're back on."
+            : "The event you were eyeing is now full or no longer available - you aren't booked into anything yet."}
         </p>
       ) : null}
 
-      {proposal.status === "confirmed" ? (
-        proposal.suggestedEventSlug ? (
+      {proposal.status === "confirmed" && !agreedEventGone ? (
+        proposal.viewerHasSeat ? (
+          // C11: the viewer already holds a seat — never a live RSVP button, never a
+          // "RSVP needed" badge. Status line is partner-focused (§B4.1 step 7).
+          <div className="mt-4 rounded-[var(--radius-lg)] bg-[color:var(--lav-bg)] p-3">
+            <p className="text-sm font-semibold text-[color:var(--ink)]">
+              {proposal.otherHasSeat ? "You're both going ✨" : "You're in ✨"}
+            </p>
+            <p className="mt-1 text-sm font-medium text-[color:var(--ink)]/80">
+              {proposal.otherHasSeat ? (
+                <>
+                  You and {proposal.otherName} both have a seat at{" "}
+                  {proposal.suggestedEventTitle ?? "the event"}. See you there.
+                </>
+              ) : (
+                <>
+                  Your seat&apos;s locked in. {proposal.otherName} hasn&apos;t grabbed one
+                  yet - you&apos;ll be going together the moment they do.
+                </>
+              )}
+            </p>
+            <Link
+              href={`/events/${proposal.suggestedEventSlug}`}
+              className="ck-btn ck-btn--sm ck-btn--secondary mt-3"
+            >
+              View {proposal.suggestedEventTitle ?? "the event"} →
+            </Link>
+          </div>
+        ) : (
+          // Viewer still needs a seat — keep the live RSVP.
           <div className="mt-4 rounded-[var(--radius-lg)] bg-[color:var(--lav-bg)] p-3">
             <p className="text-sm font-semibold text-[color:var(--ink)]">
               {proposal.confirmedByMe
@@ -125,10 +198,10 @@ export function ProposalCard({
                 : `${proposal.otherName} confirmed this plan`}
             </p>
             <p className="mt-1 text-sm font-medium text-[color:var(--ink)]/80">
-              {proposal.confirmedByMe ? (
+              {proposal.otherHasSeat ? (
                 <>
-                  RSVP to the event below. {proposal.otherName} needs to RSVP too -
-                  you&apos;re only going together once you <em>both</em> have a seat.
+                  {proposal.otherName} already has a seat. RSVP to lock in yours -
+                  you&apos;re going together once you do.
                 </>
               ) : (
                 <>
@@ -144,13 +217,22 @@ export function ProposalCard({
               RSVP to {proposal.suggestedEventTitle ?? "the event"} →
             </Link>
           </div>
-        ) : (
-          <p className="mt-4 rounded-2xl bg-[color:var(--lav-bg)] p-3 text-sm font-medium text-[color:var(--ink-soft)]">
-            You and {proposal.otherName} agreed on a plan, but that event
-            isn&apos;t available anymore. Click again at a future event to make a
-            new one.
-          </p>
         )
+      ) : agreedEventGone ? (
+        // C12: a dead agreed event is a failed attempt, not a terminal — offer a
+        // re-suggest, never a delete button.
+        <>
+          <div className="mt-5 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setPicking((v) => !v)}
+              className="ck-btn ck-btn--md ck-btn--primary"
+            >
+              Suggest another plan
+            </button>
+          </div>
+          {picker}
+        </>
       ) : proposal.isExpired ? (
         <p className="mt-4 rounded-2xl bg-[color:var(--lav-bg)] p-3 text-sm font-medium text-[color:var(--ink-soft)]">
           This proposal expired. Click again at a future event to reopen it.
@@ -186,50 +268,7 @@ export function ProposalCard({
             </p>
           ) : null}
 
-          {picking ? (
-            <form
-              action={proposeAction}
-              className="mt-4 rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-4"
-            >
-              <input type="hidden" name="proposal_id" value={proposal.id} />
-              <label className="eyebrow block">
-                Choose from the Click catalogue
-              </label>
-              <select
-                name="event_slug"
-                required
-                defaultValue=""
-                className="mt-2 h-11 w-full rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] px-3 text-sm text-[color:var(--ink)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)]"
-              >
-                <option value="" disabled>
-                  Pick an event…
-                </option>
-                {catalogue.map((event) => (
-                  <option key={event.slug} value={event.slug}>
-                    {event.title} · {event.suburb} ·{" "}
-                    {longDate.format(new Date(event.startsAt))}
-                  </option>
-                ))}
-              </select>
-              <div className="mt-3 flex gap-2">
-                <SubmitButton className="ck-btn ck-btn--sm ck-btn--primary disabled:cursor-not-allowed">
-                  Send suggestion
-                </SubmitButton>
-                <button
-                  type="button"
-                  onClick={() => setPicking(false)}
-                  className="ck-btn ck-btn--sm ck-btn--secondary"
-                >
-                  Cancel
-                </button>
-              </div>
-              {proposeState.error ? (
-                <p className="mt-3 text-xs font-medium text-[color:var(--danger)]">
-                  {proposeState.error}
-                </p>
-              ) : null}
-            </form>
-          ) : null}
+          {picker}
         </>
       )}
 
@@ -255,20 +294,27 @@ export function ProposalCard({
 }
 
 function StatusBadge({ proposal }: { proposal: ProposalEntry }) {
-  const { label, tone } =
-    proposal.status === "confirmed"
-      ? proposal.suggestedEventSlug
-        ? { label: "RSVP needed", tone: "bg-[color-mix(in_srgb,var(--amber)_16%,var(--paper))] text-[color:var(--amber-ink)]" }
-        : { label: "Wrapped", tone: "bg-[color:var(--cream)] text-[color:var(--mauve)]" }
-      : proposal.isExpired
-        ? { label: "Expired", tone: "bg-[color:var(--cream)] text-[color:var(--mauve)]" }
-        : { label: "Pending", tone: "bg-[color-mix(in_srgb,var(--amber)_16%,var(--paper))] text-[color:var(--amber-ink)]" };
+  const amber =
+    "bg-[color-mix(in_srgb,var(--amber)_16%,var(--paper))] text-[color:var(--amber-ink)]";
+  const sage =
+    "bg-[color-mix(in_srgb,var(--sage)_16%,var(--paper))] text-[color:var(--sage-ink)]";
+  const neutral = "bg-[color:var(--cream)] text-[color:var(--mauve)]";
 
-  return (
-    <span
-      className={`ck-badge ${tone}`}
-    >
-      {label}
-    </span>
-  );
+  const agreedEventGone = proposal.status === "confirmed" && !proposal.suggestedEventSlug;
+  const { label, tone } =
+    proposal.status === "confirmed" && !agreedEventGone
+      ? proposal.viewerHasSeat
+        // C11: the already-booked side never shows a pair-computed "RSVP needed" badge.
+        ? proposal.otherHasSeat
+          ? { label: "Both going", tone: sage }
+          : { label: "You're in", tone: sage }
+        : { label: "RSVP needed", tone: amber }
+      : agreedEventGone
+        // C12: not a terminal — an invitation to re-pick, not a "Wrapped" dead end.
+        ? { label: "Pick a plan", tone: amber }
+        : proposal.isExpired
+          ? { label: "Expired", tone: neutral }
+          : { label: "Pending", tone: amber };
+
+  return <span className={`ck-badge ${tone}`}>{label}</span>;
 }

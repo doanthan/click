@@ -11864,6 +11864,11 @@ export type ProposalEntry = {
   // instead of a blanket "Plan confirmed" that confuses the person who never
   // acted (bug board #199).
   confirmedByMe: boolean;
+  // C11 (§B4.1 step 7): whether each side already holds a confirmed seat on the
+  // suggested event. The already-booked side shows "I'm in", never a live RSVP
+  // button or a pair-computed "RSVP needed" badge; both booked = "both going".
+  viewerHasSeat: boolean;
+  otherHasSeat: boolean;
 };
 
 export async function getProposalsForSession(session: Session | null): Promise<ProposalEntry[]> {
@@ -11888,6 +11893,8 @@ export async function getProposalsForSession(session: Session | null): Promise<P
       expires_at: Date;
       confirmed_at: Date | null;
       confirmed_by_me: boolean;
+      viewer_has_seat: boolean;
+      other_has_seat: boolean;
     }>(
       `
         select
@@ -11908,7 +11915,19 @@ export async function getProposalsForSession(session: Session | null): Promise<P
           p.alternatives_count,
           p.expires_at,
           p.confirmed_at,
-          (p.confirmed_by = $1::uuid) as confirmed_by_me
+          (p.confirmed_by = $1::uuid) as confirmed_by_me,
+          -- C11: does each side already hold a confirmed seat on the still-live
+          -- suggested event? The e join is the block-safe upcoming/bookable one above, so
+          -- a dead/sold-out event drops both to false (and the card falls to the
+          -- C12 "pick another plan" recovery instead of a stale RSVP prompt).
+          exists (
+            select 1 from event_attendees ea
+            where ea.event_id = e.id and ea.profile_id = $1::uuid and ea.status = 'confirmed'
+          ) as viewer_has_seat,
+          exists (
+            select 1 from event_attendees ea
+            where ea.event_id = e.id and ea.profile_id = other.id and ea.status = 'confirmed'
+          ) as other_has_seat
         from click_proposals p
         join mutual_clicks m on m.id = p.mutual_click_id
         join profiles other on other.id = (
@@ -11963,6 +11982,8 @@ export async function getProposalsForSession(session: Session | null): Promise<P
       expiresAt: row.expires_at.toISOString(),
       confirmedAt: row.confirmed_at ? row.confirmed_at.toISOString() : null,
       confirmedByMe: Boolean(row.confirmed_by_me),
+      viewerHasSeat: Boolean(row.viewer_has_seat),
+      otherHasSeat: Boolean(row.other_has_seat),
     }));
   } catch {
     return [];
@@ -12118,9 +12139,34 @@ export async function proposeAlternativeForProposal(
   try {
     await client.query("begin");
     const row = await assertProposalParticipant(client, proposalId, profile.id);
+    // A live (pending) proposal can always be re-pointed. C12 (§B0/§B6): a CONFIRMED
+    // (accepted) plan whose agreed event has since died (cancelled / sold out / past)
+    // is a failed attempt, NOT a terminal — allow re-suggesting so the pair re-picks
+    // instead of being stranded on a dead "Wrapped" card. A confirmed plan whose event
+    // is still joinable stays settled (no silent re-open of a live agreement).
     if (row.status !== "pending") {
-      await client.query("rollback");
-      throw validationError("This plan is already settled.");
+      if (row.status !== "accepted") {
+        await client.query("rollback");
+        throw validationError("This plan is already settled.");
+      }
+      const stillLive = await client.query<{ ok: boolean }>(
+        `
+          select true as ok
+          from click_proposals cp
+          join events e on e.id = cp.suggested_event_id
+          join event_capacity_v cap on cap.event_id = e.id
+          where cp.id = $1::uuid
+            and e.status in ('live', 'featured')
+            and e.starts_at > now()
+            and cap.available >= 1
+        `,
+        [proposalId],
+      );
+      if (stillLive.rows[0]?.ok) {
+        await client.query("rollback");
+        throw validationError("This plan is already settled.");
+      }
+      // else: accepted + dead event → fall through and reopen it below.
     }
 
     // SAFE-03: re-check block/ban/suspend before mutating the shared proposal, so a
@@ -12162,14 +12208,28 @@ export async function proposeAlternativeForProposal(
       throw validationError("Pick an upcoming event with room for two from the catalogue.");
     }
 
+    // Re-point the suggestion. `status='pending', confirmed_* = null` is a no-op for a
+    // pending row but reopens an accepted-dead one (C12); coord_state → 'proposed' below
+    // mirrors it so a re-suggested plan is live again for both.
     await client.query(
       `
         update click_proposals
         set suggested_event_id = $2::uuid, proposed_by = $3::uuid,
+            status = 'pending', confirmed_by = null, confirmed_at = null,
             alternatives_count = alternatives_count + 1, updated_at = now()
         where id = $1::uuid
       `,
       [proposalId, event.id, profile.id],
+    );
+
+    await client.query(
+      `
+        update mutual_clicks
+        set coord_state = 'proposed', updated_at = now()
+        where id = (select mutual_click_id from click_proposals where id = $1::uuid)
+          and status = 'active'
+      `,
+      [proposalId],
     );
 
     await client.query(
