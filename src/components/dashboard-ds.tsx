@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { Icon, type IconName } from "./ds";
+import { Reveal } from "./reveal";
 
 /**
  * Section - the dashboard's scaffold. Sections are grouped by WHITESPACE, never
@@ -29,29 +30,35 @@ export function Section({
   return (
     <section className={`${first ? "mt-6 sm:mt-7" : "mt-8 sm:mt-14"} ${narrow ? "max-w-[760px]" : ""}`}>
       {title || actionLabel ? (
-        <div className="mb-3.5 flex items-baseline justify-between gap-4 sm:mb-4.5">
-          <div>
-            {title ? (
-              <h2 className="font-display text-[1.075rem] leading-tight font-semibold tracking-[-0.01em] text-[color:var(--ink)] sm:text-[1.3rem]">
-                {title}
-              </h2>
-            ) : null}
-            {sub ? (
-              <p className="mt-1.5 max-w-[520px] text-[13.5px] leading-relaxed font-medium text-[color:var(--slate)] sm:text-sm">
-                {sub}
-              </p>
+        // Headers ride the same scroll-reveal as the home page, so the feed
+        // settles in section by section instead of arriving as one wall.
+        <Reveal>
+          <div className="mb-3.5 flex items-baseline justify-between gap-4 sm:mb-4.5">
+            <div>
+              {title ? (
+                <h2 className="font-display text-[1.075rem] leading-tight font-semibold tracking-[-0.01em] text-[color:var(--ink)] sm:text-[1.3rem]">
+                  {title}
+                </h2>
+              ) : null}
+              {sub ? (
+                <p className="mt-1.5 max-w-[520px] text-[13.5px] leading-relaxed font-medium text-[color:var(--slate)] sm:text-sm">
+                  {sub}
+                </p>
+              ) : null}
+            </div>
+            {actionLabel && actionHref ? (
+              <Link
+                href={actionHref}
+                className="font-display inline-flex shrink-0 items-center gap-1.5 text-[13.5px] font-semibold whitespace-nowrap text-[color:var(--purple)] hover:underline"
+              >
+                {actionLabel}
+                <span className="nudge-arrow inline-flex">
+                  <Icon name="arrowR" size={15} stroke={2.2} />
+                </span>
+              </Link>
             ) : null}
           </div>
-          {actionLabel && actionHref ? (
-            <Link
-              href={actionHref}
-              className="font-display inline-flex shrink-0 items-center gap-1.5 text-[13.5px] font-semibold whitespace-nowrap text-[color:var(--purple)] hover:underline"
-            >
-              {actionLabel}
-              <Icon name="arrowR" size={15} stroke={2.2} />
-            </Link>
-          ) : null}
-        </div>
+        </Reveal>
       ) : null}
       {children}
     </section>

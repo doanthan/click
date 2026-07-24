@@ -4,6 +4,7 @@ import { auth, isAdminEmail } from "@/auth";
 import { EventCard } from "@/components/event-card";
 import { CategoryCircle, Icon, Spark, categoryGlyphKey } from "@/components/ds";
 import { MomentBanner, Section } from "@/components/dashboard-ds";
+import { Reveal } from "@/components/reveal";
 import { PostEventClickCard } from "@/components/post-event-click-card";
 import { ClickRadar } from "@/components/click-radar";
 import { ClickWithSomeoneUserCard } from "@/components/click-with-someone-user-card";
@@ -134,17 +135,19 @@ export default async function DashboardPage() {
     <main className="min-h-screen bg-[color:var(--champagne)] pb-24 text-[color:var(--ink)]">
       <div className="ck-page pt-6">
         {/* Greeting. On app surfaces the heading is h2-scale - display type is
-            reserved for marketing. */}
-        <p className="font-display mb-1.5 text-[13px] font-semibold text-[color:var(--slate)] sm:text-[13.5px]">
+            reserved for marketing. The top-of-page stack rides the home page's
+            rise-soft cascade: pure CSS, plays before hydration, collapsed by
+            the global reduced-motion block. */}
+        <p className="rise-soft font-display mb-1.5 text-[13px] font-semibold text-[color:var(--slate)] sm:text-[13.5px]">
           {greetingFor(hourOfDay)}, {firstName}
         </p>
-        <h1 className="font-display max-w-[620px] text-[length:var(--text-h2)] leading-snug font-semibold tracking-[-0.02em] text-balance text-[color:var(--ink)]">
+        <h1 className="rise-soft rise-d1 font-display max-w-[620px] text-[length:var(--text-h2)] leading-snug font-semibold tracking-[-0.02em] text-balance text-[color:var(--ink)]">
           {postEvent || coord ? "Here's what's next." : `Here's what's good near you this week.`}
         </h1>
 
         {/* ---- The one moment banner ---- */}
         {postEvent ? (
-          <div className="mt-6 max-w-[760px]">
+          <div className="rise-soft rise-d2 mt-6 max-w-[760px]">
             <MomentBanner
               icon="calendar"
               eyebrow={postEvent.eventTitle}
@@ -155,7 +158,7 @@ export default async function DashboardPage() {
             />
           </div>
         ) : coordConsolidated ? (
-          <div className="mt-6 max-w-[760px]">
+          <div className="rise-soft rise-d2 mt-6 max-w-[760px]">
             <MomentBanner
               icon="users"
               eyebrow="your clicks"
@@ -171,7 +174,7 @@ export default async function DashboardPage() {
             />
           </div>
         ) : coord ? (
-          <div className="mt-6 max-w-[760px]">
+          <div className="rise-soft rise-d2 mt-6 max-w-[760px]">
             {coord.suggestedEventSlug && coord.suggestedByOther ? (
               <MomentBanner
                 icon="calendar"
@@ -221,14 +224,15 @@ export default async function DashboardPage() {
         {upcoming.length > 0 ? (
           <Section title="You're going" actionLabel="All bookings" actionHref="/confirmed-events">
             <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {upcoming.slice(0, 3).map((event) => (
-                <EventCard
-                  key={event.id}
-                  event={event}
-                  bookmarked={bookmarkSet.has(event.id)}
-                  registered
-                  bookingStatus={bookingStatusFor(event.id)}
-                />
+              {upcoming.slice(0, 3).map((event, i) => (
+                <Reveal key={event.id} delay={i * 70} className="min-w-0">
+                  <EventCard
+                    event={event}
+                    bookmarked={bookmarkSet.has(event.id)}
+                    registered
+                    bookingStatus={bookingStatusFor(event.id)}
+                  />
+                </Reveal>
               ))}
             </div>
           </Section>
@@ -244,7 +248,7 @@ export default async function DashboardPage() {
           narrow
         >
           {rotatedPeople.length > 0 ? (
-            <>
+            <Reveal delay={60}>
               {rotatedPeople.map((person) => (
                 <ClickWithSomeoneUserCard
                   key={person.id}
@@ -263,17 +267,19 @@ export default async function DashboardPage() {
                   </Link>
                 </span>
               </p>
-            </>
+            </Reveal>
           ) : (
-            <div className="rounded-[var(--radius-xl)] bg-[color:var(--lav-bg)] px-6 py-7 text-center">
-              <p className="text-sm leading-relaxed text-[color:var(--ink-soft)]">
-                Add a few interests to{" "}
-                <Link href="/profile/edit" className="font-semibold text-[color:var(--purple)]">
-                  your profile
-                </Link>{" "}
-                and we&apos;ll start surfacing people with real overlap.
-              </p>
-            </div>
+            <Reveal delay={60}>
+              <div className="rounded-[var(--radius-xl)] bg-[color:var(--lav-bg)] px-6 py-7 text-center">
+                <p className="text-sm leading-relaxed text-[color:var(--ink-soft)]">
+                  Add a few interests to{" "}
+                  <Link href="/profile/edit" className="font-semibold text-[color:var(--purple)]">
+                    your profile
+                  </Link>{" "}
+                  and we&apos;ll start surfacing people with real overlap.
+                </p>
+              </div>
+            </Reveal>
           )}
         </Section>
 
@@ -285,7 +291,9 @@ export default async function DashboardPage() {
           actionHref="/discover"
           narrow
         >
-          <ClickRadar events={rotatedRadar} fomoBySlug={fomoBySlug} />
+          <Reveal delay={60}>
+            <ClickRadar events={rotatedRadar} fomoBySlug={fomoBySlug} />
+          </Reveal>
         </Section>
 
         {/* ---- Who was there (the post-event click surface) ---- */}
@@ -293,8 +301,10 @@ export default async function DashboardPage() {
           <div id="who-was-there" className="scroll-mt-24">
             <Section title="Did you click with anyone?" sub="Only the people who were actually there.">
               <div className="grid gap-5 lg:grid-cols-2">
-                {activePrompts.map((prompt) => (
-                  <PostEventClickCard key={prompt.eventSlug} prompt={prompt} />
+                {activePrompts.map((prompt, i) => (
+                  <Reveal key={prompt.eventSlug} delay={i * 80} className="min-w-0">
+                    <PostEventClickCard prompt={prompt} />
+                  </Reveal>
                 ))}
               </div>
             </Section>
@@ -310,14 +320,15 @@ export default async function DashboardPage() {
             actionHref="/discover"
           >
             <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {personalized.events.slice(0, 3).map((event) => (
-                <EventCard
-                  key={event.id}
-                  event={event}
-                  bookmarked={bookmarkSet.has(event.id)}
-                  registered={registeredSet.has(event.id)}
-                  bookingStatus={bookingStatusFor(event.id)}
-                />
+              {personalized.events.slice(0, 3).map((event, i) => (
+                <Reveal key={event.id} delay={i * 70} className="min-w-0">
+                  <EventCard
+                    event={event}
+                    bookmarked={bookmarkSet.has(event.id)}
+                    registered={registeredSet.has(event.id)}
+                    bookingStatus={bookingStatusFor(event.id)}
+                  />
+                </Reveal>
               ))}
             </div>
           </Section>
@@ -327,36 +338,40 @@ export default async function DashboardPage() {
         <Section title="Saved & waitlist" actionLabel="See all" actionHref="/bookmarks">
           {saved.length > 0 ? (
             <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {saved.slice(0, 3).map((event) => (
-                <EventCard
-                  key={event.id}
-                  event={event}
-                  bookmarked
-                  registered={registeredSet.has(event.id)}
-                  bookingStatus={bookingStatusFor(event.id)}
-                />
+              {saved.slice(0, 3).map((event, i) => (
+                <Reveal key={event.id} delay={i * 70} className="min-w-0">
+                  <EventCard
+                    event={event}
+                    bookmarked
+                    registered={registeredSet.has(event.id)}
+                    bookingStatus={bookingStatusFor(event.id)}
+                  />
+                </Reveal>
               ))}
             </div>
           ) : (
-            <div className="rounded-[var(--radius-xl)] bg-[color:var(--lav-bg)] px-6 py-7 text-center">
-              <p className="text-sm leading-relaxed text-[color:var(--ink-soft)]">
-                Nothing saved yet - your next event is where it happens.
-              </p>
-            </div>
+            <Reveal delay={60}>
+              <div className="rounded-[var(--radius-xl)] bg-[color:var(--lav-bg)] px-6 py-7 text-center">
+                <p className="text-sm leading-relaxed text-[color:var(--ink-soft)]">
+                  Nothing saved yet - your next event is where it happens.
+                </p>
+              </div>
+            </Reveal>
           )}
         </Section>
 
         {/* ---- Browse by category ---- */}
         <Section title="Or find your own thing" sub="Browse by what you feel like doing." actionLabel="See all" actionHref="/discover">
           <div className="ckRail -mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1 lg:flex-wrap lg:overflow-visible">
-            {BROWSE_CATEGORIES.map((category) => (
-              <Link
-                key={category}
-                href={`/discover?category=${encodeURIComponent(category)}`}
-                className="group shrink-0"
-              >
-                <CategoryCircle name={categoryGlyphKey(category)} label={category} />
-              </Link>
+            {BROWSE_CATEGORIES.map((category, i) => (
+              <Reveal key={category} delay={i * 40} className="shrink-0">
+                <Link
+                  href={`/discover?category=${encodeURIComponent(category)}`}
+                  className="group block"
+                >
+                  <CategoryCircle name={categoryGlyphKey(category)} label={category} />
+                </Link>
+              </Reveal>
             ))}
           </div>
         </Section>
@@ -383,7 +398,7 @@ function FinishSetupCard({
   if (!next) return null;
 
   return (
-    <div className="mt-6 max-w-[760px] rounded-[var(--radius-xl)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-4 shadow-[var(--shadow-xs)] sm:p-5">
+    <div className="rise-soft rise-d3 mt-6 max-w-[760px] rounded-[var(--radius-xl)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-4 shadow-[var(--shadow-xs)] sm:p-5">
       <div className="flex items-baseline justify-between gap-3">
         <h3 className="font-display text-[1.04rem] font-semibold text-[color:var(--ink)] sm:text-[1.15rem]">
           Finish setting up
@@ -393,8 +408,13 @@ function FinishSetupCard({
         </span>
       </div>
 
-      <div className="mt-3 mb-1 h-2 overflow-hidden rounded-full bg-[color:var(--lavender-100)]">
-        <div className="h-full rounded-full bg-[color:var(--purple)]" style={{ width: `${completion.percent}%` }} />
+      {/* The bar is decorative alongside the "X of 5" figure; the fill draws in
+          from the left on load so earned progress reads as earned. */}
+      <div aria-hidden className="mt-3 mb-1 h-2 overflow-hidden rounded-full bg-[color:var(--lavender-100)]">
+        <div
+          className="draw-line h-full rounded-full bg-[color:var(--purple)]"
+          style={{ width: `${completion.percent}%`, animationDelay: "400ms" }}
+        />
       </div>
 
       <SetupRow item={next} featured />
@@ -458,7 +478,7 @@ function SetupRow({
 
 function QuietRow({ icon, label, href, cta }: { icon: "ticket" | "settings"; label: string; href: string; cta: string }) {
   return (
-    <div className="mt-3 flex max-w-[760px] flex-wrap items-center gap-3 rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] px-4 py-3">
+    <div className="rise-soft rise-d4 mt-3 flex max-w-[760px] flex-wrap items-center gap-3 rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] px-4 py-3">
       <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[color:var(--lavender-100)] text-[color:var(--purple)]">
         <Icon name={icon} size={16} />
       </span>

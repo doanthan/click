@@ -19,7 +19,7 @@ const HEADER_ROW = "mx-auto flex max-w-[1200px] items-center justify-between gap
  */
 export function SiteHeaderShell() {
   return (
-    <header className={HEADER_SHELL}>
+    <header className={`${HEADER_SHELL} site-header--marketing`}>
       <div className={HEADER_ROW}>
         <Logo size={26} />
         <div className="h-9" aria-hidden />
@@ -40,9 +40,11 @@ export async function SiteHeader() {
   // Logged-out MARKETING header: no app nav, no repeated big logo - just a
   // quiet "Log in" and the one primary "Sign up". The app nav belongs to
   // signed-in surfaces only.
+  // site-header--marketing lets the home hero pull this bar onto the photo
+  // (see the hero nav overlay rules in globals.css).
   if (!session?.user) {
     return (
-      <header className={HEADER_SHELL}>
+      <header className={`${HEADER_SHELL} site-header--marketing`}>
         <div className={HEADER_ROW}>
           <Link href="/" aria-label="Click home" className="flex items-center">
             <Logo size={26} />

@@ -226,7 +226,7 @@ export function AdminSidebar({ counts }: { counts: AdminSidebarCounts }) {
     <>
       <PortalMobileNav title="Admin Console" items={mobileItems} />
       <aside className="hidden lg:sticky lg:top-6 lg:block lg:w-[17.5rem] lg:shrink-0">
-      <nav className="flex flex-col rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)] p-3">
+      <nav aria-label="Admin console" className="flex flex-col rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)] p-3">
         <div className="flex items-center gap-3 px-2 pb-4 pt-2">
           <Image
             src="/click_blob_mascot.svg"

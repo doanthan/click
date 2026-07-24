@@ -18,7 +18,7 @@ export function HeaderNav({ items }: { items: HeaderNavItem[] }) {
   const pathname = usePathname();
 
   return (
-    <nav className="hidden items-center gap-1.5 lg:flex">
+    <nav aria-label="Primary" className="hidden items-center gap-1.5 lg:flex">
       {items.map((item) => {
         const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
         return (

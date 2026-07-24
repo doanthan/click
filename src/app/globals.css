@@ -596,6 +596,119 @@ body {
 .sticker--ink { background: var(--surface-deep); color: var(--on-deep); border-color: transparent; }
 .sticker--cream { background: var(--cream); }
 
+/* ---------- Arrow links ----------
+   Text links that end in an arrow glyph wrap it in .nudge-arrow: the glyph
+   eases right while the link is hovered or focused. Motion lands on the
+   arrow only - the label never shifts, so nothing reflows. */
+.nudge-arrow { display: inline-block; transition: transform 180ms cubic-bezier(.2,.7,.2,1); }
+a:hover .nudge-arrow,
+a:focus-visible .nudge-arrow { transform: translateX(3px); }
+
+/* ---------- Hero photo scrim (home full-bleed hero) ----------
+   Legibility wash over the hero candid, Partiful-style dissolve: the photo
+   emerges from a near-solid deep-ink field on the left (with a violet mid-tone
+   so the blend reads brand, not black), the ink rises from the bottom, and a
+   thin top wash keeps the overlaid nav legible over the festoon lights.
+   Decorative only - tokens, never raw hex. */
+.hero-scrim {
+  background:
+    linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--surface-deep) 58%, transparent) 0%,
+      transparent 16%
+    ),
+    linear-gradient(
+      to top,
+      color-mix(in srgb, var(--surface-deep) 92%, transparent) 0%,
+      color-mix(in srgb, var(--surface-deep) 30%, transparent) 42%,
+      transparent 70%
+    ),
+    linear-gradient(
+      97deg,
+      color-mix(in srgb, var(--surface-deep) 96%, transparent) 0%,
+      color-mix(in srgb, var(--surface-deep) 84%, transparent) 26%,
+      color-mix(in srgb, var(--purple-500) 36%, transparent) 54%,
+      transparent 78%
+    );
+}
+
+/* ---------- Home hero nav overlay ----------
+   On the home page ([data-home-hero] on <main>) the logged-out marketing
+   header floats transparent over the full-bleed hero, Partiful-style: cream
+   wordmark and Log in, Sign up flips to cream-on-photo. Scoped to the
+   marketing header only - the signed-in app header keeps its cream bar.
+   No :has() support -> the header simply stays a cream sticky bar. */
+body:has([data-home-hero]) .site-header--marketing {
+  position: absolute;
+  background: transparent;
+  border-color: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+/* The wordmark's colour is an inline style - the one sanctioned !important. */
+body:has([data-home-hero]) .site-header--marketing a[aria-label="Click home"] > span {
+  color: var(--champagne) !important;
+}
+body:has([data-home-hero]) .site-header--marketing button {
+  color: var(--champagne);
+}
+body:has([data-home-hero]) .site-header--marketing .ck-btn {
+  background: var(--champagne);
+  color: var(--purple);
+}
+
+/* ---------- Aura field (home light sections) ----------
+   Partiful-style colour-field dissolve for the light stretch of the home
+   page: large soft radial washes that bloom and fade back into the cream
+   ground. Strictly the lavender/purple family (lavender, purple-100,
+   peach-soft) - status colours stay on badges, and the primary CTA stays
+   flat. Decorative ambience only; cards float on top unchanged. */
+.aura-field {
+  background:
+    radial-gradient(56rem 30rem at 84% 2%, color-mix(in srgb, var(--lavender) 52%, transparent), transparent 64%),
+    radial-gradient(50rem 28rem at 6% 28%, color-mix(in srgb, var(--lavender) 30%, transparent), transparent 62%),
+    radial-gradient(54rem 30rem at 96% 64%, color-mix(in srgb, var(--purple-100) 95%, transparent), transparent 60%),
+    radial-gradient(46rem 26rem at 14% 98%, color-mix(in srgb, var(--lavender) 40%, transparent), transparent 62%);
+}
+
+/* ---------- Party polaroid (home hero collage + photo wall) ----------
+   A white print frame that reads as a photo tossed on the cream/lavender
+   ground. The WRAPPER element carries position + rotation (via .pop-in's
+   --pop-rot or a .tilt-* class); .polaroid itself only lifts on hover so
+   the tilt is preserved while it rises. Shadows stay the DS soft purple
+   elevation - never a glow. */
+.polaroid {
+  display: block;
+  width: fit-content;
+  /* Un-layered, so this rule beats Tailwind's layered w-full: never let a
+     nowrap caption inflate the frame past its wrapper (hero prints size by
+     wrapper width; the caption ellipsizes instead). */
+  max-width: 100%;
+  margin: 0;
+  background: var(--paper);
+  border: 1px solid var(--line-soft);
+  /* Partiful-soft: outer radius minus the 8px padding = the photo's radius,
+     so the frame and print stay geometrically parallel. */
+  border-radius: 18px;
+  padding: 8px;
+  box-shadow: var(--shadow-md);
+  transition: transform 220ms cubic-bezier(.2,.7,.2,1), box-shadow 220ms ease;
+}
+.polaroid:hover { transform: translateY(-5px); box-shadow: var(--shadow-lg); }
+.polaroid img { border-radius: 10px; display: block; }
+.polaroid__caption {
+  padding: 7px 4px 3px;
+  font-family: var(--font-click-body), system-ui, sans-serif;
+  font-size: 12px;
+  line-height: 1.3;
+  font-weight: 600;
+  color: var(--ink);
+  /* Wraps to a second line on narrow prints (mobile hero) - a scribbled
+     two-line caption reads truer than losing the suburb to an ellipsis. */
+  text-wrap: balance;
+}
+.polaroid__caption span { color: var(--slate); font-weight: 500; }
+
 /* ---------- Tilt / wiggle ---------- */
 .tilt-l-2 { transform: rotate(-2deg); }
 .tilt-l-3 { transform: rotate(-3deg); }
@@ -615,12 +728,6 @@ body {
   50% { transform: translateY(-8px); }
 }
 .float-slow { animation: float 4s ease-in-out infinite; }
-
-@keyframes chip-bob {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-10px); }
-}
-.chip-bob { animation: pop-in 600ms cubic-bezier(.2,.9,.3,1.4) both, chip-bob 4.6s ease-in-out infinite; }
 
 @keyframes pulse-ring {
   0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--rose) 60%, transparent); }
@@ -652,10 +759,14 @@ body {
   to { transform: translateX(-100%); }
 }
 
-/* ---------- Reveal on load ---------- */
+/* ---------- Reveal on load ----------
+   Both keyframes END on `transform: none` (not translateY(0)): with fill-mode
+   `both` the final keyframe persists, and any retained transform would make the
+   wrapper a containing block for fixed-position descendants (dialogs, pickers)
+   forever after. `none` settles identically and releases them. */
 @keyframes rise {
   from { opacity: 0; transform: translateY(28px); }
-  to { opacity: 1; transform: translateY(0); }
+  to { opacity: 1; transform: none; }
 }
 .rise { animation: rise 900ms cubic-bezier(.2,.7,.2,1) both; }
 
@@ -665,7 +776,7 @@ body {
    it plays before hydration; the global reduced-motion block collapses it. */
 @keyframes rise-soft {
   from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
+  to { opacity: 1; transform: none; }
 }
 .rise-soft { animation: rise-soft 240ms cubic-bezier(.2,.7,.2,1) both; }
 
@@ -682,12 +793,14 @@ body {
 .rise-d5 { animation-delay: 480ms; }
 .rise-d6 { animation-delay: 580ms; }
 
+/* The overshoot is choreographed IN the keyframes (scale 1.05 at 60%), so the
+   timing curve stays a smooth exponential ease-out - no elastic bounce. */
 @keyframes pop-in {
   0% { opacity: 0; transform: scale(0.4) rotate(-12deg); }
   60% { opacity: 1; transform: scale(1.05) rotate(2deg); }
   100% { opacity: 1; transform: scale(1) rotate(var(--pop-rot, 0deg)); }
 }
-.pop-in { animation: pop-in 700ms cubic-bezier(.34,1.56,.64,1) both; }
+.pop-in { animation: pop-in 700ms cubic-bezier(.22,1,.36,1) both; }
 
 /* ---------- Reveal on scroll (progressive enhancement) ----------
    The hidden state applies ONLY when JS is running AND the visitor accepts
@@ -720,7 +833,7 @@ button, a, select, textarea, input {
     background-color 180ms ease,
     border-color 180ms ease,
     color 180ms ease,
-    transform 180ms cubic-bezier(.34,1.56,.64,1),
+    transform 180ms cubic-bezier(.25,1,.5,1),
     box-shadow 180ms ease;
 }
 
@@ -731,6 +844,40 @@ button:focus-visible, a:focus-visible, select:focus-visible, textarea:focus-visi
   outline-offset: 2px;
   border-radius: 4px;
 }
+
+/* ---------- Skip link ----------
+   First tab stop on every page. Parked above the viewport until keyboard focus,
+   then slides in over the sticky header. */
+.skip-link {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  z-index: 100;
+  padding: 10px 16px;
+  border-radius: var(--radius-md);
+  background: var(--purple);
+  color: var(--champagne);
+  font-family: var(--font-click-display), system-ui, sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  box-shadow: var(--shadow-md);
+  transform: translateY(-200%);
+}
+.skip-link:focus-visible {
+  transform: translateY(0);
+  outline-color: var(--champagne);
+  outline-offset: -4px;
+}
+
+/* ---------- Menu / popover entrance ----------
+   Header dropdowns settle in from their trigger - state-transition feedback,
+   nothing more. The global reduced-motion block collapses it. */
+@keyframes menu-pop {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+.menu-pop { animation: menu-pop 160ms cubic-bezier(.22,1,.36,1) both; transform-origin: top right; }
 
 /* ---------- The "burst" used on logo / accents ---------- */
 .burst {

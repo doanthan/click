@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { signOutOfClick } from "@/app/login/actions";
 import { Avatar, Icon } from "./ds";
+import { useDisclosure } from "./use-disclosure";
 
 export type PortalRole = "user" | "merchant" | "admin";
 
@@ -25,6 +25,7 @@ const ACCOUNT_LINKS: AccountLink[] = [
   { label: "Your profile", href: "/profile" },
   { label: "People", href: "/people" },
   { label: "Your events", href: "/confirmed-events" },
+  { label: "Calendar", href: "/dashboard/calendar" },
   { label: "Bookmarks", href: "/bookmarks" },
   { label: "How it works", href: "/how-it-works" },
   { label: "Account settings", href: "/account-settings" },
@@ -39,18 +40,8 @@ export function HeaderRoleSwitcher({
   userLabel: string;
   avatarUrl?: string | null;
 }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const { open, setOpen, ref } = useDisclosure<HTMLDivElement>();
   const pathname = usePathname();
-
-  useEffect(() => {
-    function onDocClick(e: MouseEvent) {
-      if (!ref.current) return;
-      if (!ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, []);
 
   const currentRole: PortalRole = pathname?.startsWith("/admin")
     ? "admin"
@@ -62,10 +53,12 @@ export function HeaderRoleSwitcher({
 
   return (
     <div className="relative block" ref={ref}>
+      {/* Disclosure, not an ARIA menu: the panel is a list of plain links, so
+          Tab walks it naturally and we owe no arrow-key contract. */}
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        aria-haspopup="menu"
+        aria-label="Account menu"
         aria-expanded={open}
         className="flex items-center gap-1.5 rounded-full p-0.5"
       >
@@ -79,10 +72,7 @@ export function HeaderRoleSwitcher({
       </button>
 
       {open ? (
-        <div
-          role="menu"
-          className="absolute right-0 z-50 mt-2 w-[300px] rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-2 shadow-[0_18px_44px_rgba(76,55,140,0.18)]"
-        >
+        <div className="menu-pop absolute right-0 z-50 mt-2 w-[300px] rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-2 shadow-[0_18px_44px_rgba(76,55,140,0.18)]">
           {/* Identity header - non-interactive */}
           <div className="flex items-center gap-3 px-3 py-2.5">
             <Avatar name={userLabel} src={avatarUrl} size={40} />

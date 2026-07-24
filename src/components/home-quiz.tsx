@@ -138,14 +138,14 @@ function LoggedOutQuizCta() {
 
   return (
     <>
-      <section className="bg-[color:var(--lav-bg)] px-5 py-12 sm:px-8 lg:px-12">
+      <section className="px-5 py-12 sm:px-8 lg:px-12">
         <div className="mx-auto max-w-6xl">
           <div className="flex flex-wrap items-center justify-between gap-5 rounded-[var(--radius-xl)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-6 shadow-[var(--shadow-sm)] sm:p-7">
             <div className="min-w-0 max-w-2xl">
               <span className="text-xs font-bold tracking-[0.08em] uppercase text-[color:var(--purple-500)]">
                 Pick your vibe
               </span>
-              <h2 className="font-display mt-4 text-2xl font-semibold leading-[1.05] tracking-[-0.02em] text-[color:var(--ink)] sm:text-3xl">
+              <h2 className="font-display mt-4 text-2xl font-semibold leading-[1.05] tracking-[-0.02em] text-balance text-[color:var(--ink)] sm:text-3xl">
                 A <span className="text-[color:var(--purple)]">tiny</span> quiz so Click can suggest{" "}
                 <span className="peach-highlight">rooms that fit you</span>.
               </h2>
@@ -346,14 +346,14 @@ function QuizFrame({
   children: React.ReactNode;
 }) {
   return (
-    <section className="bg-[color:var(--lav-bg)] px-5 py-12 sm:px-8 lg:px-12">
+    <section className="px-5 py-12 sm:px-8 lg:px-12">
       <div className="mx-auto max-w-6xl">
         <div className="rounded-[var(--radius-xl)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-6 shadow-[var(--shadow-sm)] sm:p-8">
           <div className="max-w-2xl">
             <span className="text-xs font-bold tracking-[0.08em] uppercase text-[color:var(--purple-500)]">
               {eyebrow}
             </span>
-            <h2 className="font-display mt-4 text-3xl font-bold leading-[1.02] tracking-[-0.025em] text-[color:var(--ink)] sm:text-4xl">
+            <h2 className="font-display mt-4 text-3xl font-bold leading-[1.02] tracking-[-0.025em] text-balance text-[color:var(--ink)] sm:text-4xl">
               {title}
             </h2>
             <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--mauve)]">

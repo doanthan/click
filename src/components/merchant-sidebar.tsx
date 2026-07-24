@@ -155,7 +155,7 @@ export function MerchantSidebar({
         cta={{ label: "Create event", href: "/merchant/events/create" }}
       />
       <aside className="hidden lg:sticky lg:top-6 lg:block lg:w-56 lg:shrink-0">
-        <nav className={`${mCard} flex flex-col gap-1 p-3.5`}>
+        <nav aria-label="Merchant portal" className={`${mCard} flex flex-col gap-1 p-3.5`}>
           <div className="flex items-center gap-2.5 px-1.5 pb-3 pt-1">
             <Avatar name={businessName} size={38} />
             <span className="min-w-0">

@@ -39,12 +39,21 @@ export function MobileBottomNav({ tabs }: { tabs: BottomNavTab[] }) {
               <Link
                 href={tab.href}
                 aria-current={active ? "page" : undefined}
-                className={`flex min-h-[56px] flex-col items-center justify-center gap-1 px-1 py-2 text-[0.68rem] font-semibold transition-colors ${
+                className={`relative flex min-h-[56px] flex-col items-center justify-center gap-1 px-1 py-2 text-[0.68rem] font-semibold transition-colors ${
                   active
                     ? "text-[color:var(--purple)]"
                     : "text-[color:var(--slate)] hover:text-[color:var(--ink)]"
                 }`}
               >
+                {/* Non-colour active cue: a short bar riding the top hairline,
+                    so the current tab reads at a glance (and for low-vision
+                    users colour alone never carries the state). */}
+                <span
+                  aria-hidden
+                  className={`absolute top-0 left-1/2 h-[3px] w-8 -translate-x-1/2 rounded-b-full bg-[color:var(--purple)] transition-opacity duration-200 ${
+                    active ? "opacity-100" : "opacity-0"
+                  }`}
+                />
                 <BottomNavGlyph icon={tab.icon} active={active} />
                 <span className="leading-none">{tab.label}</span>
               </Link>

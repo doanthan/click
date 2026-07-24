@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useDisclosure } from "./use-disclosure";
 
 // Shared mobile navigation for the admin + merchant portals. Both portals use a
 // fat left sidebar at `lg+` (admin-sidebar / merchant-sidebar), but below `lg`
@@ -32,19 +32,9 @@ export function PortalMobileNav({
   // event"). Rendered as a pinned button inside the open panel.
   cta?: { label: string; href: string };
 }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  // Close on outside click (mirrors header-role-switcher). Navigation itself is
-  // handled by each item's onClick → setOpen(false), so we don't watch the route.
-  useEffect(() => {
-    function onDocClick(e: MouseEvent) {
-      if (!ref.current) return;
-      if (!ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, []);
+  // Shared disclosure behaviour (outside click / Escape / focus-out close).
+  // Navigation itself is handled by each item's onClick → setOpen(false).
+  const { open, setOpen, ref } = useDisclosure<HTMLDivElement>();
 
   const activeItem = items.find((i) => i.active);
 
@@ -61,7 +51,6 @@ export function PortalMobileNav({
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
-          aria-haspopup="menu"
           aria-expanded={open}
           className="flex w-full items-center gap-3 rounded-xl border border-[color:var(--line)] bg-[color:var(--paper)] px-3 py-2.5 text-left font-semibold text-[color:var(--ink)]"
         >
@@ -102,10 +91,7 @@ export function PortalMobileNav({
       </div>
 
       {open ? (
-        <div
-          role="menu"
-          className="absolute inset-x-4 z-50 mt-1 max-h-[70vh] overflow-y-auto rounded-2xl bg-[color:var(--paper)] p-2 shadow-[var(--shadow-md)] sm:inset-x-6"
-        >
+        <div className="menu-pop absolute inset-x-4 z-50 mt-1 max-h-[70vh] overflow-y-auto rounded-2xl bg-[color:var(--paper)] p-2 shadow-[var(--shadow-md)] sm:inset-x-6">
           <ul className="flex flex-col gap-1">
             {items.map((item) => (
               <li key={item.key}>

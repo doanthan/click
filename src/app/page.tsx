@@ -1,17 +1,30 @@
-import Image from "next/image";
+import Image, { type StaticImageData } from "next/image";
 import Link from "next/link";
+import type { CSSProperties } from "react";
 import { auth } from "@/auth";
 import type { EventItem } from "@/lib/click-data";
 import { ButtonLink, Logo } from "@/components/ds";
 import { EventCard } from "@/components/event-card";
 import { LiveActivityMarquee } from "@/components/live-activity-marquee";
+import { MutualToast } from "@/components/mutual-toast";
+import { PartyGlow } from "@/components/party-glow";
 import { HomeQuiz } from "@/components/home-quiz";
 import { Reveal } from "@/components/reveal";
-import {
-  getEventsForExplore,
-  getLatestPersonaForSession,
-  getPersonalizedDiscovery,
-} from "@/lib/event-repository";
+import { getEventsForExplore, getLatestPersonaForSession } from "@/lib/event-repository";
+import heroMain from "../../public/home/hero-main.jpg";
+import heroRings from "../../public/home/hero-rings.jpg";
+import heroDinner from "../../public/home/hero-dinner.jpg";
+import heroRooftop from "../../public/home/hero-rooftop.jpg";
+import heroPickleball from "../../public/home/hero-pickleball.jpg";
+import heroWine from "../../public/home/hero-wine.jpg";
+import heroRun from "../../public/home/hero-run.jpg";
+import wallWarehouse from "../../public/home/wall-warehouse.jpg";
+import wallPicnic from "../../public/home/wall-picnic.jpg";
+import wallPottery from "../../public/home/wall-pottery.jpg";
+import wallTrivia from "../../public/home/wall-trivia.jpg";
+import wallVolleyball from "../../public/home/wall-volleyball.jpg";
+import wallDarts from "../../public/home/wall-darts.jpg";
+import wallKaraoke from "../../public/home/wall-karaoke.jpg";
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -56,140 +69,503 @@ function deriveCityPulse(events: EventItem[]) {
     suburbs.length > 1 ? `${suburbs.length} Sydney suburbs active` : null,
   ].filter((x): x is string => Boolean(x));
 
-  return { eventsThisWeek, suburbs, soonest, marqueeItems };
+  return { marqueeItems };
 }
+
+/* The party wall - every photo is a Sydney candid from the /images studio
+   (scripts/gen-home-images.mjs re-rolls them). The hero is ONE full-bleed
+   night; the rail below is the pinned-up week. Captions are flavour for the
+   kinds of events Click runs, not claims about specific past events. */
+
+const WALL_PRINTS: Array<{
+  src: StaticImageData;
+  alt: string;
+  caption: string;
+  place: string;
+  h: string;
+  tilt: string;
+}> = [
+  {
+    src: wallWarehouse,
+    alt: "A crowd dancing at a warehouse party caught by a camera flash",
+    caption: "Warehouse party",
+    place: "Marrickville",
+    h: "h-[280px] sm:h-[320px]",
+    tilt: "tilt-l-2",
+  },
+  {
+    src: wallPicnic,
+    alt: "A picnic mixer on the grass in Centennial Park, long shadows",
+    caption: "Picnic mixer",
+    place: "Centennial Park",
+    h: "h-[230px] sm:h-[260px]",
+    tilt: "tilt-r-2",
+  },
+  {
+    src: wallPottery,
+    alt: "Clay-covered hands and laughter at a pottery class social",
+    caption: "Pottery social",
+    place: "Redfern",
+    h: "h-[250px] sm:h-[290px]",
+    tilt: "tilt-l-2",
+  },
+  {
+    src: wallTrivia,
+    alt: "A trivia team huddled over an answer sheet at a pub",
+    caption: "Trivia night",
+    place: "Newtown",
+    h: "h-[280px] sm:h-[320px]",
+    tilt: "tilt-r-3",
+  },
+  {
+    src: wallVolleyball,
+    alt: "A casual beach volleyball social at Bondi at golden hour",
+    caption: "Beach volleyball",
+    place: "Bondi",
+    h: "h-[230px] sm:h-[260px]",
+    tilt: "tilt-l-2",
+  },
+  {
+    src: wallDarts,
+    alt: "Darts and a chalk scoreboard at a pub social",
+    caption: "Pub darts",
+    place: "The Rocks",
+    h: "h-[250px] sm:h-[290px]",
+    tilt: "tilt-r-2",
+  },
+  {
+    src: wallKaraoke,
+    alt: "Friends mid-song in a private karaoke room in Haymarket",
+    caption: "KTV night",
+    place: "Haymarket",
+    h: "h-[260px] sm:h-[300px]",
+    tilt: "tilt-l-3",
+  },
+  // The old hero collage prints, re-pinned onto the wall so the rail runs long.
+  {
+    src: heroRooftop,
+    alt: "Friends talking at a rooftop party with the Harbour Bridge behind",
+    caption: "Rooftop drinks",
+    place: "Kirribilli",
+    h: "h-[280px] sm:h-[320px]",
+    tilt: "tilt-r-3",
+  },
+  {
+    src: heroPickleball,
+    alt: "A pickleball social on an outdoor court at golden hour",
+    caption: "Pickleball social",
+    place: "Marrickville",
+    h: "h-[230px] sm:h-[260px]",
+    tilt: "tilt-l-2",
+  },
+  {
+    src: heroWine,
+    alt: "Mates over schooners and shared plates outside a pub",
+    caption: "Long lunch",
+    place: "Enmore",
+    h: "h-[250px] sm:h-[290px]",
+    tilt: "tilt-r-2",
+  },
+  {
+    src: heroRun,
+    alt: "A run club regrouping by the beach after a Saturday morning run",
+    caption: "Saturday run club",
+    place: "Bronte",
+    h: "h-[280px] sm:h-[320px]",
+    tilt: "tilt-l-3",
+  },
+];
+
+/* The four prints that pop onto the hero - one glance at the kinds of events
+   Click runs: make something, play something, eat together, move together. */
+const HERO_FAN = [
+  {
+    src: heroRings,
+    alt: "Friends leaning in as one torch-solders a silver ring at a jewellery workshop",
+    caption: "Ring-making",
+    place: "Surry Hills",
+  },
+  {
+    src: heroPickleball,
+    alt: "A pickleball social on an outdoor court at golden hour",
+    caption: "Pickleball social",
+    place: "Marrickville",
+  },
+  {
+    src: heroDinner,
+    alt: "Friends passing shared plates down a long candle-lit dinner table",
+    caption: "Long-table dinner",
+    place: "Enmore",
+  },
+  {
+    src: heroRun,
+    alt: "A run club regrouping by the beach after a Saturday morning run",
+    caption: "Run club",
+    place: "Bronte",
+  },
+];
+
+/* The mechanic in four beats for a first-time visitor - the answer to "so
+   what IS Click?". Copy stays diffed against the real flow (register ->
+   attend -> private click -> mutual reveal); the privacy rail (one-sided
+   clicks stay invisible) is the differentiator and gets said plainly. */
+const HOW_IT_WORKS = [
+  {
+    title: "Pick a plan",
+    body: "Small-group events across Sydney: run clubs, trivia nights, pottery wheels, long dinners. Come solo or bring a mate.",
+  },
+  {
+    title: "Show up",
+    body: "Everyone's there for the same thing, so talking to strangers never feels like talking to strangers.",
+  },
+  {
+    title: "Click, privately",
+    body: "Afterwards, tap who you clicked with. Nothing is sent and nothing shows - it stays between you and Click.",
+  },
+  {
+    title: "It's mutual",
+    body: "If they picked you too, you both find out - and the next plan is two taps away. If not, nobody ever knows.",
+  },
+];
 
 export default async function Home() {
   const session = await auth();
   const isLoggedIn = Boolean(session?.user);
-  const [events, persona, discovery] = await Promise.all([
+  const [events, persona] = await Promise.all([
     getEventsForExplore(),
     isLoggedIn ? getLatestPersonaForSession(session) : Promise.resolve(null),
-    isLoggedIn ? getPersonalizedDiscovery(session) : Promise.resolve(null),
   ]);
 
   const pulse = deriveCityPulse(events);
 
-  // The strip is a genuinely personalised feed when we have one, otherwise the
-  // live city catalogue.
-  const personalized = Boolean(discovery && !discovery.fallback && discovery.events.length >= 3);
-  const strip = (personalized ? discovery!.events : events).slice(0, 3);
-  const band = events[0] ?? null;
-  const bandSuburbs = pulse.suburbs.slice(0, 3).join(", ");
+  // Trending = the upcoming events the most people are going to, citywide.
+  const trending = [...events]
+    .sort((a, b) => (b.attendees || 0) - (a.attendees || 0))
+    .slice(0, 3);
 
   return (
-    <main className="min-h-screen bg-[color:var(--champagne)] text-[color:var(--ink)]">
-      {/* ===================== HERO - a real dictionary entry =====================
-          The signature of the brand: the headword, the pronunciation, one
-          numbered sense, an example sentence in italics, a short rule, then the
-          positioning line. No feature grid, no hero image. */}
-      <section className="ck-page grid items-start gap-10 pt-8 pb-12 lg:grid-cols-[1.1fr_0.9fr] lg:gap-[72px] lg:pt-14">
-        {/* The dictionary entry composes itself in reading order - a pure-CSS
-            cascade (rise-soft + the shared rise-d* delays) so it plays before
-            hydration and collapses to instant under reduced motion. */}
-        <div className="max-w-[560px]">
-          <span className="rise-soft lg:hidden">
-            <Logo size={74} />
-          </span>
-          <span className="rise-soft hidden lg:inline-flex">
-            <Logo size={104} />
-          </span>
+    <main data-home-hero className="min-h-screen bg-[color:var(--champagne)] text-[color:var(--ink)]">
+      {/* ===================== HERO - one real night, edge to edge =====================
+          A single natural Sydney candid runs full bleed; the dictionary entry
+          sits in its dark left third on the ink scrim, and the product's magic
+          moment - a mutual click landing - floats as a notification card.
+          The photo is the party; the type stays quiet. */}
+      <section className="relative isolate overflow-hidden bg-[color:var(--surface-deep)]">
+        <Image
+          src={heroMain}
+          alt="Two friends mid-dance at a small backyard party, one laughing with hair mid-whip, fairy lights on the brick wall behind"
+          fill
+          priority
+          placeholder="blur"
+          sizes="100vw"
+          className="object-cover object-[55%_center] lg:object-center"
+        />
+        <div aria-hidden className="hero-scrim absolute inset-0" />
 
-          <p className="rise-soft rise-d1 mt-3.5 text-base text-[color:var(--slate)] lg:mt-4.5 lg:text-[19px]">
-            /klɪk/ · <span className="italic">verb</span>
-          </p>
-
-          <div className="rise-soft rise-d2 mt-4.5 flex gap-3">
-            <span className="font-display shrink-0 text-[21px] leading-[1.5] font-semibold text-[color:var(--purple-500)] lg:text-[28px]">
-              1.
+        <div className="ck-page relative flex min-h-[100svh] flex-col justify-end pt-24 pb-12 lg:justify-center lg:pt-28 lg:pb-24">
+          <div className="max-w-[560px]">
+            <p className="rise-soft mb-5 inline-flex items-center gap-2 rounded-full border border-[color-mix(in_srgb,var(--on-deep)_28%,transparent)] bg-[color-mix(in_srgb,var(--surface-deep)_55%,transparent)] px-3.5 py-1.5 text-[13px] font-medium text-[color:var(--on-deep)]">
+              <span aria-hidden className="text-[color:var(--lavender)]">✦</span>
+              Now live in Sydney
+            </p>
+            <span className="rise-soft block lg:hidden">
+              <Logo size={74} cream />
             </span>
-            <p className="text-[21px] leading-[1.5] text-pretty text-[color:var(--ink)] lg:text-[28px]">
-              to connect effortlessly with someone through shared curiosity, energy, or experience.
+            <span className="rise-soft hidden lg:block">
+              <Logo size={104} cream />
+            </span>
+
+            <p className="rise-soft rise-d1 mt-3.5 text-base text-[color:var(--on-deep-soft)] lg:mt-4.5 lg:text-[19px]">
+              /klɪk/ · <span className="italic">verb</span>
+            </p>
+
+            <div className="rise-soft rise-d2 mt-4.5 flex gap-3">
+              <span className="font-display shrink-0 text-[21px] leading-[1.5] font-semibold text-[color:var(--lavender)] lg:text-[27px]">
+                1.
+              </span>
+              <p className="text-[21px] leading-[1.5] text-pretty text-[color:var(--on-deep)] lg:text-[27px]">
+                to connect effortlessly with someone through shared curiosity, energy, or experience.
+              </p>
+            </div>
+
+            <p className="rise-soft rise-d3 mt-3 ml-9 text-[14.5px] leading-[1.55] text-pretty text-[color:var(--on-deep-soft)] italic lg:text-base">
+              &ldquo;we met at pickleball and just clicked!&rdquo;
+            </p>
+
+            <p className="rise-soft rise-d5 font-display mt-7 max-w-[440px] text-[17px] leading-[1.45] font-medium text-pretty text-[color:var(--on-deep)] lg:text-[19px]">
+              We help people click in real life - not just online.
+            </p>
+
+            <div className="rise-soft rise-d6 mt-7 flex flex-wrap items-center gap-x-6 gap-y-3">
+              <ButtonLink href={isLoggedIn ? "/discover" : "/signup"} variant="onPurple" size="lg">
+                {isLoggedIn ? "See what's on" : "Get in"}
+              </ButtonLink>
+              <Link
+                href="/how-it-works"
+                className="font-display inline-block border-b border-[color-mix(in_srgb,var(--on-deep)_35%,transparent)] pb-px text-sm font-medium text-[color:var(--on-deep)]"
+              >
+                How clicking works{" "}
+                <span className="nudge-arrow" aria-hidden>
+                  →
+                </span>
+              </Link>
+            </div>
+            <p className="rise-soft rise-d6 mt-4 max-w-[420px] text-[14.5px] leading-[1.55] text-[color:var(--on-deep-soft)]">
+              Free to join. Somewhere else? Join anyway - we&apos;ll tell you the moment Click
+              reaches you.
             </p>
           </div>
-
-          <p className="rise-soft rise-d3 mt-3 ml-9 text-[14.5px] leading-[1.55] text-pretty text-[color:var(--slate)] italic lg:text-base">
-            &ldquo;we met at pickleball and just clicked!&rdquo;
-          </p>
-
-          <hr className="draw-line rise-d4 mt-7 w-[110px] border-0 border-t border-[color:var(--mist-strong)]" />
-
-          <p className="rise-soft rise-d5 font-display mt-6 max-w-[440px] text-[17px] leading-[1.45] font-medium text-pretty text-[color:var(--ink)] lg:text-[19px]">
-            We help people click in real life - not just online.
-          </p>
         </div>
 
-        {/* Action column */}
-        <div className="rise-soft rise-d6 lg:mt-1.5">
-          <ButtonLink href={isLoggedIn ? "/discover" : "/signup"} size="lg">
-            {isLoggedIn ? "See what's on" : "Get in"}
-          </ButtonLink>
-          <p className="mt-4 max-w-[380px] text-[14.5px] leading-[1.55] text-[color:var(--slate)]">
-            Free to join. Live in Sydney. Somewhere else? Join anyway - we&apos;ll tell you the moment Click reaches
-            you.
-          </p>
-          <Link
-            href="/how-it-works"
-            className="font-display mt-4.5 inline-block border-b border-[color-mix(in_srgb,var(--purple)_30%,transparent)] pb-px text-sm font-medium text-[color:var(--purple)]"
-          >
-            How clicking works →
-          </Link>
+        {/* The mutual-click notification, tossed onto the photo like a print.
+            Top-right everywhere (the type owns the bottom left, the polaroid
+            fan owns the bottom right), Partiful-style. */}
+        <div
+          className="pop-in absolute top-[11%] right-4 z-10 lg:top-[13%] lg:right-[4.5%]"
+          style={{ "--pop-rot": "-2deg", animationDelay: "650ms" } as CSSProperties}
+        >
+          <MutualToast />
+        </div>
+
+        {/* Four event-kind polaroids tossed onto the photo after the toast -
+            the "what does a Click event look like?" answer in one glance:
+            make, play, eat, move. Desktop only; the photo-wall rail carries
+            this job on mobile, where the photo stays clean. */}
+        <div className="absolute right-[3.5%] bottom-[5.5%] z-10 hidden items-end lg:flex">
+          {HERO_FAN.map((print, i) => (
+            <div
+              key={print.caption}
+              className={`pop-in ${i > 0 ? "-ml-8" : ""} ${["mb-0", "mb-5", "mb-1", "mb-6"][i]}`}
+              style={{
+                "--pop-rot": ["-5deg", "3deg", "-3deg", "6deg"][i],
+                animationDelay: `${820 + i * 150}ms`,
+                zIndex: i,
+              } as CSSProperties}
+            >
+              <figure className="polaroid">
+                <Image
+                  src={print.src}
+                  alt={print.alt}
+                  placeholder="blur"
+                  sizes="150px"
+                  className="h-[164px] w-[148px] object-cover"
+                />
+                <figcaption className="polaroid__caption">
+                  {print.caption}, <span>{print.place}</span>
+                </figcaption>
+              </figure>
+            </div>
+          ))}
         </div>
       </section>
 
       <LiveActivityMarquee items={pulse.marqueeItems} />
 
-      {/* ===================== What's on ===================== */}
-      {strip.length > 0 ? (
-        <section className="ck-page pt-12">
-          <Reveal>
-            <div className="mb-4 flex items-baseline justify-between gap-4">
-              <h2 className="font-display text-[length:var(--text-h2)] font-semibold tracking-[-0.01em] text-[color:var(--ink)]">
-                What&apos;s on near you this week
+      {/* ===================== How Click works =====================
+          The first-visit explainer: the hero defines the feeling, this
+          section shows the mechanic in four numbered beats - the numbering
+          extends the hero's dictionary conceit onto the cream ground. */}
+      <section className="ck-page py-14 lg:py-20">
+        <Reveal>
+          <div className="mb-10 flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+            <div>
+              <p className="eyebrow">How Click works</p>
+              <h2 className="font-display mt-3 max-w-[640px] text-[length:var(--text-display)] leading-[1.05] font-semibold tracking-[-0.02em] text-balance text-[color:var(--ink)]">
+                Go to things. Click with people.
               </h2>
-              <Link
-                href="/discover"
-                className="font-display shrink-0 text-[13.5px] font-semibold whitespace-nowrap text-[color:var(--purple)] hover:underline"
-              >
-                See everything near you →
-              </Link>
+              <p className="mt-3 max-w-[520px] text-[15.5px] leading-[1.6] text-[color:var(--slate)]">
+                Events worth leaving the house for - and a private, mutual way to keep the
+                people you clicked with at them.
+              </p>
             </div>
-          </Reveal>
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {strip.map((event, i) => (
-              <Reveal key={event.id} delay={i * 90} className="min-w-0">
-                <EventCard event={event} priority={i === 0} />
-              </Reveal>
-            ))}
+            <Link
+              href="/how-it-works"
+              className="font-display shrink-0 text-[13.5px] font-semibold whitespace-nowrap text-[color:var(--purple)] hover:underline"
+            >
+              The full story{" "}
+              <span className="nudge-arrow" aria-hidden>
+                →
+              </span>
+            </Link>
+          </div>
+        </Reveal>
+        <div className="grid gap-x-7 gap-y-9 sm:grid-cols-2 lg:grid-cols-4">
+          {HOW_IT_WORKS.map((step, i) => (
+            <Reveal key={step.title} delay={i * 90}>
+              <div className="border-t border-[color:var(--line)] pt-5">
+                <span className="font-display block text-[21px] leading-none font-semibold text-[color:var(--purple)]">
+                  {i + 1}.
+                </span>
+                <h3 className="font-display mt-3 text-[17px] font-semibold text-[color:var(--ink)]">
+                  {step.title}
+                  {i === 3 ? (
+                    <span aria-hidden className="text-[color:var(--lavender)]">
+                      {" "}
+                      ✦
+                    </span>
+                  ) : null}
+                </h3>
+                <p className="mt-1.5 text-[14.5px] leading-[1.6] text-[color:var(--slate)]">
+                  {step.body}
+                </p>
+              </div>
+            </Reveal>
+          ))}
+        </div>
+      </section>
+
+      {/* ===================== Trending - the party glow band =====================
+          The room mid-party: a WebGL aurora in the deep-band palette with
+          camera-flash twinkles (PartyGlow degrades to the flat deep surface),
+          and on top of it the events Sydney is piling into. White cards pop
+          on the glow; status colours stay on their badges. */}
+      {trending.length > 0 ? (
+        <section className="relative overflow-hidden bg-[color:var(--surface-deep)]">
+          <PartyGlow />
+          <div className="ck-page relative py-14 lg:py-20">
+            <Reveal>
+              <div className="mb-7 flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+                <div>
+                  <h2 className="font-display text-[length:var(--text-h1)] font-semibold tracking-[-0.015em] text-[color:var(--on-deep)]">
+                    Trending this week
+                  </h2>
+                  <p className="mt-2 max-w-[460px] text-[15px] leading-[1.55] text-[color:var(--on-deep-soft)]">
+                    The events Sydney is signing up for right now.
+                  </p>
+                </div>
+                <Link
+                  href="/discover"
+                  className="font-display shrink-0 text-[13.5px] font-semibold whitespace-nowrap text-[color:var(--on-deep)] hover:underline"
+                >
+                  See everything near you{" "}
+                  <span className="nudge-arrow" aria-hidden>
+                    →
+                  </span>
+                </Link>
+              </div>
+            </Reveal>
+            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              {trending.map((event, i) => (
+                <Reveal key={event.id} delay={i * 90} className="min-w-0">
+                  <EventCard event={event} />
+                </Reveal>
+              ))}
+            </div>
           </div>
         </section>
       ) : null}
 
-      {/* ===================== Real life, real places ===================== */}
-      {band ? (
-        <section className="ck-page py-12">
+      {/* ===================== The photo wall =====================
+          Full-bleed rail of pinned-up prints - the kinds of nights (and
+          mornings) Click runs across Sydney. Scroll-snap, no autoplay; the
+          print cut off at the viewport edge is the invitation to drag.
+          The wall + quiz share one .aura-field: Partiful-style lavender
+          washes dissolving in and out of the cream, no hard borders. */}
+      <div className="aura-field">
+      <section className="py-14">
+        <div className="ck-page">
           <Reveal>
-            <div className="relative flex min-h-[320px] items-end overflow-hidden rounded-[var(--radius-2xl)] shadow-[var(--shadow-md)] lg:min-h-[300px]">
-            <Image src={band.image} alt="" fill sizes="100vw" className="object-cover" />
-            <span className="absolute inset-0 bg-[linear-gradient(90deg,rgba(38,20,10,0.66),rgba(38,20,10,0.14)_58%,transparent)]" />
-            <div className="relative max-w-[520px] p-6 sm:p-9">
-              <p className="font-display text-[21px] leading-[1.2] font-semibold text-balance text-[color:var(--champagne)] lg:text-[30px]">
-                Real things, real people - across inner Sydney.
-              </p>
-              {bandSuburbs ? (
-                <p className="mt-2.5 max-w-[420px] text-sm leading-[1.55] text-[rgba(249,246,240,0.92)] lg:text-[15.5px]">
-                  What&apos;s on this week across {bandSuburbs} - small groups, real places, every week.
-                </p>
-              ) : null}
-            </div>
-            </div>
+            <h2 className="font-display max-w-[640px] text-[length:var(--text-display)] leading-[1.05] font-semibold tracking-[-0.02em] text-balance text-[color:var(--ink)]">
+              Your week could look like this
+            </h2>
+            <p className="mt-3 max-w-[520px] text-[15.5px] leading-[1.6] text-[color:var(--slate)]">
+              Rooftops, run clubs, trivia nights, pottery wheels - small groups in real Sydney
+              places, with people you actually click with.
+            </p>
           </Reveal>
-        </section>
-      ) : null}
+        </div>
+        <div
+          className="ckRail mt-9 flex snap-x items-center gap-7 overflow-x-auto pt-2 pb-5 pr-6"
+          style={{ paddingInlineStart: "max(20px, calc((100vw - 1200px) / 2 + 32px))" }}
+        >
+          {WALL_PRINTS.map((print, i) => (
+            <Reveal key={print.caption} delay={i * 70} className="shrink-0 snap-start">
+              <div className={print.tilt}>
+                <figure className="polaroid">
+                  <Image
+                    src={print.src}
+                    alt={print.alt}
+                    placeholder="blur"
+                    sizes="480px"
+                    className={`w-auto ${print.h}`}
+                  />
+                  <figcaption className="polaroid__caption">
+                    {print.caption}, <span>{print.place}</span>
+                  </figcaption>
+                </figure>
+              </div>
+            </Reveal>
+          ))}
+        </div>
+      </section>
 
       <Reveal className="reveal--fade">
         <HomeQuiz isLoggedIn={isLoggedIn} persona={persona} />
       </Reveal>
+      </div>
+
+      {/* ===================== The closer - dictionary callback =====================
+          The hero defines the verb; the closer conjugates it. One committed
+          Deep-Purple moment on the reserved deep band (--surface-deep), cream
+          type, the DS onPurple button. Sparks are decoration only. */}
+      <section className="relative overflow-hidden bg-[color:var(--surface-deep)]">
+        <div className="ck-page relative py-16 lg:py-24">
+          <Reveal>
+            <h2 className="font-display text-[length:var(--text-display)] leading-none font-semibold tracking-[-0.02em] text-[color:var(--on-deep)]">
+              clicked
+            </h2>
+            <p className="mt-3 text-base text-[color:var(--on-deep-soft)] lg:text-[17px]">
+              /klɪkt/ · <span className="italic">past tense</span>
+            </p>
+
+            <div className="mt-6 flex max-w-[560px] gap-3">
+              <span className="font-display shrink-0 text-[19px] leading-[1.5] font-semibold text-[color:var(--lavender)] lg:text-[22px]">
+                1.
+              </span>
+              <p className="text-[19px] leading-[1.5] text-pretty text-[color:var(--on-deep)] lg:text-[22px]">
+                to have found your people at something you nearly skipped.
+              </p>
+            </div>
+            <p className="mt-3 ml-8 text-[14.5px] leading-[1.55] text-[color:var(--on-deep-soft)] italic lg:text-base">
+              &ldquo;see you next Saturday?&rdquo;
+            </p>
+
+            <div className="mt-9 flex flex-wrap items-center gap-x-6 gap-y-3">
+              <ButtonLink href={isLoggedIn ? "/discover" : "/signup"} variant="onPurple" size="lg">
+                {isLoggedIn ? "See what's on" : "Get in"}
+              </ButtonLink>
+              <Link
+                href="/merchant"
+                className="font-display text-sm font-medium text-[color:var(--on-deep-soft)] transition-colors hover:text-[color:var(--on-deep)]"
+              >
+                Or host an event{" "}
+                <span className="nudge-arrow" aria-hidden>
+                  →
+                </span>
+              </Link>
+            </div>
+          </Reveal>
+
+          <span
+            aria-hidden
+            className="absolute top-[16%] right-[7%] text-2xl text-[color:var(--lavender)] opacity-40 select-none"
+          >
+            ✦
+          </span>
+          <span
+            aria-hidden
+            className="absolute right-[15%] bottom-[20%] hidden text-lg text-[color:var(--lavender)] opacity-25 select-none sm:block"
+          >
+            ✦
+          </span>
+          <span
+            aria-hidden
+            className="absolute top-[48%] right-[24%] hidden text-sm text-[color:var(--lavender)] opacity-30 select-none sm:block"
+          >
+            ✦
+          </span>
+        </div>
+      </section>
     </main>
   );
 }

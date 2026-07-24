@@ -9,7 +9,17 @@
 // "fix" wording in the directive texts; they are tuned prompt payloads.
 
 export type ShotKey = "crowd" | "dj" | "friends" | "lifestyle" | "detail";
-export type LightKey = "golden_hour" | "night_flash";
+export type LightKey =
+  | "golden_hour"
+  | "night_flash"
+  // Additions beyond the ported spec - see the LIGHTS entries below.
+  | "overcast"
+  | "window_daylight"
+  | "indoor_ambient"
+  | "hard_noon"
+  | "neon_night"
+  | "blue_hour";
+export type GradeKey = "warm_film" | "neutral_film" | "cool_digital";
 export type GroupKey = "pair" | "small_group" | "crowd";
 export type CameraKey =
   | "retro"
@@ -29,6 +39,7 @@ export interface PromptOptions {
   camera: CameraKey;
   vibe?: string; // clamped to 300
   extra?: string; // clamped to 600
+  grade?: GradeKey; // colour grade; omit = the original warm film grade
 }
 
 /* ---------- Section 5: shot types ---------- */
@@ -220,6 +231,45 @@ light, a streetlamp) — NOT saturated neon washes. FORBIDDEN for this look:
 rim light, hair light, fill light, multiple light sources, evenly-lit scenes,
 cinematic colour grading, glowing atmosphere. If it looks professionally lit,
 it is wrong.`,
+  // ---- Additions beyond the ported spec (the two entries above are verbatim
+  // payloads - never reworded). These give the home-page shoot real lighting
+  // variety so every frame doesn't share the same two looks. ----
+  overcast: `LIGHT - FLAT OVERCAST
+A solid pale-grey sky is the only light source - one giant softbox. Even,
+shadowless wrap on faces, soft murky ground shadows, no flare, no glow.
+Colour reads true and slightly muted: grass green, skin neutral, whites
+clean. If any sunbeam, golden cast or dramatic sky appears, it is wrong.`,
+  window_daylight: `LIGHT - WINDOW DAYLIGHT (interior)
+One big window of cool daylight lights the room from the side - bright and
+airy near the glass, honest falloff deeper into the interior. A faint
+green-white fluorescent tube or bare bulb may mix in further back. Whites
+read white, not cream; skin neutral; the sky outside is flat pale grey with
+NO sun and NO flare. Never looks lit - looks like a room on a cloudy day.`,
+  indoor_ambient: `LIGHT - VENUE AMBIENT (no flash, practicals only)
+The venue's own lamps are the only light - tungsten pendants, wall sconces,
+candles, a bar glow. Amber and murky with real mixed colour temperature,
+faces lit from wherever the nearest lamp hangs, deep soft shadows
+elsewhere, visible high-ISO grain. No flash fired, no added light, no rim
+or fill - if it looks professionally lit, it is wrong.`,
+  hard_noon: `LIGHT - HARD MIDDAY SUN
+Overhead southern-hemisphere summer sun in a deep blue cloudless sky. Hard
+short shadows directly under people, squint-bright highlights, bounced
+glare off sand or concrete. Colour is crisp and saturated by sunlight
+alone - zero golden cast, zero flare haze. Honest and harsh, like a photo
+taken at noon because that's when the event was.`,
+  neon_night: `LIGHT - SIGNS AND SCREENS (no flash)
+After dark, lit only by what the place itself emits - LED strips, a glowing
+screen, signage, string lights. Colour cast falls on skin honestly (a cyan
+edge, a warm wash) and shifts across the room; shadows go quickly to murky
+black, slow-shutter smear on moving hands, heavy ISO noise. No flash, no
+added light, no clean even exposure - a real camera struggling in a fun
+room.`,
+  blue_hour: `LIGHT - BLUE HOUR
+Just after sunset: deep blue ambient dusk in the sky while the venue's warm
+practicals - festoons, windows, signage - switch on against it. Cool blue
+fill from above, pockets of warm tungsten below, both honest and slightly
+underexposed, grain rising in the shadows. No flash, no neon washes, no
+cinematic grade - the ten real minutes when parties start.`,
 };
 
 /* ---------- Section 12: film grade block ---------- */
@@ -233,6 +283,27 @@ softly and lose a little detail. Rich but natural saturation: reds and oranges
 pop, blues and greens slightly muted so nothing fights the warm skin tones.
 This must read as a real photo from a real night out — never studio-polished,
 never stock, never posed.`;
+
+// Additions beyond the ported spec: alternative colour grades. warm_film is
+// the original FILM_GRADE payload untouched; the others exist so a batch of
+// generated frames doesn't all share the same warm Portra cast.
+const GRADES: Record<GradeKey, string> = {
+  warm_film: FILM_GRADE,
+  neutral_film: `FILM GRADE - NEUTRAL 35MM
+Candid documentary photography on neutral consumer 35mm film (Fuji Superia
+character). True-to-life white balance - whites white, greens honest, skin
+natural with no warm push. Fine visible grain, gently lifted blacks, soft
+un-clipped highlights. Colour is believable rather than pretty: the frame
+should look developed at a chemist, not graded by a colourist. Never
+studio-polished, never stock, never posed.`,
+  cool_digital: `DIGITAL GRADE - EARLY DIGICAM
+Shot on an early-2000s compact digital camera or a phone left on auto.
+Slightly cool clean white balance, mild in-camera sharpening, honest flat
+contrast, faint luminance noise in the shadows, highlights that clip a
+touch. No film grain, no warm nostalgia cast, no colourist grade - the
+unglamorous true-colour look of a camera that just took the photo. Never
+studio-polished, never stock, never posed.`,
+};
 
 /* ---------- Section 13: casting + expressions block ---------- */
 
@@ -641,7 +712,7 @@ export function buildPrompt(o: PromptOptions): string {
     ENVIRONMENTAL_WEAR,
     vibe ? `VIBE\n${vibe}` : "",
     LIGHTS[o.light] ?? LIGHTS.golden_hour,
-    FILM_GRADE,
+    GRADES[o.grade ?? "warm_film"] ?? FILM_GRADE,
     isDetail ? "" : CASTING,
     PHOTOGRAPHY_MODE,
     cameraDirective,

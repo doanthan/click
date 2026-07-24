@@ -62,13 +62,23 @@ export default async function RootLayout({
         className="min-h-full flex flex-col pb-[calc(56px+env(safe-area-inset-bottom))] lg:pb-0"
         suppressHydrationWarning
       >
+        {/* First tab stop everywhere: jump past the sticky header straight to
+            the page content. */}
+        <a href="#main-content" className="skip-link">
+          Skip to content
+        </a>
         {/* The live header awaits the session profile + notification queries;
             stream it so those round-trips never block first paint of the page
             body. The shell keeps the bar's height so nothing shifts. */}
         <Suspense fallback={<SiteHeaderShell />}>
           <SiteHeader />
         </Suspense>
-        {children}
+        {/* Every page renders its own <main>; this wrapper is the one stable
+            skip-link target above them all. flex-1 keeps short pages pushing
+            the footer down, exactly as the bare children did. */}
+        <div id="main-content" tabIndex={-1} className="flex min-w-0 flex-1 flex-col outline-none">
+          {children}
+        </div>
         <SiteFooter />
         <LoginModalHost
           googleConfigured={googleConfigured}

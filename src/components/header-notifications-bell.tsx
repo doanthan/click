@@ -1,32 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
 import { Icon } from "./ds";
+import { useDisclosure } from "./use-disclosure";
 
 export function HeaderNotificationsBell({ unreadCount }: { unreadCount: number }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const { open, setOpen, ref } = useDisclosure<HTMLDivElement>();
   // The /notifications page only ever lists the latest 50, so cap the count
   // surfaced here too - otherwise the bell claims a raw "1058 unread" the inbox
   // can never show, which reads as a bug (bug board #222).
   const countLabel = unreadCount > 99 ? "99+" : String(unreadCount);
-
-  useEffect(() => {
-    function onDocClick(e: MouseEvent) {
-      if (!ref.current) return;
-      if (!ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, []);
 
   return (
     <div className="relative" ref={ref}>
       <button
         type="button"
         aria-label={`Notifications (${countLabel} unread)`}
-        aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
         className="relative flex size-9 items-center justify-center rounded-full text-[color:var(--ink-soft)] transition-colors hover:bg-[color:var(--lavender-100)]"
@@ -41,10 +30,7 @@ export function HeaderNotificationsBell({ unreadCount }: { unreadCount: number }
       </button>
 
       {open ? (
-        <div
-          role="menu"
-          className="absolute right-0 z-50 mt-2 w-72 overflow-hidden rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] shadow-[0_18px_44px_rgba(76,55,140,0.18)]"
-        >
+        <div className="menu-pop absolute right-0 z-50 mt-2 w-72 overflow-hidden rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] shadow-[0_18px_44px_rgba(76,55,140,0.18)]">
           <div className="flex items-center justify-between gap-2 border-b border-[color:var(--line-soft)] px-4 py-3">
             <span className="font-display text-[15px] font-semibold text-[color:var(--ink)]">Notifications</span>
             {unreadCount > 0 ? (

@@ -78,7 +78,9 @@ export default async function MerchantPage({ searchParams }: MerchantPageProps) 
           businessName={businessName}
           counts={{ events: merchantEvents.length }}
         />
-        <div className="min-w-0 flex-1">
+        {/* key={tab} replays the soft rise on every tab switch - a quiet cue
+            that the content pane changed while the chrome held still. */}
+        <div key={tab} className="rise-soft min-w-0 flex-1">
           {tab === "dashboard" ? (
             <DashboardTab
               merchantEvents={merchantEvents}

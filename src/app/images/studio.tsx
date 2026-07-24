@@ -248,6 +248,12 @@ export default function ImageStudio() {
             options={[
               { value: "golden_hour", label: "Golden hour" },
               { value: "night_flash", label: "Night flash" },
+              { value: "overcast", label: "Overcast" },
+              { value: "window_daylight", label: "Window light" },
+              { value: "indoor_ambient", label: "Venue lamps" },
+              { value: "hard_noon", label: "Hard noon" },
+              { value: "neon_night", label: "Neon night" },
+              { value: "blue_hour", label: "Blue hour" },
             ]}
           />
         </GroupField>

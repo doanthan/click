@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
+import { Reveal } from "@/components/reveal";
 import { UserCalendar } from "@/components/user-calendar";
 import { EventAgendaList } from "@/components/event-agenda-list";
 import { getConfirmedEvents } from "@/lib/event-repository";
@@ -41,28 +42,30 @@ export default async function CalendarPage({ searchParams }: PageProps) {
   return (
     <main className="min-h-screen bg-[color:var(--champagne)] pb-24 text-[color:var(--ink)]">
       <div className="ck-page pt-6">
+        {/* Same rise-soft load cascade as the dashboard: header first, then the
+            grid, so the page settles top-down. */}
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="font-display text-[length:var(--text-h1)] leading-tight font-semibold tracking-[-0.02em] text-[color:var(--ink)]">
+            <h1 className="rise-soft font-display text-[length:var(--text-h1)] leading-tight font-semibold tracking-[-0.02em] text-[color:var(--ink)]">
               Your calendar
             </h1>
-            <p className="mt-1.5 max-w-[560px] text-sm leading-relaxed text-[color:var(--slate)]">
+            <p className="rise-soft rise-d1 mt-1.5 max-w-[560px] text-sm leading-relaxed text-[color:var(--slate)]">
               Every event you&apos;ve booked, laid out by day. Tap an event to see its details.
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="rise-soft rise-d1 flex gap-2">
             <Link href="/discover" className="ck-btn ck-btn--sm ck-btn--primary">
               <span className="ck-btn__label">Find more events</span>
             </Link>
           </div>
         </div>
 
-        <div className="mt-8">
+        <div className="rise-soft rise-d2 mt-8">
           <UserCalendar events={calendarEvents} monthParam={search?.month} bookedSlug={search?.booked} />
         </div>
 
         {calendarEvents.length === 0 ? (
-          <div className="mt-6 rounded-[var(--radius-xl)] bg-[color:var(--lav-bg)] px-6 py-8 text-center">
+          <div className="rise-soft rise-d3 mt-6 rounded-[var(--radius-xl)] bg-[color:var(--lav-bg)] px-6 py-8 text-center">
             <p className="font-display text-[1.05rem] font-semibold text-[color:var(--ink)]">No bookings yet.</p>
             <p className="mx-auto mt-2 max-w-[380px] text-sm leading-relaxed text-[color:var(--ink-soft)]">
               Browse events and reserve a spot - they&apos;ll show up here.
@@ -71,8 +74,11 @@ export default async function CalendarPage({ searchParams }: PageProps) {
         ) : (
           // Full chronological list so every plan is visible at once — the month
           // grid above only shows one month, so events in other months would
-          // otherwise sit behind the prev/next arrows.
-          <EventAgendaList upcoming={confirmed.upcoming} past={confirmed.past} />
+          // otherwise sit behind the prev/next arrows. Below the fold, so it
+          // reveals on scroll rather than joining the load cascade.
+          <Reveal>
+            <EventAgendaList upcoming={confirmed.upcoming} past={confirmed.past} />
+          </Reveal>
         )}
       </div>
     </main>
