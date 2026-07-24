@@ -15,21 +15,23 @@ import {
 import type { ProposalCatalogueEvent, ProposalEntry } from "@/lib/event-repository";
 
 // COORDINATION_MODAL_SYSTEM: the entire coordination sequence - reveal → suggest →
-// waiting → both going, plus recovery/terminal states - is ONE stepped modal over
-// the current page (§1). Steps advance IN PLACE, never a route change (§5 QA). The
-// drawer is a pure projection of coord_state / the proposal (§2). The panel mounts
-// once per open (host gates on `entry`), so the opacity-0 entrance keyframe runs to
-// completion exactly once and can't freeze mid-frame (§5); steps swap via plain
-// conditional render off a visible base, so no per-step opacity gate exists to stick.
+// waiting → both going, plus recovery/terminal states - is ONE stepped modal over the
+// current page (§1). Steps advance IN PLACE, never a route change (§5 QA). The drawer is
+// a PURE projection of the live entry's coord_state/proposal (§2): a successful action
+// revalidates /proposals, the fresh entry flows back in from ClicksList, and the step
+// re-projects - so revalidation DRIVES the advance instead of a fragile local override.
+// §5 freeze-safety: ClicksList keys the drawer on the mutual id, so the panel mounts once
+// per open and its opacity-0 step-enter-fwd entrance runs to completion exactly once;
+// inner steps swap via plain conditional render off a visible base (no per-step opacity
+// gate to stick). Reduced-motion is the global handler.
 
 const INITIAL: ProposalActionState = { ok: false, error: null };
-export const OPEN_COORDINATION_EVENT = "click:open-coordination";
 
-/** Opens the drawer at the entry's current coordination step. */
-export function openCoordinationDrawer(entry: ProposalEntry) {
-  if (typeof window === "undefined") return;
-  window.dispatchEvent(new CustomEvent<ProposalEntry>(OPEN_COORDINATION_EVENT, { detail: entry }));
-}
+// Reveals dismissed in THIS page session. Re-opening a mutual (list, bell, dashboard)
+// must never re-fire the reveal even before the list's revealSeen snapshot catches up.
+// The server seen_at (markMutualSeen) covers reload / other devices; this covers
+// same-session re-entry - together they kill the §4 re-fire regression.
+const revealedThisSession = new Set<string>();
 
 const longDate = new Intl.DateTimeFormat("en-AU", {
   weekday: "short",
@@ -77,32 +79,7 @@ function SubmitButton({
   );
 }
 
-export function CoordinationDrawerHost({ catalogue }: { catalogue: ProposalCatalogueEvent[] }) {
-  const [entry, setEntry] = useState<ProposalEntry | null>(null);
-
-  useEffect(() => {
-    function handle(e: Event) {
-      const detail = (e as CustomEvent<ProposalEntry>).detail;
-      if (detail && detail.mutualId) setEntry(detail);
-    }
-    window.addEventListener(OPEN_COORDINATION_EVENT, handle);
-    return () => window.removeEventListener(OPEN_COORDINATION_EVENT, handle);
-  }, []);
-
-  if (!entry || typeof document === "undefined") return null;
-  // Keyed on the mutual so opening a different mutual remounts the panel fresh (a
-  // clean one-time entrance + reset local step), per §4/§5.
-  return (
-    <CoordinationDrawer
-      key={entry.mutualId}
-      entry={entry}
-      catalogue={catalogue}
-      onClose={() => setEntry(null)}
-    />
-  );
-}
-
-function CoordinationDrawer({
+export function CoordinationDrawer({
   entry,
   catalogue,
   onClose,
@@ -117,49 +94,26 @@ function CoordinationDrawer({
   const [suggestState, suggestAction] = useActionState(suggestPlanAction, INITIAL);
 
   const [picking, setPicking] = useState(false);
-  const [override, setOverride] = useState<Exclude<Step, "reveal"> | null>(null);
-  const [revealDismissed, setRevealDismissed] = useState(false);
+  const [revealDismissed, setRevealDismissed] = useState(() =>
+    revealedThisSession.has(entry.mutualId),
+  );
 
   const titleId = useId();
   const cardRef = useRef<HTMLDivElement>(null);
 
-  // Advance in place on each successful action (§10.5): track the last-handled result
-  // per action at render time (each submit yields a new state object, so identity ==
-  // "fresh result"; same no-effect pattern as proposal-card.tsx). No route change.
-  const handled = useRef({
-    confirm: confirmState,
-    decline: declineState,
-    propose: proposeState,
-    suggest: suggestState,
-  });
-  if (confirmState !== handled.current.confirm) {
-    handled.current.confirm = confirmState;
-    if (confirmState.ok) setOverride("confirmed");
-  }
-  if (declineState !== handled.current.decline) {
-    handled.current.decline = declineState;
-    if (declineState.ok) {
-      setOverride("open");
-      setPicking(false);
-    }
-  }
-  if (proposeState !== handled.current.propose) {
-    handled.current.propose = proposeState;
-    if (proposeState.ok) {
-      setOverride("proposed");
-      setPicking(false);
-    }
-  }
-  if (suggestState !== handled.current.suggest) {
-    handled.current.suggest = suggestState;
-    if (suggestState.ok) {
-      setOverride("proposed");
-      setPicking(false);
-    }
+  // When a successful action revalidates /proposals, the fresh entry flows back in and
+  // its coordination signature changes - close the picker so the re-projected step is
+  // clean (the "advance in place"). Render-time compare, same no-effect pattern as
+  // proposal-card.tsx; no local optimistic step to fight the server truth.
+  const sig = `${entry.status}|${entry.coordState}|${entry.suggestedEventSlug ?? ""}`;
+  const lastSig = useRef(sig);
+  if (lastSig.current !== sig) {
+    lastSig.current = sig;
+    if (picking) setPicking(false);
   }
 
-  // Focus, Escape, scroll-lock, focus-trap - mount-scoped (panel mounts once per
-  // open), same proven shell as confirm-dialog.tsx.
+  // Focus, Escape, scroll-lock, focus-trap - mount-scoped (panel mounts once per open,
+  // ClicksList keys it on the mutual id). Same proven shell as confirm-dialog.tsx.
   useEffect(() => {
     const previouslyFocused = document.activeElement;
     const raf = window.requestAnimationFrame(() => cardRef.current?.focus());
@@ -205,20 +159,21 @@ function CoordinationDrawer({
     };
   }, [onClose]);
 
-  const base = override ?? projectStep(entry);
+  const base = projectStep(entry);
   // Reveal fires once per user per mutual (§4). Skip on a dead/expired mutual.
   const step: Step = !entry.revealSeen && !revealDismissed && base !== "expired" ? "reveal" : base;
 
   function dismissReveal() {
+    revealedThisSession.add(entry.mutualId);
     setRevealDismissed(true);
-    void markMutualSeenAction(entry.mutualId); // best-effort persist; never blocks
+    void markMutualSeenAction(entry.mutualId); // persist for reload / other devices
   }
 
   const firstName = entry.otherName.split(/\s+/)[0];
-  // Post-decline (override 'open') or an open mutual with no live plan → a FRESH
-  // suggestion keyed on the mutual (suggestPlanAction). A live pending plan is
-  // re-pointed instead (proposeAlternativeAction, which owns the 3-alt cap).
-  const freshSuggest = step === "open" && (override === "open" || !entry.suggestedEventSlug);
+  // An open mutual with no live plan → a FRESH suggestion keyed on the mutual
+  // (suggestPlanAction). A live pending plan is re-pointed instead (proposeAlternative,
+  // which owns the 3-alt cap).
+  const freshSuggest = step === "open" && !entry.suggestedEventSlug;
 
   const picker = picking ? (
     <form
@@ -308,7 +263,6 @@ function CoordinationDrawer({
             declineAction={declineAction}
             confirmError={confirmState.error}
             declineError={declineState.error}
-            picking={picking}
             onTogglePicker={() => setPicking((v) => !v)}
             picker={picker}
           />
@@ -357,11 +311,7 @@ function RevealStep({
           You&apos;re both open to dating ✨
         </p>
       ) : null}
-      <button
-        type="button"
-        onClick={onSuggest}
-        className="ck-btn ck-btn--md ck-btn--primary mt-6"
-      >
+      <button type="button" onClick={onSuggest} className="ck-btn ck-btn--md ck-btn--primary mt-6">
         Suggest something to do
       </button>
       <div className="mt-4">
@@ -385,7 +335,6 @@ function CoordinationBody({
   declineAction,
   confirmError,
   declineError,
-  picking,
   onTogglePicker,
   picker,
 }: {
@@ -397,7 +346,6 @@ function CoordinationBody({
   declineAction: (payload: FormData) => void;
   confirmError: string | null;
   declineError: string | null;
-  picking: boolean;
   onTogglePicker: () => void;
   picker: React.ReactNode;
 }) {
@@ -406,9 +354,7 @@ function CoordinationBody({
 
   return (
     <div>
-      <span className="eyebrow">
-        You + {entry.otherName}
-      </span>
+      <span className="eyebrow">You + {entry.otherName}</span>
 
       {step === "confirmed" ? (
         entry.viewerHasSeat ? (
@@ -454,7 +400,9 @@ function CoordinationBody({
           // Viewer still needs a seat - keep the live RSVP.
           <>
             <h2 id={titleId} className={headingClass}>
-              {entry.confirmedByMe ? "You're in - now lock in your seat." : `${firstName} confirmed this plan`}
+              {entry.confirmedByMe
+                ? "You're in - now lock in your seat."
+                : `${firstName} confirmed this plan`}
             </h2>
             <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--ink-soft)]">
               {entry.otherHasSeat ? (
@@ -487,7 +435,11 @@ function CoordinationBody({
             another plan together and you&apos;re back on.
           </p>
           <div className="mt-5">
-            <button type="button" onClick={onTogglePicker} className="ck-btn ck-btn--md ck-btn--primary">
+            <button
+              type="button"
+              onClick={onTogglePicker}
+              className="ck-btn ck-btn--md ck-btn--primary"
+            >
               Suggest another plan
             </button>
           </div>

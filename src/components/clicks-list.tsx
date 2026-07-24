@@ -1,14 +1,16 @@
 "use client";
 
-import { useEffect } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import { CoordinationDrawerHost, openCoordinationDrawer } from "./coordination-drawer";
+import { CoordinationDrawer } from "./coordination-drawer";
 import type { ProposalCatalogueEvent, ProposalEntry } from "@/lib/event-repository";
 
 // "Your clicks" (§7): the durable list. Every row is the SAME compact outcome card;
 // state is only an accent, never a different layout. Tapping a row opens the ONE
 // coordination drawer at that mutual's current step (§1) - the list is a list, not a
-// coordination surface, so it's allowed to be a routed page (§10.12).
+// coordination surface, so it's allowed to be a routed page (§10.12). The list OWNS which
+// mutual is open and feeds the drawer the LIVE entry, so a mutation's revalidate flows
+// the fresh coord_state straight back into the open drawer (advance in place).
 
 const longDate = new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" });
 
@@ -45,13 +47,16 @@ const toneClass: Record<Tone, string> = {
   neutral: "bg-[color:var(--cream)] text-[color:var(--mauve)]",
 };
 
-function ClickRow({ entry }: { entry: ProposalEntry }) {
+function ClickRow({ entry, onOpen }: { entry: ProposalEntry; onOpen: () => void }) {
   const s = rowState(entry);
   return (
-    <li>
+    // min-w-0: a grid item defaults to min-width:auto and won't shrink below its
+    // content, so without this the row grows to its untruncated text and pushes the
+    // badge off-screen at 375. min-w-0 lets the column shrink so `truncate` bites.
+    <li className="min-w-0">
       <button
         type="button"
-        onClick={() => openCoordinationDrawer(entry)}
+        onClick={onOpen}
         className="w-full rounded-[var(--radius-xl)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-5 text-left shadow-[var(--shadow-sm)] transition-shadow hover:shadow-[var(--shadow-md)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--lavender-100)]"
       >
         <div className="flex items-start justify-between gap-3">
@@ -82,27 +87,29 @@ export function ClicksList({
   catalogue: ProposalCatalogueEvent[];
   initialOpenId?: string;
 }) {
+  // The list owns which mutual is open (a deep-linked ?open= opens on first render). The
+  // drawer is fed the LIVE entry, so a mutation's revalidate advances it in place.
+  const [openId, setOpenId] = useState<string | null>(initialOpenId ?? null);
+  const openEntry = openId ? entries.find((e) => e.mutualId === openId) ?? null : null;
+
   const live = entries.filter((e) => !e.isExpired);
   const past = entries.filter((e) => e.isExpired);
 
-  // Deep-link (?open=<mutualId>, e.g. a notification): open the drawer at the current
-  // step on mount. The host is a child, so its listener is registered before this
-  // parent effect fires. Runs once (the id is the page's initial param).
-  useEffect(() => {
-    if (!initialOpenId) return;
-    const match = entries.find((e) => e.mutualId === initialOpenId);
-    if (match) openCoordinationDrawer(match);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialOpenId]);
-
   return (
     <>
-      <CoordinationDrawerHost catalogue={catalogue} />
+      {openEntry ? (
+        <CoordinationDrawer
+          key={openEntry.mutualId}
+          entry={openEntry}
+          catalogue={catalogue}
+          onClose={() => setOpenId(null)}
+        />
+      ) : null}
 
       {live.length > 0 ? (
         <ul className="mt-7 grid gap-4">
           {live.map((entry) => (
-            <ClickRow key={entry.mutualId} entry={entry} />
+            <ClickRow key={entry.mutualId} entry={entry} onOpen={() => setOpenId(entry.mutualId)} />
           ))}
         </ul>
       ) : (
@@ -127,7 +134,7 @@ export function ClicksList({
           </p>
           <ul className="grid gap-4">
             {past.map((entry) => (
-              <ClickRow key={entry.mutualId} entry={entry} />
+              <ClickRow key={entry.mutualId} entry={entry} onOpen={() => setOpenId(entry.mutualId)} />
             ))}
           </ul>
         </div>
