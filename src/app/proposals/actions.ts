@@ -3,7 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
-import { confirmProposal, proposeAlternativeForProposal } from "@/lib/event-repository";
+import {
+  confirmProposal,
+  markMutualSeen,
+  proposeAlternativeForProposal,
+} from "@/lib/event-repository";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -36,6 +40,20 @@ export async function confirmProposalAction(
   }
   revalidatePath("/proposals");
   return { ok: true, error: null };
+}
+
+// §4: mark the one-time mutual reveal as seen for the current user. Best-effort -
+// a failed stamp only risks the reveal showing once more, never blocks the drawer,
+// so it never throws into the client. No revalidate: the drawer drives itself.
+export async function markMutualSeenAction(mutualId: string): Promise<void> {
+  const session = await auth();
+  if (!session?.user) return;
+  if (typeof mutualId !== "string" || !UUID_RE.test(mutualId)) return;
+  try {
+    await markMutualSeen(session, mutualId);
+  } catch {
+    /* best-effort */
+  }
 }
 
 export async function proposeAlternativeAction(

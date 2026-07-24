@@ -11990,6 +11990,70 @@ export async function getProposalsForSession(session: Session | null): Promise<P
   }
 }
 
+// §4 (COORDINATION_MODAL_SYSTEM): the mutual reveal fires exactly ONCE per user,
+// per mutual. Persisted on mutual_clicks.seen_at_a/b (user_a = least(pair)), so
+// every later re-entry (bell, dashboard, Your clicks) skips the reveal and opens
+// the drawer straight at its current coord_state step - the exact regression the
+// live render had (re-firing on every notification tap). Migration-free: the
+// columns ship unused in 049.
+export async function getMutualRevealState(
+  session: Session | null,
+  mutualId: string,
+): Promise<{ seen: boolean } | null> {
+  const pool = getPostgresPool();
+  if (!getSessionEmail(session) || !pool) return null;
+  try {
+    const profile = await ensureProfileForSession(session);
+    const result = await pool.query<{ seen: boolean }>(
+      `
+        select case
+          when user_a_id = $2::uuid then seen_at_a is not null
+          else seen_at_b is not null
+        end as seen
+        from mutual_clicks
+        where id = $1::uuid
+          and status = 'active'
+          and (user_a_id = $2::uuid or user_b_id = $2::uuid)
+        limit 1
+      `,
+      [mutualId, profile.id],
+    );
+    const row = result.rows[0];
+    return row ? { seen: Boolean(row.seen) } : null;
+  } catch {
+    return null;
+  }
+}
+
+// Stamps the viewer's side seen_at (idempotent - the WHERE only matches while the
+// viewer's column is still null, so a re-open is a no-op). Returns true only on
+// the FIRST view, which is what tells the drawer to play the one-time reveal.
+export async function markMutualSeen(
+  session: Session | null,
+  mutualId: string,
+): Promise<boolean> {
+  const pool = getPostgresPool();
+  if (!getSessionEmail(session)) throw authError();
+  if (!pool) throw databaseUnavailableError();
+  const profile = await ensureProfileForSession(session);
+  const result = await pool.query<{ id: string }>(
+    `
+      update mutual_clicks
+      set seen_at_a = case when user_a_id = $2::uuid then now() else seen_at_a end,
+          seen_at_b = case when user_b_id = $2::uuid then now() else seen_at_b end
+      where id = $1::uuid
+        and status = 'active'
+        and (
+          (user_a_id = $2::uuid and seen_at_a is null)
+          or (user_b_id = $2::uuid and seen_at_b is null)
+        )
+      returning id::text
+    `,
+    [mutualId, profile.id],
+  );
+  return result.rows.length > 0;
+}
+
 // Verifies the session profile participates in the proposal's mutual click.
 // Returns { proposalId, otherId } or throws.
 async function assertProposalParticipant(
