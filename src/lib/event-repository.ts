@@ -11902,10 +11902,12 @@ export async function getProposalsForSession(session: Session | null): Promise<P
   try {
     const profile = await ensureProfileForSession(session);
     const result = await pool.query<{
-      id: string;
-      // Raw DB enum — the WHERE filters to these two; mapped to the UI's
+      // Nullable now the read is mutual-centric: an `open` mutual with no live plan
+      // (e.g. its only proposal was declined) has no proposal row.
+      id: string | null;
+      // Raw DB enum, or null when no live proposal; mapped to the UI's
       // pending/confirmed/expired contract below.
-      status: "pending" | "accepted";
+      status: "pending" | "accepted" | "expired" | null;
       expired: boolean;
       other_id: string;
       other_name: string;
@@ -11931,20 +11933,22 @@ export async function getProposalsForSession(session: Session | null): Promise<P
         select
           p.id::text,
           p.status,
-          -- "Expired" means the 7-day window has closed without a confirm —
-          -- either persisted (status flipped to 'expired', e.g. someone tapped
-          -- Confirm too late) or a still-'pending' row past its deadline. Both
-          -- must render as expired so a lapsed proposal never shows live
-          -- Confirm/Suggest buttons under a past date (bug #199).
-          (p.status = 'expired' or (p.status = 'pending' and p.expires_at <= now())) as expired,
+          -- "Expired" = the window closed without a confirm: persisted ('expired'),
+          -- or any non-accepted plan (incl. an open mutual with no proposal) past
+          -- the coalesced deadline. An accepted plan is never clock-expired - it's a
+          -- Plan, not a lapse. Keeps live Confirm/Suggest off a past date (bug #199).
+          (
+            p.status = 'expired'
+            or (p.status is distinct from 'accepted' and coalesce(p.expires_at, m.expires_at) <= now())
+          ) as expired,
           case when m.user_a_id = $1::uuid then m.user_b_id::text else m.user_a_id::text end as other_id,
           other.display_name as other_name,
           e.slug as event_slug,
           e.title as event_title,
           e.starts_at as event_starts_at,
           (p.suggested_event_id is not null) as had_suggestion,
-          p.alternatives_count,
-          p.expires_at,
+          coalesce(p.alternatives_count, 0) as alternatives_count,
+          coalesce(p.expires_at, m.expires_at) as expires_at,
           p.confirmed_at,
           (p.confirmed_by = $1::uuid) as confirmed_by_me,
           -- C11: does each side already hold a confirmed seat on the still-live
@@ -11969,11 +11973,22 @@ export async function getProposalsForSession(session: Session | null): Promise<P
           m.intent_b,
           (m.intent_a = 'dating' and m.intent_b = 'dating') as both_dating,
           (p.proposed_by = $1::uuid) as proposed_by_me
-        from click_proposals p
-        join mutual_clicks m on m.id = p.mutual_click_id
+        -- Mutual-centric (2.5b-iv): every ACTIVE mutual for the viewer, its live
+        -- plan LEFT-joined. An open mutual whose only proposal was declined has no
+        -- plan row (p.* null) and still shows - the drawer's suggest step re-fills it.
+        -- The lateral picks the single pending/accepted plan (at most one exists, but
+        -- lateral + limit 1 stays correct even on dirty data - no mutual fans out).
+        from mutual_clicks m
         join profiles other on other.id = (
           case when m.user_a_id = $1::uuid then m.user_b_id else m.user_a_id end
         )
+        left join lateral (
+          select cp.*
+          from click_proposals cp
+          where cp.mutual_click_id = m.id and cp.status in ('pending', 'accepted')
+          order by cp.updated_at desc
+          limit 1
+        ) p on true
         -- Only attach the suggested event if it's still upcoming + bookable, so a
         -- proposal never surfaces an event that has already happened OR has since
         -- sold out (confirmed RSVPs + live payment holds at/above capacity). A
@@ -11991,24 +12006,30 @@ export async function getProposalsForSession(session: Session | null): Promise<P
          )
         where (m.user_a_id = $1::uuid or m.user_b_id = $1::uuid)
           and m.status = 'active'
-          and p.status in ('pending', 'accepted')
-          -- SAFE-05: hide proposals for a blocked pair (belt-and-suspenders to the teardown).
+          -- SAFE-05: hide a blocked pair (belt-and-suspenders to the teardown).
           and not exists (
             select 1 from user_blocks b
             where (b.blocker_profile_id = m.user_a_id and b.blocked_profile_id = m.user_b_id)
                or (b.blocker_profile_id = m.user_b_id and b.blocked_profile_id = m.user_a_id)
           )
-        order by (p.status = 'pending' and p.expires_at > now()) desc, p.updated_at desc
+        -- Plans (both going) first, then live/actionable, newest activity first.
+        order by
+          (m.coord_state = 'confirmed_together') desc,
+          (coalesce(p.expires_at, m.expires_at) > now()) desc,
+          coalesce(p.updated_at, m.updated_at) desc
         limit 50
       `,
       [profile.id],
     );
 
     return result.rows.map((row) => ({
-      id: row.id,
-      // The new enum uses 'accepted'; the proposal UI still keys on 'confirmed'. Map it
-      // at the boundary so the surface stays unchanged until the 2.6 UI pass.
-      status: row.status === "accepted" ? "confirmed" : row.status,
+      // "" when the mutual has no live plan (open, e.g. post-decline) - the drawer
+      // keys those on mutualId (suggestPlanForMutual), never on a proposal id.
+      id: row.id ?? "",
+      // The new enum uses 'accepted'; the proposal UI still keys on 'confirmed'. Null
+      // (no live plan) maps to 'pending' so an open mutual reads as live, not lapsed.
+      status:
+        row.status === "accepted" ? "confirmed" : row.status === "expired" ? "expired" : "pending",
       isExpired: Boolean(row.expired),
       otherId: row.other_id,
       otherName: row.other_name,
@@ -12218,13 +12239,14 @@ export async function confirmProposal(session: Session | null, proposalId: strin
     await client.query(
       `
         insert into notifications (profile_id, title, body, action_url)
-        select $1::uuid, 'Plan confirmed', $2, '/proposals'
+        select $1::uuid, 'Plan confirmed', $2,
+          '/proposals?open=' || (select mutual_click_id::text from click_proposals where id = $4::uuid)
         where not exists (
           select 1 from user_mutes
           where muter_profile_id = $1::uuid and muted_profile_id = $3::uuid
         )
       `,
-      [row.other_id, `${profile.display_name} confirmed your shared plan.`, profile.id],
+      [row.other_id, `${profile.display_name} confirmed your shared plan.`, profile.id, proposalId],
     );
 
     await client.query("commit");
@@ -12346,13 +12368,14 @@ export async function proposeAlternativeForProposal(
     await client.query(
       `
         insert into notifications (profile_id, title, body, action_url)
-        select $1::uuid, 'New plan suggested', $2, '/proposals'
+        select $1::uuid, 'New plan suggested', $2,
+          '/proposals?open=' || (select mutual_click_id::text from click_proposals where id = $4::uuid)
         where not exists (
           select 1 from user_mutes
           where muter_profile_id = $1::uuid and muted_profile_id = $3::uuid
         )
       `,
-      [row.other_id, `${profile.display_name} suggested ${event.title}.`, profile.id],
+      [row.other_id, `${profile.display_name} suggested ${event.title}.`, profile.id, proposalId],
     );
 
     await client.query("commit");
