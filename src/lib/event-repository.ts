@@ -12317,6 +12317,153 @@ export async function proposeAlternativeForProposal(
   }
 }
 
+// §B6 / COORDINATION §2: declining a plan is a first-class, no-blame exit that
+// returns the mutual to `open` (NOT one of the four active-ENDING exits - the
+// mutual stays active, the pair can suggest again). The proposer is never told
+// "declined" (§4/§9: no blame, no rejection signal); their drawer simply shows the
+// suggest step again. Pairs with suggestPlanForMutual, which re-fills `open`.
+export async function declineProposalForSession(session: Session | null, proposalId: string) {
+  const pool = getPostgresPool();
+  if (!getSessionEmail(session)) throw authError();
+  if (!pool) throw databaseUnavailableError();
+
+  const profile = await ensureProfileForSession(session);
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    const row = await assertProposalParticipant(client, proposalId, profile.id);
+    // Only a live (pending) plan is declinable; accepted/expired/already-declined
+    // rows are settled. No block re-check: declining only REMOVES shared state, so
+    // it's always safe for a participant (a blocked pair must still be able to clear it).
+    if (row.status !== "pending") {
+      await client.query("rollback");
+      throw validationError("This plan is already settled.");
+    }
+    await client.query(
+      `update click_proposals set status = 'declined', updated_at = now() where id = $1::uuid and status = 'pending'`,
+      [proposalId],
+    );
+    await client.query(
+      `
+        update mutual_clicks set coord_state = 'open', updated_at = now()
+        where id = (select mutual_click_id from click_proposals where id = $1::uuid)
+          and status = 'active'
+      `,
+      [proposalId],
+    );
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+// §B4 / COORDINATION §2 (`open` step): create a FRESH plan for a mutual that has
+// none pending - a brand-new mutual, or one a decline returned to `open`. This is
+// the create-path the send-click auto-suggest comment defers to 2.5. Re-pointing
+// an EXISTING pending plan goes through proposeAlternativeForProposal (which owns
+// the 3-alt cap); this fires only from `open`, and a concurrent pending insert is
+// a no-op (never a cap bypass). Advances coord_state → 'proposed'.
+export async function suggestPlanForMutual(
+  session: Session | null,
+  mutualId: string,
+  eventSlug: string,
+) {
+  const pool = getPostgresPool();
+  if (!getSessionEmail(session)) throw authError();
+  if (!pool) throw databaseUnavailableError();
+
+  const profile = await ensureProfileForSession(session);
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    const mutualResult = await client.query<{ other_id: string; coord_state: string }>(
+      `
+        select
+          case when user_a_id = $2::uuid then user_b_id::text else user_a_id::text end as other_id,
+          coord_state
+        from mutual_clicks
+        where id = $1::uuid and status = 'active'
+          and (user_a_id = $2::uuid or user_b_id = $2::uuid)
+        for update
+      `,
+      [mutualId, profile.id],
+    );
+    const mutual = mutualResult.rows[0];
+    if (!mutual) {
+      await client.query("rollback");
+      throw validationError("This connection is no longer available.");
+    }
+    if (mutual.coord_state !== "open") {
+      // A plan is already on the table - re-point it, don't stack a second one.
+      await client.query("rollback");
+      throw validationError("There's already a plan here - suggest an alternative instead.");
+    }
+
+    // SAFE: suggesting creates shared coordination state, so re-check block/ban/suspend.
+    if (!(await pairCoordinationAllowed(client, profile.id, mutual.other_id))) {
+      await client.query("rollback");
+      throw validationError("This connection is no longer available.");
+    }
+
+    // Same bookable-for-two gate as proposeAlternative: catalogue only (no free text),
+    // upcoming, live/featured, room for BOTH (>= 2 free seats via event_capacity_v).
+    const eventResult = await client.query<{ id: string; title: string }>(
+      `
+        select e.id::text, e.title
+        from events e
+        join event_capacity_v cap on cap.event_id = e.id
+        where e.slug = $1 and e.status in ('live', 'featured')
+          and e.starts_at > now() and cap.available >= 2
+        limit 1
+      `,
+      [eventSlug],
+    );
+    const event = eventResult.rows[0];
+    if (!event) {
+      await client.query("rollback");
+      throw validationError("Pick an upcoming event with room for two from the catalogue.");
+    }
+
+    // open ⇒ no pending row; do-nothing on the partial-unique guards a concurrent insert.
+    await client.query(
+      `
+        insert into click_proposals (mutual_click_id, suggested_event_id, proposed_by, status, expires_at)
+        values ($1::uuid, $2::uuid, $3::uuid, 'pending', now() + interval '${MUTUAL_CLOCK_DAYS} days')
+        on conflict (mutual_click_id) where status = 'pending' do nothing
+      `,
+      [mutualId, event.id, profile.id],
+    );
+    await client.query(
+      `update mutual_clicks set coord_state = 'proposed', updated_at = now() where id = $1::uuid and status = 'active'`,
+      [mutualId],
+    );
+    await client.query(
+      `
+        insert into notifications (profile_id, title, body, action_url)
+        select $1::uuid, 'New plan suggested', $2, $4
+        where not exists (
+          select 1 from user_mutes where muter_profile_id = $1::uuid and muted_profile_id = $3::uuid
+        )
+      `,
+      [
+        mutual.other_id,
+        `${profile.display_name} suggested ${event.title}.`,
+        profile.id,
+        `/proposals?open=${mutualId}`,
+      ],
+    );
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export type ProposalCatalogueEvent = {
   slug: string;
   title: string;
