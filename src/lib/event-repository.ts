@@ -11869,7 +11869,31 @@ export type ProposalEntry = {
   // button or a pair-computed "RSVP needed" badge; both booked = "both going".
   viewerHasSeat: boolean;
   otherHasSeat: boolean;
+  // --- Coordination drawer (2.5b) ---------------------------------------------
+  // The drawer is a pure projection of these. `mutualId` keys markMutualSeen +
+  // suggestPlanForMutual; `coordState` picks the step; the reveal fields drive the
+  // one-time §4 reveal; `proposedByMe` splits the `proposed` copy (waiting vs "you in?").
+  mutualId: string;
+  coordState: "open" | "proposed" | "confirmed_together" | "dormant" | "released";
+  revealSeen: boolean;
+  sharedIntent: string;
+  bothDating: boolean;
+  proposedByMe: boolean;
 };
+
+// The reveal's intent line (§4): a desire, never a status. Shared only when both
+// named the same intent at click time (intent_a/intent_b snapshot, §8 immutable);
+// otherwise a neutral common ground. Dating gets its own opt-in line, not this one.
+function intentPhrase(a: string | null, b: string | null): string {
+  const map: Record<string, string> = {
+    dating: "meeting someone new",
+    friendship: "making new friends",
+    networking: "meeting new people",
+    exploring: "trying new things",
+    activities: "doing things together",
+  };
+  return a && b && a === b ? (map[a] ?? "meeting new people") : "meeting new people";
+}
 
 export async function getProposalsForSession(session: Session | null): Promise<ProposalEntry[]> {
   const pool = getPostgresPool();
@@ -11895,6 +11919,13 @@ export async function getProposalsForSession(session: Session | null): Promise<P
       confirmed_by_me: boolean;
       viewer_has_seat: boolean;
       other_has_seat: boolean;
+      mutual_id: string;
+      coord_state: "open" | "proposed" | "confirmed_together" | "dormant" | "released";
+      reveal_seen: boolean;
+      intent_a: string | null;
+      intent_b: string | null;
+      both_dating: boolean;
+      proposed_by_me: boolean;
     }>(
       `
         select
@@ -11927,7 +11958,17 @@ export async function getProposalsForSession(session: Session | null): Promise<P
           exists (
             select 1 from event_attendees ea
             where ea.event_id = e.id and ea.profile_id = other.id and ea.status = 'confirmed'
-          ) as other_has_seat
+          ) as other_has_seat,
+          -- Coordination drawer (2.5b): the mutual it belongs to + its live step,
+          -- the viewer's one-time reveal flag, the intent snapshot for the reveal
+          -- line, the both-opted-in dating flag, and which side owns the pending plan.
+          m.id::text as mutual_id,
+          m.coord_state,
+          case when m.user_a_id = $1::uuid then m.seen_at_a is not null else m.seen_at_b is not null end as reveal_seen,
+          m.intent_a,
+          m.intent_b,
+          (m.intent_a = 'dating' and m.intent_b = 'dating') as both_dating,
+          (p.proposed_by = $1::uuid) as proposed_by_me
         from click_proposals p
         join mutual_clicks m on m.id = p.mutual_click_id
         join profiles other on other.id = (
@@ -11984,6 +12025,12 @@ export async function getProposalsForSession(session: Session | null): Promise<P
       confirmedByMe: Boolean(row.confirmed_by_me),
       viewerHasSeat: Boolean(row.viewer_has_seat),
       otherHasSeat: Boolean(row.other_has_seat),
+      mutualId: row.mutual_id,
+      coordState: row.coord_state,
+      revealSeen: Boolean(row.reveal_seen),
+      sharedIntent: intentPhrase(row.intent_a, row.intent_b),
+      bothDating: Boolean(row.both_dating),
+      proposedByMe: Boolean(row.proposed_by_me),
     }));
   } catch {
     return [];
