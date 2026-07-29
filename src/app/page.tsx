@@ -3,7 +3,7 @@ import Link from "next/link";
 import type { CSSProperties } from "react";
 import { auth } from "@/auth";
 import type { EventItem } from "@/lib/click-data";
-import { ButtonLink, Logo } from "@/components/ds";
+import { ButtonLink, Logo, Spark } from "@/components/ds";
 import { EventCard } from "@/components/event-card";
 import { LiveActivityMarquee } from "@/components/live-activity-marquee";
 import { MutualToast } from "@/components/mutual-toast";
@@ -331,29 +331,33 @@ export default async function Home() {
             the "what does a Click event look like?" answer in one glance:
             make, play, eat, move. Desktop only; the photo-wall rail carries
             this job on mobile, where the photo stays clean. */}
-        <div className="absolute right-[3.5%] bottom-[5.5%] z-10 hidden items-end lg:flex">
+        <div className="hero-fan-parallax absolute right-[3.5%] bottom-[5.5%] z-10 hidden items-end lg:flex">
           {HERO_FAN.map((print, i) => (
             <div
               key={print.caption}
-              className={`pop-in ${i > 0 ? "-ml-8" : ""} ${["mb-0", "mb-5", "mb-1", "mb-6"][i]}`}
+              className={`home-float ${i > 0 ? "-ml-8" : ""} ${["mb-0", "mb-5", "mb-1", "mb-6"][i]}`}
               style={{
-                "--pop-rot": ["-5deg", "3deg", "-3deg", "6deg"][i],
-                animationDelay: `${820 + i * 150}ms`,
+                "--float-delay": `${i * 0.9}s`,
+                "--float-dur": `${7 + i}s`,
                 zIndex: i,
               } as CSSProperties}
             >
-              <figure className="polaroid">
-                <Image
-                  src={print.src}
-                  alt={print.alt}
-                  placeholder="blur"
-                  sizes="150px"
-                  className="h-[164px] w-[148px] object-cover"
-                />
-                <figcaption className="polaroid__caption">
-                  {print.caption}, <span>{print.place}</span>
-                </figcaption>
-              </figure>
+              <div
+                className="pop-in"
+                style={{
+                  "--pop-rot": ["-5deg", "3deg", "-3deg", "6deg"][i],
+                  animationDelay: `${820 + i * 150}ms`,
+                } as CSSProperties}
+              >
+                <figure className="polaroid">
+                  <Image
+                    src={print.src}
+                    alt={print.alt}
+                    placeholder="blur"
+                    sizes="150px"
+                    className="h-[164px] w-[148px] object-cover"
+                  />                </figure>
+              </div>
             </div>
           ))}
         </div>
@@ -362,55 +366,71 @@ export default async function Home() {
       <LiveActivityMarquee items={pulse.marqueeItems} />
 
       {/* ===================== How Click works =====================
-          The first-visit explainer: the hero defines the feeling, this
-          section shows the mechanic in four numbered beats - the numbering
-          extends the hero's dictionary conceit onto the cream ground. */}
-      <section className="ck-page py-14 lg:py-20">
-        <Reveal>
-          <div className="mb-10 flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
-            <div>
-              <p className="eyebrow">How Click works</p>
-              <h2 className="font-display mt-3 max-w-[640px] text-[length:var(--text-display)] leading-[1.05] font-semibold tracking-[-0.02em] text-balance text-[color:var(--ink)]">
-                Go to things. Click with people.
-              </h2>
-              <p className="mt-3 max-w-[520px] text-[15.5px] leading-[1.6] text-[color:var(--slate)]">
-                Events worth leaving the house for - and a private, mutual way to keep the
-                people you clicked with at them.
-              </p>
-            </div>
-            <Link
-              href="/how-it-works"
-              className="font-display shrink-0 text-[13.5px] font-semibold whitespace-nowrap text-[color:var(--purple)] hover:underline"
-            >
-              The full story{" "}
-              <span className="nudge-arrow" aria-hidden>
-                →
-              </span>
-            </Link>
-          </div>
-        </Reveal>
-        <div className="grid gap-x-7 gap-y-9 sm:grid-cols-2 lg:grid-cols-4">
-          {HOW_IT_WORKS.map((step, i) => (
-            <Reveal key={step.title} delay={i * 90}>
-              <div className="border-t border-[color:var(--line)] pt-5">
-                <span className="font-display block text-[21px] leading-none font-semibold text-[color:var(--purple)]">
-                  {i + 1}.
-                </span>
-                <h3 className="font-display mt-3 text-[17px] font-semibold text-[color:var(--ink)]">
-                  {step.title}
-                  {i === 3 ? (
-                    <span aria-hidden className="text-[color:var(--lavender)]">
-                      {" "}
-                      ✦
-                    </span>
-                  ) : null}
-                </h3>
-                <p className="mt-1.5 text-[14.5px] leading-[1.6] text-[color:var(--slate)]">
-                  {step.body}
+          The first-visit explainer as a run of modular beats on a LIVING
+          lavender colour-field (.aura-soft drifts, so the wash slowly changes
+          colour, Partiful-style): four numbered cards tossed on it like prints
+          - each tilted a hair and gently floating out of lockstep - the last
+          (the mutual payoff) lifted onto the lavender wash and carrying the one
+          sanctioned Spark. The numbering extends the hero's dictionary conceit;
+          copy stays diffed against the real flow (register -> attend -> private
+          click -> mutual reveal). */}
+      <section className="aura-soft">
+        <div className="ck-page py-16 lg:py-24">
+          <Reveal>
+            <div className="mb-11 flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+              <div>
+                <p className="eyebrow">How Click works</p>
+                <h2 className="font-display mt-3 max-w-[640px] text-[length:var(--text-display)] leading-[1.05] font-semibold tracking-[-0.02em] text-balance text-[color:var(--ink)]">
+                  Go to things. Click with people.
+                </h2>
+                <p className="mt-3 max-w-[520px] text-[15.5px] leading-[1.6] text-[color:var(--slate)]">
+                  Events worth leaving the house for - and a private, mutual way to keep the
+                  people you clicked with at them.
                 </p>
               </div>
-            </Reveal>
-          ))}
+              <Link
+                href="/how-it-works"
+                className="font-display shrink-0 text-[13.5px] font-semibold whitespace-nowrap text-[color:var(--purple)] hover:underline"
+              >
+                The full story{" "}
+                <span className="nudge-arrow" aria-hidden>
+                  →
+                </span>
+              </Link>
+            </div>
+          </Reveal>
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            {HOW_IT_WORKS.map((step, i) => {
+              const isPeak = i === HOW_IT_WORKS.length - 1;
+              return (
+                <Reveal key={step.title} delay={i * 90} className="min-w-0">
+                  <div
+                    className={`home-float flex h-full flex-col rounded-[var(--radius-xl)] p-6 shadow-[var(--shadow-md)] transition-shadow hover:shadow-[var(--shadow-lg)] ${
+                      isPeak ? "bg-[color:var(--lav-bg)]" : "bg-[color:var(--paper)]"
+                    }`}
+                    style={{
+                      "--tilt": ["-1.3deg", "0.9deg", "-0.8deg", "1.4deg"][i],
+                      "--float-delay": `${i * 0.8}s`,
+                      "--float-dur": `${7 + i * 0.5}s`,
+                    } as CSSProperties}
+                  >
+                    <div className="flex items-start justify-between">
+                      <span className="font-display text-[48px] leading-[0.85] font-semibold tracking-[-0.02em] text-[color:var(--purple-300)] tabular-nums">
+                        {i + 1}
+                      </span>
+                      {isPeak ? <Spark size={24} /> : null}
+                    </div>
+                    <h3 className="font-display mt-5 text-[18px] font-semibold text-[color:var(--ink)]">
+                      {step.title}
+                    </h3>
+                    <p className="mt-2 text-[14.5px] leading-[1.6] text-[color:var(--slate)]">
+                      {step.body}
+                    </p>
+                  </div>
+                </Reveal>
+              );
+            })}
+          </div>
         </div>
       </section>
 
@@ -488,11 +508,7 @@ export default async function Home() {
                     placeholder="blur"
                     sizes="480px"
                     className={`w-auto ${print.h}`}
-                  />
-                  <figcaption className="polaroid__caption">
-                    {print.caption}, <span>{print.place}</span>
-                  </figcaption>
-                </figure>
+                  />                </figure>
               </div>
             </Reveal>
           ))}

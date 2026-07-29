@@ -658,17 +658,87 @@ body:has([data-home-hero]) .site-header--marketing .ck-btn {
 }
 
 /* ---------- Aura field (home light sections) ----------
-   Partiful-style colour-field dissolve for the light stretch of the home
-   page: large soft radial washes that bloom and fade back into the cream
-   ground. Strictly the lavender/purple family (lavender, purple-100,
-   peach-soft) - status colours stay on badges, and the primary CTA stays
-   flat. Decorative ambience only; cards float on top unchanged. */
+   Partiful-style colour-field dissolve for the light stretch of the home page:
+   large soft radial washes that bloom and fade back into the cream ground, now
+   slowly DRIFTING (two pseudo-layers on offset clocks, same technique as
+   .aura-soft) so the light band breathes. Strictly the lavender/purple family -
+   status colours stay on badges, the primary CTA stays flat. Decorative only;
+   content floats on top unchanged.
+   NB: no `isolation`/transform on the wrapper - this band contains the quiz's
+   full-screen `fixed` modal, and a stacking context or containing block here
+   would trap it behind later sections. overflow-hidden is safe (it doesn't
+   containing-block a fixed child) and clips the blob spill; the -1 pseudos sit
+   behind the normal-flow content without any isolate. */
 .aura-field {
+  position: relative;
+  overflow: hidden;
+}
+.aura-field::before,
+.aura-field::after {
+  content: "";
+  position: absolute;
+  inset: -20%;
+  z-index: -1;
+  pointer-events: none;
+  will-change: transform;
+}
+.aura-field::before {
   background:
     radial-gradient(56rem 30rem at 84% 2%, color-mix(in srgb, var(--lavender) 52%, transparent), transparent 64%),
+    radial-gradient(54rem 30rem at 96% 64%, color-mix(in srgb, var(--purple-100) 95%, transparent), transparent 60%);
+  animation: aura-drift-a 26s ease-in-out infinite alternate;
+}
+.aura-field::after {
+  background:
     radial-gradient(50rem 28rem at 6% 28%, color-mix(in srgb, var(--lavender) 30%, transparent), transparent 62%),
-    radial-gradient(54rem 30rem at 96% 64%, color-mix(in srgb, var(--purple-100) 95%, transparent), transparent 60%),
     radial-gradient(46rem 26rem at 14% 98%, color-mix(in srgb, var(--lavender) 40%, transparent), transparent 62%);
+  animation: aura-drift-b 32s ease-in-out infinite alternate;
+}
+
+/* .aura-soft - the How-it-works band's LIVING colour-field. Two layers of soft
+   blobs drift in opposite directions so their overlaps slide and the wash reads
+   as slowly *changing* colour (Partiful-style), while every tint stays in the
+   sanctioned lavender/purple/peach family - no hue-rotate off-brand, no CTA
+   gradient. Pseudo-elements are GPU-composited transforms; the global
+   reduced-motion block collapses them to a valid static wash. The band itself
+   becomes the clip container (overflow-hidden) so the blobs never spill. */
+.aura-soft {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+.aura-soft::before,
+.aura-soft::after {
+  content: "";
+  position: absolute;
+  inset: -25%;
+  z-index: -1;
+  pointer-events: none;
+  will-change: transform;
+}
+.aura-soft::before {
+  background:
+    radial-gradient(38rem 24rem at 22% 18%, color-mix(in srgb, var(--lavender) 52%, transparent), transparent 62%),
+    radial-gradient(34rem 22rem at 82% 34%, color-mix(in srgb, var(--purple-100) 95%, transparent), transparent 60%);
+  animation: aura-drift-a 24s ease-in-out infinite alternate;
+}
+.aura-soft::after {
+  background:
+    radial-gradient(36rem 24rem at 74% 82%, color-mix(in srgb, var(--lavender) 44%, transparent), transparent 62%),
+    radial-gradient(32rem 20rem at 10% 92%, color-mix(in srgb, var(--peach-soft) 90%, transparent), transparent 60%);
+  animation: aura-drift-b 30s ease-in-out infinite alternate;
+}
+/* Transform drifts the blobs AND opacity trades between the two layers, so the
+   overlaps slide and the dominant tint waxes/wanes - that swap is what reads as
+   the colour slowly *changing*. Two different durations (24s/30s) keep the two
+   layers out of phase so the field never visibly loops. */
+@keyframes aura-drift-a {
+  from { transform: translate3d(-4%, -2%, 0) scale(1.05); opacity: 1; }
+  to   { transform: translate3d(6%, 4%, 0) scale(1.18); opacity: 0.62; }
+}
+@keyframes aura-drift-b {
+  from { transform: translate3d(4%, 3%, 0) scale(1.12); opacity: 0.6; }
+  to   { transform: translate3d(-5%, -3%, 0) scale(1.02); opacity: 1; }
 }
 
 /* ---------- Party polaroid (home hero collage + photo wall) ----------
@@ -696,18 +766,6 @@ body:has([data-home-hero]) .site-header--marketing .ck-btn {
 }
 .polaroid:hover { transform: translateY(-5px); box-shadow: var(--shadow-lg); }
 .polaroid img { border-radius: 10px; display: block; }
-.polaroid__caption {
-  padding: 7px 4px 3px;
-  font-family: var(--font-click-body), system-ui, sans-serif;
-  font-size: 12px;
-  line-height: 1.3;
-  font-weight: 600;
-  color: var(--ink);
-  /* Wraps to a second line on narrow prints (mobile hero) - a scribbled
-     two-line caption reads truer than losing the suburb to an ellipsis. */
-  text-wrap: balance;
-}
-.polaroid__caption span { color: var(--slate); font-weight: 500; }
 
 /* ---------- Tilt / wiggle ---------- */
 .tilt-l-2 { transform: rotate(-2deg); }
@@ -728,6 +786,50 @@ body:has([data-home-hero]) .site-header--marketing .ck-btn {
   50% { transform: translateY(-8px); }
 }
 .float-slow { animation: float 4s ease-in-out infinite; }
+
+/* Gentle perpetual drift for tossed-print elements (the hero polaroid fan and
+   the How-it-works step cards) so they breathe instead of sitting pinned. The
+   per-element tilt is baked into the keyframe via --tilt so a resting rotation
+   survives the float; --float-delay / --float-dur stagger siblings out of
+   lockstep (unison reads mechanical). Compose it OUTSIDE .pop-in / .reveal
+   wrappers so the entrance and drift transforms nest instead of fighting. The
+   global reduced-motion block drops it to the resting tilt. */
+@keyframes home-float {
+  0%, 100% { transform: translateY(0) rotate(var(--tilt, 0deg)); }
+  50%      { transform: translateY(-6px) rotate(var(--tilt, 0deg)); }
+}
+.home-float {
+  animation: home-float var(--float-dur, 7s) ease-in-out infinite;
+  animation-delay: var(--float-delay, 0s);
+}
+
+/* ---------- Scroll-driven motion (progressive enhancement) ----------
+   Motion driven by the visitor's SCROLL position, not a clock - the page comes
+   alive as you move through it (the "interactive" feel). Native CSS scroll
+   timeline, no JS/library, transform-only so zero layout shift. Doubly guarded:
+   @supports (Chromium + modern engines; older just keeps the static layout,
+   never a broken mid-keyframe) AND prefers-reduced-motion. The keyframe lives
+   outside the guard so its name always resolves; only the binding is gated.
+   .hero-fan-parallax - the hero polaroid fan drifts up a touch faster than the
+   page over the first screen, so it reads as the near layer.
+   (The photo-wall prints deliberately have NO transform-parallax: the rail is
+   overflow-x:auto, which per spec makes overflow-y used-value `auto` too, so any
+   vertical transform there risks a stray scrollbar - the live .aura-field drift
+   behind them carries that band's motion instead.) */
+@keyframes hero-fan-parallax {
+  from { transform: translateY(0); }
+  to   { transform: translateY(-60px); }
+}
+@supports (animation-timeline: scroll()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .hero-fan-parallax {
+      animation: hero-fan-parallax linear both;
+      animation-timeline: scroll(root block);
+      animation-range: 0 100vh;
+      will-change: transform;
+    }
+  }
+}
 
 @keyframes pulse-ring {
   0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--rose) 60%, transparent); }
