@@ -132,4 +132,30 @@ Branch `feat/click-2.6-language` (off the 2.5b tip). **Critical finding up front
 
 **Tests/verification:** `tsc --noEmit` clean · full click regression suite (8 scripts: concurrency 30/30, safety, capacity, timers, proposal-states, reveal, decline-suggest, clicks-read) all PASS - the push-string change touches only the `notifications` insert, not the read/detect paths, and the suite confirms no regression. Not separately browser-QA'd (copy-only + one notification string; no new UI surface).
 
-**Next: Step 3 teardown** — drop the retired `src/components/proposal-card.tsx` (no importers since 2.5b-iv; still carries the §11-banned "expired" string + a cap-C "Click again to reopen"), remove the dead `click-data.ts` reference exports, and the `/test-click` re-diff (or split that out). Matching findings (§6) + the 11 "beyond the mechanic" tasks remain out of scope pending Doan.
+**Step 2.6 is DONE.**
+
+---
+
+## ✅ Step 3 — Teardown (DONE, verified 2026-07-29)
+
+Branch `feat/click-3-teardown` (off the 2.6 tip). Pure deletion of the retired mechanic's dead code; each target verified zero-reference before removal, `tsc` clean after.
+
+- **Dropped `src/components/proposal-card.tsx`** (320 lines) — retired in 2.5b-iv (replaced by `ClicksList` + `CoordinationDrawer`), **zero importers** (every remaining textual hit was prose in `/test-click`/`coverage-data`, a code comment, or the unrelated same-named local `DemoProposalCard()` in the walkthrough). It still carried the **§11-banned "expired" badge + a cap-C "Click again to reopen"** that survived only because it was dead. Verified all 5 `proposals/actions` it used (`confirm`/`propose`/`decline`/`suggest`/`markSeen`) are consumed by the drawer, so nothing was orphaned.
+- **Removed 3 dead `click-data.ts` exports** (`roleCards`, `dashboardSections`, `notificationRows`) — zero consumers; `notificationRows` also still claimed the pre-2.4 "12 hours after event end" timer. Reworded the one `coordination-drawer.tsx` comment that named the deleted file.
+- **DB: nothing to do** — migration `049` (2.1) already dropped the legacy `user_clicks` table, the double-firing `create_mutual_click_after_click` trigger + `create_mutual_click()` function, and `event_proposals`. Their `001`/`019` definitions are the **append-only migration ledger** and are correctly left untouched (rewriting past migrations would break a fresh replay).
+
+**Tests/verification:** `tsc --noEmit` exit 0 · no dangling `proposal-card` import · no whitespace artifact. The `.mjs` regression suite exercises `event-repository` SQL (untouched by these UI/data deletions), so tsc + the zero-reference proof is the correct gate for pure teardown; not re-run.
+
+**Deliberately left (NOT click-mechanic teardown — separate greenlight):**
+- **9 unrelated dead `click-data.ts` exports** (`animatedPrompts`, `starterPrompts`, `peopleCards`, `onboardingSteps`, `lifeQuizSections`, `personaCards`, `merchantModules`, `architectureLayers`, `roadmapItems`) — general marketing/scaffold cruft, not migration residue. A batch dead-export sweep is its own hygiene task.
+- **`/test-click` re-diff** — the faithful explainer (`click-walkthrough.tsx`) still narrates the OLD mechanic; re-diffing every claim against the new one is a page-sized task, flagged in `LANGUAGE_REVIEW_FOR_CINDY.md`.
+
+---
+
+## 🏁 Migration status
+
+**The START_HERE-driven click-mechanic migration (audit §10 order) is COMPLETE: Steps 2.1 → 2.2 → 2.3 → 2.4 → 2.5 → 2.6 → 3 all DONE + verified.** The app now runs the two-process v2 mechanic end to end (schema spine, safety teardowns, capacity, unified timers, coordination drawer + one-time reveal, v14 language), and the old model's dead code is gone.
+
+**Everything lands on a 13-commit branch stack off `main @ 1d44a49`, committed but UNMERGED** (`feat/click-2.4-timers` → `2.5a` → `2.5b` → `2.6-language` → `3-teardown`, `d0268d9` at tip). Merge is Doan's call.
+
+**Out of scope, pending Doan (never in the mechanic-migration remit):** Matching findings (audit §6 — intent-mode model, `engagement_weight`, age-band), the notify-preference product decisions (UIUX-9/10), the `/for-merchants` IA question (UIUX-11), the L7 connect/connection judgment copy (→ Cindy), the `/test-click` re-diff, and the 11 "beyond the mechanic" tasks.
