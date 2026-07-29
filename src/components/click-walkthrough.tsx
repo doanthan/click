@@ -5,18 +5,20 @@ import { Pill } from "@/components/click-ui";
 import { formatIntent } from "@/lib/click-data";
 
 // ---------------------------------------------------------------------------
-// /test-click - interactive walkthrough of the Click mechanic.
+// /test-click - interactive walkthrough of the click mechanic.
 //
-// This is an EXPLAINER, not a live surface. Every card below is a faithful,
-// STATIC clone of a real component (no server actions, no DB) so the page
-// mirrors what users actually see in the app. Demo data is obviously fake.
-// If you change a real Click surface, mirror it here. Sources:
+// This is an EXPLAINER, not a live surface. Every card below is a STATIC,
+// representative clone of a real component (no server actions, no DB) so the
+// page mirrors the COPY + BEHAVIOUR users actually see. Demo data is obviously
+// fake; the visual palette here can drift from the live DS - mirror the words
+// and the flow, not the pixels. If you change a real click surface, mirror it.
+// Sources:
 //   • Step 1 card        → src/components/click-with-someone-user-card.tsx
 //   • Entry-point B card → src/components/post-event-click-card.tsx
-//   • Steps 2 & 5 card   → the rose "Mutual Click" card in src/app/dashboard/page.tsx
-//   • Step 3 / 4 cards   → src/components/proposal-card.tsx
+//   • Steps 2 & 5 card   → the "it's mutual" MomentBanner in src/app/dashboard/page.tsx
+//   • Steps 3 / 4 cards  → src/components/coordination-drawer.tsx (opened from clicks-list.tsx)
 // The mechanic itself lives in createUserClickForSession / getMutualClicksForSession
-// / the proposals flow in src/lib/event-repository.ts.
+// / the proposals flow in src/lib/event-repository.ts. Timers: src/lib/clicks/constants.ts.
 // ---------------------------------------------------------------------------
 
 const EYEBROW =
@@ -45,12 +47,12 @@ const DEMO = {
     other: "Maya",
     event: "Sunset Pottery Social",
     dateLabel: "Sat 26 Jul", // event is weeks out…
-    expiresLabel: "Sun 13 Jul", // …but the proposal expires 7 days after you matched
+    expiresLabel: "Sun 13 Jul", // …but the plan winds down 7 days after you clicked
   },
 };
 
 const POST_EVENT_HELP =
-  "Tap anyone you’d like to see again. It’s completely private - they only find out if they click you back.";
+  "Tap anyone you’d like to see again. It’s completely private - they only ever hear about it if they click you back.";
 const CONFIRMED_HELP = `RSVP to the event below. ${DEMO.mutual.other} needs to RSVP too - you’re only going together once you both have a seat.`;
 
 // --- Faithful static card clones -------------------------------------------
@@ -93,7 +95,7 @@ function DemoClickCard({ sent = false }: { sent?: boolean }) {
             sent ? "opacity-70" : ""
           }`}
         >
-          {sent ? "Clicked privately ✓ - pending their Click" : "Click privately"}
+          {sent ? "clicked - pending their click back" : `click with ${DEMO.person.name.split(" ")[0]}`}
         </span>
       </div>
     </article>
@@ -104,7 +106,7 @@ function DemoPostEventCard() {
   return (
     <div className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--peach)] p-5 hard-shadow-sm">
       <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-        You went to {DEMO.postEvent.endedLabel}
+        You were there · {DEMO.postEvent.endedLabel}
       </p>
       <h3 className="font-display mt-2 text-2xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)]">
         Did you click with anyone at{" "}
@@ -126,7 +128,7 @@ function DemoPostEventCard() {
               </span>
             </span>
             <span className="shrink-0 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--rose)] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)]">
-              Click
+              click with {person.name.split(" ")[0]}
             </span>
           </li>
         ))}
@@ -139,28 +141,28 @@ function DemoMutualCard({ celebrate = false }: { celebrate?: boolean }) {
   return (
     <div className="flex flex-col rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--rose)] p-5 text-[color:var(--surface-deep)] hard-shadow-sm">
       <p className="font-mono text-[0.65rem] font-bold uppercase tracking-[0.18em] opacity-80">
-        ✨ You both clicked
+        {celebrate ? "you're going together" : "it's mutual"}
       </p>
       <span className="font-display mt-1 text-2xl font-semibold leading-tight">
-        You + {DEMO.mutual.other}
+        You clicked with {DEMO.mutual.other}. ✨
       </span>
       {celebrate ? (
         <p className="mt-2 text-sm font-bold leading-6">
-          🎉 You&rsquo;re both going to{" "}
+          🎉 You and {DEMO.mutual.other} both have a seat at{" "}
           <span className="underline decoration-2 underline-offset-4">{DEMO.mutual.event}</span>.
           See you there.
         </p>
       ) : (
         <>
           <p className="mt-2 text-sm font-semibold leading-6">
-            Your suggested plan:{" "}
+            Find something you&rsquo;d both enjoy and meet there. We&rsquo;ve lined up{" "}
             <span className="font-bold underline decoration-2 underline-offset-4">
               {DEMO.mutual.event}
-            </span>
-            . Confirm it together - or suggest another.
+            </span>{" "}
+            to start - confirm it together, or suggest another.
           </p>
           <span className="mt-3 inline-flex w-fit items-center rounded-full border-2 border-[color:var(--surface-deep)] bg-[color:var(--champagne)] px-4 py-2 text-xs font-bold uppercase tracking-wide text-[color:var(--surface-deep)] hard-shadow-sm">
-            Confirm or suggest another →
+            See your plan →
           </span>
         </>
       )}
@@ -171,14 +173,9 @@ function DemoMutualCard({ celebrate = false }: { celebrate?: boolean }) {
 function DemoProposalCard() {
   return (
     <div className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-5 hard-shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className={EYEBROW}>You + {DEMO.mutual.other}</p>
-        <span className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--peach)] px-3 py-1 font-mono text-[0.6rem] font-bold uppercase tracking-[0.18em] text-[color:var(--surface-deep)]">
-          Pending
-        </span>
-      </div>
+      <p className={EYEBROW}>You + {DEMO.mutual.other}</p>
       <h3 className="font-display mt-2 text-2xl font-semibold leading-tight tracking-[-0.025em] text-[color:var(--ink)]">
-        Suggested: <span className="text-[color:var(--purple)]">{DEMO.mutual.event}</span>
+        Here&rsquo;s a plan: <span className="text-[color:var(--purple)]">{DEMO.mutual.event}</span>
       </h3>
       <p className="mt-1 font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
         {DEMO.mutual.dateLabel}
@@ -191,9 +188,6 @@ function DemoProposalCard() {
         <span className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-5 py-2 text-sm font-bold uppercase tracking-wide text-[color:var(--ink)]">
           Suggest alternative
         </span>
-        <span className="font-mono text-[0.65rem] font-bold uppercase tracking-wide text-[color:var(--mauve)]">
-          3 of 3 left
-        </span>
       </div>
 
       <div className="mt-4 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-4">
@@ -205,13 +199,9 @@ function DemoProposalCard() {
         </div>
         <p className="mt-2 text-xs font-bold leading-5 text-[color:var(--mauve)]">
           A dropdown of real events - not a message box. There&rsquo;s no free text anywhere in a
-          proposal.
+          plan.
         </p>
       </div>
-
-      <p className="mt-3 font-mono text-[0.65rem] font-bold uppercase tracking-wide text-[color:var(--mauve)]">
-        Expires {DEMO.mutual.expiresLabel}
-      </p>
     </div>
   );
 }
@@ -289,18 +279,18 @@ type NodeTint = "lav" | "rose" | "peach";
 
 const NODES: { n: string; label: string; tint: NodeTint; sub?: string }[] = [
   { n: "1", label: "Private pending", tint: "lav" },
-  { n: "2", label: "Mutual Click", tint: "rose" },
-  { n: "3", label: "Proposal open", tint: "peach" },
+  { n: "2", label: "Mutual", tint: "rose" },
+  { n: "3", label: "Plan open", tint: "peach" },
   { n: "4", label: "Confirmed", tint: "peach", sub: "RSVP needed" },
   { n: "5", label: "Both going", tint: "rose" },
 ];
 
-const GATES = ["they Click you back", "auto-opens", "one tap · either of you", "you BOTH hold a seat"];
+const GATES = ["they click you back", "auto-opens", "one tap · either of you", "you BOTH hold a seat"];
 
 const DEAD_ENDS = [
-  { from: "From Private pending", text: "No reply → the click expires in 30 days, silently." },
-  { from: "From Proposal", text: "7 days, no confirm → the mutual goes dead and drops off." },
-  { from: "From Proposal / Confirmed", text: "Event sold out → “pick another plan”." },
+  { from: "From Private pending", text: "No reply → the click expires in 7 days, silently." },
+  { from: "From the plan", text: "7 days, no confirm → the plan winds down; cross paths again to pick it up." },
+  { from: "From the plan / confirmed", text: "Event sold out → “pick another together”." },
 ];
 
 const LEGEND = [
@@ -310,7 +300,7 @@ const LEGEND = [
   { swatch: "bg-[color:var(--champagne-deep)]", label: "ended" },
 ];
 
-const CLOCKS = ["12h post-event gate", "30-day click", "7-day proposal"];
+const CLOCKS = ["2h post-event gate", "7-day click", "7-day proposal"];
 
 function nodeTintClass(tint: NodeTint) {
   if (tint === "rose") return "bg-[color:var(--rose)] text-[color:var(--surface-deep)]";
@@ -343,21 +333,21 @@ const STEPS = [
               <div>
                 <p className="font-display text-3xl font-semibold text-[color:var(--mauve)]">Nothing.</p>
                 <p className="mt-2 text-sm font-semibold leading-6 text-[color:var(--mauve)]">
-                  No notification. No badge. No idea. They only ever find out if they Click you back.
+                  No notification. No badge. No idea. They only ever find out if they click you back.
                 </p>
               </div>
             </div>
           </div>
         </div>
         <Annotation
-          trigger="You tap “Click privately”, or “Click” on a post-event prompt."
-          youSee="The button flips to “Clicked privately ✓ - pending their Click”."
-          theySee="Nothing - they are never told. It only surfaces if they Click you back."
-          clock="Stored as pending; auto-expires after 30 days."
+          trigger="You tap “click with [name]” - on your dashboard, the people page, or a post-event prompt."
+          youSee="The button flips to a muted “clicked - pending their click back”."
+          theySee="Nothing - they are never told. It only surfaces if they click you back."
+          clock="Stored as pending; auto-expires after 7 days."
         />
         <div className="mt-4 flex flex-wrap gap-1.5">
           <Pill tone="cream">Can&rsquo;t click with yourself</Pill>
-          <Pill tone="cream">Blocking stops new Clicks &amp; hides you in discovery</Pill>
+          <Pill tone="cream">Blocking stops new clicks &amp; hides you in discovery</Pill>
           <Pill tone="peach">100% private &amp; anonymous</Pill>
         </div>
       </>
@@ -365,7 +355,7 @@ const STEPS = [
   },
   {
     n: "02",
-    label: "Mutual Click",
+    label: "Mutual",
     blurb: "They tap you back. Both sides light up.",
     body: (
       <>
@@ -374,7 +364,7 @@ const STEPS = [
           {[
             "Both of your clicks flip to “mutual”.",
             "We auto-suggest a future, still-bookable event around a shared interest - suiting both of you where it can, otherwise something one of you is into. Soonest first, ideally one neither has RSVP’d to.",
-            "A 7-day Proposal opens automatically.",
+            "A 7-day plan window opens automatically.",
           ].map((text, i) => (
             <div
               key={i}
@@ -388,14 +378,15 @@ const STEPS = [
           ))}
         </div>
         <p className="mt-4 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-4 text-sm font-semibold leading-6 text-[color:var(--ink)]">
-          You both get an in-app “Mutual Click found” notification (opens <code>/proposals</code>) and a
-          mutual-click email - the first time anyone is notified at all. <strong>No chat opens - ever.</strong>
+          You both get an in-app notification - “It&rsquo;s mutual - you clicked with [Name]. ✨” - that
+          opens your plan on <code>/proposals</code>, plus a mutual-click email. It&rsquo;s the first time
+          anyone is notified at all. <strong>No chat opens - ever.</strong>
         </p>
         <Annotation
-          trigger="The moment they also Click you (their pending Click already existed)."
-          youSee="A bright “Mutual Click” card on your dashboard and the People page."
+          trigger="The moment they also click you (their pending click already existed)."
+          youSee="A bright “it’s mutual” card on your dashboard, and the plan waiting on /proposals."
           theySee="Exactly the same - both sides light up at once."
-          clock="A 7-day Proposal window opens."
+          clock="A 7-day plan window opens."
         />
         <p className="mt-4 rounded-2xl border-2 border-[color:var(--rose)] bg-[color:var(--lav-bg)] p-4 text-center font-display text-xl font-bold tracking-[-0.01em] text-[color:var(--ink)]">
           A mutual unlocks a PLAN, never a chat.
@@ -405,7 +396,7 @@ const STEPS = [
   },
   {
     n: "03",
-    label: "Proposal",
+    label: "Coordinate",
     blurb: "You coordinate with taps - there is no chat.",
     body: (
       <>
@@ -413,16 +404,15 @@ const STEPS = [
           <DemoProposalCard />
         </div>
         <Annotation
-          trigger="Either of you opens it from the mutual card or the Proposals page."
-          youSee="The proposal card above, on /proposals."
-          theySee="The same card - either of you can confirm or suggest."
-          clock="Expires 7 days after it opens; the card counts it down."
+          trigger="Either of you opens the plan from the mutual card or your /proposals list."
+          youSee="The plan above - tap the row on /proposals to open it."
+          theySee="The same - either of you can confirm, or suggest another."
+          clock="The 7-day window runs from when you clicked - not the event date."
         />
         <p className="mt-4 rounded-2xl border-2 border-dashed border-[color:var(--line)] bg-[color:var(--cream)] p-4 text-sm font-semibold leading-6 text-[color:var(--mauve)]">
           The 7-day clock runs from when you <strong>clicked</strong> - not from the event date (the
-          event can be weeks later). If it lapses, the proposal dies and the mutual drops off your
-          lists. The real card says “Click again to reopen”, but that reopen isn’t built yet - see the
-          audit below.
+          event can be weeks later). If it lapses, the plan quietly <strong>winds down</strong> - it’s
+          not gone. Cross paths again, or suggest another plan, and you can pick it back up.
         </p>
       </>
     ),
@@ -468,7 +458,7 @@ const STEPS = [
         </p>
         <Annotation
           trigger="You both complete a real RSVP for the same upcoming event."
-          youSee="The celebration card on your dashboard. The Proposals page never shows this 🎉 - it’s computed live from your RSVPs, not from anyone tapping Confirm."
+          youSee="The celebration on your dashboard, and a “Both going” row on /proposals - computed live from your RSVPs, not from anyone tapping Confirm."
           theySee="The same - it celebrates on their dashboard too, at the same time."
           clock="No timer. You’re going. 🎉"
         />
@@ -518,7 +508,7 @@ export function ClickWalkthrough() {
             One private tap → a mutual → a plan.
           </h2>
           <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-[color:var(--mauve)]">
-            Post-event Clicks only open 12 hours after the event ends; discovery Clicks work anytime.
+            Post-event clicks open 2 hours after the event ends; discovery clicks work anytime.
             Tap any stage to jump to it.
           </p>
 
@@ -610,10 +600,10 @@ export function ClickWalkthrough() {
         </div>
       </section>
 
-      {/* Section 3 - two ways to start a Click */}
+      {/* Section 3 - two ways to start a click */}
       <section className="border-t-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-14 sm:px-6">
         <div className="mx-auto max-w-6xl">
-          <p className={EYEBROW}>Two ways to start a Click</p>
+          <p className={EYEBROW}>Two ways to start a click</p>
           <h2 className="font-display mt-2 text-3xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)] sm:text-4xl">
             Two doors, one outcome.
           </h2>
@@ -621,7 +611,7 @@ export function ClickWalkthrough() {
             <div className="rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-5 hard-shadow-sm">
               <p className={EYEBROW}>Discovery · anytime</p>
               <h3 className="font-display mt-1 text-2xl font-semibold leading-tight tracking-[-0.02em]">
-                Click with someone
+                click with someone
               </h3>
               <p className="mb-4 mt-2 text-sm font-semibold leading-6 text-[color:var(--mauve)]">
                 On your dashboard (one rotating suggestion) and the People page (the full list, ranked by
@@ -635,14 +625,14 @@ export function ClickWalkthrough() {
                 Who did you click with?
               </h3>
               <p className="mb-4 mt-2 text-sm font-semibold leading-6 text-[color:var(--mauve)]">
-                Appears 12 hours after an event you attended ends, listing confirmed co-attendees you
+                Appears 2 hours after an event you attended ends, listing confirmed co-attendees you
                 haven&rsquo;t clicked yet. You must both have been confirmed attendees.
               </p>
               <DemoPostEventCard />
             </div>
           </div>
           <p className="mt-5 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--lav-bg)] p-4 text-center text-sm font-bold text-[color:var(--ink)]">
-            Either door leads to the same private pending Click - that&rsquo;s the walkthrough below.
+            Either door leads to the same private pending click - that&rsquo;s the walkthrough below.
           </p>
         </div>
       </section>
@@ -655,7 +645,7 @@ export function ClickWalkthrough() {
         <div className="mx-auto max-w-5xl">
           <p className={EYEBROW}>Step by step</p>
           <h2 className="font-display mt-2 text-3xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)] sm:text-4xl">
-            Walk one Click, end to end.
+            Walk one click, end to end.
           </h2>
 
           {/* Sticky pill bar - interactive only once hydrated. Without JS, all
