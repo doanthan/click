@@ -7644,7 +7644,7 @@ async function sendClickInner(
         await client.query(
           `
             insert into notifications (profile_id, title, body, action_url)
-            select $1::uuid, 'It''s mutual — you two clicked. ✨', $3, $4
+            select $1::uuid, $3, $4, $5
             where not exists (
               select 1 from user_mutes
               where muter_profile_id = $1::uuid and muted_profile_id = $2::uuid
@@ -7653,16 +7653,18 @@ async function sendClickInner(
           [
             profile.id,
             clickedProfile.id,
+            // §5 locked mutual push (CLICK_LANGUAGE v14): names the person, drops "you two".
+            `It's mutual - you clicked with ${clickedProfile.display_name}. ✨`,
             suggestedEvent
               ? `You and ${clickedProfile.display_name} clicked. ${suggestedEvent.title} could be your thing.`
               : `You and ${clickedProfile.display_name} clicked. Open your proposal to plan something.`,
-            "/proposals",
+            `/proposals?open=${mutualClickId}`,
           ],
         );
         await client.query(
           `
             insert into notifications (profile_id, title, body, action_url)
-            select $1::uuid, 'It''s mutual — you two clicked. ✨', $3, $4
+            select $1::uuid, $3, $4, $5
             where not exists (
               select 1 from user_mutes
               where muter_profile_id = $1::uuid and muted_profile_id = $2::uuid
@@ -7671,10 +7673,12 @@ async function sendClickInner(
           [
             clickedProfile.id,
             profile.id,
+            // §5 locked mutual push (CLICK_LANGUAGE v14): names the person, drops "you two".
+            `It's mutual - you clicked with ${profile.display_name}. ✨`,
             suggestedEvent
               ? `You and ${profile.display_name} clicked. ${suggestedEvent.title} could be your thing.`
               : `You and ${profile.display_name} clicked. Open your proposal to plan something.`,
-            "/proposals",
+            `/proposals?open=${mutualClickId}`,
           ],
         );
       }

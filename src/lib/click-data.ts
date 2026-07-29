@@ -225,7 +225,7 @@ export const roleCards = [
   {
     title: "Regular users",
     eyebrow: "Attendees",
-    body: "Create a profile, choose intent modes, take the Life Quiz, RSVP, save events, and Click privately on people.",
+    body: "Create a profile, choose intent modes, take the Life Quiz, RSVP, save events, and click privately with people.",
   },
   {
     title: "Merchants",
@@ -322,7 +322,7 @@ export const personaCards = [
 export const dashboardSections = [
   ["Upcoming", "Confirmed RSVPs with unlocked location and attendee context."],
   ["Saved and waitlist", "Bookmarks, waitlist offers, and time-sensitive confirmations."],
-  ["Click with Someone", "Three rotating compatibility cards refreshed every four hours."],
+  ["click with someone", "Three rotating compatibility cards refreshed every four hours."],
   ["Click Radar", "Nearby trending events with overlapping tags and privacy-safe nudges."],
   ["Suggested for You", "Events ranked by tags, persona, availability, and RSVP behavior."],
 ];
@@ -353,8 +353,8 @@ export const architectureLayers = [
 export const notificationRows = [
   ["RSVP confirmation", "Successful payment or free RSVP", "Email and in-app"],
   ["Waitlist promotion", "Spot opens", "Email with 15-minute confirmation"],
-  ["Mutual Click", "Two private clicks match", "In-app event suggestion"],
-  ["Soft nudge", "Potential match attends a saved event", "In-app banner"],
+  ["Mutual click", "Two one-way clicks become mutual", "In-app event suggestion"],
+  ["Soft nudge", "Someone you might click with attends a saved event", "In-app banner"],
   ["Post-event feedback", "12 hours after event end", "In-app feedback card"],
 ];
 
