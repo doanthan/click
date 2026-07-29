@@ -221,19 +221,6 @@ export const groups = [
   },
 ];
 
-export const roleCards = [
-  {
-    title: "Regular users",
-    eyebrow: "Attendees",
-    body: "Create a profile, choose intent modes, take the Life Quiz, RSVP, save events, and click privately with people.",
-  },
-  {
-    title: "Merchants",
-    eyebrow: "Event hosts",
-    body: "Create events, choose Click-managed or external booking, manage attendees, and watch conversion by tag.",
-  },
-];
-
 export const onboardingSteps = [
   "Intent selection",
   "Basic information",
@@ -319,14 +306,6 @@ export const personaCards = [
   },
 ];
 
-export const dashboardSections = [
-  ["Upcoming", "Confirmed RSVPs with unlocked location and attendee context."],
-  ["Saved and waitlist", "Bookmarks, waitlist offers, and time-sensitive confirmations."],
-  ["click with someone", "Three rotating compatibility cards refreshed every four hours."],
-  ["Click Radar", "Nearby trending events with overlapping tags and privacy-safe nudges."],
-  ["Suggested for You", "Events ranked by tags, persona, availability, and RSVP behavior."],
-];
-
 export const merchantModules = [
   ["Overview", "Total events, attendees, revenue, and conversion by booking model."],
   ["Event management", "Create, edit, price, tag, and submit events for review."],
@@ -348,14 +327,6 @@ export const architectureLayers = [
   ["Hosted starts", "Every event needs a named host, a clear start time, and a simple reason for strangers to talk."],
   ["Familiar paths", "Recurring groups, shared rituals, and nearby suggestions make it easier to show up a second time."],
   ["Private sparks", "Clicks stay private until mutual, then point people toward a real event instead of an empty chat thread."],
-];
-
-export const notificationRows = [
-  ["RSVP confirmation", "Successful payment or free RSVP", "Email and in-app"],
-  ["Waitlist promotion", "Spot opens", "Email with 15-minute confirmation"],
-  ["Mutual click", "Two one-way clicks become mutual", "In-app event suggestion"],
-  ["Soft nudge", "Someone you might click with attends a saved event", "In-app banner"],
-  ["Post-event feedback", "12 hours after event end", "In-app feedback card"],
 ];
 
 export const securityRows = [

@@ -103,8 +103,8 @@ export function CoordinationDrawer({
 
   // When a successful action revalidates /proposals, the fresh entry flows back in and
   // its coordination signature changes - close the picker so the re-projected step is
-  // clean (the "advance in place"). Render-time compare, same no-effect pattern as
-  // proposal-card.tsx; no local optimistic step to fight the server truth.
+  // clean (the "advance in place"). Render-time compare, no local optimistic step to
+  // fight the server truth.
   const sig = `${entry.status}|${entry.coordState}|${entry.suggestedEventSlug ?? ""}`;
   const lastSig = useRef(sig);
   if (lastSig.current !== sig) {
