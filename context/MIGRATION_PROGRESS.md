@@ -152,10 +152,25 @@ Branch `feat/click-3-teardown` (off the 2.6 tip). Pure deletion of the retired m
 
 ---
 
+## ✅ /test-click explainer re-diff (DONE 2026-07-29)
+
+Branch `feat/click-test-click-rediff` (off the Step-3 tip). The code-faithful explainer at `/test-click` (`src/components/click-walkthrough.tsx` + `src/app/test-click/page.tsx`) narrated the **pre-2.x mechanic**; re-diffed every claim against the live implementation (`src/lib/clicks/constants.ts` + `coordination-drawer.tsx`/`clicks-list.tsx`):
+
+- **Timers:** discovery click **30d → 7d** (`DISCOVERY_CLICK_WINDOW_DAYS`); post-event gate **12h → 2h** (`POST_EVENT_PROMPT_DELAY_HOURS`, window open to +48h). Confirmed the mutual + its auto-proposal **share one 7-day clock** (`MUTUAL_CLOCK_DAYS`) - so "7-day proposal" was already right; `PROPOSAL_RESPONSE_WINDOW_HOURS` (48h) is defined-but-unwired (nothing consumes it).
+- **Deleted-component clones:** Steps 3/4 cloned the now-deleted `proposal-card.tsx` (Pending badge / "3 of 3 left" / "Expires" chrome) → recloned as the coordination **drawer's open step**, opened from the `/proposals` list. Header source comment re-pointed off the dead file.
+- **Killed the "Click again to reopen isn't built yet" lie** - 2.5 built it; a lapsed plan now **winds down** and can be picked back up (cross paths / suggest another).
+- **Mutual push string → v14** "It's mutual - you clicked with [Name]. ✨" opening `/proposals`; mirrored real card copy ("click with [name]", "You were there ·", "it's mutual / You clicked with [name]. ✨", the "Both going" row); lowercased the mechanic "Click" → "click" (kept proper-noun **Click** — platform, "the Click catalogue").
+
+`tsc --noEmit` exit 0 · eslint clean · stale-claim grep empty on both files. Commit `b1775ae`.
+
+**Residual (NOT done - flagged):** `src/app/test-click/audit-report.tsx` (the embedded `<ClickAuditReport />` engineering-audit section) still audits the **OLD implementation** — references dropped `user_clicks`/`event_proposals` tables, the deleted `proposal-card.tsx` (+ old line numbers), 30d/12h timers, and several findings **2.1-2.6 already resolved** (the disagreeing post-event windows; the unbuilt reopen). Half-editing it would misrepresent resolved bugs as open. **Needs a delete-or-re-audit decision (Doan)** — a fresh honest audit of the new mechanic is its own task; a human-authored section wasn't deleted unilaterally.
+
+---
+
 ## 🏁 Migration status
 
 **The START_HERE-driven click-mechanic migration (audit §10 order) is COMPLETE: Steps 2.1 → 2.2 → 2.3 → 2.4 → 2.5 → 2.6 → 3 all DONE + verified.** The app now runs the two-process v2 mechanic end to end (schema spine, safety teardowns, capacity, unified timers, coordination drawer + one-time reveal, v14 language), and the old model's dead code is gone.
 
-**Everything lands on a 13-commit branch stack off `main @ 1d44a49`, committed but UNMERGED** (`feat/click-2.4-timers` → `2.5a` → `2.5b` → `2.6-language` → `3-teardown`, `d0268d9` at tip). Merge is Doan's call.
+**Everything lands on a 14-commit branch stack off `main @ 1d44a49`, committed but UNMERGED** (`feat/click-2.4-timers` → `2.5a` → `2.5b` → `2.6-language` → `3-teardown` → `test-click-rediff`, `b1775ae` at tip). Merge is Doan's call.
 
-**Out of scope, pending Doan (never in the mechanic-migration remit):** Matching findings (audit §6 — intent-mode model, `engagement_weight`, age-band), the notify-preference product decisions (UIUX-9/10), the `/for-merchants` IA question (UIUX-11), the L7 connect/connection judgment copy (→ Cindy), the `/test-click` re-diff, and the 11 "beyond the mechanic" tasks.
+**Out of scope, pending Doan (never in the mechanic-migration remit):** Matching findings (audit §6 — intent-mode model, `engagement_weight`, age-band), the notify-preference product decisions (UIUX-9/10), the `/for-merchants` IA question (UIUX-11), the L7 connect/connection judgment copy (→ Cindy), the **`audit-report.tsx` delete-or-re-audit** (the `/test-click` walkthrough itself is now re-diffed; only its embedded engineering-audit section remains, auditing the removed implementation), and the 11 "beyond the mechanic" tasks.
