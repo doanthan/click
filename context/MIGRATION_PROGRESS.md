@@ -112,4 +112,24 @@ Decomposed into landable sub-steps. **i / ii / iii DONE + committed** (backend t
   - **Mobile row overflow at 375** — the grid `<li>` defaulted to `min-width:auto` and pushed the badge off-screen; `min-w-0` lets `truncate` bite.
   - **Verified live:** reveal fires **visible** (computed `opacity:1`, `transform:matrix(1,0,0,1,0,0)` = the entrance animation COMPLETES — the `opacity:0` freeze regression is gone), once-only (server + session), in-place advance (no URL change), both-going + real Google-Calendar link, decline→open, mobile full-width bottom-sheet, resize torture keeps it visible, no coordination step is a routed page, banned-string grep clean. `prefers-reduced-motion` holds by construction (the global handler forces the `both`-fill animation to its `opacity:1` end state). tsc + full click suite (8 scripts) green.
 
-**Step 2.5 is DONE.** Next: **2.6** UIUX/language sweep → **Step 3** teardown (drop the legacy `ProposalCard`, the old trigger, etc.). Matching findings (§6) + the 11 "beyond the mechanic" tasks remain out of scope pending Doan.
+**Step 2.5 is DONE.**
+
+---
+
+## ✅ Step 2.6 — UIUX / copy + language sweep (DONE, verified 2026-07-29)
+
+Branch `feat/click-2.6-language` (off the 2.5b tip). **Critical finding up front:** the language canon `context/Click Design System/uploads/CLICK_LANGUAGE.md` is **v14 (2026-06-27) — newer than CODE_AUDIT.md (Jun 25)**, and had *superseded* several of the audit's "locked strings" (headline "You two clicked." → **"You clicked with [Name]."**; post-event "Who'd you click with?" → **"Did you click with anyone?"**; button cap-C "Click with" → lowercase **"click with [name]"**; pending pill → **"clicked"** no ✨). Treated **v14 as canon** (per `CLAUDE.md` it is *the* binding copy doc) and reconciled to it, not the stale audit strings.
+
+**The live worklist was small** — most §7 findings were **already fixed** during the DS restyle + 2.5b (verified, no change needed): drawer reveal + dashboard mutual card already render v14 "You clicked with [Name]." + the §5 intent line + the both-opted-in dating line (UIUX-5/6 done); post-event heading already "Did you click with anyone?" (UIUX-7); buttons already lowercase "click with [name]" (UIUX-8); `/people` lede + "Matched {date}" already gone (UIUX-1, L4); `/proposals` meta already "clicked with" (L4); `/how-it-works` clean of the "during"-clicking break (UIUX-4).
+
+**Applied (mechanical + Job-A that remained):**
+- **UIUX-5 — the one live headline miss: the mutual push notification.** `event-repository.ts` (both sides of the freshly-formed mutual) → v14 locked title **"It's mutual - you clicked with [Name]. ✨"** (name from the recipient's POV; also killed a latent em-dash → ` - ` per `CLAUDE.md`). Title moved from an inline SQL literal to a bound param. **Bonus:** `action_url` now deep-links `/proposals?open=<mutualId>` (was bare `/proposals`) so the one-time reveal lands on the right mutual - completing 2.5b-iv's notification deep-link sweep, which had missed the mutual-formed ping.
+- **L1/L4 — `click-data.ts` banned strings** ("Click privately on people" → "click privately with people"; "Two private clicks match"/"Potential match" → mutual-click language). These are **dead exports** (`roleCards`/`notificationRows`/`dashboardSections` have no consumer) but fixing them keeps the banned-string grep clean; they're Step-3 teardown candidates.
+
+**Routed, NOT auto-applied (spec defers — the discipline point):**
+- **L7 connect/connection** (terms/safety/privacy, 9 spots) → new **`context/LANGUAGE_REVIEW_FOR_CINDY.md`** for Cindy to rule on (product-category positioning vs mechanic language). Stripe **Connect** left alone (payment product).
+- **UIUX-9/10** (never-read "Mutual Click alerts" toggle; always-send mutual email), **UIUX-11** (`/for-merchants` IA), and **`/test-click`** (the faithful explainer now narrates the *old* mechanic - "Mutual Click found" push, "Click again to reopen", 7-day-or-dies, "Who did you click with?", "12h after event end"; needs its own re-diff now that 2.1-2.5 landed) → flagged to Doan, listed in the Cindy doc's tail.
+
+**Tests/verification:** `tsc --noEmit` clean · full click regression suite (8 scripts: concurrency 30/30, safety, capacity, timers, proposal-states, reveal, decline-suggest, clicks-read) all PASS - the push-string change touches only the `notifications` insert, not the read/detect paths, and the suite confirms no regression. Not separately browser-QA'd (copy-only + one notification string; no new UI surface).
+
+**Next: Step 3 teardown** — drop the retired `src/components/proposal-card.tsx` (no importers since 2.5b-iv; still carries the §11-banned "expired" string + a cap-C "Click again to reopen"), remove the dead `click-data.ts` reference exports, and the `/test-click` re-diff (or split that out). Matching findings (§6) + the 11 "beyond the mechanic" tasks remain out of scope pending Doan.
