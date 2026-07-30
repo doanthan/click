@@ -364,7 +364,7 @@ export async function editTicket(
   return true;
 }
 
-/** Look up a ticket's stored screenshot URL (for the public redirect link). */
+/** Look up a ticket's private screenshot object key (or a legacy public URL). */
 export async function getScreenshotUrl(ticketRef: string): Promise<string | null> {
   const pool = getPostgresPool();
   if (!pool) return null;

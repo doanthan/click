@@ -9,6 +9,7 @@ import { SessionFreshness } from "@/components/session-freshness";
 import { LoginModalHost } from "@/components/login-modal-host";
 import { SiteFooter, SiteHeader, SiteHeaderShell } from "@/components/site-chrome";
 import { auth } from "@/auth";
+import { isLocalDevelopment } from "@/lib/runtime-mode";
 import "./globals.css";
 
 // Display voice - Poppins, the Click DS face: headings, the lowercase
@@ -30,9 +31,33 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Click · A burst of YES",
+  metadataBase: new URL("https://www.letsclick.app"),
+  title: {
+    default: "Click · A burst of YES",
+    template: "%s · Click",
+  },
   description:
     "Click helps ordinary people find local groups, dating, friendship and Sydney events with a reason to talk.",
+  applicationName: "Click",
+  openGraph: {
+    type: "website",
+    locale: "en_AU",
+    siteName: "Click",
+    url: "/",
+    title: "Click · A burst of YES",
+    description:
+      "Find Sydney events, new friends and local groups with a reason to talk.",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Click · A burst of YES",
+    description:
+      "Find Sydney events, new friends and local groups with a reason to talk.",
+  },
+  icons: {
+    icon: "/click-mark.svg",
+    apple: "/click-mark.svg",
+  },
 };
 
 export default async function RootLayout({
@@ -42,7 +67,7 @@ export default async function RootLayout({
 }>) {
   const googleConfigured = !!(process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET);
   const metaConfigured = !!(process.env.AUTH_FACEBOOK_ID && process.env.AUTH_FACEBOOK_SECRET);
-  const showDemoCredentials = true;
+  const showInternalTools = isLocalDevelopment();
   const session = await auth();
 
   return (
@@ -83,7 +108,7 @@ export default async function RootLayout({
         <LoginModalHost
           googleConfigured={googleConfigured}
           metaConfigured={metaConfigured}
-          showDemoCredentials={showDemoCredentials}
+          showDemoCredentials={showInternalTools}
         />
         <Toaster
           position="top-right"
@@ -110,9 +135,11 @@ export default async function RootLayout({
           }}
         />
         <SessionFreshness />
-        <DevSupabaseDrawer />
+        {showInternalTools ? <DevSupabaseDrawer /> : null}
         {session?.user ? <SupportWidget /> : null}
-        <TestAccountSwitcher currentEmail={session?.user?.email ?? null} />
+        {showInternalTools ? (
+          <TestAccountSwitcher currentEmail={session?.user?.email ?? null} />
+        ) : null}
       </body>
     </html>
   );

@@ -4,6 +4,7 @@ import {
   isTestCaseStatus,
   updateTestCase,
 } from "@/lib/test-cases";
+import { internalApiNotFound } from "@/lib/runtime-mode";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,8 @@ function errorResponse(error: unknown) {
 }
 
 export async function PATCH(request: Request, context: RouteContext) {
+  const blocked = internalApiNotFound();
+  if (blocked) return blocked;
   const { id } = await context.params;
 
   let body: Record<string, unknown>;
@@ -45,6 +48,8 @@ export async function PATCH(request: Request, context: RouteContext) {
 }
 
 export async function DELETE(_request: Request, context: RouteContext) {
+  const blocked = internalApiNotFound();
+  if (blocked) return blocked;
   const { id } = await context.params;
   try {
     const removed = await deleteTestCase(id);

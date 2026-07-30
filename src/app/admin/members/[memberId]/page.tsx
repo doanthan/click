@@ -218,7 +218,7 @@ export default async function AdminMemberDetailPage({
             </div>
           ) : (
             <p className="text-sm text-[color:var(--slate)]">
-              This member hasn't completed the personality quiz yet.
+              This member hasn&apos;t completed the personality quiz yet.
             </p>
           )}
         </Card>

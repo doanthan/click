@@ -1,5 +1,6 @@
 /**
- * Profile gallery storage — sibling of `avatar-storage.ts`.
+ * Profile gallery storage — sibling of `avatar-storage.ts`, using R2 when
+ * configured and the legacy Supabase bucket as a fallback.
  *
  * Up to 5 extra profile photos per attendee (Hinge-style), stored in the same
  * public `avatars` bucket under a `gallery/<profileId>/<uuid>.jpg` prefix per
@@ -19,6 +20,12 @@ import { randomUUID } from "node:crypto";
 import sharp from "sharp";
 
 import { getSupabaseAdmin } from "@/utils/supabase/admin";
+import {
+  deletePublicMediaObject,
+  isR2PublicMediaConfigured,
+  r2PublicMediaKeyFromUrl,
+  uploadPublicMediaObject,
+} from "@/lib/public-media-storage";
 
 const GALLERY_BUCKET = "avatars";
 const GALLERY_PREFIX = "gallery";
@@ -48,6 +55,15 @@ export async function uploadGalleryPhotoFromBuffer(
     .toBuffer();
 
   const key = `${GALLERY_PREFIX}/${profileId}/${randomUUID()}.jpg`;
+
+  if (isR2PublicMediaConfigured()) {
+    return uploadPublicMediaObject({
+      key,
+      body: jpeg,
+      contentType: "image/jpeg",
+    });
+  }
+
   const supabase = getSupabaseAdmin();
 
   // Uint8Array, not the raw Node Buffer — see avatar-storage.ts (undici fetch
@@ -72,6 +88,9 @@ export async function uploadGalleryPhotoFromBuffer(
  * make sure a delete request can't reach into another user's objects.
  */
 export function ownGalleryKeyFromUrl(profileId: string, url: string): string | null {
+  const r2Key = r2PublicMediaKeyFromUrl(url);
+  if (r2Key?.startsWith(`${GALLERY_PREFIX}/${profileId}/`)) return r2Key;
+
   const marker = `/storage/v1/object/public/${GALLERY_BUCKET}/`;
   const at = url.indexOf(marker);
   if (at === -1) return null;
@@ -81,6 +100,11 @@ export function ownGalleryKeyFromUrl(profileId: string, url: string): string | n
 
 /** Best-effort object delete — the DB row is the source of truth. */
 export async function deleteGalleryObject(key: string): Promise<void> {
+  if (isR2PublicMediaConfigured()) {
+    await deletePublicMediaObject(key).catch((error) => {
+      console.warn("R2 gallery object delete failed", { key, error });
+    });
+  }
   try {
     const supabase = getSupabaseAdmin();
     await supabase.storage.from(GALLERY_BUCKET).remove([key]);

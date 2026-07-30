@@ -8,6 +8,7 @@ import {
   declineProposalForSession,
   markMutualSeen,
   proposeAlternativeForProposal,
+  releaseMutualForSession,
   suggestPlanForMutual,
 } from "@/lib/event-repository";
 
@@ -98,6 +99,25 @@ export async function declineProposalAction(
 
   try {
     await declineProposalForSession(session, id);
+  } catch (error) {
+    return { ok: false, error: errorMessage(error) };
+  }
+  revalidatePath("/proposals");
+  return { ok: true, error: null };
+}
+
+export async function releaseMutualAction(
+  _prev: ProposalActionState,
+  formData: FormData,
+): Promise<ProposalActionState> {
+  const session = await auth();
+  if (!session?.user) redirect("/login?callbackUrl=/proposals");
+  const mutualId = formData.get("mutual_id");
+  if (typeof mutualId !== "string" || !UUID_RE.test(mutualId)) {
+    return { ok: false, error: "Couldn't find that connection." };
+  }
+  try {
+    await releaseMutualForSession(session, mutualId);
   } catch (error) {
     return { ok: false, error: errorMessage(error) };
   }

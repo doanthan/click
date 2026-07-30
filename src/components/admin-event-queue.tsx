@@ -186,6 +186,7 @@ export function AdminEventQueue({
   // The event currently queued for a reject-with-reason confirmation. Drives the
   // branded <ConfirmDialog> (replaces the native window.prompt).
   const [rejectTarget, setRejectTarget] = useState<AdminEventRow | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<AdminEventRow | null>(null);
 
   // The query string is the single source of truth for every filter, so the
   // browser Back/Forward buttons replay filter states and each combination is
@@ -530,6 +531,47 @@ export function AdminEventQueue({
     }
   }
 
+  async function confirmCancel(eventId: string, reason: string) {
+    setBusyId(eventId);
+
+    try {
+      const response = await fetch(
+        `/api/admin/events/${encodeURIComponent(eventId)}/cancel`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reason }),
+        },
+      );
+      const payload = (await response.json()) as {
+        eventTitle?: string;
+        notified?: number;
+        refunded?: number;
+        alreadyCancelled?: boolean;
+        error?: string;
+      };
+
+      if (!response.ok) {
+        toast.error(payload.error ?? "Cancellation failed.");
+        return;
+      }
+
+      setRows((current) =>
+        current.map((event) =>
+          event.id === eventId ? { ...event, status: "Cancelled" } : event,
+        ),
+      );
+      toast.success(
+        payload.alreadyCancelled
+          ? `${payload.eventTitle ?? "Event"} was already cancelled.`
+          : `${payload.eventTitle ?? "Event"} cancelled · ${payload.notified ?? 0} notified · ${payload.refunded ?? 0} refunded.`,
+      );
+    } finally {
+      setBusyId(null);
+      setCancelTarget(null);
+    }
+  }
+
   return (
     <div className="mt-10">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -721,6 +763,7 @@ export function AdminEventQueue({
                     onToggleExpand={() => setExpanded(isExpanded ? null : event.id)}
                     onApprove={() => approve(event.id)}
                     onReject={() => setRejectTarget(event)}
+                    onCancel={() => setCancelTarget(event)}
                   />
                 </div>
                 {event.pendingAddress ? (
@@ -858,6 +901,28 @@ export function AdminEventQueue({
         }}
         onCancel={() => setRejectTarget(null)}
       />
+      <ConfirmDialog
+        open={cancelTarget !== null}
+        title="Cancel and unpublish this event?"
+        description={
+          cancelTarget
+            ? `"${cancelTarget.title}" will immediately disappear from public listings. Confirmed attendees and the host will be notified, and paid bookings will receive full refunds.`
+            : undefined
+        }
+        badge="Live takedown"
+        tone="rose"
+        confirmLabel="Cancel event"
+        cancelLabel="Keep event live"
+        busy={cancelTarget !== null && busyId === cancelTarget.id}
+        promptLabel="Why is Click cancelling this event? The host and attendees see this reason."
+        promptPlaceholder="Required — be clear and factual"
+        promptRequired
+        promptMultiline
+        onConfirm={(reason) => {
+          if (cancelTarget) confirmCancel(cancelTarget.id, reason);
+        }}
+        onCancel={() => setCancelTarget(null)}
+      />
     </div>
   );
 }
@@ -869,6 +934,7 @@ function EventActions({
   onToggleExpand,
   onApprove,
   onReject,
+  onCancel,
 }: {
   event: AdminEventRow;
   isExpanded: boolean;
@@ -876,6 +942,7 @@ function EventActions({
   onToggleExpand: () => void;
   onApprove: () => void;
   onReject: () => void;
+  onCancel: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -965,6 +1032,19 @@ function EventActions({
               </button>
             </>
           ) : null}
+          {(["Live", "Featured", "Waitlist", "Locked"] as EventStatus[]).includes(
+            event.status,
+          ) ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => run(onCancel)}
+              disabled={isBusy}
+              className="block w-full rounded-lg px-3 py-2 text-left text-[13px] font-medium text-[color:var(--danger)] transition-colors hover:bg-[color:var(--danger)]/10 disabled:opacity-60"
+            >
+              {isBusy ? "Working…" : "Cancel & unpublish"}
+            </button>
+          ) : null}
           <button
             type="button"
             role="menuitem"
@@ -1010,7 +1090,7 @@ function SortHeader({
     <button
       type="button"
       onClick={() => onClick(sortKey)}
-      aria-sort={active ? (dir === "asc" ? "ascending" : "descending") : "none"}
+      aria-label={`${label}, ${active ? `sorted ${dir === "asc" ? "ascending" : "descending"}` : "not sorted"}`}
       className={`flex items-center gap-1 text-left uppercase tracking-[0.1em] transition hover:text-[color:var(--ink)] ${
         active ? "text-[color:var(--ink)]" : "text-[color:var(--slate)]"
       }`}

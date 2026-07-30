@@ -1,5 +1,7 @@
 import CoverageExplorer from "./coverage-explorer";
 import { coverageData, repoMeta } from "./coverage-data";
+import { notFound } from "next/navigation";
+import { isProductionDeployment } from "@/lib/runtime-mode";
 
 export const metadata = {
   title: "Spec coverage — Click",
@@ -8,6 +10,7 @@ export const metadata = {
 };
 
 export default function SpecCoveragePage() {
+  if (isProductionDeployment()) notFound();
   const agg = (() => {
     const c = { covered: 0, partial: 0, missing: 0, future: 0 };
     for (const d of coverageData)

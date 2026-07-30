@@ -3,9 +3,9 @@
  *
  * Multipart upload from the profile-edit page (and onboarding, eventually).
  * Body: `file` — a JPG/PNG/WEBP ≤ 5 MB. Server-side: sharp normalises to a
- * 512×512 JPG, pushes to the public Supabase Storage `avatars` bucket at
+ * 512×512 JPG, pushes to the configured public-media backend at
  * `<profileId>.jpg`, persists the resulting public URL on `profiles.photo_url`,
- * and returns it.
+ * and returns it. R2 is preferred; Supabase remains a compatibility fallback.
  *
  * Returns:
  *   200 { url: string }                — success
@@ -25,6 +25,7 @@ import {
 import { ownGalleryKeyFromUrl } from "@/lib/gallery-storage";
 import { updateOwnProfile } from "@/lib/event-repository";
 import { getPostgresPool } from "@/lib/postgres";
+import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 
 const ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024; // 5 MB
@@ -36,6 +37,13 @@ export async function POST(request: Request) {
   if (!session?.user) {
     return NextResponse.json({ error: "Sign in required." }, { status: 401 });
   }
+  const limit = await checkRateLimit({
+    scope: "avatar-upload",
+    identity: session.user.email ?? "authenticated-user",
+    limit: 20,
+    windowSeconds: 60 * 60,
+  });
+  if (!limit.allowed) return rateLimitResponse(limit);
 
   if (!isAvatarStorageConfigured()) {
     return NextResponse.json(

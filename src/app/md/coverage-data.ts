@@ -307,8 +307,8 @@ export const coverageData: DocCoverage[] = [
     "docId": "03_ADMIN_JOURNEY",
     "title": "Admin Journey",
     "category": "Journeys",
-    "summary": "The codebase implements a functional admin portal with moderation queues for merchants, events, and users; audit logging via audit_logs table; tag CRUD (no merge/archive); system settings; and manual financial refunds. MFA is not enforced. User bans (permanent), event unpublish (takedown), tag merging/archiving, and merchant application history tracking are missing. Event-level payment suspension visibility is not implemented. Admin refund functionality exists and is wired.",
-    "coveragePercent": 50,
+    "summary": "The codebase implements a functional admin portal with moderation queues for merchants, events, and users; live-event takedown with automatic refunds and notifications; audit logging via audit_logs; tag CRUD (no merge/archive); system settings; and manual financial refunds. MFA is not enforced. Permanent user bans, tag merging/archiving, merchant application history, and event-level payment-suspension visibility remain missing.",
+    "coveragePercent": 55,
     "status": "partial",
     "architectureNotes": "Implementation uses Next.js API routes (/api/admin/*) instead of Supabase Edge Functions. Admin role is stored in profiles.role enum (attendee|merchant|admin) rather than a separate user_roles table. Audit logging uses a single audit_logs table (actor_profile_id, action, entity_table, entity_id, metadata) instead of the spec's admin_audit_log naming. Event approval/rejection manually insert audit records; other admin actions use writeAuditLog() utility in src/utils/admin/audit-logger.ts. Financial view reads from payment_transactions + refund_failures tables. Manual refunds are initiated via POST /api/admin/transactions/[id]/refund/route.ts which calls issueRefund() from src/lib/stripe-sync.ts.",
     "requirements": [
@@ -330,8 +330,8 @@ export const coverageData: DocCoverage[] = [
         "name": "Event moderation queue",
         "spec": "List pending_review events, approve/reject with reason, unpublish live events, mark refunds, surface payment-suspended events.",
         "status": "partial",
-        "evidence": "src/app/admin/events/page.tsx + AdminEventQueue; approveEventForAdmin() and rejectEventForAdmin() in event-repository.ts; rejection reason stored in audit metadata",
-        "gap": "No unpublish (takedown) route for live events: no /api/admin/events/[eventId]/unpublish or equivalent; no 'unpublished' event status (enum has draft|pending|live|featured|locked|waitlist|cancelled|rejected); no payment_suspended status on events; no admin filter to show payment-suspended events"
+        "evidence": "src/app/admin/events/page.tsx + AdminEventQueue; approveEventForAdmin(), rejectEventForAdmin(), and cancelEventForAdmin() in event-repository.ts; POST /api/admin/events/[eventId]/cancel takes published events offline with a required reason, full refunds, attendee/host notification, and an entity-linked audit record",
+        "gap": "No payment_suspended status on events and no admin filter for Stripe-disabled events. The implementation maps the spec's unpublished state to the existing cancelled status rather than adding a separate enum value."
       },
       {
         "name": "User moderation",
@@ -386,8 +386,8 @@ export const coverageData: DocCoverage[] = [
         "name": "Confirmation dialogs for destructive actions",
         "spec": "Merchant reject, event reject, user ban, user suspend, event unpublish require reason field (min 20 chars) + typed confirmation.",
         "status": "partial",
-        "evidence": "suspendMemberAsAdmin accepts reason param; rejectEventForAdmin accepts reason; updateMerchantVerificationForAdmin accepts reason (trimmed, max 1000)",
-        "gap": "No min 20 char validation anywhere; window.prompt() used in some legacy paths (low-UX); no typed-confirmation (e.g., 'type SUSPEND to confirm'); event unpublish not implemented so no confirmation needed"
+        "evidence": "Admin event takedown uses the branded ConfirmDialog with a required reason and a server-side minimum; suspendMemberAsAdmin, rejectEventForAdmin, and updateMerchantVerificationForAdmin also accept reasons",
+        "gap": "The takedown minimum is 5 characters rather than the spec's 20 and does not require a typed confirmation token; other destructive legacy paths do not consistently enforce a 20-character minimum."
       },
       {
         "name": "Role switching header",
@@ -406,9 +406,9 @@ export const coverageData: DocCoverage[] = [
       {
         "name": "Event unpublish (takedown)",
         "spec": "Admin unpublishes a live event (flags or reports trigger this), updates status to unpublished with reason, auto-refund option, attendee notification.",
-        "status": "missing",
-        "evidence": "No /api/admin/events/[eventId]/unpublish route; no 'unpublished' value in event_status enum (database/001_schema.sql + database/025_event_rejected_status.sql); no unpublishEventForAdmin function",
-        "gap": "No ability to take down a live/published event for safety violations; no refund trigger on unpublish; no attendee notification path; event_status enum does not include 'unpublished'"
+        "status": "covered",
+        "evidence": "AdminEventQueue exposes Cancel & unpublish for Live/Featured/Waitlist/Locked rows; POST /api/admin/events/[eventId]/cancel calls cancelEventForAdmin(), which records the required reason/actor/timestamp, changes status to cancelled, cancels active bookings and guest seats, initiates full refunds, notifies attendees and the host, emails both audiences, and writes admin_cancel_event to audit_logs. Migration 054 adds cancellation attribution columns.",
+        "gap": "Architecture divergence: the existing cancelled status represents the unpublished/taken-down state rather than adding a separate unpublished enum value."
       },
       {
         "name": "Payment-suspended events visibility",
@@ -421,7 +421,6 @@ export const coverageData: DocCoverage[] = [
     "topGaps": [
       "MFA not enforced: admin portal is reachable without multi-factor authentication despite spec requirement",
       "No permanent user ban feature: only suspension (reversible) implemented; banning requires is_banned boolean + ban metadata columns",
-      "Event unpublish (takedown) not implemented: live events cannot be removed for safety/moderation without deletion",
       "Payment-suspended events not surfaced: no automatic status transition or admin visibility when merchant Stripe account becomes non-chargeable",
       "Tag merge/archive not supported: only create/edit/delete; merging all references from tag A to tag B not implemented",
       "Merchant application history not tracked: admins cannot view prior rejections or resubmission attempts (no previous_application_id or history table)"
@@ -640,9 +639,9 @@ export const coverageData: DocCoverage[] = [
       {
         "name": "Idempotency: double-click RSVP returns same session",
         "spec": "Client supplies client_idempotency_key. Duplicate within 15 min returns cached session URL. Spec §3.1, §6.1.",
-        "status": "missing",
-        "evidence": "No client_idempotency_key column in event_attendees or payment_transactions. Checkout route POST /api/events/.../checkout does not accept or handle idempotency key. createPaymentHold does NOT check for existing pending_payment by idem key.",
-        "gap": "No idempotency key mechanism. Double-clicking RSVP creates two separate payment_transactions + event_attendees rows. The on-conflict upsert (line 8508 in createPaymentHold) is on (event_id, profile_id), so the second click updates the first hold. This works but loses the spec's explicit idem key design (spec §3.1 line 394-399, §6.1). No rate-limiting per spec §3.1 line 326-331."
+        "status": "covered",
+        "evidence": "EventPaymentButton supplies a stable Idempotency-Key per attempt; createPaymentHold serialises on the event row and reuses the buyer's active hold instead of inserting a second payment row; Stripe Checkout is keyed by the durable payment transaction id and an already-attached open Session is returned on retries. The route is limited to 10 attempts per user/hour.",
+        "gap": "The durable payment transaction id is the server-side Stripe idempotency key; the client key is not stored as a separate database column."
       },
       {
         "name": "Refund idempotency: webhook handles duplicate deliveries",
@@ -654,7 +653,7 @@ export const coverageData: DocCoverage[] = [
     ],
     "topGaps": [
       "No event_capacity_v or event_headcount_v views (spec §2.5, §2.5a) — capacity calculated inline per-request, risking inconsistency across code paths and no single source of truth for merchant/admin displays.",
-      "No client_idempotency_key support (spec §3.1, §6.1) — double-click RSVP creates duplicate holds instead of returning cached session. Upsert on (event_id, profile_id) masks this but breaks explicit idempotency design. No rate-limiting per spec §3.1.",
+      "Checkout idempotency uses the durable payment transaction id rather than storing the client key in a separate database column (architectural difference; duplicate requests still reuse one hold, ledger row and Session).",
       "Webhook charge.refunded does NOT promote waitlist (spec §3.5) — admin-initiated refunds via Stripe dashboard don't free seats for the waitlist. Only user-initiated cancellations trigger promotion.",
       "issueRefund() does not insert refund_failures on Stripe API error (spec §2.4, §3.5) — admin-initiated refunds that fail throw uncaught, creating no operator queue entry. User-initiated cancellations are protected; admin refunds are not.",
       "Payment method fingerprint not captured (spec §3.2) — missing for fraud controls (spec §20). Architectural choice to remove from this codebase.",
@@ -723,8 +722,8 @@ export const coverageData: DocCoverage[] = [
         "name": "Merchant event cancellation (100% refund)",
         "spec": "Merchant cancels → confirmation with reason (20+ chars) → all attendees refunded 100% → 3 suggested alternatives in email.",
         "status": "covered",
-        "evidence": "cancelMerchantEvent() (line 7940) refunds all paid bookings 100%, marks event.status=cancelled, sends 3 suggested upcoming events via email; refund_failures table captures failures; no reason validation or portal UI confirmed.",
-        "gap": "Reason validation (20+ char) not implemented; merchant portal UI for triggering cancel not confirmed in this audit (API exists but UX/modal not verified)."
+        "evidence": "cancelMerchantEvent() refunds all paid bookings 100%, marks event.status=cancelled, sends suggested upcoming events, and records refund failures. The merchant detail page exposes cancellation and requires a meaningful reason before submission.",
+        "gap": ""
       },
       {
         "name": "Locked state (address hidden, FOMO)",
@@ -758,7 +757,7 @@ export const coverageData: DocCoverage[] = [
         "name": "Webhook idempotency (duplicate safety)",
         "spec": "Stripe retry → idempotency via processed_webhook_events table + unique index on (event_id,user_id) WHERE confirmed.",
         "status": "covered",
-        "evidence": "stripe_checkout_session_id persisted on payment_transactions for orphan recovery (database/033_payment_checkout_session.sql); unique index on event_attendees(event_id, profile_id) WHERE status=confirmed (001_schema.sql line 138); markPaymentSucceeded() is idempotent via FOR UPDATE lock.",
+        "evidence": "stripe_checkout_session_id is persisted for orphan recovery; markPaymentSucceeded() serialises with FOR UPDATE, only promotes an unexpired pending_payment hold, and treats refunded/partially-refunded or unpublished bookings as terminal. A success-URL replay after cancellation was verified not to restore the seat or repeat side effects.",
         "gap": ""
       },
       {
@@ -788,7 +787,7 @@ export const coverageData: DocCoverage[] = [
       "Tiered refund policy hard-coded in code, not fetched from platform_settings DB (spec requires dynamic, platform-wide configuration)",
       "Refund failure queue surfaces to refund_failures table but no admin UI confirmed for viewing/acting on failures",
       "Waitlist join email uses legacy sendWorkflowEmail, not wired to email_events audit trail (consistency issue)",
-      "Merchant event cancel reason validation (20+ chars) and portal UI not confirmed in audit"
+      "Merchant cancellation maps unpublish/takedown to the existing cancelled event state rather than a separate unpublished state"
     ]
   },
   {
@@ -2568,14 +2567,14 @@ export const coverageData: DocCoverage[] = [
         "spec": "Introduce pending_bookings table with 15-min TTL, atomic advisory lock, and capacity calculation as confirmed + active pending.",
         "status": "partial",
         "evidence": "database/017_booking_holds.sql defines hold_expires_at on event_attendees + ensure_event_capacity trigger. src/app/api/events/[eventId]/checkout/route.ts calls createPaymentHold (src/lib/event-repository.ts line 8288+).",
-        "gap": "Uses event_attendees.pending_payment + 30-min hold_expires_at instead of dedicated pending_bookings table. No pg_advisory_xact_lock serialisation (spec requires hashtext(event_id)). No client idempotency_key validation or per-user rate limiting (spec: max 10 attempts/hour). Seat capacity check uses `for update of event` but lacks true atomic per-event serialisation."
+        "gap": "Uses event_attendees.pending_payment + a 31-minute hold instead of dedicated pending_bookings with a 15-minute TTL. It serialises on the event row with FOR UPDATE rather than the spec's pg_advisory_xact_lock; both make the capacity decision atomic per event."
       },
       {
         "name": "Stripe checkout session handling",
         "spec": "Edge function with idempotency check, rate limiting, advisory lock, atomicity; webhook for checkout.session.completed.",
         "status": "partial",
         "evidence": "src/app/api/events/[eventId]/checkout/route.ts POST endpoint. createPaymentHold in event-repository.ts reserves seat + creates Stripe session. src/app/api/webhooks/stripe/route.ts handles webhook.",
-        "gap": "No client idempotency key validation (spec requires UUID validation). No rate limiting (spec: 10/hour/user). Stripe session creation not idempotent on client retry. No explicit handling of orphan sessions (spec: webhook handler should refund + log)."
+        "gap": "The client sends a UUID attempt key, while the server deliberately uses the durable payment transaction id for Stripe idempotency. Orphan sessions are reconciled on return and by cron; late settlement without a valid seat is automatically refunded."
       },
       {
         "name": "Pull-on-focus realtime refetch",
@@ -2617,8 +2616,8 @@ export const coverageData: DocCoverage[] = [
       "Pull-on-focus realtime refetch (useLiveTable hook) completely missing — blocks dashboard correctness (P1 in spec)",
       "Proposal schema significantly diverges: only 3 statuses vs 7; missing accepted_by_user_a/b flags, declined_by_user_id, decline_reason, note field with blocklist validation",
       "No proposal edge functions for decline, counter-propose, add-note; missing blocklist validation for URLs, emails, phone numbers, social handles",
-      "Pending booking race-condition fix incomplete: uses 30-min TTL instead of 15-min, no pg_advisory_xact_lock, no client idempotency key or per-user rate limiting",
-      "Checkout session handling lacks idempotency key validation and rate limiting (spec: 10/hour/user); no explicit orphan session refund handler",
+      "Pending bookings use a 31-minute Stripe-aligned TTL rather than the spec's 15-minute hold, and event-row locks rather than advisory locks",
+      "Checkout stores the Session id and reconciles orphans, but uses the server payment transaction id—not a persisted client key—as Stripe's idempotency key",
       "Social auth providers (Facebook) still wired without clear removal; spec lists as P0 legal risk — needs explicit audit + removal or documentation of why kept"
     ]
   },

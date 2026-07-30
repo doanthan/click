@@ -4,6 +4,7 @@ import {
   isTestCaseStatus,
   listTestCases,
 } from "@/lib/test-cases";
+import { internalApiNotFound } from "@/lib/runtime-mode";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +15,8 @@ function errorResponse(error: unknown) {
 }
 
 export async function GET() {
+  const blocked = internalApiNotFound();
+  if (blocked) return blocked;
   try {
     const cases = await listTestCases();
     return NextResponse.json({ ok: true, cases });
@@ -23,6 +26,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const blocked = internalApiNotFound();
+  if (blocked) return blocked;
   let body: Record<string, unknown>;
   try {
     body = await request.json();

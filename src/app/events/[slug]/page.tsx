@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { auth } from "@/auth";
 import { Icon, Tag } from "@/components/ds";
@@ -39,6 +40,34 @@ type PageProps = {
 // unreviewed event can't be shared around before approval. The owning merchant
 // and admins are exempt so they can still preview.
 const PUBLIC_EVENT_STATUSES = new Set(["Featured", "Live", "Waitlist", "Locked"]);
+
+export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+  const { slug } = await params;
+  const session = await auth();
+  const event = await getEventBySlug(slug, session);
+  if (!event || !PUBLIC_EVENT_STATUSES.has(event.status)) {
+    return { title: "Event not found", robots: { index: false, follow: false } };
+  }
+  const description = event.description.slice(0, 155);
+  return {
+    title: event.title,
+    description,
+    alternates: { canonical: `/events/${event.id}` },
+    openGraph: {
+      type: "website",
+      url: `/events/${event.id}`,
+      title: event.title,
+      description,
+      images: [{ url: event.image, alt: event.imageAlt }],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: event.title,
+      description,
+      images: [event.image],
+    },
+  };
+}
 
 function formatLongDate(iso: string) {
   return new Intl.DateTimeFormat("en-AU", {
@@ -197,7 +226,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
       location: [event.location, event.address, event.suburb, event.city]
         .filter(Boolean)
         .join(", "),
-      details: `You're going to ${event.title}. See details: ${process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") || "http://localhost:3000"}/events/${event.id}`,
+      details: `You're going to ${event.title}. See details: ${process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") || "http://localhost:3000"}/events/${event.id}`,
     }),
   };
 

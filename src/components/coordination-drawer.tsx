@@ -9,6 +9,7 @@ import {
   declineProposalAction,
   markMutualSeenAction,
   proposeAlternativeAction,
+  releaseMutualAction,
   suggestPlanAction,
   type ProposalActionState,
 } from "@/app/proposals/actions";
@@ -92,6 +93,7 @@ export function CoordinationDrawer({
   const [declineState, declineAction] = useActionState(declineProposalAction, INITIAL);
   const [proposeState, proposeAction] = useActionState(proposeAlternativeAction, INITIAL);
   const [suggestState, suggestAction] = useActionState(suggestPlanAction, INITIAL);
+  const [releaseState, releaseAction] = useActionState(releaseMutualAction, INITIAL);
 
   const [picking, setPicking] = useState(false);
   const [revealDismissed, setRevealDismissed] = useState(() =>
@@ -101,16 +103,13 @@ export function CoordinationDrawer({
   const titleId = useId();
   const cardRef = useRef<HTMLDivElement>(null);
 
-  // When a successful action revalidates /proposals, the fresh entry flows back in and
-  // its coordination signature changes - close the picker so the re-projected step is
-  // clean (the "advance in place"). Render-time compare, no local optimistic step to
-  // fight the server truth.
+  // When a successful action revalidates /proposals, close the picker after the
+  // fresh server state renders so local UI never fights the server truth.
   const sig = `${entry.status}|${entry.coordState}|${entry.suggestedEventSlug ?? ""}`;
-  const lastSig = useRef(sig);
-  if (lastSig.current !== sig) {
-    lastSig.current = sig;
-    if (picking) setPicking(false);
-  }
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => setPicking(false));
+    return () => window.cancelAnimationFrame(frame);
+  }, [sig]);
 
   // Focus, Escape, scroll-lock, focus-trap - mount-scoped (panel mounts once per open,
   // ClicksList keys it on the mutual id). Same proven shell as confirm-dialog.tsx.
@@ -270,12 +269,32 @@ export function CoordinationDrawer({
 
         {/* SAFE-08: an in-flow safety exit at every step - block ends the plan. */}
         <div className="mt-6 border-t border-[color:var(--line-soft)] pt-4">
-          <Link
-            href={`/profile/${entry.otherId}#safety`}
-            className="text-[13px] font-semibold text-[color:var(--slate)] underline decoration-dotted underline-offset-2 hover:text-[color:var(--ink)]"
-          >
-            Report or block {firstName}
-          </Link>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <form
+              action={releaseAction}
+              onSubmit={(event) => {
+                if (!window.confirm(`Hide this connection with ${firstName}?`)) {
+                  event.preventDefault();
+                }
+              }}
+            >
+              <input type="hidden" name="mutual_id" value={entry.mutualId} />
+              <SubmitButton className="text-[13px] font-semibold text-[color:var(--slate)] underline decoration-dotted underline-offset-2 hover:text-[color:var(--ink)] disabled:opacity-50">
+                Not feeling it
+              </SubmitButton>
+            </form>
+            <Link
+              href={`/profile/${entry.otherId}#safety`}
+              className="text-[13px] font-semibold text-[color:var(--slate)] underline decoration-dotted underline-offset-2 hover:text-[color:var(--ink)]"
+            >
+              Report or block {firstName}
+            </Link>
+          </div>
+          {releaseState.error ? (
+            <p className="mt-2 text-xs font-medium text-[color:var(--danger)]">
+              {releaseState.error}
+            </p>
+          ) : null}
         </div>
       </div>
     </div>,

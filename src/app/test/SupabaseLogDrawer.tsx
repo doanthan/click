@@ -83,13 +83,18 @@ export default function SupabaseLogDrawer() {
   const [hideTicked, setHideTicked] = useState(false);
 
   useEffect(() => {
+    let saved: Record<string, boolean> | null = null;
     try {
       const raw = window.localStorage.getItem(TICKS_KEY);
-      if (raw) setTicked(JSON.parse(raw));
+      if (raw) saved = JSON.parse(raw) as Record<string, boolean>;
     } catch {
       // ignore
     }
-    setHydrated(true);
+    const frame = window.requestAnimationFrame(() => {
+      if (saved) setTicked(saved);
+      setHydrated(true);
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, []);
 
   useEffect(() => {
@@ -115,12 +120,6 @@ export default function SupabaseLogDrawer() {
   }, []);
 
   useEffect(() => {
-    if (open && !data && !loading) {
-      void fetchLog();
-    }
-  }, [open, data, loading, fetchLog]);
-
-  useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") setOpen(false);
     }
@@ -128,7 +127,7 @@ export default function SupabaseLogDrawer() {
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
-  const allEntries = data?.entries ?? [];
+  const allEntries = useMemo(() => data?.entries ?? [], [data]);
   const tables = data?.tables ?? [];
 
   const filtered = useMemo(() => {
@@ -170,7 +169,10 @@ export default function SupabaseLogDrawer() {
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          setOpen(true);
+          if (!data && !loading) void fetchLog();
+        }}
         className="rounded-full border-2 border-[color:var(--ink)] bg-[color:var(--ink)] px-4 py-1.5 text-xs font-bold uppercase tracking-[0.16em] text-[color:var(--champagne)] transition hover:bg-[color:var(--rose)] hover:text-[color:var(--surface-deep)]"
       >
         Open Supabase log

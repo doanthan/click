@@ -268,12 +268,14 @@ export default async function Home() {
               <span aria-hidden className="text-[color:var(--lavender)]">✦</span>
               Now live in Sydney
             </p>
-            <span className="rise-soft block lg:hidden">
-              <Logo size={74} cream />
-            </span>
-            <span className="rise-soft hidden lg:block">
-              <Logo size={104} cream />
-            </span>
+            <h1 className="rise-soft" aria-label="Click - a burst of yes">
+              <span className="block lg:hidden" aria-hidden>
+                <Logo size={74} cream />
+              </span>
+              <span className="hidden lg:block" aria-hidden>
+                <Logo size={104} cream />
+              </span>
+            </h1>
 
             <p className="rise-soft rise-d1 mt-3.5 text-base text-[color:var(--on-deep-soft)] lg:mt-4.5 lg:text-[19px]">
               /klɪk/ · <span className="italic">verb</span>

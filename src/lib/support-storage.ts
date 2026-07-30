@@ -1,10 +1,9 @@
 /**
  * Bug-report screenshot storage — Supabase Storage backend.
  *
- * Per CLAUDE.md, new public-media features reuse the public `avatars` bucket
- * with a key prefix rather than creating a new bucket. Screenshots land at
- * `support/<ticketRef>.jpg` and are served by Supabase's public object endpoint
- * (so they render in the admin/Sheet without signed URLs).
+ * Screenshots can contain personal or diagnostic information, so they reuse
+ * the private `merchant-documents` bucket under `support/<ticketRef>.jpg` and
+ * are only opened through a short-lived signed URL from the admin route.
  *
  * Normalised to JPEG via sharp so stored size is predictable. Returns null when
  * storage isn't configured — the ticket still saves to Postgres without an image.
@@ -14,18 +13,12 @@ import sharp from "sharp";
 
 import { getSupabaseAdmin, StorageNotConfiguredError } from "@/utils/supabase/admin";
 
-const BUCKET = "avatars";
+const BUCKET = "merchant-documents";
 const PREFIX = "support";
 const MAX_WIDTH = 1600; // cap huge retina screenshots
 const QUALITY = 80;
 
-function readPublicBase(): string | null {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim().replace(/\/$/, "");
-  return url || null;
-}
-
 export function isSupportStorageConfigured(): boolean {
-  if (!readPublicBase()) return false;
   try {
     getSupabaseAdmin();
     return true;
@@ -69,10 +62,22 @@ export async function uploadScreenshot(
       return null;
     }
 
-    const base = readPublicBase();
-    return `${base}/storage/v1/object/public/${BUCKET}/${key}`;
+    return key;
   } catch (error) {
     console.warn("[support-storage] uploadScreenshot failed", { ticketRef, error });
     return null;
   }
+}
+
+export async function createSignedScreenshotUrl(key: string): Promise<string | null> {
+  if (!key.startsWith(`${PREFIX}/`) || key.includes("..")) return null;
+  if (!isSupportStorageConfigured()) return null;
+  const { data, error } = await getSupabaseAdmin().storage
+    .from(BUCKET)
+    .createSignedUrl(key, 60);
+  if (error) {
+    console.warn("[support-storage] signed URL failed:", error.message);
+    return null;
+  }
+  return data.signedUrl;
 }

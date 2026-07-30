@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { resolveAvatarImage } from "@/lib/avatar-images";
 
 /**
  * The "who's going" heartbeat - a row of up to three real attendee avatars
@@ -26,7 +27,10 @@ export function FaceStack({
   /** Border colour of the avatar rings - match it to the surface behind them. */
   ringClass?: string;
 }) {
-  const shown = avatars.slice(0, 3);
+  const shown = avatars
+    .map(resolveAvatarImage)
+    .filter((url): url is string => Boolean(url))
+    .slice(0, 3);
 
   return (
     <div className={`flex items-center gap-2 ${className}`}>

@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { ClickWalkthrough } from "@/components/click-walkthrough";
+import { isProductionDeployment } from "@/lib/runtime-mode";
 import { ClickAuditReport } from "./audit-report";
 
 export const metadata = {
@@ -39,6 +41,7 @@ const RECAP = [
 const RECAP_CLOCKS = ["2h post-event gate", "7-day click", "7-day proposal"];
 
 export default function TestClickPage() {
+  if (isProductionDeployment()) notFound();
   return (
     <main className="paper-noise min-h-screen text-[color:var(--ink)]">
       {/* Section 1 - hero: the one-sentence reframe */}

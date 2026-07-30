@@ -1,6 +1,8 @@
 import { MetricCard, SectionIntro } from "@/components/click-ui";
+import { notFound } from "next/navigation";
 import { TablesExplorer } from "@/components/tables-explorer";
 import { getDatabaseTables } from "@/lib/database-tables";
+import { isProductionDeployment } from "@/lib/runtime-mode";
 
 export const metadata = {
   title: "Database tables | Click",
@@ -16,6 +18,7 @@ function formatCount(value: number | null) {
 }
 
 export default async function TablesPage() {
+  if (isProductionDeployment()) notFound();
   const { source, tables } = await getDatabaseTables();
   const isLive = source === "database";
   const totalColumns = tables.reduce((sum, table) => sum + table.columns.length, 0);

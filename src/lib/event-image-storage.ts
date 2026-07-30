@@ -1,5 +1,5 @@
 /**
- * Event image storage — Supabase Storage backend.
+ * Event image storage — Cloudflare R2 with a Supabase Storage fallback.
  *
  * Reuses the public `avatars` bucket per the project convention in CLAUDE.md
  * ("when adding new public-media features, reuse this bucket with a key
@@ -13,13 +13,18 @@
  *   a JPG via the service-role admin client. Throws on failure so the route
  *   returns 500.
  *
- * Returns the public URL of the stored object.
+ * Returns the public URL of the stored object. R2 is preferred whenever all
+ * R2 variables are present; Supabase keeps older environments compatible.
  */
 import { randomUUID } from "node:crypto";
 
 import sharp from "sharp";
 
 import { getSupabaseAdmin, StorageNotConfiguredError } from "@/utils/supabase/admin";
+import {
+  isR2PublicMediaConfigured,
+  uploadPublicMediaObject,
+} from "@/lib/public-media-storage";
 
 const EVENT_IMAGE_MAX_DIMENSION = 1600;
 const EVENT_IMAGE_QUALITY = 82;
@@ -34,6 +39,7 @@ function readPublicBase(): string | null {
 }
 
 export function isEventImageStorageConfigured(): boolean {
+  if (isR2PublicMediaConfigured()) return true;
   if (!readPublicBase()) return false;
   try {
     getSupabaseAdmin();
@@ -73,9 +79,18 @@ function buildPublicUrl(key: string): string {
  * wizard uploads later).
  */
 export async function uploadEventImageFromBuffer(source: Buffer): Promise<string> {
-  const supabase = getSupabaseAdmin();
   const jpeg = await normaliseToJpeg(source);
   const key = `${KEY_PREFIX}${randomUUID()}.jpg`;
+
+  if (isR2PublicMediaConfigured()) {
+    return uploadPublicMediaObject({
+      key,
+      body: jpeg,
+      contentType: "image/jpeg",
+    });
+  }
+
+  const supabase = getSupabaseAdmin();
 
   // Pass a Uint8Array, not the raw Node Buffer: under Node 18+/24 the
   // storage-js client (2.20) hands a Buffer body straight to undici's fetch,

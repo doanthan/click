@@ -55,9 +55,12 @@ export function getPlatformFeeBps(): number {
   return Math.min(n, 5000);
 }
 
-export function calculateApplicationFee(priceCents: number): number {
+export function calculateApplicationFee(
+  priceCents: number,
+  feeBps = getPlatformFeeBps(),
+): number {
   if (priceCents <= 0) return 0;
-  const bps = getPlatformFeeBps();
+  const bps = Math.max(0, Math.min(Math.round(feeBps), 5000));
   if (bps === 0) return 0;
   // floor — round in the platform's favour would surprise merchants; round
   // down so the merchant sees a clean number.

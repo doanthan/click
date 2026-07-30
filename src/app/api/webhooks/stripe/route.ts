@@ -65,14 +65,24 @@ export async function POST(request: Request) {
       case "checkout.session.completed":
       case "checkout.session.async_payment_succeeded": {
         const session = event.data.object;
+        if (
+          event.type === "checkout.session.completed" &&
+          session.payment_status !== "paid"
+        ) {
+          break;
+        }
         const id = paymentIdFromMetadata(session.metadata);
         if (id) {
-          await markPaymentSucceeded(id);
+          const confirmed = await markPaymentSucceeded(id);
           // Name the reserved guest seats from session metadata (spec 19 §5).
-          await processGuestSpotsForSession({
-            paymentTransactionId: id,
-            guestDetailsJson: session.metadata?.guest_details,
-          });
+          // A replayed paid Checkout Session may belong to a booking that was
+          // already cancelled/refunded; in that case its guests stay cancelled.
+          if (confirmed) {
+            await processGuestSpotsForSession({
+              paymentTransactionId: id,
+              guestDetailsJson: session.metadata?.guest_details,
+            });
+          }
         }
         break;
       }

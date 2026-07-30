@@ -202,8 +202,13 @@ export function EventRegistrationButton({
       router.refresh();
     } else {
       setMessage("Your RSVP was cancelled.");
-      router.push(`${pathname ?? `/events/${encodeURIComponent(eventId)}`}?cancelled=1`);
-      router.refresh();
+      // Hard-replace the Stripe success URL so its reusable `session_id` is
+      // removed before the server renders again. This also guarantees that the
+      // attendee list, capacity and private venue gate all come from the newly
+      // cancelled database state instead of lingering client props.
+      window.location.replace(
+        `${pathname ?? `/events/${encodeURIComponent(eventId)}`}?cancelled=1`,
+      );
     }
   }
 

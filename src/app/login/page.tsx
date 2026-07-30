@@ -11,6 +11,7 @@ import {
   SsoButton,
 } from "@/components/auth-ui";
 import { ckBtn } from "@/components/ds";
+import { isLocalDevelopment } from "@/lib/runtime-mode";
 import {
   signInWithEmail,
   signInWithGoogle,
@@ -26,6 +27,7 @@ type LoginPageProps = {
   searchParams?: Promise<{
     callbackUrl?: string;
     error?: string;
+    emailSent?: string;
   }>;
 };
 
@@ -33,6 +35,9 @@ const errorCopy: Record<string, string> = {
   CredentialsSignin: "Enter a valid email address to continue.",
   InvalidEmail: "Enter a valid email address to continue.",
   EmailNotFound: "No account found for that email. Check the spelling, or sign up.",
+  InvalidMagicLink: "That sign-in link is invalid or expired. Request a new one.",
+  RateLimited: "Too many sign-in emails were requested. Try again in an hour.",
+  EmailUnavailable: "We could not send a sign-in email right now. Try Google or try again later.",
   OAuthSignin: "The social login could not start. Check the provider configuration.",
   OAuthCallback: "The social login callback failed. Check the provider callback URL.",
   Configuration: "Authentication is missing provider or secret configuration.",
@@ -63,7 +68,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const errorMessage = params?.error ? errorCopy[params.error] ?? "Login failed." : "";
   const googleConfigured = !!(process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET);
   const metaConfigured = !!(process.env.AUTH_FACEBOOK_ID && process.env.AUTH_FACEBOOK_SECRET);
-  const showDemoCredentials = true;
+  const showDemoCredentials = isLocalDevelopment();
 
   return (
     <AuthShell
@@ -87,6 +92,10 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
       }
     >
       <AuthedRedirect />
+
+      {params?.emailSent === "1" ? (
+        <AuthNote icon="mail">Check your inbox for a secure, one-time sign-in link.</AuthNote>
+      ) : null}
 
       {/* SSO - one footprint, the provider carried by the mark */}
       <div className="grid gap-2.5">

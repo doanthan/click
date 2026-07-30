@@ -1,8 +1,8 @@
 "use client";
 
-import Image from "next/image";
 import { useCallback, useEffect, useState } from "react";
 import type { MediaItem } from "@/lib/event-media";
+import { EventImage } from "./event-image";
 
 type EventMediaGalleryProps = {
   items: MediaItem[];
@@ -257,7 +257,7 @@ function Tile({
       className={`group relative block overflow-hidden rounded-[var(--radius-lg)] bg-[color:var(--champagne-deep)] shadow-[var(--shadow-sm)] transition hover:-translate-y-0.5 hover:shadow-[var(--shadow-md)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--purple)] ${className}`}
       aria-label={item.kind === "video" ? `Play video: ${item.alt}` : `Open photo: ${item.alt}`}
     >
-      <Image
+      <EventImage
         src={poster}
         alt={item.alt}
         fill
@@ -345,7 +345,7 @@ function Lightbox({
               Your browser can&apos;t play this video.
             </video>
           ) : (
-            <Image
+            <EventImage
               key={item.url}
               src={item.url}
               alt={item.alt}

@@ -1,0 +1,180 @@
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import path from "node:path";
+import process from "node:process";
+import { Pool } from "pg";
+
+const root = process.cwd();
+const requestedEnv = process.argv.find((arg) => arg.startsWith("--env="))?.slice(6);
+const envFile = requestedEnv || ".env.production.local";
+
+function loadEnv(filename) {
+  const absolute = path.resolve(root, filename);
+  if (!existsSync(absolute)) return false;
+  for (const line of readFileSync(absolute, "utf8").split(/\r?\n/)) {
+    const match = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
+    if (!match || match[1] in process.env) continue;
+    let value = match[2];
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    process.env[match[1]] = value;
+  }
+  return true;
+}
+
+const loaded = loadEnv(envFile);
+const errors = [];
+const warnings = [];
+const value = (name) => process.env[name]?.trim() || "";
+const requireValue = (name) => {
+  if (!value(name)) errors.push(`${name} is missing.`);
+};
+
+[
+  "AUTH_SECRET",
+  "AUTH_URL",
+  "CLICK_MECHANIC_ENABLED",
+  "DATABASE_URL",
+  "NEXT_PUBLIC_APP_URL",
+  "NEXT_PUBLIC_SUPABASE_URL",
+  "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
+  "NEXT_PUBLIC_MAPBOX_TOKEN",
+  "STRIPE_SECRET_KEY",
+  "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY",
+  "STRIPE_WEBHOOK_SECRET",
+  "PLATFORM_FEE_BPS",
+  "CRON_SECRET",
+  "RESEND_API_KEY",
+  "RESEND_FROM_EMAIL",
+  "ADMIN_EMAILS",
+  "SAFETY_INBOX_EMAIL",
+].forEach(requireValue);
+
+if (!value("SUPABASE_SECRET_KEY") && !value("SUPABASE_SERVICE_ROLE_KEY")) {
+  errors.push("SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY is missing.");
+}
+
+const r2Names = [
+  "R2_ACCOUNT_ID",
+  "R2_ACCESS_KEY_ID",
+  "R2_SECRET_ACCESS_KEY",
+  "R2_BUCKET_NAME",
+];
+for (const name of r2Names) requireValue(name);
+if (!value("R2_PUBLIC_URL") && !value("R2_TEMP_PUBLIC")) {
+  errors.push("R2_PUBLIC_URL is missing.");
+}
+
+if (value("AUTH_SECRET").length < 32) errors.push("AUTH_SECRET must be at least 32 characters.");
+if (value("CRON_SECRET").length < 32) errors.push("CRON_SECRET must be at least 32 characters.");
+if (value("AUTH_URL") !== "https://www.letsclick.app") {
+  errors.push("AUTH_URL must be https://www.letsclick.app.");
+}
+if (value("NEXT_PUBLIC_APP_URL") !== "https://www.letsclick.app") {
+  errors.push("NEXT_PUBLIC_APP_URL must be https://www.letsclick.app.");
+}
+if (value("CLICK_MECHANIC_ENABLED") && value("CLICK_MECHANIC_ENABLED") !== "true") {
+  errors.push("CLICK_MECHANIC_ENABLED must be true after the staging Click QA flow passes.");
+}
+if (value("STRIPE_SECRET_KEY") && !value("STRIPE_SECRET_KEY").startsWith("sk_live_")) {
+  errors.push("STRIPE_SECRET_KEY must be a live-mode key.");
+}
+if (
+  value("NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY") &&
+  !value("NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY").startsWith("pk_live_")
+) {
+  errors.push("NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY must be a live-mode key.");
+}
+if (value("STRIPE_WEBHOOK_SECRET") && !value("STRIPE_WEBHOOK_SECRET").startsWith("whsec_")) {
+  errors.push("STRIPE_WEBHOOK_SECRET must be a Stripe webhook signing secret.");
+}
+if (value("RESEND_API_KEY") && !value("RESEND_API_KEY").startsWith("re_")) {
+  errors.push("RESEND_API_KEY does not look like a Resend API key.");
+}
+if (
+  value("RESEND_FROM_EMAIL") &&
+  !/@letsclick\.app[>\s]*$/i.test(value("RESEND_FROM_EMAIL"))
+) {
+  errors.push("RESEND_FROM_EMAIL must use the verified letsclick.app domain.");
+}
+if (
+  value("ADMIN_EMAILS") &&
+  value("SAFETY_INBOX_EMAIL") &&
+  /example\.com|click\.local/i.test(`${value("ADMIN_EMAILS")},${value("SAFETY_INBOX_EMAIL")}`)
+) {
+  errors.push("ADMIN_EMAILS and SAFETY_INBOX_EMAIL must use real monitored inboxes.");
+}
+if (value("NEXT_PUBLIC_MODE").toUpperCase() === "DEVELOPMENT") {
+  errors.push("NEXT_PUBLIC_MODE must be unset in production.");
+}
+
+const fee = Number(value("PLATFORM_FEE_BPS"));
+if (value("PLATFORM_FEE_BPS") && (!Number.isInteger(fee) || fee <= 0 || fee > 5_000)) {
+  errors.push("PLATFORM_FEE_BPS must be an integer from 1 to 5000.");
+}
+if (!value("AUTH_GOOGLE_ID") || !value("AUTH_GOOGLE_SECRET")) {
+  warnings.push("Google OAuth is disabled until AUTH_GOOGLE_ID and AUTH_GOOGLE_SECRET are set.");
+}
+
+const vercel = JSON.parse(readFileSync(path.join(root, "vercel.json"), "utf8"));
+for (const cron of vercel.crons ?? []) {
+  const target = path.join(root, "src/app", cron.path, "route.ts");
+  if (!existsSync(target)) errors.push(`Cron target does not exist: ${cron.path}`);
+}
+
+if (value("DATABASE_URL")) {
+  const databaseUrl = value("DATABASE_URL");
+  const pool = new Pool({
+    connectionString: databaseUrl,
+    max: 1,
+    ssl: /supabase\.(co|com)/.test(databaseUrl)
+      ? { rejectUnauthorized: false }
+      : undefined,
+  });
+  try {
+    const ledger = await pool.query("select filename, checksum from schema_migrations");
+    const applied = new Map(ledger.rows.map((row) => [row.filename, row.checksum]));
+    const migrationFiles = readdirSync(path.join(root, "database"))
+      .filter((name) => /^\d+.*\.sql$/.test(name))
+      .sort();
+    for (const filename of migrationFiles) {
+      if (!applied.has(filename)) {
+        errors.push(`Database migration is not applied: ${filename}`);
+        continue;
+      }
+      const sql = readFileSync(path.join(root, "database", filename), "utf8");
+      const checksum = createHash("sha256").update(sql).digest("hex");
+      if (applied.get(filename) !== checksum) {
+        warnings.push(`Migration file changed after apply: ${filename}`);
+      }
+    }
+    const objects = await pool.query(
+      `select to_regclass('public.clicks')::text as clicks,
+              to_regclass('public.mutual_clicks')::text as mutual_clicks,
+              to_regclass('public.click_proposals')::text as click_proposals,
+              to_regclass('public.event_capacity_v')::text as event_capacity_v`,
+    );
+    for (const [name, present] of Object.entries(objects.rows[0] ?? {})) {
+      if (!present) errors.push(`Required database object is missing: ${name}`);
+    }
+  } catch {
+    errors.push("Could not verify the production database migration ledger.");
+  } finally {
+    await pool.end();
+  }
+}
+
+console.log(`Release environment: ${loaded ? envFile : "process environment"}`);
+for (const warning of warnings) console.warn(`WARN  ${warning}`);
+for (const error of errors) console.error(`FAIL  ${error}`);
+
+if (errors.length > 0) {
+  console.error(`\nRelease check failed with ${errors.length} blocker(s).`);
+  process.exit(1);
+}
+
+console.log("PASS  Production configuration is ready for deployment.");

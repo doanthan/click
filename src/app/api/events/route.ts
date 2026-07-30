@@ -62,7 +62,21 @@ function responseForError(error: unknown) {
 
 export async function POST(request: Request) {
   const session = await auth();
-  const formData = await request.formData();
+  // Reject anonymous callers before parsing multipart data. Besides being the
+  // correct boundary, this prevents a malformed/incorrect Content-Type from
+  // turning an unauthenticated request into a framework-level 500.
+  if (!session?.user?.email) {
+    return NextResponse.json({ error: "You need to log in first." }, { status: 401 });
+  }
+  let formData: FormData;
+  try {
+    formData = await request.formData();
+  } catch {
+    return NextResponse.json(
+      { error: "Invalid event form submission." },
+      { status: 400 },
+    );
+  }
 
   const input: CreateEventInput = {
     title: getString(formData.get("title")),

@@ -16,14 +16,9 @@ export function ShareEventButton({
 }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [shareUrl, setShareUrl] = useState(`/events/${slug}`);
   const ref = useRef<HTMLDivElement>(null);
-
-  // Build the absolute URL on the client so shares carry the real origin
-  // (letsclick.app) rather than a bare path.
-  useEffect(() => {
-    setShareUrl(`${window.location.origin}/events/${slug}`);
-  }, [slug]);
+  const siteUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://www.letsclick.app";
+  const shareUrl = `${siteUrl.replace(/\/$/, "")}/events/${slug}`;
 
   useEffect(() => {
     function onDocClick(e: MouseEvent) {

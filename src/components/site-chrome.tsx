@@ -127,6 +127,8 @@ export async function SiteFooter() {
     ["Safety", "/safety"],
     ["Privacy", "/privacy"],
     ["Terms", "/terms"],
+    ["Refunds", "/refund-policy"],
+    ["Security", "/security"],
   ];
 
   return (

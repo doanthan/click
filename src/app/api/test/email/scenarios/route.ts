@@ -6,10 +6,13 @@
 import { NextResponse } from "next/server";
 
 import { scenarios } from "@/lib/email-templates";
+import { internalApiNotFound } from "@/lib/runtime-mode";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  const blocked = internalApiNotFound();
+  if (blocked) return blocked;
   return NextResponse.json({
     scenarios: scenarios.map((s) => ({
       id: s.id,

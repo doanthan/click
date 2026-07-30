@@ -1,10 +1,10 @@
-import Image from "next/image";
 import Link from "next/link";
 import { type EventItem, formatEventTimeRange } from "@/lib/click-data";
 import { formatCapacity } from "@/lib/click-matching";
 import { AvatarStack, Icon, StatusBadge, TagRow, type EventStatus } from "./ds";
 import { EventBookmarkButton } from "./event-bookmark-button";
 import { EventDetailModal } from "./event-detail-modal";
+import { EventImage } from "./event-image";
 
 /**
  * The Event Card - the heart of the product, and the ONE card used identically
@@ -77,9 +77,10 @@ export function EventCard({
       {/* Cover - 16:9 everywhere, so cards in a row are equal height */}
       <div className="relative aspect-[16/9] w-full shrink-0 overflow-hidden bg-[color:var(--champagne-deep)]">
         <Link href={`/events/${event.id}`} aria-label={event.title} className="relative block h-full w-full">
-          <Image
+          <EventImage
             src={event.image}
             alt={event.imageAlt}
+            category={event.category}
             fill
             priority={priority}
             sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"

@@ -34,7 +34,7 @@ type LoginModalProps = {
 type Mode = "login" | "signup";
 type SignupRole = "attendee" | "host";
 
-const initialEmailState: EmailLoginFormState = { error: null };
+const initialEmailState: EmailLoginFormState = { error: null, sent: false };
 
 // Attendee signups route through /post-login, which sends anyone with an
 // incomplete profile to /onboarding (where the prefill below is read).
@@ -72,7 +72,9 @@ export function LoginModal({
   useEffect(() => {
     if (!open) return;
 
-    setLastUsed(readLastLoginMethod());
+    const readFrame = window.requestAnimationFrame(() => {
+      setLastUsed(readLastLoginMethod());
+    });
 
     function handleKey(event: KeyboardEvent) {
       if (event.key === "Escape") onClose();
@@ -86,6 +88,7 @@ export function LoginModal({
       document.body.style.overflow = "";
       document.removeEventListener("keydown", handleKey);
       window.clearTimeout(timeout);
+      window.cancelAnimationFrame(readFrame);
     };
   }, [open, onClose]);
 
@@ -320,6 +323,9 @@ export function LoginModal({
           />
 
           {emailState.error ? <AuthError>{emailState.error}</AuthError> : null}
+          {emailState.sent ? (
+            <AuthNote icon="mail">Check your inbox for a secure, one-time sign-in link.</AuthNote>
+          ) : null}
 
           <button
             type="submit"
@@ -331,7 +337,9 @@ export function LoginModal({
             aria-busy={emailPending || undefined}
           >
             <span className="ck-btn__label">
-              {isSignup
+              {emailState.sent
+                ? "Email sent"
+                : isSignup
                 ? isHostSignup
                   ? "Create host account"
                   : "Create account"

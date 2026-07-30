@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { deleteComment } from "@/lib/test-cases";
+import { internalApiNotFound } from "@/lib/runtime-mode";
 
 export const dynamic = "force-dynamic";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
 export async function DELETE(_request: Request, context: RouteContext) {
+  const blocked = internalApiNotFound();
+  if (blocked) return blocked;
   const { id } = await context.params;
   try {
     const removed = await deleteComment(id);

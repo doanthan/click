@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getTableRows } from "@/lib/table-data";
+import { internalApiNotFound } from "@/lib/runtime-mode";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +30,8 @@ function parsePositiveInt(value: string | null, fallback: number): number {
 }
 
 export async function GET(request: Request, context: RouteContext) {
+  const blocked = internalApiNotFound();
+  if (blocked) return blocked;
   const { table } = await context.params;
   const { searchParams } = new URL(request.url);
 

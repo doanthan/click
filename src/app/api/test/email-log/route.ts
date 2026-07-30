@@ -6,6 +6,7 @@
 import { NextResponse } from "next/server";
 
 import { getPostgresPool } from "@/lib/postgres";
+import { internalApiNotFound } from "@/lib/runtime-mode";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,8 @@ type EmailLogEntry = {
 const ROW_LIMIT = 25;
 
 export async function GET() {
+  const blocked = internalApiNotFound();
+  if (blocked) return blocked;
   const pool = getPostgresPool();
   if (!pool) {
     return NextResponse.json(

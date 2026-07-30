@@ -205,6 +205,20 @@ export async function syncTransactionFromStripe(
       refundsUpserted += 1;
     }
 
+    // A successful Stripe retry closes any matching operator-queue entry. The
+    // webhook/backfill path may be the process that first observes success, so
+    // resolution belongs here as well as in the direct refund path.
+    if (totalRefundedCents > 0) {
+      await client.query(
+        `update refund_failures
+         set resolution = 'resolved', resolved_at = coalesce(resolved_at, now())
+         where payment_transaction_id = $1::uuid
+           and resolution = 'pending'
+           and amount_cents <= $2`,
+        [txnId, totalRefundedCents],
+      );
+    }
+
     await client.query("commit");
 
     // If this charge is a clean success, make sure the seat is promoted too.
@@ -246,8 +260,8 @@ export async function syncTransactionFromStripe(
 // calendar. The checkout `success_url` carries the Checkout Session id, so here
 // we retrieve the session and, if Stripe reports it paid, run the SAME
 // `markPaymentSucceeded` the webhook would have. Idempotent — that function
-// no-ops once the txn is already 'paid', so a later webhook delivery (or a page
-// refresh) is harmless.
+// only promotes an active payment hold and treats refunded/cancelled/expired
+// bookings as terminal, so a later webhook delivery or page refresh is safe.
 export async function reconcileCheckoutSession(
   sessionId: string,
 ): Promise<{ confirmed: boolean }> {
@@ -272,7 +286,8 @@ export async function reconcileCheckoutSession(
   if (typeof session.payment_intent === "string") {
     await attachPaymentIntent(paymentTransactionId, session.payment_intent);
   }
-  await markPaymentSucceeded(paymentTransactionId);
+  const confirmed = await markPaymentSucceeded(paymentTransactionId);
+  if (!confirmed) return { confirmed: false };
   // Name any reserved guest seats from session metadata — covers the case where
   // the webhook was missed and the buyer's return / cron reconcile confirms.
   await processGuestSpotsForSession({
@@ -336,7 +351,8 @@ export async function reconcilePendingTransactionsForMerchant(
         if (typeof s.payment_intent === "string") {
           await attachPaymentIntent(row.id, s.payment_intent);
         }
-        await markPaymentSucceeded(row.id);
+        const confirmed = await markPaymentSucceeded(row.id);
+        if (!confirmed) continue;
         // Name reserved guest seats too (see reconcilePendingPayments / #192) —
         // this self-heal path must invite guests just like the webhook does.
         await processGuestSpotsForSession({
@@ -391,7 +407,8 @@ export async function reconcilePendingPayments(
     const paymentTransactionId = session.metadata?.payment_transaction_id ?? null;
     if (!paymentTransactionId) continue;
     try {
-      await markPaymentSucceeded(paymentTransactionId);
+      const confirmed = await markPaymentSucceeded(paymentTransactionId);
+      if (!confirmed) continue;
       // Name any reserved guest seats from the session metadata. The webhook and
       // success-URL return already do this; the cron backstop must too, or a
       // guest invited on a missed-webhook booking that only the cron reconciles
@@ -747,19 +764,33 @@ export async function issueRefund(
   // events have no connected account / transfer, so the flags don't apply (and
   // `reverse_transfer` would error with no transfer to reverse).
   const isDestinationCharge = txn.merchant_profile_id != null;
-  const stripeRefund = await stripe.refunds.create({
-    charge: chargeId,
-    amount: requestedAmount,
-    reason: input.reason,
-    ...(isDestinationCharge
-      ? { reverse_transfer: true, refund_application_fee: true }
-      : {}),
-    metadata: {
-      payment_transaction_id: txn.id,
-      initiated_by_profile_id: input.adminProfileId ?? "",
-      source: "admin_dashboard",
+  const stripeRefund = await stripe.refunds.create(
+    {
+      charge: chargeId,
+      amount: requestedAmount,
+      reason: input.reason,
+      ...(isDestinationCharge
+        ? { reverse_transfer: true, refund_application_fee: true }
+        : {}),
+      metadata: {
+        payment_transaction_id: txn.id,
+        source: "admin_dashboard",
+      },
     },
-  });
+    {
+      // If Stripe succeeds but the local transaction fails (or two event-cancel
+      // retries overlap), replay the same refund instead of charging the
+      // platform twice. A later intentional partial refund has a new cached
+      // refunded amount and therefore a distinct key.
+      idempotencyKey: [
+        "click-refund",
+        txn.id,
+        txn.refunded_amount_cents,
+        requestedAmount,
+        input.reason ?? "unspecified",
+      ].join(":"),
+    },
+  );
 
   // Mirror locally in a transaction so refunded_amount_cents stays consistent
   // with the refunds row. The DB constraint `refunded_le_amount` will throw if
@@ -830,6 +861,17 @@ export async function issueRefund(
         where id = $1::uuid
       `,
       [txn.id, refundedAmountCents, newStatus],
+    );
+
+    await client.query(
+      `update refund_failures
+       set resolution = 'resolved',
+           resolved_by_profile_id = coalesce($2::uuid, resolved_by_profile_id),
+           resolved_at = coalesce(resolved_at, now())
+       where payment_transaction_id = $1::uuid
+         and resolution = 'pending'
+         and amount_cents <= $3`,
+      [txn.id, input.adminProfileId, refundedAmountCents],
     );
 
     await client.query("commit");

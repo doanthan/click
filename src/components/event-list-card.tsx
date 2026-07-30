@@ -1,7 +1,7 @@
-import Image from "next/image";
 import Link from "next/link";
 import { type EventItem, formatEventTimeRange } from "@/lib/click-data";
 import { EventBookmarkButton } from "./event-bookmark-button";
+import { EventImage } from "./event-image";
 
 function initials(name: string) {
   return name
@@ -38,9 +38,10 @@ export function EventListCard({
         href={`/events/${event.id}`}
         className="relative h-44 w-full shrink-0 self-stretch overflow-hidden rounded-xl border border-[color:var(--line-soft)] sm:h-auto sm:w-52"
       >
-        <Image
+        <EventImage
           src={event.image}
           alt={event.imageAlt}
+          category={event.category}
           fill
           sizes="(min-width: 640px) 208px, 100vw"
           className="object-cover transition duration-500 group-hover:scale-105"

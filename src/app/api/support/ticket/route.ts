@@ -8,8 +8,11 @@ import {
   type ConsoleEntry,
   type NetworkEntry,
 } from "@/lib/support-repository";
+import { checkRateLimit, getClientIp, rateLimitResponse } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
+const SCREENSHOT_MAX_BYTES = 5 * 1024 * 1024;
+const SCREENSHOT_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 function clientIp(request: Request): string | null {
   const fwd = request.headers.get("x-forwarded-for");
@@ -31,6 +34,13 @@ export async function POST(request: Request) {
   if (!session?.user?.email) {
     return NextResponse.json({ error: "Sign in to report a bug." }, { status: 401 });
   }
+  const limit = await checkRateLimit({
+    scope: "support-ticket",
+    identity: `${session.user.email}:${getClientIp(request)}`,
+    limit: 10,
+    windowSeconds: 60 * 60,
+  });
+  if (!limit.allowed) return rateLimitResponse(limit);
 
   let form: FormData;
   try {
@@ -61,6 +71,18 @@ export async function POST(request: Request) {
   const screenshotEntry = form.get("screenshot");
   let screenshot: Buffer | null = null;
   if (screenshotEntry && typeof screenshotEntry !== "string") {
+    if (!SCREENSHOT_TYPES.has(screenshotEntry.type)) {
+      return NextResponse.json(
+        { error: "Screenshot must be a JPG, PNG, or WEBP image." },
+        { status: 400 },
+      );
+    }
+    if (screenshotEntry.size > SCREENSHOT_MAX_BYTES) {
+      return NextResponse.json(
+        { error: "Screenshot must be 5 MB or smaller." },
+        { status: 400 },
+      );
+    }
     const ab = await screenshotEntry.arrayBuffer();
     screenshot = Buffer.from(ab);
   }

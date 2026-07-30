@@ -14,6 +14,7 @@
  */
 import Link from "next/link";
 import type { ComponentProps, CSSProperties, ReactNode } from "react";
+import { resolveAvatarImage } from "@/lib/avatar-images";
 
 /* ============================ brand marks ============================ */
 
@@ -424,6 +425,7 @@ export function Avatar({
   className?: string;
 }) {
   const [bg, fg] = AVATAR_TINTS[(name.charCodeAt(0) || 0) % AVATAR_TINTS.length];
+  const avatarSrc = resolveAvatarImage(src);
   const base: CSSProperties = {
     width: size,
     height: size,
@@ -436,13 +438,13 @@ export function Avatar({
     boxShadow: ring ? "0 0 0 2.5px var(--paper), 0 0 0 4px var(--lavender)" : undefined,
   };
 
-  if (src) {
+  if (avatarSrc) {
     return (
       <span className={className} style={{ ...base, background: "var(--champagne-deep)" }}>
         {/* Avatars are remote (Supabase / OAuth) and tiny; next/image buys
             nothing here and its loader chokes on the arbitrary provider hosts. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={src} alt={name} width={size} height={size} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+        <img src={avatarSrc} alt={name} width={size} height={size} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
       </span>
     );
   }

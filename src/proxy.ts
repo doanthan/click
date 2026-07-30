@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
 import { updateSession } from "@/utils/supabase/middleware";
+import { isInternalRoute, isProductionDeployment } from "@/lib/runtime-mode";
 import { NextResponse, type NextRequest } from "next/server";
 
 function redirectToLogin(request: NextRequest, target: "customer" | "merchant" = "customer") {
@@ -15,6 +16,17 @@ export const proxy = auth((request) => {
   const nextRequest = request as NextRequest;
   const pathname = nextRequest.nextUrl.pathname;
   const session = request.auth;
+
+  // Test harnesses and database inspection tools are never part of the public
+  // product. Return a deliberately empty 404 before any DB work or page render.
+  // The underlying test actions also enforce local-development-only access so
+  // stale Server Action ids cannot bypass this route-level containment.
+  if (isProductionDeployment() && isInternalRoute(pathname)) {
+    return new NextResponse(null, {
+      status: 404,
+      headers: { "Cache-Control": "private, no-store" },
+    });
+  }
 
   // /dashboard and /admin only require a signed-in session here. Admin-specific
   // authorization is enforced in src/app/admin/layout.tsx, which renders an

@@ -26,6 +26,11 @@ import {
   scorePersonalizedEvent,
 } from "./personalized-matching";
 import { buildEventMediaGallery, type MediaItem } from "./event-media";
+import {
+  fallbackEventImage,
+  resolveEventImage,
+  resolveEventImages,
+} from "./event-images";
 import { deriveEventSubTagsBySlug } from "./matching/feature-store";
 import {
   generateEventCandidates,
@@ -59,7 +64,8 @@ import {
   severAllCoordinationForUser,
   pairCoordinationAllowed,
 } from "./clicks/teardown";
-import { calculateApplicationFee } from "./stripe-connect";
+import { calculateApplicationFee, getPlatformFeeBps } from "./stripe-connect";
+import { isClickMechanicEnabled, isProductionDeployment } from "./runtime-mode";
 import { logBookingEvent, refundBandFromTier } from "./booking-events";
 import {
   type GuestDetailInput,
@@ -564,6 +570,12 @@ function eventStatusFromDb(status: string): EventStatus {
   return "Live";
 }
 
+const BOOKABLE_EVENT_STATUSES = new Set(["live", "featured", "locked", "waitlist"]);
+
+function isBookableEventStatus(status: string) {
+  return BOOKABLE_EVENT_STATUSES.has(status);
+}
+
 function bookingFromDb(bookingModel: string): EventItem["booking"] {
   return bookingModel === "external" ? "External" : "Click-managed";
 }
@@ -595,7 +607,7 @@ function eventFromRow(row: EventRow): EventItem {
     // When a merchant hasn't uploaded a cover, fall back to a category-relevant
     // stock image rather than a single generic yoga photo (which read as a
     // "random" unrelated pic on, e.g., a floral or food event).
-    image: row.image_url ?? imageForCategory(row.category),
+    image: resolveEventImage(row.image_url, row.category, row.title),
     imageAlt: row.image_alt ?? "Click event",
     description: row.description,
     tags: row.tags ?? [],
@@ -623,14 +635,6 @@ function parsePriceCents(price: string) {
 
   const numeric = Number(trimmed.replace(/[^0-9.]/g, ""));
   return Number.isFinite(numeric) ? Math.round(numeric * 100) : 0;
-}
-
-function imageForCategory(category: string) {
-  if (category === "Food") return "/media/networking.jpg";
-  if (category === "Fitness") return "/media/yoga.jpg";
-  if (category === "Relationships" || category === "Career") return "/media/networking.jpg";
-  if (category === "Creative") return "/media/concert.jpg";
-  return "/media/open-yoga.jpg";
 }
 
 function authError(message = "You need to log in first.") {
@@ -678,7 +682,7 @@ async function sendWorkflowEmail(input: {
 // Shared site-origin lookup for absolute URLs in templated emails. Falls back
 // to localhost so dev sessions still produce clickable links in the drawer.
 function emailOrigin() {
-  return process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") || "http://localhost:3000";
+  return process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") || "http://localhost:3000";
 }
 
 // Date/time formatting for the templated emails. We always use Sydney
@@ -827,7 +831,7 @@ async function logRsvpEmails(
       ? `${priceLabel(receipt.amountPaidCents, receipt.currency)} · Paid`
       : priceLabel(row.price_cents, row.currency);
 
-    void logEmailEvent({
+    await logEmailEvent({
       template: "rsvp-attendee",
       toEmail: row.attendee_email,
       toProfileId: attendeeProfileId,
@@ -855,7 +859,7 @@ async function logRsvpEmails(
     });
 
     if (row.merchant_contact_email) {
-      void logEmailEvent({
+      await logEmailEvent({
         template: "rsvp-merchant",
         toEmail: row.merchant_contact_email,
         toProfileId: row.merchant_owner_profile_id,
@@ -936,7 +940,7 @@ async function logEventApprovedEmail(
       (row.merchant_owner_display_name || row.merchant_business_name || "")
         .split(/\s+/)[0] || "there";
 
-    void logEmailEvent({
+    await logEmailEvent({
       template: "event-approved-merchant",
       toEmail: row.merchant_contact_email,
       toProfileId: row.merchant_owner_profile_id,
@@ -1001,7 +1005,7 @@ async function logEventRejectedEmail(
       (row.merchant_owner_display_name || row.merchant_business_name || "")
         .split(/\s+/)[0] || "there";
 
-    void logEmailEvent({
+    await logEmailEvent({
       template: "event-rejected-merchant",
       toEmail: row.merchant_contact_email,
       toProfileId: row.merchant_owner_profile_id,
@@ -1095,7 +1099,7 @@ async function logRsvpCancelledEmails(
       (row.merchant_owner_display_name || row.merchant_business_name || "")
         .split(/\s+/)[0] || "there";
 
-    void logEmailEvent({
+    await logEmailEvent({
       template: "rsvp-cancelled-attendee",
       toEmail: row.attendee_email,
       toProfileId: attendeeProfileId,
@@ -1112,7 +1116,7 @@ async function logRsvpCancelledEmails(
     });
 
     if (row.merchant_contact_email) {
-      void logEmailEvent({
+      await logEmailEvent({
         template: "rsvp-cancelled-merchant",
         toEmail: row.merchant_contact_email,
         toProfileId: row.merchant_owner_profile_id,
@@ -1203,7 +1207,7 @@ async function logPaymentReceiptEmail(
       timeZone: "Australia/Sydney",
     }).format(new Date());
 
-    void logEmailEvent({
+    await logEmailEvent({
       template: "payment-receipt-attendee",
       toEmail: row.profile_email,
       toProfileId: row.profile_id,
@@ -1245,9 +1249,11 @@ function getSessionEmail(session: Session | null) {
 // store the in-flight promise so concurrent Promise.all callers share one
 // query. Outside a React request scope (route handlers, crons) cache() calls
 // straight through uncached, which matches the previous behaviour.
-const sessionMemoSlot = cache((_scope: string, _email: string) => ({
-  promise: undefined as Promise<unknown> | undefined,
-}));
+const sessionMemoSlot = cache((scope: string, email: string) => {
+  void scope;
+  void email;
+  return { promise: undefined as Promise<unknown> | undefined };
+});
 
 function memoizeBySessionEmail<T>(
   scope: string,
@@ -1378,7 +1384,7 @@ function eventItemFromInput(input: CreateEventInput, session: Session | null): E
     price: formatPrice(priceCents),
     attendees: 0,
     capacity,
-    image: imageForCategory(category),
+    image: fallbackEventImage(category, title),
     imageAlt: "Community event listing",
     description,
     tags,
@@ -1578,8 +1584,8 @@ async function ensureProfileForSessionUncached(session: Session | null) {
   if (row?.is_new) {
     const firstName = (row.display_name || "").split(/\s+/)[0] || "there";
     const origin =
-      process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") || "http://localhost:3000";
-    void logEmailEvent({
+      process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") || "http://localhost:3000";
+    await logEmailEvent({
       template: "account-welcome",
       toEmail: row.email,
       toProfileId: row.id,
@@ -2052,12 +2058,11 @@ export async function getMerchantEventDetail(
     waitlisted: Number(row.waitlisted),
     priceCents: row.price_cents,
     category: row.category,
-    images:
-      row.image_urls && row.image_urls.length > 0
-        ? row.image_urls
-        : row.image_url
-          ? [row.image_url]
-          : [imageForCategory(row.category)],
+    images: resolveEventImages(
+      row.image_urls && row.image_urls.length > 0 ? row.image_urls : [row.image_url],
+      row.category,
+      row.title,
+    ),
     imageAlt: row.image_alt,
     attendees: attendeeResult.rows.map((entry) => ({
       attendeeId: entry.attendee_id,
@@ -2455,7 +2460,7 @@ export async function rejectEventAddressChange(
 export async function getEventsForExplore() {
   const pool = getPostgresPool();
 
-  if (!pool) return getFallbackEvents();
+  if (!pool) return isProductionDeployment() ? [] : getFallbackEvents();
 
   try {
     const result = await pool.query<EventRow>(`
@@ -2543,7 +2548,7 @@ export async function getEventsForExplore() {
       console.warn("Falling back to static Click events because Postgres is unavailable.", error);
     }
 
-    return getFallbackEvents();
+    return isProductionDeployment() ? [] : getFallbackEvents();
   }
 }
 
@@ -2847,6 +2852,7 @@ export async function getEventBySlug(
   const pool = getPostgresPool();
 
   if (!pool) {
+    if (isProductionDeployment()) return null;
     const fallback = (await getFallbackEvents({ includePending: true })).find(
       (event) => event.id === slug,
     );
@@ -2953,6 +2959,7 @@ export async function getEventBySlug(
 
     const row = result.rows[0];
     if (!row) {
+      if (isProductionDeployment()) return null;
       // Slug connected fine but has no row — e.g. a static seed event that was
       // never inserted into Supabase. Fall back to bundled Click data so shared
       // links and the event modal still resolve instead of 404ing.
@@ -3091,15 +3098,17 @@ export async function getEventBySlug(
       media: buildEventMediaGallery({
         // Real uploads only: the image_urls[] array when set, else the single
         // image_url. No synthetic stock fillers.
-        images:
-          row.image_urls && row.image_urls.length > 0
-            ? row.image_urls
-            : [base.image],
+        images: resolveEventImages(
+          row.image_urls && row.image_urls.length > 0 ? row.image_urls : [base.image],
+          row.category,
+          row.title,
+        ),
         primaryAlt: base.imageAlt,
       }),
     };
   } catch (error) {
     if (isDatabaseConnectivityError(error)) {
+      if (isProductionDeployment()) return null;
       const fallback = (await getFallbackEvents({ includePending: true })).find(
         (event) => event.id === slug,
       );
@@ -3200,6 +3209,11 @@ export async function registerForEvent(eventId: string, session: Session | null)
       // Past events are closed: no new RSVPs once the event has ended.
       if (event.has_ended) {
         const error = new Error("This event has already ended.");
+        error.name = "ValidationError";
+        throw error;
+      }
+      if (!isBookableEventStatus(event.status)) {
+        const error = new Error("This event is not accepting bookings.");
         error.name = "ValidationError";
         throw error;
       }
@@ -3477,6 +3491,7 @@ export async function acceptWaitlistOffer(eventId: string, session: Session | nu
       slug: string;
       title: string;
       capacity: number;
+      status: string;
       price_cents: number;
       confirmed_attendees: string;
     }>(
@@ -3486,6 +3501,7 @@ export async function acceptWaitlistOffer(eventId: string, session: Session | nu
           event.slug,
           event.title,
           event.capacity,
+          event.status::text,
           event.price_cents,
           (
             select count(*)
@@ -3504,6 +3520,11 @@ export async function acceptWaitlistOffer(eventId: string, session: Session | nu
     if (!event) {
       const error = new Error("Event not found.");
       error.name = "NotFoundError";
+      throw error;
+    }
+    if (!isBookableEventStatus(event.status)) {
+      const error = new Error("This event is not accepting bookings.");
+      error.name = "ConflictError";
       throw error;
     }
 
@@ -3688,7 +3709,7 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
       .filter(Boolean);
     const dedupedGallery = Array.from(new Set(galleryUrls));
     const coverImage =
-      dedupedGallery[0] || input.imageUrl?.trim() || imageForCategory(category);
+      resolveEventImage(dedupedGallery[0] || input.imageUrl?.trim(), category, input.title);
     const imageUrlsForDb =
       dedupedGallery.length > 0 ? dedupedGallery : null;
 
@@ -3821,7 +3842,7 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
     const merchantFirstName =
       (profile.display_name || merchantProfile.business_name || "").split(/\s+/)[0] ||
       "there";
-    void logEmailEvent({
+    await logEmailEvent({
       template: "event-created-merchant",
       toEmail: merchantProfile.contact_email,
       toProfileId: profile.id,
@@ -4386,26 +4407,22 @@ export async function updateMerchantVerificationForAdmin(
     ],
   );
 
-  await sendWorkflowEmail({
-    to: merchant.owner_email,
-    subject:
-      status === "approved"
-        ? `${merchant.business_name} is approved on Click`
-        : status === "suspended"
+  if (status !== "approved" && status !== "rejected") {
+    await sendWorkflowEmail({
+      to: merchant.owner_email,
+      subject:
+        status === "suspended"
           ? `${merchant.business_name} has been suspended on Click`
           : `${merchant.business_name} merchant status: ${status}`,
-    text: [
-      `Hi ${merchant.owner_name},`,
-      status === "approved"
-        ? `${merchant.business_name} is approved to create and manage events on Click. Finish a quick setup to learn the ropes and connect payouts.`
-        : status === "suspended"
+      text: [
+        `Hi ${merchant.owner_name},`,
+        status === "suspended"
           ? `${merchant.business_name} has been suspended. Your events are hidden from Discover until an admin reinstates the account.`
-          : status === "rejected" && trimmedReason
-            ? `${merchant.business_name} needs another look before we can approve it:\n\n${trimmedReason}\n\nReply to this email or update your application and resubmit.`
-            : `${merchant.business_name} is now marked ${status}.`,
-      `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3001"}${status === "approved" ? "/merchant/onboarding" : "/merchant"}`,
-    ].join("\n\n"),
-  });
+          : `${merchant.business_name} is now marked ${status}.`,
+        `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3001"}/merchant`,
+      ].join("\n\n"),
+    });
+  }
 
   // Log the rendered HTML to email_events for the dev drawer. Only approved /
   // rejected have templates in /emails today; suspended + pending fall through
@@ -4414,7 +4431,7 @@ export async function updateMerchantVerificationForAdmin(
   const merchantFirstName =
     (merchant.owner_name || merchant.business_name || "").split(/\s+/)[0] || "there";
   if (status === "approved") {
-    void logEmailEvent({
+    await logEmailEvent({
       template: "merchant-verified-merchant",
       toEmail: merchant.owner_email,
       toProfileId: merchant.owner_profile_id,
@@ -4428,7 +4445,7 @@ export async function updateMerchantVerificationForAdmin(
       },
     });
   } else if (status === "rejected") {
-    void logEmailEvent({
+    await logEmailEvent({
       template: "merchant-rejected-merchant",
       toEmail: merchant.owner_email,
       toProfileId: merchant.owner_profile_id,
@@ -5241,12 +5258,16 @@ export async function getAdminMerchantDetail(
       paidRevenueCents: Number(e.paid_revenue_cents),
     }));
 
-    const upcomingEvents = allEvents.filter(
-      (e) => e.startsAt && new Date(e.startsAt).getTime() >= now,
-    );
-    const pastEvents = allEvents.filter(
-      (e) => !e.startsAt || new Date(e.startsAt).getTime() < now,
-    );
+    const isUpcomingAdminMerchantEvent = (event: AdminMerchantDetailEvent) =>
+      event.status !== "cancelled" &&
+      event.status !== "rejected" &&
+      !!event.startsAt &&
+      new Date(event.startsAt).getTime() >= now;
+    const upcomingEvents = allEvents.filter(isUpcomingAdminMerchantEvent);
+    // Cancelled/rejected future listings are historical records, not upcoming
+    // work. Keep them visible to admins, but under history where their terminal
+    // status cannot inflate the merchant's active-event count.
+    const pastEvents = allEvents.filter((event) => !isUpcomingAdminMerchantEvent(event));
 
     // Upcoming should be soonest-first.
     upcomingEvents.sort((a, b) => {
@@ -6252,7 +6273,8 @@ async function getProfileStatusUncached(session: Session | null): Promise<Profil
       hasGalleryPhotos: Boolean(row?.has_gallery),
       datingVisible: Boolean(row?.dating_visible),
     };
-  } catch {
+  } catch (error) {
+    console.error("getProfileStatus failed", { email, error });
     return {
       exists: !!email,
       role: "attendee",
@@ -7119,7 +7141,7 @@ export async function registerMerchantWizardSubmit(
       // row IS the waitlist record (the dev/staging inbox + audit trail).
       const withinPilot = isWithinPilotArea(input.addressState, postcode);
       if (!withinPilot) {
-        void logEmailEvent({
+        await logEmailEvent({
           template: "merchant-waitlisted-merchant",
           toEmail: contactEmail,
           toProfileId: profile.id,
@@ -7133,7 +7155,7 @@ export async function registerMerchantWizardSubmit(
           },
         });
       } else {
-        void logEmailEvent({
+        await logEmailEvent({
           template: "merchant-application-received",
           toEmail: contactEmail,
           toProfileId: profile.id,
@@ -7359,6 +7381,23 @@ async function sendClickInner(
       throw error;
     }
 
+    const suppressionResult = await client.query<{ suppressed: boolean }>(
+      `
+        select exists (
+          select 1 from pair_suppressions
+          where expires_at > now()
+            and ((user_a_id = $1::uuid and user_b_id = $2::uuid)
+              or (user_a_id = $2::uuid and user_b_id = $1::uuid))
+        ) as suppressed
+      `,
+      [profile.id, clickedProfile.id],
+    );
+    if (suppressionResult.rows[0]?.suppressed) {
+      const error = new Error("This person isn't available to click with right now.");
+      error.name = "ValidationError";
+      throw error;
+    }
+
     // Two click processes, two surfaces (§1, §2). The surface is decided by whether a
     // source event is supplied — never by anything the receiver can influence:
     //  • Process 1 — discovery "Click with someone" (no source event): anonymous,
@@ -7434,7 +7473,8 @@ async function sendClickInner(
             )
           : await client.query<{ n: number }>(
               `select count(*)::int as n from clicks
-                where sender_id = $1::uuid and event_id is null and status = 'pending'`,
+                where sender_id = $1::uuid and event_id is null
+                  and status = 'pending' and expires_at > now()`,
               [profile.id],
             );
       const used = Number(capResult.rows[0]?.n ?? 0);
@@ -7700,7 +7740,7 @@ async function sendClickInner(
       const firstNameOf = (name: string | null) =>
         (name || "").split(/\s+/)[0] || "there";
       if (profile.email) {
-        void logEmailEvent({
+        await logEmailEvent({
           template: "mutual-click-attendee",
           toEmail: profile.email,
           toProfileId: profile.id,
@@ -7715,7 +7755,7 @@ async function sendClickInner(
         });
       }
       if (clickedProfile.email) {
-        void logEmailEvent({
+        await logEmailEvent({
           template: "mutual-click-attendee",
           toEmail: clickedProfile.email,
           toProfileId: clickedProfile.id,
@@ -7762,12 +7802,65 @@ export async function createUserClickForSession(
 ) {
   const startedAt = Date.now();
   try {
+    if (!isClickMechanicEnabled()) {
+      const error = new Error("Clicking is temporarily paused.");
+      error.name = "ValidationError";
+      throw error;
+    }
     return await sendClickInner(input, session);
   } finally {
     const elapsed = Date.now() - startedAt;
     if (elapsed < SEND_CLICK_FLOOR_MS) {
       await new Promise((resolve) => setTimeout(resolve, SEND_CLICK_FLOOR_MS - elapsed));
     }
+  }
+}
+
+export async function expireClickLifecycles() {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    const clicks = await client.query(
+      `update clicks set status = 'expired', updated_at = now()
+       where status = 'pending' and expires_at <= now()`,
+    );
+    const proposals = await client.query(
+      `update click_proposals set status = 'expired', updated_at = now()
+       where status = 'pending' and expires_at <= now()`,
+    );
+    await client.query(
+      `update mutual_clicks m
+       set coord_state = 'dormant', updated_at = now()
+       where m.status = 'active' and m.coord_state = 'proposed'
+         and not exists (
+           select 1 from click_proposals p
+           where p.mutual_click_id = m.id and p.status in ('pending', 'accepted')
+         )`,
+    );
+    const mutuals = await client.query(
+      `update mutual_clicks
+       set status = 'expired', coord_state = 'dormant', ended_at = now(), updated_at = now()
+       where status = 'active' and expires_at <= now()`,
+    );
+    const suppressions = await client.query(
+      `delete from pair_suppressions where expires_at <= now()`,
+    );
+    await client.query(`delete from api_rate_limits where expires_at <= now()`);
+    await client.query("commit");
+    return {
+      clicksExpired: clicks.rowCount ?? 0,
+      proposalsExpired: proposals.rowCount ?? 0,
+      mutualsExpired: mutuals.rowCount ?? 0,
+      suppressionsReleased: suppressions.rowCount ?? 0,
+    };
+  } catch (error) {
+    await client.query("rollback").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
   }
 }
 
@@ -8468,7 +8561,7 @@ export async function cancelGuestSeatForPurchaser(
         day: "numeric",
         timeZone: "Australia/Sydney",
       }).format(eventStartsAt)}`;
-      void logEmailEvent({
+      await logEmailEvent({
         template: "guest-spot-cancelled",
         toEmail: claimed.email,
         toProfileId: claimed.profileId,
@@ -8853,10 +8946,58 @@ export async function cancelMerchantEvent(eventId: string, session: Session | nu
     throw error;
   }
 
+  return cancelEvent(eventId, {
+    kind: "merchant",
+    actorProfileId: profile.id,
+    merchantId: merchant.id,
+    reason: "",
+  });
+}
+
+export async function cancelEventForAdmin(
+  eventId: string,
+  reason: string,
+  session: Session | null,
+) {
+  if (!getPostgresPool()) throw databaseUnavailableError();
+  const profile = await requireAdminProfile(session);
+  const cancellationReason = reason.trim().slice(0, 1000);
+
+  if (cancellationReason.length < 5) {
+    const error = new Error("Add a short cancellation reason (at least 5 characters).");
+    error.name = "ValidationError";
+    throw error;
+  }
+
+  return cancelEvent(eventId, {
+    kind: "admin",
+    actorProfileId: profile.id,
+    reason: cancellationReason,
+  });
+}
+
+type EventCancellationActor =
+  | {
+      kind: "merchant";
+      actorProfileId: string;
+      merchantId: string;
+      reason: string;
+    }
+  | {
+      kind: "admin";
+      actorProfileId: string;
+      reason: string;
+    };
+
+async function cancelEvent(eventId: string, actor: EventCancellationActor) {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+
   const client = await pool.connect();
   let affectedProfiles: {
     bookingId: string;
     isBooking: boolean;
+    needsCancellationNotice: boolean;
     profileId: string;
     email: string;
     displayName: string;
@@ -8875,31 +9016,52 @@ export async function cancelMerchantEvent(eventId: string, session: Session | nu
       slug: string;
       title: string;
       status: string;
+      merchant_profile_id: string | null;
+      host_profile_id: string | null;
+      host_email: string | null;
+      host_display_name: string | null;
       starts_at: Date;
       ends_at: Date | null;
       timezone: string;
       host_name: string;
     }>(
       `
-        select id::text, slug, title, status::text, starts_at, ends_at, timezone, host_name
-        from events
-        where slug = $1 and merchant_profile_id = $2::uuid
-        for update
+        select
+          event.id::text,
+          event.slug,
+          event.title,
+          event.status::text,
+          event.merchant_profile_id::text,
+          event.host_profile_id::text,
+          host.email::text as host_email,
+          host.display_name as host_display_name,
+          event.starts_at,
+          event.ends_at,
+          event.timezone,
+          event.host_name
+        from events event
+        left join profiles host on host.id = event.host_profile_id
+        where event.slug = $1
+          ${
+            actor.kind === "merchant"
+              ? "and event.merchant_profile_id = $2::uuid"
+              : "and event.status in ('live', 'featured', 'waitlist', 'locked', 'cancelled')"
+          }
+        for update of event
       `,
-      [eventId, merchant.id],
+      actor.kind === "merchant" ? [eventId, actor.merchantId] : [eventId],
     );
 
     const event = eventResult.rows[0];
     if (!event) {
-      const error = new Error("Merchant event not found.");
+      const error = new Error(
+        actor.kind === "admin" ? "Published event not found." : "Merchant event not found.",
+      );
       error.name = "NotFoundError";
       throw error;
     }
 
-    if (event.status === "cancelled") {
-      await client.query("commit");
-      return { eventTitle: event.title, notified: 0, refunded: 0, alreadyCancelled: true };
-    }
+    const alreadyCancelled = event.status === "cancelled";
 
     const attendeeResult = await client.query<{
       attendee_id: string;
@@ -8929,7 +9091,17 @@ export async function cancelMerchantEvent(eventId: string, session: Session | nu
         join profiles attendee_profile on attendee_profile.id = attendee.profile_id
         left join payment_transactions pt on pt.id = attendee.payment_transaction_id
         where attendee.event_id = $1::uuid
-          and attendee.status in ('confirmed', 'waitlisted', 'pending_payment')
+          and (
+            attendee.status in ('confirmed', 'waitlisted', 'pending_payment')
+            -- A cancellation commits before its Stripe calls. If the process
+            -- stops in that gap, a retry must resume any remaining refund even
+            -- though the attendee row is already cancelled.
+            or (
+              attendee.status = 'cancelled'
+              and pt.status in ('paid', 'partially_refunded')
+              and pt.amount_cents > coalesce(pt.refunded_amount_cents, 0)
+            )
+          )
       `,
       [event.id],
     );
@@ -8944,6 +9116,7 @@ export async function cancelMerchantEvent(eventId: string, session: Session | nu
         bookingId: row.attendee_id,
         // Waitlisted rows aren't bookings — exclude from the lifecycle log.
         isBooking: row.attendee_status !== "waitlisted",
+        needsCancellationNotice: row.attendee_status !== "cancelled",
         profileId: row.profile_id,
         email: row.email,
         displayName: row.display_name,
@@ -8953,14 +9126,20 @@ export async function cancelMerchantEvent(eventId: string, session: Session | nu
       };
     });
 
-    await client.query(
-      `
-        update events
-        set status = 'cancelled', updated_at = now()
-        where id = $1::uuid
-      `,
-      [event.id],
-    );
+    if (!alreadyCancelled) {
+      await client.query(
+        `
+          update events
+          set status = 'cancelled',
+              cancellation_reason = $2,
+              cancelled_at = now(),
+              cancelled_by_profile_id = $3::uuid,
+              updated_at = now()
+          where id = $1::uuid
+        `,
+        [event.id, actor.reason || null, actor.actorProfileId],
+      );
+    }
 
     await client.query(
       `
@@ -8976,14 +9155,16 @@ export async function cancelMerchantEvent(eventId: string, session: Session | nu
     // (not waitlist rows). In-txn so the cancellation + logs commit atomically.
     // The refunded_full leg is logged post-commit per attendee below.
     for (const a of affectedProfiles) {
-      if (!a.isBooking) continue;
+      if (!a.isBooking || !a.needsCancellationNotice) continue;
       await logBookingEvent(client, {
         bookingId: a.bookingId,
         eventId: event.id,
-        merchantId: merchant.id,
+        merchantId: event.merchant_profile_id,
         userId: a.profileId,
         eventType: "cancelled_by_merchant",
-        actor: "merchant",
+        actor: actor.kind,
+        metadata:
+          actor.kind === "admin" ? { cancellationReason: actor.reason } : undefined,
       });
     }
 
@@ -8996,7 +9177,10 @@ export async function cancelMerchantEvent(eventId: string, session: Session | nu
       [event.id],
     );
 
-    if (attendeeResult.rows.length > 0) {
+    const profilesNeedingNotice = affectedProfiles.filter(
+      (profile) => profile.needsCancellationNotice,
+    );
+    if (profilesNeedingNotice.length > 0) {
       await client.query(
         `
           insert into notifications (profile_id, title, body, action_url)
@@ -9004,10 +9188,46 @@ export async function cancelMerchantEvent(eventId: string, session: Session | nu
           from unnest($1::uuid[]) as profile_id
         `,
         [
-          attendeeResult.rows.map((row) => row.profile_id),
+          profilesNeedingNotice.map((profile) => profile.profileId),
           "Event cancelled",
-          `${event.title} has been cancelled by the host.`,
+          actor.kind === "admin"
+            ? `${event.title} has been cancelled by Click. Reason: ${actor.reason}`
+            : `${event.title} has been cancelled by the host.`,
           `/events/${event.slug}`,
+        ],
+      );
+    }
+
+    if (actor.kind === "admin" && !alreadyCancelled && event.host_profile_id) {
+      await client.query(
+        `
+          insert into notifications (profile_id, title, body, action_url)
+          values ($1::uuid, 'Event cancelled by Click', $2, $3)
+        `,
+        [
+          event.host_profile_id,
+          `${event.title} was taken offline. Reason: ${actor.reason}`,
+          `/merchant/events/${event.slug}`,
+        ],
+      );
+    }
+
+    if (actor.kind === "admin" && !alreadyCancelled) {
+      await client.query(
+        `
+          insert into audit_logs (actor_profile_id, action, entity_table, entity_id, metadata)
+          values ($1::uuid, 'admin_cancel_event', 'events', $2::uuid, $3::jsonb)
+        `,
+        [
+          actor.actorProfileId,
+          event.id,
+          JSON.stringify({
+            slug: event.slug,
+            title: event.title,
+            previousStatus: event.status,
+            reason: actor.reason,
+            affectedBookings: affectedProfiles.filter((profile) => profile.isBooking).length,
+          }),
         ],
       );
     }
@@ -9051,10 +9271,6 @@ export async function cancelMerchantEvent(eventId: string, session: Session | nu
       };
     });
     const suggestedEventsHtml = renderSuggestedEventsBlock(suggestions);
-    const suggestedEventsText = suggestions.length
-      ? "Events you might enjoy:\n" +
-        suggestions.map((s) => `• ${s.title} — ${s.line}\n  ${s.url}`).join("\n")
-      : "";
 
     // Per attendee: issue the 100% refund (full remaining balance), then email.
     // Each refund is isolated — a Stripe failure logs to refund_failures and the
@@ -9071,7 +9287,7 @@ export async function cancelMerchantEvent(eventId: string, session: Session | nu
             const refundResult = await issueRefund({
               paymentTransactionId: attendee.paymentTransactionId,
               reason: "requested_by_customer",
-              adminProfileId: null,
+              adminProfileId: actor.kind === "admin" ? actor.actorProfileId : null,
             });
             refundedCount += 1;
             refundLabel = `A full refund of ${dollars} is on the way (3–5 business days).`;
@@ -9080,13 +9296,13 @@ export async function cancelMerchantEvent(eventId: string, session: Session | nu
             await logBookingEvent(pool, {
               bookingId: attendee.bookingId,
               eventId: event.id,
-              merchantId: merchant.id,
+              merchantId: event.merchant_profile_id,
               userId: attendee.profileId,
               eventType: "refunded_full",
               amountCents: -attendee.refundableCents,
               currency: attendee.currency,
               stripeObjectId: refundResult.stripeRefundId,
-              actor: "merchant",
+              actor: actor.kind,
             }).catch(() => {});
           } catch (err) {
             refundLabel =
@@ -9108,22 +9324,9 @@ export async function cancelMerchantEvent(eventId: string, session: Session | nu
           }
         }
 
-        await sendWorkflowEmail({
-          to: attendee.email,
-          subject: `${event.title} has been cancelled`,
-          text: [
-            `Hi ${attendee.displayName},`,
-            `${event.title} has been cancelled by the host.`,
-            refundLabel,
-            suggestedEventsText,
-          ]
-            .filter(Boolean)
-            .join("\n\n"),
-        });
-
-        // Mirror into email_events (dev log) with the real refund label +
-        // suggestions. Fire-and-forget — never blocks the response.
-        void logEmailEvent({
+        // Persist and deliver the cancellation with the real refund label and
+        // suggestions. Awaiting it prevents serverless shutdown mid-send.
+        await logEmailEvent({
           template: "event-cancelled-attendee",
           toEmail: attendee.email,
           toProfileId: attendee.profileId,
@@ -9132,8 +9335,8 @@ export async function cancelMerchantEvent(eventId: string, session: Session | nu
             eventTitle: event.title,
             eventLongDate: dates.eventLongDate,
             eventStartTime: dates.eventStartTime,
-            eventHostName: event.host_name,
-            cancellationReason: "",
+            eventHostName: actor.kind === "admin" ? "Click" : event.host_name,
+            cancellationReason: actor.reason,
             refundLabel,
             suggestedEvents: suggestedEventsHtml,
             discoverUrl: `${origin}/discover`,
@@ -9144,11 +9347,34 @@ export async function cancelMerchantEvent(eventId: string, session: Session | nu
       }),
     );
 
+    if (
+      actor.kind === "admin" &&
+      !alreadyCancelled &&
+      event.host_email &&
+      event.host_profile_id
+    ) {
+      await logEmailEvent({
+        template: "event-cancelled-merchant",
+        toEmail: event.host_email,
+        toProfileId: event.host_profile_id,
+        vars: {
+          merchantFirstName:
+            (event.host_display_name || event.host_name || "there").split(/\s+/)[0] || "there",
+          eventTitle: event.title,
+          cancellationReason: actor.reason,
+          attendeeCount: String(affectedProfiles.length),
+          refundCount: String(refundedCount),
+          eventDashboardUrl: `${origin}/merchant/events/${event.slug}`,
+          supportEmail: "hello@letsclick.app",
+        },
+      });
+    }
+
     return {
       eventTitle: event.title,
-      notified: affectedProfiles.length,
+      notified: profilesNeedingNotice.length,
       refunded: refundedCount,
-      alreadyCancelled: false,
+      alreadyCancelled,
     };
   } catch (error) {
     await client.query("rollback");
@@ -9168,6 +9394,9 @@ export type PaymentHold = {
   // Platform booking fee added on top of the ticket (system_settings.booking_fee_bps,
   // snapshotted at hold time). 0 when the fee is disabled.
   bookingFeeCents: number;
+  // Total Stripe application fee across all seats, snapshotted from the same
+  // settings used for transaction reporting.
+  applicationFeeCents: number | null;
   // What the buyer actually pays = (priceCents + bookingFeeCents) × seatCount.
   // Persisted as payment_transactions.amount_cents so receipts/refunds reconcile.
   totalCents: number;
@@ -9183,6 +9412,11 @@ export type PaymentHold = {
   // Null for legacy platform-managed events where the platform itself is the
   // merchant — those keep the existing single-charge behaviour.
   merchantStripeAccountId: string | null;
+  // One deterministic expiry is shared by the DB hold and Stripe Session so
+  // concurrent retries send byte-for-byte identical creation parameters.
+  holdExpiresAt: Date;
+  stripeCheckoutSessionId: string | null;
+  reused: boolean;
 };
 
 export async function createPaymentHold(
@@ -9222,6 +9456,7 @@ export async function createPaymentHold(
       merchant_charges_enabled: boolean | null;
       confirmed_attendees: string;
       has_ended: boolean;
+      has_live_waitlist_offer: boolean;
     }>(
       `
         select
@@ -9237,6 +9472,18 @@ export async function createPaymentHold(
           merchant.stripe_connect_account_id as merchant_stripe_account_id,
           merchant.charges_enabled as merchant_charges_enabled,
           (coalesce(event.ends_at, event.starts_at) <= now()) as has_ended,
+          exists (
+            select 1
+            from event_waitlists own_offer
+            join event_attendees own_attendee
+              on own_attendee.event_id = own_offer.event_id
+             and own_attendee.profile_id = own_offer.profile_id
+             and own_attendee.status = 'waitlisted'
+            where own_offer.event_id = event.id
+              and own_offer.profile_id = $2::uuid
+              and own_offer.accepted_at is null
+              and own_offer.offered_until > now()
+          ) as has_live_waitlist_offer,
           (
             (
               select count(*)
@@ -9308,6 +9555,11 @@ export async function createPaymentHold(
       error.name = "ValidationError";
       throw error;
     }
+    if (!isBookableEventStatus(event.status)) {
+      const error = new Error("This event is not accepting bookings.");
+      error.name = "ValidationError";
+      throw error;
+    }
 
     // Merchant-hosted paid events must route the charge to the merchant's
     // connected account via destination charge. Platform-managed events
@@ -9324,7 +9576,7 @@ export async function createPaymentHold(
 
     const confirmedCount = Number(event.confirmed_attendees);
     const available = event.capacity - confirmedCount;
-    if (event.status === "waitlist" || available <= 0) {
+    if ((event.status === "waitlist" && !event.has_live_waitlist_offer) || available <= 0) {
       const error = new Error("Event is full — join the waitlist instead.");
       error.name = "ConflictError";
       throw error;
@@ -9365,6 +9617,78 @@ export async function createPaymentHold(
         error.name = "ValidationError";
         throw error;
       }
+    }
+
+    // Application-level checkout idempotency. The event row lock serialises
+    // repeated requests for the same buyer/event, and an active hold is reused
+    // instead of inserting a second payment ledger row. Stripe is keyed by the
+    // returned transaction id, so retries also resolve to the same Checkout
+    // Session even if the client request is duplicated or its response is lost.
+    const activeHoldResult = await client.query<{
+      id: string;
+      amount_cents: number;
+      application_fee_cents: number | null;
+      seat_count: string;
+      hold_expires_at: Date;
+      stripe_checkout_session_id: string | null;
+    }>(
+      `
+        select
+          payment.id::text,
+          payment.amount_cents,
+          payment.application_fee_cents,
+          attendee.hold_expires_at,
+          payment.stripe_checkout_session_id,
+          (
+            1 + (
+              select count(*)
+              from guest_spots guest
+              where guest.payment_transaction_id = payment.id
+                and guest.status <> 'cancelled'
+            )
+          )::text as seat_count
+        from event_attendees attendee
+        join payment_transactions payment on payment.id = attendee.payment_transaction_id
+        where attendee.event_id = $1::uuid
+          and attendee.profile_id = $2::uuid
+          and attendee.status = 'pending_payment'
+          and attendee.hold_expires_at > now()
+          and payment.status = 'pending'
+        limit 1
+        for update of attendee, payment
+      `,
+      [event.id, profile.id],
+    );
+    const activeHold = activeHoldResult.rows[0];
+    if (activeHold) {
+      const heldSeatCount = Number(activeHold.seat_count);
+      if (heldSeatCount !== seatCount) {
+        const error = new Error(
+          `You already have a checkout open for ${heldSeatCount} seat${heldSeatCount === 1 ? "" : "s"}. Complete or wait for it to expire before changing the party size.`,
+        );
+        error.name = "ConflictError";
+        throw error;
+      }
+      const heldPerSeatCents = Math.trunc(activeHold.amount_cents / heldSeatCount);
+      await client.query("commit");
+      return {
+        paymentTransactionId: activeHold.id,
+        eventUuid: event.id,
+        eventSlug: event.slug,
+        eventTitle: event.title,
+        priceCents: event.price_cents,
+        bookingFeeCents: Math.max(0, heldPerSeatCents - event.price_cents),
+        applicationFeeCents: activeHold.application_fee_cents,
+        totalCents: activeHold.amount_cents,
+        seatCount: heldSeatCount,
+        guests: normalizedGuests,
+        currency: event.currency,
+        profileEmail: profile.email,
+        merchantStripeAccountId: event.merchant_stripe_account_id,
+        holdExpiresAt: activeHold.hold_expires_at,
+        stripeCheckoutSessionId: activeHold.stripe_checkout_session_id,
+        reused: true,
+      };
     }
 
     const existing = await client.query<{ status: string }>(
@@ -9420,7 +9744,7 @@ export async function createPaymentHold(
     // Snapshot it at hold time so a later admin change to the rate can't alter an
     // in-flight checkout. Per-seat figures; amount_cents stores the FULL buyer
     // charge across all seats (ticket + fee) × seatCount.
-    const { bookingFeeBps } = await getSystemSettings();
+    const { bookingFeeBps, commissionRateBps } = await getSystemSettings();
     const bookingFeeCents = Math.round((event.price_cents * bookingFeeBps) / 10_000);
     const perSeatCents = event.price_cents + bookingFeeCents;
     const totalCents = perSeatCents * seatCount;
@@ -9434,7 +9758,7 @@ export async function createPaymentHold(
     // merchant-hosted events are destination charges with an application fee;
     // platform-owned events have no connected account, so leave it NULL.
     const applicationFeeCents = event.merchant_stripe_account_id
-      ? (calculateApplicationFee(event.price_cents) + bookingFeeCents) * seatCount
+      ? (calculateApplicationFee(event.price_cents, commissionRateBps) + bookingFeeCents) * seatCount
       : null;
 
     const paymentResult = await client.query<{ id: string }>(
@@ -9447,13 +9771,13 @@ export async function createPaymentHold(
     );
     const paymentTransactionId = paymentResult.rows[0].id;
 
-    const attendeeRow = await client.query<{ id: string }>(
+    const attendeeRow = await client.query<{ id: string; hold_expires_at: Date }>(
       `
         insert into event_attendees (event_id, profile_id, status, payment_transaction_id, hold_expires_at)
-        values ($1::uuid, $2::uuid, 'pending_payment', $3::uuid, now() + interval '30 minutes')
+        values ($1::uuid, $2::uuid, 'pending_payment', $3::uuid, now() + interval '31 minutes')
         on conflict (event_id, profile_id) do update
-        set status = 'pending_payment', payment_transaction_id = excluded.payment_transaction_id, hold_expires_at = now() + interval '30 minutes', updated_at = now()
-        returning id::text
+        set status = 'pending_payment', payment_transaction_id = excluded.payment_transaction_id, hold_expires_at = now() + interval '31 minutes', updated_at = now()
+        returning id::text, hold_expires_at
       `,
       [event.id, profile.id, paymentTransactionId],
     );
@@ -9509,12 +9833,16 @@ export async function createPaymentHold(
       eventTitle: event.title,
       priceCents: event.price_cents,
       bookingFeeCents,
+      applicationFeeCents,
       totalCents,
       seatCount,
       guests: normalizedGuests,
       currency: event.currency,
       profileEmail: profile.email,
       merchantStripeAccountId: event.merchant_stripe_account_id,
+      holdExpiresAt: attendeeRow.rows[0].hold_expires_at,
+      stripeCheckoutSessionId: null,
+      reused: false,
     };
   } catch (error) {
     await client.query("rollback");
@@ -9607,7 +9935,7 @@ export async function processGuestSpotsForSession(args: {
     for (const o of outcomes) {
       if (o.kind === "invited") {
         named.push(o.firstName);
-        void logEmailEvent({
+        await logEmailEvent({
           template: "guest-invite",
           toEmail: o.email,
           vars: {
@@ -9634,7 +9962,7 @@ export async function processGuestSpotsForSession(args: {
             ],
           )
           .catch(() => {});
-        void logEmailEvent({
+        await logEmailEvent({
           template: "guest-spot-existing-user",
           toEmail: o.email,
           toProfileId: o.claimedProfileId,
@@ -9988,7 +10316,7 @@ export async function attachCheckoutSession(
   );
 }
 
-export async function markPaymentSucceeded(paymentTransactionId: string) {
+export async function markPaymentSucceeded(paymentTransactionId: string): Promise<boolean> {
   const pool = getPostgresPool();
   if (!pool) throw databaseUnavailableError();
 
@@ -10015,6 +10343,8 @@ export async function markPaymentSucceeded(paymentTransactionId: string) {
       merchant_profile_id: string | null;
       display_name: string;
       profile_email: string;
+      attendee_status: string | null;
+      attendee_hold_expires_at: Date | null;
     }>(
       `
         select
@@ -10030,6 +10360,16 @@ export async function markPaymentSucceeded(paymentTransactionId: string) {
           (select status::text from events where id = payment_transactions.event_id) as event_status,
           (select display_name from profiles where id = payment_transactions.profile_id) as display_name,
           (select email::text from profiles where id = payment_transactions.profile_id) as profile_email
+          ,(select status::text
+              from event_attendees
+             where event_id = payment_transactions.event_id
+               and profile_id = payment_transactions.profile_id
+             limit 1) as attendee_status
+          ,(select hold_expires_at
+              from event_attendees
+             where event_id = payment_transactions.event_id
+               and profile_id = payment_transactions.profile_id
+             limit 1) as attendee_hold_expires_at
         from payment_transactions
         where id = $1::uuid
         for update
@@ -10040,16 +10380,40 @@ export async function markPaymentSucceeded(paymentTransactionId: string) {
     if (!payment) {
       // Unknown txn id (foreign Stripe session / dev data) — exit cleanly.
       await client.query("rollback");
-      return;
+      return false;
     }
 
-    // Race: the buyer's checkout settled AFTER the host cancelled the event.
-    // cancelMerchantEvent only refunds seats that were paid/pending at cancel
-    // time, so a payment landing later would otherwise get *confirmed* into a
-    // dead event. The money is real (Stripe captured it), so flip the ledger to
-    // 'paid', mark the seat cancelled (never confirmed), notify the buyer, and
-    // issue a full refund out-of-band. Do NOT send the RSVP/receipt emails.
-    if (payment.event_status === "cancelled") {
+    // A Checkout Session remains `payment_status=paid` in Stripe after its
+    // charge has been refunded. Success URLs, webhook retries and reconciliation
+    // sweeps can therefore replay long after the attendee cancelled. Refunded
+    // ledger states are terminal: never move the money back to `paid`, never
+    // restore the seat, and never resend confirmation side effects.
+    if (payment.status === "refunded" || payment.status === "partially_refunded") {
+      await client.query("rollback");
+      return false;
+    }
+
+    const activePaymentHold =
+      payment.attendee_status === "pending_payment" &&
+      payment.attendee_hold_expires_at instanceof Date &&
+      payment.attendee_hold_expires_at.getTime() > Date.now();
+    const alreadyConfirmed = payment.attendee_status === "confirmed";
+
+    // A charge can settle after an event was unpublished, after the buyer
+    // cancelled an unpaid hold, or after that hold expired. In all three cases
+    // the money is real but the booking is not: never restore the seat or send
+    // a confirmation. Instead, persist the capture and issue a full refund.
+    //
+    // A transaction that was already `paid` and whose attendee later cancelled
+    // is intentionally excluded for a live event: it may be a legitimate
+    // no-refund-window cancellation and replaying the success URL must be a
+    // complete no-op rather than changing the agreed refund outcome.
+    const eventCannotFulfil = !isBookableEventStatus(payment.event_status);
+    const newSettlementHasNoSeat =
+      payment.status !== "paid" && !activePaymentHold && !alreadyConfirmed;
+    const paidHoldExpiredBeforeFulfilment =
+      payment.status === "paid" && payment.attendee_status === "pending_payment" && !activePaymentHold;
+    if (eventCannotFulfil || newSettlementHasNoSeat || paidHoldExpiredBeforeFulfilment) {
       if (payment.status !== "paid") {
         await client.query(
           `update payment_transactions set status = 'paid', updated_at = now() where id = $1::uuid`,
@@ -10075,18 +10439,24 @@ export async function markPaymentSucceeded(paymentTransactionId: string) {
         );
         cancelledBookingId = seat.rows[0]?.id ?? null;
       }
-      await client.query(
-        `
-          insert into notifications (profile_id, title, body, action_url)
-          values ($1::uuid, $2, $3, $4)
-        `,
-        [
-          payment.profile_id,
-          "Event cancelled — refund on the way",
-          `${payment.event_title} was cancelled before your payment cleared. A full refund is on the way.`,
-          `/events/${payment.event_slug}`,
-        ],
-      );
+      const firstInvalidSettlement =
+        payment.status !== "paid" || (cancelledSeat.rowCount ?? 0) > 0;
+      if (firstInvalidSettlement) {
+        await client.query(
+          `
+            insert into notifications (profile_id, title, body, action_url)
+            values ($1::uuid, $2, $3, $4)
+          `,
+          [
+            payment.profile_id,
+            "Booking unavailable — refund on the way",
+            eventCannotFulfil
+              ? `${payment.event_title} is no longer available. A full refund is on the way.`
+              : `Your booking hold for ${payment.event_title} ended before payment cleared. A full refund is on the way.`,
+            `/events/${payment.event_slug}`,
+          ],
+        );
+      }
       await client.query("commit");
 
       // Refund the captured charge in full, out-of-band (its own txn + Stripe
@@ -10111,7 +10481,11 @@ export async function markPaymentSucceeded(paymentTransactionId: string) {
           currency: payment.currency,
           stripeObjectId: refundResult.stripeRefundId,
           actor: "system",
-          metadata: { reason: "payment_settled_after_event_cancellation" },
+          metadata: {
+            reason: eventCannotFulfil
+              ? "payment_settled_after_event_unpublished"
+              : "payment_settled_after_booking_hold_ended",
+          },
         }).catch(() => {});
       } catch {
         await pool
@@ -10124,12 +10498,14 @@ export async function markPaymentSucceeded(paymentTransactionId: string) {
               payment.profile_id,
               payment.amount_cents,
               payment.currency,
-              "Auto-refund failed: payment settled after event cancellation",
+              eventCannotFulfil
+                ? "Auto-refund failed: payment settled after event was unpublished"
+                : "Auto-refund failed: payment settled after booking hold ended",
             ],
           )
           .catch(() => null);
       }
-      return;
+      return false;
     }
 
     // Flip the ledger forward. Track whether THIS call did it so a retry that
@@ -10142,13 +10518,18 @@ export async function markPaymentSucceeded(paymentTransactionId: string) {
       );
     }
 
-    // Always promote the seat idempotently — independent of the ledger flip —
-    // so a row left 'pending_payment' by a ledger-only path still self-heals.
+    // Promote only a live payment hold. A paid booking cancelled inside the
+    // no-refund window legitimately keeps the transaction `paid` while its seat
+    // is `cancelled`; replaying the old success URL must not resurrect it. The
+    // pending-only predicate still self-heals the intended missed-webhook case.
     const attendeeUpdate = await client.query<{ id: string }>(
       `
         update event_attendees
         set status = 'confirmed', hold_expires_at = null, updated_at = now()
-        where event_id = $1::uuid and profile_id = $2::uuid and status <> 'confirmed'
+        where event_id = $1::uuid
+          and profile_id = $2::uuid
+          and status = 'pending_payment'
+          and hold_expires_at > now()
         returning id::text
       `,
       [payment.event_id, payment.profile_id],
@@ -10209,6 +10590,7 @@ export async function markPaymentSucceeded(paymentTransactionId: string) {
       // Paid RSVP can also be a proposal's suggested event — nudge the match.
       void notifyProposalPartnerOfRsvp(pool, payment.event_id, payment.profile_id);
     }
+    return attendeeFlipped || payment.attendee_status === "confirmed";
   } catch (error) {
     await client.query("rollback");
     throw error;
@@ -11039,7 +11421,7 @@ export async function getSuggestedPeople(session: Session | null): Promise<Sugge
   const pool = getPostgresPool();
   const email = getSessionEmail(session);
 
-  if (!pool || !email) return [];
+  if (!pool || !email || !isClickMechanicEnabled()) return [];
 
   try {
     const profile = await ensureProfileForSession(session);
@@ -11134,8 +11516,15 @@ export async function getSuggestedPeople(session: Session | null): Promise<Sugge
           -- (bug board #214/#215). mutual_clicks stores the pair as least/greatest.
           and not exists (
             select 1 from mutual_clicks mc
-            where (mc.user_a_id = $1::uuid and mc.user_b_id = p.id)
-               or (mc.user_a_id = p.id and mc.user_b_id = $1::uuid)
+            where mc.status = 'active' and mc.expires_at > now()
+              and ((mc.user_a_id = $1::uuid and mc.user_b_id = p.id)
+                or (mc.user_a_id = p.id and mc.user_b_id = $1::uuid))
+          )
+          and not exists (
+            select 1 from pair_suppressions ps
+            where ps.expires_at > now()
+              and ((ps.user_a_id = $1::uuid and ps.user_b_id = p.id)
+                or (ps.user_a_id = p.id and ps.user_b_id = $1::uuid))
           )
         group by p.id
         order by array_length(
@@ -11295,7 +11684,7 @@ export async function getMutualClicksForSession(session: Session | null): Promis
           -- full) returns the mutual to open/dormant but never ends it, so we filter on
           -- the mutual's status, not the proposal's. Terminal rows (connected/released/
           -- suppressed/expired) belong on the future "Past clicks" shelf, not here.
-          and m.status = 'active'
+          and m.status = 'active' and m.expires_at > now()
           -- SAFE-05: defence-in-depth — a block tears the mutual down (→ suppressed) so
           -- this filter rarely bites, but anti-join blocks directly so a blocked pair can
           -- never render a live card even if a teardown ever failed to run.
@@ -11479,7 +11868,7 @@ export async function reportUser(
     metadata: { reportedProfileId: input.reportedProfileId, reason: input.reason },
   });
 
-  void logEmailEvent({
+  await logEmailEvent({
     template: "report-received-admin",
     toEmail: process.env.SAFETY_INBOX_EMAIL || "safety@click.local",
     vars: {
@@ -12009,7 +12398,7 @@ export async function getProposalsForSession(session: Session | null): Promise<P
            where cap.event_id = e.id and cap.available >= 1
          )
         where (m.user_a_id = $1::uuid or m.user_b_id = $1::uuid)
-          and m.status = 'active'
+          and m.status = 'active' and m.expires_at > now()
           -- SAFE-05: hide a blocked pair (belt-and-suspenders to the teardown).
           and not exists (
             select 1 from user_blocks b
@@ -12198,9 +12587,20 @@ export async function confirmProposal(session: Session | null, proposalId: strin
         select (
           e.status not in ('live', 'featured')
           or e.starts_at <= now()
-          or cap.available < 1
+          or cap.available < (
+            select count(*)
+            from unnest(array[m.user_a_id, m.user_b_id]) participant(profile_id)
+            where not exists (
+              select 1 from event_attendees attendee
+              where attendee.event_id = e.id
+                and attendee.profile_id = participant.profile_id
+                and attendee.status in ('confirmed', 'pending_payment')
+                and (attendee.status <> 'pending_payment' or attendee.hold_expires_at > now())
+            )
+          )
         ) as unavailable
         from click_proposals cp
+        join mutual_clicks m on m.id = cp.mutual_click_id
         join events e on e.id = cp.suggested_event_id
         join event_capacity_v cap on cap.event_id = e.id
         where cp.id = $1::uuid
@@ -12428,6 +12828,63 @@ export async function declineProposalForSession(session: Session | null, proposa
     await client.query("commit");
   } catch (error) {
     await client.query("rollback").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+// Soft-release a mutual without notifying the other person. The pair is kept
+// out of discovery for 90 days, after which the lifecycle cron removes the
+// suppression and they may naturally encounter one another again.
+export async function releaseMutualForSession(session: Session | null, mutualId: string) {
+  const pool = getPostgresPool();
+  if (!getSessionEmail(session)) throw authError();
+  if (!pool) throw databaseUnavailableError();
+
+  const profile = await ensureProfileForSession(session);
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    const result = await client.query<{ user_a_id: string; user_b_id: string }>(
+      `select user_a_id::text, user_b_id::text
+       from mutual_clicks
+       where id = $1::uuid and status = 'active'
+         and (user_a_id = $2::uuid or user_b_id = $2::uuid)
+       for update`,
+      [mutualId, profile.id],
+    );
+    const mutual = result.rows[0];
+    if (!mutual) throw validationError("This connection is already settled.");
+
+    await client.query(
+      `update click_proposals set status = 'withdrawn', updated_at = now()
+       where mutual_click_id = $1::uuid and status in ('pending', 'accepted')`,
+      [mutualId],
+    );
+    await client.query(
+      `update clicks set status = 'invalidated', updated_at = now()
+       where status = 'pending'
+         and ((sender_id = $1::uuid and receiver_id = $2::uuid)
+           or (sender_id = $2::uuid and receiver_id = $1::uuid))`,
+      [mutual.user_a_id, mutual.user_b_id],
+    );
+    await client.query(
+      `update mutual_clicks
+       set status = 'released', coord_state = 'dormant', ended_at = now(), updated_at = now()
+       where id = $1::uuid`,
+      [mutualId],
+    );
+    await client.query(
+      `insert into pair_suppressions (user_a_id, user_b_id, reason, expires_at)
+       values ($1::uuid, $2::uuid, 'not_feeling_it', now() + interval '90 days')
+       on conflict (user_a_id, user_b_id)
+       do update set reason = excluded.reason, expires_at = excluded.expires_at, created_at = now()`,
+      [mutual.user_a_id, mutual.user_b_id],
+    );
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback").catch(() => undefined);
     throw error;
   } finally {
     client.release();
@@ -13577,7 +14034,7 @@ function parseMatchingWeights(value: unknown): MatchingWeights {
 export async function getSystemSettings(): Promise<SystemSettings> {
   const fallback: SystemSettings = {
     maintenanceMode: false,
-    commissionRateBps: 290,
+    commissionRateBps: getPlatformFeeBps(),
     bookingFeeBps: 0,
     marketingBanner: "",
     matchingWeights: DEFAULT_MATCHING_WEIGHTS,
@@ -13594,7 +14051,9 @@ export async function getSystemSettings(): Promise<SystemSettings> {
     const map = new Map(result.rows.map((row) => [row.key, row.value]));
     return {
       maintenanceMode: Boolean(map.get("maintenance_mode")),
-      commissionRateBps: Number(map.get("commission_rate_bps") ?? 290),
+      commissionRateBps: process.env.PLATFORM_FEE_BPS
+        ? getPlatformFeeBps()
+        : Number(map.get("commission_rate_bps") ?? 0),
       bookingFeeBps: Number(map.get("booking_fee_bps") ?? 0),
       marketingBanner: String(map.get("marketing_banner") ?? "").trim(),
       matchingWeights: parseMatchingWeights(map.get("matching_weights")),
@@ -13883,6 +14342,108 @@ export type EventAttendeePreviewRow = {
   // visibility — gated so we never out someone who keeps dating private.
   datingMinded: boolean;
 };
+
+export async function sendEventReminders() {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+
+  const result = await pool.query<{
+    event_id: string;
+    event_slug: string;
+    event_title: string;
+    starts_at: Date;
+    ends_at: Date | null;
+    timezone: string;
+    location_name: string;
+    address: string | null;
+    city: string;
+    category: string;
+    host_name: string;
+    profile_id: string;
+    email: string;
+    display_name: string;
+    confirmed_count: string;
+  }>(
+    `
+      select e.id::text as event_id,
+             e.slug as event_slug,
+             e.title as event_title,
+             e.starts_at,
+             e.ends_at,
+             e.timezone,
+             e.location_name,
+             e.address,
+             e.city,
+             e.category,
+             e.host_name,
+             p.id::text as profile_id,
+             p.email::text as email,
+             p.display_name,
+             (
+               select count(*)::text
+               from event_attendees count_attendee
+               where count_attendee.event_id = e.id
+                 and count_attendee.status = 'confirmed'
+             ) as confirmed_count
+      from events e
+      join event_attendees attendee
+        on attendee.event_id = e.id and attendee.status = 'confirmed'
+      join profiles p on p.id = attendee.profile_id
+      where e.starts_at >= now() + interval '23 hours'
+        and e.starts_at < now() + interval '25 hours'
+        and e.status in ('live', 'featured', 'locked', 'waitlist')
+        and coalesce((p.notification_prefs->>'eventReminders')::boolean, true)
+        and not exists (
+          select 1
+          from email_events sent
+          where sent.template = 'event-reminder-attendee'
+            and sent.to_profile_id = p.id
+            and sent.vars->>'eventId' = e.id::text
+        )
+      order by e.starts_at, p.id
+    `,
+  );
+
+  const origin = emailOrigin();
+  await Promise.all(
+    result.rows.map(async (row) => {
+      const dates = formatEmailDates(row.starts_at, row.ends_at, row.timezone);
+      const firstName = row.display_name.split(/\s+/)[0] || "there";
+      const directionsQuery = [row.location_name, row.address, row.city]
+        .filter(Boolean)
+        .join(", ");
+      await logEmailEvent({
+        template: "event-reminder-attendee",
+        toEmail: row.email,
+        toProfileId: row.profile_id,
+        vars: {
+          eventId: row.event_id,
+          firstName,
+          eventTitle: row.event_title,
+          eventLongDate: dates.eventLongDate,
+          eventStartTime: dates.eventStartTime,
+          eventEndTime: dates.eventEndTime,
+          eventVenue: row.location_name,
+          eventAddress: row.address ?? "",
+          eventCity: row.city,
+          eventCategory: row.category,
+          eventHostName: row.host_name,
+          whoElseLabel:
+            Number(row.confirmed_count) > 1
+              ? `${Number(row.confirmed_count) - 1} other people are going`
+              : "",
+          directionsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(directionsQuery)}`,
+          eventDetailsUrl: `${origin}/events/${row.event_slug}`,
+          cancelRsvpUrl: `${origin}/confirmed-events`,
+          unsubscribeUrl: `${origin}/account-settings`,
+          supportEmail: "hello@letsclick.app",
+        },
+      });
+    }),
+  );
+
+  return { processed: result.rowCount ?? result.rows.length };
+}
 
 export async function getEventAttendeePreview(
   eventSlug: string,

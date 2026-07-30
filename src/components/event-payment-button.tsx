@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { openLoginModal } from "./login-modal-host";
 import { EventCheckoutModal } from "./event-checkout-modal";
 
@@ -67,6 +67,7 @@ export function EventPaymentButton({
   perSeatCents?: number;
   eventDateISO?: string;
 }) {
+  const checkoutAttemptRef = useRef<string | null>(null);
   const [state, setState] = useState<PaymentState>("idle");
   const [message, setMessage] = useState("");
   const [clientSecret, setClientSecret] = useState<string | null>(null);
@@ -135,7 +136,11 @@ export function EventPaymentButton({
       `/api/events/${encodeURIComponent(eventId)}/checkout`,
       {
         method: "POST",
-        ...(body ? { headers: { "Content-Type": "application/json" }, body } : {}),
+        headers: {
+          "Idempotency-Key": (checkoutAttemptRef.current ??= crypto.randomUUID()),
+          ...(body ? { "Content-Type": "application/json" } : {}),
+        },
+        ...(body ? { body } : {}),
       },
     );
 

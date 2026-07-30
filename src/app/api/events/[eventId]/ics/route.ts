@@ -44,7 +44,7 @@ export async function GET(_request: Request, context: RouteContext) {
 
   const location = [event.location, event.suburb].filter(Boolean).join(", ");
   const baseUrl =
-    process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") || "https://www.letsclick.app";
+    process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") || "https://www.letsclick.app";
   const eventUrl = `${baseUrl}/events/${event.id}`;
   const description = `${event.description}\n\nDetails: ${eventUrl}`;
 

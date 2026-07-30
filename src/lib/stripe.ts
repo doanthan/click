@@ -1,4 +1,5 @@
 import Stripe from "stripe";
+import { isProductionDeployment } from "./runtime-mode";
 
 declare global {
   var clickStripeClient: Stripe | undefined;
@@ -7,6 +8,10 @@ declare global {
 export function getStripeClient() {
   const secretKey = process.env.STRIPE_SECRET_KEY;
   if (!secretKey) return null;
+  if (isProductionDeployment() && !secretKey.startsWith("sk_live_")) {
+    console.error("[stripe] Refusing to initialize a non-live Stripe key in production.");
+    return null;
+  }
 
   if (!globalThis.clickStripeClient) {
     globalThis.clickStripeClient = new Stripe(secretKey, {

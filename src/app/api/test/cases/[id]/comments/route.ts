@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { addComment } from "@/lib/test-cases";
+import { internalApiNotFound } from "@/lib/runtime-mode";
 
 export const dynamic = "force-dynamic";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
 export async function POST(request: Request, context: RouteContext) {
+  const blocked = internalApiNotFound();
+  if (blocked) return blocked;
   const { id } = await context.params;
 
   let body: Record<string, unknown>;

@@ -1,11 +1,9 @@
 /**
- * Avatar storage — Supabase Storage backend.
+ * Avatar storage — Cloudflare R2 with a Supabase Storage fallback.
  *
- * Public `avatars` bucket on the same Supabase project that hosts our Postgres.
- * Uploads go through the service-role admin client (`getSupabaseAdmin`) so we
- * don't need RLS policies for writes; reads are served by Supabase's public
- * object endpoint (`/storage/v1/object/public/avatars/<key>`), so `<img src>`
- * works without signed URLs.
+ * Production prefers the configured public R2 bucket. Existing environments
+ * can continue using the Supabase `avatars` bucket through the service-role
+ * admin client, so already-stored URLs and incremental rollout keep working.
  *
  * Two entrypoints (mirroring the old R2 surface so callers didn't change much):
  *  - `uploadAvatarFromUrl(profileId, sourceUrl)` — one-shot rehost of a Google
@@ -24,6 +22,10 @@
 import sharp from "sharp";
 
 import { getSupabaseAdmin, StorageNotConfiguredError } from "@/utils/supabase/admin";
+import {
+  isR2PublicMediaConfigured,
+  uploadPublicMediaObject,
+} from "@/lib/public-media-storage";
 
 const AVATAR_SIZE = 512;
 const AVATAR_QUALITY = 85;
@@ -37,6 +39,7 @@ function readPublicBase(): string | null {
 }
 
 export function isAvatarStorageConfigured(): boolean {
+  if (isR2PublicMediaConfigured()) return true;
   // We need both the public URL (for the resulting <img src>) and the service-
   // role key (for the upload itself). getSupabaseAdmin reads the latter.
   if (!readPublicBase()) return false;
@@ -68,8 +71,19 @@ function buildPublicUrl(key: string): string {
 }
 
 async function putAvatar(profileId: string, body: Buffer): Promise<string> {
-  const supabase = getSupabaseAdmin();
   const key = `${profileId}.jpg`;
+
+  if (isR2PublicMediaConfigured()) {
+    const url = await uploadPublicMediaObject({
+      key,
+      body,
+      contentType: "image/jpeg",
+      cacheControl: "public, max-age=31536000",
+    });
+    return `${url}?v=${Date.now()}`;
+  }
+
+  const supabase = getSupabaseAdmin();
 
   // Uint8Array, not the raw Node Buffer: storage-js on Node 18+/24 passes a
   // Buffer body straight to undici's fetch, which fails with an opaque

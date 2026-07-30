@@ -101,13 +101,17 @@ export default function TestCasesBoard() {
   }, []);
 
   useEffect(() => {
-    load();
+    let saved = "";
     try {
-      const saved = window.localStorage.getItem(NAME_KEY);
-      if (saved) setAuthor(saved);
+      saved = window.localStorage.getItem(NAME_KEY) ?? "";
     } catch {
       // ignore
     }
+    const frame = window.requestAnimationFrame(() => {
+      void load();
+      if (saved) setAuthor(saved);
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, [load]);
 
   // Persist the author name so people don't retype it on every action.

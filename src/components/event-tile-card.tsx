@@ -1,7 +1,7 @@
-import Image from "next/image";
 import Link from "next/link";
 import { type EventItem, formatEventTimeRange } from "@/lib/click-data";
 import { EventBookmarkButton } from "./event-bookmark-button";
+import { EventImage } from "./event-image";
 
 // Compact "SAT, 14 JUN" date label, formatted in Sydney time so it lines up
 // with the server-rendered time string already on the item.
@@ -113,9 +113,10 @@ export function EventTileCard({
         href={`/events/${event.id}`}
         className="relative block aspect-[4/5] w-full overflow-hidden rounded-2xl border border-[color:var(--line-soft)] bg-[color:var(--champagne-deep)]"
       >
-        <Image
+        <EventImage
           src={event.image}
           alt={event.imageAlt}
+          category={event.category}
           fill
           sizes={fluid ? "(min-width: 1024px) 24rem, (min-width: 640px) 45vw, 90vw" : "(min-width: 640px) 20rem, 18rem"}
           className="object-cover transition duration-500 group-hover:scale-[1.03]"

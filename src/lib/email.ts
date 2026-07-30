@@ -7,10 +7,12 @@ type TransactionalEmail = {
   subject: string;
   text: string;
   html?: string;
+  idempotencyKey?: string;
 };
 
 export type EmailDeliveryResult = {
   sent: boolean;
+  providerMessageId?: string;
   reason?: string;
 };
 
@@ -30,7 +32,7 @@ function textToHtml(text: string) {
 }
 
 function getFromAddress() {
-  return process.env.RESEND_FROM_EMAIL || "Click <hello@click.local>";
+  return process.env.RESEND_FROM_EMAIL || "Click <hello@letsclick.app>";
 }
 
 export async function sendTransactionalEmail(
@@ -50,20 +52,31 @@ export async function sendTransactionalEmail(
     return { sent: false, reason: "RESEND_API_KEY is not configured." };
   }
 
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      from: getFromAddress(),
-      to: email.to,
-      subject: email.subject,
-      text: email.text,
-      html: email.html ?? textToHtml(email.text),
-    }),
-  });
+  let response: Response;
+  try {
+    response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        ...(email.idempotencyKey
+          ? { "Idempotency-Key": email.idempotencyKey }
+          : {}),
+      },
+      body: JSON.stringify({
+        from: getFromAddress(),
+        to: email.to,
+        subject: email.subject,
+        text: email.text,
+        html: email.html ?? textToHtml(email.text),
+      }),
+    });
+  } catch (error) {
+    return {
+      sent: false,
+      reason: error instanceof Error ? error.message : "Could not reach Resend.",
+    };
+  }
 
   if (!response.ok) {
     const body = await response.text();
@@ -73,13 +86,15 @@ export async function sendTransactionalEmail(
     };
   }
 
-  return { sent: true };
+  const payload = (await response.json().catch(() => null)) as { id?: string } | null;
+  return { sent: true, providerMessageId: payload?.id };
 }
 
 // ---------- Templated email logging ----------
 //
-// Dev/staging email log. Instead of always going through Resend, callers can
-// render a template from /emails and persist the result to `email_events`.
+// Durable transactional email outbox. Callers render a template from /emails,
+// persist it to `email_events`, then deliver it through Resend with the row id
+// as the provider idempotency key.
 // View a row in Supabase Studio → Table Editor → email_events → click the row
 // and the side drawer shows the full rendered `html` and `vars` jsonb. The
 // 012_email_events.sql migration creates the table.
@@ -98,6 +113,7 @@ export type EmailTemplate =
   | "event-created-merchant"
   | "event-approved-merchant"
   | "event-rejected-merchant"
+  | "event-cancelled-merchant"
   | "event-cancelled-attendee"
   | "merchant-application-received"
   | "merchant-waitlisted-merchant"
@@ -138,6 +154,8 @@ const SUBJECTS: Record<EmailTemplate, (vars: Record<string, string>) => string> 
     `${v.eventTitle ?? "Your event"} is live`,
   "event-rejected-merchant": (v) =>
     `${v.eventTitle ?? "Your event"} needs another pass`,
+  "event-cancelled-merchant": (v) =>
+    `${v.eventTitle ?? "Your event"} was cancelled by Click`,
   "event-cancelled-attendee": (v) =>
     `${v.eventTitle ?? "Your event"} has been cancelled`,
   "merchant-application-received": (v) =>
@@ -196,20 +214,32 @@ export type LogEmailInput = {
 
 export async function logEmailEvent(input: LogEmailInput): Promise<void> {
   try {
-    const pool = getPostgresPool();
-    if (!pool) {
-      console.warn("logEmailEvent: no DB pool, skipping", { template: input.template });
-      return;
-    }
-
     const raw = await loadTemplate(input.template);
     const html = renderHtml(raw, input.vars);
     const subject = SUBJECTS[input.template](input.vars);
+    const pool = getPostgresPool();
 
-    await pool.query(
+    if (!pool) {
+      const delivery = await sendTransactionalEmail({
+        to: input.toEmail,
+        subject,
+        text: subject,
+        html,
+      });
+      if (!delivery.sent) {
+        console.warn("logEmailEvent: delivery skipped without database", {
+          template: input.template,
+          reason: delivery.reason,
+        });
+      }
+      return;
+    }
+
+    const inserted = await pool.query<{ id: string }>(
       `
         insert into email_events (template, to_email, to_profile_id, subject, html, vars)
         values ($1, $2, $3::uuid, $4, $5, $6::jsonb)
+        returning id::text
       `,
       [
         input.template,
@@ -220,6 +250,37 @@ export async function logEmailEvent(input: LogEmailInput): Promise<void> {
         JSON.stringify(input.vars),
       ],
     );
+    const emailEventId = inserted.rows[0].id;
+    const delivery = await sendTransactionalEmail({
+      to: input.toEmail,
+      subject,
+      text: subject,
+      html,
+      idempotencyKey: `click-email-${emailEventId}`,
+    });
+    const status = delivery.sent
+      ? "sent"
+      : delivery.reason === "RESEND_API_KEY is not configured."
+        ? "skipped"
+        : "failed";
+
+    await pool.query(
+      `
+        update email_events
+        set delivery_status = $2,
+            provider_message_id = $3,
+            delivery_error = $4,
+            attempt_count = attempt_count + 1,
+            sent_at = case when $2 = 'sent' then now() else sent_at end
+        where id = $1::uuid
+      `,
+      [
+        emailEventId,
+        status,
+        delivery.providerMessageId ?? null,
+        delivery.sent ? null : delivery.reason ?? "Unknown delivery error.",
+      ],
+    );
   } catch (error) {
     console.warn("logEmailEvent failed", {
       template: input.template,
@@ -227,6 +288,62 @@ export async function logEmailEvent(input: LogEmailInput): Promise<void> {
       error,
     });
   }
+}
+
+export async function retryPendingEmailEvents(limit = 50) {
+  const pool = getPostgresPool();
+  if (!pool || !process.env.RESEND_API_KEY) return { processed: 0, sent: 0, failed: 0 };
+
+  const pending = await pool.query<{
+    id: string;
+    to_email: string;
+    subject: string;
+    html: string;
+  }>(
+    `
+      select id::text, to_email::text, subject, html
+      from email_events
+      where delivery_status in ('pending', 'failed')
+        and attempt_count < 5
+        and created_at > now() - interval '7 days'
+      order by created_at asc
+      limit $1
+    `,
+    [Math.max(1, Math.min(limit, 100))],
+  );
+
+  let sent = 0;
+  let failed = 0;
+  for (const row of pending.rows) {
+    const delivery = await sendTransactionalEmail({
+      to: row.to_email,
+      subject: row.subject,
+      text: row.subject,
+      html: row.html,
+      idempotencyKey: `click-email-${row.id}`,
+    });
+    if (delivery.sent) sent += 1;
+    else failed += 1;
+    await pool.query(
+      `
+        update email_events
+        set delivery_status = $2,
+            provider_message_id = coalesce($3, provider_message_id),
+            delivery_error = $4,
+            attempt_count = attempt_count + 1,
+            sent_at = case when $2 = 'sent' then now() else sent_at end
+        where id = $1::uuid
+      `,
+      [
+        row.id,
+        delivery.sent ? "sent" : "failed",
+        delivery.providerMessageId ?? null,
+        delivery.sent ? null : delivery.reason ?? "Unknown delivery error.",
+      ],
+    );
+  }
+
+  return { processed: pending.rows.length, sent, failed };
 }
 
 // Exposed for tests / preview pages that want the rendered output without

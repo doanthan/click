@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
@@ -10,6 +9,7 @@ import { ckBtn } from "./ds";
 import { EventBookmarkButton } from "./event-bookmark-button";
 import { EventPaymentButton } from "./event-payment-button";
 import { EventRegistrationButton } from "./event-registration-button";
+import { EventImage } from "./event-image";
 
 type EventDetailData = EventItem & {
   priceCents: number;
@@ -50,10 +50,6 @@ export function EventDetailModal({
   const [open, setOpen] = useState(false);
   const [detail, setDetail] = useState<EventDetailData | null>(null);
   const [loading, setLoading] = useState(false);
-  const [mounted, setMounted] = useState(false);
-
-  // Portals need a DOM target, so wait until we're on the client.
-  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
     if (!open) return;
@@ -165,7 +161,7 @@ export function EventDetailModal({
         {triggerLabel}
       </button>
 
-      {open && mounted
+      {open
         ? createPortal(
         <div
           role="dialog"
@@ -179,9 +175,10 @@ export function EventDetailModal({
           <div className="absolute inset-0 bg-black/50" />
           <div className="relative my-auto flex max-h-[calc(100dvh-2rem)] w-full max-w-3xl flex-col overflow-hidden rounded-[var(--radius-xl)] bg-[color:var(--paper)] shadow-[var(--shadow-lg)]">
             <div className="relative h-52 w-full shrink-0 overflow-hidden sm:h-72">
-              <Image
+              <EventImage
                 src={data.image}
                 alt={data.imageAlt}
+                category={data.category}
                 fill
                 sizes="(min-width: 768px) 672px, 100vw"
                 className="object-cover"

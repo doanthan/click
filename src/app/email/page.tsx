@@ -7,8 +7,10 @@
 // every preview is shareable and back/forward buttons work.
 
 import Link from "next/link";
+import { notFound } from "next/navigation";
 
 import { findScenario, scenarios, type EmailScenarioGroup } from "@/lib/email-templates";
+import { isProductionDeployment } from "@/lib/runtime-mode";
 
 import { PreviewControls } from "./preview-controls";
 
@@ -27,6 +29,7 @@ type EmailPageProps = {
 };
 
 export default async function EmailPage({ searchParams }: EmailPageProps) {
+  if (isProductionDeployment()) notFound();
   const { scenario: scenarioId } = await searchParams;
   const active = findScenario(scenarioId);
   const built = active.build();

@@ -52,7 +52,10 @@ export function DashboardTab({
   // eslint-disable-next-line react-hooks/purity -- async server component, evaluated once per request
   const now = Date.now();
   const upcoming = merchantEvents.filter(
-    (event) => new Date(event.startsAt).getTime() >= now,
+    (event) =>
+      event.status !== "Cancelled" &&
+      event.status !== "Rejected" &&
+      new Date(event.startsAt).getTime() >= now,
   );
   const upcomingCount = upcoming.length;
 

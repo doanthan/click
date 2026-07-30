@@ -1,4 +1,6 @@
 import ImageStudio from "./studio";
+import { notFound } from "next/navigation";
+import { isProductionDeployment } from "@/lib/runtime-mode";
 
 export const metadata = {
   title: "Event image studio | Click",
@@ -8,6 +10,7 @@ export const metadata = {
 // for front-page and campaign use via the Gemini image API (see
 // src/lib/image-gen.ts for the prompt system). Not linked from public nav.
 export default function ImagesPage() {
+  if (isProductionDeployment()) notFound();
   return (
     <main className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6">
       <p className="eyebrow">Internal tool</p>

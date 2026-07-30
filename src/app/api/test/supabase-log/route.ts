@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getPostgresPool } from "@/lib/postgres";
+import { internalApiNotFound } from "@/lib/runtime-mode";
 
 export const dynamic = "force-dynamic";
 
@@ -220,6 +221,8 @@ const queries: QuerySpec[] = [
 ];
 
 export async function GET() {
+  const blocked = internalApiNotFound();
+  if (blocked) return blocked;
   const pool = getPostgresPool();
   if (!pool) {
     return NextResponse.json(

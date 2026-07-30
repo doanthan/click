@@ -60,8 +60,10 @@ const AU_STATE_NAMES: Record<AuState, string> = {
 };
 
 
-const DOC_TYPES = ["abn_certificate", "public_liability_insurance", "liquor_licence"] as const;
-type DocumentType = (typeof DOC_TYPES)[number];
+type DocumentType =
+  | "abn_certificate"
+  | "public_liability_insurance"
+  | "liquor_licence";
 
 const SOCIAL_PLATFORMS = [
   { value: "instagram", label: "Instagram", placeholder: "@yourbusiness" },

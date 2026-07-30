@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { getEventsForExplore } from "@/lib/event-repository";
+import { isProductionDeployment } from "@/lib/runtime-mode";
 import { startTestJourney, signOutOfTestAccount } from "@/app/login/actions";
 import SupabaseLogDrawer from "./SupabaseLogDrawer";
 import TestCasesBoard from "./TestCasesBoard";
@@ -43,6 +45,7 @@ type Persona = {
 };
 
 export default async function TestPage() {
+  if (isProductionDeployment()) notFound();
   const events = await getEventsForExplore();
   const sampleSlug = events[0]?.id ?? "sample-event";
   const sampleTitle = events[0]?.title ?? "an event";

@@ -1,28 +1,47 @@
 import { NextResponse } from "next/server";
 
+import { auth, isAdminEmail } from "@/auth";
 import { getScreenshotUrl } from "@/lib/support-repository";
+import { createSignedScreenshotUrl } from "@/lib/support-storage";
 
 export const runtime = "nodejs";
 
 // GET /api/support/ticket/<ticketRef>/screenshot
 //
-// This link lives in the Google Sheet triage board, so it gets opened by a
-// HUMAN in a browser — not fetched by code. The happy path is a 302 straight to
-// the stored (already-public) screenshot, which keeps the Sheet pointing at a
-// stable letsclick.app URL instead of a raw Supabase Storage path.
+// This link lives in the Google Sheet triage board. It requires an authenticated
+// Click admin and redirects to a 60-second signed private-storage URL.
 //
 // Every other path therefore renders a small, readable HTML page that explains
 // what happened, rather than a raw JSON blob that looks broken in a browser.
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ ticketRef: string }> },
 ) {
   const { ticketRef } = await params;
+  const session = await auth();
+  if (!session?.user) {
+    const login = new URL("/login", request.url);
+    login.searchParams.set(
+      "callbackUrl",
+      `/api/support/ticket/${encodeURIComponent(ticketRef)}/screenshot`,
+    );
+    return NextResponse.redirect(login);
+  }
+  if (!isAdminEmail(session.user.email)) {
+    return htmlPage({
+      status: 403,
+      title: "Admin access required",
+      body: "This screenshot is private to the Click support team.",
+    });
+  }
 
   try {
     const url = await getScreenshotUrl(ticketRef);
     if (url) {
-      return NextResponse.redirect(url, 302);
+      const destination = url.startsWith("https://")
+        ? url
+        : await createSignedScreenshotUrl(url);
+      if (destination) return NextResponse.redirect(destination, 302);
     }
     return htmlPage({
       status: 404,

@@ -539,11 +539,6 @@ export function AdminMembersTable({
     });
   }, [displayRows, role, deferredQuery, eventFilter]);
 
-  // Reset to page 1 whenever the filter result set changes shape.
-  useEffect(() => {
-    setPage(1);
-  }, [role, query, eventFilter, pageSize]);
-
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, pageCount);
   const startIndex = (currentPage - 1) * pageSize;
@@ -564,6 +559,12 @@ export function AdminMembersTable({
     setRole("all");
     setEventFilter("all");
     setQuery("");
+    setPage(1);
+  }
+
+  function selectEvent(value: string) {
+    setEventFilter(value);
+    setPage(1);
   }
 
   return (
@@ -574,7 +575,10 @@ export function AdminMembersTable({
             <button
               key={option.value}
               type="button"
-              onClick={() => setRole(option.value)}
+              onClick={() => {
+                setRole(option.value);
+                setPage(1);
+              }}
               className={`ck-tag ck-tag--select ${role === option.value ? "ck-tag--selected" : ""}`}
             >
               {option.label} <span className="opacity-60">({option.count})</span>
@@ -588,7 +592,7 @@ export function AdminMembersTable({
           <select
             id="admin-members-event-filter"
             value={eventFilter}
-            onChange={(event) => setEventFilter(event.target.value)}
+            onChange={(event) => selectEvent(event.target.value)}
             className="w-full rounded-xl border border-[color:var(--mist)] bg-white px-4 py-2 text-sm text-[color:var(--ink)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)] sm:w-64"
           >
             <option value="all">All events</option>
@@ -601,7 +605,10 @@ export function AdminMembersTable({
           <input
             type="search"
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setPage(1);
+            }}
             placeholder="Search name, email, suburb, event…"
             className="w-full rounded-xl border border-[color:var(--mist)] bg-white px-4 py-2 text-sm text-[color:var(--ink)] placeholder:text-[color:var(--slate)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)] sm:w-72"
           />
@@ -649,7 +656,7 @@ export function AdminMembersTable({
               key={d.member.id}
               member={d.member}
               joinedLabel={d.joinedLabel}
-              onEventSelect={setEventFilter}
+              onEventSelect={selectEvent}
             />
           ))
         )}
@@ -666,7 +673,10 @@ export function AdminMembersTable({
             <span className="sr-only">Rows per page</span>
             <select
               value={pageSize}
-              onChange={(event) => setPageSize(Number(event.target.value))}
+              onChange={(event) => {
+                setPageSize(Number(event.target.value));
+                setPage(1);
+              }}
               className="rounded-xl border border-[color:var(--mist)] bg-white px-3 py-1.5 text-xs font-semibold text-[color:var(--ink)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)]"
             >
               {PAGE_SIZES.map((size) => (

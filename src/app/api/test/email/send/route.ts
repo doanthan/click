@@ -11,10 +11,13 @@ import { NextResponse } from "next/server";
 
 import { getPostgresPool } from "@/lib/postgres";
 import { findScenario, scenarios } from "@/lib/email-templates";
+import { internalApiNotFound } from "@/lib/runtime-mode";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
+  const blocked = internalApiNotFound();
+  if (blocked) return blocked;
   if (process.env.NEXT_PUBLIC_MODE !== "DEVELOPMENT") {
     return NextResponse.json(
       { ok: false, error: "Fake email sending is only enabled in DEVELOPMENT mode." },

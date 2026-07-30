@@ -8,6 +8,7 @@ import {
 } from "@/lib/event-repository";
 import { getAppUrl, getStripeClient } from "@/lib/stripe";
 import { calculateApplicationFee } from "@/lib/stripe-connect";
+import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 
 type RouteContext = {
   params: Promise<{ eventId: string }>;
@@ -53,6 +54,17 @@ function errorResponse(error: unknown) {
 export async function POST(request: Request, context: RouteContext) {
   const { eventId } = await context.params;
   const session = await auth();
+
+  if (!session?.user?.email) {
+    return NextResponse.json({ error: "You need to log in first." }, { status: 401 });
+  }
+  const limit = await checkRateLimit({
+    scope: "event-checkout",
+    identity: session.user.email,
+    limit: 10,
+    windowSeconds: 60 * 60,
+  });
+  if (!limit.allowed) return rateLimitResponse(limit);
 
   const stripe = getStripeClient();
   if (!stripe) {
@@ -110,6 +122,30 @@ export async function POST(request: Request, context: RouteContext) {
           cancel_url: `${appUrl}${returnPath}?canceled=1`,
         };
 
+    // A duplicate request that arrives after the first request attached its
+    // Session should return that exact Checkout instead of issuing another
+    // create call. This is the common double-click/lost-response retry path.
+    if (hold.stripeCheckoutSessionId) {
+      const existingSession = await stripe.checkout.sessions.retrieve(
+        hold.stripeCheckoutSessionId,
+      );
+      if (existingSession.status === "open") {
+        if (useEmbedded && existingSession.client_secret) {
+          return NextResponse.json({ clientSecret: existingSession.client_secret });
+        }
+        if (!useEmbedded && existingSession.url) {
+          return NextResponse.json({ url: existingSession.url });
+        }
+      }
+      const error = new Error(
+        existingSession.payment_status === "paid"
+          ? "This checkout is already paid. Refresh the event to see your booking."
+          : "This checkout is no longer open. Refresh the event to start again.",
+      );
+      error.name = "ConflictError";
+      throw error;
+    }
+
     const checkoutSession = await stripe.checkout.sessions.create({
       mode: "payment",
       payment_method_types: ["card"],
@@ -155,11 +191,9 @@ export async function POST(request: Request, context: RouteContext) {
       // reconcileCheckoutSession in stripe-sync.
       ...uiModeParams,
       // Matches the `hold_expires_at` set in createPaymentHold so the reserved
-      // seat and the Stripe session expire together — no ghost seats, and no
-      // chance of a payment landing after the seat was freed and resold.
-      // 30 min is Stripe's minimum allowed session lifetime; without a reaper
-      // to expire the session early we hold the seat for the same window.
-      expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
+      // seat and the Stripe session expire together. The DB uses 31 minutes to
+      // leave headroom above Stripe's 30-minute minimum while the request runs.
+      expires_at: Math.floor(hold.holdExpiresAt.getTime() / 1000),
       metadata: {
         payment_transaction_id: hold.paymentTransactionId,
         event_uuid: hold.eventUuid,
@@ -194,13 +228,13 @@ export async function POST(request: Request, context: RouteContext) {
           ? {
               transfer_data: { destination: hold.merchantStripeAccountId },
               on_behalf_of: hold.merchantStripeAccountId,
-              application_fee_amount:
+              application_fee_amount: hold.applicationFeeCents ??
                 (calculateApplicationFee(hold.priceCents) + hold.bookingFeeCents) *
-                hold.seatCount,
+                  hold.seatCount,
             }
           : {}),
       },
-    });
+    }, { idempotencyKey: `click-checkout-${hold.paymentTransactionId}` });
 
     // The session id is always present at creation and is our durable Stripe
     // handle for reconciliation. The PaymentIntent is usually null here (Stripe
@@ -224,7 +258,7 @@ export async function POST(request: Request, context: RouteContext) {
 
     return NextResponse.json({ url: checkoutSession.url });
   } catch (error) {
-    if (hold) {
+    if (hold && !hold.reused) {
       try {
         await markPaymentFailed(hold.paymentTransactionId);
       } catch {

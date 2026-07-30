@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { buildPrompt, type PromptOptions } from "@/lib/image-gen";
+import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
+import { internalApiNotFound } from "@/lib/runtime-mode";
 
 // Candid event image generation (backs /images). One image per request; the
 // client fires N concurrent POSTs for a batch. Key stays server-side.
@@ -38,10 +40,19 @@ async function callGemini(url: string, payload: unknown): Promise<GeminiReply> {
 }
 
 export async function POST(request: Request) {
+  const unavailable = internalApiNotFound();
+  if (unavailable) return unavailable;
   const session = await auth();
   if (!session?.user) {
     return NextResponse.json({ error: "Sign in required." }, { status: 401 });
   }
+  const limit = await checkRateLimit({
+    scope: "image-generation",
+    identity: session.user.email ?? "authenticated-user",
+    limit: 12,
+    windowSeconds: 60 * 60,
+  });
+  if (!limit.allowed) return rateLimitResponse(limit);
 
   const apiKey = process.env.GOOGLE_AI_API_KEY;
   if (!apiKey) {

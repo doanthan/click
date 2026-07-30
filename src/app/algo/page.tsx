@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { getPostgresPool } from "@/lib/postgres";
 import { getSystemSettings } from "@/lib/event-repository";
 import {
@@ -10,6 +11,7 @@ import { DEFAULT_COHORT_WEIGHTS, MODEL_VERSION } from "@/lib/matching/weights";
 import { SUB_TAG_PATTERNS } from "@/lib/matching/sub-tags";
 import { COHORTS, type CohortId, type FeatureName } from "@/lib/matching/types";
 import V2Toggle from "@/components/algo/v2-toggle";
+import { isProductionDeployment } from "@/lib/runtime-mode";
 
 export const metadata = {
   title: "Matching engine v2 — inspector | Click",
@@ -98,6 +100,7 @@ export default async function AlgoPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  if (isProductionDeployment()) notFound();
   const params = await searchParams;
   const pool = getPostgresPool();
   const { matchingV2Enabled } = await getSystemSettings();

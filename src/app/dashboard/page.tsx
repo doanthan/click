@@ -63,11 +63,10 @@ export default async function DashboardPage() {
   //  • one person to click with, rotating 4×/day (every 6 hours)
   //  • one radar event, rotating hourly
   // Deterministic index off the clock so it's stable within each window.
-  // eslint-disable-next-line react-hooks/purity -- async server component, evaluated once per request
+  // eslint-disable-next-line react-hooks/purity -- server component, evaluated once per request
   const nowForRotation = Date.now();
   const sixHourIndex = Math.floor(nowForRotation / (6 * 3_600_000));
   const hourIndex = Math.floor(nowForRotation / 3_600_000);
-  // eslint-disable-next-line react-hooks/purity -- async server component, evaluated once per request
   const hourOfDay = new Date().getHours();
 
   // Drop anyone the viewer has already clicked: an active click shouldn't keep

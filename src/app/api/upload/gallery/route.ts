@@ -23,6 +23,7 @@ import {
   uploadGalleryPhotoFromBuffer,
 } from "@/lib/gallery-storage";
 import { getPostgresPool } from "@/lib/postgres";
+import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 
 const ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024; // 5 MB
@@ -66,6 +67,13 @@ async function requireProfileId(): Promise<
 export async function POST(request: Request) {
   const who = await requireProfileId();
   if ("response" in who) return who.response;
+  const limit = await checkRateLimit({
+    scope: "gallery-upload",
+    identity: who.profileId,
+    limit: 20,
+    windowSeconds: 60 * 60,
+  });
+  if (!limit.allowed) return rateLimitResponse(limit);
 
   if (!isAvatarStorageConfigured()) {
     return NextResponse.json({ error: "Upload temporarily unavailable." }, { status: 503 });

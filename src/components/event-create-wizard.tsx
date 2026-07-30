@@ -340,16 +340,20 @@ export function EventCreateProvider({
   // on the defaults (no hydration mismatch); the saved values flash in right
   // after mount.
   useEffect(() => {
+    let saved: Partial<WizardValues> | null = null;
     try {
       const raw = sessionStorage.getItem(STORAGE_KEY);
       if (raw) {
-        const saved = JSON.parse(raw) as Partial<WizardValues>;
-        setValues((v) => ({ ...v, ...saved }));
+        saved = JSON.parse(raw) as Partial<WizardValues>;
       }
     } catch {
       // Malformed / unavailable storage — fall back to defaults.
     }
-    setHydrated(true);
+    const frame = window.requestAnimationFrame(() => {
+      if (saved) setValues((v) => ({ ...v, ...saved }));
+      setHydrated(true);
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, []);
 
   // Persist every change once hydrated so a refresh or a direct deep-link to a
@@ -1721,7 +1725,7 @@ function makeUploadId() {
 }
 
 export function MediaSection() {
-  const { values, set, setUploading } = useWizard();
+  const { set, setUploading } = useWizard();
   const [pending, setPending] = useState<PendingUpload[]>([]);
   const [dropping, setDropping] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -1789,7 +1793,7 @@ export function MediaSection() {
         toast.error(message);
       }
     },
-    [set],
+    [],
   );
 
   const addFiles = useCallback(

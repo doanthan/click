@@ -1,28 +1,85 @@
 "use server";
 
-import { AuthError } from "next-auth";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { signIn, signOut } from "@/auth";
 import { profileExistsByEmail } from "@/lib/event-repository";
+import { assertLocalDevelopment } from "@/lib/runtime-mode";
+import { issueMagicLink, revokeMagicLink } from "@/lib/auth-magic-link";
+import { sendTransactionalEmail } from "@/lib/email";
 
 function getFormValue(formData: FormData, key: string) {
   const value = formData.get(key);
   return typeof value === "string" ? value : "";
 }
 
-// Basic deliverable-shape check: one @, a dot in the domain, no spaces. This
-// catches malformed input; the existing-account check below catches a typo'd
-// but well-formed address (bug board #181).
+// Basic deliverable-shape check: one @, a dot in the domain, no spaces.
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// Returns an error CODE (or null) for an email sign-in attempt. On a login
-// surface (mode === "login") an unknown address is rejected so we don't
-// passwordless-create a junk profile for a mistyped email; signup surfaces pass
-// no mode and skip the existence check so new accounts still work.
-async function emailSignInGate(email: string, mode: string): Promise<string | null> {
+function emailSignInGate(email: string): string | null {
   if (!EMAIL_RE.test(email)) return "InvalidEmail";
-  if (mode === "login" && !(await profileExistsByEmail(email))) return "EmailNotFound";
   return null;
+}
+
+function publicAppUrl() {
+  const configured = process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/$/, "");
+  if (configured) return configured.replace("://letsclick.app", "://www.letsclick.app");
+  return "http://localhost:3000";
+}
+
+async function clientIp() {
+  const incoming = await headers();
+  return incoming.get("x-forwarded-for")?.split(",")[0]?.trim() || incoming.get("x-real-ip");
+}
+
+async function requestEmailSignIn(input: {
+  email: string;
+  mode: string;
+  callbackUrl: string;
+}) {
+  const gateError = emailSignInGate(input.email);
+  if (gateError) return { error: gateError, sent: false };
+
+  const purpose = input.mode === "login" ? "login" : "signup";
+  // Never reveal account existence on a login surface. Unknown addresses get
+  // the same success state, but no token is created or email sent.
+  if (purpose === "login" && !(await profileExistsByEmail(input.email))) {
+    return { error: null, sent: true };
+  }
+
+  let token: string;
+  try {
+    token = await issueMagicLink({
+      email: input.email,
+      redirectTo: input.callbackUrl,
+      purpose,
+      clientIp: await clientIp(),
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "RateLimitError") {
+      return { error: "RateLimited", sent: false };
+    }
+    return { error: "EmailUnavailable", sent: false };
+  }
+
+  const verifyUrl = `${publicAppUrl()}/auth/email/verify?${new URLSearchParams({ token })}`;
+  const delivery = await sendTransactionalEmail({
+    to: input.email,
+    subject: purpose === "signup" ? "Finish creating your Click account" : "Your Click sign-in link",
+    text: [
+      purpose === "signup" ? "Finish creating your Click account." : "Continue signing in to Click.",
+      verifyUrl,
+      "This link expires in 15 minutes and can only be used once.",
+      "If you did not request it, you can ignore this email.",
+    ].join("\n\n"),
+    html: `<p>${purpose === "signup" ? "Finish creating your Click account." : "Continue signing in to Click."}</p><p><a href="${verifyUrl}">Continue to Click</a></p><p>This link expires in 15 minutes and can only be used once.</p><p>If you did not request it, you can ignore this email.</p>`,
+  });
+  if (!delivery.sent) {
+    await revokeMagicLink(token).catch(() => undefined);
+    return { error: "EmailUnavailable", sent: false };
+  }
+
+  return { error: null, sent: true };
 }
 
 // Every sign-in is funneled through /post-login so the admin gate there can
@@ -33,15 +90,6 @@ function safeCallbackUrl(value: string) {
   if (!value.startsWith("/") || value.startsWith("//")) return "/post-login";
   if (value === "/post-login" || value.startsWith("/post-login?")) return value;
   return `/post-login?next=${encodeURIComponent(value)}`;
-}
-
-function redirectWithAuthError(error: AuthError, callbackUrl: string) {
-  const params = new URLSearchParams({
-    error: error.type,
-    callbackUrl,
-  });
-
-  redirect(`/login?${params.toString()}`);
 }
 
 export async function signInWithGoogle(formData: FormData) {
@@ -62,27 +110,13 @@ export async function signInWithEmail(formData: FormData) {
   const email = getFormValue(formData, "email").trim().toLowerCase();
   const mode = getFormValue(formData, "mode");
 
-  // Validate before handing to the passwordless provider — redirect runs OUTSIDE
-  // the try so its NEXT_REDIRECT isn't mistaken for an auth failure.
-  const gateError = await emailSignInGate(email, mode);
-  if (gateError) {
+  const result = await requestEmailSignIn({ email, mode, callbackUrl });
+  if (result.error) {
     redirect(
-      `/login?${new URLSearchParams({ error: gateError, callbackUrl: rawCallback }).toString()}`,
+      `/login?${new URLSearchParams({ error: result.error, callbackUrl: rawCallback }).toString()}`,
     );
   }
-
-  try {
-    await signIn("email-login", {
-      email,
-      redirectTo: callbackUrl,
-    });
-  } catch (error) {
-    if (error instanceof AuthError) {
-      redirectWithAuthError(error, callbackUrl);
-    }
-
-    throw error;
-  }
+  redirect(`/login?${new URLSearchParams({ emailSent: "1", callbackUrl: rawCallback }).toString()}`);
 }
 
 export async function signOutOfClick() {
@@ -93,11 +127,9 @@ export async function signOutOfClick() {
 // signed-out ("Not signed in") state without leaving wherever you're testing.
 // `redirectTo` is constrained to a local path and defaults to "/".
 //
-// SECURITY: previously gated to DEVELOPMENT. The gate has been removed so the
-// switcher works on a private/staging deploy — meaning anyone who can reach the
-// site can sign in (passwordless) as any seeded account, including admin. Do
-// NOT expose this deployment to the public internet.
+// SECURITY: this action is hard-gated to the local Next.js dev server.
 export async function signOutOfTestAccount(formData: FormData) {
+  assertLocalDevelopment("Test-account sign-out");
   const next = getFormValue(formData, "redirectTo");
   const dest = next.startsWith("/") && !next.startsWith("//") ? next : "/";
 
@@ -109,15 +141,14 @@ export async function signOutOfTestAccount(formData: FormData) {
 // /post-login like every other sign-in, so the destination is decided by the
 // same admin/merchant/onboarding gates.
 //
-// SECURITY: the DEVELOPMENT gate has been removed at the owner's request so this
-// works on a private/staging deploy. It now impersonates ANY seeded account
-// (including admin) by email alone, with no password. Keep this deployment
-// private — do NOT expose it to the public internet.
+// SECURITY: this action is hard-gated to the local Next.js dev server and only
+// accepts the seeded @click.local namespace.
 export async function signInAsTestAccount(formData: FormData) {
+  assertLocalDevelopment("Test-account sign-in");
   const email = getFormValue(formData, "email").toLowerCase();
-  if (!email.includes("@")) return;
+  if (!email.endsWith("@click.local")) return;
 
-  await signIn("email-login", { email, redirectTo: "/post-login" });
+  await signIn("test-login", { email, redirectTo: "/post-login" });
 }
 
 // Kick off a /test journey as the persona's seeded account. Unlike
@@ -126,25 +157,27 @@ export async function signInAsTestAccount(formData: FormData) {
 // it actually begins rather than being re-routed by the role gates. `next` is
 // constrained to a local path.
 //
-// SECURITY: same caveat as signInAsTestAccount — the DEVELOPMENT gate is gone,
-// so this is passwordless impersonation by email. Keep the deployment private.
+// SECURITY: same local-only and @click.local restrictions as the switcher.
 export async function startTestJourney(formData: FormData) {
+  assertLocalDevelopment("Test journeys");
   const email = getFormValue(formData, "email").toLowerCase();
-  if (!email.includes("@")) return;
+  if (!email.endsWith("@click.local")) return;
 
   const next = getFormValue(formData, "next");
   const dest = next.startsWith("/") && !next.startsWith("//") ? next : "/post-login";
 
-  await signIn("email-login", { email, redirectTo: dest });
+  await signIn("test-login", { email, redirectTo: dest });
 }
 
-export type EmailLoginFormState = { error: string | null };
+export type EmailLoginFormState = { error: string | null; sent: boolean };
 
 const errorCopyByType: Record<string, string> = {
   CredentialsSignin: "Enter a valid email address to continue.",
   Configuration: "Authentication is missing provider or secret configuration.",
   InvalidEmail: "Enter a valid email address to continue.",
   EmailNotFound: "No account found for that email. Check the spelling, or sign up.",
+  RateLimited: "Too many sign-in emails were requested. Try again in an hour.",
+  EmailUnavailable: "We could not send a sign-in email right now. Try Google or try again later.",
 };
 
 export async function signInWithEmailFromModal(
@@ -155,21 +188,9 @@ export async function signInWithEmailFromModal(
   const email = getFormValue(formData, "email").trim().toLowerCase();
   const mode = getFormValue(formData, "mode");
 
-  const gateError = await emailSignInGate(email, mode);
-  if (gateError) {
-    return { error: errorCopyByType[gateError] ?? "Login failed." };
-  }
-
-  try {
-    await signIn("email-login", {
-      email,
-      redirectTo: callbackUrl,
-    });
-    return { error: null };
-  } catch (error) {
-    if (error instanceof AuthError) {
-      return { error: errorCopyByType[error.type] ?? "Login failed." };
-    }
-    throw error;
-  }
+  const result = await requestEmailSignIn({ email, mode, callbackUrl });
+  return {
+    error: result.error ? errorCopyByType[result.error] ?? "Login failed." : null,
+    sent: result.sent,
+  };
 }
