@@ -37,24 +37,36 @@ const SORT_OPTIONS: Array<[SortMode, string]> = [
   ["popular", "Trending"],
 ];
 
-function daysUntil(startsAt: string, referenceTime: number) {
-  const eventDate = new Date(startsAt);
-  const milliseconds = eventDate.getTime() - referenceTime;
-  return Math.ceil(milliseconds / 86_400_000);
+// Bucket by CALENDAR DAY in the venue timezone - the same wall date the card
+// prints (formatted Australia/Sydney server-side). The old millisecond delta ran
+// through Math.ceil, so tonight's 7pm event was 0.79 days and rounded up into
+// "Tomorrow", while a real tomorrow-evening event scored 2 and matched neither.
+const sydneyDayFormat = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Australia/Sydney",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+/** Days since the epoch for the Sydney calendar date of `value`. */
+function sydneyDayIndex(value: string | Date) {
+  const [year, month, day] = sydneyDayFormat.format(new Date(value)).split("-").map(Number);
+  return Math.floor(Date.UTC(year, month - 1, day) / 86_400_000);
 }
 
 // Whether an event falls within the selected date window. "weekend" = the
 // upcoming Sat/Sun (today counts if it's already the weekend).
-function matchesDateWindow(startsAt: string, dateWindow: DateWindow, todayTime: number) {
+function matchesDateWindow(startsAt: string, dateWindow: DateWindow, todayIndex: number) {
   if (dateWindow === "all") return true;
-  const eventDays = daysUntil(startsAt, todayTime);
+  const eventDays = sydneyDayIndex(startsAt) - todayIndex;
   if (eventDays < 0) return false;
   if (dateWindow === "7") return eventDays <= 7;
   if (dateWindow === "30") return eventDays <= 30;
   if (dateWindow === "today") return eventDays === 0;
   if (dateWindow === "tomorrow") return eventDays === 1;
   if (dateWindow === "weekend") {
-    const day = new Date(startsAt).getDay(); // 0 Sun … 6 Sat
+    // Epoch day 0 was a Thursday, so +4 maps the index onto 0 Sun … 6 Sat.
+    const day = (sydneyDayIndex(startsAt) + 4) % 7;
     const isWeekendDay = day === 6 || day === 0;
     // Within the next 7 days and lands on Sat/Sun.
     return isWeekendDay && eventDays <= 7;
@@ -157,10 +169,7 @@ export function EventExplorer({
   const [sheetOpen, setSheetOpen] = useState(false);
   const skipFirstSync = useRef(true);
 
-  const todayTime = useMemo(() => {
-    const now = new Date();
-    return new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  }, []);
+  const todayIndex = useMemo(() => sydneyDayIndex(new Date()), []);
 
   const suburbs = useMemo(
     () => ["All Sydney", ...Array.from(new Set(events.map((event) => event.suburb))).sort()],
@@ -183,7 +192,7 @@ export function EventExplorer({
 
     return locatedEvents
       .filter((event) => {
-        const matchesDate = matchesDateWindow(event.startsAt, dateWindow, todayTime);
+        const matchesDate = matchesDateWindow(event.startsAt, dateWindow, todayIndex);
         const matchesTime =
           timeOfDay === "all" ||
           (timeOfDay === "night" ? isNightEvent(event.startsAt) : !isNightEvent(event.startsAt));
@@ -236,7 +245,7 @@ export function EventExplorer({
     selectedSuburb,
     sortMode,
     tagFilter,
-    todayTime,
+    todayIndex,
   ]);
 
   // The category strip shows the full predefined set (so you can always browse

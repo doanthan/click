@@ -63,6 +63,10 @@ export function ClickWithSomeoneUserCard({
       </div>
       <CommonalityLine c={hook} />
       <TagRow tags={person.sharedInterests} max={3} />
+      {/* Stacks under the tags in BOTH layouts. Rendered as a sibling of the
+          columns it became a third flex item once the action returned a
+          message, collapsing the identity column and clipping TagRow. */}
+      <Status state={state} />
     </div>
   );
 
@@ -101,7 +105,6 @@ export function ClickWithSomeoneUserCard({
           {content}
         </div>
         <div className="sm:w-[190px] sm:shrink-0">{actions}</div>
-        <Status state={state} />
       </article>
     );
   }
@@ -115,7 +118,6 @@ export function ClickWithSomeoneUserCard({
         {content}
       </div>
       {actions}
-      <Status state={state} />
     </article>
   );
 }

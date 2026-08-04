@@ -25,6 +25,7 @@ import {
   readinessScore,
   scorePersonalizedEvent,
 } from "./personalized-matching";
+import { resolveAvatarImage } from "./avatar-images";
 import { buildEventMediaGallery, type MediaItem } from "./event-media";
 import {
   fallbackEventImage,
@@ -3172,7 +3173,31 @@ export async function registerForEvent(eventId: string, session: Session | null)
                 select count(*)
                 from event_attendees attendee
                 where attendee.event_id = event.id
+                  -- Exclude the CALLER's own seat, exactly as the waitlist-offer
+                  -- arm below and createPaymentHold's gate already do. Counting
+                  -- it meant a replayed RSVP on a full event saw itself, flipped
+                  -- isFull, and the upsert below demoted the caller's own
+                  -- confirmed seat to 'waitlisted' - a double-tap gave away the
+                  -- seat you already had. A caller with no row is unaffected.
+                  and attendee.profile_id <> $2::uuid
                   and (attendee.status = 'confirmed' or (attendee.status = 'pending_payment' and attendee.hold_expires_at > now()))
+              )
+              +
+              -- Guest +1 seats (spec 19). Without this arm the gate is blind to
+              -- a whole class of seat, so an event full ONLY of guest seats read
+              -- as open: a paid event then raised "requires payment" instead of
+              -- offering the waitlist, and the buyer was refused again by
+              -- createPaymentHold's own gate. Same liveness rule as that gate.
+              (
+                select count(*)
+                from guest_spots gs
+                join event_attendees ga
+                  on ga.payment_transaction_id = gs.payment_transaction_id
+                 and ga.profile_id = gs.purchaser_profile_id
+                where gs.event_id = event.id
+                  and gs.status <> 'cancelled'
+                  and gs.purchaser_profile_id <> $2::uuid
+                  and (ga.status = 'confirmed' or (ga.status = 'pending_payment' and ga.hold_expires_at > now()))
               )
               +
               -- Live waitlist offers held by OTHER people reserve their seat for
@@ -7415,8 +7440,13 @@ async function sendClickInner(
         `
           select e.id::text, coalesce(e.ends_at, e.starts_at)::text as event_end
           from events e
-          join event_attendees a1 on a1.event_id = e.id and a1.profile_id = $1::uuid and a1.status = 'confirmed'
-          join event_attendees a2 on a2.event_id = e.id and a2.profile_id = $2::uuid and a2.status = 'confirmed'
+          -- event_participants_v, not event_attendees: someone who claimed a
+          -- guest +1 has no attendee row of their own (their seat lives on the
+          -- purchaser's booking), so gating on event_attendees made them
+          -- unclickable AND unable to click - they attended, but the mechanic
+          -- could not see them in either direction. See migration 056.
+          join event_participants_v a1 on a1.event_id = e.id and a1.profile_id = $1::uuid
+          join event_participants_v a2 on a2.event_id = e.id and a2.profile_id = $2::uuid
           where e.slug = $3
             and coalesce(e.ends_at, e.starts_at) <= now()
             and coalesce(e.ends_at, e.starts_at) + interval '${POST_EVENT_CLICK_WINDOW_HOURS} hours' > now()
@@ -9745,11 +9775,21 @@ export async function createPaymentHold(
     // 'paid', the money is in — promote the seat in place and stop, rather than
     // opening a new checkout. markPaymentSucceeded stays the primary path; this
     // is the backstop that prevents a double charge.
+    // Only a transaction that still backs a LIVE seat counts. A booking cancelled
+    // inside the no-refund window (or whose refund failed) keeps its ledger row at
+    // 'paid' forever — cancelRegistration never writes payment_transactions — so an
+    // unscoped lookup here permanently blocks that buyer from ever re-booking.
+    // Mirrors the same guard markPaymentSucceeded already applies.
     const paidTxn = await client.query<{ id: string }>(
       `
-        select id::text
-        from payment_transactions
-        where event_id = $1::uuid and profile_id = $2::uuid and status = 'paid'
+        select pt.id::text
+        from payment_transactions pt
+        join event_attendees a
+          on a.event_id = pt.event_id and a.profile_id = pt.profile_id
+        where pt.event_id = $1::uuid
+          and pt.profile_id = $2::uuid
+          and pt.status = 'paid'
+          and a.status <> 'cancelled'
         limit 1
       `,
       [event.id, profile.id],
@@ -9759,7 +9799,7 @@ export async function createPaymentHold(
         `
           update event_attendees
           set status = 'confirmed', hold_expires_at = null, updated_at = now()
-          where event_id = $1::uuid and profile_id = $2::uuid and status <> 'confirmed'
+          where event_id = $1::uuid and profile_id = $2::uuid and status = 'pending_payment'
         `,
         [event.id, profile.id],
       );
@@ -10263,6 +10303,15 @@ export async function removeGuestDetailsByToken(token: string): Promise<GuestTok
         from guest_spots gs
         join events e on e.id = gs.event_id
         where gs.claim_token = $1::uuid
+          -- 'cancelled' is terminal: the seat was refunded and its capacity
+          -- returned. Without this guard the update below flipped it back to
+          -- 'removed', and because every seat count treats any non-cancelled
+          -- row as occupied, a refunded seat silently re-consumed capacity. The
+          -- two sibling token actions already guard their statuses (claim
+          -- requires 'invited', release requires 'invited'/'claimed'); this was
+          -- the only one matching on the token alone. Still idempotent for a
+          -- seat that is already 'removed'.
+          and gs.status <> 'cancelled'
         for update of gs
       `,
       [token],
@@ -11569,7 +11618,13 @@ export async function getSuggestedPeople(session: Session | null): Promise<Sugge
       [profile.id],
     );
 
-    let rows = result.rows;
+    // "Has a photo" must mean the SAME thing here as it does at render time
+    // (bug board #190, reopened twice). The SQL guard above only proves the
+    // column is non-blank; resolveAvatarImage additionally rejects URLs on a
+    // dead storage host and unparseable bare keys, which is what the Avatar
+    // component actually falls back on. Without this the pool kept offering
+    // people who render as a faceless placeholder.
+    let rows = result.rows.filter((row) => resolveAvatarImage(row.photo_url));
 
     // Matching v2 (flagged): keep this surface's candidate selection + profile-
     // completeness rules, but re-rank by the cohort-aware pair model instead of
@@ -12105,10 +12160,13 @@ export async function getPostEventClickPrompts(
               and c.event_id = e.id
           ) as already_clicked
         from events e
-        join event_attendees mine on mine.event_id = e.id
-          and mine.profile_id = $1::uuid and mine.status = 'confirmed'
-        join event_attendees theirs on theirs.event_id = e.id
-          and theirs.status = 'confirmed' and theirs.profile_id <> $1::uuid
+        -- Roster = event_participants_v (confirmed attendees + claimed guest
+        -- +1s), so someone who came on a friend's booking both sees this prompt
+        -- and appears on everyone else's. See migration 056.
+        join event_participants_v mine on mine.event_id = e.id
+          and mine.profile_id = $1::uuid
+        join event_participants_v theirs on theirs.event_id = e.id
+          and theirs.profile_id <> $1::uuid
         join profiles other on other.id = theirs.profile_id
           and other.role = 'attendee' and other.suspended_at is null and other.is_banned = false
         where coalesce(e.ends_at, e.starts_at) + interval '${POST_EVENT_PROMPT_DELAY_HOURS} hours' <= now()
@@ -12195,10 +12253,13 @@ export async function getPostEventClickPromptForEvent(
               and c.event_id = e.id
           ) as already_clicked
         from events e
-        join event_attendees mine on mine.event_id = e.id
-          and mine.profile_id = $1::uuid and mine.status = 'confirmed'
-        join event_attendees theirs on theirs.event_id = e.id
-          and theirs.status = 'confirmed' and theirs.profile_id <> $1::uuid
+        -- Roster = event_participants_v (confirmed attendees + claimed guest
+        -- +1s), so someone who came on a friend's booking both sees this prompt
+        -- and appears on everyone else's. See migration 056.
+        join event_participants_v mine on mine.event_id = e.id
+          and mine.profile_id = $1::uuid
+        join event_participants_v theirs on theirs.event_id = e.id
+          and theirs.profile_id <> $1::uuid
         join profiles other on other.id = theirs.profile_id
           and other.role = 'attendee' and other.suspended_at is null and other.is_banned = false
         where e.slug = $2
@@ -12255,18 +12316,19 @@ export async function notifyPostEventClickPrompts(): Promise<number> {
         'You went to ' || e.title || '. Tap anyone you''d like to see again — it''s completely private.',
         '/events/' || e.slug || '?from=post-event-click'
       from events e
-      join event_attendees mine on mine.event_id = e.id and mine.status = 'confirmed'
+      -- Same roster as the two pull-based queries (migration 056), so a claimed
+      -- guest gets the push prompt too rather than silently never being asked.
+      join event_participants_v mine on mine.event_id = e.id
       where coalesce(e.ends_at, e.starts_at) + interval '${POST_EVENT_PROMPT_DELAY_HOURS} hours' <= now()
         and coalesce(e.ends_at, e.starts_at) + interval '${POST_EVENT_CLICK_WINDOW_HOURS} hours' > now()
         and extract(hour from now() at time zone e.timezone) >= 9
         and extract(hour from now() at time zone e.timezone) < 22
         and exists (
           select 1
-          from event_attendees theirs
+          from event_participants_v theirs
           join profiles other on other.id = theirs.profile_id
             and other.role = 'attendee' and other.suspended_at is null and other.is_banned = false
           where theirs.event_id = e.id
-            and theirs.status = 'confirmed'
             and theirs.profile_id <> mine.profile_id
             -- Same event scoping as the two roster queries above: without it a
             -- click sent at any other event suppresses this event's prompt.

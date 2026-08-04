@@ -39,8 +39,15 @@ export default async function PostLoginPage({ searchParams }: PostLoginPageProps
   }
 
   const params = await searchParams;
+  const status = await getProfileStatus(session);
+
+  // A brand-new attendee must finish onboarding before any deep link - a fresh
+  // Google signup off /discover was otherwise handed straight back to /discover
+  // and never saw the form. Merchants keep their deep links: merchant signup
+  // never writes profiles.suburb, so onboardingComplete is false for every
+  // host-only account and gating them here would trap them in the attendee flow.
   const explicitNext = safeNext(params?.next);
-  if (explicitNext) {
+  if (explicitNext && (status.onboardingComplete || status.merchantProfile)) {
     redirect(explicitNext);
   }
 
@@ -50,8 +57,6 @@ export default async function PostLoginPage({ searchParams }: PostLoginPageProps
   if (params?.portal === "merchant") {
     redirect("/merchant");
   }
-
-  const status = await getProfileStatus(session);
 
   // Role-aware default (bug board #138): a user whose MAIN role is host - i.e.
   // they hold an approved merchant profile - defaults straight to the host

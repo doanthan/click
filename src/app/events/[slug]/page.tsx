@@ -230,6 +230,15 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
     }),
   };
 
+  // successDetails carries the venue name and a calendar link with the full
+  // street address, so handing it to a client component serialises both into
+  // the page source - readable by anyone who hasn't RSVP'd, while the page is
+  // still telling them the venue is revealed on RSVP. Only pass it once the
+  // venue is actually unlocked. Without it EventRegistrationButton falls back
+  // to redirecting to /events/<id>?booked=1: the unlocked page, same confirmed
+  // banner, venue fetched fresh under a now-confirmed session.
+  const successDetailsForViewer = venueUnlocked ? successDetails : undefined;
+
   const seatsTaken = attendeePreview.totalConfirmed;
   const capacityPct = event.capacity > 0 ? Math.min(100, Math.round((seatsTaken / event.capacity) * 100)) : 0;
   const notice = search?.canceled
@@ -507,7 +516,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                           isWaitlist={isWaitlisted}
                           offerExpiresAt={waitlistOfferExpiresAt}
                           cancelRefundLabel={cancelRefundLabel}
-                          successDetails={successDetails}
+                          successDetails={successDetailsForViewer}
                         />
                       )
                     ) : isWaitlistMode ? (
@@ -584,7 +593,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                           eventId={event.id}
                           initiallyRegistered={false}
                           isWaitlist={false}
-                          successDetails={successDetails}
+                          successDetails={successDetailsForViewer}
                         />
                       </EventBookingDialog>
                     )}
