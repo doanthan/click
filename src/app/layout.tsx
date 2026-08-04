@@ -33,26 +33,26 @@ const plexMono = IBM_Plex_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL("https://www.letsclick.app"),
   title: {
-    default: "Click · A burst of YES",
+    default: "Click · Find fun things to do in Sydney",
     template: "%s · Click",
   },
   description:
-    "Click helps ordinary people find local groups, dating, friendship and Sydney events with a reason to talk.",
+    "Discover and book fun Sydney activities, meet people naturally, and see who you click with.",
   applicationName: "Click",
   openGraph: {
     type: "website",
     locale: "en_AU",
     siteName: "Click",
     url: "/",
-    title: "Click · A burst of YES",
+    title: "Click · Find fun things to do in Sydney",
     description:
-      "Find Sydney events, new friends and local groups with a reason to talk.",
+      "Discover and book fun Sydney activities, meet people naturally, and see who you click with.",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Click · A burst of YES",
+    title: "Click · Find fun things to do in Sydney",
     description:
-      "Find Sydney events, new friends and local groups with a reason to talk.",
+      "Discover and book fun Sydney activities, meet people naturally, and see who you click with.",
   },
   icons: {
     icon: "/click-mark.svg",

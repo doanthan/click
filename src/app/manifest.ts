@@ -2,9 +2,9 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Click · A burst of YES",
+    name: "Click · Find fun things to do in Sydney",
     short_name: "Click",
-    description: "Find Sydney events and people with a reason to talk.",
+    description: "Discover and book fun Sydney activities, meet people naturally, and see who you click with.",
     start_url: "/",
     display: "standalone",
     background_color: "#F9F6F0",

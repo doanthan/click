@@ -9,6 +9,8 @@ const eslintConfig = defineConfig([
   globalIgnores([
     // Default ignores of eslint-config-next:
     ".next/**",
+    // Vercel CLI build output — gitignored, minified, not ours to lint.
+    ".vercel/**",
     ".claude/**",
     "out/**",
     "build/**",

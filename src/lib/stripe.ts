@@ -27,6 +27,15 @@ export function getStripeWebhookSecret() {
   return process.env.STRIPE_WEBHOOK_SECRET ?? null;
 }
 
+// Stripe splits v1 (snapshot payload) and v2 (thin payload) events across two
+// separate event destinations, each with its own signing secret. Both post to
+// /api/webhooks/stripe; the route picks the secret by payload shape. Unset →
+// v2 notifications are rejected, and Connect status only refreshes when the
+// host revisits /merchant/onboarding/payouts.
+export function getStripeWebhookSecretV2() {
+  return process.env.STRIPE_WEBHOOK_SECRET_V2 ?? null;
+}
+
 export function getAppUrl() {
   const raw =
     process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? "http://localhost:3000";

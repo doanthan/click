@@ -32,6 +32,24 @@ test("internal routes are blocked centrally", () => {
   assert.match(proxy, /status: 404/);
 });
 
+test("the stripe webhook handles both payload styles on one route", () => {
+  const route = readFileSync(
+    path.join(root, "src/app/api/webhooks/stripe/route.ts"),
+    "utf8",
+  );
+  // Thin (v2) notifications must be verified with the second destination's own
+  // secret — constructEvent throws on them by design.
+  assert.match(route, /isThinEventNotification/);
+  assert.match(route, /parseEventNotification\(rawBody, signature, secretV2\)/);
+  assert.match(route, /getStripeWebhookSecretV2/);
+  // v2.core.account_person.* and v2.core.account_link.returned carry a person /
+  // link id, not an acct_. Retrieving one 404s and Stripe retries the 500, so
+  // the loose prefix match must not come back.
+  assert.doesNotMatch(route, /startsWith\("v2\.core\.account"\)/);
+  assert.match(route, /startsWith\("v2\.core\.account\."\)/);
+  assert.match(route, /startsWith\("v2\.core\.account\["\)/);
+});
+
 test("paid reconciliation cannot resurrect a cancelled or refunded booking", () => {
   const repository = readFileSync(
     path.join(root, "src/lib/event-repository.ts"),

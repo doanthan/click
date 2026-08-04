@@ -1,14 +1,89 @@
 # letsclick.app go-live checklist
 
-Updated: 30 July 2026
+Updated: 2 August 2026
 
 ## Current verdict
 
-The application code is release-ready locally. The currently deployed site is
-still the old build and is **not ready for public launch**: the live smoke test
-still finds the internal tools exposed and the new security/SEO/health routes
-missing. Complete the production configuration and deploy this changeset before
-accepting real users or payments.
+The core application passes its local release gate, but Click is **not ready for
+public launch**. The currently deployed site is still the old preview build: its
+login permits unsafe preview behaviour, internal tools are exposed, and the new
+security/SEO/health routes are missing. Resolve the code/content items below,
+complete production configuration and deploy this changeset before accepting
+real users or payments.
+
+## Readiness audit — 2 August 2026
+
+### Evidence collected
+
+- [x] `npm run check` passed: zero-warning lint, TypeScript, 11/11 tests,
+  production build (112 routes) and `npm audit --audit-level=high` with zero
+  vulnerabilities.
+- [x] The local member dashboard rendered recommendations, onboarding progress,
+  notifications and event actions with no framework error overlay.
+- [x] A normal member was denied `/admin` and redirected from `/merchant` into
+  the host application flow as expected.
+- [x] The local/test paid-event flow reached the Stripe Embedded Checkout form:
+  checkout API `200`, database seat hold created, correct A$10 event and customer
+  shown, and no browser console errors. The test hold expires automatically.
+- [x] All eight Click database harnesses passed, including 30/30 simultaneous
+  reciprocal Click races, capacity, proposals, reveal-once, safety teardown and
+  lifecycle timing.
+- [x] The merchant dashboard, bookings and finances tabs loaded live database
+  rows without browser or server errors; non-admin merchant access to `/admin`
+  was correctly denied.
+- [ ] The final Stripe Pay submission, webhook fulfilment, confirmation email,
+  dashboard booking, cancellation, refund and payout loop was not repeated in
+  this audit; repeat the controlled full-flow test before enabling live payments.
+
+### P0 — live deployment is unsafe for launch
+
+- [ ] Deploy commit `ad69310` (or a reviewed descendant) to Production. It is
+  currently 112 files ahead of `origin/main`, while `www.letsclick.app` serves
+  the older preview build.
+- [ ] Disable real-user acquisition and live checkout until the hardened build
+  is deployed and every production smoke check passes.
+- [ ] Verify the production login no longer says “Preview build - no password
+  yet,” permits arbitrary-email impersonation, or exposes `admin@click.local`.
+- [ ] Verify the Supabase write tracker and local test-account switcher are absent
+  from every production page.
+- [ ] Verify `/tables`, `/test`, `/business`, `/scale`,
+  `/api/tables/profiles/rows`, `/api/generate` and `/api/test/*` return `404`.
+  They currently return `200` or `405` on the live deployment.
+- [ ] Verify CSP, Referrer-Policy, X-Content-Type-Options, X-Frame-Options and
+  Permissions-Policy headers are present. They are currently missing live.
+- [ ] Verify `/robots.txt`, `/sitemap.xml`, `/manifest.webmanifest` and
+  `/api/health` return `200`; they currently return `404` live.
+- [ ] Run `npm run smoke -- https://www.letsclick.app` and require zero failures;
+  the 2 August run failed 14 checks.
+
+### P0 — production data and customer-facing content
+
+- [ ] Confirm every currently published event is real, approved and ready to
+  accept money; unpublish all seed/QA events before opening checkout.
+- [ ] Correct or confirm suspicious live listings, including “Fight Night (bare
+  Nuckle),” “Jazz and Wine” at 4:00 am, “Mum's and Babies Sensory Group” at
+  7:00 pm, generic “Merchant's Events” host copy and generic listing imagery.
+- [ ] Replace the hard-coded merchant support address `support@click.local` with
+  a monitored production address and make footer/policy contact domains
+  consistent (`hello@click.au` versus `hello@letsclick.app`).
+- [ ] Remove QA/test event, booking and attendee rows from the production database;
+  the merchant portal currently exposes test-labelled events and invalid-looking
+  attendee records alongside operational data.
+
+### P1 — authentication and dashboard integrity
+
+- [ ] Fix local `AUTH_URL` and `NEXT_PUBLIC_APP_URL` to match the actual local
+  server port. They currently point at `localhost:3001`, so a server running on
+  port 3000 redirects a fresh login to the wrong origin.
+- [ ] Configure and test Resend before relying on email login. The hardened login
+  correctly creates 15-minute, single-use links, but `.env.local` currently has
+  no `RESEND_API_KEY` or `RESEND_FROM_EMAIL`, so delivery cannot complete.
+- [ ] Replace the admin dashboard's static-data fallbacks with an explicit
+  unavailable/stale state. Several admin repository reads currently return demo
+  metrics when Postgres fails, which can make a disconnected dashboard look live.
+- [ ] Set `ADMIN_EMAILS` to a comma-separated allow-list of real operator emails,
+  redeploy, and verify one allowed and one denied account. Database
+  `profiles.role='admin'` alone does not grant portal access.
 
 ## Completed in this changeset
 

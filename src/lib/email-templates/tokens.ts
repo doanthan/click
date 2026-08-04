@@ -38,4 +38,4 @@ export const FONT_MONO = "'IBM Plex Mono', 'SFMono-Regular', Menlo, monospace";
 // "A burst of YES" is the brand tagline; used in the header eyebrow on
 // every email. Kept in tokens so a copy tweak is a one-liner.
 export const BRAND_TAGLINE = "A social calendar";
-export const SUPPORT_EMAIL_DEFAULT = "hello@click.local";
+export const SUPPORT_EMAIL_DEFAULT = "hello@letsclick.app";

@@ -92,14 +92,33 @@ if (
 if (value("STRIPE_WEBHOOK_SECRET") && !value("STRIPE_WEBHOOK_SECRET").startsWith("whsec_")) {
   errors.push("STRIPE_WEBHOOK_SECRET must be a Stripe webhook signing secret.");
 }
+if (value("STRIPE_WEBHOOK_SECRET_V2")) {
+  if (!value("STRIPE_WEBHOOK_SECRET_V2").startsWith("whsec_")) {
+    errors.push("STRIPE_WEBHOOK_SECRET_V2 must be a Stripe webhook signing secret.");
+  }
+  if (value("STRIPE_WEBHOOK_SECRET_V2") === value("STRIPE_WEBHOOK_SECRET")) {
+    errors.push(
+      "STRIPE_WEBHOOK_SECRET_V2 must be the v2 destination's own secret, not a copy of the v1 one.",
+    );
+  }
+} else {
+  warnings.push(
+    "STRIPE_WEBHOOK_SECRET_V2 is unset: v2 account notifications are refused, so merchant payout status only refreshes on the onboarding return page.",
+  );
+}
 if (value("RESEND_API_KEY") && !value("RESEND_API_KEY").startsWith("re_")) {
   errors.push("RESEND_API_KEY does not look like a Resend API key.");
 }
+// Resend verifies send.letsclick.app, not the root. A from address on the root
+// is accepted by this file but rejected by Resend with a 403, which silently
+// kills every magic link — so the check pins the actual verified subdomain.
 if (
   value("RESEND_FROM_EMAIL") &&
-  !/@letsclick\.app[>\s]*$/i.test(value("RESEND_FROM_EMAIL"))
+  !/@send\.letsclick\.app[>\s]*$/i.test(value("RESEND_FROM_EMAIL"))
 ) {
-  errors.push("RESEND_FROM_EMAIL must use the verified letsclick.app domain.");
+  errors.push(
+    "RESEND_FROM_EMAIL must send from the verified send.letsclick.app subdomain.",
+  );
 }
 if (
   value("ADMIN_EMAILS") &&

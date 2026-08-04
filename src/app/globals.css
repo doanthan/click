@@ -904,6 +904,128 @@ body:has([data-home-hero]) .site-header--marketing .ck-btn {
 }
 .pop-in { animation: pop-in 700ms cubic-bezier(.22,1,.36,1) both; }
 
+/* ---------- Home discovery motion ----------
+   Motion on the public home page has one job per treatment: establish the
+   social scene, make interactive surfaces feel tactile, and reveal browse
+   choices in reading order. All movement is transform/opacity only, so it
+   stays compositor-friendly and the global reduced-motion block near EOF
+   collapses every treatment to its resting state. */
+@keyframes home-hero-photo-enter {
+  from { opacity: 0.72; transform: scale(1.045); }
+  to { opacity: 1; transform: none; }
+}
+.home-hero-photo {
+  animation: home-hero-photo-enter 1100ms cubic-bezier(.2,.7,.2,1) both;
+  transform-origin: 68% 50%;
+}
+.home-hero-copy .rise-soft {
+  animation-duration: 580ms;
+  animation-timing-function: cubic-bezier(.22,1,.36,1);
+}
+/* ---------- Hero word cycle ----------
+   The last word of the hero headline rolls through five plans and lands on the
+   brand payoff ("click."). The ANCHOR word sits in normal flow: it sizes the
+   box and it is the only copy a crawler, a screen reader or a no-JS visitor
+   sees. The alternates are aria-hidden absolute overlays, each owning one slice
+   of the loop; between slices the anchor is simply back on screen.
+
+   Every rule that hides anything lives inside no-preference, so a
+   reduced-motion visitor gets the plain anchor word - never a stack of five
+   words, never a frozen mid-fade frame from the global
+   `animation-duration: 0.01ms` collapse near EOF.
+
+   `display: block` puts the word on its own line at every width: the alternates
+   are longer than the anchor, so letting them share a line with "Find your
+   next" would make the wrap point depend on which word is showing. */
+.word-cycle { position: relative; display: block; color: var(--lavender); }
+.word-cycle__alt { display: none; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .word-cycle__alt {
+    display: block;
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline-start: 0;
+    white-space: nowrap;
+    user-select: none; /* the anchor is the copy-pasteable word */
+  }
+  /* One keyframe, five items, each delayed by one 20% slot. The 2% overlap at
+     each handoff is the crossfade: the outgoing word lifts away as the incoming
+     one rises into place. ponytail: slot maths is hard-coded for 5 words - add
+     a sixth and these percentages need re-cutting. */
+  .word-cycle__anchor,
+  .word-cycle__alt {
+    animation: word-cycle-slot 12.5s cubic-bezier(.22,1,.36,1) infinite both;
+    animation-delay: calc(var(--cycle-i, 0) * 2.5s);
+  }
+}
+
+@keyframes word-cycle-slot {
+  0%   { opacity: 0; transform: translateY(0.18em); }
+  4%   { opacity: 1; transform: none; }
+  18%  { opacity: 1; transform: none; }
+  22%  { opacity: 0; transform: translateY(-0.18em); }
+  100% { opacity: 0; transform: translateY(0.18em); }
+}
+
+.home-explore-form {
+  transition:
+    transform 260ms cubic-bezier(.22,1,.36,1),
+    box-shadow 260ms ease;
+}
+.home-explore-form:hover,
+.home-explore-form:focus-within {
+  transform: translateY(-2px);
+  box-shadow: 0 28px 70px -28px rgba(16,11,34,0.72);
+}
+.home-explore-form:focus-within {
+  outline: 2px solid color-mix(in srgb, var(--lavender) 80%, transparent);
+  outline-offset: 3px;
+}
+
+.activity-lane {
+  transition:
+    transform 360ms cubic-bezier(.22,1,.36,1),
+    box-shadow 360ms ease;
+}
+.activity-lane__image {
+  transition: transform 700ms cubic-bezier(.22,1,.36,1), filter 360ms ease;
+}
+.activity-lane__arrow {
+  transition: transform 280ms cubic-bezier(.22,1,.36,1), background-color 180ms ease;
+}
+.activity-lane:hover {
+  transform: translateY(-5px);
+  box-shadow: var(--shadow-lg);
+}
+.activity-lane:hover .activity-lane__image { transform: scale(1.045); }
+.activity-lane:hover .activity-lane__arrow { transform: translateX(3px); }
+.activity-lane:active { transform: translateY(-1px) scale(0.992); }
+
+@keyframes home-step-enter {
+  from { opacity: 0; transform: translateX(14px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (scripting: enabled) and (prefers-reduced-motion: no-preference) {
+  .reveal.home-reveal {
+    transform: translateY(18px);
+    transition-duration: 520ms;
+    transition-timing-function: cubic-bezier(.22,1,.36,1);
+  }
+  .reveal.home-reveal.is-in { transform: none; }
+  .reveal.home-reveal.reveal--fade { transform: none; }
+  .reveal.home-story-visual .home-story-image {
+    transform: scale(1.04);
+    transition: transform 900ms cubic-bezier(.22,1,.36,1) var(--reveal-delay, 0ms);
+  }
+  .reveal.home-story-visual.is-in .home-story-image { transform: none; }
+  .reveal.is-in .home-step {
+    animation: home-step-enter 520ms cubic-bezier(.22,1,.36,1) both;
+    animation-delay: var(--step-delay, 0ms);
+  }
+}
+
 /* ---------- Reveal on scroll (progressive enhancement) ----------
    The hidden state applies ONLY when JS is running AND the visitor accepts
    motion - so no-JS and reduced-motion visitors always see content (the 2 Jul

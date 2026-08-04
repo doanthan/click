@@ -133,15 +133,20 @@ export function EventExplorer({
   const urlParams = useSearchParams();
   const initialTag = urlParams?.get("tag") ?? "";
   const initialCategory = urlParams?.get("category") ?? "";
+  const initialSearch = urlParams?.get("q") ?? "";
+  const requestedDate = urlParams?.get("date") ?? "all";
+  const initialDate = DATE_OPTIONS.some(([value]) => value === requestedDate)
+    ? (requestedDate as DateWindow)
+    : "all";
 
   const [locationStatus, setLocationStatus] = useState<LocationStatus>("idle");
   // The user's real coordinates once they share location. When set, every
   // event's distance is recomputed from here instead of from Sydney CBD.
   const [userCoords, setUserCoords] = useState<LatLng | null>(null);
   const [locationQuery, setLocationQuery] = useState("Sydney CBD");
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState(initialSearch);
   const [selectedSuburb, setSelectedSuburb] = useState("All Sydney");
-  const [dateWindow, setDateWindow] = useState<DateWindow>("all");
+  const [dateWindow, setDateWindow] = useState<DateWindow>(initialDate);
   const [timeOfDay, setTimeOfDay] = useState<TimeOfDay>("all");
   const [freeOnly, setFreeOnly] = useState(false);
   const [distanceKm, setDistanceKm] = useState<number>(MAX_DISTANCE_KM);
@@ -254,9 +259,11 @@ export function EventExplorer({
     const next = new URLSearchParams();
     if (tagFilter.trim()) next.set("tag", tagFilter.trim());
     if (categoryFilter) next.set("category", categoryFilter);
+    if (searchQuery.trim()) next.set("q", searchQuery.trim());
+    if (dateWindow !== "all") next.set("date", dateWindow);
     const queryString = next.toString();
     router.replace(queryString ? `${pathname}?${queryString}` : pathname, { scroll: false });
-  }, [tagFilter, categoryFilter, router, pathname]);
+  }, [tagFilter, categoryFilter, searchQuery, dateWindow, router, pathname]);
 
   function requestLocation() {
     if (!("geolocation" in navigator)) {

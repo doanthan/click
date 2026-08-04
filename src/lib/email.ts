@@ -31,8 +31,15 @@ function textToHtml(text: string) {
     .join("");
 }
 
+// Resend verifies the sending subdomain, not the root: send.letsclick.app is
+// verified, letsclick.app is not, and a from address on the root gets a 403.
+// The subdomain has no mailbox, so replies are pointed at the real inbox.
 function getFromAddress() {
-  return process.env.RESEND_FROM_EMAIL || "Click <hello@letsclick.app>";
+  return process.env.RESEND_FROM_EMAIL || "Click <hello@send.letsclick.app>";
+}
+
+function getReplyToAddress() {
+  return process.env.RESEND_REPLY_TO_EMAIL || "hello@letsclick.app";
 }
 
 export async function sendTransactionalEmail(
@@ -65,6 +72,7 @@ export async function sendTransactionalEmail(
       },
       body: JSON.stringify({
         from: getFromAddress(),
+        reply_to: getReplyToAddress(),
         to: email.to,
         subject: email.subject,
         text: email.text,
