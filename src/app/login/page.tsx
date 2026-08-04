@@ -108,14 +108,14 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           />
         </form>
 
-        <form action={signInWithMeta}>
-          <input type="hidden" name="callbackUrl" value={callbackUrl} />
-          <SsoButton
-            provider="facebook"
-            disabled={!metaConfigured}
-            label={metaConfigured ? "Continue with Facebook" : "Facebook · setup required"}
-          />
-        </form>
+        {/* An unconfigured provider is hidden rather than shown disabled - a
+            dead "setup required" button reads as a broken site to a visitor. */}
+        {metaConfigured ? (
+          <form action={signInWithMeta}>
+            <input type="hidden" name="callbackUrl" value={callbackUrl} />
+            <SsoButton provider="facebook" label="Continue with Facebook" />
+          </form>
+        ) : null}
       </div>
 
       <div className="my-4">

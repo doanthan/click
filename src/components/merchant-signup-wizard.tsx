@@ -620,16 +620,17 @@ export function StepAuthCard({
           </button>
         </form>
 
-        <form action={signInWithMeta} className="mt-3 grid gap-3">
-          <input type="hidden" name="callbackUrl" value={callbackUrl} />
-          <button
-            type="submit"
-            disabled={!metaConfigured}
-            className="flex min-h-[52px] w-full items-center justify-center rounded-xl bg-[#1877F2] px-5 text-[15px] font-semibold text-white transition hover:bg-[#1566d6] disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {metaConfigured ? "Continue with Facebook" : "Facebook · setup required"}
-          </button>
-        </form>
+        {metaConfigured ? (
+          <form action={signInWithMeta} className="mt-3 grid gap-3">
+            <input type="hidden" name="callbackUrl" value={callbackUrl} />
+            <button
+              type="submit"
+              className="flex min-h-[52px] w-full items-center justify-center rounded-xl bg-[#1877F2] px-5 text-[15px] font-semibold text-white transition hover:bg-[#1566d6]"
+            >
+              Continue with Facebook
+            </button>
+          </form>
+        ) : null}
 
         <div className="my-5 flex items-center gap-3">
           <span className="h-px flex-1 bg-[color:var(--mist)]" />

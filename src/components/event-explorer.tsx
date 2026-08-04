@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { categories, type EventItem } from "@/lib/click-data";
 import { haversineKm, roundKm, type LatLng } from "@/lib/geo";
 import { Button, CategoryCircle, Icon, categoryGlyphKey } from "./ds";
+import { EmptyState } from "./empty-state";
 import { EventCard } from "./event-card";
 import { MapboxAutocomplete } from "./mapbox-autocomplete";
 
@@ -419,6 +420,11 @@ export function EventExplorer({
     </div>
   );
 
+  // An empty catalogue and an over-narrow filter look identical to the count
+  // but need opposite copy: "clear filters" is nonsense advice when there was
+  // nothing to filter in the first place, and the button would be a no-op.
+  const nothingToShow = events.length === 0;
+
   const results =
     totalCount > 0 ? (
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
@@ -432,6 +438,15 @@ export function EventExplorer({
           />
         ))}
       </div>
+    ) : nothingToShow ? (
+      <EmptyState
+        eyebrow="Just getting started"
+        icon={<Icon name="compass" size={26} stroke={1.7} />}
+        title="The first events are on their way."
+        body="New things to do land here every week. Check back soon, or host the first one yourself."
+        actionHref="/merchant"
+        actionLabel="Host an event"
+      />
     ) : (
       <div className="rounded-[var(--radius-xl)] bg-[color:var(--lav-bg)] px-6 py-12 text-center">
         <Icon name="compass" size={32} stroke={1.7} className="mx-auto text-[color:var(--purple-400)]" />
@@ -455,7 +470,9 @@ export function EventExplorer({
         What&apos;s on near you
       </h1>
       <p className="mt-1 text-sm font-medium text-[color:var(--slate)]">
-        {events.length} {events.length === 1 ? "event" : "events"} on this week.
+        {nothingToShow
+          ? "Fresh events land here every week."
+          : `${events.length} ${events.length === 1 ? "event" : "events"} on this week.`}
       </p>
 
       {/* Search */}

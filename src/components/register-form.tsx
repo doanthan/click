@@ -105,14 +105,12 @@ export function RegisterForm({
           />
         </form>
 
-        <form action={signInWithMeta} onSubmit={stashPrefill}>
-          <input type="hidden" name="callbackUrl" value={callbackUrl} />
-          <SsoButton
-            provider="facebook"
-            disabled={!metaConfigured}
-            label={metaConfigured ? "Sign up with Facebook" : "Facebook · setup required"}
-          />
-        </form>
+        {metaConfigured ? (
+          <form action={signInWithMeta} onSubmit={stashPrefill}>
+            <input type="hidden" name="callbackUrl" value={callbackUrl} />
+            <SsoButton provider="facebook" label="Sign up with Facebook" />
+          </form>
+        ) : null}
       </div>
 
       <AuthDivider />

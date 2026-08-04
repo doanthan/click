@@ -268,23 +268,18 @@ export function LoginModal({
             />
           </form>
 
-          <form action={signInWithMeta} onSubmit={() => handleSubmit("facebook")}>
-            <input type="hidden" name="callbackUrl" value={formCallbackUrl} />
-            <SsoButton
-              provider="facebook"
-              disabled={!metaConfigured}
-              label={
-                !metaConfigured
-                  ? "Facebook · setup required"
-                  : isSignup
-                    ? "Sign up with Facebook"
-                    : "Continue with Facebook"
-              }
-              trailing={
-                !isSignup && lastUsed === "facebook" && metaConfigured ? <LastUsedBadge /> : null
-              }
-            />
-          </form>
+          {metaConfigured ? (
+            <form action={signInWithMeta} onSubmit={() => handleSubmit("facebook")}>
+              <input type="hidden" name="callbackUrl" value={formCallbackUrl} />
+              <SsoButton
+                provider="facebook"
+                label={isSignup ? "Sign up with Facebook" : "Continue with Facebook"}
+                trailing={
+                  !isSignup && lastUsed === "facebook" ? <LastUsedBadge /> : null
+                }
+              />
+            </form>
+          ) : null}
         </div>
 
         <div className="my-4">

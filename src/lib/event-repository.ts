@@ -7889,6 +7889,37 @@ async function promoteNextWaitlister(
   eventTitle: string,
   eventSlug: string,
 ): Promise<WaitlistPromotion | null> {
+  // A seat can only roll to the waitlist if the event can still take someone:
+  // still bookable, not yet over, and genuinely below capacity. Every caller
+  // routes through here, so this one guard covers the cancel, hold-expiry and
+  // lapsed-offer paths alike.
+  //
+  // Without it, `expireWaitlistOffers` loops forever on past events: it nulls a
+  // lapsed `offered_until`, immediately re-offers the same seat, and emails
+  // "a spot opened for <event>" - every sweep, for an event that already
+  // happened. `available` already nets off the offer we just released, because
+  // event_capacity_v counts only offers with `offered_until > now()`.
+  //
+  // The two gates deliberately mirror the booking layer rather than being
+  // tighter than it. Offering a seat that registerForEvent would refuse is
+  // useless; refusing to offer one it would still accept hands the queue's seat
+  // to whoever walks up next. So: the same bookable-status set (isBookableEventStatus,
+  // :573) and the same has_ended test (`coalesce(ends_at, starts_at) <= now()`,
+  // :3169) - an event mid-session is still claimable, so its queue still gets served.
+  const roomResult = await client.query(
+    `
+      select 1
+      from events e
+      join event_capacity_v cap on cap.event_id = e.id
+      where e.id = $1::uuid
+        and e.status::text = any($2::text[])
+        and coalesce(e.ends_at, e.starts_at) > now()
+        and cap.available > 0
+    `,
+    [eventId, [...BOOKABLE_EVENT_STATUSES]],
+  );
+  if (roomResult.rows.length === 0) return null;
+
   const waitlistResult = await client.query<{
     waitlist_id: string;
     profile_id: string;
@@ -12058,9 +12089,20 @@ export async function getPostEventClickPrompts(
           other.id::text as other_id,
           other.display_name as other_name,
           other.suburb as other_suburb,
+          -- Scoped to THIS event on purpose: the constraint this mirrors is
+          -- uq_click_post_event (sender_id, receiver_id, event_id), so a click
+          -- sent at some other event must not hide the person here. Unscoped,
+          -- one long-expired discovery click removed someone from every future
+          -- roster permanently - and because mutual detection only pairs clicks
+          -- on the same surface, the hidden send was the one that would have
+          -- formed the mutual. No status filter: the unique index ignores
+          -- status, so any existing row (even invalidated) still blocks a
+          -- re-send, and showing them as clickable would just 500 on insert.
           exists (
             select 1 from clicks c
-            where c.sender_id = $1::uuid and c.receiver_id = other.id
+            where c.sender_id = $1::uuid
+              and c.receiver_id = other.id
+              and c.event_id = e.id
           ) as already_clicked
         from events e
         join event_attendees mine on mine.event_id = e.id
@@ -12137,9 +12179,20 @@ export async function getPostEventClickPromptForEvent(
           other.id::text as other_id,
           other.display_name as other_name,
           other.suburb as other_suburb,
+          -- Scoped to THIS event on purpose: the constraint this mirrors is
+          -- uq_click_post_event (sender_id, receiver_id, event_id), so a click
+          -- sent at some other event must not hide the person here. Unscoped,
+          -- one long-expired discovery click removed someone from every future
+          -- roster permanently - and because mutual detection only pairs clicks
+          -- on the same surface, the hidden send was the one that would have
+          -- formed the mutual. No status filter: the unique index ignores
+          -- status, so any existing row (even invalidated) still blocks a
+          -- re-send, and showing them as clickable would just 500 on insert.
           exists (
             select 1 from clicks c
-            where c.sender_id = $1::uuid and c.receiver_id = other.id
+            where c.sender_id = $1::uuid
+              and c.receiver_id = other.id
+              and c.event_id = e.id
           ) as already_clicked
         from events e
         join event_attendees mine on mine.event_id = e.id
@@ -12215,10 +12268,13 @@ export async function notifyPostEventClickPrompts(): Promise<number> {
           where theirs.event_id = e.id
             and theirs.status = 'confirmed'
             and theirs.profile_id <> mine.profile_id
+            -- Same event scoping as the two roster queries above: without it a
+            -- click sent at any other event suppresses this event's prompt.
             and not exists (
               select 1 from clicks c
               where c.sender_id = mine.profile_id
                 and c.receiver_id = other.id
+                and c.event_id = e.id
             )
             and not exists (
               select 1 from user_blocks b
@@ -12630,12 +12686,29 @@ export async function confirmProposal(session: Session | null, proposalId: strin
 
     // The plan is locked — advance the mutual to confirmed_together (§B5.3). The fuller
     // both-or-neither booking coordination (§B5) lands in the 2.5 surfaces pass.
+    //
+    // Extending expires_at is not optional here. The 7-day clock stamped at
+    // formation is a *discovery* timer for pairs where nothing happened; once a
+    // plan is locked it must outlive that clock. expireClickLifecycles expires
+    // any active mutual past expires_at regardless of coord_state, and
+    // getProposalsForSession filters on `status = 'active' and expires_at >
+    // now()` - so a plan confirmed on day 0 for an event on day 20 silently
+    // vanished from /proposals on day 7, partner and calendar link included,
+    // with no notification. greatest() so this only ever extends.
     await client.query(
       `
-        update mutual_clicks
-        set coord_state = 'confirmed_together', updated_at = now()
-        where id = (select mutual_click_id from click_proposals where id = $1::uuid)
-          and status = 'active'
+        update mutual_clicks m
+        set coord_state = 'confirmed_together',
+            expires_at = greatest(
+              m.expires_at,
+              coalesce(e.ends_at, e.starts_at) + interval '${POST_EVENT_CLICK_WINDOW_HOURS} hours'
+            ),
+            updated_at = now()
+        from click_proposals cp
+        join events e on e.id = cp.suggested_event_id
+        where cp.id = $1::uuid
+          and m.id = cp.mutual_click_id
+          and m.status = 'active'
       `,
       [proposalId],
     );

@@ -8,12 +8,27 @@ const root = process.cwd();
 const requestedEnv = process.argv.find((arg) => arg.startsWith("--env="))?.slice(6);
 const envFile = requestedEnv || ".env.production.local";
 
+const duplicateKeys = [];
+
 function loadEnv(filename) {
   const absolute = path.resolve(root, filename);
   if (!existsSync(absolute)) return false;
+  // A key already present in the real environment wins over the file - that
+  // mirrors how a deploy resolves. But WITHIN the file the LAST occurrence must
+  // win, because that is what @next/env does and therefore what `next build`
+  // inlines. This parser used to be first-wins, so a stale duplicate at the
+  // bottom of the file shipped to production while this gate happily validated
+  // the good value at the top: the file carried pk_live_ on line 20 and
+  // pk_test_ on line 45, the gate passed, and the build inlined the test key.
+  const preexisting = new Set(Object.keys(process.env));
+  const seenInFile = new Set();
   for (const line of readFileSync(absolute, "utf8").split(/\r?\n/)) {
     const match = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
-    if (!match || match[1] in process.env) continue;
+    if (!match) continue;
+    const key = match[1];
+    if (seenInFile.has(key)) duplicateKeys.push(key);
+    seenInFile.add(key);
+    if (preexisting.has(key)) continue;
     let value = match[2];
     if (
       (value.startsWith('"') && value.endsWith('"')) ||
@@ -21,7 +36,7 @@ function loadEnv(filename) {
     ) {
       value = value.slice(1, -1);
     }
-    process.env[match[1]] = value;
+    process.env[key] = value;
   }
   return true;
 }
@@ -29,6 +44,14 @@ function loadEnv(filename) {
 const loaded = loadEnv(envFile);
 const errors = [];
 const warnings = [];
+
+// A duplicate key is never intentional in a production env file, and it is
+// invisible in every "did I set that?" grep that stops at the first hit.
+for (const key of [...new Set(duplicateKeys)]) {
+  errors.push(
+    `${key} is defined more than once in ${envFile}; the last occurrence wins. Delete the stale one.`,
+  );
+}
 const value = (name) => process.env[name]?.trim() || "";
 const requireValue = (name) => {
   if (!value(name)) errors.push(`${name} is missing.`);
