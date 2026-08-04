@@ -81,15 +81,43 @@ if (!value("SUPABASE_SECRET_KEY") && !value("SUPABASE_SERVICE_ROLE_KEY")) {
   errors.push("SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY is missing.");
 }
 
+// Public media (avatars, galleries, event images) has two interchangeable
+// backends. readR2Config() in src/lib/public-media-storage.ts is all-or-
+// nothing: miss any one value and every upload helper silently falls back to
+// the public Supabase `avatars` bucket. So the gate blocks only when NEITHER
+// backend can serve. A half-configured R2 is a warning, not a blocker - the
+// app still works, it just isn't on R2 yet.
 const r2Names = [
   "R2_ACCOUNT_ID",
   "R2_ACCESS_KEY_ID",
   "R2_SECRET_ACCESS_KEY",
   "R2_BUCKET_NAME",
 ];
-for (const name of r2Names) requireValue(name);
-if (!value("R2_PUBLIC_URL") && !value("R2_TEMP_PUBLIC")) {
-  errors.push("R2_PUBLIC_URL is missing.");
+const missingR2 = r2Names.filter((name) => !value(name));
+if (!value("R2_PUBLIC_URL") && !value("R2_TEMP_PUBLIC")) missingR2.push("R2_PUBLIC_URL");
+// Mirrors getSupabaseAdmin(), which takes the new sb_secret_ key or the legacy
+// service-role JWT, plus readPublicBase() for the resulting <img src>.
+const supabaseMediaReady =
+  Boolean(value("NEXT_PUBLIC_SUPABASE_URL")) &&
+  Boolean(value("SUPABASE_SECRET_KEY") || value("SUPABASE_SERVICE_ROLE_KEY"));
+
+if (missingR2.length > 0) {
+  if (supabaseMediaReady) {
+    warnings.push(
+      `R2 is not configured (missing ${missingR2.join(", ")}); public media uses the Supabase 'avatars' bucket.`,
+    );
+  } else {
+    errors.push(
+      `No public media backend: R2 is missing ${missingR2.join(", ")} and Supabase Storage is not configured either.`,
+    );
+  }
+} else if (!value("R2_PUBLIC_URL")) {
+  // R2 is otherwise complete, so it WILL activate - but the base URL would come
+  // from R2_TEMP_PUBLIC, which points at an unrelated project's CDN. Objects
+  // would write to R2_BUCKET_NAME while every returned <img src> 404s.
+  errors.push(
+    "R2 is active but R2_PUBLIC_URL is unset, so image URLs fall back to R2_TEMP_PUBLIC. Set R2_PUBLIC_URL to the domain bound to R2_BUCKET_NAME.",
+  );
 }
 
 if (value("AUTH_SECRET").length < 32) errors.push("AUTH_SECRET must be at least 32 characters.");
