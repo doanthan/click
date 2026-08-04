@@ -21,11 +21,8 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ ticketRef: string }> },
 ) {
+  // Pre-launch: signed-out testers can tick a bug off / send it back too.
   const session = await auth();
-  if (!session?.user?.email) {
-    return NextResponse.json({ error: "Sign in to update bugs." }, { status: 401 });
-  }
-
   const { ticketRef } = await params;
   const body = (await request.json().catch(() => ({}))) as {
     status?: string;

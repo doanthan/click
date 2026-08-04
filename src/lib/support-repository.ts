@@ -69,6 +69,14 @@ function dbUnavailable(): Error {
   return new Error("Database is not available.");
 }
 
+// Pre-launch the reporter is open to signed-out visitors too, so bugs on
+// /login, /register or a signed-out /discover can be filed at all. Those
+// tickets carry a placeholder identity rather than a null reporter, so the
+// checklist and the Sheet still show who filed them. profile_id stays null -
+// no profile is looked up or created for the placeholder.
+const GUEST_EMAIL = "user@letsclick.app";
+const GUEST_NAME = "Guest";
+
 async function resolveReporter(session: Session | null): Promise<{
   profileId: string | null;
   email: string | null;
@@ -77,7 +85,9 @@ async function resolveReporter(session: Session | null): Promise<{
 }> {
   const email = session?.user?.email?.trim().toLowerCase() || null;
   const name = session?.user?.name?.trim() || email;
-  if (!email) return { profileId: null, email: null, name: null, role: "guest" };
+  if (!email) {
+    return { profileId: null, email: GUEST_EMAIL, name: GUEST_NAME, role: "guest" };
+  }
 
   const pool = getPostgresPool();
   if (!pool) return { profileId: null, email, name, role: "unknown" };

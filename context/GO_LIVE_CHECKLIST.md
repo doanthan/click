@@ -55,6 +55,11 @@ real users or payments.
   `/api/health` return `200`; they currently return `404` live.
 - [ ] Run `npm run smoke -- https://www.letsclick.app` and require zero failures;
   the 2 August run failed 14 checks.
+- [ ] Re-gate the bug reporter behind a session. While pre-launch it is shown to
+  everyone and accepts signed-out reports as `user@letsclick.app`, which means a
+  real visitor can see the "Report a bug" button and write to the triage board.
+  Restore the `session?.user` mount check in `src/app/layout.tsx` and the 401s in
+  `src/app/api/support/ticket/**`.
 
 ### P0 — production data and customer-facing content
 

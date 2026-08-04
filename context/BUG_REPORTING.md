@@ -10,7 +10,7 @@ How the in-app **Report a Bug** widget works, what it captures, and how a report
 
 | File | Job |
 | --- | --- |
-| `src/components/support/support-widget.tsx` | The floating button + off-canvas panel. Mounted in `src/app/layout.tsx:114` — **logged-in users only** (`session?.user ? <SupportWidget /> : null`). |
+| `src/components/support/support-widget.tsx` | The floating button + off-canvas panel. Mounted unconditionally in `src/app/layout.tsx` — **every visitor, signed in or not**, pre-launch. |
 | `src/lib/support-capture.ts` | **Always-on** console + failed-network buffer. Side-effect import; starts recording as soon as the widget module loads. |
 | `src/lib/support-screenshot.ts` | Viewport screenshot via `html2canvas-pro` (dynamically imported). |
 | `src/app/api/support/ticket/route.ts` | `POST` file a bug · `GET ?url=` list open bugs for a page. |
@@ -194,7 +194,7 @@ Both scripts auto-load `.env.local` and need the three `GOOGLE_*` vars; `mark-ai
 
 ## 7. Gotchas
 
-- **The widget only renders for logged-in users**, and the API 401s anonymous requests. There is no guest bug report.
+- **Pre-launch the widget renders for everyone, signed in or not**, and the API accepts anonymous reports so bugs on the signed-out surfaces (`/login`, `/register`, a signed-out `/discover`) can be filed at all. A guest report is attributed to `user@letsclick.app` with a null `reporter_profile_id` and role `guest` on the board; no profile is looked up or created for it. Rate limiting falls back to per-IP (20/hour) instead of per-account. **Re-gate this at launch** - it is on the go-live checklist.
 - **Sheet edits don't flow back to Postgres.** Writes are one-way (app → sheet) except through the API. If a human types `fixed` into col G by hand, the row goes green but `support_tickets.status` stays `open`, so the bug keeps appearing on the in-app checklist. Tick it off in the widget instead, and the sheet follows.
 - **`sheet_row` is a row *number*.** Inserting or deleting rows in the middle of the sheet by hand shifts every row below it and silently de-syncs the mapping. Append and archive; don't insert.
 - **Everything is best-effort except the Postgres insert.** Missing `GOOGLE_*` → no board rows. Missing `SUPABASE_SERVICE_ROLE_KEY` / `NEXT_PUBLIC_SUPABASE_URL` → no screenshots. Neither blocks a report, and neither throws into the request; they just `console.warn`.

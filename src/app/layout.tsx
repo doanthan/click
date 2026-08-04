@@ -136,7 +136,9 @@ export default async function RootLayout({
         />
         <SessionFreshness />
         {showInternalTools ? <DevSupabaseDrawer /> : null}
-        {session?.user ? <SupportWidget /> : null}
+        {/* Pre-launch: shown to everyone, signed in or not, so a bug on the
+            signed-out surfaces (login, register, discover) can be reported. */}
+        <SupportWidget />
         {showInternalTools ? (
           <TestAccountSwitcher currentEmail={session?.user?.email ?? null} />
         ) : null}

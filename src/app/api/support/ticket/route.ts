@@ -30,14 +30,14 @@ function safeParse<T>(value: FormDataEntryValue | null, fallback: T): T {
 
 // POST /api/support/ticket — file a bug (multipart FormData from SupportPanel).
 export async function POST(request: Request) {
+  // Pre-launch this is open to signed-out visitors; they file as the guest
+  // reporter (see resolveReporter) and are rate-limited per IP instead of
+  // per account.
   const session = await auth();
-  if (!session?.user?.email) {
-    return NextResponse.json({ error: "Sign in to report a bug." }, { status: 401 });
-  }
   const limit = await checkRateLimit({
     scope: "support-ticket",
-    identity: `${session.user.email}:${getClientIp(request)}`,
-    limit: 10,
+    identity: `${session?.user?.email ?? "guest"}:${getClientIp(request)}`,
+    limit: 20,
     windowSeconds: 60 * 60,
   });
   if (!limit.allowed) return rateLimitResponse(limit);
@@ -112,11 +112,6 @@ export async function POST(request: Request) {
 
 // GET /api/support/ticket?url=<pathname> — open bugs for a page (the checklist).
 export async function GET(request: Request) {
-  const session = await auth();
-  if (!session?.user?.email) {
-    return NextResponse.json({ error: "Sign in to view bugs." }, { status: 401 });
-  }
-
   const url = new URL(request.url).searchParams.get("url");
   if (!url) {
     return NextResponse.json({ bugs: [] });
