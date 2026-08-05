@@ -3,7 +3,7 @@ import type { CSSProperties } from "react";
 /**
  * Brand loading skeletons.
  *
- * These are NOT generic spinners — each composed skeleton mirrors the geometry
+ * These are NOT generic spinners - each composed skeleton mirrors the geometry
  * of the real component it stands in for (same radius, border, padding, grid
  * columns), rendered in the warm `.skeleton` shimmer (champagne-deep base with
  * a soft cream light-sweep). The sweep auto-freezes to a flat surface under
@@ -55,10 +55,10 @@ export function SkeletonText({
   );
 }
 
-/** Mirrors <MetricCard>: rounded-2xl cream card, small label, big value. */
+/** Mirrors <MetricCard>: rounded-2xl white card, small label, big value. */
 export function SkeletonMetricCard() {
   return (
-    <article className="rounded-2xl border border-[color:var(--line)] bg-[color:var(--cream)] p-5">
+    <article className="rounded-2xl border border-[color:var(--mist)] bg-[color:var(--paper)] p-5">
       <Skeleton className="h-3 w-20 rounded-full" />
       <Skeleton className="mt-3 h-9 w-24 rounded-lg" />
     </article>
@@ -76,7 +76,7 @@ export function SkeletonMetricGrid({ count = 8 }: { count?: number }) {
   );
 }
 
-/** Mirrors <AdminPageHeader>: rose eyebrow, display H1, optional description. */
+/** Mirrors <AdminPageHeader>: Slate eyebrow, display H1, optional description. */
 export function SkeletonPageHeader({ description = true }: { description?: boolean }) {
   return (
     <div className="flex flex-wrap items-end justify-between gap-4">
@@ -90,14 +90,14 @@ export function SkeletonPageHeader({ description = true }: { description?: boole
   );
 }
 
-/** Mirrors <AdminTrendChart>: gap-4 md:2-col, each a cream card with a bar row. */
+/** Mirrors <AdminTrendChart>: gap-4 md:2-col, each a white card with a bar row. */
 export function SkeletonChart({ panels = 4 }: { panels?: number }) {
   return (
     <div className="grid gap-4 md:grid-cols-2">
       {Array.from({ length: panels }).map((_, p) => (
         <div
           key={p}
-          className="rounded-2xl border border-[color:var(--line)] bg-[color:var(--cream)] p-5"
+          className="rounded-2xl border border-[color:var(--mist)] bg-[color:var(--paper)] p-5"
         >
           <div className="flex items-baseline justify-between gap-2">
             <Skeleton className="h-3 w-24 rounded-full" />
@@ -108,7 +108,7 @@ export function SkeletonChart({ panels = 4 }: { panels?: number }) {
               <Skeleton
                 key={b}
                 className="flex-1 rounded-t-md"
-                // Deterministic varied heights — no Math.random (SSR-safe).
+                // Deterministic varied heights - no Math.random (SSR-safe).
                 style={{ height: `${30 + ((b * 37) % 70)}%` }}
               />
             ))}
@@ -123,14 +123,14 @@ export function SkeletonChart({ panels = 4 }: { panels?: number }) {
   );
 }
 
-/** Mirrors <InfoCard>: cream card with an accent bar, title, body lines. */
+/** Mirrors <InfoCard>: white card with an accent bar, title, body lines. */
 export function SkeletonInfoCardGrid({ count = 6 }: { count?: number }) {
   return (
     <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
       {Array.from({ length: count }).map((_, i) => (
         <article
           key={i}
-          className="rounded-2xl border border-[color:var(--line)] bg-[color:var(--cream)] p-6"
+          className="rounded-2xl border border-[color:var(--mist)] bg-[color:var(--paper)] p-6"
         >
           <Skeleton className="h-1.5 w-12 rounded-full" />
           <Skeleton className="mt-5 h-7 w-3/4 rounded-md" />
@@ -156,7 +156,7 @@ export function SkeletonFilterBar({ pills = 5 }: { pills?: number }) {
 }
 
 /**
- * A generic list/table panel skeleton: a bordered cream card holding N rows,
+ * A generic list/table panel skeleton: a bordered white card holding N rows,
  * each a leading block (avatar/thumb) + two text lines + a trailing chip.
  * Matches the row rhythm of the admin tables and merchant panels.
  */
@@ -168,12 +168,12 @@ export function SkeletonTable({
   withThumb?: boolean;
 }) {
   return (
-    <div className="overflow-hidden rounded-2xl border border-[color:var(--line)] bg-[color:var(--cream)]">
+    <div className="overflow-hidden rounded-2xl border border-[color:var(--mist)] bg-[color:var(--paper)]">
       {Array.from({ length: rows }).map((_, i) => (
         <div
           key={i}
           className={`flex items-center gap-4 px-5 py-4 ${
-            i !== rows - 1 ? "border-b border-[color:var(--line-soft)]" : ""
+            i !== rows - 1 ? "border-b border-[color:var(--mist)]" : ""
           }`}
         >
           {withThumb ? <Skeleton className="size-11 shrink-0 rounded-xl" /> : null}
@@ -202,7 +202,7 @@ export function SkeletonCardGrid({
       {Array.from({ length: count }).map((_, i) => (
         <article
           key={i}
-          className="overflow-hidden rounded-2xl border border-[color:var(--line)] bg-[color:var(--cream)]"
+          className="overflow-hidden rounded-2xl border border-[color:var(--mist)] bg-[color:var(--paper)]"
         >
           <Skeleton className="aspect-[3/2] w-full rounded-none" />
           <div className="p-5">

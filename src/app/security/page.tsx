@@ -1,7 +1,8 @@
+import Link from "next/link";
 import { LegalPage } from "@/components/legal-page";
 
 export const metadata = {
-  title: "Security | Click",
+  title: "Security",
   description: "How Click protects your account, your data, and your payments.",
 };
 
@@ -94,7 +95,7 @@ export default function SecurityPage() {
               revealed to the other person unless they click you back. There is no direct-message
               inbox and no way to broadcast one-way interest. This removes a common harassment vector
               and is enforced in how the data is modelled and surfaced, not just in the interface. See
-              our <a href="/safety" className="font-bold underline">Safety Policy</a> for the
+              our <Link href="/safety" className="font-bold underline">Safety Policy</Link> for the
               member-facing controls.
             </p>
           ),
@@ -156,9 +157,9 @@ export default function SecurityPage() {
               For security matters, email{" "}
               <a href="mailto:security@letsclick.app" className="font-bold underline">security@letsclick.app</a>.
               For privacy requests, see our{" "}
-              <a href="/privacy" className="font-bold underline">Privacy Policy</a>. For safety
+              <Link href="/privacy" className="font-bold underline">Privacy Policy</Link>. For safety
               concerns about another member or an event, see our{" "}
-              <a href="/safety" className="font-bold underline">Safety Policy</a>.
+              <Link href="/safety" className="font-bold underline">Safety Policy</Link>.
             </p>
           ),
         },

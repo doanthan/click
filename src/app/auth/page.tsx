@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 
 export const metadata = {
-  title: "Sign in or sign up | Click",
+  title: "Sign in or sign up",
   description: "Unified entry point for Click sign-in and sign-up.",
 };
 

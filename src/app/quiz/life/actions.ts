@@ -23,5 +23,11 @@ export async function submitLifeQuizAction(formData: FormData) {
   }
 
   revalidatePath("/profile");
-  redirect("/profile?from=life-quiz");
+  revalidatePath("/quiz");
+  // Lands back on the quiz hub rather than /profile: the hub is the one page
+  // that can say what just happened (it reads `from` and `saved`, and marks the
+  // Life card done), and it is where the other quiz is offered next. `saved`
+  // carries the count so a finish with nothing selected - which skips the write
+  // above entirely - cannot look identical to a real save.
+  redirect(`/quiz?from=life-quiz&saved=${tags.length}`);
 }

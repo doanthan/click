@@ -4,6 +4,8 @@ import { useActionState, useEffect, useId, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { createPortal } from "react-dom";
 import Link from "next/link";
+import { SubmitButton } from "@/components/ds-client";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import {
   confirmProposalAction,
   declineProposalAction,
@@ -63,19 +65,31 @@ function projectStep(entry: ProposalEntry): Exclude<Step, "reveal"> {
   return entry.coordState === "proposed" ? "proposed" : "open";
 }
 
-function SubmitButton({
-  className,
-  children,
-  disabled,
-}: {
-  className: string;
-  children: React.ReactNode;
-  disabled?: boolean;
-}) {
+/**
+ * The safety exit, and the ONE control here the shared SubmitButton cannot
+ * cover: it is a quiet underlined link by design, not a ck-btn, and
+ * SubmitButton wraps the DS Button. It still reads the release form's pending
+ * state, so it has to live inside that form.
+ *
+ * Not a submit: it opens the confirm first, and the dialog submits the form.
+ */
+function ReleaseControl({ onRequest }: { onRequest: () => void }) {
   const { pending } = useFormStatus();
   return (
-    <button type="submit" disabled={pending || disabled} className={className}>
-      {pending ? "Sending…" : children}
+    <button
+      type="button"
+      onClick={() => {
+        if (!pending) onRequest();
+      }}
+      aria-busy={pending || undefined}
+      aria-disabled={pending || undefined}
+      className="text-[13px] font-semibold text-[color:var(--slate)] underline decoration-dotted underline-offset-2 hover:text-[color:var(--ink)] aria-disabled:opacity-50"
+    >
+      {/* "Hiding…" - this ends the plan for you; it sends nothing to them. The
+          old shared label said "Sending…", which on the safety exit implied a
+          message had gone to the other person: the exact fear that stops people
+          using it. */}
+      {pending ? "Hiding…" : "Not feeling it"}
     </button>
   );
 }
@@ -100,8 +114,20 @@ export function CoordinationDrawer({
     revealedThisSession.has(entry.mutualId),
   );
 
+  const [confirmRelease, setConfirmRelease] = useState(false);
+  // The Escape/Tab handler below is document-level and mount-scoped, so it would
+  // fight the ConfirmDialog that portals ON TOP of this drawer: Escape would
+  // close the whole drawer instead of the confirm, and Tab would yank focus back
+  // out of it. A ref rather than state, so the handler never needs re-binding.
+  const confirmOpenRef = useRef(false);
+  function openReleaseConfirm(next: boolean) {
+    confirmOpenRef.current = next;
+    setConfirmRelease(next);
+  }
+
   const titleId = useId();
   const cardRef = useRef<HTMLDivElement>(null);
+  const releaseFormRef = useRef<HTMLFormElement>(null);
 
   // When a successful action revalidates /proposals, close the picker after the
   // fresh server state renders so local UI never fights the server truth.
@@ -118,6 +144,8 @@ export function CoordinationDrawer({
     const raf = window.requestAnimationFrame(() => cardRef.current?.focus());
 
     function onKey(e: KeyboardEvent) {
+      // While the release confirm is up it owns the keyboard - see openReleaseConfirm.
+      if (confirmOpenRef.current) return;
       if (e.key === "Escape") {
         e.preventDefault();
         onClose();
@@ -177,7 +205,7 @@ export function CoordinationDrawer({
   const picker = picking ? (
     <form
       action={freshSuggest ? suggestAction : proposeAction}
-      className="mt-4 rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-4"
+      className="rise-soft mt-4 rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-4"
     >
       {freshSuggest ? (
         <input type="hidden" name="mutual_id" value={entry.mutualId} />
@@ -201,7 +229,7 @@ export function CoordinationDrawer({
         ))}
       </select>
       <div className="mt-3 flex gap-2">
-        <SubmitButton className="ck-btn ck-btn--sm ck-btn--primary disabled:cursor-not-allowed">
+        <SubmitButton size="sm" pendingLabel="Sending…">
           Send suggestion
         </SubmitButton>
         <button
@@ -250,38 +278,36 @@ export function CoordinationDrawer({
           </span>
         </button>
 
-        {step === "reveal" ? (
-          <RevealStep entry={entry} titleId={titleId} onSuggest={dismissReveal} />
-        ) : (
-          <CoordinationBody
-            entry={entry}
-            step={step}
-            titleId={titleId}
-            firstName={firstName}
-            confirmAction={confirmAction}
-            declineAction={declineAction}
-            confirmError={confirmState.error}
-            declineError={declineState.error}
-            onTogglePicker={() => setPicking((v) => !v)}
-            picker={picker}
-          />
-        )}
+        {/* key={step} remounts the body on every advance so .rise-soft replays -
+            the one flow in this surface that genuinely steps was the one that
+            never felt like it was stepping. Safe against the freeze the header
+            comment warns about: rise-soft is pure CSS with fill `both` settling
+            at opacity 1, not a JS-applied class that can stick invisible. */}
+        <div key={step} className="rise-soft">
+          {step === "reveal" ? (
+            <RevealStep entry={entry} titleId={titleId} onSuggest={dismissReveal} />
+          ) : (
+            <CoordinationBody
+              entry={entry}
+              step={step}
+              titleId={titleId}
+              firstName={firstName}
+              confirmAction={confirmAction}
+              declineAction={declineAction}
+              confirmError={confirmState.error}
+              declineError={declineState.error}
+              onTogglePicker={() => setPicking((v) => !v)}
+              picker={picker}
+            />
+          )}
+        </div>
 
         {/* SAFE-08: an in-flow safety exit at every step - block ends the plan. */}
         <div className="mt-6 border-t border-[color:var(--line-soft)] pt-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <form
-              action={releaseAction}
-              onSubmit={(event) => {
-                if (!window.confirm(`Hide this connection with ${firstName}?`)) {
-                  event.preventDefault();
-                }
-              }}
-            >
+            <form ref={releaseFormRef} action={releaseAction}>
               <input type="hidden" name="mutual_id" value={entry.mutualId} />
-              <SubmitButton className="text-[13px] font-semibold text-[color:var(--slate)] underline decoration-dotted underline-offset-2 hover:text-[color:var(--ink)] disabled:opacity-50">
-                Not feeling it
-              </SubmitButton>
+              <ReleaseControl onRequest={() => openReleaseConfirm(true)} />
             </form>
             <Link
               href={`/profile/${entry.otherId}#safety`}
@@ -291,11 +317,30 @@ export function CoordinationDrawer({
             </Link>
           </div>
           {releaseState.error ? (
-            <p className="mt-2 text-xs font-medium text-[color:var(--danger)]">
+            <p role="alert" className="mt-2 text-xs font-medium text-[color:var(--danger)]">
               {releaseState.error}
             </p>
           ) : null}
         </div>
+
+        {/* A native window.confirm used to land an OS-chrome grey box on top of
+            this card, in a font the DS does not own, inside an active focus
+            trap - on the most emotionally loaded control on the screen. */}
+        <ConfirmDialog
+          open={confirmRelease}
+          title={`Hide this connection with ${firstName}?`}
+          description={`${firstName} isn't told, and nothing is sent. This plan just stops showing up for you.`}
+          confirmLabel="Hide this connection"
+          cancelLabel="Keep it"
+          tone="rose"
+          onConfirm={() => {
+            openReleaseConfirm(false);
+            // requestSubmit fires a real submit event, so React runs the form's
+            // server action exactly as a click on a submit button would.
+            releaseFormRef.current?.requestSubmit();
+          }}
+          onCancel={() => openReleaseConfirm(false)}
+        />
       </div>
     </div>,
     document.body,
@@ -474,7 +519,7 @@ function CoordinationBody({
           </p>
         </>
       ) : (
-        // open / proposed — a plan is (or can be) on the table.
+        // open / proposed - a plan is (or can be) on the table.
         <>
           <h2 id={titleId} className={headingClass}>
             {step === "proposed" && entry.proposedByMe ? (
@@ -511,9 +556,9 @@ function CoordinationBody({
             {!(step === "proposed" && entry.proposedByMe) && entry.suggestedEventSlug ? (
               <form action={confirmAction}>
                 <input type="hidden" name="proposal_id" value={entry.id} />
-                <SubmitButton className="ck-btn ck-btn--md ck-btn--primary disabled:cursor-not-allowed">
-                  Confirm this plan
-                </SubmitButton>
+                {/* Confirming a plan is agreeing to a night out, not sending a
+                    message - the old shared "Sending…" label said otherwise. */}
+                <SubmitButton pendingLabel="Confirming…">Confirm this plan</SubmitButton>
               </form>
             ) : null}
             <button
@@ -528,7 +573,7 @@ function CoordinationBody({
             {step === "proposed" && !entry.proposedByMe ? (
               <form action={declineAction}>
                 <input type="hidden" name="proposal_id" value={entry.id} />
-                <SubmitButton className="ck-btn ck-btn--md ck-btn--ghost disabled:cursor-not-allowed">
+                <SubmitButton variant="ghost" pendingLabel="Passing…">
                   Not this one
                 </SubmitButton>
               </form>

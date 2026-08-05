@@ -9,6 +9,7 @@ import { EventMediaGallery } from "@/components/event-media-gallery";
 import { EventVenueMap } from "@/components/event-venue-map";
 import { EventPaymentButton } from "@/components/event-payment-button";
 import { EventRegistrationButton } from "@/components/event-registration-button";
+import { EventBookedCelebration } from "@/components/event-rsvp-success-overlay";
 import { EventBookmarkButton } from "@/components/event-bookmark-button";
 import { MyGuestSeats } from "@/components/my-guest-seats";
 import { PostEventClickCard } from "@/components/post-event-click-card";
@@ -262,6 +263,18 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
           <div className="mt-4 rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-4 text-sm text-[color:var(--ink-soft)]">
             {notice}
           </div>
+        ) : null}
+
+        {/* The completion moment for the people who paid. Everything it renders
+            comes from successDetailsForViewer, which is already gated on
+            venueUnlocked - and a viewer who is `isRegistered` has it unlocked by
+            definition. Strictly downstream of reconcileCheckoutSession above:
+            it reads reconciled registration state and nothing else. */}
+        {search?.booked && isRegistered && successDetailsForViewer ? (
+          <EventBookedCelebration
+            details={successDetailsForViewer}
+            celebrationKey={search.session_id ?? event.id}
+          />
         ) : null}
 
         {search?.booked && isRegistered ? (

@@ -5,7 +5,7 @@ import { EventCard } from "@/components/event-card";
 import { getEventsForExplore, getPersonalizedDiscovery, getProfileStatus } from "@/lib/event-repository";
 
 export const metadata = {
-  title: "Discover | Click",
+  title: "Discover",
   description: "Browse local Click events near you by suburb, date, and vibe.",
 };
 

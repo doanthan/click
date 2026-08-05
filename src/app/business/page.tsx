@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 
 /**
- * /business — internal forecasting + reality-check dashboard for the Click
+ * /business - internal forecasting + reality-check dashboard for the Click
  * founding team. Built off context/BUSINESS_CASE.md. Three scenarios
  * (Worst / Base / Best), the brutal cash math, an honest competitor teardown,
  * and a straight answer on whether to raise VC. Not linked in public nav.
@@ -19,7 +19,7 @@ type Scenario = {
   blurb: string;
   // 12 monthly MRR points (AUD)
   mrr: number[];
-  // operating spend assumption for year 1 (AUD, total) — conditional on funding
+  // operating spend assumption for year 1 (AUD, total) - conditional on funding
   year1Burn: number;
   burnNote: string;
   // exit ARR by year (AUD)
@@ -40,7 +40,7 @@ const SCENARIOS: Record<ScenarioKey, Scenario> = {
     burnNote:
       "Lean survival mode: founders unpaid, no hires, ~$20k/mo. Even then Year 1 burns ~$240k against ~$39k earned.",
     arr: { y1: 90_000, y2: 144_000, y3: 200_000 },
-    breakeven: "Month 24+ or never — likely a zombie or a wind-down",
+    breakeven: "Month 24+ or never - likely a zombie or a wind-down",
     verdict:
       "Below the doc's own 'bear case'. The honest floor: a small lifestyle business or a graceful shutdown. Not fundable.",
   },
@@ -49,11 +49,11 @@ const SCENARIOS: Record<ScenarioKey, Scenario> = {
     label: "Base case",
     tag: "The plan as written",
     blurb:
-      "Exactly the BUSINESS_CASE.md projection: 35 merchants, 40% month-6 retention, organic + PR working, paid acquisition switched on in Month 4. Everything goes roughly to plan — which itself is optimistic.",
+      "Exactly the BUSINESS_CASE.md projection: 35 merchants, 40% month-6 retention, organic + PR working, paid acquisition switched on in Month 4. Everything goes roughly to plan - which itself is optimistic.",
     mrr: [150, 450, 900, 1800, 3000, 4667, 6200, 8000, 10138, 12000, 13600, 15409],
     year1Burn: 475_000,
     burnNote:
-      "Full plan burn: $19.5–31.5k/mo (M1–3), $38.5k/mo (M4–6), $47.5k/mo (M7–12). ~$475k for the year — requires raised capital to spend.",
+      "Full plan burn: $19.5–31.5k/mo (M1–3), $38.5k/mo (M4–6), $47.5k/mo (M7–12). ~$475k for the year - requires raised capital to spend.",
     arr: { y1: 185_000, y2: 480_000, y3: 1_000_000 },
     breakeven: "Month 14 (per the plan), assuming the raise lands",
     verdict:
@@ -68,7 +68,7 @@ const SCENARIOS: Record<ScenarioKey, Scenario> = {
     mrr: [300, 800, 1500, 3200, 5500, 8500, 12000, 15000, 18000, 22000, 26000, 30000],
     year1Burn: 475_000,
     burnNote:
-      "Same ~$475k spend, but deployed behind a working funnel — you'd raise again mid-year to pour fuel on it.",
+      "Same ~$475k spend, but deployed behind a working funnel - you'd raise again mid-year to pour fuel on it.",
     arr: { y1: 360_000, y2: 1_400_000, y3: 3_600_000 },
     breakeven: "Month 11, then you intentionally stay unprofitable to grow",
     verdict:
@@ -113,19 +113,19 @@ function sum(arr: number[]) {
 const PROS = [
   {
     title: "A real, documented, painful problem.",
-    body: "Sydney 3rd-worst city for making friends; 43% of under-25s chronically lonely; an actual NSW Parliament loneliness inquiry. You're not inventing demand — it exists and it's quantified.",
+    body: "Sydney 3rd-worst city for making friends; 43% of under-25s chronically lonely; an actual NSW Parliament loneliness inquiry. You're not inventing demand - it exists and it's quantified.",
   },
   {
     title: "Built-in distribution via merchants.",
-    body: "Every studio/bar that lists is also a channel — their existing customers see Click. That's the cheapest, highest-trust acquisition you have, and most consumer-social apps don't get it.",
+    body: "Every studio/bar that lists is also a channel - their existing customers see Click. That's the cheapest, highest-trust acquisition you have, and most consumer-social apps don't get it.",
   },
   {
     title: "The 'no chat' angle is genuinely differentiated.",
-    body: "It's a real safety + brand wedge, especially for women. It's a clear story journalists can repeat in one sentence — which is most of what early PR needs.",
+    body: "It's a real safety + brand wedge, especially for women. It's a clear story journalists can repeat in one sentence - which is most of what early PR needs.",
   },
   {
     title: "The product is already largely built.",
-    body: "Events, RSVP, Stripe, admin, onboarding, quiz all exist. You're past the 'can we build it' risk that kills most pre-seed teams — your risk is purely demand and retention.",
+    body: "Events, RSVP, Stripe, admin, onboarding, quiz all exist. You're past the 'can we build it' risk that kills most pre-seed teams - your risk is purely demand and retention.",
   },
   {
     title: "Multiple revenue streams that compound.",
@@ -135,11 +135,11 @@ const PROS = [
 
 const THREATS = [
   {
-    title: "Cold-start is brutal — and you have TWO sides.",
+    title: "Cold-start is brutal - and you have TWO sides.",
     body: "No events → no users. No users → merchants churn. The plan's '35 merchants before any user' gate is right, but signing 35 SMBs by hand in 12 weeks is a full-time sales grind with a ~30% conversion at best.",
   },
   {
-    title: "Retention is the whole ballgame — and it's unproven.",
+    title: "Retention is the whole ballgame - and it's unproven.",
     body: "The entire model assumes 40% month-6 retention. Consumer-social retention is usually FAR worse. If users come once and ghost, every revenue line collapses. You have zero data on this yet.",
   },
   {
@@ -152,7 +152,7 @@ const THREATS = [
   },
   {
     title: "Marketplace leakage.",
-    body: "Once a user meets a studio through Click, the next booking goes direct — the merchant's incentive is to take the relationship off-platform. Eventbrite/ClassBento have fought this for a decade.",
+    body: "Once a user meets a studio through Click, the next booking goes direct - the merchant's incentive is to take the relationship off-platform. Eventbrite/ClassBento have fought this for a decade.",
   },
   {
     title: "Safety / dating-mode liability.",
@@ -168,7 +168,7 @@ const COMPETITORS = [
   {
     name: "Timeleft",
     threat: "Severe",
-    what: "VC-backed (France), dinners-with-strangers, already live in Sydney, viral on TikTok. Almost exactly your 'event is the icebreaker, no swiping' thesis — but funded and scaling now.",
+    what: "VC-backed (France), dinners-with-strangers, already live in Sydney, viral on TikTok. Almost exactly your 'event is the icebreaker, no swiping' thesis - but funded and scaling now.",
     why: "This is the one to worry about. They've validated the exact wedge in your city with far more capital. 'We don't have chat' won't differentiate against them.",
   },
   {
@@ -181,7 +181,7 @@ const COMPETITORS = [
     name: "Bumble BFF / Hinge / dating apps",
     threat: "High",
     what: "Deep pockets, the default place people go for both dating and friendship. Bumble BFF is explicitly friendship-matching.",
-    why: "They own the intent and the install base. Your counter is 'real-world first, no cold DMs' — a genuine wedge, but you're fighting brands with 100M+ users and huge ad budgets.",
+    why: "They own the intent and the install base. Your counter is 'real-world first, no cold DMs' - a genuine wedge, but you're fighting brands with 100M+ users and huge ad budgets.",
   },
   {
     name: "222 / Pie / We3 (new social)",
@@ -192,14 +192,14 @@ const COMPETITORS = [
   {
     name: "Eventbrite / Humanitix / ClassBento / Fever",
     threat: "Medium",
-    what: "Own event discovery + ticketing supply. ClassBento especially owns Sydney experiences (pottery, cooking) — your exact merchant categories.",
+    what: "Own event discovery + ticketing supply. ClassBento especially owns Sydney experiences (pottery, cooking) - your exact merchant categories.",
     why: "Merchants already use them and will resist a second platform taking 10%. They're not selling 'connection', but they own the supply you need and the booking habit.",
   },
   {
     name: "Free alternatives (run clubs, Facebook Groups, churches, hobby meetups)",
     threat: "Underrated",
     what: "$0. Run Club culture is booming in Sydney. Facebook Groups are where 'New to Sydney' people already gather.",
-    why: "Your real competition isn't an app — it's free. You must be worth paying for (or worth the friction) versus showing up to a free Saturday run.",
+    why: "Your real competition isn't an app - it's free. You must be worth paying for (or worth the friction) versus showing up to a free Saturday run.",
   },
 ];
 
@@ -218,7 +218,7 @@ export default function BusinessPage() {
       {/* Hero */}
       <section className="relative overflow-hidden border-b-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 pb-12 pt-14 sm:px-6">
         <div className="relative z-10 mx-auto max-w-6xl">
-          {/* This page isn't in any nav — give it an explicit way back to admin
+          {/* This page isn't in any nav - give it an explicit way back to admin
               so it isn't a dead end. */}
           <Link
             href="/admin"
@@ -234,7 +234,7 @@ export default function BusinessPage() {
             How much money can <span className="peach-highlight text-[color:var(--purple)]">Click</span> actually make?
           </h1>
           <p className="mt-6 max-w-3xl text-base font-medium leading-7 text-[color:var(--mauve)] sm:text-lg">
-            A straight forecast built off the business case — worst, base, and best.
+            A straight forecast built off the business case - worst, base, and best.
             Plus the part the deck skips: the cash math, the competitors who are
             already doing this, and whether you three should take VC money at all.
           </p>
@@ -242,7 +242,7 @@ export default function BusinessPage() {
             ⚠️ Reality note for first-time founders: every number below is a
             <em> hypothesis</em>, not a forecast. Pre-launch projections are almost
             always wrong. Treat the base case as &ldquo;if we execute well AND get a
-            little lucky&rdquo; — not the default.
+            little lucky&rdquo; - not the default.
           </p>
         </div>
       </section>
@@ -382,12 +382,12 @@ export default function BusinessPage() {
           <p className="mt-5 max-w-3xl text-sm font-semibold leading-6 text-[color:var(--mauve)]">
             Note: merchant subscriptions (recurring SaaS) and commission are the
             backbone. Click Plus and promoted placement are real but small for
-            years — don&apos;t bet the company on consumer subscriptions converting.
+            years - don&apos;t bet the company on consumer subscriptions converting.
           </p>
         </div>
       </section>
 
-      {/* THE CASH MATH — the part the deck skips */}
+      {/* THE CASH MATH - the part the deck skips */}
       <section className="border-b-2 border-[color:var(--line)] bg-[color:var(--ink)] px-4 py-14 text-[color:var(--on-deep)] sm:px-6">
         <div className="mx-auto max-w-6xl">
           <span className="sticker sticker--peach tilt-r-1 inline-flex">
@@ -399,7 +399,7 @@ export default function BusinessPage() {
           </h2>
           <p className="mt-5 max-w-3xl text-base font-medium leading-7 text-[color:var(--peach)]">
             In <strong>every</strong> scenario, Year 1 spends far more than it earns.
-            That is normal for marketplaces — but it means the business cannot exist
+            That is normal for marketplaces - but it means the business cannot exist
             on your current ~$50k and 3–6 month runway. The only questions are how big
             the hole is and how you fund it.
           </p>
@@ -467,9 +467,9 @@ export default function BusinessPage() {
           </div>
 
           <div className="mt-8 grid gap-4 sm:grid-cols-3">
-            <DeepCard title="Option A — Raise it" body="Pre-seed $150–400k buys ~18 months. Standard path, but you sell 15–25% and sign up to grow 10× or die. Hard to land pre-revenue with no retention data." />
-            <DeepCard title="Option B — Stay lean" body="Founders unpaid, no hires, ~$5k/mo. Survive on grants (NSW MVP $25k) + early revenue. Slower, but you keep 100% and buy time to PROVE retention before raising." />
-            <DeepCard title="Option C — Hybrid (recommended)" body="Bridge $30–80k F&F + the NSW grant, run lean for 6 months, hit one number: 40% month-6 retention. THEN raise from strength — or realise it's a lifestyle business and that's fine." />
+            <DeepCard title="Option A - Raise it" body="Pre-seed $150–400k buys ~18 months. Standard path, but you sell 15–25% and sign up to grow 10× or die. Hard to land pre-revenue with no retention data." />
+            <DeepCard title="Option B - Stay lean" body="Founders unpaid, no hires, ~$5k/mo. Survive on grants (NSW MVP $25k) + early revenue. Slower, but you keep 100% and buy time to PROVE retention before raising." />
+            <DeepCard title="Option C - Hybrid (recommended)" body="Bridge $30–80k F&F + the NSW grant, run lean for 6 months, hit one number: 40% month-6 retention. THEN raise from strength - or realise it's a lifestyle business and that's fine." />
           </div>
         </div>
       </section>
@@ -520,7 +520,7 @@ export default function BusinessPage() {
           <p className="mt-4 max-w-3xl text-sm font-semibold leading-6 text-[color:var(--mauve)]">
             The deck says &ldquo;a new category&rdquo;. It isn&apos;t. &ldquo;Meet people through
             shared real-world events, no swiping&rdquo; is a crowded, funded bet right now.
-            Knowing that is a strength — it tells you where to be faster and sharper.
+            Knowing that is a strength - it tells you where to be faster and sharper.
           </p>
           <div className="mt-8 grid gap-5 lg:grid-cols-2">
             {COMPETITORS.map((c) => (
@@ -561,7 +561,7 @@ export default function BusinessPage() {
             Should you take VC money?
           </h2>
           <p className="mt-6 text-lg font-medium leading-8 text-[color:var(--peach)]">
-            Short answer: <strong>not yet — and maybe not ever, and that&apos;s okay.</strong>
+            Short answer: <strong>not yet - and maybe not ever, and that&apos;s okay.</strong>
           </p>
 
           <div className="mt-8 space-y-5 text-base font-medium leading-7 text-[color:var(--champagne)]/90">
@@ -584,7 +584,7 @@ export default function BusinessPage() {
               The one number that decides everything: <strong>month-6 retention.</strong>
               If 40%+ of users are still active at month 6, you have a venture-scale
               business and VC becomes the right tool. If it&apos;s 10–15% (the common
-              reality), no amount of funding fixes it — and you&apos;ll have given away a
+              reality), no amount of funding fixes it - and you&apos;ll have given away a
               chunk of a company that was never going to be venture-sized.
             </p>
           </div>
@@ -598,7 +598,7 @@ export default function BusinessPage() {
               tone="peach"
               items={[
                 "Take the free money: NSW MVP grant (up to $25k, non-dilutive).",
-                "Raise a tiny F&F bridge ($30–80k) on a SAFE — friends, not funds.",
+                "Raise a tiny F&F bridge ($30–80k) on a SAFE - friends, not funds.",
                 "Run brutally lean: founders unpaid, no hires, ~$5k/mo.",
                 "Formalise the developer + IP assignment THIS week.",
               ]}
@@ -627,11 +627,11 @@ export default function BusinessPage() {
 
           <p className="mt-10 text-base font-medium leading-7 text-[color:var(--champagne)]/90">
             <strong className="text-[color:var(--peach)]">Bottom line for three first-time founders:</strong>{" "}
-            Don&apos;t fundraise to validate the idea — validate the idea, then decide if
+            Don&apos;t fundraise to validate the idea - validate the idea, then decide if
             you even want to fundraise. The cheapest, smartest 6 months you can spend
             is proving retention on grant + bridge money. If it works, investors will
             chase you and your terms will be better. If it doesn&apos;t, you&apos;ll have
-            lost months instead of years — and you won&apos;t owe a board an explanation.
+            lost months instead of years - and you won&apos;t owe a board an explanation.
           </p>
 
           <div className="mt-10 flex flex-wrap gap-3">
@@ -655,7 +655,7 @@ export default function BusinessPage() {
         <p className="mx-auto max-w-6xl text-xs font-semibold leading-6 text-[color:var(--mauve)]">
           Source: <code>context/BUSINESS_CASE.md</code>. Worst/best cases are
           modelled scenarios, not commitments. Figures are AUD, pre-tax, and assume
-          the launch gate (35 merchants) is met. Internal planning only — do not put
+          the launch gate (35 merchants) is met. Internal planning only - do not put
           these numbers in an investor deck without sensitising the assumptions.
         </p>
       </section>

@@ -1,14 +1,27 @@
-import { Button, Icon } from "@/components/ds";
+import { auth } from "@/auth";
+import { getProfileStatus, type MerchantProfileRow } from "@/lib/event-repository";
+import { Button, ButtonLink, Icon } from "@/components/ds";
 import { InfoNote, SectionLabel, StatusPill, mCard } from "@/components/merchant-ds";
 import { TabHeader } from "./merchant-portal-shared";
 
-export function SettingsTab({
+// Read-only settings surface, and it stays one - the dominant journey here is
+// "check or change one thing", which a wizard would tax on every visit to
+// flatter the rare one.
+//
+// Async only to read the payout columns. getProfileStatus is memoised per
+// request (event-repository.ts:1392), and /merchant already called it to gate
+// this page, so this is a memo hit rather than a second query - cheaper than
+// drilling two more props through the tab switch.
+export async function SettingsTab({
   businessName,
   verification,
 }: {
   businessName: string;
   verification: string;
 }) {
+  const merchant = (await getProfileStatus(await auth())).merchantProfile;
+  const payouts = describePayouts(merchant);
+
   const faqs = [
     {
       q: "How long does merchant verification take?",
@@ -41,7 +54,27 @@ export function SettingsTab({
             value={verification}
             badge={<StatusPill status={verification === "approved" ? "live" : verification} />}
           />
+          {/* The section label and the tab header both promise a payout
+              account, and the last onboarding step sends skippers here to find
+              it - so it has to actually be here. It used to be two fields and
+              no payout state at all. */}
+          <InfoField
+            label="Payouts"
+            value={payouts.value}
+            badge={<StatusPill status={payouts.status} label={payouts.label} />}
+          />
         </div>
+        {!payouts.live ? (
+          // Links to the payout step rather than embedding the Stripe POST:
+          // that page is where Stripe's hosted flow returns to (the return_url
+          // in api/merchant/stripe/connect), and it's the same hand-off the
+          // dashboard's setup bar already uses.
+          <div>
+            <ButtonLink href="/merchant/onboarding/payouts" variant="secondary" size="sm">
+              {payouts.cta}
+            </ButtonLink>
+          </div>
+        ) : null}
         <InfoNote>
           Editing business name / website / ABN ships with merchant self-service. For now, email{" "}
           <b className="font-semibold text-[color:var(--purple-700)]">merchants@click.au</b> to
@@ -99,6 +132,55 @@ export function SettingsTab({
       </section>
     </div>
   );
+}
+
+/**
+ * The four payout states, in the order they actually occur. Mirrors the
+ * branching on /merchant/onboarding/payouts so a merchant never sees one
+ * screen say "verifying" and the other say "not connected".
+ *
+ * `details_submitted && !payouts_enabled` is the state that reads worst if you
+ * get it wrong: the merchant has finished their side and Stripe is verifying
+ * asynchronously, so it is Pending, never a prompt to do more (bug board #206).
+ *
+ * `value` stays one word on purpose - InfoField's <dd> carries `capitalize`,
+ * which title-cases every word it is given.
+ */
+function describePayouts(merchant: MerchantProfileRow | null): {
+  value: string;
+  status: string;
+  label: string;
+  cta: string;
+  live: boolean;
+} {
+  if (merchant?.payouts_enabled) {
+    return { value: "Connected", status: "live", label: "Live", cta: "", live: true };
+  }
+  if (merchant?.details_submitted) {
+    return {
+      value: "Verifying",
+      status: "pending",
+      label: "Pending",
+      cta: "View payout setup",
+      live: false,
+    };
+  }
+  if (merchant?.stripe_connect_account_id) {
+    return {
+      value: "Unfinished",
+      status: "pending",
+      label: "Pending",
+      cta: "Finish payout setup",
+      live: false,
+    };
+  }
+  return {
+    value: "Off",
+    status: "draft",
+    label: "Not set up",
+    cta: "Connect payouts",
+    live: false,
+  };
 }
 
 function InfoField({

@@ -4,7 +4,7 @@ import { auth } from "@/auth";
 import { Badge, ButtonLink, Tag, type BadgeTone } from "@/components/ds";
 import { MerchantEventCancelButton } from "@/components/merchant-event-cancel-button";
 import { MerchantEventDuplicateButton } from "@/components/merchant-event-duplicate-button";
-import { MerchantEventEditForm } from "@/components/merchant-event-edit-form";
+import { EDIT_SECTION_ID, MerchantEventEditForm } from "@/components/merchant-event-edit-form";
 import { MerchantEventResubmitButton } from "@/components/merchant-event-resubmit-button";
 import { GuestCheckInToggle } from "@/components/guest-check-in-toggle";
 import {
@@ -77,6 +77,15 @@ function eventStatusTone(status: string): BadgeTone {
   return "lavender";
 }
 
+// Host-only surface behind a login redirect, and there is no src/app/merchant
+// layout to supply a title - so without this every event a host opens shows the
+// generic marketing title. Static, not generateMetadata: naming the event would
+// cost a second DB read for a page nobody shares.
+export const metadata = {
+  title: "Manage event",
+  robots: { index: false, follow: false },
+};
+
 export default async function MerchantEventDetailPage({ params }: PageProps) {
   const { eventId } = await params;
   const session = await auth();
@@ -114,7 +123,7 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
     (attendee) => attendee.status === "confirmed",
   );
   // Live (unexpired) payment holds. They occupy a seat and so are already
-  // counted in `event.confirmed`, but they're not yet paid — surfacing them as
+  // counted in `event.confirmed`, but they're not yet paid - surfacing them as
   // their own group is what makes the "Confirmed X / capacity" metric reconcile
   // with the named attendee list below.
   const awaitingPaymentAttendees = event.attendees.filter(
@@ -145,12 +154,24 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
               {event.locationName} · {event.suburb}
             </p>
           </div>
-          <div className="flex gap-2">
+          {/* Constructive first, destructive last. The edit form sits below four
+              tables that grow with every RSVP, so without this anchor the only
+              way to fix a typo on a busy event is to scroll past the whole door
+              list - while "Cancel event" was one of the first things in reach. */}
+          <div className="flex flex-wrap gap-2">
+            <ButtonLink href={`#${EDIT_SECTION_ID}`} variant="secondary">
+              Edit details
+            </ButtonLink>
             <MerchantEventDuplicateButton eventId={event.slug} />
-            <MerchantEventCancelButton eventId={event.slug} status={event.status} />
             <ButtonLink href="/merchant" variant="secondary">
               Back to portal
             </ButtonLink>
+            <MerchantEventCancelButton
+              eventId={event.slug}
+              status={event.status}
+              confirmedSeats={confirmedSeats}
+              waitlistedCount={waitlistedAttendees.length}
+            />
           </div>
         </div>
 
@@ -415,7 +436,7 @@ function AttendeeTable({ rows }: { rows: MerchantAttendeeRow[] }) {
 }
 
 // The door list (spec 19 §11): named +1s only, shown as "first name · invited by ·
-// status" with a check-in toggle. No email/DOB — that's the whole merchant-visible
+// status" with a check-in toggle. No email/DOB - that's the whole merchant-visible
 // footprint of a guest. Check-in writes guest_spots.attended (§9).
 function GuestList({ rows, eventSlug }: { rows: MerchantGuestRow[]; eventSlug: string }) {
   return (

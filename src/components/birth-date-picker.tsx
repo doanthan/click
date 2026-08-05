@@ -12,7 +12,7 @@ type Mode = "days" | "years";
 type Props = {
   value: string;                         // "yyyy-mm-dd" or ""
   onChange: (iso: string) => void;
-  max: string;                           // "yyyy-mm-dd" — 18+ cutoff
+  max: string;                           // "yyyy-mm-dd" - 18+ cutoff
   min?: string;                          // defaults to 1920-01-01
   describedBy?: string;
   labelledBy?: string;
@@ -50,7 +50,7 @@ function toIso(d: Date): string {
 }
 
 // Forgiving free-text parser. Accepts day-first input with any non-digit
-// separators — "10.10.88", "10/10/1988", "10-10-88", "10 10 1988" — plus
+// separators - "10.10.88", "10/10/1988", "10-10-88", "10 10 1988" - plus
 // pasted ISO "1988-10-10". Two-digit years pivot on the current year (so
 // "88" → 1988, "05" → 2005). Returns ISO "yyyy-mm-dd" or null if it can't
 // make a real calendar date out of the input.
@@ -85,7 +85,7 @@ function parseFlexible(input: string): string | null {
 }
 
 // Live input mask. Strips everything but digits, caps at 8 (ddmmyyyy), then
-// regroups as "dd / mm / yyyy" — so the separators appear automatically as the
+// regroups as "dd / mm / yyyy" - so the separators appear automatically as the
 // user types numbers and they never need to press "/". Adds no trailing
 // separator, so backspace deletes a digit cleanly instead of getting stuck on
 // a " / ".
@@ -126,7 +126,7 @@ export function BirthDatePicker({
   const popoverRef = useRef<HTMLDivElement | null>(null);
 
   // Merge external ref (from the form's `firstFieldRef`) with the internal one
-  // — the form focuses this on step entry, so it points at the text input.
+  // - the form focuses this on step entry, so it points at the text input.
   const setInputRef = useCallback(
     (node: HTMLInputElement | null) => {
       inputRef.current = node;
@@ -166,7 +166,7 @@ export function BirthDatePicker({
 
   // Sync the view back to a fresh external value (e.g. localStorage draft
   // hydration). This is the "external store -> React" sync pattern the rest
-  // of the form uses for its draft restore — setting state in an effect is
+  // of the form uses for its draft restore - setting state in an effect is
   // the lesser evil over a layered derived-state dance.
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
@@ -271,7 +271,7 @@ export function BirthDatePicker({
       setCursor(parsed);
       return;
     }
-    // Invalid or out of the 18+ range — revert to the committed value.
+    // Invalid or out of the 18+ range - revert to the committed value.
     setText(fmtDisplay(selected));
   }
 
@@ -413,7 +413,7 @@ export function BirthDatePicker({
           aria-label="Choose your birth date"
           className="absolute left-0 top-[calc(100%+0.5rem)] z-30 w-[min(20rem,calc(100vw-2rem))] rounded-2xl bg-[color:var(--paper)] p-3 shadow-[var(--shadow-md)]"
         >
-          {/* Header — month label doubles as a toggle to the year grid */}
+          {/* Header - month label doubles as a toggle to the year grid */}
           <div className="mb-2 flex items-center justify-between gap-1">
             <button
               type="button"

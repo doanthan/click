@@ -25,7 +25,7 @@ function getStripe() {
 }
 
 // On-page Stripe Embedded Checkout in a modal. Stripe redirects the top window
-// to the session's return_url on completion, so there's no onComplete handler —
+// to the session's return_url on completion, so there's no onComplete handler -
 // the event page reconciles via `?booked=1&session_id=`. The shopper closes the
 // modal (or presses Escape) to back out; the held seat expires on its own.
 export function EventCheckoutModal({
@@ -93,13 +93,22 @@ export function EventCheckoutModal({
           </button>
         </div>
         {stripe ? (
-          <div className="overflow-hidden rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)] p-2 sm:p-3">
-            <EmbeddedCheckoutProvider
-              stripe={stripe}
-              options={{ clientSecret }}
-            >
-              <EmbeddedCheckout />
-            </EmbeddedCheckoutProvider>
+          // The skeleton sits BEHIND the provider and the min-height holds the
+          // box open, because Stripe's iframe starts at zero height while it
+          // boots - so this used to be a collapsed empty rectangle for the
+          // seconds right after a payment tap. Presentation only: the provider
+          // and its mount order are untouched, the placeholder is just painted
+          // underneath and covered when the iframe arrives.
+          <div className="relative min-h-[420px] overflow-hidden rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)] p-2 sm:p-3">
+            <div className="skeleton absolute inset-2 rounded-xl sm:inset-3" aria-hidden />
+            <div className="relative">
+              <EmbeddedCheckoutProvider
+                stripe={stripe}
+                options={{ clientSecret }}
+              >
+                <EmbeddedCheckout />
+              </EmbeddedCheckoutProvider>
+            </div>
           </div>
         ) : (
           <p className="p-4 text-sm font-medium text-[color:var(--danger)]">

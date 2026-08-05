@@ -2,7 +2,7 @@ import Link from "next/link";
 import { auth } from "@/auth";
 import { Badge } from "@/components/ds";
 import { getAdminReports, type AdminReportRow } from "@/lib/event-repository";
-import { resolveReportAction, suspendFromReportAction } from "./actions";
+import { ReportCardActions } from "./report-card-actions";
 
 export const metadata = {
   title: "Safety Reports | Click Admin",
@@ -24,7 +24,7 @@ const REASON_LABELS: Record<string, string> = {
   other: "Other",
 };
 
-// Hours since a report was filed — used to surface the 24hr SLA.
+// Hours since a report was filed - used to surface the 24hr SLA.
 function hoursSince(iso: string): number {
   return Math.floor((Date.now() - new Date(iso).getTime()) / 3_600_000);
 }
@@ -44,7 +44,8 @@ export default async function AdminReportsPage() {
         </h1>
         <p className="mt-3 max-w-2xl text-sm leading-6 text-[color:var(--slate)]">
           User reports awaiting review. Target SLA is 24 hours. Resolving a report either dismisses
-          it (no action) or marks it actioned - you can also suspend the reported account directly.
+          it (no action) or marks it actioned, and the note you leave is kept on the report.
+          Suspending the reported account closes the report as actioned at the same time.
         </p>
       </header>
 
@@ -145,47 +146,13 @@ function ReportCard({ report }: { report: AdminReportRow }) {
         </p>
       ) : null}
 
-      <div className="mt-4 flex flex-wrap items-center gap-2">
-        <form action={resolveReportAction}>
-          <input type="hidden" name="report_id" value={report.id} />
-          <input type="hidden" name="resolution" value="dismissed" />
-          <button
-            type="submit"
-            className="ck-btn ck-btn--secondary ck-btn--sm"
-          >
-            Dismiss
-          </button>
-        </form>
-
-        <form action={resolveReportAction}>
-          <input type="hidden" name="report_id" value={report.id} />
-          <input type="hidden" name="resolution" value="actioned" />
-          <button
-            type="submit"
-            className="ck-btn ck-btn--primary ck-btn--sm"
-          >
-            Mark actioned
-          </button>
-        </form>
-
-        {!alreadySuspended ? (
-          <form action={suspendFromReportAction}>
-            <input type="hidden" name="report_id" value={report.id} />
-            <input type="hidden" name="reported_id" value={report.reportedId} />
-            <input
-              type="hidden"
-              name="reason"
-              value={`Safety report: ${REASON_LABELS[report.reason] ?? report.reason}`}
-            />
-            <button
-              type="submit"
-              className="ck-btn ck-btn--danger ck-btn--sm"
-            >
-              Suspend account
-            </button>
-          </form>
-        ) : null}
-      </div>
+      <ReportCardActions
+        reportId={report.id}
+        reportedId={report.reportedId}
+        reportedName={report.reportedName}
+        defaultSuspendReason={`Safety report: ${REASON_LABELS[report.reason] ?? report.reason}`}
+        alreadySuspended={alreadySuspended}
+      />
     </li>
   );
 }

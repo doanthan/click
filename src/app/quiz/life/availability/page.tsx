@@ -1,7 +1,7 @@
 import { LifeQuizStep } from "@/components/life-quiz-wizard";
 
 export const metadata = {
-  title: "Availability · Life Quiz | Click",
+  title: "Availability · Life Quiz",
 };
 
 // Step 2/4 · Availability.

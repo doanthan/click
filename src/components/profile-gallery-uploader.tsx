@@ -6,7 +6,7 @@
  * Up to 5 extra photos alongside the avatar. Like the AvatarUploader, each
  * add/remove persists immediately via /api/upload/gallery (the API is the
  * source of truth and returns the full list after every change), so the
- * surrounding form save isn't involved — photos stick even if the user walks
+ * surrounding form save isn't involved - photos stick even if the user walks
  * away without hitting "Save profile".
  */
 
@@ -86,7 +86,7 @@ export function ProfileGalleryUploader({ initialUrls }: { initialUrls: string[] 
     }
   }
 
-  // Promote a gallery photo to the main avatar (bug board #220 — there was no
+  // Promote a gallery photo to the main avatar (bug board #220 - there was no
   // way to choose your main photo, only "replace" on the avatar itself).
   const [settingMain, setSettingMain] = useState<string | null>(null);
   async function handleSetMain(url: string) {
@@ -158,7 +158,7 @@ export function ProfileGalleryUploader({ initialUrls }: { initialUrls: string[] 
       </span>
       <p className="-mt-1 text-[13px] leading-[1.5] text-[color:var(--slate)]">
         Add up to {MAX_PHOTOS} photos of you doing things you love - they show on your profile
-        alongside your prompts. Photos save on their own, no need to hit Save.
+        alongside your prompts. Photos save as soon as they upload.
       </p>
 
       <div className="grid grid-cols-3 gap-3 sm:grid-cols-5">
@@ -184,7 +184,7 @@ export function ProfileGalleryUploader({ initialUrls }: { initialUrls: string[] 
               onClick={() => void handleSetMain(url)}
               disabled={settingMain === url}
               aria-label="Set as main photo"
-              className="absolute inset-x-0 bottom-0 truncate bg-[rgba(28,24,48,0.62)] px-1 py-1.5 text-center text-[11px] font-semibold text-white transition hover:bg-[color:var(--purple)] disabled:opacity-60"
+              className="absolute inset-x-0 bottom-0 truncate bg-[color-mix(in_srgb,var(--ink)_62%,transparent)] px-1 py-1.5 text-center text-[11px] font-semibold text-[color:var(--champagne)] transition hover:bg-[color:var(--purple)] disabled:opacity-60"
             >
               {settingMain === url ? "Setting…" : "Set as main"}
             </button>

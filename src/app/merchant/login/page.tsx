@@ -14,7 +14,7 @@ import {
 // (one user can be both attendee and merchant via profiles.role).
 
 export const metadata = {
-  title: "Host login | Click",
+  title: "Host login",
   description:
     "Log in to your Click merchant portal to manage events, attendees, and payouts.",
 };

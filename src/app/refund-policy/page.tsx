@@ -1,7 +1,7 @@
 import { LegalPage } from "@/components/legal-page";
 
 export const metadata = {
-  title: "Refund & Cancellation Policy | Click",
+  title: "Refund & Cancellation Policy",
   description: "When and how refunds are issued for Click event bookings.",
 };
 

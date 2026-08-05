@@ -15,7 +15,7 @@ import { isProductionDeployment } from "@/lib/runtime-mode";
 import { PreviewControls } from "./preview-controls";
 
 export const metadata = {
-  title: "Email previews | Click",
+  title: "Email previews",
   description: "Branded HTML previews of every Click transactional email.",
   robots: { index: false, follow: false },
 };

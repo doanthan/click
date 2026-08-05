@@ -3,7 +3,7 @@ import { CatGlyph, Icon, categoryGlyphKey } from "@/components/ds";
 import { getEventCategories } from "@/lib/event-repository";
 
 export const metadata = {
-  title: "Categories | Click",
+  title: "Categories",
   description:
     "Browse Click events by category - and the tags that quietly power who you meet.",
 };

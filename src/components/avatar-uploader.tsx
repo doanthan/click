@@ -7,7 +7,7 @@
  * - On selection, POSTs the file to /api/upload/avatar; the route normalises
  *   to 512×512 JPG in R2 and persists `profiles.photo_url`.
  * - The hidden `photo_url` field keeps the existing server action contract
- *   (`saveProfileEditAction` reads `photo_url`) — uploading just rewrites
+ *   (`saveProfileEditAction` reads `photo_url`) - uploading just rewrites
  *   that field with the new R2 URL.
  *
  * The route already persists the URL, so the surrounding form save is the
@@ -26,9 +26,12 @@ const MAX_BYTES = 5 * 1024 * 1024;
 type AvatarUploaderProps = {
   initialUrl: string | null;
   displayName: string;
+  /** Fired after a successful upload. Onboarding uses it to know whether to
+   *  nudge for a photo on the completion screen. */
+  onUploaded?: (url: string) => void;
 };
 
-export function AvatarUploader({ initialUrl, displayName }: AvatarUploaderProps) {
+export function AvatarUploader({ initialUrl, displayName, onUploaded }: AvatarUploaderProps) {
   const inputId = useId();
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -36,7 +39,7 @@ export function AvatarUploader({ initialUrl, displayName }: AvatarUploaderProps)
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // The avatar persists on upload, but the only "Save profile" button sits at
-  // the bottom of a long form — so users thought they had to scroll down to
+  // the bottom of a long form - so users thought they had to scroll down to
   // save the photo (bug board #219). Flash a "Saved ✓" to make it clear.
   const [saved, setSaved] = useState(false);
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -78,12 +81,13 @@ export function AvatarUploader({ initialUrl, displayName }: AvatarUploaderProps)
         // so plainly rather than the bare "temporarily unavailable".
         setError(
           response.status === 503
-            ? "Photo uploads aren’t available right now — your other changes will still save."
+            ? "Photo uploads aren’t available right now - your other changes will still save."
             : payload?.error ?? "Upload failed. Try again.",
         );
         return;
       }
       setUrl(payload.url);
+      onUploaded?.(payload.url);
       flashSaved();
       router.refresh();
     } catch {

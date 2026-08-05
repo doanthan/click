@@ -21,7 +21,7 @@ import {
 } from "@/lib/event-repository";
 
 export const metadata = {
-  title: "Dashboard | Click",
+  title: "Dashboard",
   description: "Your Click dashboard: upcoming events, saved plans, and account state.",
 };
 
@@ -211,12 +211,7 @@ export default async function DashboardPage() {
         {/* Host + admin entry points stay quiet single rows - they are shortcuts,
             not moments. */}
         {profileStatus.merchantProfile ? (
-          <QuietRow
-            icon="ticket"
-            label={`Hosting as ${profileStatus.merchantProfile.business_name}`}
-            href="/merchant"
-            cta="Open host portal →"
-          />
+          <QuietRow icon="ticket" {...hostRowFor(profileStatus.merchantProfile)} />
         ) : null}
         {isAdmin ? <QuietRow icon="settings" label="Admin tools" href="/admin" cta="Open admin →" /> : null}
 
@@ -480,6 +475,41 @@ function SetupRow({
       </span>
     </Link>
   );
+}
+
+/**
+ * The host row, keyed on where the application actually stands.
+ *
+ * A merchant_profiles row exists from the moment someone applies, so this used
+ * to read "Hosting as X · Open host portal →" to people whose application was
+ * still in the admin queue, had been rejected, or had been suspended - and the
+ * button then bounced them to a holding page. Each state gets the sentence that
+ * is true and the one action that helps.
+ */
+function hostRowFor(merchant: { business_name: string; verification_status: string }) {
+  const name = merchant.business_name;
+  switch (merchant.verification_status) {
+    case "approved":
+      return { label: `Hosting as ${name}`, href: "/merchant", cta: "Open host portal →" };
+    case "rejected":
+      return {
+        label: `Your host application for ${name} needs changes`,
+        href: "/merchant/signup",
+        cta: "Update and resubmit →",
+      };
+    case "suspended":
+      return {
+        label: `Hosting is paused for ${name}`,
+        href: "/merchant-pending",
+        cta: "See what this means →",
+      };
+    default:
+      return {
+        label: `Your host application for ${name} is under review`,
+        href: "/merchant-pending",
+        cta: "Check status →",
+      };
+  }
 }
 
 function QuietRow({ icon, label, href, cta }: { icon: "ticket" | "settings"; label: string; href: string; cta: string }) {

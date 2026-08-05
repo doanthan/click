@@ -9,7 +9,7 @@ import {
 } from "@/lib/event-repository";
 
 export const metadata = {
-  title: "Create event | Click",
+  title: "Create event",
 };
 
 // Shared chrome + state provider for the whole /merchant/events/create flow.

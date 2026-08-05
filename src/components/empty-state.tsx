@@ -27,7 +27,20 @@ export function EmptyState({
   /** Or a simple link action. */
   actionHref?: string;
   actionLabel?: string;
-  /** Legacy accent hint - the DS empty state has ONE quiet look, so this is accepted but unused. */
+  /**
+   * @deprecated Dead prop - never read, and the names lie: --peach now resolves
+   * to Lavender and --rose to Deep Purple. The DS empty state has ONE quiet
+   * look, so nothing here would honour a tone even if it were wired.
+   *
+   * ON ITS WAY OUT, but it cannot go yet: four call sites still spell it, and
+   * TypeScript rejects an unknown JSX prop, so deleting this line before they do
+   * breaks the typecheck. Strip the attribute from all four, THEN delete this:
+   *   admin-tag-manager.tsx        tone="ink"
+   *   admin-merchants-table.tsx    tone="ink"
+   *   admin-transactions-table.tsx tone="rose"
+   *   admin-members-table.tsx      tone="rose"
+   * (admin-event-queue.tsx's tone="peach" is already gone.)
+   */
   tone?: "peach" | "rose" | "ink";
   /** Drop the frame + surface so it can sit cleanly inside an existing card. */
   bare?: boolean;

@@ -13,7 +13,7 @@
  * pseudo-classes in globals.css (.ck-btn / .ck-tag), not JS handlers.
  */
 import Link from "next/link";
-import type { ComponentProps, CSSProperties, ReactNode } from "react";
+import type { ComponentProps, CSSProperties, MouseEvent, ReactNode } from "react";
 import { resolveAvatarImage } from "@/lib/avatar-images";
 
 /* ============================ brand marks ============================ */
@@ -211,24 +211,74 @@ export function Button({
   loading,
   className,
   children,
+  onClick,
   ...rest
 }: {
   variant?: ButtonVariant;
   size?: ButtonSize;
   full?: boolean;
+  /** In-flight. Renders aria-disabled + aria-busy, NOT the native `disabled`. */
   loading?: boolean;
   className?: string;
   children: ReactNode;
 } & Omit<ComponentProps<"button">, "className">) {
+  const busy = Boolean(loading);
+  const nativelyDisabled = Boolean(rest.disabled);
+
+  /* Busy is NOT the same thing as disabled, and the difference is the whole
+     reason this branch exists. The browser BLURS a focused element the instant
+     it goes disabled, so `disabled={loading}` yanked focus off the button the
+     user had just pressed and dumped keyboard and screen-reader users back at
+     the top of the document, mid-action - the same anti-pattern the account
+     settings toggles dropped. aria-disabled announces "not actionable" while
+     leaving the control focusable, and aria-busy says why.
+
+     An explicitly passed `disabled` is untouched and still renders a genuinely
+     disabled control - that one is a real, caller-declared state (a submit with
+     nothing to submit), not a transient in-flight blip. */
+  const handleClick =
+    busy || onClick
+      ? (event: MouseEvent<HTMLButtonElement>) => {
+          if (busy) {
+            /* This guard - not the ARIA - is what actually stops a second
+               submit. aria-disabled is advisory only: an aria-disabled submit
+               button still posts its form natively. .ck-btn--loading's
+               pointer-events:none blocks the MOUSE and nothing else.
+
+               preventDefault is what closes all three routes in, because every
+               one of them ends in a real click event whose DEFAULT ACTION is
+               the submission: a pointer press, Enter/Space on the focused
+               button, and implicit submission (Enter in a text field, which the
+               HTML spec defines as firing a click at the form's default
+               button). Cancel the click and no submit event is dispatched, so
+               React's <form action={…}> never re-runs.
+
+               stopPropagation is the separate half: it keeps a parent row or
+               card onClick from treating the swallowed press as a navigation. */
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+          }
+          onClick?.(event);
+        }
+      : /* Attached CONDITIONALLY on purpose: ds.tsx has no "use client" and ~15
+           Server Components render <Button>. A Server Component cannot serialise
+           a function onto a host element, so an unconditional handler would
+           break every one of them. `loading` only ever comes from client state
+           (SubmitButton's useFormStatus, a useState), so busy implies a client
+           component and the handler is safe exactly when it exists. */
+        undefined;
+
   return (
     <button
       {...rest}
-      disabled={rest.disabled || loading}
-      aria-busy={loading || undefined}
-      className={ckBtn(variant, size, { full, className: `${loading ? "ck-btn--loading" : ""} ${className ?? ""}` })}
+      aria-disabled={busy && !nativelyDisabled ? true : undefined}
+      aria-busy={busy || undefined}
+      onClick={handleClick}
+      className={ckBtn(variant, size, { full, className: `${busy ? "ck-btn--loading" : ""} ${className ?? ""}` })}
     >
       <span className="ck-btn__label">{children}</span>
-      {loading ? <span className="ck-btn__spinner" aria-hidden /> : null}
+      {busy ? <span className="ck-btn__spinner" aria-hidden /> : null}
     </button>
   );
 }
@@ -251,6 +301,180 @@ export function ButtonLink({
     <Link {...rest} className={ckBtn(variant, size, { full, className })}>
       <span className="ck-btn__label">{children}</span>
     </Link>
+  );
+}
+
+/* ============================ form field ============================ */
+/* ONE labelled control for the whole app - input, textarea and select share the
+   .ck-input treatment defined in globals.css beside .ck-btn.
+
+   Deliberately NOT called `Field`: auth-ui.tsx already exports a Field of its
+   own (a 50px input with an inline glyph, tuned for the auth cards) and the six
+   auth/onboarding sites that import it keep it. FormField is the wider,
+   product-form sibling - it is the one to reach for everywhere else. */
+
+/** The chrome every FormField shape shares, whatever control it wraps. */
+type FormFieldChrome = {
+  label: ReactNode;
+  /** Renders a quiet Slate marker beside the label AND sets native `required`,
+      so browser constraint validation still works with JS disabled. */
+  required?: boolean;
+  /** When set: --danger hairline, aria-invalid, and a role="alert" message. */
+  error?: string;
+  /** Shown only when there is no error, so the two never stack. */
+  hint?: ReactNode;
+  /** Right-aligned affordance beside the label, e.g. a character count. */
+  action?: ReactNode;
+};
+
+/* `children` rides in on each variant's native props:
+   - as="select": the <option> list, as you would expect.
+   - as="input" / "textarea": the ESCAPE HATCH. Pass children and FormField
+     renders them INSTEAD of its own control, so a combobox, a date picker or a
+     MapboxAutocomplete can borrow the label / required / error chrome. */
+export type FormFieldProps =
+  | (FormFieldChrome & { as?: "input" } & Omit<ComponentProps<"input">, "className">)
+  | (FormFieldChrome & { as: "textarea" } & Omit<ComponentProps<"textarea">, "className">)
+  | (FormFieldChrome & { as: "select" } & Omit<ComponentProps<"select">, "className">);
+
+/* The chrome keys are peeled off before the rest is spread onto the DOM node -
+   `label`, `error`, `hint` and `action` are ours, not attributes, and React
+   would otherwise warn about unknown props. `required` deliberately STAYS in
+   the rest so it lands on the element as the native attribute, which is what
+   gives the field browser constraint validation with JS disabled. */
+const FORM_FIELD_CHROME = ["label", "as", "error", "hint", "action"] as const;
+
+function stripFormFieldChrome<P extends FormFieldProps>(props: P) {
+  const control: Record<string, unknown> = { ...props };
+  for (const key of FORM_FIELD_CHROME) delete control[key];
+  return control as Omit<P, (typeof FORM_FIELD_CHROME)[number]>;
+}
+
+function formFieldControl(props: FormFieldProps, className: string) {
+  const invalid = props.error ? true : undefined;
+
+  if (props.as === "textarea") {
+    return <textarea {...stripFormFieldChrome(props)} aria-invalid={invalid} className={className} />;
+  }
+  if (props.as === "select") {
+    return <select {...stripFormFieldChrome(props)} aria-invalid={invalid} className={className} />;
+  }
+  return <input {...stripFormFieldChrome(props)} aria-invalid={invalid} className={className} />;
+}
+
+/**
+ * A labelled form control. Hook-free and server-renderable like the rest of this
+ * file, so it works inside a Server Component and with scripting off.
+ *
+ * The wrapping <label> associates implicitly with the first labelable control
+ * inside it, which is why the escape hatch still gets a working label.
+ *
+ * On the escape-hatch path (children in place of the control) the caller owns
+ * the control, so .ck-input, aria-invalid and the native `required` attribute
+ * are the caller's to apply - only the label / marker / error chrome is ours.
+ */
+export function FormField(props: FormFieldProps) {
+  const { label, required, error, hint, action } = props;
+
+  const controlClass = [
+    "ck-input",
+    "w-full",
+    error ? "ck-input--invalid" : "",
+    props.as === "textarea" ? "ck-input--area" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  // The escape hatch: on input/textarea, children replace the control entirely.
+  // A select's children are its options, so they stay inside the control.
+  const custom = props.as !== "select" && props.children !== undefined;
+
+  return (
+    <label className="grid gap-1.5">
+      <span className="flex items-baseline justify-between gap-3">
+        <span className="flex items-baseline gap-2">
+          <span className="text-[13.5px] font-semibold text-[color:var(--ink)]">{label}</span>
+          {required ? (
+            // aria-hidden: the native `required` attribute below is what actually
+            // reaches assistive tech, so this marker is purely visual.
+            <span aria-hidden className="text-[11.5px] font-medium text-[color:var(--slate)]">
+              Required
+            </span>
+          ) : null}
+        </span>
+        {action}
+      </span>
+      {custom ? props.children : formFieldControl(props, controlClass)}
+      {error ? (
+        <span role="alert" className="text-[12.5px] font-medium text-[color:var(--danger)]">
+          {error}
+        </span>
+      ) : hint ? (
+        <span className="text-[12.5px] leading-[1.5] text-[color:var(--slate)]">{hint}</span>
+      ) : null}
+    </label>
+  );
+}
+
+/* ============================ endowed progress ============================ */
+
+/* Endowed progress: the bar is already moving on step one, fast early and slower
+   late, and it never renders 0 or 100 - 100 belongs to the done state, not to
+   the last step of the form. Three byte-identical copies of this markup already
+   exist (life-quiz-wizard, the personality wizard, onboarding-form); this is the
+   one they collapse into. */
+const ENDOWED_START = 24;
+const ENDOWED_END = 92;
+/* >1 bends the curve concave: big jumps on the first steps, small ones at the
+   end, so the second half never feels like it stalled. */
+const ENDOWED_EASE = 1.35;
+
+function endowedPct(step: number, total: number) {
+  if (total <= 1) return ENDOWED_END;
+  const t = step / (total - 1);
+  return ENDOWED_START + (ENDOWED_END - ENDOWED_START) * (1 - Math.pow(1 - t, ENDOWED_EASE));
+}
+
+export function EndowedProgress({
+  step,
+  total,
+  pct,
+  label,
+  className = "",
+}: {
+  /** 0-indexed. */
+  step: number;
+  total: number;
+  /** Override the derived curve, e.g. a real byte-count during an upload. */
+  pct?: number;
+  /** Replaces the counter line, e.g. "Creating 3 of 26". */
+  label?: string;
+  className?: string;
+}) {
+  const safeTotal = Math.max(1, Math.round(total));
+  const current = Math.min(Math.max(Math.round(step), 0), safeTotal - 1);
+  // Clamped either way: a caller-supplied pct must obey the same never-0,
+  // never-100 rule, or the bar lies about being finished.
+  const width = Math.round(Math.min(96, Math.max(8, pct ?? endowedPct(current, safeTotal))));
+  const counter = label ?? `Step ${current + 1} of ${safeTotal}`;
+
+  return (
+    <div className={className}>
+      <p className="font-display text-[12.5px] font-semibold text-[color:var(--slate)]">{counter}</p>
+      <div
+        className="mt-2 h-1.5 overflow-hidden rounded-full bg-[color:var(--lav-bg)]"
+        role="progressbar"
+        aria-valuenow={current + 1}
+        aria-valuemin={1}
+        aria-valuemax={safeTotal}
+        aria-label={counter}
+      >
+        <div
+          className="h-full rounded-full bg-[color:var(--purple)] transition-[width] duration-500 ease-out"
+          style={{ width: `${width}%` }}
+        />
+      </div>
+    </div>
   );
 }
 

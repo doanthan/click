@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { isProductionDeployment } from "@/lib/runtime-mode";
 
 export const metadata = {
-  title: "Spec coverage — Click",
+  title: "Spec coverage",
   description:
     "How the Click codebase covers the click-tech specs, and where the gaps are.",
 };

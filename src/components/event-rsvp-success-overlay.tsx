@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { fireBrandConfetti } from "./brand-confetti";
 
 export type EventSuccessDetails = {
   title: string;
@@ -13,77 +14,6 @@ export type EventSuccessDetails = {
   calendarUrl: string;
 };
 
-// Self-contained canvas confetti — avoids pulling in a dependency. Spawns a
-// burst of physics-y particles that fall + fade over ~2.5s, then stops the RAF
-// loop so we don't keep painting an idle canvas.
-function runConfetti(canvas: HTMLCanvasElement) {
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return () => {};
-  const g = ctx; // non-null capture so nested closures keep the narrowing
-
-  // Canvas needs literal colours - these mirror the DS tokens (--lavender,
-  // --purple, --sage, --amber, --coral) since var() can't reach into 2D paint.
-  const colors = ["#C8B8F8", "#3B2F81", "#5B8C6E", "#E0A33A", "#E8674C"];
-  const dpr = window.devicePixelRatio || 1;
-
-  function resize() {
-    canvas.width = window.innerWidth * dpr;
-    canvas.height = window.innerHeight * dpr;
-    g.setTransform(dpr, 0, 0, dpr, 0, 0);
-  }
-  resize();
-  window.addEventListener("resize", resize);
-
-  const w = () => canvas.width / dpr;
-  const count = 160;
-  const particles = Array.from({ length: count }, (_, i) => ({
-    x: w() / 2 + (Math.random() - 0.5) * w() * 0.4,
-    y: window.innerHeight * 0.35 + (Math.random() - 0.5) * 80,
-    vx: (Math.random() - 0.5) * 12,
-    vy: Math.random() * -14 - 4,
-    size: Math.random() * 8 + 4,
-    color: colors[i % colors.length],
-    rot: Math.random() * Math.PI,
-    vrot: (Math.random() - 0.5) * 0.3,
-  }));
-
-  let raf = 0;
-  let frame = 0;
-  const maxFrames = 160;
-  const gravity = 0.45;
-
-  function tick() {
-    frame += 1;
-    g.clearRect(0, 0, w(), window.innerHeight);
-    for (const p of particles) {
-      p.vy += gravity;
-      p.x += p.vx;
-      p.y += p.vy;
-      p.vx *= 0.99;
-      p.rot += p.vrot;
-      const alpha = Math.max(0, 1 - frame / maxFrames);
-      g.save();
-      g.globalAlpha = alpha;
-      g.translate(p.x, p.y);
-      g.rotate(p.rot);
-      g.fillStyle = p.color;
-      g.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 0.6);
-      g.restore();
-    }
-    if (frame < maxFrames) {
-      raf = requestAnimationFrame(tick);
-    } else {
-      g.clearRect(0, 0, w(), window.innerHeight);
-    }
-  }
-  raf = requestAnimationFrame(tick);
-
-  return () => {
-    cancelAnimationFrame(raf);
-    window.removeEventListener("resize", resize);
-  };
-}
-
 export function EventRsvpSuccessOverlay({
   details,
   onClose,
@@ -91,22 +21,61 @@ export function EventRsvpSuccessOverlay({
   details: EventSuccessDetails;
   onClose: () => void;
 }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    const stop = canvas ? runConfetti(canvas) : undefined;
+    // The 66 lines of hand-rolled canvas physics that used to live here started
+    // their RAF loop unconditionally, and the global reduced-motion CSS block
+    // cannot reach a JS canvas - so a user who had asked the OS for less motion
+    // got a full-screen particle storm at the emotional peak of the flow.
+    // fireBrandConfetti guards with window.matchMedia (brand-confetti.ts) and is
+    // the same burst every other celebration in the app already uses.
+    void fireBrandConfetti({ x: 0.5, y: 0.4 });
+
+    // Focus + trap + restore. This card can now open on its own after a paid
+    // return, so leaving focus behind on the page under a scroll-locked scrim
+    // would strand a keyboard user outside a dialog they never opened.
+    const previouslyFocused = document.activeElement;
+    const raf = window.requestAnimationFrame(() => cardRef.current?.focus());
 
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        onClose();
+        return;
+      }
+      if (e.key === "Tab") {
+        const card = cardRef.current;
+        if (!card) return;
+        const focusables = Array.from(
+          card.querySelectorAll<HTMLElement>(
+            'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+          ),
+        ).filter((el) => el.offsetParent !== null || el === document.activeElement);
+        if (focusables.length === 0) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        const active = document.activeElement;
+        if (!card.contains(active)) {
+          e.preventDefault();
+          first.focus();
+        } else if (e.shiftKey && active === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && active === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
     }
     document.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
     return () => {
-      stop?.();
+      window.cancelAnimationFrame(raf);
       document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = "";
+      document.body.style.overflow = prevOverflow;
+      if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus();
     };
   }, [onClose]);
 
@@ -118,13 +87,17 @@ export function EventRsvpSuccessOverlay({
       className="fixed inset-0 z-[120] flex items-center justify-center p-4"
     >
       <div className="absolute inset-0 bg-[color:var(--surface-deep)]/70 backdrop-blur-sm" />
-      <canvas
-        ref={canvasRef}
-        className="pointer-events-none absolute inset-0 h-full w-full"
-        aria-hidden
-      />
 
-      <div className="relative w-full max-w-md rounded-[var(--radius-xl)] bg-[color:var(--paper)] p-7 text-center shadow-[var(--shadow-lg)]">
+      {/* The card is capped and scrolls: a long venue name on a short phone
+          used to push the three actions past the bottom of the screen. The cap
+          stays inside the wrapper's padding box, because a centred flex child
+          that outgrows its container loses its top edge with no way to reach
+          it. */}
+      <div
+        ref={cardRef}
+        tabIndex={-1}
+        className="rise-soft relative max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-[var(--radius-xl)] bg-[color:var(--paper)] p-7 text-center shadow-[var(--shadow-lg)] outline-none"
+      >
         <button
           type="button"
           aria-label="Close"
@@ -142,7 +115,7 @@ export function EventRsvpSuccessOverlay({
           You&apos;re in!
         </h2>
 
-        <div className="mt-5 rounded-2xl bg-[color:var(--champagne-deep)] p-5 text-left">
+        <div className="rise-soft rise-d1 mt-5 rounded-2xl bg-[color:var(--champagne-deep)] p-5 text-left">
           <p className="font-display text-2xl font-semibold leading-tight tracking-[-0.025em] text-[color:var(--ink)]">
             {details.title}
           </p>
@@ -160,7 +133,7 @@ export function EventRsvpSuccessOverlay({
           </p>
         </div>
 
-        <div className="mt-6 grid gap-2">
+        <div className="rise-soft rise-d2 mt-6 grid gap-2">
           <a
             href={details.calendarUrl}
             target="_blank"
@@ -186,4 +159,50 @@ export function EventRsvpSuccessOverlay({
       </div>
     </div>
   );
+}
+
+/**
+ * The paid path's completion moment.
+ *
+ * A finished Stripe checkout returns to `?booked=1` and used to land on a quiet
+ * banner, while the free RSVP - the smaller commitment - got the overlay. This
+ * mounts the same celebration for the people who actually paid. It reads only
+ * already-reconciled registration state: no amount, no session creation, no part
+ * of the Stripe call sequence is involved.
+ *
+ * Fires once per checkout. The "already celebrated" flag is read in an EFFECT,
+ * never in a useState initializer, because the server render cannot see
+ * sessionStorage and a first client render that disagreed would be a hydration
+ * mismatch.
+ */
+export function EventBookedCelebration({
+  details,
+  celebrationKey,
+}: {
+  details: EventSuccessDetails;
+  /** Stable per checkout - the Stripe session id where there is one. */
+  celebrationKey: string;
+}) {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    const key = `click:booked-celebrated:${celebrationKey}`;
+    // Inside a frame callback rather than straight in the effect body: a
+    // celebration is a post-paint flourish, and this is the same idiom
+    // coordination-drawer.tsx uses to keep setState out of an effect body.
+    const frame = window.requestAnimationFrame(() => {
+      try {
+        if (window.sessionStorage.getItem(key)) return;
+        window.sessionStorage.setItem(key, "1");
+      } catch {
+        // Storage blocked (private mode, locked-down browser): celebrate anyway.
+        // The cost of a repeat on refresh is far below the cost of never firing.
+      }
+      setOpen(true);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [celebrationKey]);
+
+  if (!open) return null;
+  return <EventRsvpSuccessOverlay details={details} onClose={() => setOpen(false)} />;
 }

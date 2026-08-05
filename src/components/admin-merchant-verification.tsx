@@ -34,32 +34,37 @@ export function AdminMerchantVerification({
   async function performDecision(next: "approved" | "rejected", reason?: string) {
     setSaving(next);
 
-    const response = await fetch(
-      `/api/admin/merchants/${merchantId}/verification`,
-      {
+    try {
+      const response = await fetch(`/api/admin/merchants/${merchantId}/verification`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: next, reason }),
-      },
-    );
-    const payload = (await response.json().catch(() => ({}))) as {
-      error?: string;
-      verificationStatus?: Status;
-    };
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        verificationStatus?: Status;
+      };
 
-    if (!response.ok) {
-      toast.error(payload.error ?? "Could not update.");
+      if (!response.ok) {
+        toast.error(payload.error ?? "Could not update.");
+        setSaving(null);
+        setPending(null);
+        return;
+      }
+
+      setStatus(payload.verificationStatus ?? next);
       setSaving(null);
       setPending(null);
-      return;
+      toast.success(next === "approved" ? "Merchant approved." : "Merchant declined.");
+      // Re-render the server page so the status badge + downstream gating update.
+      router.refresh();
+    } catch {
+      // A dropped connection used to strand the button on "Approving…" with the
+      // dialog still open and no way to tell whether the decision landed.
+      toast.error("Could not reach the server - the merchant is unchanged. Try again.");
+      setSaving(null);
+      setPending(null);
     }
-
-    setStatus(payload.verificationStatus ?? next);
-    setSaving(null);
-    setPending(null);
-    toast.success(next === "approved" ? "Merchant approved." : "Merchant declined.");
-    // Re-render the server page so the status badge + downstream gating update.
-    router.refresh();
   }
 
   const isApproved = status === "approved";

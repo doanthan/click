@@ -1,11 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { saveCuratedMatchLabel } from "@/lib/event-repository";
 
 // Save one curated judgment, then revalidate so the next unlabeled pair loads.
-// Plain form action — the judgment comes from the submit button's name/value.
+// Plain form action - the judgment comes from the submit button's name/value,
+// so this keeps working with scripting off.
 export async function submitLabelAction(formData: FormData) {
   const session = await auth();
 
@@ -22,6 +24,7 @@ export async function submitLabelAction(formData: FormData) {
     featuresSnapshot = {};
   }
 
+  let saved = false;
   if (profileA && profileB) {
     try {
       await saveCuratedMatchLabel(session, {
@@ -32,10 +35,19 @@ export async function submitLabelAction(formData: FormData) {
         featuresSnapshot,
         score,
       });
-    } catch {
-      // swallow — admin gate / DB issues shouldn't crash the queue
+      saved = true;
+    } catch (error) {
+      // Log, then TELL THE OPERATOR via the redirect below. This used to be a
+      // bare `catch {}` followed by a revalidate, so an admin-gate or DB failure
+      // looked exactly like a successful save - twenty minutes of labelling
+      // could produce zero rows with nothing on screen to say so.
+      console.warn("[matching-lab] curated label save failed", error);
     }
   }
 
   revalidatePath("/admin/matching-lab");
+  // redirect() works by throwing, so it has to sit outside the try above.
+  // Redirecting on BOTH outcomes also clears a stale ?save=failed from the URL
+  // once the next judgment lands.
+  redirect(saved ? "/admin/matching-lab" : "/admin/matching-lab?save=failed");
 }

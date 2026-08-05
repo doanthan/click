@@ -8,7 +8,7 @@ import { getConfirmedEvents } from "@/lib/event-repository";
 import { reconcileCheckoutSession } from "@/lib/stripe-sync";
 
 export const metadata = {
-  title: "Calendar | Click",
+  title: "Calendar",
   description: "Your booked events on a month-by-month grid.",
 };
 

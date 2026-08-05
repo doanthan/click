@@ -1,7 +1,7 @@
 import { BasicsSection, WizardShell } from "@/components/event-create-wizard";
 
 export const metadata = {
-  title: "Basics · Create event | Click",
+  title: "Basics · Create event",
 };
 
 // Step 1/5 · Basics.

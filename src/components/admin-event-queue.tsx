@@ -110,7 +110,7 @@ function parsePage(value: string | null): number {
   return Number.isFinite(n) && n > 0 ? n : 1;
 }
 
-// Natural order for the Status pill — Pending first matches the queue's purpose
+// Natural order for the Status pill - Pending first matches the queue's purpose
 // (admins are usually triaging), then the live/featured states, then the cold tail.
 const statusRank: Record<EventStatus, number> = {
   Pending: 0,
@@ -143,14 +143,14 @@ const dateFormatter = new Intl.DateTimeFormat("en-AU", {
   minute: "2-digit",
 });
 
-// "Created" only needs the date — admins triage by recency, not the minute.
+// "Created" only needs the date - admins triage by recency, not the minute.
 const createdFormatter = new Intl.DateTimeFormat("en-AU", {
   day: "numeric",
   month: "short",
   year: "numeric",
 });
 
-// Status dropdown options. Pending leads (and is the default) — the queue's whole
+// Status dropdown options. Pending leads (and is the default) - the queue's whole
 // purpose is triaging pending events; Live/Featured cover the published states;
 // All escapes the facet. Waitlist/Locked/Rejected/Cancelled stay reachable via All.
 const statusOptions: { value: StatusFilter; label: string }[] = [
@@ -210,7 +210,7 @@ export function AdminEventQueue({
   // Pull URL → box so Back/Forward (or a fresh link) updates the input text.
   // This is React's "adjust state during render when a value changes" pattern
   // (not an effect): when `urlQuery` shifts under us we reset the box to match.
-  // It's a no-op while typing — the debounce write only changes `urlQuery` to a
+  // It's a no-op while typing - the debounce write only changes `urlQuery` to a
   // value the box already holds, so the guard skips the reset.
   const [lastUrlQuery, setLastUrlQuery] = useState(urlQuery);
   if (urlQuery !== lastUrlQuery) {
@@ -221,7 +221,7 @@ export function AdminEventQueue({
   // Merge updates into the current query string and replace the URL. `null`
   // (or a default-equal value passed as null by the caller) deletes the param.
   // router.replace (not push) means a single filter tweak doesn't bury the page
-  // you arrived from under a pile of history entries — but Back still steps
+  // you arrived from under a pile of history entries - but Back still steps
   // through the distinct states you navigated to.
   function writeParams(updates: Record<string, string | null>) {
     const params = new URLSearchParams(searchParams.toString());
@@ -283,13 +283,13 @@ export function AdminEventQueue({
   // Faceted counts + filtered rows in one pass. Each facet's count reflects
   // every OTHER active filter (but not itself), so a badge never disagrees with
   // the table: e.g. with When=Upcoming active, the Pending badge counts only the
-  // upcoming pending events — exactly what clicking it would show. (Previously
+  // upcoming pending events - exactly what clicking it would show. (Previously
   // counts ignored all filters, so a past-dated pending event showed "Pending
   // (1)" over an empty table.)
   const { counts, regionCounts, filtered } = useMemo(() => {
     const search = query.trim().toLowerCase();
     // Snapshot "now" each time filters change. We don't need minute-level
-    // freshness — admins reload often, and a stale boundary is harmless.
+    // freshness - admins reload often, and a stale boundary is harmless.
     // eslint-disable-next-line react-hooks/purity -- intentional snapshot inside memo
     const now = Date.now();
 
@@ -305,7 +305,7 @@ export function AdminEventQueue({
     const matchesDate = (event: AdminEventRow) => {
       if (dateFilter === "all") return true;
       const startsMs = new Date(event.startsAt).getTime();
-      // Unparseable dates are never excluded by the date facet — they're noise,
+      // Unparseable dates are never excluded by the date facet - they're noise,
       // not a reason to hide a row from a reviewer.
       if (!Number.isFinite(startsMs)) return true;
       return dateFilter === "upcoming" ? startsMs >= now : startsMs < now;
@@ -324,7 +324,7 @@ export function AdminEventQueue({
       const q = matchesQuery(event);
 
       // Status facet ignores the status filter, region facet ignores the region
-      // filter — standard faceted-search behaviour.
+      // filter - standard faceted-search behaviour.
       if (r && d && q) {
         statusAll += 1;
         statusCounts.set(event.status, (statusCounts.get(event.status) ?? 0) + 1);
@@ -346,7 +346,7 @@ export function AdminEventQueue({
   const sorted = useMemo(() => {
     const dir = sortDir === "asc" ? 1 : -1;
     const collator = new Intl.Collator("en-AU", { sensitivity: "base", numeric: true });
-    // Copy before sorting — `filtered` is derived from `rows` state, mutating
+    // Copy before sorting - `filtered` is derived from `rows` state, mutating
     // it would scramble the source for the next memo run.
     return filtered.slice().sort((a, b) => {
       switch (sortKey) {
@@ -359,7 +359,7 @@ export function AdminEventQueue({
         case "attendees":
           return (a.attendees - b.attendees) * dir;
         case "startsAt": {
-          // Unparseable dates sink to the bottom regardless of direction —
+          // Unparseable dates sink to the bottom regardless of direction -
           // they're noise, not the answer to "soonest" or "latest".
           const at = new Date(a.startsAt).getTime();
           const bt = new Date(b.startsAt).getTime();
@@ -369,7 +369,7 @@ export function AdminEventQueue({
           return (at - bt) * dir;
         }
         case "createdAt": {
-          // Same missing-date handling as startsAt — rows without a created-at
+          // Same missing-date handling as startsAt - rows without a created-at
           // timestamp (static fallback) always sink to the bottom.
           const at = a.createdAt ? new Date(a.createdAt).getTime() : NaN;
           const bt = b.createdAt ? new Date(b.createdAt).getTime() : NaN;
@@ -383,7 +383,7 @@ export function AdminEventQueue({
   }, [filtered, sortKey, sortDir]);
 
   // Clamp page if the filtered set shrank under us (e.g. approve flips a row
-  // out of view). Cheap and deterministic — no effect needed.
+  // out of view). Cheap and deterministic - no effect needed.
   const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount);
   const pageRows = useMemo(
@@ -498,7 +498,7 @@ export function AdminEventQueue({
   }
 
   // Runs once the reject-reason dialog is confirmed. The reason rides through to
-  // the event-rejected-merchant email + audit log (empty string is allowed — the
+  // the event-rejected-merchant email + audit log (empty string is allowed - the
   // note is optional, matching the previous window.prompt behaviour).
   async function confirmReject(eventId: string, reason: string) {
     setBusyId(eventId);
@@ -672,21 +672,24 @@ export function AdminEventQueue({
             bare
             eyebrow="Nothing to triage"
             title="No events match this filter."
-            body="Try a different status, region, or date range — or clear the search to widen the queue."
-            tone="peach"
+            body="Try a different status, region, or date range - or clear the search to widen the queue."
           />
         ) : (
           pageRows.map((event) => {
             const isExpanded = expanded === event.id;
             const startsAt = new Date(event.startsAt);
+            /* Words, not a bare em-dash. Two reasons: the DS bans em-dashes
+               outright, and a lone dash is read out as "em dash" (or skipped
+               entirely) by a screen reader, so the admin triaging the queue
+               could not tell a missing date from a rendering glitch. */
             const startsLabel = Number.isNaN(startsAt.getTime())
-              ? "—"
+              ? "Not set"
               : dateFormatter.format(startsAt);
             const createdAt = event.createdAt ? new Date(event.createdAt) : null;
             const createdLabel =
               createdAt && !Number.isNaN(createdAt.getTime())
                 ? createdFormatter.format(createdAt)
-                : "—";
+                : "Not recorded";
 
             return (
               <div
@@ -879,7 +882,7 @@ export function AdminEventQueue({
       )}
 
       {/* Branded reject-reason prompt (replaces window.prompt). The reason is
-          optional — empty confirms a reject with no note, as before. */}
+          optional - empty confirms a reject with no note, as before. */}
       <ConfirmDialog
         open={rejectTarget !== null}
         title="Reject this event?"
@@ -894,7 +897,7 @@ export function AdminEventQueue({
         cancelLabel="Keep pending"
         busy={rejectTarget !== null && busyId === rejectTarget.id}
         promptLabel="Why is this event being declined? The merchant sees this note."
-        promptPlaceholder="Optional — shared with the merchant"
+        promptPlaceholder="Optional - shared with the merchant"
         promptMultiline
         onConfirm={(reason) => {
           if (rejectTarget) confirmReject(rejectTarget.id, reason);
@@ -915,7 +918,7 @@ export function AdminEventQueue({
         cancelLabel="Keep event live"
         busy={cancelTarget !== null && busyId === cancelTarget.id}
         promptLabel="Why is Click cancelling this event? The host and attendees see this reason."
-        promptPlaceholder="Required — be clear and factual"
+        promptPlaceholder="Required - be clear and factual"
         promptRequired
         promptMultiline
         onConfirm={(reason) => {
@@ -965,7 +968,7 @@ function EventActions({
     };
   }, [open]);
 
-  // Close the menu after firing — keeps the row's expand transition feeling
+  // Close the menu after firing - keeps the row's expand transition feeling
   // like the only thing that happened.
   function run(fn: () => void) {
     fn();
@@ -1083,7 +1086,7 @@ function SortHeader({
   onClick: (key: SortKey) => void;
 }) {
   const active = sortKey === activeKey;
-  // ▲/▼ glyphs are dim until the column is the active sort — keeps the row
+  // ▲/▼ glyphs are dim until the column is the active sort - keeps the row
   // visually quiet but still hints clickability.
   const arrow = active ? (dir === "asc" ? "▲" : "▼") : "▾";
   return (
@@ -1105,7 +1108,7 @@ function SortHeader({
 
 // Inline interest-tag editor shown in an event's expanded admin row. Selected
 // tags render as removable chips; an add-menu lists the remaining curated
-// interest tags. Saving PUTs to /api/admin/events/[id]/tags. Click tags only —
+// interest tags. Saving PUTs to /api/admin/events/[id]/tags. Click tags only -
 // admins pick from existing options, never free-text.
 function EventTagEditor({
   eventTags,
@@ -1125,7 +1128,7 @@ function EventTagEditor({
 
   // Re-sync if the row's tags change underneath us (e.g. after a save elsewhere)
   // using the "adjust state during render when a value changes" pattern rather
-  // than an effect — keyed on the slug list so we don't loop on array identity.
+  // than an effect - keyed on the slug list so we don't loop on array identity.
   const tagsKey = eventTags.map((t) => t.slug).join("|");
   const [lastTagsKey, setLastTagsKey] = useState(tagsKey);
   if (tagsKey !== lastTagsKey) {

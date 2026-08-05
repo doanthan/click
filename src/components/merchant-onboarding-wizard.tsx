@@ -5,23 +5,29 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { WizardStepper } from "./merchant-ds";
 
-// Post-approval merchant onboarding — a short, mostly-informational walkthrough
-// shown once after an admin approves a merchant. Each step has its own URL so
-// the Stripe hosted-onboarding round-trip (leave the app → come back to
+// Post-approval merchant onboarding - a short walkthrough shown once after an
+// admin approves a merchant. Each step has its own URL so the Stripe
+// hosted-onboarding round-trip (leave the app → come back to
 // /merchant/onboarding/payouts) doesn't lose wizard state:
-//   /merchant/onboarding/welcome        · intro
-//   /merchant/onboarding/create-events  · how event creation works
-//   /merchant/onboarding/payouts        · connect Stripe (skippable)
-//   /merchant/onboarding/done           · finish → create first event
+//   /merchant/onboarding/welcome  · the news, plus what hosting looks like
+//   /merchant/onboarding/payouts  · connect Stripe (skippable)
+//   /merchant/onboarding/done     · finish → create first event
+//
+// There used to be a fourth step, /create-events, that rendered a hand-written
+// prose copy of the create-event wizard's own five-step stepper. It collected
+// nothing, it had already drifted out of sync with STEP_TITLES once, and the
+// merchant sees the real stepper about thirty seconds later - so it was a page
+// load spent teaching something the next screen teaches better. Deleted rather
+// than folded in, because any copy of that list is a copy that must be diffed
+// by hand forever.
 //
 // Unlike the signup wizard there's no form state to persist, so there's no
-// context provider — the only shared piece is the pathname-driven progress
+// context provider - the only shared piece is the pathname-driven progress
 // bar. The interactive bits (Connect with Stripe, Finish) are the small client
 // buttons at the bottom.
 
 export const ONBOARDING_STEPS = [
   { path: "/merchant/onboarding/welcome", title: "Welcome" },
-  { path: "/merchant/onboarding/create-events", title: "Create events" },
   { path: "/merchant/onboarding/payouts", title: "Get paid" },
   { path: "/merchant/onboarding/done", title: "Done" },
 ] as const;
@@ -33,9 +39,15 @@ export function OnboardingProgress() {
     ONBOARDING_STEPS.findIndex((s) => pathname.startsWith(s.path)),
   );
 
-  // Read-only progress (no paths) - onboarding steps navigate via the page CTAs.
+  // Completed dots are tappable here. WizardStepper's read-only mode exists so
+  // you can't skip ahead past unvalidated input - this walkthrough has no input
+  // at all, so re-reading step 1 from step 3 should cost one tap, not two Backs.
   return (
-    <WizardStepper steps={ONBOARDING_STEPS.map((s) => s.title)} current={current} />
+    <WizardStepper
+      steps={ONBOARDING_STEPS.map((s) => s.title)}
+      current={current}
+      paths={ONBOARDING_STEPS.map((s) => s.path)}
+    />
   );
 }
 
@@ -83,6 +95,8 @@ export function ConnectPayoutsButton({
   const [error, setError] = useState("");
 
   async function start() {
+    // Guard in the handler, not with `disabled` - see the button below.
+    if (busy) return;
     setBusy(true);
     setError("");
     try {
@@ -111,7 +125,18 @@ export function ConnectPayoutsButton({
 
   return (
     <div className="grid gap-2">
-      <button type="button" onClick={start} disabled={busy} className={primaryBtn}>
+      {/* aria-disabled, not `disabled`: a real `disabled` attribute drops the
+          button out of the tab order mid-press, which browsers answer by
+          blurring it and sending keyboard users back to the top of the
+          document - right as we're about to hand them off to Stripe. The
+          double-submit guard lives in start() instead. */}
+      <button
+        type="button"
+        onClick={start}
+        aria-busy={busy}
+        aria-disabled={busy}
+        className={primaryBtn}
+      >
         {busy ? "Opening Stripe…" : label}
       </button>
       {error ? (
@@ -124,7 +149,7 @@ export function ConnectPayoutsButton({
 }
 
 // Marks the walkthrough complete (idempotent), then navigates. Used by the
-// final step's CTAs so completion is tied to an explicit click — not to the
+// final step's CTAs so completion is tied to an explicit tap - not to the
 // page rendering, which Next.js could trigger early via Link prefetch.
 export function FinishOnboardingButton({
   href,
@@ -139,21 +164,26 @@ export function FinishOnboardingButton({
   const [busy, setBusy] = useState(false);
 
   async function finish() {
+    if (busy) return;
     setBusy(true);
     try {
       await fetch("/api/merchant/onboarding/complete", { method: "POST" });
     } catch {
-      // Non-fatal — they can still navigate; /merchant will re-prompt at worst.
+      // Non-fatal - they can still navigate; /merchant will re-prompt at worst.
     }
     router.push(href);
     router.refresh();
   }
 
   return (
+    // aria-disabled rather than `disabled` for the same reason as the Stripe
+    // button above: this is the last control in the flow, and blurring it would
+    // dump a keyboard user to the top of the page on the way out.
     <button
       type="button"
       onClick={finish}
-      disabled={busy}
+      aria-busy={busy}
+      aria-disabled={busy}
       className={variant === "primary" ? primaryBtn : secondaryBtn}
     >
       {busy ? "One sec…" : label}

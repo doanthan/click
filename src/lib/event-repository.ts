@@ -11275,7 +11275,12 @@ export async function updateOwnProfile(
     updates.push(`age = $${i++}`);
     params.push(input.age);
   }
-  if (input.intents !== undefined && input.intents.length > 0) {
+  // An explicitly EMPTY array is a real instruction - "I want no intents" - and
+  // must write, not be skipped. The old `&& length > 0` guard made deselecting
+  // every intent card a silent no-op that still redirected as though it saved.
+  // Absent (undefined) still means "leave unchanged", which is what the avatar
+  // route relies on: api/upload/avatar passes only photoUrl.
+  if (input.intents !== undefined) {
     updates.push(`connection_intents = $${i++}::connection_intent[]`);
     params.push(input.intents);
   }

@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { isProductionDeployment } from "@/lib/runtime-mode";
 
 export const metadata = {
-  title: "Event image studio | Click",
+  title: "Event image studio",
 };
 
 // Internal marketing tool - generates candid, film-grade event photography

@@ -1,10 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import {
-  registerMerchantProfile,
-  registerMerchantWizardSubmit,
-  type MerchantWizardInput,
-} from "@/lib/event-repository";
+import { registerMerchantWizardSubmit, type MerchantWizardInput } from "@/lib/event-repository";
 
 function errorResponse(error: unknown) {
   if (!(error instanceof Error)) {
@@ -70,9 +66,19 @@ function sanitizeSocials(value: unknown): Record<string, string> {
   return out;
 }
 
+/**
+ * This endpoint accepts exactly ONE shape: the signup wizard's mode:"wizard"
+ * payload. It used to fall through to a laxer branch for a single-page form
+ * that no longer exists, and that fallback was a live trap - it called
+ * registerMerchantProfile, which skips the wizard's validation AND the
+ * merchant-application-received email, so a hand-rolled POST could create a
+ * merchant that never got its confirmation. Anything else is now a 400.
+ *
+ * We discriminate on the explicit `mode` marker rather than sniffing field
+ * presence, so a partially-filled wizard payload fails validation with a real
+ * message instead of being mistaken for some other shape.
+ */
 function isWizardPayload(payload: unknown): payload is MerchantWizardInput {
-  // We pick on `mode === "wizard"` (set by the new wizard) rather than
-  // sniffing field presence, so the legacy short form keeps working unchanged.
   return (
     typeof payload === "object" &&
     payload !== null &&
@@ -90,6 +96,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
   }
 
+  if (!isWizardPayload(payload)) {
+    return NextResponse.json(
+      { error: "Unsupported merchant signup payload." },
+      { status: 400 },
+    );
+  }
+
   const normalizedWebsite = normalizeHttpsWebsiteUrl(
     typeof payload.websiteUrl === "string" ? payload.websiteUrl : "",
   );
@@ -99,39 +112,24 @@ export async function POST(request: Request) {
   const normalizedWebsiteUrl = normalizedWebsite.url ?? "";
 
   try {
-    if (isWizardPayload(payload)) {
-      const merchant = await registerMerchantWizardSubmit(
-        {
-          businessName: stringField(payload.businessName),
-          tradingName: stringField(payload.tradingName),
-          abn: stringField(payload.abn),
-          acn: stringField(payload.acn),
-          businessType: payload.businessType as MerchantWizardInput["businessType"],
-          eventCategoryIds: Array.isArray(payload.eventCategoryIds)
-            ? (payload.eventCategoryIds as unknown[]).map(String)
-            : [],
-          contactEmail: stringField(payload.contactEmail),
-          phone: stringField(payload.phone),
-          websiteUrl: normalizedWebsiteUrl,
-          socials: sanitizeSocials(payload.socials),
-          addressStreet: stringField(payload.addressStreet),
-          addressSuburb: stringField(payload.addressSuburb),
-          addressState: payload.addressState as MerchantWizardInput["addressState"],
-          addressPostcode: stringField(payload.addressPostcode),
-        },
-        session,
-      );
-      return NextResponse.json({ ok: true, merchant });
-    }
-
-    // Legacy short-form payload (kept for backwards compatibility with the
-    // older single-page merchant-signup-form.tsx during the transition).
-    const merchant = await registerMerchantProfile(
+    const merchant = await registerMerchantWizardSubmit(
       {
         businessName: stringField(payload.businessName),
-        contactEmail: stringField(payload.contactEmail),
-        websiteUrl: normalizedWebsiteUrl,
+        tradingName: stringField(payload.tradingName),
         abn: stringField(payload.abn),
+        acn: stringField(payload.acn),
+        businessType: payload.businessType as MerchantWizardInput["businessType"],
+        eventCategoryIds: Array.isArray(payload.eventCategoryIds)
+          ? (payload.eventCategoryIds as unknown[]).map(String)
+          : [],
+        contactEmail: stringField(payload.contactEmail),
+        phone: stringField(payload.phone),
+        websiteUrl: normalizedWebsiteUrl,
+        socials: sanitizeSocials(payload.socials),
+        addressStreet: stringField(payload.addressStreet),
+        addressSuburb: stringField(payload.addressSuburb),
+        addressState: payload.addressState as MerchantWizardInput["addressState"],
+        addressPostcode: stringField(payload.addressPostcode),
       },
       session,
     );

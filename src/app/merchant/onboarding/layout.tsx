@@ -4,15 +4,21 @@ import { getProfileStatus } from "@/lib/event-repository";
 import { OnboardingProgress } from "@/components/merchant-onboarding-wizard";
 
 export const metadata = {
-  title: "Get set up | Click",
+  title: "Get set up",
   description:
     "Welcome aboard - learn how to create events and connect payouts so you can start taking payments on Click.",
 };
 
 // Shared chrome + access gate for the post-approval onboarding. Mirrors the
 // merchant-signup layout: the gate runs once here instead of in every step.
-// Only approved merchants belong here — pending/rejected go to the holding
+// Only approved merchants belong here - pending/rejected go to the holding
 // page, non-merchants to signup, logged-out visitors to the merchant login.
+//
+// The chrome is deliberately thin: gate, ground, stepper. The "You're approved"
+// sticker and the h1 used to live here, which meant the one piece of good news
+// in the flow repeated above every step - and was still exhorting the merchant
+// to get started on the step that told them they were finished. Each step now
+// owns its own headline; the welcome step owns the news.
 export default async function MerchantOnboardingLayout({
   children,
 }: {
@@ -32,26 +38,10 @@ export default async function MerchantOnboardingLayout({
   }
 
   return (
-    <main className="paper-noise min-h-screen bg-[color:var(--champagne)] px-4 pb-12 pt-2 text-[color:var(--ink)] sm:px-6">
-      <section className="mx-auto max-w-3xl">
-        <span className="sticker sticker--peach tilt-l-1 inline-flex">
-          <span className="size-2 rounded-full bg-[color:var(--rose)] pulse-ring" />
-          You&apos;re approved
-        </span>
-        <h1 className="font-display mt-3 text-4xl font-bold leading-[0.96] tracking-[-0.025em] sm:text-5xl">
-          Let&apos;s get you <span className="text-[color:var(--rose)]">hosting</span>.
-        </h1>
-        {/* Not "let's get you paid" - the payout step is skippable and free
-            events are a first-class path, so the frame has to fit both. */}
-        <p className="mt-2 max-w-2xl text-sm font-medium leading-6 text-[color:var(--mauve)]">
-          A quick lap around hosting on Click. Running free events? You&apos;re
-          already set - connect a bank account only when you want to charge.
-        </p>
-
-        <div className="mt-5 grid gap-6">
-          <OnboardingProgress />
-          {children}
-        </div>
+    <main className="paper-noise min-h-screen bg-[color:var(--champagne)] px-4 pb-12 pt-6 text-[color:var(--ink)] sm:px-6">
+      <section className="mx-auto grid max-w-3xl gap-6">
+        <OnboardingProgress />
+        {children}
       </section>
     </main>
   );

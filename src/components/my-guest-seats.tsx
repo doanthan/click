@@ -129,7 +129,11 @@ export function MyGuestSeats({
                     <button
                       type="button"
                       onClick={() => cancelSeat(seat)}
+                      // disabled stays: a second tap here is a second refund
+                      // attempt. aria-busy is what makes the wait audible, since
+                      // a disabled button is skipped by many screen-reader cursors.
                       disabled={isPending}
+                      aria-busy={isPending || undefined}
                       className="ck-btn ck-btn--sm ck-btn--danger"
                     >
                       {isPending ? "Cancelling…" : "Yes, cancel"}

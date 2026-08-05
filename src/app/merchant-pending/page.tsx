@@ -9,7 +9,7 @@ import { getProfileStatus } from "@/lib/event-repository";
 // redirect) so the page never just "vanishes".
 
 export const metadata = {
-  title: "Application received | Click",
+  title: "Application received",
   description:
     "Your Click host application is being reviewed. Here's what to prepare while you wait.",
 };
@@ -57,10 +57,15 @@ export default async function MerchantPendingPage() {
   const status = session?.user ? await getProfileStatus(session) : null;
   const merchantProfile = status?.merchantProfile ?? null;
 
+  // 'suspended' belongs here too. It used to fall through to the else branch
+  // below, whose only remaining case was 'approved' - so a suspended host was
+  // locked out of /merchant AND told "your portal is live, there's no pending
+  // status to show", with "Back to Click" as the sole exit.
   if (
     !merchantProfile ||
     (merchantProfile.verification_status !== "pending" &&
-      merchantProfile.verification_status !== "rejected")
+      merchantProfile.verification_status !== "rejected" &&
+      merchantProfile.verification_status !== "suspended")
   ) {
     let reason: string;
     let showHostCta = false;
@@ -81,18 +86,32 @@ export default async function MerchantPendingPage() {
   }
 
   const rejected = merchantProfile.verification_status === "rejected";
+  const suspended = merchantProfile.verification_status === "suspended";
+  // Rejected and suspended share the alert treatment and, crucially, neither
+  // gets the "get your first event live" prep checklist - it reads as "you can
+  // publish now" to someone who can't (bug board #204, and a suspended host is
+  // the same trap).
+  const needsAttention = rejected || suspended;
 
   return (
     <main className="paper-noise min-h-screen bg-[color:var(--champagne)] px-4 py-12 text-[color:var(--ink)] sm:px-6">
       <section className="mx-auto grid max-w-5xl gap-10 lg:grid-cols-[0.5fr_0.5fr] lg:items-start">
         <div className="lg:sticky lg:top-24">
-          <span className={`sticker ${rejected ? "sticker--rose" : "sticker--peach"} inline-flex`}>
-            <span className={`size-2 rounded-full ${rejected ? "bg-[color:var(--champagne)]" : "bg-[color:var(--purple)] pulse-ring"}`} />
-            {rejected ? "Application needs another look" : "Application received"}
+          <span className={`sticker ${needsAttention ? "sticker--rose" : "sticker--peach"} inline-flex`}>
+            <span className={`size-2 rounded-full ${needsAttention ? "bg-[color:var(--champagne)]" : "bg-[color:var(--purple)] pulse-ring"}`} />
+            {suspended
+              ? "Hosting paused"
+              : rejected
+                ? "Application needs another look"
+                : "Application received"}
           </span>
 
           <h1 className="font-display mt-6 text-5xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)] sm:text-6xl">
-            {rejected ? (
+            {suspended ? (
+              <>
+                Your hosting is <span className="text-[color:var(--purple)]">on hold</span>.
+              </>
+            ) : rejected ? (
               <>
                 We need to <span className="text-[color:var(--purple)]">talk it over</span>.
               </>
@@ -104,13 +123,16 @@ export default async function MerchantPendingPage() {
           </h1>
 
           <p className="mt-6 max-w-xl text-base font-medium leading-7 text-[color:var(--slate)]">
-            {rejected
-              ? "An admin reviewed your application and flagged something. Check your email for the reason and resubmit when you’ve addressed it."
-              : "Your merchant application is in the admin queue. We aim to review new merchants within 1 business day. We’ll email you the moment your portal unlocks."}
+            {suspended
+              ? "An admin has paused hosting on this account, so your events are hidden from Discover and you can’t publish new ones. Bookings people already hold still stand. Check your email for the reason, or reply to that email and we’ll sort it out with you."
+              : rejected
+                ? "An admin reviewed your application and flagged something. Check your email for the reason and resubmit when you’ve addressed it."
+                : "Your merchant application is in the admin queue. We aim to review new merchants within 1 business day. We’ll email you the moment your portal unlocks."}
           </p>
 
           <p className="mt-6 text-sm font-semibold text-[color:var(--ink)]">
-            Application for: <span className="font-display font-semibold text-[color:var(--purple)]">{merchantProfile.business_name}</span>
+            {suspended ? "Hosting account: " : "Application for: "}
+            <span className="font-display font-semibold text-[color:var(--purple)]">{merchantProfile.business_name}</span>
           </p>
           <p className="mt-1 text-sm font-medium text-[color:var(--slate)]">
             Contact email on file: {merchantProfile.contact_email}
@@ -130,10 +152,61 @@ export default async function MerchantPendingPage() {
 
         {/*
           A rejected merchant must NOT see the "get your first event live"
-          prep checklist — it reads as "you can create events now" even though
+          prep checklist - it reads as "you can create events now" even though
           they can't (bug board #204). Steer them to fix + resubmit instead.
+          Same for a suspended one, who additionally has live attendees to
+          think about, so their panel explains what is and isn't still running.
         */}
-        {rejected ? (
+        {suspended ? (
+          <div className="rounded-[18px] bg-[color:var(--paper)] p-6 shadow-[var(--shadow-sm)]">
+            <p className="eyebrow">What this means</p>
+            <h2 className="mt-3 font-display text-3xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)]">
+              Your bookings keep running. New listings don’t.
+            </h2>
+            <p className="mt-4 text-sm font-medium leading-7 text-[color:var(--slate)]">
+              A pause is not a cancellation. Nobody who already booked with you loses
+              their spot, and you can still reach us about it.
+            </p>
+            <ul className="mt-6 grid gap-4">
+              {[
+                {
+                  t: "Confirmed bookings still stand",
+                  d: "Anyone holding a spot at one of your events keeps it, and they keep their booking details.",
+                },
+                {
+                  t: "Your events are hidden from Discover",
+                  d: "They stop appearing in browse and search while the pause is on, so no new bookings come in.",
+                },
+                {
+                  t: "New events can’t be published",
+                  d: "Event creation stays closed until the pause is lifted.",
+                },
+                {
+                  t: "Talk to us",
+                  d: "We emailed the contact address on file with the reason. Reply to it and an admin will pick it up.",
+                },
+              ].map((item) => (
+                <li
+                  key={item.t}
+                  className="rounded-2xl border border-[color:var(--line)] bg-[color:var(--champagne)] p-4"
+                >
+                  <p className="font-semibold text-[color:var(--ink)]">{item.t}</p>
+                  <p className="mt-1 text-sm font-medium leading-6 text-[color:var(--slate)]">{item.d}</p>
+                </li>
+              ))}
+            </ul>
+            {/* Same address the suspension email came from, so replying there
+                and starting here land in the same place. */}
+            <a
+              href={`mailto:hello@letsclick.app?subject=${encodeURIComponent(
+                `Hosting paused - ${merchantProfile.business_name}`,
+              )}`}
+              className="ck-btn ck-btn--secondary ck-btn--md mt-6"
+            >
+              Email us about this →
+            </a>
+          </div>
+        ) : rejected ? (
           <div className="rounded-[18px] bg-[color:var(--paper)] p-6 shadow-[var(--shadow-sm)]">
             <p className="eyebrow">What happens next</p>
             <h2 className="mt-3 font-display text-3xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)]">

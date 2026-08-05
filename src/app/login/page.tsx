@@ -19,7 +19,7 @@ import {
 } from "./actions";
 
 export const metadata = {
-  title: "Log in | Click",
+  title: "Log in",
   description: "Log in to Click with Email, Facebook, or Google.",
 };
 

@@ -5,7 +5,7 @@ import { Icon, Logo } from "@/components/ds";
 import { PersonalityQuizWizard } from "./wizard";
 
 export const metadata = {
-  title: "Personality Quiz | Click",
+  title: "Personality Quiz",
 };
 
 type PersonalityQuizPageProps = {
@@ -29,7 +29,9 @@ export default async function PersonalityQuizPage({
     <main className="min-h-[100dvh] bg-[color:var(--champagne)] px-5 py-6 text-[color:var(--ink)] sm:py-8">
       <div className="mx-auto w-full max-w-[520px]">
         <div className="flex items-center justify-between gap-4">
-          <Logo size={26} />
+          <Link href="/dashboard" aria-label="Click home" className="inline-flex">
+            <Logo size={26} />
+          </Link>
           <Link
             href="/quiz"
             className="flex items-center gap-1 text-[13px] font-semibold text-[color:var(--slate)] hover:text-[color:var(--ink)]"

@@ -1,7 +1,7 @@
 import { ScheduleSection, WizardShell } from "@/components/event-create-wizard";
 
 export const metadata = {
-  title: "Schedule · Create event | Click",
+  title: "Schedule · Create event",
 };
 
 // Step 2/5 · Schedule.

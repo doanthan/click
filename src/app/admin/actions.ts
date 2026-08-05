@@ -37,7 +37,7 @@ export async function unsuspendMemberAction(formData: FormData) {
   revalidatePath("/admin");
 }
 
-// SAFE-06 — permanent ban: flags the profile + tears down all clicks/mutuals/proposals.
+// SAFE-06 - permanent ban: flags the profile + tears down all clicks/mutuals/proposals.
 export async function banMemberAction(formData: FormData) {
   const session = await auth();
   if (!session?.user) redirect("/login?callbackUrl=/admin");
@@ -97,4 +97,8 @@ export async function updateSystemSettingsAction(formData: FormData) {
   });
 
   revalidatePath("/admin");
+  // AdminSystemSettings is mounted at /admin/system, not /admin - without this
+  // the form's own page kept serving pre-save values from the router cache, so
+  // navigating away and back read as "my save did not take".
+  revalidatePath("/admin/system");
 }

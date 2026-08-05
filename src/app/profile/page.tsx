@@ -7,7 +7,7 @@ import { formatIntent } from "@/lib/click-data";
 import { getConfirmedEvents, getOwnProfile } from "@/lib/event-repository";
 
 export const metadata = {
-  title: "Your profile | Click",
+  title: "Your profile",
 };
 
 export default async function OwnProfilePage() {

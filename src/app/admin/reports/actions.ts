@@ -32,13 +32,17 @@ export async function suspendFromReportAction(formData: FormData) {
   const reason = formData.get("reason");
   if (typeof reportedId !== "string" || !UUID_RE.test(reportedId)) return;
 
-  await suspendMemberAsAdmin(
-    session,
-    reportedId,
-    typeof reason === "string" && reason ? reason : "Suspended from safety report queue.",
-  );
+  // One reason string serves both writes: the suspension record AND the report
+  // resolution note. Previously the note was the constant "Account suspended.",
+  // so the resolved queue could never say why the call was made.
+  const suspensionReason =
+    typeof reason === "string" && reason.trim() !== ""
+      ? reason.trim()
+      : "Suspended from safety report queue.";
+
+  await suspendMemberAsAdmin(session, reportedId, suspensionReason);
   if (typeof reportId === "string" && UUID_RE.test(reportId)) {
-    await resolveReport(session, reportId, "actioned", "Account suspended.");
+    await resolveReport(session, reportId, "actioned", `Account suspended - ${suspensionReason}`);
   }
   revalidatePath("/admin/reports");
 }

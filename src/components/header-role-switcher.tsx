@@ -35,10 +35,16 @@ export function HeaderRoleSwitcher({
   roles,
   userLabel,
   avatarUrl,
+  showHostCta = false,
 }: {
   roles: PortalRole[];
   userLabel: string;
   avatarUrl?: string | null;
+  /** Only for people with NO host application on file. `roles` can't answer
+   *  this: it carries "merchant" for approved hosts only, so inferring from it
+   *  would re-pitch hosting to someone whose application is sitting in the
+   *  admin queue. */
+  showHostCta?: boolean;
 }) {
   const { open, setOpen, ref } = useDisclosure<HTMLDivElement>();
   const pathname = usePathname();
@@ -54,9 +60,9 @@ export function HeaderRoleSwitcher({
   // The header's "Host an event" button is desktop-only (hidden sm:inline-flex)
   // and the mobile bottom bar has no host tab, so on a phone this menu was the
   // only reachable route to hosting - and it didn't carry one.
-  const links = roles.includes("merchant")
-    ? ACCOUNT_LINKS
-    : [...ACCOUNT_LINKS, { label: "Host an event", href: "/merchant/signup" }];
+  const links = showHostCta
+    ? [...ACCOUNT_LINKS, { label: "Host an event", href: "/merchant/signup" }]
+    : ACCOUNT_LINKS;
 
   return (
     <div className="relative block" ref={ref}>

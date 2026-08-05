@@ -11,7 +11,7 @@ import {
 } from "@/lib/event-repository";
 
 export const metadata = {
-  title: "Your events | Click",
+  title: "Your events",
   description: "Everything you've RSVP'd to, joined a waitlist for, saved, or been to.",
 };
 

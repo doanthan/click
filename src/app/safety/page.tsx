@@ -1,7 +1,8 @@
+import Link from "next/link";
 import { LegalPage } from "@/components/legal-page";
 
 export const metadata = {
-  title: "Safety Policy | Click",
+  title: "Safety Policy",
   description: "How Click keeps members safe at events and on the platform.",
 };
 
@@ -98,8 +99,8 @@ export default function SafetyPage() {
             <p>
               Your clicks are private and one-way interest is never revealed. We don&apos;t share your
               contact details with other members, and we keep sensitive data protected - see our{" "}
-              <a href="/privacy" className="font-bold underline">Privacy Policy</a> and{" "}
-              <a href="/security" className="font-bold underline">Security Policy</a> for the detail.
+              <Link href="/privacy" className="font-bold underline">Privacy Policy</Link> and{" "}
+              <Link href="/security" className="font-bold underline">Security Policy</Link> for the detail.
             </p>
           ),
         },

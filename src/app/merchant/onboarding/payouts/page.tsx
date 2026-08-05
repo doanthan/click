@@ -23,9 +23,14 @@ type PageProps = {
 };
 
 export default async function OnboardingPayoutsPage({ searchParams }: PageProps) {
-  const session = await auth();
+  // searchParams is independent of the session chain, so resolve it alongside
+  // rather than after. getApprovedMerchantForSession genuinely needs the session
+  // first, so that one stays sequential - there's no honest way to overlap it.
+  const [session, params] = await Promise.all([
+    auth(),
+    searchParams ?? Promise.resolve<{ stripe?: string }>({}),
+  ]);
   const merchant = await getApprovedMerchantForSession(session);
-  const params = (await searchParams) ?? {};
 
   const stripeConfigured = isStripeConnectConfigured();
   const accountId = merchant.stripe_connect_account_id;
@@ -43,7 +48,7 @@ export default async function OnboardingPayoutsPage({ searchParams }: PageProps)
       payoutsEnabled = status.payoutsEnabled;
       detailsSubmitted = status.detailsSubmitted;
     } catch {
-      // Best-effort — fall back to the cached columns above.
+      // Best-effort - fall back to the cached columns above.
     }
   }
 
@@ -51,10 +56,10 @@ export default async function OnboardingPayoutsPage({ searchParams }: PageProps)
 
   return (
     <div className="grid gap-6">
-      <div className={cardClass}>
-        <h2 className="font-display text-3xl font-semibold leading-tight text-[color:var(--ink)]">
+      <div className={`${cardClass} rise-soft`}>
+        <h1 className="font-display text-3xl font-semibold leading-tight text-[color:var(--ink)]">
           Connect payouts.
-        </h2>
+        </h1>
         <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--slate)]">
           Paid events run through Stripe. Connect your business and bank details
           once - Stripe collects them securely (we never see your bank
@@ -104,7 +109,7 @@ export default async function OnboardingPayoutsPage({ searchParams }: PageProps)
             {/*
               Only prompt "Continue on Stripe" when setup is genuinely
               incomplete. Once details are submitted the merchant has finished
-              their part — showing the button made it look like more action was
+              their part - showing the button made it look like more action was
               required while Stripe verified asynchronously (bug board #206).
             */}
             {!detailsSubmitted ? <ConnectPayoutsButton label="Continue on Stripe →" /> : null}
@@ -121,31 +126,37 @@ export default async function OnboardingPayoutsPage({ searchParams }: PageProps)
         )}
       </div>
 
-      {payoutsEnabled || detailsSubmitted ? (
-        // Details submitted counts as "done" for navigation — the merchant has
-        // finished their part and payouts activate asynchronously (#206), so
-        // give them the primary Continue rather than a "Skip for now".
-        <OnboardingNav
-          backHref="/merchant/onboarding/create-events"
-          nextHref="/merchant/onboarding/done"
-          nextLabel="Continue →"
-        />
-      ) : (
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <Link
-            href="/merchant/onboarding/create-events"
-            className="ck-btn ck-btn--secondary ck-btn--md"
-          >
-            ← Back
-          </Link>
-          <Link
-            href="/merchant/onboarding/done"
-            className="ck-btn ck-btn--ghost ck-btn--md"
-          >
-            Skip for now →
-          </Link>
-        </div>
-      )}
+      <div className="rise-soft rise-d1">
+        {payoutsEnabled || detailsSubmitted || !stripeConfigured ? (
+          // Two states earn the primary Continue. Details submitted counts as
+          // "done" - the merchant has finished their part and payouts activate
+          // asynchronously (#206). And when Stripe isn't configured on this
+          // environment there is nothing on the page to act on, so offering a
+          // ghost "Skip for now" would name an opt-out that doesn't exist and
+          // hand the merchant the quietest button in the system at the exact
+          // moment the flow is asking them to trust us with money.
+          <OnboardingNav
+            backHref="/merchant/onboarding/welcome"
+            nextHref="/merchant/onboarding/done"
+            nextLabel="Continue →"
+          />
+        ) : (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <Link
+              href="/merchant/onboarding/welcome"
+              className="ck-btn ck-btn--secondary ck-btn--md"
+            >
+              ← Back
+            </Link>
+            <Link
+              href="/merchant/onboarding/done"
+              className="ck-btn ck-btn--ghost ck-btn--md"
+            >
+              Skip for now →
+            </Link>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

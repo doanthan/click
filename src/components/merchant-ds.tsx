@@ -230,9 +230,19 @@ export function WizardStepper({
           </span>
         );
 
+        /* sr-only, NOT `hidden`. display:none drops the node out of the
+           accessibility tree as well as the layout, so under 640px a screen
+           reader used to hear bare numerals - "1, 2, 3", one of them current,
+           none of them named. sr-only keeps the step name announced at every
+           width while still painting nothing below sm, and sm:not-sr-only puts
+           it back in flow for the desktop row.
+
+           Layout is unchanged either way: sr-only clips the span to 1px and
+           takes it out of flow, exactly as `hidden` did, so the li's flex gap
+           still sees only the dot on small screens. */
         const label = (
           <span
-            className={`hidden text-[12px] font-bold uppercase tracking-[0.08em] sm:inline ${
+            className={`sr-only text-[12px] font-bold uppercase tracking-[0.08em] sm:not-sr-only sm:inline ${
               active ? "text-[color:var(--purple-700)]" : "text-[color:var(--ink-faint)]"
             }`}
           >

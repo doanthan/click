@@ -1,7 +1,8 @@
+import Link from "next/link";
 import { LegalPage } from "@/components/legal-page";
 
 export const metadata = {
-  title: "Privacy Policy | Click",
+  title: "Privacy Policy",
   description: "How Click collects, uses, and protects your personal information.",
 };
 
@@ -146,7 +147,7 @@ export default function PrivacyPage() {
               unauthorised access - including encryption in transit, access controls, a private,
               signed-URL store for sensitive merchant documents, and delegating card handling to
               Stripe. For more detail see our{" "}
-              <a href="/security" className="font-bold underline">Security Policy</a>. No system is
+              <Link href="/security" className="font-bold underline">Security Policy</Link>. No system is
               perfectly secure, so we cannot guarantee absolute security.
             </p>
           ),

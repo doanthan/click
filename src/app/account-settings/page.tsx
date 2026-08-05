@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { AccountSettingToggle } from "@/components/account-setting-toggle";
 import { Button, ButtonLink, Icon, type IconName } from "@/components/ds";
+import { EmptyState } from "@/components/empty-state";
 import { signOutOfClick } from "@/app/login/actions";
 import { getOwnProfile, type AccountSettings } from "@/lib/event-repository";
 
@@ -20,7 +21,7 @@ const DEFAULT_SETTINGS: AccountSettings = {
 };
 
 export const metadata = {
-  title: "Settings | Click",
+  title: "Settings",
 };
 
 type TabKey = "account" | "notifications" | "privacy" | "payments" | "security";
@@ -85,8 +86,12 @@ export default async function AccountSettingsPage({ searchParams }: AccountSetti
             })}
           </nav>
 
-          {/* Narrow content column: capped, left-aligned, whitespace to the right. */}
-          <div className="min-w-0 max-w-[640px]">
+          {/* Narrow content column: capped, left-aligned, whitespace to the right.
+              key={tab} remounts it per tab so the 240ms rise plays on the swap -
+              every tab is a server round-trip, and without it the panel replaces
+              itself in one hard frame that reads as "did that do anything?".
+              Resting state is fully visible; the rise is purely additive. */}
+          <div key={tab} className="rise-soft min-w-0 max-w-[640px]">
             <h2 className="font-display text-[length:var(--text-h2)] font-semibold leading-tight tracking-[-0.01em]">
               {label}
             </h2>
@@ -144,17 +149,7 @@ function AccountTab({
 
       <Group last>
         <SectionHead>Membership</SectionHead>
-        {/* Signing out is not destructive - a quiet Ink row with a lavender-tint
-            hover, never error red. */}
-        <form action={signOutOfClick}>
-          <button
-            type="submit"
-            className="-mx-3 flex w-[calc(100%+1.5rem)] items-center gap-3 rounded-[12px] px-3 py-3 text-left text-[14.5px] font-semibold text-[color:var(--ink)] transition-colors hover:bg-[color:var(--lavender-100)] sm:w-auto sm:min-w-[280px]"
-          >
-            <Icon name="logout" size={18} className="text-[color:var(--slate)]" />
-            Sign out
-          </button>
-        </form>
+        <SignOutRow />
       </Group>
     </>
   );
@@ -259,14 +254,15 @@ function PaymentsTab() {
       <SectionHead sub="Used for paid event RSVPs. Card details live in Stripe, never on Click's servers.">
         Cards on file
       </SectionHead>
-      <div className="rounded-[16px] bg-[color:var(--paper)] px-5 py-7 text-center shadow-[var(--shadow-sm)]">
-        <p className="font-display text-[length:var(--text-h3)] font-semibold leading-tight">
-          No saved cards yet.
-        </p>
-        <p className="mx-auto mt-2 max-w-[360px] text-[14px] leading-[1.55] text-[color:var(--slate)]">
-          Add one next time you book a paid event, and it&apos;ll rest here.
-        </p>
-      </div>
+      {/* The DS empty state, not a one-off card: the bespoke version used a
+          white --paper panel where every other empty state in the product uses
+          the --lav-bg wash. */}
+      <EmptyState
+        eyebrow="Nothing here yet"
+        title="No saved cards yet."
+        body="Add one next time you book a paid event, and it'll rest here."
+        icon={<Icon name="ticket" size={22} />}
+      />
     </Group>
   );
 }
@@ -274,22 +270,20 @@ function PaymentsTab() {
 function SecurityTab({ email }: { email: string }) {
   return (
     <Group last>
-      <SectionHead sub="Sign out everywhere if you've lost a device. Deleting your account is permanent, so we'd ask you to confirm twice.">
+      {/* Says only what ships. The old copy promised "sign out everywhere" - the
+          control below is the ordinary single-session sign-out, and someone who
+          had genuinely lost a phone would have pressed it and believed the other
+          device was safe. It also promised a two-step confirm on a delete that
+          does not exist yet. When delete lands, build it on ConfirmDialog with
+          promptRequired so the user types their email. */}
+      <SectionHead sub="Sign out of this browser. Account deletion is coming soon.">
         Sessions and access
       </SectionHead>
       <dl className="grid gap-4 sm:grid-cols-2">
         <ReadOnlyField label="Signed in as" value={email} />
       </dl>
       <div className="mt-5 grid gap-1">
-        <form action={signOutOfClick}>
-          <button
-            type="submit"
-            className="-mx-3 flex w-[calc(100%+1.5rem)] items-center gap-3 rounded-[12px] px-3 py-3 text-left text-[14.5px] font-semibold text-[color:var(--ink)] transition-colors hover:bg-[color:var(--lavender-100)] sm:w-auto sm:min-w-[280px]"
-          >
-            <Icon name="logout" size={18} className="text-[color:var(--slate)]" />
-            Sign out
-          </button>
-        </form>
+        <SignOutRow />
         <div>
           <Button type="button" variant="ghost" size="sm" disabled>
             Delete account · coming soon
@@ -297,6 +291,24 @@ function SecurityTab({ email }: { email: string }) {
         </div>
       </div>
     </Group>
+  );
+}
+
+/* One sign-out row, rendered on both the Account and Security tabs. It used to
+   be two byte-identical copies of a 40-character class string that had to stay
+   in sync. Signing out is not destructive - a quiet Ink row with a lavender-tint
+   hover, never error red. */
+function SignOutRow() {
+  return (
+    <form action={signOutOfClick}>
+      <button
+        type="submit"
+        className="-mx-3 flex w-[calc(100%+1.5rem)] items-center gap-3 rounded-[12px] px-3 py-3 text-left text-[14.5px] font-semibold text-[color:var(--ink)] transition-colors hover:bg-[color:var(--lavender-100)] sm:w-auto sm:min-w-[280px]"
+      >
+        <Icon name="logout" size={18} className="text-[color:var(--slate)]" />
+        Sign out
+      </button>
+    </form>
   );
 }
 

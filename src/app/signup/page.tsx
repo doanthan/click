@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 
 export const metadata = {
-  title: "Sign up | Click",
+  title: "Sign up",
 };
 
 function isSafeRelative(value: string | undefined) {

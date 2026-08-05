@@ -7,7 +7,7 @@ import { formatIntent } from "@/lib/click-data";
 import { getOwnProfile, getPublicProfileById, getSafetyState } from "@/lib/event-repository";
 
 export const metadata = {
-  title: "Profile | Click",
+  title: "Profile",
 };
 
 type PublicProfilePageProps = {

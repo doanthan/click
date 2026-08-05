@@ -1,7 +1,8 @@
+import Link from "next/link";
 import { LegalPage } from "@/components/legal-page";
 
 export const metadata = {
-  title: "Terms of Service | Click",
+  title: "Terms of Service",
   description: "The terms that govern your use of Click.",
 };
 
@@ -64,7 +65,7 @@ export default function TermsPage() {
                 When you sign in with a social provider, that provider authenticates you and we
                 receive basic profile details (such as your name, email, and photo). We never receive
                 or store your Google or Facebook password. See our{" "}
-                <a href="/privacy" className="font-bold underline">Privacy Policy</a> for what we
+                <Link href="/privacy" className="font-bold underline">Privacy Policy</Link> for what we
                 collect and how it is handled.
               </p>
             </>
@@ -85,7 +86,7 @@ export default function TermsPage() {
                 Once two people click each other, Click offers structured coordination tools (such as
                 proposing to meet again) that do not include open-ended free-text messaging. You
                 agree to use these features respectfully and in line with our{" "}
-                <a href="/safety" className="font-bold underline">Safety Policy</a>.
+                <Link href="/safety" className="font-bold underline">Safety Policy</Link>.
               </p>
             </>
           ),
@@ -165,7 +166,7 @@ export default function TermsPage() {
           body: (
             <p>
               Cancellations and refunds are governed by our{" "}
-              <a href="/refund-policy" className="font-bold underline">Refund &amp; Cancellation Policy</a>,
+              <Link href="/refund-policy" className="font-bold underline">Refund &amp; Cancellation Policy</Link>,
               which operates alongside your rights under the Australian Consumer Law (which cannot be
               excluded). If a host cancels or materially changes an event, you are entitled to a full
               refund of the ticket price.
@@ -216,8 +217,8 @@ export default function TermsPage() {
               features may be subject to the relevant provider&apos;s own terms. We are not
               responsible for third-party services we do not control, but we choose providers we
               consider reputable. See our{" "}
-              <a href="/privacy" className="font-bold underline">Privacy Policy</a> and{" "}
-              <a href="/security" className="font-bold underline">Security Policy</a> for how data is
+              <Link href="/privacy" className="font-bold underline">Privacy Policy</Link> and{" "}
+              <Link href="/security" className="font-bold underline">Security Policy</Link> for how data is
               handled.
             </p>
           ),
@@ -242,7 +243,7 @@ export default function TermsPage() {
                 Click facilitates connections and bookings for in-person events; it does not vet
                 every attendee and does not guarantee the conduct of any user, host, or venue. You
                 attend events and meet other people at your own risk and should use good judgement
-                and follow our <a href="/safety" className="font-bold underline">Safety Policy</a>.
+                and follow our <Link href="/safety" className="font-bold underline">Safety Policy</Link>.
                 The Platform is provided &quot;as is&quot; and we do not warrant that it will be
                 uninterrupted or error-free.
               </p>

@@ -5,7 +5,7 @@ import { ButtonLink } from "@/components/ds";
 import { getBookmarkedEvents, getProfileStatus } from "@/lib/event-repository";
 
 export const metadata = {
-  title: "Saved | Click",
+  title: "Saved",
   description: "Events you've saved for later on Click.",
 };
 

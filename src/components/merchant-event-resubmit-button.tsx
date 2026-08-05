@@ -14,39 +14,57 @@ export function MerchantEventResubmitButton({ eventId }: { eventId: string }) {
   const [message, setMessage] = useState("");
 
   async function resubmit() {
+    // The double-submit guard that a real `disabled` attribute used to provide -
+    // see the aria-disabled note on the button below.
+    if (state === "submitting" || state === "done") return;
     setState("submitting");
     setMessage("");
 
-    const response = await fetch(
-      `/api/merchant/events/${encodeURIComponent(eventId)}/resubmit`,
-      { method: "POST" },
-    );
-    const payload = (await response.json().catch(() => null)) as
-      | { error?: string; status?: string }
-      | null;
+    try {
+      const response = await fetch(
+        `/api/merchant/events/${encodeURIComponent(eventId)}/resubmit`,
+        { method: "POST" },
+      );
+      const payload = (await response.json().catch(() => null)) as
+        | { error?: string; status?: string }
+        | null;
 
-    if (!response.ok || !payload) {
+      if (!response.ok || !payload) {
+        setState("error");
+        setMessage(payload?.error ?? "Could not resubmit this event. Try again.");
+        return;
+      }
+
+      setState("done");
+      setMessage(
+        payload.status === "Live"
+          ? "Resubmitted - your event is live again."
+          : "Resubmitted for review. We'll email you the outcome.",
+      );
+      router.refresh();
+    } catch {
+      // The fetch itself can reject (offline, DNS, aborted navigation) and that
+      // path skipped every setState below, stranding the button on
+      // "Resubmitting..." with nothing said.
       setState("error");
-      setMessage(payload?.error ?? "Could not resubmit this event. Try again.");
-      return;
+      setMessage("Could not reach the server. Check your connection and try again.");
     }
-
-    setState("done");
-    setMessage(
-      payload.status === "Live"
-        ? "Resubmitted - your event is live again."
-        : "Resubmitted for review. We'll email you the outcome.",
-    );
-    router.refresh();
   }
 
   return (
     <div className="grid gap-1">
+      {/* aria-disabled rather than `disabled`: dropping a focused button out of
+          the tab order mid-press makes browsers blur it, which sends keyboard
+          users back to the top of the document right as the outcome arrives.
+          The label and aria-busy carry the state instead. */}
       <button
         type="button"
         onClick={resubmit}
-        disabled={state === "submitting" || state === "done"}
-        className="ck-btn ck-btn--primary ck-btn--md"
+        aria-busy={state === "submitting" || undefined}
+        aria-disabled={state === "submitting" || state === "done" || undefined}
+        className={`ck-btn ck-btn--primary ck-btn--md ${
+          state === "submitting" || state === "done" ? "opacity-60" : ""
+        }`}
       >
         {state === "submitting"
           ? "Resubmitting…"
@@ -56,8 +74,12 @@ export function MerchantEventResubmitButton({ eventId }: { eventId: string }) {
       </button>
       {message ? (
         <p
-          className={`text-xs font-bold ${
-            state === "error" ? "text-[color:var(--rose)]" : "text-[color:var(--mauve)]"
+          role={state === "error" ? "alert" : "status"}
+          // The confirmation line pops in because landing in the review queue is
+          // the whole point of the tap - it is not a celebration, so nothing
+          // heavier than typography arrives with it.
+          className={`text-xs font-bold ${state === "done" ? "pop-in" : ""} ${
+            state === "error" ? "text-[color:var(--danger)]" : "text-[color:var(--mauve)]"
           }`}
         >
           {message}

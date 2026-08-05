@@ -5,7 +5,7 @@ import { getDatabaseTables } from "@/lib/database-tables";
 import { isProductionDeployment } from "@/lib/runtime-mode";
 
 export const metadata = {
-  title: "Database tables | Click",
+  title: "Database tables",
   description: "Every table in the Click Postgres schema, with columns, types, and live row counts.",
 };
 

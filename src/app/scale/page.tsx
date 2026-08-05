@@ -1,7 +1,7 @@
 import { LinkButton, MetricCard, Pill, SectionIntro } from "@/components/click-ui";
 
 export const metadata = {
-  title: "Scale | Click",
+  title: "Scale",
   description:
     "How Click's architecture behaves at 100 merchants and 2000 browsers, the bottlenecks in the order they hit, and the road to running in Saigon, Sydney, and London.",
 };

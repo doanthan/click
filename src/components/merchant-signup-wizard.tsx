@@ -4,6 +4,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useMemo,
   useReducer,
   useRef,
   useState,
@@ -24,8 +25,11 @@ import {
   validateOptionalAbn,
   validateOptionalAcn,
 } from "@/lib/abn";
+import { useFormDraft } from "@/lib/use-form-draft";
 import { MapboxAutocomplete, type MapboxPlace } from "./mapbox-autocomplete";
-import { WizardStepper } from "./merchant-ds";
+import { Badge, Button, EndowedProgress } from "./ds";
+import { SubmitButton } from "./ds-client";
+import { InfoNote, WizardStepper } from "./merchant-ds";
 
 // Merchant signup — multi-step wizard covering spec §1. Each step has its own
 // URL so users can bookmark, link to, and browser-back through them:
@@ -64,6 +68,38 @@ type DocumentType =
   | "abn_certificate"
   | "public_liability_insurance"
   | "liquor_licence";
+
+// MIRRORS the server constants at src/app/api/merchant/documents/route.ts:30-31,
+// deliberately value-for-value. The route can only reject AFTER request.formData()
+// has buffered the whole body, so a 15 MB scan on 4G spends its entire upload
+// earning a "max 5 MB" - the only place that check helps anyone is here, before
+// the send. These numbers and the route's MUST move together; the honest home for
+// them is one shared module both sides import (see notesForHuman - this component
+// cannot import the route without dragging node:crypto and the repository into the
+// client bundle).
+const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+const MAX_UPLOAD_MB = MAX_UPLOAD_BYTES / 1024 / 1024;
+const ALLOWED_UPLOAD_MIME = ["application/pdf", "image/jpeg", "image/png"] as const;
+// The picker filter and the guard read from one list, so they cannot disagree.
+const UPLOAD_ACCEPT = ALLOWED_UPLOAD_MIME.join(",");
+
+/**
+ * The client-side half of the upload contract. Returns the message to show, or
+ * null when the file is fine. Kept exactly as strict as the route and no
+ * stricter: a file this returns null for is a file the route accepts, so we can
+ * never block a legal document locally. An empty file.type (some Android
+ * pickers) fails both sides identically.
+ */
+function uploadRejection(file: File): string | null {
+  if (!(ALLOWED_UPLOAD_MIME as readonly string[]).includes(file.type)) {
+    return "That file needs to be a PDF, JPG or PNG.";
+  }
+  if (file.size > MAX_UPLOAD_BYTES) {
+    const mb = (file.size / 1024 / 1024).toFixed(1);
+    return `That file is ${mb} MB and the limit is ${MAX_UPLOAD_MB} MB. A photo of the document, or a smaller scan, will do.`;
+  }
+  return null;
+}
 
 const SOCIAL_PLATFORMS = [
   { value: "instagram", label: "Instagram", placeholder: "@yourbusiness" },
@@ -143,6 +179,11 @@ export type MerchantSignupProviderProps = {
 // "Uploaded", so the wizard looked half-filled and Submit threw you back to
 // step 1. Mirror the answers into sessionStorage the way the event-create
 // wizard already does.
+// Persistence now runs through the shared useFormDraft hook, which wraps the
+// answers in a { v, values } envelope rather than the flat { v, ...fields } this
+// file used to write. DRAFT_VERSION stays at 1 deliberately: the FIELD shape did
+// not change, and the hook already drops any stored draft whose `values` is
+// missing, so a flat leftover is discarded rather than half-applied.
 const STORAGE_KEY = "click:merchant-signup-draft";
 const DRAFT_VERSION = 1;
 
@@ -309,6 +350,17 @@ type WizardContextValue = {
   state: State;
   dispatch: Dispatch<Action>;
   categories: CategoryOption[];
+  /** True once a saved draft has actually been applied - drives the quiet
+      "picked up where you left off" note, so a pre-filled form never looks
+      like it filled itself in. */
+  draftRestored: boolean;
+  /** Drop the saved draft. SUCCESS BRANCH ONLY - never before the write lands. */
+  clearDraft: () => void;
+  /** A rejected merchant editing their existing application. Derived from the
+      prefill rather than the layout's isRejectedResubmit flag on purpose: the
+      note says "pre-filled", so it must follow whether answers ACTUALLY came
+      back, not whether we went looking for them. */
+  resubmitting: boolean;
 };
 
 const WizardContext = createContext<WizardContextValue | null>(null);
@@ -337,57 +389,55 @@ export function MerchantSignupProvider({
     initialState,
   );
 
-  // Restore, then persist. Hydration can't be a lazy useReducer init without an
-  // SSR/CSR mismatch, so it's an effect that runs once; the persist effect
-  // waits on the ref so it can't clobber the draft on first paint.
-  const hydratedRef = useRef(false);
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      const raw = window.sessionStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const draft = JSON.parse(raw) as Partial<DraftFields> & { v?: number };
-        if (draft.v === DRAFT_VERSION) {
-          const values: Partial<DraftFields> = {};
-          for (const key of DRAFT_FIELD_KEYS) {
-            if (draft[key] !== undefined) {
-              Object.assign(values, { [key]: draft[key] });
-            }
-          }
-          dispatch({ type: "hydrate", values });
-        }
-      }
-    } catch {
-      // sessionStorage / parse can fail in private mode - ignore.
-    }
-    hydratedRef.current = true;
-  }, []);
-
-  useEffect(() => {
-    if (!hydratedRef.current || typeof window === "undefined") return;
-    try {
-      const draft: Record<string, unknown> = { v: DRAFT_VERSION };
-      for (const key of DRAFT_FIELD_KEYS) draft[key] = state[key];
-      window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(draft));
-    } catch {
-      // Quota / private mode - the draft is a convenience, never load-bearing.
-    }
+  // Only the answer fields ride in the draft - `uploads` is rebuilt server-side
+  // from listMerchantDocuments on every load, and submit status is per-attempt.
+  // Memoised on `state` so the hook writes once per real change rather than once
+  // per render.
+  const draftValues = useMemo(() => {
+    const values: Partial<DraftFields> = {};
+    for (const key of DRAFT_FIELD_KEYS) Object.assign(values, { [key]: state[key] });
+    return values as DraftFields;
   }, [state]);
 
-  return (
-    <WizardContext.Provider value={{ state, dispatch, categories }}>
-      {children}
-    </WizardContext.Provider>
-  );
-}
+  // Restore, then persist - via the shared hook, which owns the two rules this
+  // used to hand-roll: the read happens in an effect (never a lazy initializer,
+  // or the server and first client render disagree) and writes stop dead once
+  // clear() has run, so submitting can't have its own draft rewritten back over
+  // the top of it a render later.
+  //
+  // sessionStorage, deliberately, NOT localStorage: the draft carries an ABN, a
+  // phone number and a street address, and localStorage would leave that sitting
+  // on a shared or borrowed device long after the tab closed. The cost is a draft
+  // that dies with the tab, which the restored note below softens.
+  const { restored, clear } = useFormDraft<DraftFields>({
+    key: STORAGE_KEY,
+    version: DRAFT_VERSION,
+    storage: "session",
+    values: draftValues,
+    apply: (saved) => {
+      const values: Partial<DraftFields> = {};
+      for (const key of DRAFT_FIELD_KEYS) {
+        if (saved[key] !== undefined) Object.assign(values, { [key]: saved[key] });
+      }
+      dispatch({ type: "hydrate", values });
+    },
+  });
 
-/** Drop the saved draft once the application is in - a refresh must not resurrect it. */
-function clearSignupDraft() {
-  try {
-    window.sessionStorage.removeItem(STORAGE_KEY);
-  } catch {
-    // ignore
-  }
+  const resubmitting = Boolean(existingProfile);
+
+  const value = useMemo<WizardContextValue>(
+    () => ({
+      state,
+      dispatch,
+      categories,
+      draftRestored: restored,
+      clearDraft: clear,
+      resubmitting,
+    }),
+    [state, categories, restored, clear, resubmitting],
+  );
+
+  return <WizardContext.Provider value={value}>{children}</WizardContext.Provider>;
 }
 
 // ---------- step validation ----------
@@ -509,9 +559,10 @@ export function WizardShell({
   step: StepIndex;
   children: React.ReactNode;
 }) {
-  const { state, dispatch } = useWizard();
+  const { state, dispatch, draftRestored, clearDraft, resubmitting } = useWizard();
   const router = useRouter();
   const isLast = step === STEP_COUNT - 1;
+  const submitting = state.submitState === "submitting";
 
   function goNext() {
     const error = validateStep(step, state);
@@ -523,12 +574,18 @@ export function WizardShell({
   }
 
   function goBack() {
+    // Back stays focusable while the application is in flight (aria-disabled,
+    // not disabled - a browser blurs a control you disable under the user's
+    // finger and dumps keyboard users to the top of the document), so the guard
+    // has to live here.
+    if (submitting) return;
     if (step > 0) {
       router.push(STEP_PATHS[step - 1]);
     }
   }
 
   async function submit() {
+    if (submitting) return;
     // Re-run every step's validation on final submit — guards against a user
     // editing an earlier step after passing it, or deep-linking past one.
     for (let s = 0; s < STEP_COUNT; s++) {
@@ -564,32 +621,78 @@ export function WizardShell({
       addressPostcode: state.addressPostcode.trim(),
     };
 
-    const response = await fetch("/api/merchant", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    try {
+      const response = await fetch("/api/merchant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
 
-    if (response.status === 401) {
-      window.location.href = "/merchant/login?callbackUrl=/merchant/signup";
-      return;
+      if (response.status === 401) {
+        window.location.href = "/merchant/login?callbackUrl=/merchant/signup";
+        return;
+      }
+
+      const body = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) {
+        dispatch({ type: "submitError", message: body.error ?? "Submission failed." });
+        return;
+      }
+
+      dispatch({ type: "submitSuccess" });
+      // Only now, on the success branch - clearing before the POST lands would
+      // take the answers with it if the request failed.
+      clearDraft();
+      router.push("/merchant-pending");
+      router.refresh();
+    } catch {
+      // A dropped connection used to leave the button spinning forever with
+      // nothing said. Put the form back the way it was and name the failure.
+      dispatch({
+        type: "submitError",
+        message:
+          "We couldn't reach Click just then - check your connection and send it again. Everything you typed is still here.",
+      });
     }
-
-    const body = (await response.json().catch(() => ({}))) as { error?: string };
-    if (!response.ok) {
-      dispatch({ type: "submitError", message: body.error ?? "Submission failed." });
-      return;
-    }
-
-    dispatch({ type: "submitSuccess" });
-    clearSignupDraft();
-    router.push("/merchant-pending");
-    router.refresh();
   }
 
   return (
     <div className="grid gap-6">
-      <StepIndicator current={step} />
+      {/* ONE progress cluster, at the top. The dots say WHERE you are and let you
+          jump back; the endowed bar says HOW FAR, and its counter line carries the
+          step name on phones, where the dot labels are hidden. The counter that
+          used to sit down beside the Next button said the same thing 700px away
+          from this one, so it's gone. */}
+      <div className="rise-soft grid gap-3">
+        <StepIndicator current={step} />
+        <EndowedProgress
+          step={step}
+          total={STEP_COUNT}
+          label={`Step ${step + 1} of ${STEP_COUNT} · ${STEP_TITLES[step]}`}
+        />
+      </div>
+
+      {/* At most ONE note here. A resubmitting host needs to know why the form is
+          already full far more than they need to know a draft was restored, and
+          two stacked lavender notes above the card is a wall, not reassurance.
+          The rejection reason itself is not stored anywhere this wizard can read
+          it - it travels by email - so the note points there rather than
+          inventing a quote. */}
+      {resubmitting ? (
+        <div className="rise-soft rise-d1">
+          <InfoNote icon="info">
+            This is your existing application, filled in as you left it. Update whatever the
+            review team asked about in their email, then send it again - it goes back into the
+            queue for another look.
+          </InfoNote>
+        </div>
+      ) : draftRestored ? (
+        <div className="rise-soft rise-d1">
+          <InfoNote icon="info">
+            Picked up where you left off - the answers you had already typed are still here.
+          </InfoNote>
+        </div>
+      ) : null}
 
       <SectionCard>{children}</SectionCard>
 
@@ -602,37 +705,34 @@ export function WizardShell({
         </p>
       ) : null}
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <button
+      <div className="rise-soft rise-d3 flex flex-wrap items-center justify-between gap-3">
+        <Button
           type="button"
+          variant="secondary"
+          size="md"
           onClick={goBack}
-          disabled={step === 0 || state.submitState === "submitting"}
-          className="ck-btn ck-btn--secondary ck-btn--md"
+          disabled={step === 0}
+          aria-disabled={submitting || undefined}
         >
           ← Back
-        </button>
-
-        <span className="text-[12.5px] font-semibold text-[color:var(--slate)]">
-          Step {step + 1} of {STEP_COUNT} · {STEP_TITLES[step]}
-        </span>
+        </Button>
 
         {isLast ? (
-          <button
+          <Button
             type="button"
             onClick={submit}
-            disabled={state.submitState === "submitting"}
-            className="ck-btn ck-btn--primary ck-btn--md"
+            loading={submitting}
+            // The spinner hides the label, and a visibility:hidden label is gone
+            // from the accessibility tree too - this keeps the button named while
+            // it spins.
+            aria-label="Submit application"
           >
-            {state.submitState === "submitting" ? "Submitting…" : "Submit application →"}
-          </button>
+            Submit application →
+          </Button>
         ) : (
-          <button
-            type="button"
-            onClick={goNext}
-            className="ck-btn ck-btn--primary ck-btn--md"
-          >
+          <Button type="button" onClick={goNext}>
             Next →
-          </button>
+          </Button>
         )}
       </div>
     </div>
@@ -650,14 +750,29 @@ function StepIndicator({ current }: { current: StepIndex }) {
 }
 
 function SectionCard({ children }: { children: React.ReactNode }) {
+  // The wizard's whole entrance choreography is three beats - progress, card,
+  // nav - because each step page is a fresh mount, so it replays on every Next
+  // and Back. rise-soft is 240ms/8px with fill `both`, so it ENDS at opacity 1
+  // and a re-render can't restart it: the resting state is always visible and
+  // the motion is purely additive. The global reduced-motion block collapses it;
+  // never add a per-component media query for that.
   return (
-    <div className="rounded-[18px] bg-[color:var(--paper)] p-6 shadow-[var(--shadow-sm)] sm:p-8">
+    <div className="rise-soft rise-d2 rounded-[18px] bg-[color:var(--paper)] p-6 shadow-[var(--shadow-sm)] sm:p-8">
       {children}
     </div>
   );
 }
 
 // ---------- step 0 (auth gate) ----------
+
+// Meta's brand blue. A provider button that isn't the provider's colour reads as
+// a fake, so the FILL is a legitimate exception to the palette rule - the
+// GEOMETRY is not, and comes from ck-btn like every other button in the app.
+// This is Meta blue one step down (#1877F2's own hover shade): the cream ck-btn
+// label lands at 4.9:1 on it and only 3.9:1 on #1877F2, which is under AA at the
+// 16px the lg button uses. Wants to be a --fb-blue token in globals.css, which
+// this component does not own - see notesForHuman.
+const FB_BLUE = "#1566D6";
 
 export function StepAuthCard({
   googleConfigured,
@@ -702,26 +817,21 @@ export function StepAuthCard({
           </p>
         ) : null}
 
+        {/* SubmitButton reads useFormStatus, so these three carry a real pending
+            state during the round trip to the provider instead of looking idle. */}
         <form action={signInWithGoogle} className="grid gap-3">
           <input type="hidden" name="callbackUrl" value={callbackUrl} />
-          <button
-            type="submit"
-            disabled={!googleConfigured}
-            className="ck-btn ck-btn--secondary ck-btn--lg ck-btn--full"
-          >
+          <SubmitButton variant="secondary" size="lg" full disabled={!googleConfigured}>
             {googleConfigured ? "Continue with Google" : "Google · setup required"}
-          </button>
+          </SubmitButton>
         </form>
 
         {metaConfigured ? (
           <form action={signInWithMeta} className="mt-3 grid gap-3">
             <input type="hidden" name="callbackUrl" value={callbackUrl} />
-            <button
-              type="submit"
-              className="flex min-h-[52px] w-full items-center justify-center rounded-xl bg-[#1877F2] px-5 text-[15px] font-semibold text-white transition hover:bg-[#1566d6]"
-            >
+            <SubmitButton size="lg" full style={{ backgroundColor: FB_BLUE }}>
               Continue with Facebook
-            </button>
+            </SubmitButton>
           </form>
         ) : null}
 
@@ -747,12 +857,10 @@ export function StepAuthCard({
               required
               autoComplete="email"
               placeholder="you@yourbusiness.com"
-              className="rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] px-4 py-3 text-base text-[color:var(--ink)] outline-none focus:border-[color:var(--purple)] focus:ring-2 focus:ring-[color:var(--lavender-100)]"
+              className="ck-input w-full"
             />
           </label>
-          <button type="submit" className="ck-btn ck-btn--primary ck-btn--lg">
-            Continue →
-          </button>
+          <SubmitButton size="lg">Continue →</SubmitButton>
         </form>
       </div>
     </div>
@@ -769,13 +877,12 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
+// The control treatment is .ck-input (globals.css, beside .ck-btn) - one class
+// for every input in the app, and no local focus string to drift from it. The
+// wrapper stays because these fields still use their own 12.5px Slate label; the
+// shared FormField is the migration this file has not taken yet.
 function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  return (
-    <input
-      {...props}
-      className={`rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] px-4 py-3 text-base text-[color:var(--ink)] outline-none focus:border-[color:var(--purple)] focus:ring-2 focus:ring-[color:var(--lavender-100)] ${props.className ?? ""}`}
-    />
-  );
+  return <input {...props} className={`ck-input w-full ${props.className ?? ""}`} />;
 }
 
 // ---------- section · business ----------
@@ -784,7 +891,7 @@ export function BusinessSection() {
   const { state, dispatch, categories } = useWizard();
   return (
     <div className="grid gap-5">
-      <h3 className="font-display text-3xl font-semibold leading-tight">Business details</h3>
+      <h2 className="font-display text-3xl font-semibold leading-tight">Business details</h2>
 
       <label className="grid gap-2">
         <FieldLabel>Business name *</FieldLabel>
@@ -908,7 +1015,7 @@ function CategoryPicker({
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search categories…"
               aria-label="Search event categories"
-              className="w-full rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] px-4 py-2.5 text-base text-[color:var(--ink)] outline-none focus:border-[color:var(--purple)] focus:ring-2 focus:ring-[color:var(--lavender-100)]"
+              className="ck-input w-full"
             />
           </div>
 
@@ -989,7 +1096,7 @@ export function ContactSection() {
 
   return (
     <div className="grid gap-5">
-      <h3 className="font-display text-3xl font-semibold leading-tight">Contact & address</h3>
+      <h2 className="font-display text-3xl font-semibold leading-tight">Contact & address</h2>
 
       <div className="grid gap-5 sm:grid-cols-2">
         <label className="grid gap-2">
@@ -1065,7 +1172,7 @@ export function ContactSection() {
             </label>
           ))}
         </div>
-        <span className="text-xs font-medium text-[color:var(--mauve)]">
+        <span className="text-xs font-medium text-[color:var(--slate)]">
           Add any networks you&apos;re on - handy for verifying hosts who don&apos;t have formal documents yet.
         </span>
       </div>
@@ -1078,7 +1185,7 @@ export function ContactSection() {
           onSelect={handlePick}
           placeholder="Start typing - e.g. 42 Crown Street, Surry Hills"
         />
-        <span className="text-xs font-medium text-[color:var(--mauve)]">
+        <span className="text-xs font-medium text-[color:var(--slate)]">
           Pick a suggestion and we&apos;ll fill in suburb, state &amp; postcode.
         </span>
       </label>
@@ -1243,11 +1350,17 @@ export function DocumentsSection() {
   const { state, dispatch } = useWizard();
   return (
     <div className="grid gap-5">
-      <h3 className="font-display text-3xl font-semibold leading-tight">Documents</h3>
-      <p className="text-sm font-medium leading-6 text-[color:var(--mauve)]">
-        Upload PDFs or images (max 5 MB each). Files land in a private Supabase Storage bucket;
-        only admins and you can access them via signed URLs.
-      </p>
+      <h2 className="font-display text-3xl font-semibold leading-tight">Documents</h2>
+      {/* Written for a restaurant owner, not an engineer: the sentence this
+          replaced said "private Supabase Storage bucket" and "signed URLs", which
+          is leaked plumbing on the one step where trust is being asked for. It
+          also never said the thing that actually settles nerves - none of this is
+          required to send the application. */}
+      <InfoNote icon="lock">
+        These let the review team confirm your business is yours. They stay private to you and
+        the Click review team - nothing here appears on your public host page. Every one is
+        optional, so you can send your application now and add documents later.
+      </InfoNote>
 
       <DocumentUploadRow
         label="ABN certificate (optional)"
@@ -1271,6 +1384,53 @@ export function DocumentsSection() {
   );
 }
 
+type UploadResponse = { error?: string; document?: { file_name: string } };
+
+// "sending" = bytes on the wire · "finishing" = bytes delivered, server still
+// writing to storage and the metadata row. The second phase is short on wifi and
+// very much not short on 4G, and it is the reason the bar must never park at 100.
+type UploadPhase = "idle" | "sending" | "finishing";
+
+/**
+ * POSTs one document and reports how much of it has gone.
+ *
+ * XMLHttpRequest, not fetch, for exactly one reason: fetch cannot report
+ * request-body progress, and this is the slowest wait in the whole application.
+ * Everything else about the contract is identical to the fetch call it replaced.
+ * Resolves for any HTTP reply (`ok` says which); rejects only when the request
+ * never completed, so a dropped connection is distinguishable from a rejection.
+ */
+function uploadDocument(
+  documentType: DocumentType,
+  file: File,
+  onProgress: (fraction: number) => void,
+): Promise<{ ok: boolean; body: UploadResponse }> {
+  return new Promise((resolve, reject) => {
+    const form = new FormData();
+    form.set("document_type", documentType);
+    form.set("file", file);
+
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/merchant/documents");
+    xhr.upload.addEventListener("progress", (event) => {
+      if (event.lengthComputable && event.total > 0) onProgress(event.loaded / event.total);
+    });
+    xhr.addEventListener("load", () => {
+      let body: UploadResponse = {};
+      try {
+        body = JSON.parse(xhr.responseText) as UploadResponse;
+      } catch {
+        // A proxy error page rather than our JSON - the caller's fallback
+        // message covers it.
+      }
+      resolve({ ok: xhr.status >= 200 && xhr.status < 300, body });
+    });
+    xhr.addEventListener("error", () => reject(new Error("Upload failed to complete.")));
+    xhr.addEventListener("abort", () => reject(new Error("Upload was interrupted.")));
+    xhr.send(form);
+  });
+}
+
 function DocumentUploadRow({
   label,
   documentType,
@@ -1282,44 +1442,99 @@ function DocumentUploadRow({
   state: State;
   dispatch: Dispatch<Action>;
 }) {
-  const [busy, setBusy] = useState(false);
+  const [phase, setPhase] = useState<UploadPhase>("idle");
+  const [sentFraction, setSentFraction] = useState(0);
   const [error, setError] = useState("");
   const existing = state.uploads[documentType];
+  const busy = phase !== "idle";
 
   async function onChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
+    // Clear the input straight away - before any early return - so re-picking
+    // the same file fires onChange again, including after a rejection. The File
+    // reference above survives it.
+    event.target.value = "";
     if (!file) return;
-    setBusy(true);
+
+    // The input stays focusable while busy (see aria-disabled below), so this is
+    // where a second pick gets caught. Silence here would look like a dead
+    // control.
+    if (busy) {
+      setError("One at a time - this row is still uploading.");
+      return;
+    }
+
+    // Ahead of the network, not after it. The route cannot see the size until it
+    // has buffered the whole body, so without this an oversized file spends its
+    // entire upload earning a rejection we already knew about.
+    const rejection = uploadRejection(file);
+    if (rejection) {
+      setError(rejection);
+      return;
+    }
+
     setError("");
+    setSentFraction(0);
+    setPhase("sending");
     try {
-      const form = new FormData();
-      form.set("document_type", documentType);
-      form.set("file", file);
-      const response = await fetch("/api/merchant/documents", { method: "POST", body: form });
-      const body = (await response.json().catch(() => ({}))) as { error?: string; document?: { file_name: string } };
-      if (!response.ok) {
-        setError(body.error ?? "Upload failed.");
+      const result = await uploadDocument(documentType, file, (fraction) => {
+        setSentFraction(fraction);
+        if (fraction >= 1) setPhase("finishing");
+      });
+      if (!result.ok) {
+        setError(result.body.error ?? "That upload didn't go through. Pick the file again.");
         return;
       }
       dispatch({
         type: "upload",
         docType: documentType,
-        info: { fileName: body.document?.file_name ?? file.name },
+        info: { fileName: result.body.document?.file_name ?? file.name },
       });
+      // The only message that can still be on screen here is the "one at a time"
+      // note from a pick made mid-upload, and it is now stale.
+      setError("");
+    } catch {
+      // A dropped connection used to land in a bare finally: busy cleared,
+      // nothing said, and the row looked exactly as it had before the pick. A
+      // failure must never be indistinguishable from nothing happening.
+      setError("The upload stopped partway - check your connection and pick the file again.");
     } finally {
-      setBusy(false);
-      // Reset the input so re-selecting the same file fires onChange again.
-      event.target.value = "";
+      setPhase("idle");
     }
   }
 
+  // Endowed: 8% the instant the first byte moves so the bar is never empty, and
+  // capped below 100 until the server has actually confirmed - 100 belongs to
+  // the Uploaded badge, not to the last packet. EndowedProgress clamps to the
+  // same 8..96 window; `step` is one under the percentage so aria-valuenow reads
+  // as the true number out of 100.
+  const shownPct = phase === "finishing" ? 96 : Math.max(8, Math.round(sentFraction * 100));
+
+  // One phase-level announcement, not a percentage ticker - a live region firing
+  // on every percent is noise, and the progressbar already carries the number.
+  // The error line announces itself through role="alert".
+  const liveStatus = busy
+    ? phase === "finishing"
+      ? "Almost done, finishing your upload."
+      : "Uploading your document."
+    : existing
+      ? `Uploaded ${existing.fileName}.`
+      : "";
+
   return (
-    <div className="grid gap-3 rounded-2xl border border-[color:var(--line)] bg-[color:var(--champagne)] p-4">
+    <div
+      aria-busy={busy || undefined}
+      className="grid gap-3 rounded-2xl border border-[color:var(--line)] bg-[color:var(--champagne)] p-4"
+    >
       <div className="flex flex-wrap items-baseline justify-between gap-3">
         <FieldLabel>{label}</FieldLabel>
         {existing ? (
-          <span className="inline-flex items-center rounded-lg bg-[color-mix(in_srgb,var(--sage)_14%,var(--paper))] px-2 py-0.5 text-xs font-semibold text-[color:var(--sage)]">
-            Uploaded
+          // The DS Badge, not a hand-rolled span: the raw --sage hue on its own
+          // 14% tint is the contrast regression BADGE_TONE warns about, and Badge
+          // carries the AA-safe --sage-ink instead. pop-in gives the settled
+          // moment its weight without particles.
+          <span className="pop-in inline-flex">
+            <Badge tone="sage">Uploaded</Badge>
           </span>
         ) : null}
       </div>
@@ -1328,17 +1543,35 @@ function DocumentUploadRow({
       ) : null}
       <input
         type="file"
-        accept="application/pdf,image/jpeg,image/png"
+        accept={UPLOAD_ACCEPT}
         onChange={onChange}
-        disabled={busy}
+        // aria-disabled, not disabled: disabling a control the user just used
+        // blurs it, and a keyboard user lands back at the top of the document.
+        // The guard in onChange is what actually blocks the second pick.
+        aria-disabled={busy || undefined}
         className="text-sm font-medium text-[color:var(--ink)] file:mr-3 file:rounded-xl file:border file:border-[color:var(--mist)] file:bg-[color:var(--paper)] file:px-4 file:py-2 file:text-xs file:font-semibold file:text-[color:var(--ink)] hover:file:bg-[color:var(--lavender-100)]"
       />
+      {/* The constraints live beside the input that enforces them, from the same
+          constants the guard and the picker filter use. */}
+      <p className="text-xs font-medium text-[color:var(--slate)]">
+        PDF, JPG or PNG · up to {MAX_UPLOAD_MB} MB
+      </p>
       {busy ? (
-        <p className="text-xs font-medium text-[color:var(--slate)]">Uploading…</p>
+        <EndowedProgress
+          step={shownPct - 1}
+          total={100}
+          pct={shownPct}
+          label={phase === "finishing" ? "Finishing up…" : `Uploading… ${shownPct}%`}
+        />
       ) : null}
       {error ? (
-        <p className="text-xs font-semibold text-[color:var(--danger)]">{error}</p>
+        <p role="alert" className="text-xs font-semibold text-[color:var(--danger)]">
+          {error}
+        </p>
       ) : null}
+      <p className="sr-only" role="status">
+        {liveStatus}
+      </p>
     </div>
   );
 }

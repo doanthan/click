@@ -13,7 +13,7 @@ import {
 } from "@/lib/event-repository";
 
 export const metadata = {
-  title: "Notification email | Click",
+  title: "Notification email",
   robots: { index: false, follow: false },
 };
 

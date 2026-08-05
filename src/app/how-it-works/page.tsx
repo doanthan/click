@@ -1,7 +1,7 @@
 import { ButtonLink, Icon, type IconName } from "@/components/ds";
 
 export const metadata = {
-  title: "How Click works | Click",
+  title: "How Click works",
   description:
     "The best people you'll meet this year aren't on an app. They're across the room. Here's how Click works.",
 };

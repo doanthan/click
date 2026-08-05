@@ -414,6 +414,34 @@ body {
 }
 @keyframes ck-spin { to { transform: rotate(360deg); } }
 
+/* ---- Input: the ONE text-control treatment. Every input, textarea and select
+   in the app wears this class, so a restyle lands in one place instead of the
+   ~15 hand-rolled focus/border strings it replaces. Radius and 44px minimum
+   match .ck-btn--md so a field and the button beside it read as one footprint.
+
+   Two deliberate omissions:
+   - NO :focus / :focus-visible rule. The global ring further down this file
+     already covers input/select/textarea; a second one draws a box inside the
+     border instead of around it.
+   - NO width. Callers keep `w-full` so a field can also sit in a grid cell. ---- */
+.ck-input {
+  box-sizing: border-box;
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 1.5px solid var(--mist-strong);
+  border-radius: var(--radius-md);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-click-body), system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.45;
+}
+.ck-input::placeholder { color: var(--ink-faint); }
+/* Invalid = the --danger hairline, NEVER coral - status hues live on badges. */
+.ck-input--invalid { border-color: var(--danger); }
+/* Textarea sizing: roughly three lines before it scrolls. */
+.ck-input--area { min-height: 96px; padding-block: 12px; resize: vertical; }
+
 /* ---- Tag: ONE neutral look everywhere. White fill, mist hairline, ink text,
    no dot. Selected = Deep-Purple fill, cream label, NO tick (the fill IS the
    signal). Status colour NEVER lands on a tag. ---- */

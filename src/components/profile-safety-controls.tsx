@@ -1,7 +1,10 @@
 "use client";
 
-import { useState } from "react";
-import { Badge, Button, ckBtn } from "@/components/ds";
+import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
+import { Badge, Button, FormField } from "@/components/ds";
+import { SubmitButton } from "@/components/ds-client";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import {
   blockUserAction,
   muteUserAction,
@@ -25,8 +28,8 @@ const REPORT_REASON_OPTIONS: { value: string; label: string }[] = [
   { value: "other", label: "Something else" },
 ];
 
-const field =
-  "w-full rounded-[12px] border border-[color:var(--mist-strong)] bg-[color:var(--paper)] px-3.5 py-2.5 text-[14.5px] text-[color:var(--ink)] outline-none focus-visible:border-[color:var(--purple)]";
+const BLOCK_CONSEQUENCE =
+  "Blocking takes you both out of each other's discovery, releases any pending click, and ends any mutual or shared plan between you.";
 
 export function ProfileSafetyControls({
   profileId,
@@ -36,39 +39,68 @@ export function ProfileSafetyControls({
   state: SafetyState;
 }) {
   const [reportOpen, setReportOpen] = useState(false);
+  const [confirmBlock, setConfirmBlock] = useState(false);
+  const blockFormRef = useRef<HTMLFormElement>(null);
+
+  // Acknowledge the report only once the server has actually recorded it:
+  // hasReported arrives back through revalidation, so a post that never landed
+  // can't produce a "we got it". Fires on the false -> true edge only, which
+  // also keeps a revisit to an already-reported profile quiet.
+  const reportedRef = useRef(state.hasReported);
+  useEffect(() => {
+    if (state.hasReported && !reportedRef.current) {
+      setReportOpen(false);
+      toast.success("Report sent. Our safety team reviews within 24 hours.");
+    }
+    reportedRef.current = state.hasReported;
+  }, [state.hasReported]);
 
   return (
     // Quiet, grouped by whitespace and a hairline - safety is available, never
-    // shouted. Destructive confirms use --danger, never coral.
+    // shouted. The --danger fill lives on the block confirm inside the dialog,
+    // never on a row button and never on coral.
     <section id="safety" className="mt-8 scroll-mt-24 border-t border-[color:var(--mist)] pt-6">
       <p className="eyebrow">Safety</p>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        {/* Block / unblock */}
-        <form action={state.isBlocked ? unblockUserAction : blockUserAction}>
+        {/* Block / unblock. Unblocking is one tap - it is reversible and adding
+            friction there would teach people that these prompts are noise. */}
+        <form ref={blockFormRef} action={state.isBlocked ? unblockUserAction : blockUserAction}>
           <input type="hidden" name="profile_id" value={profileId} />
           {state.isBlocked ? (
-            <button type="submit" className={ckBtn("pending", "sm")}>
-              <span className="ck-btn__label">Blocked · undo</span>
-            </button>
+            <SubmitButton variant="pending" size="sm" pendingLabel="Unblocking…">
+              Blocked · undo
+            </SubmitButton>
           ) : (
-            <Button type="submit" variant="secondary" size="sm">
+            <SubmitButton
+              variant="secondary"
+              size="sm"
+              pendingLabel="Blocking…"
+              onClick={(e) => {
+                // Still a real submit, so with scripting off the block works as
+                // it always did. With scripting on we intercept and route
+                // through the confirm: block ends a mutual click, and nothing
+                // in the UI can put that back.
+                e.preventDefault();
+                setConfirmBlock(true);
+              }}
+            >
               Block
-            </Button>
+            </SubmitButton>
           )}
         </form>
 
-        {/* Mute / unmute */}
+        {/* Mute / unmute - reversible both ways, so no confirm on either. */}
         <form action={state.isMuted ? unmuteUserAction : muteUserAction}>
           <input type="hidden" name="profile_id" value={profileId} />
           {state.isMuted ? (
-            <button type="submit" className={ckBtn("pending", "sm")}>
-              <span className="ck-btn__label">Muted · undo</span>
-            </button>
+            <SubmitButton variant="pending" size="sm" pendingLabel="Unmuting…">
+              Muted · undo
+            </SubmitButton>
           ) : (
-            <Button type="submit" variant="secondary" size="sm">
+            <SubmitButton variant="secondary" size="sm" pendingLabel="Muting…">
               Mute
-            </Button>
+            </SubmitButton>
           )}
         </form>
 
@@ -89,18 +121,14 @@ export function ProfileSafetyControls({
       </div>
 
       <p className="mt-3 max-w-[520px] text-[12.5px] leading-[1.55] text-[color:var(--slate)]">
-        Blocking takes you both out of each other&apos;s discovery, releases any pending click, and
-        ends any mutual or shared plan between you. Muting stops notifications. Reports go to our
-        safety team and are reviewed within 24 hours.
+        {BLOCK_CONSEQUENCE} Muting stops notifications. Reports go to our safety team and are
+        reviewed within 24 hours.
       </p>
 
       {reportOpen && !state.hasReported ? (
-        <form action={reportUserAction} className="mt-5 max-w-[520px]">
+        <form action={reportUserAction} className="mt-5 grid max-w-[520px] gap-3.5">
           <input type="hidden" name="profile_id" value={profileId} />
-          <label className="block text-[13.5px] font-semibold text-[color:var(--ink)]">
-            What happened?
-          </label>
-          <select name="reason" required defaultValue="" className={`mt-2 ${field}`}>
+          <FormField as="select" label="What happened?" name="reason" required defaultValue="">
             <option value="" disabled>
               Choose a reason…
             </option>
@@ -109,24 +137,43 @@ export function ProfileSafetyControls({
                 {opt.label}
               </option>
             ))}
-          </select>
-          <textarea
+          </FormField>
+          <FormField
+            as="textarea"
+            label="Any detail that helps us review"
             name="details"
             rows={3}
             maxLength={2000}
-            placeholder="Add any detail that helps us review (optional)."
-            className={`mt-3 resize-y ${field}`}
+            placeholder="Optional - what happened, and where."
+            hint="Optional. Anything specific helps our team read the situation faster."
           />
-          <div className="mt-3 flex gap-2">
-            <Button type="submit" variant="danger" size="sm">
+          <div className="mt-1 flex gap-2">
+            {/* Primary, not danger: filing a report opens a ticket, it doesn't
+                destroy anything of the reporter's. The danger fill belongs on
+                the block confirm below. */}
+            <SubmitButton variant="primary" size="sm" pendingLabel="Sending…">
               Submit report
-            </Button>
+            </SubmitButton>
             <Button type="button" variant="ghost" size="sm" onClick={() => setReportOpen(false)}>
               Cancel
             </Button>
           </div>
         </form>
       ) : null}
+
+      <ConfirmDialog
+        open={confirmBlock}
+        title="Block this member?"
+        description={`${BLOCK_CONSEQUENCE} You can unblock them later, but the mutual click doesn't come back.`}
+        confirmLabel="Block"
+        tone="rose"
+        onConfirm={() => {
+          setConfirmBlock(false);
+          // requestSubmit (not submit) so React's form action still runs.
+          blockFormRef.current?.requestSubmit();
+        }}
+        onCancel={() => setConfirmBlock(false)}
+      />
     </section>
   );
 }

@@ -4,7 +4,7 @@ import { ckBtn } from "@/components/ds";
 import { confirmEmailSignIn } from "./actions";
 
 export const metadata = {
-  title: "Confirm email sign-in | Click",
+  title: "Confirm email sign-in",
   robots: { index: false, follow: false },
 };
 

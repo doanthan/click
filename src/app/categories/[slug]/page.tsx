@@ -22,9 +22,9 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { slug } = await params;
   const category = categoryFromSlug(slug);
-  if (!category) return { title: "Category not found | Click" };
+  if (!category) return { title: "Category not found" };
   return {
-    title: `${category} events | Click`,
+    title: `${category} events`,
     description: `Browse every ${category.toLowerCase()} event on Click near you.`,
   };
 }

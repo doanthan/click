@@ -68,9 +68,14 @@ export default async function AdminMatchingPage() {
                     {field.hint}
                   </span>
                 </span>
+                {/* `required` so the browser blocks an empty submit outright -
+                    a cleared box used to persist as a real 0 and switch this
+                    signal off for every member's feed. The server keeps the
+                    saved value as a second guard (see actions.ts num()). */}
                 <input
                   type="number"
                   name={field.key}
+                  required
                   min={0}
                   max={field.max}
                   step={0.5}
@@ -92,6 +97,7 @@ export default async function AdminMatchingPage() {
               <input
                 type="number"
                 name="readinessThreshold"
+                required
                 min={0}
                 max={100}
                 step={1}
@@ -110,13 +116,17 @@ export default async function AdminMatchingPage() {
         </form>
 
         <div className="rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)] p-6">
-          <h2 className="eyebrow">Live preview</h2>
+          {/* Named for what it is. This list is scored server-side from the
+              SAVED weights (see `weights` above), so it does not react to the
+              form on the left - calling it a "live preview" told operators the
+              opposite. A real dry-run preview is a separate piece of work. */}
+          <h2 className="eyebrow">Current ranking</h2>
           <p className="mt-2 text-xs font-medium leading-5 text-[color:var(--slate)]">
-            Top events for a sample member interested in{" "}
+            What a sample member interested in{" "}
             <span className="font-semibold text-[color:var(--ink)]">
               {sampleTags.length > 0 ? sampleTags.join(", ") : "the most common tags"}
-            </span>
-            , ranked with the currently saved weights.
+            </span>{" "}
+            sees right now, with the saved weights. It updates after you save, not as you type.
           </p>
           {preview.length > 0 ? (
             <ol className="mt-4 space-y-2">

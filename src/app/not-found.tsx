@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 export const metadata = {
-  title: "Lost the plot · 404 | Click",
+  title: "Lost the plot · 404",
   description: "That page slipped through the cracks.",
 };
 

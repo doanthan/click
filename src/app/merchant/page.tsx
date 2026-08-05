@@ -14,7 +14,7 @@ import { SettingsTab } from "@/components/merchant-settings-tab";
 import { getMerchantEvents, getProfileStatus } from "@/lib/event-repository";
 
 export const metadata = {
-  title: "Merchant Portal | Click",
+  title: "Merchant Portal",
   description: "Click merchant portal for event hosts, booking models, payments, and analytics.",
 };
 

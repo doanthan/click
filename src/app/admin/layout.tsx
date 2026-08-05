@@ -6,7 +6,7 @@ import { AdminSidebar } from "@/components/admin-sidebar";
 import { getAdminSidebarCounts } from "@/lib/event-repository";
 
 export const metadata = {
-  title: "Admin Portal | Click",
+  title: "Admin Portal",
   description: "Click admin portal for moderation, tag governance, security, and analytics.",
 };
 

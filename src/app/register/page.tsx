@@ -6,7 +6,7 @@ import { AuthNote, AuthShell } from "@/components/auth-ui";
 import { RegisterForm } from "@/components/register-form";
 
 export const metadata = {
-  title: "Create your account | Click",
+  title: "Create your account",
   description: "Sign up for Click with Email, Facebook, or Google.",
 };
 

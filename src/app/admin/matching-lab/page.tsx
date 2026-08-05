@@ -25,12 +25,30 @@ function pct(n: number, total: number) {
   return total > 0 ? Math.min(100, Math.round((n / total) * 100)) : 0;
 }
 
-export default async function MatchingLabPage() {
+export default async function MatchingLabPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ save?: string }>;
+}) {
   const session = await auth();
-  const [pair, stats] = await Promise.all([
-    getCuratedPairToLabel(session).catch(() => null),
+  // A failed judgment redirects here with ?save=failed - see actions.ts. The
+  // action used to swallow the error and revalidate, which made a dropped label
+  // indistinguishable from a saved one.
+  const saveFailed = (await searchParams)?.save === "failed";
+  const [pairResult, stats] = await Promise.all([
+    // Resolve the failure into a FLAG rather than into null: a permissions or
+    // query error used to collapse into the "no unlabeled pairs" empty state,
+    // whose advice (run the feature-refresh cron) cannot fix either of those.
+    getCuratedPairToLabel(session).then(
+      (value) => ({ pair: value, failed: false }),
+      (error: unknown) => {
+        console.warn("[matching-lab] could not load a pair to label", error);
+        return { pair: null, failed: true };
+      },
+    ),
     getMatchingLabStats(),
   ]);
+  const pair = pairResult.pair;
 
   return (
     <div className="space-y-8 py-6">
@@ -89,8 +107,19 @@ export default async function MatchingLabPage() {
         <h2 className="eyebrow">Curate a pair</h2>
         <p className="mt-1 max-w-2xl text-xs font-medium text-[color:var(--slate)]">
           &ldquo;Would you introduce these two?&rdquo; Your call is stored with the feature vector at
-          label time. The viewer&apos;s cohort drives the predicted score.
+          label time. The viewer&apos;s cohort drives the predicted score. Each judgment is a
+          permanent row - there is no undo yet, so read the pair before you decide.
         </p>
+
+        {saveFailed ? (
+          <p
+            role="alert"
+            className="mt-4 rounded-2xl border border-[color:var(--danger)] bg-[color:var(--paper)] p-4 text-sm font-semibold text-[color:var(--danger)]"
+          >
+            That judgment was NOT saved - the write was rejected. Check you are still signed in as
+            an admin, then judge the pair again.
+          </p>
+        ) : null}
 
         {pair ? (
           <form
@@ -170,6 +199,15 @@ export default async function MatchingLabPage() {
               </span>
             </div>
           </form>
+        ) : pairResult.failed ? (
+          <p
+            role="alert"
+            className="mt-4 rounded-2xl border border-[color:var(--danger)] bg-[color:var(--paper)] p-6 text-sm font-semibold text-[color:var(--danger)]"
+          >
+            Could not load a pair to label - the query failed rather than coming back empty. This is
+            usually the admin gate or the database, not the feature store, so refreshing features
+            will not help. The server log has the detail.
+          </p>
         ) : (
           <p className="mt-4 rounded-2xl border border-dashed border-[color:var(--line)] bg-[color:var(--paper)] p-6 text-sm font-medium text-[color:var(--slate)]">
             No unlabeled pairs available right now - either everything reachable has been judged, or

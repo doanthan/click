@@ -2,11 +2,12 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { Icon } from "@/components/ds";
+import { SubmitButton } from "@/components/ds-client";
 import { getNotificationsForSession } from "@/lib/event-repository";
 import { markAllReadAction, markReadAction } from "./actions";
 
 export const metadata = {
-  title: "Notifications | Click",
+  title: "Notifications",
 };
 
 const dateFormatter = new Intl.DateTimeFormat("en-AU", {
@@ -40,13 +41,13 @@ export default async function NotificationsPage() {
             </p>
           </div>
           {unread.length > 0 ? (
+            // Clearing the inbox wipes a whole band off the page, so the button
+            // has to hold a real pending state - SubmitButton reads the form's
+            // own status, no client component needed around it.
             <form action={markAllReadAction}>
-              <button
-                type="submit"
-                className="font-display text-[13px] font-semibold text-[color:var(--purple)] hover:underline"
-              >
+              <SubmitButton variant="ghost" size="sm" pendingLabel="Marking…">
                 Mark all as read
-              </button>
+              </SubmitButton>
             </form>
           ) : null}
         </div>
@@ -103,8 +104,12 @@ function NotificationItem({
 }) {
   const ts = new Date(createdAt);
   return (
+    // rise-soft unconditionally, never toggled on a state: an item that gets
+    // marked read moves between the Unread and Earlier lists, so React remounts
+    // it and the 8px rise replays - the reorder reads as movement instead of a
+    // teleport. The resting state is fully visible either way.
     <div
-      className={`flex items-start gap-3 px-4 py-3.5 ${first ? "" : "border-t border-[color:var(--line-soft)]"} ${
+      className={`rise-soft flex items-start gap-3 px-4 py-3.5 ${first ? "" : "border-t border-[color:var(--line-soft)]"} ${
         unread ? "bg-[color:var(--lavender-100)]" : ""
       }`}
     >
@@ -123,21 +128,23 @@ function NotificationItem({
               View →
             </Link>
           ) : null}
+          {/* "Open" sat beside "View" reading as its synonym. It actually shows
+              the emailed copy of this notification, so it says so. */}
           <Link
             href={`/notifications/${id}/email`}
             className="font-display text-[13px] font-semibold text-[color:var(--slate)] hover:text-[color:var(--ink)]"
           >
-            Open
+            Read the email
           </Link>
           {unread ? (
+            // The one mutation in the row, so it is the one control that looks
+            // like a button - and SubmitButton gives it the pending state the
+            // bare submit never had.
             <form action={markReadAction}>
               <input type="hidden" name="notification_id" value={id} />
-              <button
-                type="submit"
-                className="font-display text-[13px] font-semibold text-[color:var(--slate)] hover:text-[color:var(--ink)]"
-              >
+              <SubmitButton variant="secondary" size="sm" pendingLabel="Marking…">
                 Mark read
-              </button>
+              </SubmitButton>
             </form>
           ) : null}
         </div>

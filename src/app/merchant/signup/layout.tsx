@@ -9,7 +9,7 @@ import {
 } from "@/lib/event-repository";
 
 export const metadata = {
-  title: "Become a host | Click",
+  title: "Become a host",
   description:
     "Set up your Click merchant profile: business details, contact & address, and compliance documents.",
 };

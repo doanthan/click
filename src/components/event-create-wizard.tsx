@@ -17,12 +17,14 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { toast } from "sonner";
-import { Badge } from "./ds";
+import { Badge, EndowedProgress, FormField } from "./ds";
+import { InfoNote, WizardStepper } from "./merchant-ds";
+import { ConfirmDialog } from "./confirm-dialog";
 import { MapboxAutocomplete, type MapboxPlace } from "./mapbox-autocomplete";
 import { toTitleCase } from "@/lib/text-format";
 import { EVENT_CREATE_STORAGE_KEY } from "@/lib/event-create-storage";
 
-// Create-event — multi-step wizard. Each step has its own URL so users can
+// Create-event - multi-step wizard. Each step has its own URL so users can
 // bookmark, link to, and browser-back through them:
 //   /merchant/events/create           · redirects → /basics
 //   /merchant/events/create/basics    · step 1 · what is this event
@@ -47,7 +49,7 @@ type WizardValues = {
   category: string;
   startsAt: string;
   // How long the event runs, in minutes. Combined with startsAt server-side to
-  // set events.ends_at — without it every event silently defaulted to 2 hours.
+  // set events.ends_at - without it every event silently defaulted to 2 hours.
   durationMinutes: string;
   capacity: string;
   locationName: string;
@@ -87,10 +89,14 @@ export const STEP_PATHS = [
   "/merchant/events/create/media",
   "/merchant/events/create/review",
 ] as const;
+// Endowed progress: already moving on step one, a big jump for clearing the two
+// heavy steps (Basics + Schedule hold 13 of the 18 fields), and never 100 until
+// the event actually exists.
+const STEP_PCT = [24, 52, 72, 88, 96] as const;
 
 // Wizard form state is held in React context (mounted in the route layout), so
 // it survives client-side navigation between step pages. It does NOT survive a
-// full page load — a refresh or a direct deep-link to a later step (e.g. opening
+// full page load - a refresh or a direct deep-link to a later step (e.g. opening
 // /review on its own) starts a fresh context and resets to these defaults. To
 // keep entered values across those reloads too, we mirror the state into
 // sessionStorage and rehydrate from it on mount.
@@ -120,46 +126,93 @@ const initial: WizardValues = {
   recurrenceCount: "1",
 };
 
-function validateStep(step: StepIndex, v: WizardValues): string | null {
+/* One message per offending field rather than one message per attempt. The old
+   validator returned a single string and bailed on the first failure, so a
+   merchant with four empty fields got bounced four times, learning one
+   requirement per attempt, from a paragraph down by the nav buttons that never
+   said WHICH field it meant. */
+type FieldErrors = Partial<Record<keyof WizardValues, string>>;
+
+/* Insertion order below is DOM order within the step, and Object.keys preserves
+   it for string keys - that is what makes "focus the first offender" land on the
+   topmost one rather than an arbitrary field. */
+function validateStep(step: StepIndex, v: WizardValues): FieldErrors {
+  const errors: FieldErrors = {};
+
   if (step === 0) {
-    if (!v.title.trim()) return "Event title is required.";
-    if (!v.groupName.trim()) return "Group / host name is required.";
-    if (!v.description.trim()) return "Description is required.";
-    if (!v.relationshipGoal.trim())
-      return "Tell people why they should come (relationship goal).";
-  }
-  if (step === 1) {
-    if (!v.startsAt) return "Pick a start date and time.";
-    const start = new Date(v.startsAt);
-    if (Number.isNaN(start.getTime()) || start.getTime() < Date.now()) {
-      return "Start time must be in the future.";
+    if (!v.title.trim()) errors.title = "Give the event a title.";
+    if (!v.groupName.trim()) errors.groupName = "Add the group or host name.";
+    if (!v.relationshipGoal.trim()) {
+      errors.relationshipGoal = "Say why people should come - one line is plenty.";
     }
-    const capacity = Number.parseInt(v.capacity, 10);
-    if (!Number.isFinite(capacity) || capacity < 1) {
-      return "Capacity must be a positive number.";
+    if (!v.description.trim()) errors.description = "Add a short description.";
+  }
+
+  if (step === 1) {
+    if (!v.startsAt) {
+      errors.startsAt = "Pick a start date and time.";
+    } else {
+      const start = new Date(v.startsAt);
+      if (Number.isNaN(start.getTime()) || start.getTime() < Date.now()) {
+        errors.startsAt = "Start time must be in the future.";
+      }
     }
     if (v.recurrenceFreq !== "none") {
       const n = Number.parseInt(v.recurrenceCount, 10);
       if (!Number.isFinite(n) || n < 2 || n > 26) {
-        return "Pick 2–26 occurrences for a recurring event.";
+        errors.recurrenceCount = "Pick 2-26 occurrences for a repeating event.";
       }
     }
+    // Whole seats only. The capacity input used to strip every non-digit, so
+    // "1.5" silently became 15 - a 10x guest list nobody typed. The field now
+    // keeps what was typed and this is what rejects it, so the merchant sees
+    // their own value next to the reason it was refused.
+    if (!/^\d+$/.test(v.capacity.trim()) || Number.parseInt(v.capacity, 10) < 1) {
+      errors.capacity = "Capacity must be a whole number of seats, e.g. 12.";
+    }
+    // Stripe runs in live mode, so a price that reads differently from what was
+    // typed is a real charge on a real card. The same strip turned "12.50" into
+    // "1250" and the Review card showed "$1250" as if it were intended.
+    if (v.price.trim() && !/^\d+(\.\d{1,2})?$/.test(v.price.trim())) {
+      errors.price = "Price must be a dollar amount, e.g. 12.50.";
+    }
   }
+
   if (step === 2) {
-    if (!v.locationName.trim()) return "Venue name is required.";
-    if (!v.suburb.trim()) return "Suburb is required.";
+    if (!v.locationName.trim()) errors.locationName = "Name the venue.";
+    if (!v.suburb.trim()) errors.suburb = "Add the suburb.";
     // Require the full street address so confirmed attendees always get a
     // complete address (number, street, state, postcode) once the venue
-    // unlocks — not just a suburb. Picking a Mapbox suggestion fills this with
+    // unlocks - not just a suburb. Picking a Mapbox suggestion fills this with
     // the full formatted line; merchants can append a unit/level number.
-    if (!v.address.trim()) return "Street address is required.";
+    if (!v.address.trim()) errors.address = "Add the street address.";
   }
+
   if (step === 3) {
-    // Media step is optional — when the merchant skips uploads we fall back
+    // Media step is optional - when the merchant skips uploads we fall back
     // to a category-themed placeholder server-side, so there's nothing to
     // validate here.
   }
-  return null;
+
+  return errors;
+}
+
+/** DOM id for a field's control, so validation can focus the one at fault. */
+function fieldAnchorId(field: keyof WizardValues) {
+  return `ce-field-${field}`;
+}
+
+/* Keep the digits and at most one decimal point, capped at `decimals` places.
+   Deliberately NOT a "make it a valid number" transform: a controlled input that
+   rewrites what you typed is exactly how "12.50" became "1250". Anything this
+   leaves malformed ("12.", "") is validateStep's problem, not the keystroke's. */
+function sanitizeAmount(raw: string, decimals: number): string {
+  const cleaned = raw.replace(/[^0-9.]/g, "");
+  const dot = cleaned.indexOf(".");
+  if (dot === -1) return cleaned;
+  const whole = cleaned.slice(0, dot);
+  const fraction = cleaned.slice(dot + 1).replace(/\./g, "").slice(0, decimals);
+  return `${whole}.${fraction}`;
 }
 
 // ---------- date helpers (DateTimePicker + RecurrencePicker) ----------
@@ -284,7 +337,7 @@ type WizardContextValue = {
   categoryOptions: string[];
   tagOptions: string[];
   // Suggestions for the Basics step's group/host-name combobox and the Location
-  // step's venue combobox — derived server-side from the merchant's profile and
+  // step's venue combobox - derived server-side from the merchant's profile and
   // past events. Both fields stay freetext; these just save retyping.
   hostNameOptions: string[];
   venueOptions: string[];
@@ -295,6 +348,21 @@ type WizardContextValue = {
   chargesEnabled: boolean;
   stepError: string | null;
   setStepError: Dispatch<SetStateAction<string | null>>;
+  // Per-field validation messages for the step currently on screen. Each step
+  // section reads its own keys and hands them to FormField's `error` slot, so
+  // the message sits under the control it is about.
+  fieldErrors: FieldErrors;
+  setFieldErrors: Dispatch<SetStateAction<FieldErrors>>;
+  // True when the mount rehydrate actually applied a saved draft - either the
+  // merchant's own unfinished one or a "Duplicate event" seed. Without this the
+  // wizard silently opens full of last month's event with no explanation.
+  restoredDraft: boolean;
+  discardDraft: () => void;
+  // Mutable, NOT state: WizardShell remounts on every step route, so a piece of
+  // state would reset with it. The provider lives in the layout and survives, so
+  // the flag rides here and tells the freshly-mounted shell whether it arrived
+  // by navigation (move focus) or by first load (leave focus alone).
+  navigatedRef: React.MutableRefObject<boolean>;
   submitting: boolean;
   setSubmitting: Dispatch<SetStateAction<boolean>>;
   // True while the Media step has one or more image uploads in flight. Set by
@@ -336,16 +404,24 @@ export function EventCreateProvider({
     category: categoryOptions[0] ?? "",
   }));
   const [stepError, setStepError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [submitting, setSubmitting] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [restoredDraft, setRestoredDraft] = useState(false);
   // Gate persistence until after the rehydrate effect runs, so we don't clobber
   // saved progress with the default state on first paint.
   const [hydrated, setHydrated] = useState(false);
+  const navigatedRef = useRef(false);
 
   // Rehydrate from sessionStorage on mount (client only). Done in an effect
   // rather than the useState initializer so server + first client render agree
   // on the defaults (no hydration mismatch); the saved values flash in right
   // after mount.
+  //
+  // NOT switched to the shared useFormDraft hook: that hook stores a versioned
+  // { v, values } envelope, and merchant-event-duplicate-button.tsx:48 writes a
+  // BARE values object into this same key. Adopting the envelope here would make
+  // every "Duplicate event" seed look like a stale draft and get dropped.
   useEffect(() => {
     let saved: Partial<WizardValues> | null = null;
     try {
@@ -354,10 +430,13 @@ export function EventCreateProvider({
         saved = JSON.parse(raw) as Partial<WizardValues>;
       }
     } catch {
-      // Malformed / unavailable storage — fall back to defaults.
+      // Malformed / unavailable storage - fall back to defaults.
     }
     const frame = window.requestAnimationFrame(() => {
-      if (saved) setValues((v) => ({ ...v, ...saved }));
+      if (saved) {
+        setValues((v) => ({ ...v, ...saved }));
+        setRestoredDraft(true);
+      }
       setHydrated(true);
     });
     return () => window.cancelAnimationFrame(frame);
@@ -370,12 +449,36 @@ export function EventCreateProvider({
     try {
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(values));
     } catch {
-      // Storage full / unavailable — non-fatal, the in-memory state still works.
+      // Storage full / unavailable - non-fatal, the in-memory state still works.
     }
   }, [values, hydrated]);
 
-  const set = <K extends keyof WizardValues>(key: K, value: WizardValues[K]) =>
+  const set = <K extends keyof WizardValues>(key: K, value: WizardValues[K]) => {
     setValues((v) => ({ ...v, [key]: value }));
+    // Editing a field retires its error. Leaving it up while the merchant fixes
+    // the value is how a form starts reading as broken rather than picky.
+    setFieldErrors((prev) => {
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
+
+  // "Start over" from the restored-draft note. Irreversible, so WizardShell puts
+  // a ConfirmDialog in front of it.
+  const discardDraft = () => {
+    try {
+      sessionStorage.removeItem(STORAGE_KEY);
+    } catch {
+      // Nothing to do - a draft we cannot remove is still harmless, and the
+      // in-memory reset below is what the merchant actually asked for.
+    }
+    setValues({ ...initial, category: categoryOptions[0] ?? "" });
+    setFieldErrors({});
+    setStepError(null);
+    setRestoredDraft(false);
+  };
 
   return (
     <WizardContext.Provider
@@ -390,6 +493,11 @@ export function EventCreateProvider({
         chargesEnabled,
         stepError,
         setStepError,
+        fieldErrors,
+        setFieldErrors,
+        restoredDraft,
+        discardDraft,
+        navigatedRef,
         submitting,
         setSubmitting,
         uploading,
@@ -410,48 +518,102 @@ export function WizardShell({
   step: StepIndex;
   children: React.ReactNode;
 }) {
-  const { values, stepError, setStepError, submitting, setSubmitting, uploading } =
-    useWizard();
+  const {
+    values,
+    stepError,
+    setStepError,
+    setFieldErrors,
+    restoredDraft,
+    discardDraft,
+    navigatedRef,
+    submitting,
+    setSubmitting,
+    uploading,
+  } = useWizard();
   const router = useRouter();
   const isLast = step === STEP_COUNT - 1;
   const errorRef = useRef<HTMLParagraphElement>(null);
+  const stepBodyRef = useRef<HTMLDivElement>(null);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  // How many occurrence POSTs have finished, out of how many the submit will
+  // make. Null until submit starts, so the bar only exists during the wait.
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(
+    null,
+  );
+
+  // Each step is its own route, so this shell REMOUNTS on every Next / Back and
+  // focus falls back to <body>. Move it to the top of the new step body - which
+  // sits immediately before that step's <h1> - but only when we got here by
+  // navigating, never on the first load of the wizard (stealing focus from a
+  // page the merchant just opened is worse than not moving it).
+  useEffect(() => {
+    if (!navigatedRef.current) return;
+    navigatedRef.current = false;
+    stepBodyRef.current?.focus();
+  }, [navigatedRef]);
+
+  /**
+   * Shared by goNext and submit: mark every offending field and say how many.
+   * `focusFirst` is false on the submit path, where we are about to route to
+   * another step - the focus would land on a control that is being unmounted,
+   * and the remount effect above moves focus to the new step body anyway.
+   */
+  function showFieldErrors(
+    errors: FieldErrors,
+    { stepLabel, focusFirst }: { stepLabel?: string; focusFirst: boolean },
+  ) {
+    const keys = Object.keys(errors) as Array<keyof WizardValues>;
+    setFieldErrors(errors);
+    const summary =
+      keys.length === 1
+        ? (errors[keys[0]] as string)
+        : `${keys.length} things still need a moment${stepLabel ? ` on ${stepLabel}` : ""} - they're marked below.`;
+    setStepError(summary);
+    toast.error(summary);
+    if (!focusFirst) return;
+    // Land the merchant ON the offending control. The old version scrolled the
+    // summary paragraph by the nav buttons into view, which said something was
+    // wrong but never where (bug board #210).
+    requestAnimationFrame(() => {
+      const first = document.getElementById(fieldAnchorId(keys[0]));
+      const target = first ?? errorRef.current;
+      target?.focus();
+      target?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }
 
   function goNext() {
     if (uploading) {
       toast.error("Hang on - your photos are still uploading.");
       return;
     }
-    const err = validateStep(step, values);
-    if (err) {
-      setStepError(err);
-      toast.error(err);
-      // Pull the inline error next to the button and focus it — on a tall
-      // form the top-right toast is easy to miss (bug board #210).
-      requestAnimationFrame(() => {
-        errorRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-        errorRef.current?.focus();
-      });
+    const errors = validateStep(step, values);
+    if (Object.keys(errors).length > 0) {
+      showFieldErrors(errors, { focusFirst: true });
       return;
     }
+    setFieldErrors({});
     setStepError(null);
+    navigatedRef.current = true;
     router.push(STEP_PATHS[step + 1]);
   }
 
   function goBack() {
     if (step > 0) {
       setStepError(null);
+      navigatedRef.current = true;
       router.push(STEP_PATHS[step - 1]);
     }
   }
 
   async function submit() {
-    // Re-run every step's validation on final submit — guards against a user
+    // Re-run every step's validation on final submit - guards against a user
     // editing an earlier step after passing it, or deep-linking past one.
     for (let s = 0; s < STEP_COUNT; s++) {
-      const err = validateStep(s as StepIndex, values);
-      if (err) {
-        setStepError(err);
-        toast.error(err);
+      const errors = validateStep(s as StepIndex, values);
+      if (Object.keys(errors).length > 0) {
+        showFieldErrors(errors, { stepLabel: STEP_TITLES[s], focusFirst: false });
+        navigatedRef.current = true;
         router.push(STEP_PATHS[s]);
         return;
       }
@@ -459,6 +621,7 @@ export function WizardShell({
 
     setSubmitting(true);
     setStepError(null);
+    setFieldErrors({});
     try {
       // Expand recurrence client-side: one POST per occurrence. "none" yields
       // a single-element array so the loop is the only path.
@@ -477,10 +640,17 @@ export function WizardShell({
       const errors: string[] = [];
       let firstTitle: string | undefined;
       // Whether the created event(s) went straight live (trusted / auto-approved
-      // merchant) vs landed in the pending review queue — drives the toast copy.
+      // merchant) vs landed in the pending review queue - drives the toast copy.
       let firstStatus: string | undefined;
 
-      for (const startsAt of startsAtList) {
+      // Indexed rather than for-of purely so the bar below can say which
+      // occurrence is in flight. The order, the awaits and the one-POST-at-a-time
+      // shape are unchanged - a fortnightly x26 event is still 26 serial
+      // round-trips, it just stops looking like a hung button.
+      setProgress({ done: 0, total: startsAtList.length });
+      for (let i = 0; i < startsAtList.length; i++) {
+        const startsAt = startsAtList[i];
+        setProgress({ done: i, total: startsAtList.length });
         const form = new FormData();
         form.set("title", values.title);
         form.set("groupName", values.groupName);
@@ -499,7 +669,7 @@ export function WizardShell({
         form.set("tags", values.tags);
         form.set("relationshipGoal", values.relationshipGoal);
         form.set("description", values.description);
-        // Multi-photo gallery from the Media step — one append per URL so the
+        // Multi-photo gallery from the Media step - one append per URL so the
         // server gets the full ordered list via formData.getAll("imageUrls").
         for (const url of values.images) {
           if (url) form.append("imageUrls", url);
@@ -524,10 +694,10 @@ export function WizardShell({
         };
         if (!response.ok) {
           // Server can hand us a follow-up URL (e.g. MerchantSignupRequired →
-          // /merchant/signup). Toast the reason and navigate there — every
+          // /merchant/signup). Toast the reason and navigate there - every
           // queued occurrence shares the same root cause, so there's nothing
           // useful to retry until the merchant finishes the step the server
-          // pointed them at. (Paid events no longer gate on payout setup — the
+          // pointed them at. (Paid events no longer gate on payout setup - the
           // event sits in pending for admin review regardless.)
           if (payload.redirect) {
             const msg = payload.error ?? "Action needed before publishing.";
@@ -550,21 +720,21 @@ export function WizardShell({
         return;
       }
 
-      // Submission succeeded — drop the saved draft so the next "Create event"
-      // starts clean instead of rehydrating this event's values.
-      try {
-        sessionStorage.removeItem(STORAGE_KEY);
-      } catch {
-        // Non-fatal.
-      }
-
       const label = firstTitle ?? values.title ?? "Event";
-      // Trusted merchants (auto-approve on) publish straight to live — congratulate
+      // Trusted merchants (auto-approve on) publish straight to live - congratulate
       // them instead of saying it's "submitted for admin review", which reads as a
       // contradiction of the trust they were just granted (bug board #180).
       const liveNow =
         firstStatus === "live" || firstStatus === "featured" || firstStatus === "Live";
       if (errors.length === 0) {
+        // Only a clean sweep drops the saved draft, and only here on the success
+        // branch. Clearing it before the partial-failure branch below (as this
+        // used to) left the dates that failed with nothing to retry from.
+        try {
+          sessionStorage.removeItem(STORAGE_KEY);
+        } catch {
+          // Non-fatal.
+        }
         toast.success(
           liveNow
             ? startsAtList.length === 1
@@ -587,14 +757,38 @@ export function WizardShell({
       toast.error(msg);
     } finally {
       setSubmitting(false);
+      setProgress(null);
     }
   }
 
   return (
     <div className="rounded-2xl bg-[color:var(--paper)] shadow-[var(--shadow-sm)]">
-      <StepIndicator current={step} />
+      {/* Bar above dots: the bar answers "how far in am I", the dots answer
+          "which part am I on". PCT is weighted to the real work rather than
+          evenly - Basics carries 7 fields and 4 of the 9 required, Review
+          carries none - so the back half doesn't feel like it stalled. */}
+      <div className="space-y-3.5 border-b border-[color:var(--mist)] px-5 py-4">
+        <EndowedProgress step={step} total={STEP_COUNT} pct={STEP_PCT[step]} />
+        <WizardStepper steps={STEP_TITLES} current={step} paths={STEP_PATHS} />
+      </div>
 
-      <div className="space-y-5 p-6">
+      <div ref={stepBodyRef} tabIndex={-1} className="space-y-5 p-6 outline-none">
+        {/* A restored draft used to arrive silently, which is worst on the
+            "Duplicate event" path - the merchant opens Create event and finds it
+            already full of last month's event with no explanation. */}
+        {restoredDraft && step === 0 ? (
+          <InfoNote icon="info">
+            Picked up where you left off - your last draft is filled in below.{" "}
+            <button
+              type="button"
+              onClick={() => setConfirmDiscard(true)}
+              className="font-semibold text-[color:var(--purple)] underline underline-offset-2"
+            >
+              Start over
+            </button>
+          </InfoNote>
+        ) : null}
+
         {children}
 
         {stepError ? (
@@ -606,6 +800,23 @@ export function WizardShell({
           >
             {stepError}
           </p>
+        ) : null}
+
+        {/* The submit fires one POST per occurrence, serially, and can take a
+            while. Without a counter the merchant cannot tell a working submit
+            from a hung one, and the natural response - reload - leaves half the
+            occurrences created. */}
+        {progress ? (
+          <EndowedProgress
+            step={progress.done}
+            total={progress.total}
+            label={
+              progress.total === 1
+                ? "Creating your event…"
+                : `Creating ${Math.min(progress.done + 1, progress.total)} of ${progress.total}…`
+            }
+            className="rise-soft"
+          />
         ) : null}
 
         <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
@@ -621,6 +832,8 @@ export function WizardShell({
             <button
               type="button"
               onClick={submit}
+              // Genuinely must not double-fire: a second click is a second set
+              // of live-Stripe events. This is the one place `disabled` earns it.
               disabled={submitting}
               className="ck-btn ck-btn--primary ck-btn--md"
             >
@@ -630,93 +843,41 @@ export function WizardShell({
             <button
               type="button"
               onClick={goNext}
-              disabled={uploading}
-              className="ck-btn ck-btn--primary ck-btn--md"
+              // aria-disabled, NOT disabled: a disabled button never dispatches a
+              // click, which made goNext's "photos are still uploading" toast
+              // unreachable and dropped keyboard users out of the tab order with
+              // no explanation. goNext still refuses to advance.
+              aria-disabled={uploading || undefined}
+              aria-busy={uploading || undefined}
+              className="ck-btn ck-btn--primary ck-btn--md aria-disabled:cursor-not-allowed aria-disabled:opacity-60"
             >
               {uploading ? "Uploading…" : "Next →"}
             </button>
           )}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmDiscard}
+        title="Start over?"
+        description="This clears the draft that was filled in and gives you an empty form. It can't be undone."
+        confirmLabel="Start over"
+        cancelLabel="Keep the draft"
+        onConfirm={() => {
+          setConfirmDiscard(false);
+          discardDraft();
+        }}
+        onCancel={() => setConfirmDiscard(false)}
+      />
     </div>
   );
 }
 
-function StepIndicator({ current }: { current: StepIndex }) {
-  // Every step is a <Link> so users can jump anywhere in the wizard — the
-  // form state lives in React context (mounted in layout.tsx), so navigating
-  // away preserves what they've entered, and Submit re-runs every validator
-  // and rebounces them to the offending step if any are still incomplete.
-  // The current step links to itself (idempotent) just to keep the markup
-  // uniform; aria-current marks it for screen readers.
-  // Visual vocabulary matches the merchant-console WizardStepper: completed
-  // steps sage with a check, current step Deep Purple, upcoming a quiet outline.
-  return (
-    <ol className="flex flex-wrap items-center gap-3 border-b border-[color:var(--mist)] px-5 py-4">
-      {STEP_TITLES.map((title, idx) => {
-        const active = idx === current;
-        const done = idx < current;
-        return (
-          <li key={title}>
-            <Link
-              href={STEP_PATHS[idx]}
-              aria-label={`Go to ${title}`}
-              aria-current={active ? "step" : undefined}
-              className="inline-flex items-center gap-2 rounded-full transition-opacity hover:opacity-75 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--purple)]"
-            >
-              <span
-                className={`inline-flex size-6 flex-none items-center justify-center rounded-full text-[12px] font-semibold tabular-nums ${
-                  done
-                    ? "bg-[color:var(--sage)] text-[color:var(--champagne)]"
-                    : active
-                      ? "bg-[color:var(--purple)] text-[color:var(--champagne)]"
-                      : "border-[1.5px] border-[color:var(--mist-strong)] bg-[color:var(--paper)] text-[color:var(--slate)]"
-                }`}
-              >
-                {done ? <span aria-hidden>✓</span> : idx + 1}
-              </span>
-              <span
-                className={`text-[12.5px] font-semibold ${
-                  active ? "text-[color:var(--purple-700)]" : "text-[color:var(--slate)]"
-                }`}
-              >
-                {title}
-              </span>
-            </Link>
-          </li>
-        );
-      })}
-    </ol>
-  );
-}
-
-function Field({
-  label,
-  children,
-  hint,
-}: {
-  label: string;
-  hint?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="grid gap-2 text-sm text-[color:var(--ink)]">
-      <span className="text-[12.5px] font-semibold text-[color:var(--slate)]">
-        {label}
-      </span>
-      {children}
-      {hint ? (
-        <span className="text-xs font-medium leading-5 text-[color:var(--slate)]">
-          {hint}
-        </span>
-      ) : null}
-    </label>
-  );
-}
-
-function inputClass() {
-  return "rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] px-4 py-3 text-base text-[color:var(--ink)] outline-none focus:border-[color:var(--purple)] focus:ring-2 focus:ring-[color:var(--lavender-100)]";
-}
+/* StepIndicator and the local Field / inputClass() used to live here. All three
+   are gone: the stepper is merchant-ds.tsx's WizardStepper (which links ONLY
+   completed steps, so nobody lands on a Review card reading "Untitled event"),
+   and the field chrome is ds.tsx's FormField over the .ck-input class - which is
+   also what gives every control here an `error` slot. */
 
 // Max tags the merchant can attach. Mirrors the server-side `.slice(0, 8)` in
 // createEventForMerchant so the UI can't promise more than the backend keeps.
@@ -731,7 +892,7 @@ function parseTags(value: string): string[] {
 
 // Tag input backed by a comma-separated string (the wizard's `values.tags`).
 // Merchants search the admin-curated `options` list and click to add as pills.
-// Tags are "click tags" — never free-form: only labels present in `options` can
+// Tags are "click tags" - never free-form: only labels present in `options` can
 // be added, so a merchant cannot mint a new tag. Picking from the list keeps tag
 // spelling consistent with the tags users hold on their profiles, which is
 // what powers matching. Selected tags render as removable pills; the serialised
@@ -761,7 +922,7 @@ function TagPicker({
   }, [options]);
   const atLimit = selected.length >= MAX_TAGS;
 
-  // All available (unselected) tags matching the search box — rendered as a
+  // All available (unselected) tags matching the search box - rendered as a
   // browsable, clickable chip cloud so merchants can discover existing tags
   // without having to guess search terms.
   const browsable = useMemo(() => {
@@ -833,15 +994,15 @@ function TagPicker({
         placeholder={
           atLimit ? `Tag limit reached (${MAX_TAGS})` : "Search tags…"
         }
-        className={`${inputClass()} h-12 w-full disabled:cursor-not-allowed disabled:opacity-60`}
+        className="ck-input w-full disabled:cursor-not-allowed disabled:opacity-60"
       />
 
-      {/* Browsable chip cloud — tap to add, no typing required. The list does
+      {/* Browsable chip cloud - tap to add, no typing required. The list does
           NOT use an inner scroll area: on phones a tap inside a nested
           overflow-y-auto box gets swallowed as a scroll-start, so chips could
           only be added via search (bug board #179). Instead we render a plain
           wrapping cloud and, when nothing's typed, cap how many chips show so
-          the full list can't blow out the form — search narrows it for the
+          the full list can't blow out the form - search narrows it for the
           rest. `touch-manipulation` also drops the mobile tap delay. */}
       {!atLimit && browsable.length > 0 ? (
         (() => {
@@ -880,7 +1041,7 @@ function TagPicker({
 }
 
 // Single-value text input with a suggestion dropdown. Unlike TagPicker, freetext
-// is allowed — `options` are no-retyping conveniences (the merchant's host names
+// is allowed - `options` are no-retyping conveniences (the merchant's host names
 // / past venues), not a closed list. Picking a suggestion fills the field; the
 // merchant can still type anything. `transform` lets callers normalise input as
 // it's typed (e.g. title-casing), applied to typed text but not to picked options.
@@ -891,6 +1052,8 @@ function Combobox({
   placeholder,
   required,
   transform,
+  id,
+  invalid,
 }: {
   value: string;
   options: string[];
@@ -898,6 +1061,11 @@ function Combobox({
   placeholder?: string;
   required?: boolean;
   transform?: (s: string) => string;
+  // The wrapping FormField owns the label and the message; the control it wraps
+  // is ours, so the anchor id (for focus-the-first-offender) and the --danger
+  // hairline have to be passed down.
+  id?: string;
+  invalid?: boolean;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -912,6 +1080,7 @@ function Combobox({
   return (
     <div className="relative">
       <input
+        id={id}
         type="text"
         value={value}
         onChange={(e) => {
@@ -921,7 +1090,8 @@ function Combobox({
         onFocus={() => setOpen(true)}
         onBlur={() => setTimeout(() => setOpen(false), 120)}
         placeholder={placeholder}
-        className={inputClass()}
+        aria-invalid={invalid || undefined}
+        className={`ck-input w-full ${invalid ? "ck-input--invalid" : ""}`}
         required={required}
       />
       {open && suggestions.length > 0 ? (
@@ -972,7 +1142,8 @@ function composeGoalFromIntents(labels: string[]): string {
 }
 
 export function BasicsSection() {
-  const { values, set, categoryOptions, tagOptions, hostNameOptions } = useWizard();
+  const { values, set, fieldErrors, categoryOptions, tagOptions, hostNameOptions } =
+    useWizard();
   const [selectedIntents, setSelectedIntents] = useState<string[]>([]);
 
   function toggleIntent(label: string) {
@@ -994,52 +1165,59 @@ export function BasicsSection() {
   }
 
   return (
-    <div className="space-y-5">
-      <header>
+    // rise-soft on the section root, then three staggered groups. Capped at
+    // three: past ~4 the last group is dead time, not arrival. The keyframes end
+    // on transform:none, so the Combobox dropdown still escapes the container.
+    <div className="space-y-5 rise-soft">
+      <header className="rise-soft rise-d1">
         <p className="eyebrow">Step 1 · Basics</p>
-        <h2 className="font-display mt-2 text-3xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)]">
+        <h1 className="font-display mt-2 text-3xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)]">
           What is this event?
-        </h2>
+        </h1>
         <p className="mt-2 text-sm leading-6 text-[color:var(--slate)]">
           Don&apos;t worry about getting it perfect - you can edit any of this later from your event page.
         </p>
       </header>
-      <div className="grid gap-4 md:grid-cols-2">
-        <Field label="Event title" hint="Auto-capitalised as you type.">
-          <input
-            value={values.title}
-            onChange={(e) => set("title", toTitleCase(e.target.value))}
-            placeholder="Restaurant Meetup: Table for Eight"
-            className={inputClass()}
-            required
-          />
-        </Field>
-        <Field
+      <div className="grid gap-4 rise-soft rise-d2 md:grid-cols-2">
+        <FormField
+          label="Event title"
+          hint="Auto-capitalised as you type."
+          required
+          error={fieldErrors.title}
+          id={fieldAnchorId("title")}
+          value={values.title}
+          onChange={(e) => set("title", toTitleCase(e.target.value))}
+          placeholder="Restaurant Meetup: Table for Eight"
+        />
+        <FormField
           label="Group / host name"
           hint="Pick a saved name or type a new one."
+          required
+          error={fieldErrors.groupName}
         >
           <Combobox
+            id={fieldAnchorId("groupName")}
+            invalid={Boolean(fieldErrors.groupName)}
             value={values.groupName}
             options={hostNameOptions}
             onChange={(next) => set("groupName", next)}
             placeholder="Sydney Table Friends"
             required
           />
-        </Field>
-        <Field label="Category">
-          <select
-            value={values.category}
-            onChange={(e) => set("category", e.target.value)}
-            className={`${inputClass()} h-12 self-start`}
-          >
-            {categoryOptions.length === 0 ? (
-              <option value="">No categories available</option>
-            ) : (
-              categoryOptions.map((c) => <option key={c}>{c}</option>)
-            )}
-          </select>
-        </Field>
-        <Field
+        </FormField>
+        <FormField
+          as="select"
+          label="Category"
+          value={values.category}
+          onChange={(e) => set("category", e.target.value)}
+        >
+          {categoryOptions.length === 0 ? (
+            <option value="">No categories available</option>
+          ) : (
+            categoryOptions.map((c) => <option key={c}>{c}</option>)
+          )}
+        </FormField>
+        <FormField
           label="Tags"
           hint="Search and pick from Click's tag list. Top 5 used for matching."
         >
@@ -1048,133 +1226,154 @@ export function BasicsSection() {
             options={tagOptions}
             onChange={(next) => set("tags", next)}
           />
-        </Field>
+        </FormField>
       </div>
-      <Field
-        label="Who's this event for? (intent)"
-        hint="Pick one or more - we'll draft the goal line below, which you can edit."
-      >
-        <div className="flex flex-wrap gap-2">
-          {EVENT_INTENTS.map((intent) => {
-            const active = selectedIntents.includes(intent.label);
-            return (
-              <button
-                key={intent.label}
-                type="button"
-                aria-pressed={active}
-                onClick={() => toggleIntent(intent.label)}
-                className={`min-h-11 rounded-xl border px-4 text-sm font-medium transition-colors ${
-                  active
-                    ? "border-transparent bg-[color:var(--purple)] text-[color:var(--champagne)]"
-                    : "border-[color:var(--mist)] bg-[color:var(--paper)] text-[color:var(--ink)] hover:bg-[color:var(--lavender-100)]"
-                }`}
-              >
-                {intent.label}
-              </button>
-            );
-          })}
-        </div>
-      </Field>
-      <Field label="Why should people come? (relationship goal)">
-        <input
+      <div className="space-y-5 rise-soft rise-d3">
+        <FormField
+          label="Who's this event for? (intent)"
+          hint="Pick one or more - we'll draft the goal line below, which you can edit."
+        >
+          <div className="flex flex-wrap gap-2">
+            {EVENT_INTENTS.map((intent) => {
+              const active = selectedIntents.includes(intent.label);
+              return (
+                <button
+                  key={intent.label}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => toggleIntent(intent.label)}
+                  // background-color LONGHAND on the selected state, never a
+                  // transitioned `background` shorthand - the shorthand leaves
+                  // the selected chip unpainted mid-transition.
+                  className={`min-h-11 rounded-xl border px-4 text-sm font-medium transition-[background-color,border-color] ${
+                    active
+                      ? "border-transparent bg-[color:var(--purple)] text-[color:var(--champagne)]"
+                      : "border-[color:var(--mist)] bg-[color:var(--paper)] text-[color:var(--ink)] hover:bg-[color:var(--lavender-100)]"
+                  }`}
+                >
+                  {intent.label}
+                </button>
+              );
+            })}
+          </div>
+        </FormField>
+        <FormField
+          label="Why should people come? (relationship goal)"
+          required
+          error={fieldErrors.relationshipGoal}
+          id={fieldAnchorId("relationshipGoal")}
           value={values.relationshipGoal}
           onChange={(e) => set("relationshipGoal", e.target.value)}
           placeholder="Make dinner feel like the easiest first plan with new people."
-          className={inputClass()}
         />
-      </Field>
-      <Field label="Short description">
-        <textarea
+        <FormField
+          as="textarea"
+          label="Short description"
+          required
+          error={fieldErrors.description}
+          id={fieldAnchorId("description")}
           value={values.description}
           onChange={(e) => set("description", e.target.value)}
           rows={4}
           placeholder="A hosted restaurant table for people who want dinner plans without the awkward group-chat setup…"
-          className={inputClass()}
         />
-      </Field>
+      </div>
     </div>
   );
 }
 
 export function ScheduleSection() {
-  const { values, set, chargesEnabled } = useWizard();
+  const { values, set, fieldErrors, chargesEnabled } = useWizard();
   return (
-    <div className="space-y-4">
-      <header>
+    <div className="space-y-4 rise-soft">
+      <header className="rise-soft rise-d1">
         <p className="eyebrow">Step 2 · Schedule</p>
-        <h2 className="font-display mt-1 text-2xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)]">
+        <h1 className="font-display mt-1 text-2xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)]">
           When + how many?
-        </h2>
+        </h1>
       </header>
 
-      <DateTimePicker
-        value={values.startsAt}
-        onChange={(v) => set("startsAt", v)}
-      />
+      <div className="space-y-4 rise-soft rise-d2">
+        <DateTimePicker
+          id={fieldAnchorId("startsAt")}
+          error={fieldErrors.startsAt}
+          value={values.startsAt}
+          onChange={(v) => set("startsAt", v)}
+        />
 
-      <Field label="Duration" hint="How long does the event run?">
-        <select
+        <FormField
+          as="select"
+          label="Duration"
+          hint="How long does the event run?"
           value={values.durationMinutes}
           onChange={(e) => set("durationMinutes", e.target.value)}
-          className={inputClass()}
         >
           {DURATION_OPTIONS.map((opt) => (
             <option key={opt.value} value={opt.value}>
               {opt.label}
             </option>
           ))}
-        </select>
-      </Field>
+        </FormField>
 
-      <RecurrencePicker
-        startsAt={values.startsAt}
-        freq={values.recurrenceFreq}
-        count={values.recurrenceCount}
-        onFreqChange={(f) => set("recurrenceFreq", f)}
-        onCountChange={(c) => set("recurrenceCount", c)}
-      />
+        <RecurrencePicker
+          startsAt={values.startsAt}
+          freq={values.recurrenceFreq}
+          count={values.recurrenceCount}
+          error={fieldErrors.recurrenceCount}
+          onFreqChange={(f) => set("recurrenceFreq", f)}
+          onCountChange={(c) => set("recurrenceCount", c)}
+        />
+      </div>
 
-      <div className="grid gap-3 md:grid-cols-2">
-        <Field label="Capacity" hint="Max number of guests.">
-          <input
-            type="number"
-            min={1}
-            step={1}
+      <div className="space-y-4 rise-soft rise-d3">
+        <div className="grid gap-3 md:grid-cols-2">
+          <FormField
+            label="Capacity"
+            hint="Max number of guests."
+            required
+            error={fieldErrors.capacity}
+            id={fieldAnchorId("capacity")}
+            type="text"
             inputMode="numeric"
             value={values.capacity}
-            onChange={(e) => set("capacity", e.target.value.replace(/[^0-9]/g, ""))}
-            className={inputClass()}
-            required
+            // Keeps what was typed rather than rewriting it. The old strip
+            // turned "1.5" into 15 - a guest list nobody asked for - and
+            // validateStep now rejects the decimal instead of hiding it.
+            onChange={(e) => set("capacity", sanitizeAmount(e.target.value, 2))}
+            placeholder="12"
           />
-        </Field>
-        <Field label="Price" hint="Enter 0 for free.">
-          <input
-            type="number"
-            min={0}
-            step={1}
-            inputMode="numeric"
+          <FormField
+            label="Price"
+            hint="Enter 0 for free. Dollars and cents, e.g. 12.50."
+            error={fieldErrors.price}
+            id={fieldAnchorId("price")}
+            // type="text" + inputMode="decimal", NOT type="number": the number
+            // input's own value sanitising is what let the old digits-only strip
+            // turn "12.50" into "1250" without the merchant seeing it happen.
+            // Stripe is live, so that was a real 100x charge.
+            type="text"
+            inputMode="decimal"
             value={values.price}
-            onChange={(e) => set("price", e.target.value.replace(/[^0-9]/g, ""))}
+            onChange={(e) => set("price", sanitizeAmount(e.target.value, 2))}
             placeholder="0"
-            className={inputClass()}
           />
-        </Field>
+        </div>
+        {/* Free events publish without Stripe; a paid one can't be approved until
+            payouts are live. Say it here, at the moment the price is typed, rather
+            than letting the merchant discover it from an admin rejection later. */}
+        {!chargesEnabled && Number(values.price) > 0 ? (
+          <p className="rounded-xl border border-[color:var(--mist)] bg-[color:var(--lav-bg)] px-4 py-3 text-sm leading-6 text-[color:var(--slate)]">
+            You haven&rsquo;t finished payout setup, so a paid event stays in review
+            until you do - free events publish as normal.{" "}
+            <a
+              href="/merchant/onboarding/payouts"
+              className="font-medium text-[color:var(--purple)] underline underline-offset-2"
+            >
+              Set up payouts
+            </a>
+          </p>
+        ) : null}
       </div>
-      {/* Free events publish without Stripe; a paid one can't be approved until
-          payouts are live. Say it here, at the moment the price is typed, rather
-          than letting the merchant discover it from an admin rejection later. */}
-      {!chargesEnabled && Number(values.price) > 0 ? (
-        <p className="mt-4 rounded-xl border border-[color:var(--mist)] bg-[color:var(--lav-bg)] px-4 py-3 text-sm leading-6 text-[color:var(--slate)]">
-          You haven&rsquo;t finished payout setup, so a paid event stays in review
-          until you do - free events publish as normal.{" "}
-          <a
-            href="/merchant/onboarding/payouts"
-            className="font-medium text-[color:var(--rose)] underline underline-offset-2"
-          >
-            Set up payouts
-          </a>
-        </p>
-      ) : null}
     </div>
   );
 }
@@ -1186,9 +1385,16 @@ export function ScheduleSection() {
 function DateTimePicker({
   value,
   onChange,
+  id,
+  error,
 }: {
   value: string;
   onChange: (v: string) => void;
+  // The picker is a fieldset, not one control, so the anchor id lands on the
+  // fieldset (tabIndex -1 below) - that is what "focus the first offender" can
+  // reach when the missing thing is a date rather than a text field.
+  id?: string;
+  error?: string;
 }) {
   const today = useMemo(() => startOfDay(new Date()), []);
   const parsed = parseLocalDateTime(value);
@@ -1243,7 +1449,13 @@ function DateTimePicker({
     : null;
 
   return (
-    <fieldset className="mx-auto w-full max-w-sm rounded-2xl border border-[color:var(--mist)] bg-[color:var(--champagne)] px-4 py-3 md:max-w-2xl">
+    <fieldset
+      id={id}
+      tabIndex={-1}
+      className={`mx-auto w-full max-w-sm rounded-2xl border bg-[color:var(--champagne)] px-4 py-3 outline-none md:max-w-2xl ${
+        error ? "border-[color:var(--danger)]" : "border-[color:var(--mist)]"
+      }`}
+    >
       <legend className="flex flex-wrap items-baseline justify-between gap-2 px-2">
         <span className="text-[12.5px] font-semibold text-[color:var(--slate)]">
           Start time
@@ -1252,6 +1464,15 @@ function DateTimePicker({
           {summary ?? "Pick a day + time"}
         </span>
       </legend>
+
+      {error ? (
+        <p
+          role="alert"
+          className="px-2 pt-1 text-[12.5px] font-medium text-[color:var(--danger)]"
+        >
+          {error}
+        </p>
+      ) : null}
 
       <div className="mt-2 flex flex-col gap-4 md:flex-row md:items-stretch md:gap-6">
       <div className="md:flex-1">
@@ -1400,19 +1621,21 @@ function DateTimePicker({
   );
 }
 
-// Recurrence selector — expanded into N events at submit time. Cap is 26 so a
+// Recurrence selector - expanded into N events at submit time. Cap is 26 so a
 // typo can't blow up the queue; backend doesn't currently know about
 // recurrence, each occurrence is just another row.
 function RecurrencePicker({
   startsAt,
   freq,
   count,
+  error,
   onFreqChange,
   onCountChange,
 }: {
   startsAt: string;
   freq: RecurrenceFreq;
   count: string;
+  error?: string;
   onFreqChange: (v: RecurrenceFreq) => void;
   onCountChange: (v: string) => void;
 }) {
@@ -1448,7 +1671,7 @@ function RecurrencePicker({
               onClick={() => {
                 onFreqChange(opt.value);
                 // Bump the count to a sensible default when switching off
-                // "none" — otherwise the user lands on "1" and has to type.
+                // "none" - otherwise the user lands on "1" and has to type.
                 if (opt.value !== "none" && (Number.parseInt(count, 10) || 0) < 2) {
                   onCountChange("4");
                 }
@@ -1472,17 +1695,27 @@ function RecurrencePicker({
               How many?
             </span>
             <input
+              id={fieldAnchorId("recurrenceCount")}
               type="number"
               min={2}
               max={26}
               value={count}
               onChange={(e) => onCountChange(e.target.value)}
-              className="w-20 rounded-lg border border-[color:var(--mist)] bg-[color:var(--paper)] px-3 py-2 text-base text-[color:var(--ink)] outline-none focus:border-[color:var(--purple)] focus:ring-2 focus:ring-[color:var(--lavender-100)]"
+              aria-invalid={error ? true : undefined}
+              className={`ck-input w-20 ${error ? "ck-input--invalid" : ""}`}
             />
           </label>
           <span className="text-xs font-medium text-[color:var(--slate)]">
             Max 26 · one event row per date below.
           </span>
+          {error ? (
+            <span
+              role="alert"
+              className="text-[12.5px] font-medium text-[color:var(--danger)]"
+            >
+              {error}
+            </span>
+          ) : null}
         </div>
       ) : null}
 
@@ -1513,8 +1746,8 @@ function RecurrencePicker({
 }
 
 export function LocationSection() {
-  const { values, set, venueOptions } = useWizard();
-  // The search box is its own field — a throwaway query used to locate the
+  const { values, set, fieldErrors, venueOptions } = useWizard();
+  // The search box is its own field - a throwaway query used to locate the
   // address, pin the map, and (when Mapbox returns a named place) suggest the
   // venue name below. The venue field stays editable freetext either way.
   const [query, setQuery] = useState("");
@@ -1533,7 +1766,7 @@ export function LocationSection() {
 
     // Auto-fill the venue name from the POI name (e.g. "Fortress"), but only
     // when Mapbox returned a real place name distinct from the bare street
-    // line — a plain street address shouldn't become the venue name. Respect a
+    // line - a plain street address shouldn't become the venue name. Respect a
     // name the merchant has already typed.
     const poi = place.name?.trim() ?? "";
     const isNamedPlace =
@@ -1593,66 +1826,73 @@ export function LocationSection() {
   }
 
   return (
-    <div className="space-y-5">
-      <header>
+    <div className="space-y-5 rise-soft">
+      <header className="rise-soft rise-d1">
         <p className="eyebrow">Step 3 · Location</p>
-        <h2 className="font-display mt-2 text-3xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)]">
+        <h1 className="font-display mt-2 text-3xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)]">
           Where in Sydney?
-        </h2>
+        </h1>
         <p className="mt-1 text-sm leading-6 text-[color:var(--slate)]">
           Search a street address to fill the suburb, pin it on the map, and
           auto-fill the venue name - edit it below if needed.
         </p>
       </header>
 
-      <Field
-        label="Find address"
-        hint="Powered by Mapbox. Bias is Australia; pick a suggestion to fill the suburb, capture exact coordinates, and suggest a venue name."
-      >
-        <MapboxAutocomplete
-          value={query}
-          onValueChange={setQuery}
-          onSelect={handlePick}
-          placeholder="e.g. 48 Spencer Road, Potts Point"
-        />
-      </Field>
-
-      <div className="grid gap-4 md:grid-cols-2">
-        <Field label="Venue name" hint="Pick a saved venue or type a new one.">
-          <Combobox
-            value={values.locationName}
-            options={venueOptions}
-            onChange={(next) => set("locationName", next)}
-            placeholder="Bar Lucia"
-            required
+      <div className="space-y-5 rise-soft rise-d2">
+        <FormField
+          label="Find address"
+          hint="Powered by Mapbox. Bias is Australia; pick a suggestion to fill the suburb, capture exact coordinates, and suggest a venue name."
+        >
+          <MapboxAutocomplete
+            value={query}
+            onValueChange={setQuery}
+            onSelect={handlePick}
+            placeholder="e.g. 48 Spencer Road, Potts Point"
           />
-        </Field>
-        <Field label="Suburb">
-          <input
+        </FormField>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <FormField
+            label="Venue name"
+            hint="Pick a saved venue or type a new one."
+            required
+            error={fieldErrors.locationName}
+          >
+            <Combobox
+              id={fieldAnchorId("locationName")}
+              invalid={Boolean(fieldErrors.locationName)}
+              value={values.locationName}
+              options={venueOptions}
+              onChange={(next) => set("locationName", next)}
+              placeholder="Bar Lucia"
+              required
+            />
+          </FormField>
+          <FormField
+            label="Suburb"
+            required
+            error={fieldErrors.suburb}
+            id={fieldAnchorId("suburb")}
             value={values.suburb}
             onChange={(e) => set("suburb", e.target.value)}
             placeholder="Potts Point"
-            className={inputClass()}
-            required
           />
-        </Field>
-      </div>
+        </div>
 
-      <Field
-        label="Street address"
-        hint="Shown to confirmed attendees once they RSVP. Include the unit / level number, street, state and postcode."
-      >
-        <input
+        <FormField
+          label="Street address"
+          hint="Shown to confirmed attendees once they RSVP. Include the unit / level number, street, state and postcode."
+          required
+          error={fieldErrors.address}
+          id={fieldAnchorId("address")}
           value={values.address}
           onChange={(e) => set("address", e.target.value)}
           placeholder="Unit 6/29 Bridge Rd, Stanmore NSW 2048"
-          className={inputClass()}
-          required
         />
-      </Field>
+      </div>
 
       <p
-        className={`text-xs font-medium ${
+        className={`rise-soft rise-d3 text-xs font-medium ${
           pinned ? "text-[color:var(--purple)]" : "text-[color:var(--slate)]"
         }`}
       >
@@ -1724,7 +1964,7 @@ type PendingUpload = {
 const MEDIA_ACCEPTED_MIME = new Set(["image/jpeg", "image/png", "image/webp"]);
 const MEDIA_MAX_BYTES = 10 * 1024 * 1024;
 // Hard cap on event photos. Matches the event detail gallery, which only lays
-// out the first 5 images — anything beyond that never renders, so we stop the
+// out the first 5 images - anything beyond that never renders, so we stop the
 // merchant uploading photos that would silently be dropped.
 const MEDIA_MAX_PHOTOS = 5;
 
@@ -1747,9 +1987,28 @@ function makeUploadId() {
   return `up-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+/* Rebuild tiles from the wizard's saved gallery. Already-stored URLs are "done"
+   by definition - there is nothing left to upload. */
+function tilesFromUrls(urls: string[]): PendingUpload[] {
+  return urls.filter(Boolean).map((url) => ({
+    id: makeUploadId(),
+    previewUrl: url,
+    status: "done" as const,
+    url,
+    name: SAMPLE_PHOTOS.find((s) => s.url === url)?.name ?? "Photo",
+  }));
+}
+
 export function MediaSection() {
-  const { set, setUploading } = useWizard();
-  const [pending, setPending] = useState<PendingUpload[]>([]);
+  const { values, set, setUploading } = useWizard();
+  // SEEDED FROM CONTEXT, never []. The provider lives in the route layout and
+  // never remounts, but this section remounts on every visit - so an empty seed
+  // plus the mirror effect below meant the first thing a Media -> Review -> Back
+  // round trip did was write values.images = [], silently deleting every photo
+  // the merchant had uploaded and submitting the event with none.
+  const [pending, setPending] = useState<PendingUpload[]>(() =>
+    tilesFromUrls(values.images),
+  );
   const [dropping, setDropping] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const dragIndexRef = useRef<number | null>(null);
@@ -1775,6 +2034,35 @@ export function MediaSection() {
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pending]);
+
+  // The seed above covers arriving with images already in context. It does NOT
+  // cover a hard reload straight onto /media: the provider's sessionStorage
+  // rehydrate is rAF-deferred, so the saved gallery lands one frame AFTER this
+  // section's first render. Adopt it exactly once, and only while we are holding
+  // nothing of our own - past that, a deliberate "Remove" must stick.
+  //
+  // The adopt is rAF-deferred for the same reason the provider's rehydrate is
+  // (see EventCreateProvider): it has to land as a change to an already-painted
+  // tree rather than racing it, and that is also what keeps it out of the
+  // set-state-in-effect lint.
+  const adoptedRef = useRef(false);
+  useEffect(() => {
+    if (adoptedRef.current) return;
+    if (pending.length > 0) {
+      adoptedRef.current = true;
+      return;
+    }
+    if (values.images.length === 0) return;
+    const urls = values.images;
+    // The ref flips inside the callback, not beside the schedule: if the frame
+    // gets cancelled the adopt has not happened, and marking it done would strand
+    // the tiles empty for good.
+    const frame = window.requestAnimationFrame(() => {
+      adoptedRef.current = true;
+      setPending(tilesFromUrls(urls));
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [values.images, pending.length]);
 
   // Surface in-flight uploads to the wizard shell so it can block "Next" until
   // every tile settles. Reset on unmount so a flag stuck `true` (e.g. the user
@@ -1981,12 +2269,12 @@ export function MediaSection() {
   }
 
   return (
-    <div className="space-y-5">
-      <header>
+    <div className="space-y-5 rise-soft">
+      <header className="rise-soft rise-d1">
         <p className="eyebrow">Step 4 · Media</p>
-        <h2 className="font-display mt-2 text-3xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)]">
+        <h1 className="font-display mt-2 text-3xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)]">
           Drop in a few real photos.
-        </h2>
+        </h1>
         <p className="mt-2 text-sm leading-6 text-[color:var(--slate)]">
           Add up to {MEDIA_MAX_PHOTOS} photos. The first one is the cover - use{" "}
           <span className="font-semibold text-[color:var(--ink)]">Set cover</span> on
@@ -1995,7 +2283,7 @@ export function MediaSection() {
         </p>
       </header>
 
-      {/* Drop / paste zone — focusable so paste works on click, mirrors the
+      {/* Drop / paste zone - focusable so paste works on click, mirrors the
           "drop anything here" affordance of Claude's chat composer. */}
       <div
         tabIndex={0}
@@ -2012,7 +2300,7 @@ export function MediaSection() {
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onPaste={handlePaste}
-        className={`grid place-items-center gap-3 rounded-2xl border border-dashed px-6 py-10 text-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--purple)] ${
+        className={`grid place-items-center gap-3 rise-soft rise-d2 rounded-2xl border border-dashed px-6 py-10 text-center transition-[background-color,border-color] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--purple)] ${
           dropping
             ? "border-[color:var(--purple)] bg-[color:var(--lavender-100)]"
             : "border-[color:var(--mist-strong)] bg-[color:var(--champagne)] hover:bg-[color:var(--lavender-100)]/60"
@@ -2038,7 +2326,7 @@ export function MediaSection() {
           own photos isn't left with an empty grid (bug board #208). Thumbnails
           use next/image so the (large) source files are served resized. */}
       {pending.length === 0 ? (
-        <div className="space-y-2">
+        <div className="space-y-2 rise-soft rise-d3">
           <p className="text-[12.5px] font-semibold text-[color:var(--slate)]">
             No photos? Pick a sample to start
           </p>
@@ -2076,7 +2364,7 @@ export function MediaSection() {
       {/* Card grid for uploaded photos. Each card is draggable so the
           merchant can promote any photo to the cover slot. */}
       {pending.length > 0 ? (
-        <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
+        <div className="grid gap-3 rise-soft rise-d3 sm:grid-cols-2 md:grid-cols-3">
           {pending.map((tile, idx) => {
             const isCover = idx === 0;
             return (
@@ -2149,15 +2437,8 @@ export function MediaSection() {
 
 export function ReviewSection() {
   const { values } = useWizard();
-  const tagsPreview = useMemo(
-    () =>
-      values.tags
-        .split(",")
-        .map((t) => t.trim())
-        .filter(Boolean)
-        .slice(0, 3),
-    [values.tags],
-  );
+  const allTags = useMemo(() => parseTags(values.tags), [values.tags]);
+  const tagsPreview = allTags.slice(0, 3);
 
   // Derive the same display bits the live EventCard shows, so this preview is a
   // faithful "here's how your card will look on Click" rather than a form dump.
@@ -2193,21 +2474,30 @@ export function ReviewSection() {
   const location =
     [values.locationName, values.suburb].filter(Boolean).join(", ") ||
     "Location TBA";
+  const durationLabel =
+    DURATION_OPTIONS.find((o) => o.value === values.durationMinutes)?.label ?? "";
+  const photoCount = values.images.filter(Boolean).length;
+  const photosLabel =
+    photoCount === 0
+      ? "None yet - we'll use a category cover"
+      : photoCount === 1
+        ? "1 photo"
+        : `${photoCount} photos`;
 
   return (
-    <div className="space-y-5">
-      <header>
+    <div className="space-y-5 rise-soft">
+      <header className="rise-soft rise-d1">
         <p className="eyebrow">Step 5 · Review</p>
-        <h2 className="font-display mt-2 text-3xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)]">
+        <h1 className="font-display mt-2 text-3xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)]">
           Looks good?
-        </h2>
+        </h1>
         <p className="mt-2 text-sm leading-6 text-[color:var(--slate)]">
           This is how your event card will look on Click. Submissions go to admin
           for approval before going live.
         </p>
       </header>
 
-      <div className="mx-auto w-full max-w-sm">
+      <div className="mx-auto w-full max-w-sm rise-soft rise-d2">
         <article className="group relative min-w-0 overflow-hidden rounded-2xl bg-[color:var(--paper)] shadow-[var(--shadow-sm)]">
           <div className="relative block h-60 overflow-hidden">
             {cover ? (
@@ -2277,6 +2567,39 @@ export function ReviewSection() {
           Preview · public listing card
         </p>
       </div>
+
+      {/* Everything the public card does NOT show. The street address is
+          required and its hint promises it reaches confirmed attendees, but
+          until now the last chance to proofread it was two steps back. Kept
+          below the card, and quieter, so the card stays the hero of the step. */}
+      <dl className="mx-auto grid w-full max-w-sm gap-px overflow-hidden rounded-2xl bg-[color:var(--mist)] rise-soft rise-d3">
+        {[
+          { label: "Street address", value: values.address, step: 2 },
+          { label: "Why people should come", value: values.relationshipGoal, step: 0 },
+          { label: "Runs for", value: durationLabel, step: 1 },
+          { label: "Capacity", value: `${values.capacity || "-"} seats`, step: 1 },
+          { label: "Tags", value: allTags.join(", "), step: 0 },
+          { label: "Photos", value: photosLabel, step: 3 },
+        ].map((row) => (
+          <div
+            key={row.label}
+            className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 bg-[color:var(--paper)] px-4 py-3"
+          >
+            <dt className="text-[12.5px] font-semibold text-[color:var(--slate)]">
+              {row.label}
+            </dt>
+            <Link
+              href={STEP_PATHS[row.step]}
+              className="text-[12px] font-semibold text-[color:var(--purple)] underline underline-offset-2"
+            >
+              Edit
+            </Link>
+            <dd className="w-full text-[13.5px] leading-relaxed text-[color:var(--ink)]">
+              {row.value || "Not set"}
+            </dd>
+          </div>
+        ))}
+      </dl>
     </div>
   );
 }

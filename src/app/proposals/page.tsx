@@ -4,7 +4,7 @@ import { ClicksList } from "@/components/clicks-list";
 import { getProposalCatalogue, getProposalsForSession } from "@/lib/event-repository";
 
 export const metadata = {
-  title: "Your clicks | Click",
+  title: "Your clicks",
   description: "Coordinate a shared plan with people you've clicked with.",
 };
 

@@ -1,7 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import { submitPersonalityQuizAction } from "@/app/quiz/personality/actions";
+import {
+  PERSONALITY_DRAFT,
+  readPersonalityAnswers,
+  type PersonalityDraft,
+} from "@/app/quiz/personality/draft";
+import { ckBtn, Icon } from "@/components/ds";
+import { useFormDraft } from "@/lib/use-form-draft";
 import { fireBrandConfetti } from "./brand-confetti";
 import { openLoginModal } from "./login-modal-host";
 
@@ -72,14 +80,14 @@ type HomeQuizProps = {
 export function HomeQuiz({ isLoggedIn, persona = null }: HomeQuizProps) {
   const [retaking, setRetaking] = useState(false);
 
-  // Logged-out visitor — don't drop a full, unsavable form into the page. Show
+  // Logged-out visitor - don't drop a full, unsavable form into the page. Show
   // a compact "about you" tag that opens the quiz in a modal; submitting there
   // prompts login (the deeper /quiz/personality flow is one click past that).
   if (!isLoggedIn) {
     return <LoggedOutQuizCta />;
   }
 
-  // Logged-in user with a saved persona — show summary with a retake toggle.
+  // Logged-in user with a saved persona - show summary with a retake toggle.
   if (isLoggedIn && persona && !retaking) {
     return (
       <QuizFrame
@@ -96,19 +104,18 @@ export function HomeQuiz({ isLoggedIn, persona = null }: HomeQuizProps) {
         subtitle={`${persona.socialEnergy} · ${persona.pace} pace · ${persona.openness} · ${persona.engagementFrequency}`}
       >
         <div className="mt-6 flex flex-wrap gap-3">
-          <button
-            type="button"
-            onClick={() => setRetaking(true)}
-            className="ck-btn ck-btn--md ck-btn--primary"
-          >
-            Retake the quiz
+          {/* ckBtn() and an <Icon>, not a raw class string and a literal arrow:
+              a text arrow inherits neither icon sizing nor stroke, and screen
+              readers read it out as part of the label. */}
+          <button type="button" onClick={() => setRetaking(true)} className={ckBtn("primary", "md")}>
+            <span className="ck-btn__label">Retake the quiz</span>
           </button>
-          <a
-            href="/quiz/life"
-            className="ck-btn ck-btn--md ck-btn--secondary"
-          >
-            Add life tags →
-          </a>
+          <Link href="/quiz/life" className={ckBtn("secondary", "md")}>
+            <span className="ck-btn__label">
+              Add life tags
+              <Icon name="arrowR" size={16} />
+            </span>
+          </Link>
         </div>
       </QuizFrame>
     );
@@ -157,9 +164,12 @@ function LoggedOutQuizCta() {
             <button
               type="button"
               onClick={() => setOpen(true)}
-              className="ck-btn ck-btn--md ck-btn--primary shrink-0"
+              className={ckBtn("primary", "md", { className: "shrink-0" })}
             >
-              Take the quiz →
+              <span className="ck-btn__label">
+                Take the quiz
+                <Icon name="arrowR" size={16} />
+              </span>
             </button>
           </div>
         </div>
@@ -239,10 +249,44 @@ function QuizForm({
   isLoggedIn: boolean;
   onLoggedOutSubmit?: () => void;
 }) {
-  // Logged-out submit: intercept and open the login modal so the user can
-  // sign in / sign up. We don't preserve selections through login — they
-  // can re-tap once back, and the deeper /quiz/personality form is one
-  // click away from the post-login flow.
+  // The radios are controlled now for one reason: we cannot persist answers we
+  // cannot read. The name/value/required attributes stay on them, so the
+  // logged-in path still posts natively and still gets browser validation.
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  // Question names the browser rejected as empty on the last submit attempt.
+  const [invalid, setInvalid] = useState<string[]>([]);
+
+  const draftValues = useMemo<PersonalityDraft>(() => ({ answers }), [answers]);
+
+  // The four taps now survive the login round trip. They used to be thrown
+  // away at the wall - the one moment the product asks for effort before asking
+  // for a signup was the one moment it discarded that effort. The same key
+  // seeds the full wizard at /quiz/personality, so signing in lands on the
+  // intent step with the bar already near the end instead of on a blank form.
+  //
+  // Nothing clears it from here. A form with `action=` hands off to the server
+  // the moment this handler returns, so any clear() on this path would run
+  // BEFORE the write, and a rejected save would have taken the answers with it.
+  // The wizard clears the key on its own confirmed success; until then, keeping
+  // a stale draft only ever means a retake starts from your last answers.
+  useFormDraft<PersonalityDraft>({
+    key: PERSONALITY_DRAFT.key,
+    version: PERSONALITY_DRAFT.version,
+    storage: PERSONALITY_DRAFT.storage,
+    values: draftValues,
+    apply: (saved) => {
+      const restored = readPersonalityAnswers(saved);
+      if (Object.keys(restored).length > 0) setAnswers(restored);
+    },
+  });
+
+  function pick(name: string, value: string) {
+    setAnswers((prev) => ({ ...prev, [name]: value }));
+    // Answering clears that question's error and nothing else - a group the
+    // user has not reached yet should not lose its marker.
+    setInvalid((prev) => prev.filter((n) => n !== name));
+  }
+
   function handleLoggedOutSubmit(event: React.FormEvent<HTMLFormElement>) {
     if (isLoggedIn) {
       // Real success path: the persona is about to be saved by the server
@@ -262,6 +306,7 @@ function QuizForm({
     }
     event.preventDefault();
     // Close the quiz modal first so it isn't stacked behind the login modal.
+    // The answers are already in storage, so /quiz/personality picks them up.
     onLoggedOutSubmit?.();
     openLoginModal({ callbackUrl: "/quiz/personality" });
   }
@@ -274,7 +319,7 @@ function QuizForm({
       onSubmit={handleLoggedOutSubmit}
       className="mt-6 grid gap-4"
     >
-      {/* Default intent split — the /quiz/personality page lets users tune
+      {/* Default intent split - the /quiz/personality page lets users tune
           this; on the home block we use neutral defaults so the saved
           persona is still meaningful. */}
       <input type="hidden" name="intent_friendship" value="25" />
@@ -283,36 +328,57 @@ function QuizForm({
       <input type="hidden" name="intent_exploring" value="25" />
 
       <div className="grid gap-3 md:grid-cols-2">
-        {QUESTIONS.map((q) => (
-          <fieldset
-            key={q.name}
-            className="rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-4"
-          >
-            <legend className="px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-[color:var(--purple-700)]">
-              {q.legend}
-            </legend>
-            <p className="mt-1 text-xs text-[color:var(--slate)]">
-              {q.hint}
-            </p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {q.options.map((opt) => (
-                <label
-                  key={opt.value}
-                  className="cursor-pointer rounded-xl border-[1.5px] border-[color:var(--mist-strong)] bg-[color:var(--paper)] px-3.5 py-2 text-[13px] font-medium text-[color:var(--ink)] transition-colors hover:border-[color:var(--slate)] has-[input:checked]:border-transparent has-[input:checked]:bg-[color:var(--purple)] has-[input:checked]:text-[color:var(--champagne)]"
-                >
-                  <input
-                    type="radio"
-                    name={q.name}
-                    value={opt.value}
-                    required={isLoggedIn}
-                    className="sr-only"
-                  />
-                  {opt.label}
-                </label>
-              ))}
-            </div>
-          </fieldset>
-        ))}
+        {QUESTIONS.map((q) => {
+          const missing = invalid.includes(q.name);
+          return (
+            <fieldset
+              key={q.name}
+              className={`rounded-[var(--radius-lg)] border bg-[color:var(--paper)] p-4 ${
+                missing
+                  ? "border-[color:var(--danger)]"
+                  : "border-[color:var(--line-soft)]"
+              }`}
+            >
+              <legend className="px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-[color:var(--purple-700)]">
+                {q.legend}
+              </legend>
+              <p className="mt-1 text-xs text-[color:var(--slate)]">
+                {q.hint}
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {q.options.map((opt) => (
+                  <label
+                    key={opt.value}
+                    className="cursor-pointer rounded-xl border-[1.5px] border-[color:var(--mist-strong)] bg-[color:var(--paper)] px-3.5 py-2 text-[13px] font-medium text-[color:var(--ink)] transition-colors hover:border-[color:var(--slate)] has-[input:checked]:border-transparent has-[input:checked]:bg-[color:var(--purple)] has-[input:checked]:text-[color:var(--champagne)]"
+                  >
+                    <input
+                      type="radio"
+                      name={q.name}
+                      value={opt.value}
+                      required={isLoggedIn}
+                      checked={answers[q.name] === opt.value}
+                      onChange={() => pick(q.name, opt.value)}
+                      // The radio is sr-only, so the browser's own validation
+                      // bubble anchors to a clipped 1px box - it points at
+                      // nothing. Catching invalid lets the error land on the
+                      // question instead, where it can be read.
+                      onInvalid={() =>
+                        setInvalid((prev) => (prev.includes(q.name) ? prev : [...prev, q.name]))
+                      }
+                      className="sr-only"
+                    />
+                    {opt.label}
+                  </label>
+                ))}
+              </div>
+              {missing ? (
+                <p role="alert" className="mt-2.5 text-xs font-medium text-[color:var(--danger)]">
+                  Pick one to continue.
+                </p>
+              ) : null}
+            </fieldset>
+          );
+        })}
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
@@ -323,11 +389,11 @@ function QuizForm({
             <>Log in to save your answers · 30 seconds total</>
           )}
         </p>
-        <button
-          type="submit"
-          className="ck-btn ck-btn--md ck-btn--primary"
-        >
-          {isLoggedIn ? "Save my persona →" : "Log in to save →"}
+        <button type="submit" className={ckBtn("primary", "md")}>
+          <span className="ck-btn__label">
+            {isLoggedIn ? "Save my persona" : "Log in to save"}
+            <Icon name="arrowR" size={16} />
+          </span>
         </button>
       </div>
     </form>

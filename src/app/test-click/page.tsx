@@ -5,7 +5,7 @@ import { isProductionDeployment } from "@/lib/runtime-mode";
 import { ClickAuditReport } from "./audit-report";
 
 export const metadata = {
-  title: "How a click works | Click",
+  title: "How a click works",
   description:
     "A step-by-step walkthrough of the click mechanic: a private tap, a mutual click, a shared plan - never a chat.",
 };

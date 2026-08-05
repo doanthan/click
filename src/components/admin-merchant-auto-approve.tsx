@@ -1,7 +1,14 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 
+// Trust toggle for one merchant: auto-publish vs manual per-event review.
+// Reports through sonner + router.refresh() rather than an inline red line, so
+// it matches AdminMerchantVerification directly above it on the same page - two
+// stacked controls answering in two different channels meant an operator who
+// had learned to watch for the toast saw nothing when this one failed.
 export function AdminMerchantAutoApprove({
   merchantId,
   initial,
@@ -9,36 +16,48 @@ export function AdminMerchantAutoApprove({
   merchantId: string;
   initial: boolean;
 }) {
+  const router = useRouter();
   const [enabled, setEnabled] = useState(initial);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
 
   async function toggle() {
+    if (saving) return;
     const next = !enabled;
     setSaving(true);
-    setError("");
 
-    const response = await fetch(
-      `/api/admin/merchants/${merchantId}/auto-approve`,
-      {
+    try {
+      const response = await fetch(`/api/admin/merchants/${merchantId}/auto-approve`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ autoApprove: next }),
-      },
-    );
-    const payload = (await response.json().catch(() => ({}))) as {
-      error?: string;
-      autoApproveEvents?: boolean;
-    };
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        autoApproveEvents?: boolean;
+      };
 
-    if (!response.ok) {
-      setError(payload.error ?? "Could not update.");
+      if (!response.ok) {
+        toast.error(payload.error ?? "Could not update - the merchant is unchanged.");
+        setSaving(false);
+        return;
+      }
+
+      const applied = payload.autoApproveEvents ?? next;
+      setEnabled(applied);
       setSaving(false);
-      return;
+      toast.success(
+        applied
+          ? "Trusted - their events now publish live."
+          : "Back to manual review - new events wait in the queue.",
+      );
+      // The surrounding server page renders the trust state too; without this it
+      // kept showing the old one until a manual reload.
+      router.refresh();
+    } catch {
+      // A network failure used to leave the button stuck on "Saving…" forever.
+      toast.error("Could not reach the server - the merchant is unchanged.");
+      setSaving(false);
     }
-
-    setEnabled(payload.autoApproveEvents ?? next);
-    setSaving(false);
   }
 
   return (
@@ -55,23 +74,20 @@ export function AdminMerchantAutoApprove({
             Approving any one of this merchant&apos;s events turns this on
             automatically. Turn it off to send them back to manual review.
           </p>
-          {error ? (
-            <p className="mt-2 text-xs font-semibold text-[color:var(--danger)]">{error}</p>
-          ) : null}
         </div>
         <button
           type="button"
           onClick={toggle}
-          disabled={saving}
-          className={`shrink-0 disabled:cursor-not-allowed ck-btn ck-btn--sm ${
+          // aria-disabled, not disabled: disabling a focused control mid-write
+          // blurs it and drops keyboard users at the top of the document. The
+          // re-entry guard lives at the top of toggle().
+          aria-disabled={saving || undefined}
+          aria-busy={saving || undefined}
+          className={`shrink-0 ck-btn ck-btn--sm ${
             enabled ? "ck-btn--secondary" : "ck-btn--primary"
-          }`}
+          } ${saving ? "opacity-70" : ""}`}
         >
-          {saving
-            ? "Saving…"
-            : enabled
-              ? "Require review"
-              : "Trust merchant"}
+          {saving ? "Saving…" : enabled ? "Require review" : "Trust merchant"}
         </button>
       </div>
     </div>

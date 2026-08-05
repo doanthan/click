@@ -32,7 +32,19 @@ export function LoginModalHost(props: LoginModalHostProps) {
       const candidate = typeof detail.callbackUrl === "string" ? detail.callbackUrl : "";
       const safe =
         candidate.startsWith("/") && !candidate.startsWith("//") ? candidate : "/post-login";
-      setCallbackUrl(safe);
+
+      // Callers say "bring me back HERE" by passing usePathname(), which drops
+      // the query string - so signing in to RSVP from /discover?category=food
+      // returned you to an unfiltered /discover with the filter, and often the
+      // event you were looking at, gone. Re-attach the live search when the
+      // caller handed us exactly the current path. An explicit destination
+      // (home-quiz passes /quiz/personality) is left alone.
+      const restored =
+        safe === window.location.pathname && window.location.search
+          ? `${safe}${window.location.search}`
+          : safe;
+
+      setCallbackUrl(restored);
       setOpen(true);
     }
 

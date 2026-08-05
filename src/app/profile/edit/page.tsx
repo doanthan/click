@@ -3,10 +3,14 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { Icon } from "@/components/ds";
 import { ProfileEditForm } from "@/components/profile-edit-form";
-import { getOwnProfile, getProfileTagOptions } from "@/lib/event-repository";
+import {
+  getOwnProfile,
+  getProfileCompletion,
+  getProfileTagOptions,
+} from "@/lib/event-repository";
 
 export const metadata = {
-  title: "Edit profile | Click",
+  title: "Edit profile",
 };
 
 export default async function EditProfilePage() {
@@ -21,7 +25,13 @@ export default async function EditProfilePage() {
     redirect("/onboarding");
   }
 
-  const tagOptions = await getProfileTagOptions();
+  // The same checklist the dashboard shows. Four of its five items are edited on
+  // this page, so it belongs here too - the form re-answers those four against
+  // live state and leaves the rest of the definition to the repository.
+  const [tagOptions, completion] = await Promise.all([
+    getProfileTagOptions(),
+    getProfileCompletion(session),
+  ]);
 
   return (
     <main className="min-h-screen bg-[color:var(--champagne)] pb-8 text-[color:var(--ink)]">
@@ -44,7 +54,7 @@ export default async function EditProfilePage() {
             Your photos, your words, and the things you&apos;re into.
           </p>
 
-          <ProfileEditForm profile={profile} tagOptions={tagOptions} />
+          <ProfileEditForm profile={profile} tagOptions={tagOptions} completion={completion} />
         </div>
       </div>
     </main>

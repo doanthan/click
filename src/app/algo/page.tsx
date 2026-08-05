@@ -14,14 +14,14 @@ import V2Toggle from "@/components/algo/v2-toggle";
 import { isProductionDeployment } from "@/lib/runtime-mode";
 
 export const metadata = {
-  title: "Matching engine v2 — inspector | Click",
+  title: "Matching engine v2 - inspector",
 };
 
 // Internal inspector for the v2 matching engine (context/04_MATCHING_ALGORITHM_V2.md).
 // Server-rendered so it runs the *real* engine on live data: pick a member, see
 // their cohort + feature vector, the active cohort weights, and the actual
 // people/event candidates the engine would surface, with per-feature score
-// breakdowns. v1 is still what production serves — this shows v2 before it's wired.
+// breakdowns. v1 is still what production serves - this shows v2 before it's wired.
 
 // User↔user feature columns shown in the per-cohort weight matrix.
 const PAIR_FEATURES: FeatureName[] = [
@@ -110,14 +110,14 @@ export default async function AlgoPage({
       <main className="mx-auto max-w-3xl px-5 py-16">
         <h1 className="font-display text-3xl">Matching engine v2</h1>
         <p className="mt-3 text-[color:var(--mauve)]">
-          Database unavailable — the inspector needs the feature store. Run the migration and the
+          Database unavailable - the inspector needs the feature store. Run the migration and the
           feature-refresh cron, then reload.
         </p>
       </main>
     );
   }
 
-  // Inspectable members — richest profiles first so the demo lands on someone
+  // Inspectable members - richest profiles first so the demo lands on someone
   // with signal.
   const memberList = await pool.query<{
     profile_id: string;
@@ -135,7 +135,7 @@ export default async function AlgoPage({
   `);
   const members = memberList.rows;
 
-  // Feature-store health — the "all the data" view. Cheap aggregate scan.
+  // Feature-store health - the "all the data" view. Cheap aggregate scan.
   const statsRow = await pool.query<{
     profiles: number;
     with_interests: number;
@@ -217,11 +217,11 @@ export default async function AlgoPage({
         <p className="mt-4 text-base font-medium leading-7 text-[color:var(--mauve)]">
           v2 is a cohort-aware logistic-regression model: features from the store, dotted with{" "}
           <em>per-cohort</em> weights, squashed to 0–100. This inspector runs the real engine on a
-          live member — their cohort, feature vector, and the actual candidates it would surface.
+          live member - their cohort, feature vector, and the actual candidates it would surface.
         </p>
       </header>
 
-      {/* Live status — reflects the real system_settings.matching_v2_enabled flag */}
+      {/* Live status - reflects the real system_settings.matching_v2_enabled flag */}
       <section
         className={`mt-6 rounded-3xl border-2 p-5 hard-shadow-sm ${
           matchingV2Enabled
@@ -238,7 +238,7 @@ export default async function AlgoPage({
                 }`}
               />
               <span className="font-mono text-[0.7rem] font-black uppercase tracking-[0.2em] text-[color:var(--ink)]">
-                {matchingV2Enabled ? "v2 is LIVE" : "v2 is OFF — production serves v1"}
+                {matchingV2Enabled ? "v2 is LIVE" : "v2 is OFF - production serves v1"}
               </span>
               <span className="rounded-full bg-[color:var(--ink)] px-2 py-0.5 font-mono text-[0.55rem] uppercase tracking-wide text-[color:var(--on-deep)]">
                 {MODEL_VERSION}
@@ -273,13 +273,13 @@ export default async function AlgoPage({
         </p>
       </section>
 
-      {/* Feature-store health — the data the engine runs on */}
+      {/* Feature-store health - the data the engine runs on */}
       <section className="mt-8">
         <h2 className="font-display text-3xl font-semibold tracking-tight">The data it runs on</h2>
         <p className="mt-2 max-w-2xl text-sm font-medium text-[color:var(--mauve)]">
           Live coverage of the <code className="font-mono text-[color:var(--ink)]">user_features</code> store
           and <code className="font-mono text-[color:var(--ink)]">events.sub_tags</code>. Matching quality
-          is bounded by these — thin coverage means the model leans on whatever signal it has.
+          is bounded by these - thin coverage means the model leans on whatever signal it has.
         </p>
         <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard label="Members profiled" value={stats.profiles} sub="in the feature store" />
@@ -477,7 +477,7 @@ export default async function AlgoPage({
             <code className="font-mono">/people</code> re-ranks its complete-profile pool with{" "}
             <code className="font-mono">scorePair</code>, and Discovery re-ranks{" "}
             <code className="font-mono">getPersonalizedDiscovery</code>&apos;s pool with{" "}
-            <code className="font-mono">scoreUserEvent</code> — only when the flag above is on.
+            <code className="font-mono">scoreUserEvent</code> - only when the flag above is on.
           </p>
         </>
       ) : (
@@ -487,7 +487,7 @@ export default async function AlgoPage({
         </p>
       )}
 
-      {/* All cohort weights — see how the levers differ per cohort */}
+      {/* All cohort weights - see how the levers differ per cohort */}
       <section className="mt-12">
         <h2 className="font-display text-3xl font-semibold tracking-tight">Per-cohort weights</h2>
         <p className="mt-2 max-w-2xl text-sm font-medium text-[color:var(--mauve)]">
@@ -554,7 +554,7 @@ export default async function AlgoPage({
             Cohort assignment rules
           </h3>
           <p className="mt-1 text-[0.72rem] font-medium text-[color:var(--mauve)]">
-            First match wins (intent leads — the single biggest splitter). Recomputed each batch.
+            First match wins (intent leads - the single biggest splitter). Recomputed each batch.
           </p>
           <ol className="mt-3 space-y-2 text-[0.8rem] font-medium text-[color:var(--ink)]">
             {[
@@ -647,13 +647,13 @@ export default async function AlgoPage({
         </div>
       </section>
 
-      {/* Recommendations — computed from the live feature-store coverage above */}
+      {/* Recommendations - computed from the live feature-store coverage above */}
       <section className="mt-12">
         <h2 className="font-display text-3xl font-semibold tracking-tight">
           How to improve it
         </h2>
         <p className="mt-2 max-w-2xl text-sm font-medium text-[color:var(--mauve)]">
-          Generated from the live coverage numbers — ordered by impact. These are the levers that
+          Generated from the live coverage numbers - ordered by impact. These are the levers that
           actually move match quality right now.
         </p>
         <div className="mt-5 space-y-3">
@@ -764,7 +764,7 @@ function buildRecommendations(
     recs.push({
       severity: "high",
       title: `Interest coverage is ${interestPct}% (${s.with_interests}/${s.profiles} members)`,
-      body: "interest_overlap is the heaviest weight in every cohort, but most members carry no interest tags — so the model falls back to weaker signals. Make interest selection a required, low-friction onboarding step and re-prompt untagged members.",
+      body: "interest_overlap is the heaviest weight in every cohort, but most members carry no interest tags - so the model falls back to weaker signals. Make interest selection a required, low-friction onboarding step and re-prompt untagged members.",
     });
   }
   if (taggedPct < 75) {
@@ -784,7 +784,7 @@ function buildRecommendations(
   if (s.impressions === 0) {
     recs.push({
       severity: "med",
-      title: "No impressions logged — the flywheel isn't turning",
+      title: "No impressions logged - the flywheel isn't turning",
       body: "Every shown candidate + mutual click is a future training label. Flip v2 on (toggle at the top) and call recordImpressions on the serving surfaces so the model has something to learn from.",
     });
   }
@@ -792,7 +792,7 @@ function buildRecommendations(
     recs.push({
       severity: "low",
       title: `Persona coverage is ${energyPct}%`,
-      body: "energy_match defaults to neutral (0.5) without a Click Persona, so it can't differentiate. Nudge quiz completion — it's a cheap signal that helps the dating cohorts most.",
+      body: "energy_match defaults to neutral (0.5) without a Click Persona, so it can't differentiate. Nudge quiz completion - it's a cheap signal that helps the dating cohorts most.",
     });
   }
   if (topPct >= 60 && top) {
@@ -806,7 +806,7 @@ function buildRecommendations(
     recs.push({
       severity: "low",
       title: "Coverage looks healthy",
-      body: "Declared + behavioural signals are well populated. Next lever is learned weights — stand up the training pipeline and A/B it against the hand-curated prior.",
+      body: "Declared + behavioural signals are well populated. Next lever is learned weights - stand up the training pipeline and A/B it against the hand-curated prior.",
     });
   }
   return recs;

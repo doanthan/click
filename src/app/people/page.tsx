@@ -12,7 +12,7 @@ import {
 } from "@/lib/event-repository";
 
 export const metadata = {
-  title: "click with someone | Click",
+  title: "click with someone",
   description: "A small, intentional set of people you might click with - no endless feed.",
 };
 

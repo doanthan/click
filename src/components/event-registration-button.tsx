@@ -2,6 +2,7 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { Button } from "./ds";
 import { openLoginModal } from "./login-modal-host";
 import {
   EventRsvpSuccessOverlay,
@@ -26,7 +27,7 @@ export function EventRegistrationButton({
   // ISO timestamp of a live waitlist promotion offer. When set (and the viewer
   // is waitlisted), a "Confirm your spot" CTA + countdown appears.
   offerExpiresAt = null,
-  // Pre-rendered refund label (e.g. "Full refund — $35.00"). When present, the
+  // Pre-rendered refund label (e.g. "Full refund - $35.00"). When present, the
   // cancel button first shows a confirmation with the exact amount.
   cancelRefundLabel = null,
   successDetails,
@@ -43,6 +44,12 @@ export function EventRegistrationButton({
     initiallyRegistered ? (isWaitlist ? "waitlisted" : "registered") : "idle",
   );
   const [message, setMessage] = useState("");
+  // Tone is tracked separately from `state` because a failure does not always
+  // move the machine into "error" - a failed waitlist confirm goes back to
+  // "waitlisted", a failed cancel back to "registered". Keying the colour off
+  // the state alone printed those two in quiet Slate, which made a failure read
+  // exactly like a success.
+  const [messageIsError, setMessageIsError] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   // null until mounted, so the live countdown never causes a hydration mismatch.
   const [nowMs, setNowMs] = useState<number | null>(null);
@@ -74,13 +81,33 @@ export function EventRegistrationButton({
       : null;
   const offerExpired = msLeft != null && msLeft <= 0;
 
+  /** Neutral progress / confirmation copy. */
+  function say(text: string) {
+    setMessage(text);
+    setMessageIsError(false);
+  }
+  /** Something went wrong - always rendered in --danger and announced live. */
+  function fail(text: string) {
+    setMessage(text);
+    setMessageIsError(true);
+  }
+
   async function register() {
     setState("submitting");
-    setMessage("");
+    say("");
 
-    const response = await fetch(`/api/events/${encodeURIComponent(eventId)}/register`, {
-      method: "POST",
-    });
+    let response: Response;
+    try {
+      response = await fetch(`/api/events/${encodeURIComponent(eventId)}/register`, {
+        method: "POST",
+      });
+    } catch {
+      // Without this a dropped connection left the button stuck on "RSVPing..."
+      // with no way back but a reload. Reset only - never re-send.
+      setState("error");
+      fail("We couldn't reach Click. Check your connection and try again.");
+      return;
+    }
 
     if (response.status === 401) {
       setState("idle");
@@ -88,7 +115,7 @@ export function EventRegistrationButton({
       return;
     }
 
-    const payload = (await response.json()) as {
+    const payload = (await response.json().catch(() => ({}))) as {
       registration?: { status?: string; eventTitle?: string };
       error?: string;
       redirectTo?: string;
@@ -101,26 +128,26 @@ export function EventRegistrationButton({
 
     if (!response.ok) {
       setState("error");
-      setMessage(payload.error ?? "Registration failed.");
+      fail(payload.error ?? "Registration failed.");
       return;
     }
 
     const status = payload.registration?.status;
     setState(status === "waitlisted" ? "waitlisted" : "registered");
-    setMessage(
+    say(
       status === "waitlisted" ? "You are on the waitlist." : "You are registered.",
     );
     if (status === "waitlisted") {
       router.refresh();
     } else if (successDetails) {
-      // Already on the full event page — pop the confetti "You're confirmed!"
+      // Already on the full event page - pop the confetti "You're confirmed!"
       // overlay in place (it has all the details around it already).
       setShowSuccess(true);
     } else {
       // RSVP'd from a card/modal (e.g. Discover): send the now-confirmed
-      // attendee straight to their unlocked event page — full details + venue,
+      // attendee straight to their unlocked event page - full details + venue,
       // and a "You're confirmed!" banner (+ add-a-photo nudge) keyed off ?booked=1.
-      setMessage("You're confirmed! Taking you to your event…");
+      say("You're confirmed! Taking you to your event…");
       window.location.href = `/events/${encodeURIComponent(eventId)}?booked=1`;
     }
   }
@@ -129,12 +156,21 @@ export function EventRegistrationButton({
   // as a 402 with a redirect to the event page, where the buyer pays via Stripe.
   async function confirmSpot() {
     setState("confirming");
-    setMessage("");
+    say("");
 
-    const response = await fetch(
-      `/api/events/${encodeURIComponent(eventId)}/waitlist/accept`,
-      { method: "POST" },
-    );
+    let response: Response;
+    try {
+      response = await fetch(
+        `/api/events/${encodeURIComponent(eventId)}/waitlist/accept`,
+        { method: "POST" },
+      );
+    } catch {
+      // Back to "waitlisted" - the offer is still live server-side, so the hold
+      // clock keeps running and the CTA stays tappable. Reset only, no re-send.
+      setState("waitlisted");
+      fail("We couldn't reach Click. Check your connection and try again.");
+      return;
+    }
 
     if (response.status === 401) {
       setState("waitlisted");
@@ -142,7 +178,7 @@ export function EventRegistrationButton({
       return;
     }
 
-    const payload = (await response.json()) as {
+    const payload = (await response.json().catch(() => ({}))) as {
       registration?: { status?: string; eventTitle?: string };
       error?: string;
       redirectTo?: string;
@@ -155,13 +191,13 @@ export function EventRegistrationButton({
 
     if (!response.ok) {
       setState("waitlisted");
-      setMessage(payload.error ?? "Could not confirm your spot.");
+      fail(payload.error ?? "Could not confirm your spot.");
       router.refresh();
       return;
     }
 
     setState("registered");
-    setMessage("Your spot is confirmed!");
+    say("Your spot is confirmed!");
     if (successDetails) {
       setShowSuccess(true);
     } else {
@@ -172,11 +208,20 @@ export function EventRegistrationButton({
   async function cancel() {
     const previous = state === "waitlisted" ? "waitlisted" : "registered";
     setState("cancelling");
-    setMessage("");
+    say("");
 
-    const response = await fetch(`/api/events/${encodeURIComponent(eventId)}/register`, {
-      method: "DELETE",
-    });
+    let response: Response;
+    try {
+      response = await fetch(`/api/events/${encodeURIComponent(eventId)}/register`, {
+        method: "DELETE",
+      });
+    } catch {
+      // Land back on whichever seat state they had, so the spot still reads as
+      // theirs - a stuck "Cancelling..." implies it went through when it did not.
+      setState(previous);
+      fail("We couldn't reach Click - your spot is unchanged. Try again.");
+      return;
+    }
 
     if (response.status === 401) {
       setState(previous);
@@ -184,24 +229,24 @@ export function EventRegistrationButton({
       return;
     }
 
-    const payload = (await response.json()) as { error?: string };
+    const payload = (await response.json().catch(() => ({}))) as { error?: string };
     if (!response.ok) {
       setState("error");
-      setMessage(payload.error ?? "Cancel failed.");
+      fail(payload.error ?? "Cancel failed.");
       return;
     }
 
     setState("cancelled");
     // After cancelling, the page re-renders into the locked/pre-RSVP state and
-    // this button re-mounts to "idle", wiping the in-memory message — so it
+    // this button re-mounts to "idle", wiping the in-memory message - so it
     // looked like a silent dump onto a locked event (bug board #212). Carry an
     // acknowledgment in the URL so a durable banner confirms the cancel. The
     // waitlist "leave" path keeps the lighter in-place refresh.
     if (previous === "waitlisted") {
-      setMessage("You left the waitlist.");
+      say("You left the waitlist.");
       router.refresh();
     } else {
-      setMessage("Your RSVP was cancelled.");
+      say("Your RSVP was cancelled.");
       // Hard-replace the Stripe success URL so its reusable `session_id` is
       // removed before the server renders again. This also guarantees that the
       // attendee list, capacity and private venue gate all come from the newly
@@ -239,7 +284,7 @@ export function EventRegistrationButton({
             type="button"
             onClick={() => {
               setState("registered");
-              setMessage("");
+              say("");
             }}
             className="ck-btn ck-btn--md ck-btn--full ck-btn--secondary"
           >
@@ -281,24 +326,39 @@ export function EventRegistrationButton({
             </>
           )}
         </div>
-        <button
+        <Button
           type="button"
-          onClick={confirmSpot}
-          disabled={state === "confirming" || offerExpired}
-          className="ck-btn ck-btn--md ck-btn--full ck-btn--primary"
+          onClick={() => void confirmSpot()}
+          disabled={offerExpired}
+          loading={state === "confirming"}
+          full
         >
-          {state === "confirming" ? "Confirming…" : "Confirm your spot"}
-        </button>
-        <button
+          Confirm your spot
+        </Button>
+        <Button
           type="button"
+          variant="secondary"
           onClick={() => void cancel()}
           disabled={state === "confirming"}
-          className="ck-btn ck-btn--md ck-btn--full ck-btn--secondary"
+          full
         >
           Leave waitlist
-        </button>
+        </Button>
+        {state === "confirming" ? (
+          <p role="status" aria-live="polite" className="text-xs font-medium text-[color:var(--slate)]">
+            Confirming your spot…
+          </p>
+        ) : null}
         {message ? (
-          <p className="text-xs font-medium text-[color:var(--danger)]">{message}</p>
+          <p
+            role={messageIsError ? "alert" : "status"}
+            aria-live={messageIsError ? "assertive" : "polite"}
+            className={`text-xs font-medium ${
+              messageIsError ? "text-[color:var(--danger)]" : "text-[color:var(--slate)]"
+            }`}
+          >
+            {message}
+          </p>
         ) : null}
       </div>
     );
@@ -309,6 +369,19 @@ export function EventRegistrationButton({
     state === "waitlisted" ||
     state === "cancelling" ||
     state === "confirming";
+
+  const busyMessage =
+    state === "submitting"
+      ? isWaitlist
+        ? "Joining the waitlist…"
+        : "Saving your RSVP…"
+      : state === "cancelling"
+        ? isWaitlist
+          ? "Leaving the waitlist…"
+          : "Cancelling your RSVP…"
+        : state === "confirming"
+          ? "Confirming your spot…"
+          : null;
 
   return (
     <div className="grid gap-1">
@@ -322,42 +395,45 @@ export function EventRegistrationButton({
         />
       ) : null}
       {isLocked ? (
-        <button
+        <Button
           type="button"
+          variant="secondary"
           onClick={onCancelClick}
-          disabled={state === "cancelling" || state === "confirming"}
-          className="ck-btn ck-btn--md ck-btn--full ck-btn--secondary"
+          loading={state === "cancelling" || state === "confirming"}
+          full
         >
-          {state === "cancelling"
-            ? "Cancelling..."
-            : state === "waitlisted"
-              ? "Leave waitlist"
-              : "Cancel RSVP"}
-        </button>
+          {state === "waitlisted" ? "Leave waitlist" : "Cancel RSVP"}
+        </Button>
       ) : (
-        <button
+        <Button
           type="button"
-          onClick={register}
-          disabled={state === "submitting"}
-          className="ck-btn ck-btn--md ck-btn--full ck-btn--primary"
+          onClick={() => void register()}
+          loading={state === "submitting"}
+          full
         >
-          {state === "submitting"
+          {state === "cancelled"
             ? isWaitlist
-              ? "Joining waitlist..."
-              : "RSVPing..."
-            : state === "cancelled"
-              ? isWaitlist
-                ? "Rejoin waitlist"
-                : "RSVP again"
-              : isWaitlist
-                ? "Join waitlist"
-                : "RSVP"}
-        </button>
+              ? "Rejoin waitlist"
+              : "RSVP again"
+            : isWaitlist
+              ? "Join waitlist"
+              : "RSVP"}
+        </Button>
       )}
+      {/* The DS button hides its own label while loading, so the in-flight
+          wording lives here - where it is also announced, which a swapped label
+          on a disabled button never was. */}
+      {busyMessage ? (
+        <p role="status" aria-live="polite" className="text-xs font-medium text-[color:var(--slate)]">
+          {busyMessage}
+        </p>
+      ) : null}
       {message ? (
         <p
+          role={messageIsError ? "alert" : "status"}
+          aria-live={messageIsError ? "assertive" : "polite"}
           className={`text-xs font-medium ${
-            state === "error" ? "text-[color:var(--danger)]" : "text-[color:var(--slate)]"
+            messageIsError ? "text-[color:var(--danger)]" : "text-[color:var(--slate)]"
           }`}
         >
           {message}

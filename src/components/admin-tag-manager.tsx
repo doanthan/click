@@ -31,7 +31,7 @@ export function AdminTagManager({ tags }: { tags: AdminTagRow[] }) {
   );
 
   // Filter by search (label / slug / category) + type, then group by category
-  // (then label) so related tags sit together — much easier to scan than the
+  // (then label) so related tags sit together - much easier to scan than the
   // previous unsorted, silently-capped-at-80 list.
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -214,12 +214,20 @@ export function AdminTagManager({ tags }: { tags: AdminTagRow[] }) {
 
       <div className="overflow-hidden rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)]">
         <div className="flex flex-wrap items-center gap-3 border-b border-[color:var(--line)] px-5 py-3">
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search tags, slugs, categories…"
-            className="min-w-0 flex-1 rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] px-4 py-2 text-sm text-[color:var(--ink)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)]"
-          />
+          {/* The placeholder is not an accessible name - it disappears the
+              moment anything is typed. Same wrapping-label pattern as the three
+              fields in the form on the left, just visually hidden here because
+              the toolbar has no room for a visible one. */}
+          <label className="min-w-0 flex-1">
+            <span className="sr-only">Search tags by label, slug or category</span>
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search tags, slugs, categories…"
+              className="w-full rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] px-4 py-2 text-sm text-[color:var(--ink)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)]"
+            />
+          </label>
           <div className="flex flex-wrap gap-1.5">
             {(["all", ...tagTypeOptions] as const).map((type) => (
               <button

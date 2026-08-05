@@ -24,11 +24,28 @@ import { createPortal } from "react-dom";
  *     onCancel={() => setOpen(false)}
  *   />
  *
- * Usage (prompt — collects a reason, passed to onConfirm):
+ * Usage (prompt - collects a reason, passed to onConfirm):
  *   <ConfirmDialog open={open} title="Reject this event?"
  *     promptLabel="Reason (shared with the merchant)" promptRequired
  *     confirmLabel="Reject event" tone="rose"
  *     onConfirm={(reason) => reject(reason)} onCancel={() => setOpen(false)} />
+ */
+/**
+ * READ THIS BEFORE PICKING A TONE - the three strings are historic palette
+ * names and two of them now say the opposite of what they paint:
+ *
+ *   "rose"  -> DESTRUCTIVE. Renders .ck-btn--danger (--danger #B5362F).
+ *              The token --rose itself resolves to Deep Purple these days; the
+ *              tone string does NOT reach for it. This is the default.
+ *   "ink"   -> neutral. Renders the one flat Deep Purple .ck-btn--primary.
+ *   "peach" -> affirmative. ALSO .ck-btn--primary, identical to "ink" - it only
+ *              changes the default header eyebrow to "Heads up". The token
+ *              --peach resolves to Lavender, and there is no coral CTA in the
+ *              DS, so nothing here is ever a status colour.
+ *
+ * The strings are kept rather than renamed because ~a dozen call sites pass
+ * them. If they are ever renamed, "danger" | "neutral" | "affirmative" is the
+ * honest vocabulary.
  */
 type Tone = "rose" | "ink" | "peach";
 
@@ -38,7 +55,7 @@ type ConfirmDialogProps = {
   description?: ReactNode;
   confirmLabel?: string;
   cancelLabel?: string;
-  /** Confirm-button tone. rose = destructive (default), ink = neutral, peach = affirmative. */
+  /** Confirm-button tone - see the Tone doc above; the names are historic. */
   tone?: Tone;
   /** Disables the buttons + shows a working state (e.g. during the await). */
   busy?: boolean;
@@ -55,7 +72,7 @@ type ConfirmDialogProps = {
 };
 
 export function ConfirmDialog(props: ConfirmDialogProps) {
-  // Gate on `open` at the wrapper so the body MOUNTS FRESH each time it opens —
+  // Gate on `open` at the wrapper so the body MOUNTS FRESH each time it opens  - 
   // that resets the prompt field via useState init (no setState-in-effect), and
   // scopes the focus/scroll-lock effects to exactly the open lifetime. These
   // dialogs are always user-triggered, so `open` is false during SSR/hydration
@@ -88,7 +105,7 @@ function ConfirmDialogBody({
 
   // Keep the latest busy/onCancel for the mount-scoped key handler without
   // re-running the focus effect (which would steal focus on every keystroke).
-  // Synced in an effect — never mutated during render.
+  // Synced in an effect - never mutated during render.
   const latest = useRef({ busy, onCancel });
   useEffect(() => {
     latest.current = { busy, onCancel };

@@ -3,22 +3,83 @@
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { updateSystemSettingsAction } from "@/app/admin/actions";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { Badge } from "@/components/ds";
+import { useUnsavedGuard } from "@/lib/use-unsaved-guard";
 import type { SystemSettings } from "@/lib/event-repository";
+
+/**
+ * Read one numeric setting, reporting WHY it is unusable instead of coercing.
+ *
+ * The fields are held as strings on purpose. They used to be numbers fed by
+ * `Number(e.target.value)`, and Number("") is 0 - so an operator who cleared
+ * the commission box to retype it, then saved, shipped 0 bps to live Stripe
+ * pricing with no warning. A blank box now means "invalid", never "zero".
+ */
+function bounded(
+  raw: string,
+  min: number,
+  max: number,
+  fallback: number,
+): { value: number; error: string | null } {
+  if (raw.trim() === "") {
+    return { value: fallback, error: "Enter a number - an empty box is not the same as 0." };
+  }
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return { value: fallback, error: "That is not a number." };
+  if (parsed < min || parsed > max) {
+    return { value: fallback, error: `Must be between ${min} and ${max}.` };
+  }
+  return { value: parsed, error: null };
+}
+
+function FieldError({ message }: { message: string | null }) {
+  if (!message) return null;
+  return (
+    <span role="alert" className="text-[12.5px] font-medium text-[color:var(--danger)]">
+      {message}
+    </span>
+  );
+}
+
+function UnsavedMark({ show }: { show: boolean }) {
+  if (!show) return null;
+  return <Badge tone="amber">Unsaved</Badge>;
+}
 
 export function AdminSystemSettings({ initial }: { initial: SystemSettings }) {
   const [maintenance, setMaintenance] = useState(initial.maintenanceMode);
-  const [commission, setCommission] = useState(initial.commissionRateBps);
-  const [bookingFeePercent, setBookingFeePercent] = useState(
-    initial.bookingFeeBps / 100,
-  );
+  const [commission, setCommission] = useState(String(initial.commissionRateBps));
+  const [bookingFeePercent, setBookingFeePercent] = useState(String(initial.bookingFeeBps / 100));
   const [banner, setBanner] = useState(initial.marketingBanner);
   const [isPending, startTransition] = useTransition();
+  const [confirming, setConfirming] = useState(false);
+
+  const commissionField = bounded(commission, 0, 5000, initial.commissionRateBps);
+  const bookingField = bounded(bookingFeePercent, 0, 50, initial.bookingFeeBps / 100);
+  const commissionBps = Math.round(commissionField.value);
+  const bookingBps = Math.round(bookingField.value * 100);
+
+  // Per-section dirty flags. An unusable field counts as dirty so the guard
+  // still fires - the operator has changed something, it just cannot be saved.
+  const maintenanceDirty = maintenance !== initial.maintenanceMode;
+  const commissionDirty = commissionField.error !== null || commissionBps !== initial.commissionRateBps;
+  const bookingDirty = bookingField.error !== null || bookingBps !== initial.bookingFeeBps;
+  const bannerDirty = banner !== initial.marketingBanner;
+
+  const hasError = commissionField.error !== null || bookingField.error !== null;
+  const dirty = maintenanceDirty || commissionDirty || bookingDirty || bannerDirty;
+
+  // Link interception only - never gates the save itself. After a successful
+  // save the server action revalidates /admin/system, `initial` comes back with
+  // the new values, and `dirty` falls to false on its own.
+  const { pendingHref, confirm: leave, cancel: stay } = useUnsavedGuard(dirty);
 
   function save() {
     const form = new FormData();
     if (maintenance) form.set("maintenance_mode", "on");
-    form.set("commission_rate_bps", String(commission));
-    form.set("booking_fee_bps", String(Math.round(bookingFeePercent * 100)));
+    form.set("commission_rate_bps", String(commissionBps));
+    form.set("booking_fee_bps", String(bookingBps));
     form.set("marketing_banner", banner);
 
     startTransition(async () => {
@@ -26,9 +87,26 @@ export function AdminSystemSettings({ initial }: { initial: SystemSettings }) {
         await updateSystemSettingsAction(form);
         toast.success("System settings saved.");
       } catch {
-        toast.error("Could not save settings.");
+        toast.error("Could not save settings - nothing was changed.");
       }
     });
+  }
+
+  function requestSave() {
+    if (isPending) return;
+    if (hasError) {
+      toast.error("Fix the highlighted field before saving.");
+      return;
+    }
+    if (!dirty) return;
+    // Maintenance mode takes the whole site offline for every visitor, and it
+    // rides the same Save as a banner typo fix. Gate ONLY that change - the
+    // common fee/banner edit stays a single tap.
+    if (maintenanceDirty) {
+      setConfirming(true);
+      return;
+    }
+    save();
   }
 
   return (
@@ -37,8 +115,9 @@ export function AdminSystemSettings({ initial }: { initial: SystemSettings }) {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="eyebrow">Maintenance mode</p>
-            <h3 className="font-display mt-2 text-2xl font-semibold leading-tight text-[color:var(--ink)]">
+            <h3 className="font-display mt-2 flex flex-wrap items-center gap-2 text-2xl font-semibold leading-tight text-[color:var(--ink)]">
               Take Click offline.
+              <UnsavedMark show={maintenanceDirty} />
             </h3>
             <p className="mt-2 text-sm leading-6 text-[color:var(--slate)]">
               When on, public + protected routes can render a maintenance
@@ -61,79 +140,140 @@ export function AdminSystemSettings({ initial }: { initial: SystemSettings }) {
 
       <section className="rounded-2xl bg-[color:var(--paper)] p-5 shadow-[var(--shadow-sm)]">
         <p className="eyebrow">Commission rate</p>
-        <h3 className="font-display mt-2 text-2xl font-semibold leading-tight text-[color:var(--ink)]">
+        <h3 className="font-display mt-2 flex flex-wrap items-center gap-2 text-2xl font-semibold leading-tight text-[color:var(--ink)]">
           Per paid-ticket fee
+          <UnsavedMark show={commissionDirty} />
         </h3>
         <p className="mt-2 text-sm leading-6 text-[color:var(--slate)]">
           Stored in basis points. 290 bps = 2.9%. Applied at checkout for Click-managed paid events.
         </p>
-        <div className="mt-4 flex items-center gap-3">
-          <input
-            type="number"
-            min={0}
-            max={5000}
-            value={commission}
-            onChange={(e) => setCommission(Number(e.target.value))}
-            className="w-28 rounded-xl border border-[color:var(--mist)] bg-white px-4 py-2 text-[color:var(--ink)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)]"
-          />
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          {/* The visible heading names the setting; the label below is what
+              carries that name to assistive tech, which previously announced
+              this live-pricing box as an unlabelled spin button. */}
+          <label className="grid gap-1.5">
+            <span className="sr-only">Commission rate in basis points</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={0}
+              max={5000}
+              value={commission}
+              onChange={(e) => setCommission(e.target.value)}
+              aria-invalid={commissionField.error ? true : undefined}
+              className={`ck-input w-28 ${commissionField.error ? "ck-input--invalid" : ""}`}
+            />
+          </label>
           <span className="text-[12.5px] font-semibold text-[color:var(--slate)]">
-            bps · {(commission / 100).toFixed(2)}%
+            bps · {(commissionBps / 100).toFixed(2)}%
           </span>
+          <FieldError message={commissionField.error} />
         </div>
       </section>
 
       <section className="rounded-2xl bg-[color:var(--paper)] p-5 shadow-[var(--shadow-sm)]">
         <p className="eyebrow">Booking fees %</p>
-        <h3 className="font-display mt-2 text-2xl font-semibold leading-tight text-[color:var(--ink)]">
+        <h3 className="font-display mt-2 flex flex-wrap items-center gap-2 text-2xl font-semibold leading-tight text-[color:var(--ink)]">
           Per-booking service fee
+          <UnsavedMark show={bookingDirty} />
         </h3>
         <p className="mt-2 text-sm leading-6 text-[color:var(--slate)]">
           Added on top of the ticket price at checkout. Set as a percentage of the
           order subtotal. 0% disables the fee.
         </p>
-        <div className="mt-4 flex items-center gap-3">
-          <input
-            type="number"
-            min={0}
-            max={50}
-            step={0.1}
-            value={bookingFeePercent}
-            onChange={(e) => setBookingFeePercent(Number(e.target.value))}
-            className="w-28 rounded-xl border border-[color:var(--mist)] bg-white px-4 py-2 text-[color:var(--ink)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)]"
-          />
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <label className="grid gap-1.5">
+            <span className="sr-only">Booking fee as a percentage of the order subtotal</span>
+            <input
+              type="number"
+              inputMode="decimal"
+              min={0}
+              max={50}
+              step={0.1}
+              value={bookingFeePercent}
+              onChange={(e) => setBookingFeePercent(e.target.value)}
+              aria-invalid={bookingField.error ? true : undefined}
+              className={`ck-input w-28 ${bookingField.error ? "ck-input--invalid" : ""}`}
+            />
+          </label>
           <span className="text-[12.5px] font-semibold text-[color:var(--slate)]">
-            % · {Math.round(bookingFeePercent * 100)} bps
+            % · {bookingBps} bps
           </span>
+          <FieldError message={bookingField.error} />
         </div>
       </section>
 
       <section className="rounded-2xl bg-[color:var(--paper)] p-5 shadow-[var(--shadow-sm)]">
         <p className="eyebrow">Marketing banner</p>
-        <h3 className="font-display mt-2 text-2xl font-semibold leading-tight text-[color:var(--ink)]">
+        <h3 className="font-display mt-2 flex flex-wrap items-center gap-2 text-2xl font-semibold leading-tight text-[color:var(--ink)]">
           Site-wide message
+          <UnsavedMark show={bannerDirty} />
         </h3>
         <p className="mt-2 text-sm leading-6 text-[color:var(--slate)]">
           Shown on home + protected pages when non-empty. 200 chars max.
         </p>
-        <input
-          value={banner}
-          onChange={(e) => setBanner(e.target.value)}
-          maxLength={200}
-          placeholder="e.g. New events drop every Sunday. Tap the bell to follow."
-          className="mt-4 w-full rounded-xl border border-[color:var(--mist)] bg-white px-4 py-2 text-[color:var(--ink)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)]"
-        />
+        <label className="mt-4 grid gap-1.5">
+          <span className="sr-only">Site-wide marketing banner message</span>
+          <input
+            value={banner}
+            onChange={(e) => setBanner(e.target.value)}
+            maxLength={200}
+            placeholder="e.g. New events drop every Sunday. Tap the bell to follow."
+            className="ck-input w-full"
+          />
+        </label>
       </section>
 
-      <div className="flex justify-end">
+      <div className="flex flex-wrap items-center justify-end gap-3">
+        {!dirty && !isPending ? (
+          <p className="text-[12.5px] font-medium text-[color:var(--slate)]">
+            Nothing to save - these are the live settings.
+          </p>
+        ) : null}
         <button
           type="button"
-          onClick={save}
-          disabled={isPending}
-          className="ck-btn ck-btn--primary ck-btn--md"
+          onClick={requestSave}
+          // aria-disabled rather than disabled: a disabled button drops focus
+          // and dumps keyboard users at the top of the page mid-write. The
+          // no-op lives in requestSave, which also explains an invalid field.
+          // An unusable field always counts as dirty, so `!dirty` already
+          // implies "nothing to save AND nothing to fix".
+          aria-disabled={isPending || !dirty || undefined}
+          aria-busy={isPending || undefined}
+          className={`ck-btn ck-btn--primary ck-btn--md ${isPending || !dirty ? "opacity-60" : ""}`}
         >
           {isPending ? "Saving…" : "Save system settings"}
         </button>
       </div>
+
+      <ConfirmDialog
+        open={confirming}
+        title={maintenance ? "Take Click offline?" : "Bring Click back online?"}
+        description={
+          maintenance
+            ? "Every visitor gets the maintenance banner until this is switched off again. Admin stays reachable. Any other edits above save at the same time."
+            : "Public and protected routes start serving normally again. Any other edits above save at the same time."
+        }
+        confirmLabel={maintenance ? "Take Click offline" : "Bring Click online"}
+        tone={maintenance ? "rose" : "peach"}
+        busy={isPending}
+        onConfirm={() => {
+          setConfirming(false);
+          save();
+        }}
+        onCancel={() => setConfirming(false)}
+      />
+
+      <ConfirmDialog
+        open={pendingHref !== null}
+        title="Leave without saving?"
+        description="The settings you changed here have not been written yet."
+        confirmLabel="Leave without saving"
+        cancelLabel="Keep editing"
+        tone="rose"
+        onConfirm={leave}
+        onCancel={stay}
+      />
     </div>
   );
 }

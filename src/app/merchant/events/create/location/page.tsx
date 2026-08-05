@@ -1,7 +1,7 @@
 import { LocationSection, WizardShell } from "@/components/event-create-wizard";
 
 export const metadata = {
-  title: "Location · Create event | Click",
+  title: "Location · Create event",
 };
 
 // Step 3/5 · Location.

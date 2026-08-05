@@ -1,7 +1,7 @@
 import { ReviewSection, WizardShell } from "@/components/event-create-wizard";
 
 export const metadata = {
-  title: "Review · Create event | Click",
+  title: "Review · Create event",
 };
 
 // Step 5/5 · Review → Submit.

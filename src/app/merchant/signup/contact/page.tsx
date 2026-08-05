@@ -6,7 +6,7 @@ import {
 } from "@/components/merchant-signup-wizard";
 
 export const metadata = {
-  title: "Contact & address · Become a host | Click",
+  title: "Contact & address · Become a host",
 };
 
 // Step 2/3 · Contact & address.

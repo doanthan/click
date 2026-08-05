@@ -33,7 +33,17 @@ export async function SiteHeader() {
   const userLabel = session?.user?.name ?? session?.user?.email ?? "Account";
   const isAdmin = !!session?.user && isAdminEmail(session.user.email);
   const profileStatus = session?.user ? await getProfileStatus(session) : null;
-  const hasMerchantProfile = !!profileStatus?.merchantProfile;
+  const merchantProfile = profileStatus?.merchantProfile ?? null;
+  // A merchant_profiles row exists from the moment someone APPLIES, so plain
+  // truthiness is not "is a host". It was handing pending, rejected and
+  // suspended applicants a Host nav tab, a Host entry in the portal switcher
+  // and a wordmark pointing at /merchant - every one of which bounces straight
+  // back out to a holding page.
+  const isApprovedHost = merchantProfile?.verification_status === "approved";
+  // Whether to still PITCH hosting. Anyone who has applied has answered that
+  // question already, whatever the outcome - so the CTA keys off the row, not
+  // the status.
+  const hasHostApplication = !!merchantProfile;
   const avatarUrl = profileStatus?.photoUrl ?? session?.user?.image ?? null;
   const unreadCount = session?.user ? await getUnreadNotificationCount(session) : 0;
 
@@ -61,12 +71,12 @@ export async function SiteHeader() {
   }
 
   const portalRoles: PortalRole[] = ["user"];
-  if (hasMerchantProfile) portalRoles.push("merchant");
+  if (isApprovedHost) portalRoles.push("merchant");
   if (isAdmin) portalRoles.push("admin");
 
   // The wordmark points at the portal you actually work in (admin → /admin,
   // host → /merchant, otherwise the attendee dashboard).
-  const logoHref = isAdmin ? "/admin" : hasMerchantProfile ? "/merchant" : "/dashboard";
+  const logoHref = isAdmin ? "/admin" : isApprovedHost ? "/merchant" : "/dashboard";
 
   // App nav, per the DS: Discover · Dashboard · click (the people destination,
   // carrying the header's one spark) · Events.
@@ -76,7 +86,7 @@ export async function SiteHeader() {
     { label: "click", href: "/people", icon: "spark" },
     { label: "Events", href: "/confirmed-events", icon: "calendar" },
   ];
-  if (hasMerchantProfile) navItems.push({ label: "Host", href: "/merchant", icon: "ticket" });
+  if (isApprovedHost) navItems.push({ label: "Host", href: "/merchant", icon: "ticket" });
   if (isAdmin) navItems.push({ label: "Admin", href: "/admin", icon: "settings" });
 
   // Mobile: a sticky bottom action bar (a web pattern, not a native tab bar) -
@@ -99,13 +109,18 @@ export async function SiteHeader() {
           <HeaderNav items={navItems} />
 
           <div className="flex items-center gap-2">
-            {!hasMerchantProfile ? (
+            {!hasHostApplication ? (
               <ButtonLink href="/merchant/signup" variant="secondary" size="sm" className="hidden sm:inline-flex">
                 Host an event
               </ButtonLink>
             ) : null}
             <HeaderNotificationsBell unreadCount={unreadCount} />
-            <HeaderRoleSwitcher roles={portalRoles} userLabel={userLabel} avatarUrl={avatarUrl} />
+            <HeaderRoleSwitcher
+              roles={portalRoles}
+              userLabel={userLabel}
+              avatarUrl={avatarUrl}
+              showHostCta={!hasHostApplication}
+            />
           </div>
         </div>
       </header>

@@ -8,6 +8,16 @@ type PageProps = {
   searchParams?: Promise<{ action?: string }>;
 };
 
+// Deliberately generic, and deliberately noindex. The URL carries a one-time
+// guest token, so it gets pasted into group chats where the preview card is
+// visible to everyone in the thread - the title must not name the event, the
+// host or whoever bought the seat. Crawlers have no business here either.
+export const metadata = {
+  title: "Your guest spot",
+  description: "Claim the seat a friend saved for you on Click.",
+  robots: { index: false, follow: false },
+};
+
 const SANS = "var(--font-click-body), system-ui, -apple-system, sans-serif";
 
 const SHELL: React.CSSProperties = {

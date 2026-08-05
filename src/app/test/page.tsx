@@ -7,7 +7,7 @@ import SupabaseLogDrawer from "./SupabaseLogDrawer";
 import TestCasesBoard from "./TestCasesBoard";
 
 export const metadata = {
-  title: "Test personas | Click",
+  title: "Test personas",
   description: "Jump into the key journeys for each kind of Click user.",
 };
 

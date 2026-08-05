@@ -2,7 +2,7 @@ import Link from "next/link";
 import { requestPasswordReset } from "./actions";
 
 export const metadata = {
-  title: "Forgot password | Click",
+  title: "Forgot password",
   description: "Request a fresh Click email sign-in link.",
 };
 
