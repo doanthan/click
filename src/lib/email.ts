@@ -128,6 +128,12 @@ export type EmailTemplate =
   | "merchant-verified-merchant"
   | "merchant-rejected-merchant"
   | "password-reset"
+  | "signin-link"
+  | "signup-link"
+  | "signin-no-account"
+  | "waitlist-joined-attendee"
+  | "waitlist-promoted-attendee"
+  | "merchant-suspended-merchant"
   | "payment-receipt-attendee"
   | "report-received-admin"
   | "merchant-monthly-report"
@@ -175,6 +181,15 @@ const SUBJECTS: Record<EmailTemplate, (vars: Record<string, string>) => string> 
   "merchant-rejected-merchant": (v) =>
     `${v.businessName ?? "Your"} application - one small change`,
   "password-reset": () => "Reset your Click password",
+  "signin-link": () => "Your Click sign-in link",
+  "signup-link": () => "Finish creating your Click account",
+  "signin-no-account": () => "No Click account on this address yet",
+  "waitlist-joined-attendee": (v) =>
+    `You're on the waitlist - ${v.eventTitle ?? "your event"}`,
+  "waitlist-promoted-attendee": (v) =>
+    `A spot opened - ${v.eventTitle ?? "your event"}`,
+  "merchant-suspended-merchant": (v) =>
+    `${v.businessName ?? "Your account"} has been suspended on Click`,
   "payment-receipt-attendee": (v) =>
     `Receipt - ${v.eventTitle ?? "your event"}${v.totalLabel ? ` (${v.totalLabel})` : ""}`,
   "report-received-admin": (v) =>
@@ -311,7 +326,11 @@ export async function retryPendingEmailEvents(limit = 50) {
     `
       select id::text, to_email::text, subject, html
       from email_events
-      where delivery_status in ('pending', 'failed')
+      -- 'skipped' means "we never attempted delivery because RESEND_API_KEY was
+      -- absent". Once a key exists (guarded above) that is exactly a retryable
+      -- state, so it belongs in the sweep - otherwise every mail logged during a
+      -- misconfiguration window is stranded forever with no operator-visible queue.
+      where delivery_status in ('pending', 'failed', 'skipped')
         and attempt_count < 5
         and created_at > now() - interval '7 days'
       order by created_at asc

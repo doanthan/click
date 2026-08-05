@@ -1,0 +1,157 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="x-apple-disable-message-reformatting">
+    <title>You're on the waitlist for {{eventTitle}}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+      body { margin: 0; padding: 0; width: 100% !important; background: #F9F6F0; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+      table { border-collapse: collapse; mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+      img { border: 0; outline: none; text-decoration: none; -ms-interpolation-mode: bicubic; }
+      a { color: #3B2F81; }
+      .serif { font-family: 'Schibsted Grotesk', -apple-system, 'Segoe UI', Arial, sans-serif; }
+      .sans { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; }
+      @media only screen and (max-width: 600px) {
+        .container { width: 100% !important; }
+        .px-gutter { padding-left: 24px !important; padding-right: 24px !important; }
+        .hero-title { font-size: 28px !important; line-height: 1.15 !important; }
+        .stack { display: block !important; width: 100% !important; padding-right: 0 !important; padding-bottom: 16px !important; }
+      }
+    </style>
+  </head>
+  <body style="margin:0;padding:0;background:#F9F6F0;">
+    <div style="display:none;font-size:1px;color:#F9F6F0;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden;">
+      You're on the waitlist for {{eventTitle}}.
+    </div>
+
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#F9F6F0;">
+      <tr>
+        <td align="center" style="padding:32px 16px;">
+
+          <table role="presentation" class="container" width="600" cellspacing="0" cellpadding="0" border="0" style="width:600px;max-width:600px;background:#FFFFFF;border:1px solid #ECEAF0;">
+
+            <!-- header -->
+            <tr>
+              <td class="px-gutter" style="padding:28px 40px 20px 40px;border-bottom:1px solid #ECEAF0;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                  <tr>
+                    <td class="serif" style="font-family:'Schibsted Grotesk',-apple-system,'Segoe UI',Arial,sans-serif;font-size:22px;font-weight:600;color:#3B2F81;letter-spacing:-0.01em;">
+                      Click
+                    </td>
+                    <td align="right" class="sans" style="font-family:'Inter',Helvetica,Arial,sans-serif;font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:#6B6580;">
+                      Waitlist
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <!-- hero -->
+            <tr>
+              <td class="px-gutter" style="padding:40px 40px 8px 40px;">
+                <p class="sans" style="margin:0 0 12px 0;font-family:'Inter',Helvetica,Arial,sans-serif;font-size:11px;font-weight:600;letter-spacing:0.18em;text-transform:uppercase;color:#6B6580;">
+                  You're in the queue
+                </p>
+                <h1 class="serif hero-title" style="margin:0 0 16px 0;font-family:'Schibsted Grotesk',-apple-system,'Segoe UI',Arial,sans-serif;font-weight:700;font-size:34px;line-height:1.1;color:#3B2F81;letter-spacing:-0.015em;">
+                  You've got a place in the queue, {{firstName}}.
+                </h1>
+                <p class="sans" style="margin:0;font-family:'Inter',Helvetica,Arial,sans-serif;font-size:16px;line-height:1.55;color:#1C1830;">
+                  This night is full at the moment, so we've held your spot on the waitlist for it. Plans shift all the time and seats open up often - the moment one does, Click emails you straight away. There's nothing you need to do until then.
+                </p>
+              </td>
+            </tr>
+
+            <!-- event card -->
+            <tr>
+              <td class="px-gutter" style="padding:28px 40px 0 40px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#F9F6F0;border:1px solid #ECEAF0;border-top:2px solid #C8B8F8;">
+                  <tr>
+                    <td style="padding:24px 24px 0 24px;">
+                      <p class="sans" style="margin:0 0 10px 0;font-family:'Inter',Helvetica,Arial,sans-serif;font-size:10px;font-weight:600;letter-spacing:0.16em;text-transform:uppercase;color:#6B6580;">
+                        On the waitlist for
+                      </p>
+                      <h2 class="serif" style="margin:0;font-family:'Schibsted Grotesk',-apple-system,'Segoe UI',Arial,sans-serif;font-weight:600;font-size:22px;line-height:1.2;color:#1C1830;letter-spacing:-0.01em;">
+                        {{eventTitle}}
+                      </h2>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="padding:20px 24px 24px 24px;">
+                      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                        <tr>
+                          <td class="stack" width="50%" valign="top" style="padding-right:16px;">
+                            <p class="sans" style="margin:0 0 4px 0;font-family:'Inter',Helvetica,Arial,sans-serif;font-size:10px;font-weight:600;letter-spacing:0.16em;text-transform:uppercase;color:#6B6580;">When</p>
+                            <p class="sans" style="margin:0;font-family:'Inter',Helvetica,Arial,sans-serif;font-size:15px;font-weight:600;color:#1C1830;line-height:1.4;">{{eventLongDate}}</p>
+                            <p class="sans" style="margin:2px 0 0 0;font-family:'Inter',Helvetica,Arial,sans-serif;font-size:15px;color:#1C1830;line-height:1.4;">From {{eventStartTime}}</p>
+                          </td>
+                          <td class="stack" width="50%" valign="top">
+                            <p class="sans" style="margin:0 0 4px 0;font-family:'Inter',Helvetica,Arial,sans-serif;font-size:10px;font-weight:600;letter-spacing:0.16em;text-transform:uppercase;color:#6B6580;">Where</p>
+                            <p class="sans" style="margin:0;font-family:'Inter',Helvetica,Arial,sans-serif;font-size:15px;font-weight:600;color:#1C1830;line-height:1.4;">{{eventVenue}}</p>
+                            <p class="sans" style="margin:2px 0 0 0;font-family:'Inter',Helvetica,Arial,sans-serif;font-size:15px;color:#1C1830;line-height:1.4;">{{eventCity}}</p>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <!-- claim window note -->
+            <tr>
+              <td class="px-gutter" style="padding:28px 40px 0 40px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#F9F6F0;border-left:3px solid #C8B8F8;">
+                  <tr>
+                    <td style="padding:16px 18px;">
+                      <p class="sans" style="margin:0 0 6px 0;font-family:'Inter',Helvetica,Arial,sans-serif;font-size:14px;color:#1C1830;line-height:1.55;">
+                        <span class="serif" style="font-family:'Schibsted Grotesk',-apple-system,'Segoe UI',Arial,sans-serif;color:#3B2F81;">How claiming works -</span> when a seat frees up we hold it for you for {{offerWindowLabel}}. Tap the link in that email inside the window and the seat is yours; after that it rolls on to the next person in the queue.
+                      </p>
+                      <p class="sans" style="margin:6px 0 0 0;font-family:'Inter',Helvetica,Arial,sans-serif;font-size:13px;color:#6B6580;line-height:1.55;">
+                        Worth keeping an eye on your inbox, and adding us to your contacts so it lands where you'll see it.
+                      </p>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <!-- CTA -->
+            <tr>
+              <td class="px-gutter" style="padding:28px 40px 8px 40px;">
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                  <tr>
+                    <td bgcolor="#3B2F81" style="background:#3B2F81;">
+                      <a href="{{eventDetailsUrl}}" class="sans" style="display:inline-block;padding:14px 28px;font-family:'Inter',Helvetica,Arial,sans-serif;font-size:13px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:#FFFFFF;text-decoration:none;">View the event</a>
+                    </td>
+                  </tr>
+                </table>
+                <p class="sans" style="margin:14px 0 0 0;font-family:'Inter',Helvetica,Arial,sans-serif;font-size:14px;color:#6B6580;line-height:1.5;">
+                  Keen for something sooner? <a href="{{discoverUrl}}" style="color:#3B2F81;text-decoration:underline;">Browse other nights with room</a> - plenty of good ones are open right now, and you keep your place in this queue either way.
+                </p>
+              </td>
+            </tr>
+
+            <!-- footer -->
+            <tr>
+              <td class="px-gutter" style="padding:36px 40px 28px 40px;border-top:1px solid #ECEAF0;">
+                <p class="sans" style="margin:0 0 6px 0;font-family:'Inter',Helvetica,Arial,sans-serif;font-size:12px;color:#6B6580;line-height:1.6;">
+                  You're getting this because you joined the waitlist for {{eventTitle}} through Click.
+                </p>
+                <p class="sans" style="margin:0;font-family:'Inter',Helvetica,Arial,sans-serif;font-size:12px;color:#6B6580;line-height:1.6;">
+                  <a href="{{unsubscribeUrl}}" style="color:#6B6580;text-decoration:underline;">Email preferences</a> &middot; <a href="mailto:{{supportEmail}}" style="color:#6B6580;text-decoration:underline;">{{supportEmail}}</a>
+                </p>
+              </td>
+            </tr>
+
+          </table>
+
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

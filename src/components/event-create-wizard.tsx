@@ -288,6 +288,11 @@ type WizardContextValue = {
   // past events. Both fields stay freetext; these just save retyping.
   hostNameOptions: string[];
   venueOptions: string[];
+  // Whether the merchant has finished Stripe Connect. Creating events no longer
+  // requires it (free events publish fine), but a PAID event can't be approved
+  // until payouts are live - the Schedule step's price field says so rather than
+  // letting the merchant find out from an admin rejection.
+  chargesEnabled: boolean;
   stepError: string | null;
   setStepError: Dispatch<SetStateAction<string | null>>;
   submitting: boolean;
@@ -316,12 +321,14 @@ export function EventCreateProvider({
   tagOptions = [],
   hostNameOptions = [],
   venueOptions = [],
+  chargesEnabled = false,
   children,
 }: {
   categoryOptions: string[];
   tagOptions?: string[];
   hostNameOptions?: string[];
   venueOptions?: string[];
+  chargesEnabled?: boolean;
   children: React.ReactNode;
 }) {
   const [values, setValues] = useState<WizardValues>(() => ({
@@ -380,6 +387,7 @@ export function EventCreateProvider({
         tagOptions,
         hostNameOptions,
         venueOptions,
+        chargesEnabled,
         stepError,
         setStepError,
         submitting,
@@ -1089,7 +1097,7 @@ export function BasicsSection() {
 }
 
 export function ScheduleSection() {
-  const { values, set } = useWizard();
+  const { values, set, chargesEnabled } = useWizard();
   return (
     <div className="space-y-4">
       <header>
@@ -1152,6 +1160,21 @@ export function ScheduleSection() {
           />
         </Field>
       </div>
+      {/* Free events publish without Stripe; a paid one can't be approved until
+          payouts are live. Say it here, at the moment the price is typed, rather
+          than letting the merchant discover it from an admin rejection later. */}
+      {!chargesEnabled && Number(values.price) > 0 ? (
+        <p className="mt-4 rounded-xl border border-[color:var(--mist)] bg-[color:var(--lav-bg)] px-4 py-3 text-sm leading-6 text-[color:var(--slate)]">
+          You haven&rsquo;t finished payout setup, so a paid event stays in review
+          until you do - free events publish as normal.{" "}
+          <a
+            href="/merchant/onboarding/payouts"
+            className="font-medium text-[color:var(--rose)] underline underline-offset-2"
+          >
+            Set up payouts
+          </a>
+        </p>
+      ) : null}
     </div>
   );
 }

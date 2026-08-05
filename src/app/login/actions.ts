@@ -5,8 +5,30 @@ import { redirect } from "next/navigation";
 import { signIn, signOut } from "@/auth";
 import { profileExistsByEmail } from "@/lib/event-repository";
 import { assertLocalDevelopment } from "@/lib/runtime-mode";
-import { issueMagicLink, revokeMagicLink } from "@/lib/auth-magic-link";
-import { sendTransactionalEmail } from "@/lib/email";
+import {
+  TOKEN_TTL_MINUTES,
+  issueMagicLink,
+  revokeMagicLink,
+} from "@/lib/auth-magic-link";
+import { renderTemplate, sendTransactionalEmail } from "@/lib/email";
+
+const SUPPORT_EMAIL = "hello@letsclick.app";
+
+// Only reached when the .html template can't be read - the real subject and
+// copy live in /emails and src/lib/email.ts. Kept so a filesystem problem
+// degrades the look of the mail instead of locking everyone out of sign-in.
+const FALLBACK_SUBJECT = {
+  "signin-link": "Your Click sign-in link",
+  "signup-link": "Finish creating your Click account",
+  "signin-no-account": "No Click account on this address yet",
+} as const;
+
+const FALLBACK_LEAD = {
+  "signin-link": "Continue signing in to Click.",
+  "signup-link": "Finish creating your Click account.",
+  "signin-no-account":
+    "There is no Click account on this address yet. This link creates one.",
+} as const;
 
 function getFormValue(formData: FormData, key: string) {
   const value = formData.get(key);
@@ -41,18 +63,26 @@ async function requestEmailSignIn(input: {
   if (gateError) return { error: gateError, sent: false };
 
   const purpose = input.mode === "login" ? "login" : "signup";
-  // Never reveal account existence on a login surface. Unknown addresses get
-  // the same success state, but no token is created or email sent.
-  if (purpose === "login" && !(await profileExistsByEmail(input.email))) {
-    return { error: null, sent: true };
-  }
+
+  // Signing in on an address with no account is not an error and must not look
+  // like one: answering "no such account" hands out a user-enumeration oracle.
+  // So the token is issued either way and only the template that lands in that
+  // inbox differs - the browser response is identical, and so is the rate
+  // limiting. (It did NOT used to be: this branch returned early without
+  // touching issueMagicLink, so a known address started returning RateLimited
+  // after 5 tries while an unknown one never did. Six posts told you whether an
+  // account existed.) Issuing it as a signup is what makes the link in that
+  // email actually work - one tap creates the account.
+  const noAccount =
+    purpose === "login" && !(await profileExistsByEmail(input.email));
+  const tokenPurpose = noAccount ? "signup" : purpose;
 
   let token: string;
   try {
     token = await issueMagicLink({
       email: input.email,
       redirectTo: input.callbackUrl,
-      purpose,
+      purpose: tokenPurpose,
       clientIp: await clientIp(),
     });
   } catch (error) {
@@ -63,16 +93,43 @@ async function requestEmailSignIn(input: {
   }
 
   const verifyUrl = `${publicAppUrl()}/auth/email/verify?${new URLSearchParams({ token })}`;
+  const expiryWindowLabel = `${TOKEN_TTL_MINUTES} minutes`;
+
+  // Deliberately NOT logEmailEvent, unlike every other templated email. Two
+  // reasons: this is the one send whose result gates a side effect (a failed
+  // delivery must revoke the token below, and logEmailEvent is void +
+  // fire-and-forget), and an email_events row would park a live one-time
+  // sign-in URL in a queryable table that the retry cron could re-deliver
+  // after the token was already revoked.
+  // Falls back to the plain-text auto-HTML if the template can't be read, so a
+  // missing /emails file degrades the look of the mail instead of locking
+  // everyone out of sign-in.
+  const template = noAccount
+    ? "signin-no-account"
+    : tokenPurpose === "signup"
+      ? "signup-link"
+      : "signin-link";
+
+  const rendered = await renderTemplate(template, {
+    verifyUrl,
+    expiryWindowLabel,
+    attemptedEmail: input.email,
+    supportEmail: SUPPORT_EMAIL,
+  }).catch((error) => {
+    console.warn("magic-link template render failed", { template, error });
+    return null;
+  });
+
   const delivery = await sendTransactionalEmail({
     to: input.email,
-    subject: purpose === "signup" ? "Finish creating your Click account" : "Your Click sign-in link",
+    subject: rendered?.subject ?? FALLBACK_SUBJECT[template],
+    html: rendered?.html,
     text: [
-      purpose === "signup" ? "Finish creating your Click account." : "Continue signing in to Click.",
+      FALLBACK_LEAD[template],
       verifyUrl,
-      "This link expires in 15 minutes and can only be used once.",
+      `This link expires in ${expiryWindowLabel} and can only be used once.`,
       "If you did not request it, you can ignore this email.",
     ].join("\n\n"),
-    html: `<p>${purpose === "signup" ? "Finish creating your Click account." : "Continue signing in to Click."}</p><p><a href="${verifyUrl}">Continue to Click</a></p><p>This link expires in 15 minutes and can only be used once.</p><p>If you did not request it, you can ignore this email.</p>`,
   });
   if (!delivery.sent) {
     await revokeMagicLink(token).catch(() => undefined);

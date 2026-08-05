@@ -2,15 +2,15 @@
 
 Project guide for Claude Code working in this repo.
 
-## Project status — PRE-PRODUCTION
+## Project status — LIVE INFRASTRUCTURE, NO TRAFFIC YET
 
-This app has **not launched**. There are no real users, merchants, bookings, or payments — everything in the database is seed/demo/test data.
+The app has no public users yet, but **the production stack is armed**. Treat production data as real and **ask before any destructive operation**.
 
-- It is safe to truncate, reseed, or delete rows for testing. Do not stop to ask before clearing demo data.
-- **Stripe is test mode only** — no real charges exist. Never assume a payment row is real money.
-- Destructive migrations, `TRUNCATE`, and re-running seed scripts are all fine.
-- One caution: `profiles` may be tied to the developer's real Google/Facebook OAuth logins, and `email_events` is the audit/dev-inbox trail — prefer reseeding these over blind-wiping, but they're still not production data.
-- **Remove this section at launch.** Once it's gone, treat all data as production and ask before any destructive operation.
+- **Stripe is LIVE mode.** `STRIPE_SECRET_KEY` is `sk_live_…` and the deployed bundle ships a `pk_live_…` publishable key. `scripts/release-check.mjs` *fails the release* on anything else, and `src/lib/stripe.ts` refuses to initialise a non-live key in production. A completed checkout moves real money — never assume a `payment_transactions` row is fake.
+- **Do not `TRUNCATE`, wipe, or reseed production.** Query counts first; if a table looks like demo data, say so and ask. Destructive migrations need explicit sign-off.
+- `profiles` is tied to real Google/Facebook OAuth logins and `email_events` is the audit/dev-inbox trail. Neither is disposable.
+- **`.env.local` currently points at the production database** (same `aws-1-ap-southeast-1.pooler.supabase.com` host as `.env.production.local`) and has no `RESEND_API_KEY`. So `npm run dev` writes into production and logs mail as `delivery_status='skipped'` — every such row in production so far came from localhost, not the deployment. Point local dev at its own database before assuming otherwise.
+- Local seeding against a **separate** database is fine and encouraged.
 
 ## Stack
 
@@ -85,9 +85,16 @@ Public bucket = anyone with the URL can read (avatars rendered on event cards, h
 | `event-cancelled-attendee` | `cancelMerchantEvent` in `src/lib/event-repository.ts`, fan-out to every affected attendee after commit |
 | `payment-receipt-attendee` | `markPaymentSucceeded` in `src/lib/event-repository.ts`, via `logPaymentReceiptEmail` helper (GST receipt, tax = total / 11) |
 | `password-reset` | `requestPasswordReset` in `src/app/forgot-password/actions.ts`, alongside the legacy `sendTransactionalEmail` magic-link send |
+| `waitlist-joined-attendee` | `registerForEvent` in `src/lib/event-repository.ts`, after commit on the waitlisted branch, via `logWaitlistJoinedEmail` |
+| `waitlist-promoted-attendee` | `logWaitlistPromotedEmail` in `src/lib/event-repository.ts`, called from all four promotion sites: `cancelRegistration`, `cancelGuestSeatForPurchaser`, `expireWaitlistOffers`, `expirePaymentHolds` |
+| `merchant-suspended-merchant` | `updateMerchantVerificationForAdmin` in `src/lib/event-repository.ts`, on the `suspended` branch |
 | `merchant-monthly-report` | `sendMerchantMonthlyReports` in `src/lib/event-repository.ts`, driven by the `api/cron/merchant-monthly-reports` cron — one row per approved merchant who hosted ≥1 event in the target month (events/attendees/paid-revenue/top event) |
 
-Still unwired: `event-reminder-attendee` (needs a ~24h-out cron, not a request handler). When you add that trigger site, call `logEmailEvent` — same shape as the wired ones above.
+`event-reminder-attendee` is wired too, via `sendEventReminders` in `src/lib/event-repository.ts` (cron route `api/cron/event-reminders`), which dedupes against existing `email_events` rows so a re-run can't double-send.
+
+**The two deliberate exceptions**, both in `src/app/login/actions.ts` (`requestEmailSignIn`): `signin-link` and `signup-link` render through `renderTemplate` but deliver through `sendTransactionalEmail`, NOT `logEmailEvent`. Two reasons, and both must still hold before you "fix" this — the delivery result gates a side effect (a failed send revokes the just-issued token, and `logEmailEvent` is `void` + fire-and-forget), and an `email_events` row would park a live one-time sign-in URL in a queryable table that `retryPendingEmailEvents` could re-deliver after the token was revoked.
+
+The one message still on plain text is the merchant status change to `pending` — rare, internal, no template.
 
 ### Existing `sendTransactionalEmail` (Resend)
 

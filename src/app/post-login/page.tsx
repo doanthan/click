@@ -1,23 +1,11 @@
 import { redirect } from "next/navigation";
 import { auth, isAdminEmail } from "@/auth";
 import { getProfileStatus } from "@/lib/event-repository";
+import { safeNext } from "@/lib/safe-next";
 
 export const metadata = {
   title: "Signing you in… | Click",
 };
-
-const KNOWN_PORTAL_ROOTS = ["/dashboard", "/admin", "/merchant", "/onboarding"];
-
-function safeNext(value: string | undefined | null) {
-  if (!value) return null;
-  if (!value.startsWith("/") || value.startsWith("//")) return null;
-  // The marketing home page is never a meaningful post-login destination -
-  // logging in from "/" should hand off to the role dispatch below (dashboard /
-  // merchant / admin) rather than bouncing the user straight back to home.
-  if (value === "/") return null;
-  if (KNOWN_PORTAL_ROOTS.some((root) => value === root)) return null;
-  return value;
-}
 
 type PostLoginPageProps = {
   searchParams?: Promise<{ next?: string; portal?: string }>;
@@ -69,7 +57,14 @@ export default async function PostLoginPage({ searchParams }: PostLoginPageProps
   }
 
   if (!status.onboardingComplete) {
-    redirect("/onboarding");
+    // Carry the deep link THROUGH onboarding rather than dropping it. A visitor
+    // who tapped RSVP on an event, signed up, and finished the form used to land
+    // on /dashboard with no RSVP and no way back to the event that brought them.
+    redirect(
+      explicitNext
+        ? `/onboarding?next=${encodeURIComponent(explicitNext)}`
+        : "/onboarding",
+    );
   }
 
   redirect("/dashboard");

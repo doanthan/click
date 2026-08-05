@@ -52,33 +52,15 @@ export default async function CreateEventLayout({
     );
   }
 
-  // Payments must be connected before a merchant can create events: every event
-  // can sell tickets, so we require Stripe Connect onboarding (charges_enabled)
-  // to be finished first. Sends them to the payout step rather than dead-ending.
-  if (!status.merchantProfile.charges_enabled) {
-    return (
-      <main className="min-h-screen bg-[color:var(--champagne)] px-4 py-12 text-[color:var(--ink)] sm:px-6">
-        <section className="mx-auto max-w-3xl">
-          <p className="eyebrow">Connect payments first</p>
-          <h1 className="mt-6 font-display text-3xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)] sm:text-4xl">
-            Set up payouts before you create events.
-          </h1>
-          <p className="mt-4 text-base leading-7 text-[color:var(--slate)]">
-            We collect ticket payments through Stripe and pay them out to your
-            connected account. Finish Stripe onboarding and you can publish your
-            first event right after.
-          </p>
-          <a
-            href="/merchant/onboarding/payouts"
-            className="ck-btn ck-btn--primary ck-btn--md mt-8"
-          >
-            Set up payouts
-          </a>
-        </section>
-      </main>
-    );
-  }
-
+  // NO payout gate here. Onboarding explicitly offers "Skip for now - you can
+  // keep going and run free events", so blocking the whole wizard on
+  // charges_enabled dead-ended every merchant who took that offer. Stripe
+  // Connect is enforced where it actually matters instead:
+  //   - createEventForMerchant keeps the event 'pending' unless payouts are live
+  //   - approveEventForAdmin refuses to publish a PAID merchant event without it
+  //   - checkout throws PayoutsNotReadyError as the final backstop
+  // The Schedule step warns as soon as a non-zero price is typed, so a merchant
+  // learns this before submitting rather than from an admin rejection.
   const [categoryRows, tagOptions, createOptions] = await Promise.all([
     getMerchantCategoryOptions(),
     getMerchantTagOptions(),
@@ -95,6 +77,7 @@ export default async function CreateEventLayout({
             tagOptions={tagOptions}
             hostNameOptions={createOptions.hostNames}
             venueOptions={createOptions.venues}
+            chargesEnabled={status.merchantProfile.charges_enabled === true}
           >
             {children}
           </EventCreateProvider>

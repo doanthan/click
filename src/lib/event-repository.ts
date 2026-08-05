@@ -680,6 +680,10 @@ async function sendWorkflowEmail(input: {
   }
 }
 
+// Support inbox printed in every templated email. letsclick.app is the domain
+// Click actually owns - the old hello@click.app address bounced.
+const SUPPORT_EMAIL = "hello@letsclick.app";
+
 // Shared site-origin lookup for absolute URLs in templated emails. Falls back
 // to localhost so dev sessions still produce clickable links in the drawer.
 function emailOrigin() {
@@ -854,7 +858,7 @@ async function logRsvpEmails(
         eventDetailsUrl: `${origin}/events/${row.event_slug}`,
         cancelRsvpUrl: `${origin}/confirmed-events`,
         addToCalendarUrl: `${origin}/events/${row.event_slug}`,
-        supportEmail: "hello@click.app",
+        supportEmail: SUPPORT_EMAIL,
         unsubscribeUrl: `${origin}/account-settings`,
       },
     });
@@ -876,13 +880,153 @@ async function logRsvpEmails(
           eventSpotsFilledLabel: spotsLabel,
           attendeesUrl: `${origin}/merchant/events/${row.event_id}`,
           eventDashboardUrl: `${origin}/merchant/events/${row.event_id}`,
-          supportEmail: "hello@click.app",
+          supportEmail: SUPPORT_EMAIL,
           unsubscribeUrl: `${origin}/account-settings`,
         },
       });
     }
   } catch (error) {
     console.warn("logRsvpEmails failed", { eventDbId, attendeeProfileId, error });
+  }
+}
+
+// Post-commit emailer for a waitlist join. Same shape as logRsvpEmails: one
+// supplementary SELECT outside the txn, fire-and-forget, so a template problem
+// can never roll back the queue insert.
+async function logWaitlistJoinedEmail(
+  pool: NonNullable<ReturnType<typeof getPostgresPool>>,
+  eventDbId: string,
+  attendeeProfileId: string,
+) {
+  try {
+    const result = await pool.query<{
+      event_slug: string;
+      event_title: string;
+      starts_at: Date;
+      ends_at: Date | null;
+      timezone: string;
+      location_name: string;
+      city: string;
+      attendee_email: string;
+      attendee_display_name: string;
+    }>(
+      `
+        select
+          e.slug as event_slug,
+          e.title as event_title,
+          e.starts_at,
+          e.ends_at,
+          e.timezone,
+          e.location_name,
+          e.city,
+          p.email::text as attendee_email,
+          p.display_name as attendee_display_name
+        from events e
+        join profiles p on p.id = $2::uuid
+        where e.id = $1::uuid
+        limit 1
+      `,
+      [eventDbId, attendeeProfileId],
+    );
+
+    const row = result.rows[0];
+    if (!row) return;
+
+    const origin = emailOrigin();
+    const dates = formatEmailDates(row.starts_at, row.ends_at, row.timezone);
+
+    await logEmailEvent({
+      template: "waitlist-joined-attendee",
+      toEmail: row.attendee_email,
+      toProfileId: attendeeProfileId,
+      vars: {
+        firstName: (row.attendee_display_name || "").split(/\s+/)[0] || "there",
+        eventTitle: row.event_title,
+        eventLongDate: dates.eventLongDate,
+        eventStartTime: dates.eventStartTime,
+        eventVenue: row.location_name,
+        eventCity: row.city,
+        eventDetailsUrl: `${origin}/events/${row.event_slug}`,
+        discoverUrl: `${origin}/discover`,
+        offerWindowLabel: `${WAITLIST_OFFER_MINUTES} minutes`,
+        supportEmail: SUPPORT_EMAIL,
+        unsubscribeUrl: `${origin}/account-settings`,
+      },
+    });
+  } catch (error) {
+    console.warn("logWaitlistJoinedEmail failed", {
+      eventDbId,
+      attendeeProfileId,
+      error,
+    });
+  }
+}
+
+// A freed seat has been offered to the next person in the queue. Called from
+// all four promotion sites (attendee cancel, guest-seat cancel, and the two
+// expiry crons) so the offer email is identical wherever the seat came from.
+// The offer window is already ticking when this runs, so it stays awaited
+// rather than fire-and-forget - but it never throws into the caller.
+async function logWaitlistPromotedEmail(
+  pool: NonNullable<ReturnType<typeof getPostgresPool>>,
+  promotion: WaitlistPromotion,
+) {
+  try {
+    const result = await pool.query<{
+      starts_at: Date;
+      ends_at: Date | null;
+      timezone: string;
+      location_name: string;
+      city: string;
+    }>(
+      `
+        select starts_at, ends_at, timezone, location_name, city
+        from events
+        where slug = $1
+        limit 1
+      `,
+      [promotion.eventSlug],
+    );
+
+    const row = result.rows[0];
+    if (!row) return;
+
+    const origin = emailOrigin();
+    const tz = row.timezone || "Australia/Sydney";
+    const dates = formatEmailDates(row.starts_at, row.ends_at, tz);
+    // Absolute wall-clock deadline in the venue's timezone. A relative "30
+    // minutes" is wrong the moment the mail sits in a queue.
+    const offerExpiresLabel = new Intl.DateTimeFormat("en-AU", {
+      weekday: "short",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+      timeZone: tz,
+    }).format(promotion.offeredUntil);
+
+    await logEmailEvent({
+      template: "waitlist-promoted-attendee",
+      toEmail: promotion.email,
+      toProfileId: promotion.profileId,
+      vars: {
+        firstName: (promotion.displayName || "").split(/\s+/)[0] || "there",
+        eventTitle: promotion.eventTitle,
+        eventLongDate: dates.eventLongDate,
+        eventStartTime: dates.eventStartTime,
+        eventVenue: row.location_name,
+        eventCity: row.city,
+        claimUrl: `${origin}/events/${promotion.eventSlug}`,
+        offerExpiresLabel,
+        offerWindowLabel: `${WAITLIST_OFFER_MINUTES} minutes`,
+        supportEmail: SUPPORT_EMAIL,
+        unsubscribeUrl: `${origin}/account-settings`,
+      },
+    });
+  } catch (error) {
+    console.warn("logWaitlistPromotedEmail failed", {
+      eventSlug: promotion.eventSlug,
+      error,
+    });
   }
 }
 
@@ -955,7 +1099,7 @@ async function logEventApprovedEmail(
         eventCapacityLabel: `Capacity ${row.capacity}`,
         publicEventUrl: `${origin}/events/${row.event_slug}`,
         eventDashboardUrl: `${origin}/merchant/events/${row.event_slug}`,
-        supportEmail: "hello@click.app",
+        supportEmail: SUPPORT_EMAIL,
         unsubscribeUrl: `${origin}/account-settings`,
       },
     });
@@ -1015,7 +1159,7 @@ async function logEventRejectedEmail(
         eventTitle: row.event_title,
         rejectionReason,
         editEventUrl: `${origin}/merchant/events/${eventSlug}`,
-        supportEmail: "hello@click.app",
+        supportEmail: SUPPORT_EMAIL,
         unsubscribeUrl: `${origin}/account-settings`,
       },
     });
@@ -1111,7 +1255,7 @@ async function logRsvpCancelledEmails(
         eventStartTime: dates.eventStartTime,
         refundLine,
         discoverUrl: `${origin}/discover`,
-        supportEmail: "hello@click.app",
+        supportEmail: SUPPORT_EMAIL,
         unsubscribeUrl: `${origin}/account-settings`,
       },
     });
@@ -1132,7 +1276,7 @@ async function logRsvpCancelledEmails(
             waitlistCount === 1 ? "1 on the waitlist" : `${waitlistCount} on the waitlist`,
           attendeesUrl: `${origin}/merchant/events/${row.event_slug}`,
           eventDashboardUrl: `${origin}/merchant/events/${row.event_slug}`,
-          supportEmail: "hello@click.app",
+          supportEmail: SUPPORT_EMAIL,
           unsubscribeUrl: `${origin}/account-settings`,
         },
       });
@@ -1228,7 +1372,7 @@ async function logPaymentReceiptEmail(
         eventDetailsUrl: `${origin}/events/${row.event_slug}`,
         downloadInvoiceUrl: `${origin}/confirmed-events`,
         refundPolicyUrl: `${origin}/how-it-works`,
-        supportEmail: "hello@click.app",
+        supportEmail: SUPPORT_EMAIL,
         unsubscribeUrl: `${origin}/account-settings`,
       },
     });
@@ -1594,7 +1738,7 @@ async function ensureProfileForSessionUncached(session: Session | null) {
         firstName,
         quizUrl: `${origin}/quiz/life`,
         discoverUrl: `${origin}/discover`,
-        supportEmail: "hello@click.app",
+        supportEmail: SUPPORT_EMAIL,
         unsubscribeUrl: `${origin}/account-settings`,
       },
     });
@@ -3313,16 +3457,9 @@ export async function registerForEvent(eventId: string, session: Session | null)
       await client.query("commit");
 
       if (status === "waitlisted") {
-        await sendWorkflowEmail({
-          to: profile.email,
-          subject: `You are on the waitlist for ${event.title}`,
-          text: [
-            `Hi ${profile.display_name},`,
-            `You are on the waitlist for ${event.title}.`,
-            "If a spot opens, Click will notify you by email and in your dashboard.",
-            `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3001"}/events/${event.slug}`,
-          ].join("\n\n"),
-        });
+        // Waitlist join → log waitlist-joined-attendee to email_events.
+        // Fire-and-forget, same as the confirmed branch below.
+        void logWaitlistJoinedEmail(pool, event.id, profile.id);
       } else {
         // Confirmed RSVP → log rsvp-attendee + rsvp-merchant to email_events.
         // One supplementary SELECT gathers everything both templates need so
@@ -3672,14 +3809,6 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
       error.name = "MerchantApprovalRequiredError";
       throw error;
     }
-    // Payments must be connected first: events sell tickets, so block creation
-    // until Stripe Connect onboarding is complete (charges_enabled). The wizard
-    // gates on this too — this is the server-side backstop.
-    if (!merchantProfile.charges_enabled) {
-      const error = new Error("Connect Stripe payouts before creating events.");
-      error.name = "ValidationError";
-      throw error;
-    }
     // Trusted merchants (an admin has approved at least one of their events, see
     // approveEventForAdmin) skip the pending queue — their events publish straight
     // to 'live'. New/untrusted merchants still land in 'pending' for manual review.
@@ -3881,7 +4010,7 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
         eventCapacityLabel: `Capacity ${capacity}`,
         eventDashboardUrl: `${origin}/merchant/events/${slug}`,
         editEventUrl: `${origin}/merchant/events/${slug}`,
-        supportEmail: "hello@click.app",
+        supportEmail: SUPPORT_EMAIL,
         unsubscribeUrl: `${origin}/account-settings`,
       },
     });
@@ -4432,26 +4561,22 @@ export async function updateMerchantVerificationForAdmin(
     ],
   );
 
-  if (status !== "approved" && status !== "rejected") {
+  // 'pending' is the one status with no template - an admin walking a merchant
+  // back to review is rare and internal, so it keeps the plain-text notice.
+  if (status !== "approved" && status !== "rejected" && status !== "suspended") {
     await sendWorkflowEmail({
       to: merchant.owner_email,
-      subject:
-        status === "suspended"
-          ? `${merchant.business_name} has been suspended on Click`
-          : `${merchant.business_name} merchant status: ${status}`,
+      subject: `${merchant.business_name} merchant status: ${status}`,
       text: [
         `Hi ${merchant.owner_name},`,
-        status === "suspended"
-          ? `${merchant.business_name} has been suspended. Your events are hidden from Discover until an admin reinstates the account.`
-          : `${merchant.business_name} is now marked ${status}.`,
+        `${merchant.business_name} is now marked ${status}.`,
         `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3001"}/merchant`,
       ].join("\n\n"),
     });
   }
 
-  // Log the rendered HTML to email_events for the dev drawer. Only approved /
-  // rejected have templates in /emails today; suspended + pending fall through
-  // until someone drafts those .html files.
+  // Log the rendered HTML to email_events. Approved / rejected / suspended all
+  // have templates in /emails; 'pending' falls through to the notice above.
   const origin = emailOrigin();
   const merchantFirstName =
     (merchant.owner_name || merchant.business_name || "").split(/\s+/)[0] || "there";
@@ -4465,7 +4590,7 @@ export async function updateMerchantVerificationForAdmin(
         merchantFirstName,
         createEventUrl: `${origin}/merchant/events/create`,
         merchantDashboardUrl: `${origin}/merchant`,
-        supportEmail: "hello@click.app",
+        supportEmail: SUPPORT_EMAIL,
         unsubscribeUrl: `${origin}/account-settings`,
       },
     });
@@ -4481,8 +4606,23 @@ export async function updateMerchantVerificationForAdmin(
           trimmedReason ||
           "Our reviewer flagged something in your application. Reply to this email and we'll walk you through it.",
         resubmitUrl: `${origin}/merchant/signup/documents`,
-        supportEmail: "hello@click.app",
+        supportEmail: SUPPORT_EMAIL,
         unsubscribeUrl: `${origin}/account-settings`,
+      },
+    });
+  } else if (status === "suspended") {
+    await logEmailEvent({
+      template: "merchant-suspended-merchant",
+      toEmail: merchant.owner_email,
+      toProfileId: merchant.owner_profile_id,
+      vars: {
+        businessName: merchant.business_name,
+        merchantFirstName,
+        suspensionReason:
+          trimmedReason ||
+          "An admin paused this account while we look into something. Reply to this email and we'll walk you through it.",
+        merchantDashboardUrl: `${origin}/merchant`,
+        supportEmail: SUPPORT_EMAIL,
       },
     });
   }
@@ -7175,7 +7315,7 @@ export async function registerMerchantWizardSubmit(
             businessName,
             suburb: suburb || input.addressState,
             pilotArea: PILOT_AREA_LABEL,
-            supportEmail: "hello@click.app",
+            supportEmail: SUPPORT_EMAIL,
             unsubscribeUrl: `${origin}/account-settings`,
           },
         });
@@ -7189,7 +7329,7 @@ export async function registerMerchantWizardSubmit(
             businessName,
             submittedDate,
             merchantDashboardUrl: `${origin}/merchant`,
-            supportEmail: "hello@click.app",
+            supportEmail: SUPPORT_EMAIL,
             unsubscribeUrl: `${origin}/account-settings`,
           },
         });
@@ -7779,7 +7919,7 @@ async function sendClickInner(
             otherName: clickedProfile.display_name,
             suggestionLine,
             proposalsUrl,
-            supportEmail: "hello@click.app",
+            supportEmail: SUPPORT_EMAIL,
             unsubscribeUrl: `${origin}/account-settings`,
           },
         });
@@ -7794,7 +7934,7 @@ async function sendClickInner(
             otherName: profile.display_name,
             suggestionLine,
             proposalsUrl,
-            supportEmail: "hello@click.app",
+            supportEmail: SUPPORT_EMAIL,
             unsubscribeUrl: `${origin}/account-settings`,
           },
         });
@@ -7895,6 +8035,7 @@ export async function expireClickLifecycles() {
 }
 
 type WaitlistPromotion = {
+  profileId: string;
   email: string;
   displayName: string;
   eventTitle: string;
@@ -8019,6 +8160,7 @@ async function promoteNextWaitlister(
   );
 
   return {
+    profileId: nextInLine.profile_id,
     email: nextInLine.email,
     displayName: nextInLine.display_name,
     eventTitle,
@@ -8268,7 +8410,7 @@ export async function cancelRegistration(eventId: string, session: Session | nul
       // queue and tell the user we're on it (spec §5 "refund fails").
       refund = { refundCents: refundPlan.refundCents, tier: refundPlan.tier, failed: true };
       refundLine =
-        "We're processing your refund — if you don't see it within 7 days, contact hello@click.app.";
+        `We're processing your refund - if you don't see it within 7 days, contact ${SUPPORT_EMAIL}.`;
       await pool
         .query(
           `insert into refund_failures (payment_transaction_id, event_id, profile_id, amount_cents, currency, error_message)
@@ -8304,18 +8446,7 @@ export async function cancelRegistration(eventId: string, session: Session | nul
   void logRsvpCancelledEmails(pool, cancelledEventId, profile.id, refundLine);
 
   if (promotion) {
-    await sendWorkflowEmail({
-      to: promotion.email,
-      subject: `A spot opened for ${promotion.eventTitle}`,
-      text: [
-        `Hi ${promotion.displayName},`,
-        `A spot opened for ${promotion.eventTitle}.`,
-        `Your offer is held until ${promotion.offeredUntil.toLocaleString("en-AU", {
-          timeZone: "Australia/Sydney",
-        })} (about ${WAITLIST_OFFER_MINUTES} minutes).`,
-        `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3001"}/events/${promotion.eventSlug}`,
-      ].join("\n\n"),
-    });
+    await logWaitlistPromotedEmail(pool, promotion);
   }
 
   return {
@@ -8637,18 +8768,7 @@ export async function cancelGuestSeatForPurchaser(
   }
 
   if (promotion) {
-    await sendWorkflowEmail({
-      to: promotion.email,
-      subject: `A spot opened for ${promotion.eventTitle}`,
-      text: [
-        `Hi ${promotion.displayName},`,
-        `A spot opened for ${promotion.eventTitle}.`,
-        `Your offer is held until ${promotion.offeredUntil.toLocaleString("en-AU", {
-          timeZone: "Australia/Sydney",
-        })} (about ${WAITLIST_OFFER_MINUTES} minutes).`,
-        `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3001"}/events/${promotion.eventSlug}`,
-      ].join("\n\n"),
-    });
+    await logWaitlistPromotedEmail(pool, promotion);
   }
 
   return {
@@ -8776,18 +8896,7 @@ export async function expireWaitlistOffers(): Promise<{ expired: number; reoffer
 
   // Email the newly-offered users outside any transaction.
   for (const promo of promotions) {
-    await sendWorkflowEmail({
-      to: promo.email,
-      subject: `A spot opened for ${promo.eventTitle}`,
-      text: [
-        `Hi ${promo.displayName},`,
-        `A spot opened for ${promo.eventTitle}.`,
-        `Your offer is held until ${promo.offeredUntil.toLocaleString("en-AU", {
-          timeZone: "Australia/Sydney",
-        })} (about ${WAITLIST_OFFER_MINUTES} minutes).`,
-        `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3001"}/events/${promo.eventSlug}`,
-      ].join("\n\n"),
-    }).catch(() => {});
+    await logWaitlistPromotedEmail(pool, promo);
   }
 
   return { expired, reoffered };
@@ -8974,18 +9083,7 @@ export async function expirePaymentHolds(): Promise<{ expired: number; reoffered
 
   // Email the newly-offered users outside any transaction.
   for (const promo of promotions) {
-    await sendWorkflowEmail({
-      to: promo.email,
-      subject: `A spot opened for ${promo.eventTitle}`,
-      text: [
-        `Hi ${promo.displayName},`,
-        `A spot opened for ${promo.eventTitle}.`,
-        `Your offer is held until ${promo.offeredUntil.toLocaleString("en-AU", {
-          timeZone: "Australia/Sydney",
-        })} (about ${WAITLIST_OFFER_MINUTES} minutes).`,
-        `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3001"}/events/${promo.eventSlug}`,
-      ].join("\n\n"),
-    }).catch(() => {});
+    await logWaitlistPromotedEmail(pool, promo);
   }
 
   return { expired, reoffered };
@@ -9367,7 +9465,7 @@ async function cancelEvent(eventId: string, actor: EventCancellationActor) {
             }).catch(() => {});
           } catch (err) {
             refundLabel =
-              "We're processing your full refund — if it hasn't arrived within 7 days, contact hello@click.app.";
+              `We're processing your full refund - if it hasn't arrived within 7 days, contact ${SUPPORT_EMAIL}.`;
             await pool
               .query(
                 `insert into refund_failures (payment_transaction_id, event_id, profile_id, amount_cents, currency, error_message)
@@ -9401,7 +9499,7 @@ async function cancelEvent(eventId: string, actor: EventCancellationActor) {
             refundLabel,
             suggestedEvents: suggestedEventsHtml,
             discoverUrl: `${origin}/discover`,
-            supportEmail: "hello@click.app",
+            supportEmail: SUPPORT_EMAIL,
             unsubscribeUrl: `${origin}/account-settings`,
           },
         });
@@ -13797,7 +13895,7 @@ export async function sendMerchantMonthlyReports(opts: {
           topEventAttendees: String(Number(row.top_event_attendees ?? 0)),
           merchantDashboardUrl: `${origin}/merchant?tab=dashboard`,
           unsubscribeUrl: `${origin}/account-settings`,
-          supportEmail: "hello@click.app",
+          supportEmail: SUPPORT_EMAIL,
         },
       });
       sent += 1;

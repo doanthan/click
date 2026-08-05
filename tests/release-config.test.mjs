@@ -134,11 +134,94 @@ test("event cancellation retries resume unfinished refunds safely", () => {
   assert.match(stripeSync, /update refund_failures[\s\S]*resolution = 'resolved'/);
 });
 
-test("known-dead legacy avatar storage falls back before rendering", () => {
-  const resolver = readFileSync(path.join(root, "src/lib/avatar-images.ts"), "utf8");
+test("media blocklists can never contain the live storage host", () => {
+  // This test used to assert the OPPOSITE - that vkpwhxixnynfccfheuut.supabase.co
+  // was blocklisted - which is how the bug survived review. That host is the
+  // project's CURRENT Supabase Storage bucket, so blocklisting it meant every
+  // event photo and avatar uploaded in production was written to storage and
+  // then silently discarded on read, replaced by stock art / initials.
+  for (const file of ["src/lib/avatar-images.ts", "src/lib/event-images.ts"]) {
+    const resolver = readFileSync(path.join(root, file), "utf8");
+    assert.match(
+      resolver,
+      /unavailableHosts\(/,
+      `${file} must build its blocklist through unavailableHosts()`,
+    );
+    assert.doesNotMatch(
+      resolver,
+      /["'][a-z0-9-]+\.supabase\.co["']/,
+      `${file} hardcodes a Supabase host - route it through unavailableHosts() instead`,
+    );
+  }
+
+  // The guard itself: it is only meaningful if it compares against the bucket we
+  // actually upload to.
+  const guard = readFileSync(path.join(root, "src/lib/unavailable-hosts.ts"), "utf8");
+  assert.match(guard, /NEXT_PUBLIC_SUPABASE_URL/);
+
   const designSystem = readFileSync(path.join(root, "src/components/ds.tsx"), "utf8");
-  assert.match(resolver, /vkpwhxixnynfccfheuut\.supabase\.co/);
   assert.match(designSystem, /resolveAvatarImage\(src\)/);
+});
+
+test("merchants can create free events without finishing Stripe Connect", () => {
+  // Onboarding offers "Skip for now - you can keep going and run free events".
+  // A blanket charges_enabled gate on the create flow dead-ended everyone who
+  // took that offer, so the gate lives downstream instead: pending status at
+  // creation, a paid-only publication gate at approval, PayoutsNotReadyError at
+  // checkout.
+  const layout = readFileSync(
+    path.join(root, "src/app/merchant/events/create/layout.tsx"),
+    "utf8",
+  );
+  assert.doesNotMatch(
+    layout,
+    /if \(!status\.merchantProfile\.charges_enabled\)/,
+    "the create-event wizard must not block wholesale on charges_enabled",
+  );
+
+  const repository = readFileSync(path.join(root, "src/lib/event-repository.ts"), "utf8");
+  assert.doesNotMatch(
+    repository,
+    /Connect Stripe payouts before creating events/,
+    "createEventForMerchant must not reject free events for missing payouts",
+  );
+  // The downstream gates that make the above safe must still be in place.
+  assert.match(repository, /const eventStatus = autoApprove && stripeReady \? "live" : "pending"/);
+  assert.match(repository, /This is a paid event, but the host hasn't finished Stripe Connect/);
+});
+
+test("a deep link survives signup and onboarding", () => {
+  // Signing up from an event page used to drop the event: the modal replaced the
+  // callback with a bare /post-login, and /post-login dropped ?next= again when
+  // it sent a brand-new attendee to /onboarding. The RSVP never happened.
+  const modal = readFileSync(path.join(root, "src/components/login-modal.tsx"), "utf8");
+  assert.match(modal, /ATTENDEE_SIGNUP_CALLBACK_URL\}\?next=\$\{encodeURIComponent\(callbackUrl\)/);
+
+  const postLogin = readFileSync(path.join(root, "src/app/post-login/page.tsx"), "utf8");
+  assert.match(postLogin, /\/onboarding\?next=\$\{encodeURIComponent\(explicitNext\)/);
+
+  const onboardingPage = readFileSync(path.join(root, "src/app/onboarding/page.tsx"), "utf8");
+  assert.match(onboardingPage, /safeNext/);
+  assert.match(onboardingPage, /next=\{next\}/);
+
+  const onboardingForm = readFileSync(
+    path.join(root, "src/components/onboarding-form.tsx"),
+    "utf8",
+  );
+  assert.match(onboardingForm, /router\.push\(next \?\? "\/dashboard"\)/);
+
+  // safeNext is the one place the protocol-relative case is handled.
+  const safeNextSource = readFileSync(path.join(root, "src/lib/safe-next.ts"), "utf8");
+  assert.match(safeNextSource, /value\.startsWith\("\/\/"\)/);
+});
+
+test("email logged while the provider was unconfigured is retryable", () => {
+  const email = readFileSync(path.join(root, "src/lib/email.ts"), "utf8");
+  assert.match(
+    email,
+    /delivery_status in \('pending', 'failed', 'skipped'\)/,
+    "'skipped' means delivery was never attempted - it must be swept once a key exists",
+  );
 });
 
 test("write APIs authenticate before parsing or validating request bodies", () => {

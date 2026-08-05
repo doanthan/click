@@ -3,7 +3,8 @@ import "server-only";
 import { createHash, randomBytes } from "node:crypto";
 import { getPostgresPool } from "@/lib/postgres";
 
-const TOKEN_TTL_MINUTES = 15;
+// Exported so the sign-in email copy quotes the TTL it actually enforces.
+export const TOKEN_TTL_MINUTES = 15;
 const EMAIL_LIMIT_PER_HOUR = 5;
 const IP_LIMIT_PER_HOUR = 30;
 

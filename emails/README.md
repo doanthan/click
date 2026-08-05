@@ -2,16 +2,17 @@
 
 Plain HTML templates for the transactional emails Click sends today. Each file is a complete, standalone document with inlined styles — open one in a browser to see the design, or feed it through any templating engine (Handlebars, Mustache, hand-rolled string replace) to fill in the `{{variables}}`.
 
-These follow the design direction in `/design.md`:
+These follow the Click design system (`context/Click Design System/`, palette canon in `context/DESIGN.MD`):
 
-- Porcelain background, Indigo Ink type, Bubblegum Pink CTAs, Icy Aqua tags.
-- Editorial serif headings, refined sans body.
-- Warm, specific, practical copy. No "AI-powered" anything.
-- Ticket-stub visual cues on event cards (dashed indigo top border).
+- Cream `#F9F6F0` page ground, white cards, Ink `#1C1830` type, Slate `#6B6580` meta, Mist `#ECEAF0` hairlines.
+- Deep Purple `#3B2F81` is the only CTA / heading accent colour - flat, never a gradient. Lavender `#C8B8F8` is an accent hairline only.
+- Schibsted Grotesk headings + wordmark, Inter body.
+- Warm, specific, practical copy. No "AI-powered" anything. Hyphens ` - `, never em-dashes.
+- Ticket-stub visual cues on event cards.
 
 ## Files
 
-The first four are wired through `logEmailEvent` (see "Dev log" below). The rest are designed and templated — their trigger sites still need to call `logEmailEvent({ template: "…", … })`. The `EmailTemplate` union + subject lines in `src/lib/email.ts` already cover them, so once you call it, it'll typecheck and render.
+Every template listed here is wired through `logEmailEvent` and fires today, with one exception noted in "Open to-dos". Adding a new one means: drop the `.html` here, add the variant to the `EmailTemplate` union and a subject to `SUBJECTS` in `src/lib/email.ts`, then call `logEmailEvent({ template: "…", … })` from the trigger site.
 
 ### Attendee-facing
 
@@ -23,7 +24,18 @@ The first four are wired through `logEmailEvent` (see "Dev log" below). The rest
 | `event-reminder-attendee.html` | ~24h before `events.starts_at` (cron job — not request-triggered). | `Tomorrow — {{eventTitle}}` |
 | `event-cancelled-attendee.html` | Fan-out to every confirmed RSVP after `POST /api/merchant/events/[eventId]/cancel`. | `{{eventTitle}} has been cancelled` |
 | `payment-receipt-attendee.html` | From the Stripe webhook (`checkout.session.completed`) on paid events. | `Receipt — {{eventTitle}} ({{totalLabel}})` |
+| `waitlist-joined-attendee.html` | When an RSVP lands on a full event's waitlist (`registerForEvent`). | `You're on the waitlist - {{eventTitle}}` |
+| `waitlist-promoted-attendee.html` | When a freed seat is offered to the next person in the queue. Time-sensitive - the hold is already ticking. | `A spot opened - {{eventTitle}}` |
+
+### Auth and security
+
+No `unsubscribeUrl` on any of these — security mail is transactional and exempt from preference lists.
+
+| File | When to send | Subject suggestion |
+| --- | --- | --- |
 | `password-reset.html` | When a user starts the `/forgot-password` flow. | `Reset your Click password` |
+| `signin-link.html` | Magic-link sign-in for an existing account (`requestEmailSignIn`, `mode: "login"`). | `Your Click sign-in link` |
+| `signup-link.html` | Magic-link confirmation that finishes creating a new account (`mode: "signup"`). | `Finish creating your Click account` |
 
 ### Merchant-facing
 
@@ -33,6 +45,7 @@ The first four are wired through `logEmailEvent` (see "Dev log" below). The rest
 | `merchant-waitlisted-merchant.html` | Same step, when the venue is outside the launch pilot (Greater Sydney) — parked on the host waitlist. | `You're on the Click waitlist — {{suburb}} is coming soon` |
 | `merchant-verified-merchant.html` | After `POST /api/admin/merchants/[merchantId]/verification` approves. | `{{businessName}} is verified — post your first event` |
 | `merchant-rejected-merchant.html` | Same route, declined. | `{{businessName}} application — one small change` |
+| `merchant-suspended-merchant.html` | Same route, suspended. Their live events are hidden from Discover until an admin reinstates them. | `{{businessName}} has been suspended on Click` |
 | `event-created-merchant.html` | After a merchant submits an event for review (`POST /api/merchant/events`). | `Your event is in review — {{eventTitle}}` |
 | `event-approved-merchant.html` | After `POST /api/admin/events/[eventId]/approve` succeeds. | `{{eventTitle}} is live` |
 | `event-rejected-merchant.html` | After `POST /api/admin/events/[eventId]/reject` succeeds. | `{{eventTitle}} needs another pass` |
@@ -273,6 +286,58 @@ No `unsubscribeUrl` here — security mail is transactional and exempt from pref
 | `requestIpLabel` | e.g. `an IP in Sydney, Australia` — never the raw IP. Optional but recommended for trust. |
 | `supportEmail` |  |
 
+### `signin-link.html` and `signup-link.html`
+
+Same three variables, different copy. These carry a live one-time credential, which is why they are the only templated emails that do **not** go through `logEmailEvent` — see the comment in `src/app/login/actions.ts`.
+
+| Variable | Notes |
+| --- | --- |
+| `verifyUrl` | One-shot signed URL. Also rendered as plain text below the button. |
+| `expiryWindowLabel` | e.g. `15 minutes`. Derived from `TOKEN_TTL_MINUTES` in `src/lib/auth-magic-link.ts` — never hard-code it, the copy and the token must not disagree. |
+| `supportEmail` |  |
+
+### `waitlist-joined-attendee.html`
+
+| Variable | Notes |
+| --- | --- |
+| `firstName` |  |
+| `eventTitle` |  |
+| `eventLongDate` |  |
+| `eventStartTime` |  |
+| `eventVenue` |  |
+| `eventCity` |  |
+| `offerWindowLabel` | How long a freed seat is held, e.g. `30 minutes`. Comes from `WAITLIST_OFFER_MINUTES`. |
+| `eventDetailsUrl` | `/events/[slug]`. |
+| `discoverUrl` | Offered as a genuine alternative, never as consolation. |
+| `supportEmail` |  |
+| `unsubscribeUrl` |  |
+
+### `waitlist-promoted-attendee.html`
+
+| Variable | Notes |
+| --- | --- |
+| `firstName` |  |
+| `eventTitle` |  |
+| `eventLongDate` |  |
+| `eventStartTime` |  |
+| `eventVenue` |  |
+| `eventCity` |  |
+| `claimUrl` | Where they accept the seat — `/events/[slug]`. Single CTA, no competing links. |
+| `offerExpiresLabel` | Absolute wall-clock deadline in the venue's timezone, e.g. `Thu, 7:42 PM`. A relative "30 minutes" goes stale the moment the mail queues. |
+| `offerWindowLabel` | e.g. `30 minutes`. |
+| `supportEmail` |  |
+| `unsubscribeUrl` |  |
+
+### `merchant-suspended-merchant.html`
+
+| Variable | Notes |
+| --- | --- |
+| `merchantFirstName` |  |
+| `businessName` |  |
+| `suspensionReason` | Free-text from the admin. Rendered as a single paragraph — newlines OK but no markdown. Falls back to a neutral sentence when the admin left it blank. |
+| `merchantDashboardUrl` | `/merchant`. |
+| `supportEmail` |  |
+
 ### `payment-receipt-attendee.html`
 
 This one is a tax document — `taxLabel` and the `ABN` line in the footer matter for AU GST receipts. If you launch outside AU first, swap the footer text accordingly.
@@ -307,26 +372,23 @@ There's no SMTP provider wired yet, but rendered emails *are* persisted to a Pos
 
 The helper lives in `src/lib/email.ts` (`logEmailEvent`, `renderTemplate`). It loads the matching `.html` file from this directory, replaces `{{vars}}`, and inserts a row. Failures are warn-logged and swallowed — a missing template will never break the signup/RSVP flow it's attached to. Restart the dev server to pick up template edits (`.html` files are cached in-process).
 
-All four templates are wired:
-
-- `account-welcome` → `ensureProfileForSession` (fires on `xmax = 0`, i.e. fresh inserts only)
-- `rsvp-attendee` + `rsvp-merchant` → `registerForEvent`, after the confirmed-RSVP txn commits (waitlisted RSVPs still go through the existing `sendWorkflowEmail` path, not the dev log)
-- `event-created-merchant` → `createEventForMerchant`, after the events insert (and tag upsert) succeeds
+The per-template trigger site is listed in the "Wired triggers" table in `CLAUDE.md`.
 
 ## Sending these
 
-Click doesn't have an email backend wired up yet. When adding one, the recommended path is:
+Resend is live. `logEmailEvent` inserts the `email_events` row first, then delivers through Resend using the row id as the provider idempotency key, then writes back `delivery_status` / `provider_message_id`. Rows that failed or were logged while the key was missing are retried by `retryPendingEmailEvents` (cron route `api/cron/email-delivery`), up to 5 attempts within 7 days.
 
-1. Pick a provider — Resend or AWS SES both work. Add the SDK in `package.json`.
-2. Add a thin `src/lib/email.ts` that:
-   - Loads the relevant `.html` file from `/emails`.
-   - Runs it through a templater (or a regex replace over `{{var}}`).
-   - Sends via the provider, with a generated plain-text fallback (strip tags + decode entities).
-3. Trigger sites:
-   - `account-welcome.html` → after `ensureProfileForSession` returns a freshly-inserted profile.
-   - `rsvp-*.html` → at the end of `POST /api/events/[eventId]/register`, in a `Promise.all` so the response isn't blocked on SMTP.
-   - `event-created-merchant.html` → at the end of `POST /api/merchant/events`.
-4. Keep the templates here, not in `src/`. They're content, not code. The send wrapper in `src/lib/email.ts` should be the only thing that reads them.
+Resend verifies the sending **subdomain**, not the root: `send.letsclick.app` is verified and `letsclick.app` is not, so a from address on the root gets a 403. `RESEND_FROM_EMAIL` must stay on the subdomain; replies are pointed at the real inbox via `reply_to`.
+
+### Testing the whole set
+
+```
+node scripts/send-test-emails.mjs --to=you@example.com            # real send, one of each
+node scripts/send-test-emails.mjs --to=you@example.com --dry-run  # render only
+node scripts/send-test-emails.mjs --to=you@example.com --only=signin-link
+```
+
+It renders every `.html` in this directory with realistic sample data and posts straight to Resend — no `email_events` rows, so a test blast never pollutes the audit trail. It exits non-zero if a template leaves any `{{variable}}` unreplaced, or if a `.html` has no subject in `SUBJECTS` (or vice versa), so adding half of a template pair fails the run.
 
 ## Editing
 
@@ -337,7 +399,6 @@ Click doesn't have an email backend wired up yet. When adding one, the recommend
 
 ## Open to-dos
 
-- Trigger sites are now wired for `event-approved-merchant`, `event-rejected-merchant`, `rsvp-cancelled-*`, `event-cancelled-attendee`, `event-cancelled-merchant`, `merchant-application-received`, `merchant-verified/rejected-merchant`, `payment-receipt-attendee`, and `password-reset` (see the "Wired triggers" table in `CLAUDE.md` for the exact handler per template). Still unwired: `event-reminder-attendee` (cron, below).
-- `event-reminder-attendee` needs a scheduler, not a request handler. Easiest path is a daily cron job that selects `events` starting ~24h out, joins confirmed RSVPs, and calls `logEmailEvent` per row. Pick the cron mechanism (Supabase `pg_cron`, Vercel cron, GitHub Actions) before building it.
+- Every template here is wired. The one remaining plain-text notice is the merchant status change to `pending` in `updateMerchantVerificationForAdmin` — a rare internal action with no `.html` and no `email_events` row. Draft `merchant-pending-merchant.html` if an admin ever uses it in anger.
 - Hook the unsubscribe link to a real preferences page — placeholder `unsubscribeUrl` won't satisfy CAN-SPAM/CASL on its own.
 - `payment-receipt-attendee.html` footer hard-codes a placeholder ABN. Fill in the real ABN once Click Pty Ltd is registered, and reconsider the GST line if you launch outside AU first.

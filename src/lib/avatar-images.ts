@@ -1,9 +1,9 @@
-const UNAVAILABLE_AVATAR_HOSTS = new Set([
-  // Legacy Supabase project currently returns HTTP 402 for every public object.
-  // Keep the stored URL intact so the photo can be recovered if the project is
-  // restored; readers fall back to the standard anonymous avatar meanwhile.
-  "vkpwhxixnynfccfheuut.supabase.co",
-]);
+import { unavailableHosts } from "@/lib/unavailable-hosts";
+
+// Avatar hosts known to be dead. Empty today - see the note in event-images.ts:
+// this listed the live Supabase Storage host, so every uploaded avatar rendered
+// as initials AND dropped that profile out of people discovery.
+const UNAVAILABLE_AVATAR_HOSTS = unavailableHosts([]);
 
 export function resolveAvatarImage(url?: string | null): string | null {
   const value = url?.trim();

@@ -1,9 +1,11 @@
-const UNAVAILABLE_EVENT_IMAGE_HOSTS = new Set([
-  // Legacy Supabase project currently returns HTTP 402 for every public object.
-  // Keep the original URLs in Postgres so they can be recovered if the project
-  // is restored; public readers bypass only this known-unavailable host.
-  "vkpwhxixnynfccfheuut.supabase.co",
-]);
+import { unavailableHosts } from "@/lib/unavailable-hosts";
+
+// Event-image hosts known to be dead. Empty today: this used to list
+// vkpwhxixnynfccfheuut.supabase.co on the belief that the project returned HTTP
+// 402 for every object, but that is the CURRENT storage host and it serves
+// normally (a missing key returns NoSuchKey/404). Every merchant photo uploaded
+// in production was being thrown away on read as a result.
+const UNAVAILABLE_EVENT_IMAGE_HOSTS = unavailableHosts([]);
 
 export function fallbackEventImage(
   category?: string | null,

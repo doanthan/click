@@ -63,10 +63,17 @@ export function LoginModal({
 
   const isSignup = mode === "signup";
   const isHostSignup = isSignup && role === "host";
+  // Attendee signups route via /post-login so onboarding runs first, but the
+  // page they came from rides along as ?next= - signing up from an event and
+  // then losing the event was the most common way an intended RSVP evaporated.
+  // /post-login re-validates with safeNext, so an unusable value is dropped there.
+  const attendeeSignupCallbackUrl = callbackUrl?.startsWith("/")
+    ? `${ATTENDEE_SIGNUP_CALLBACK_URL}?next=${encodeURIComponent(callbackUrl)}`
+    : ATTENDEE_SIGNUP_CALLBACK_URL;
   const formCallbackUrl = isSignup
     ? isHostSignup
       ? HOST_SIGNUP_CALLBACK_URL
-      : ATTENDEE_SIGNUP_CALLBACK_URL
+      : attendeeSignupCallbackUrl
     : callbackUrl;
 
   useEffect(() => {

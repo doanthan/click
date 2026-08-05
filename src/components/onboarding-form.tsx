@@ -68,6 +68,10 @@ type SubmitState = "idle" | "submitting" | "error";
 
 type OnboardingFormProps = {
   initialName: string;
+  // Deep link the visitor was headed to before signup interrupted them (already
+  // validated by safeNext on the server). Finishing the form resumes that trip
+  // instead of dumping them on /dashboard.
+  next?: string | null;
 };
 
 // 18 years ago today, ISO yyyy-mm-dd - the max value the <input type="date"> accepts.
@@ -90,7 +94,7 @@ function ageFromBirthDate(iso: string): number | null {
   return age;
 }
 
-export function OnboardingForm({ initialName }: OnboardingFormProps) {
+export function OnboardingForm({ initialName, next }: OnboardingFormProps) {
   const router = useRouter();
   const maxBirthDate = useMemo(() => getMaxBirthDate(), []);
 
@@ -283,7 +287,7 @@ export function OnboardingForm({ initialName }: OnboardingFormProps) {
       window.localStorage.removeItem(STORAGE_KEY);
     } catch {}
 
-    router.push("/dashboard");
+    router.push(next ?? "/dashboard");
     router.refresh();
   }
 
