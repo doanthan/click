@@ -727,7 +727,17 @@ export default function SupportWidget() {
                         </p>
                         <div className="mt-1 flex items-center gap-3">
                           {b.screenshotUrl && (
-                            <a href={b.screenshotUrl} target="_blank" rel="noreferrer" className="inline-block text-xs underline" style={{ color: ACCENT }}>
+                            // screenshot_url is a PRIVATE-bucket object KEY ("support/<ref>.jpg"),
+                            // not a URL. Linking it straight resolved relative to the current page
+                            // and 404'd. Go through the route that mints a 60-second signed URL -
+                            // the same link the Sheet uses.
+                            <a
+                              href={`/api/support/ticket/${encodeURIComponent(b.ticketRef)}/screenshot`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-block text-xs underline"
+                              style={{ color: ACCENT }}
+                            >
                               View screenshot
                             </a>
                           )}
