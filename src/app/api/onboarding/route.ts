@@ -26,7 +26,6 @@ export async function POST(request: Request) {
   let payload: {
     displayName?: string;
     suburb?: string;
-    age?: string;
     bio?: string;
     intents?: string[];
     tags?: string[];
@@ -46,11 +45,12 @@ export async function POST(request: Request) {
       {
         displayName: payload.displayName ?? "",
         suburb: payload.suburb ?? "",
-        age: payload.age ?? "",
         bio: payload.bio ?? "",
         intents: Array.isArray(payload.intents) ? payload.intents : [],
         tags: Array.isArray(payload.tags) ? payload.tags : [],
-        birthDate: payload.birthDate,
+        // Required - saveOnboarding rejects a missing/underage date. The 18+
+        // gate is not the client's to enforce.
+        birthDate: payload.birthDate ?? "",
         datingVisible:
           typeof payload.datingVisible === "boolean" ? payload.datingVisible : undefined,
         flexibleDiscovery:

@@ -112,26 +112,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     strategy: "jwt",
   },
   providers,
-  callbacks: {
-    authorized({ auth: session, request }) {
-      const pathname = request.nextUrl.pathname;
-      const protectedRoutes = [
-        "/dashboard",
-        "/merchant",
-        "/admin",
-        "/onboarding",
-        "/post-login",
-      ];
-      const isProtectedRoute = protectedRoutes.some((route) =>
-        pathname.startsWith(route),
-      );
-
-      if (!isProtectedRoute) return true;
-      if (!session?.user) return false;
-      // Admin-page access denial is rendered inline by the page itself so the
-      // user gets an explicit "no admin access" message instead of bouncing
-      // back to /login in a loop while already signed in.
-      return true;
-    },
-  },
+  // No `authorized` callback, deliberately. It used to list protected routes
+  // here and return a boolean - and that boolean was thrown away. Our middleware
+  // (src/proxy.ts) passes its OWN handler to auth(), and next-auth's handleAuth
+  // takes the `else if (userMiddlewareOrRoute)` branch BEFORE the `else if
+  // (!authorized)` one, so with a custom handler only a Response return from
+  // `authorized` has any effect - never a false. The callback ran on every
+  // request and decided nothing, while reading like the app's access control.
+  //
+  // The real gates: src/proxy.ts for the route-level session redirects, and
+  // each page / route handler calling auth() itself. Put new rules in proxy.ts.
 });

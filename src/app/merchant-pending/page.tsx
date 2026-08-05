@@ -204,7 +204,7 @@ export default async function MerchantPendingPage() {
               },
               {
                 t: "Connect Stripe for paid events",
-                d: "Required before you can charge. You’ll be prompted at Step 3 of the event wizard if Stripe isn’t connected.",
+                d: "Required before you can charge. The event wizard warns you on Step 2 the moment you type a price above 0 without payouts connected.",
               },
               {
                 t: "Tag richly",

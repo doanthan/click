@@ -15,7 +15,6 @@ import {
   SsoButton,
 } from "@/components/auth-ui";
 import { Icon, Logo, ckBtn } from "@/components/ds";
-import { REGISTER_PREFILL_KEY, type RegisterPrefill } from "@/components/register-form";
 import {
   type LoginMethod,
   readLastLoginMethod,
@@ -37,9 +36,8 @@ type SignupRole = "attendee" | "host";
 const initialEmailState: EmailLoginFormState = { error: null, sent: false };
 
 // Attendee signups route through /post-login, which sends anyone with an
-// incomplete profile to /onboarding (where the prefill below is read).
-// Host signups land directly on the 4-step merchant wizard - it detects the
-// fresh session and skips its own inline auth step.
+// incomplete profile to /onboarding. Host signups land directly on the merchant
+// wizard - it detects the fresh session and skips its own inline auth step.
 const ATTENDEE_SIGNUP_CALLBACK_URL = "/post-login";
 const HOST_SIGNUP_CALLBACK_URL = "/merchant/signup";
 
@@ -57,7 +55,6 @@ export function LoginModal({
   );
   const [mode, setMode] = useState<Mode>("login");
   const [role, setRole] = useState<SignupRole>("attendee");
-  const [name, setName] = useState("");
   const [lastUsed, setLastUsed] = useState<LoginMethod | null>(null);
   const firstFieldRef = useRef<HTMLInputElement>(null);
 
@@ -99,29 +96,15 @@ export function LoginModal({
     };
   }, [open, onClose]);
 
-  // For sign-ups, hand the typed name to /onboarding via the same
-  // sessionStorage prefill that the full /register flow uses.
-  function stashSignupPrefill() {
-    if (!isSignup || typeof window === "undefined") return;
-    const prefill: RegisterPrefill = {
-      displayName: name.trim(),
-      intent: "friendship",
-      latitude: null,
-      longitude: null,
-      capturedAt: new Date().toISOString(),
-    };
-    try {
-      window.sessionStorage.setItem(REGISTER_PREFILL_KEY, JSON.stringify(prefill));
-    } catch {
-      // sessionStorage can be unavailable in private mode - ignore.
-    }
-  }
-
-  // Records the chosen method (for the "Last used" pill) and carries the
-  // signup name prefill forward, on every sign-in form submit.
+  // Records the chosen method for the "Last used" pill.
+  //
+  // This used to also stash the typed name in sessionStorage for /onboarding to
+  // read. It only worked on the OAuth path: a magic link opens in a NEW tab,
+  // which gets empty sessionStorage, so the emailed path threw the name away.
+  // The name field is gone from signup entirely - onboarding asks for it, and
+  // asks once. See the note in register-form.tsx.
   function handleSubmit(method: LoginMethod) {
     rememberLoginMethod(method);
-    stashSignupPrefill();
   }
 
   if (!open) return null;
@@ -299,24 +282,10 @@ export function LoginModal({
               of passwordless-creating a junk profile; signup still creates. (#181) */}
           <input type="hidden" name="mode" value={isSignup ? "signup" : "login"} />
 
-          {isSignup ? (
-            <Field
-              label="Your name"
-              icon="user"
-              ref={firstFieldRef}
-              name="displayName"
-              type="text"
-              autoComplete="name"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="Jordan Lee"
-            />
-          ) : null}
-
           <Field
             label="Email"
             icon="mail"
-            ref={isSignup ? undefined : firstFieldRef}
+            ref={firstFieldRef}
             name="email"
             type="email"
             required
@@ -326,7 +295,11 @@ export function LoginModal({
 
           {emailState.error ? <AuthError>{emailState.error}</AuthError> : null}
           {emailState.sent ? (
-            <AuthNote icon="mail">Check your inbox for a secure, one-time sign-in link.</AuthNote>
+            <AuthNote icon="mail">
+              {isSignup
+                ? "Check your inbox - we've sent a one-time link that finishes creating your account."
+                : "Check your inbox for a secure, one-time sign-in link."}
+            </AuthNote>
           ) : null}
 
           <button

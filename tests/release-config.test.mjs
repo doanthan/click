@@ -215,6 +215,67 @@ test("a deep link survives signup and onboarding", () => {
   assert.match(safeNextSource, /value\.startsWith\("\/\/"\)/);
 });
 
+test("the 18+ gate is enforced on the server, not just in the form", () => {
+  // Click is 18+. Birth date used to be OPTIONAL in saveOnboarding, so POSTing
+  // straight at /api/onboarding minted a finished profile with birth_date null
+  // and an age nobody ever checked. The form's own check is a convenience.
+  const repo = readFileSync(path.join(root, "src/lib/event-repository.ts"), "utf8");
+
+  assert.match(
+    repo,
+    /if \(!rawBirthDate\) \{\s*throw validationError/,
+    "saveOnboarding must reject a missing birth date",
+  );
+  assert.match(
+    repo,
+    /derivedAge < 18/,
+    "saveOnboarding must reject an under-18 birth date",
+  );
+
+  // A profile that never supplied one has never passed the gate, so it is not
+  // onboarded - keep this in step with assertBookingEligible below.
+  assert.match(
+    repo,
+    /const onboardingComplete = !!row\?\.suburb && !!row\?\.birth_date/,
+    "onboardingComplete must require a birth date",
+  );
+
+  const route = readFileSync(path.join(root, "src/app/api/onboarding/route.ts"), "utf8");
+  assert.doesNotMatch(
+    route,
+    /age: payload\.age/,
+    "age must be derived from the birth date server-side, never accepted from the client",
+  );
+});
+
+test("booking an event requires a finished profile on every path", () => {
+  // /onboarding is a form, and a form is not a gate - the app chrome used to
+  // render over the top of it, so a fresh signup could tap through to Discover
+  // and book with no postcode and no birth date. Both booking entry points have
+  // to check, or checkout becomes the way around the free-RSVP check.
+  const repo = readFileSync(path.join(root, "src/lib/event-repository.ts"), "utf8");
+
+  assert.match(
+    repo,
+    /async function assertBookingEligible\(pool: Pool, profileId: string\)/,
+    "the booking eligibility guard must exist",
+  );
+  assert.match(repo, /error\.name = "OnboardingRequiredError"/);
+
+  for (const entryPoint of [
+    /export async function registerForEvent[\s\S]{0,400}?assertBookingEligible/,
+    /export async function createPaymentHold[\s\S]{0,900}?assertBookingEligible/,
+  ]) {
+    assert.match(repo, entryPoint, "every booking entry point must call the guard");
+  }
+
+  // And the chrome that made the form escapable stays off the onboarding route.
+  const gate = readFileSync(path.join(root, "src/components/chrome-gate.tsx"), "utf8");
+  assert.match(gate, /"\/onboarding"/);
+  const layout = readFileSync(path.join(root, "src/app/layout.tsx"), "utf8");
+  assert.match(layout, /<ChromeGate>[\s\S]{0,400}<SiteHeader \/>/);
+});
+
 test("email logged while the provider was unconfigured is retryable", () => {
   const email = readFileSync(path.join(root, "src/lib/email.ts"), "utf8");
   assert.match(
@@ -392,3 +453,4 @@ test("QA provisioning can only ever touch the @click.local namespace", () => {
     );
   }
 });
+

@@ -13,6 +13,7 @@
  * Hook-free and presentational, so the same code renders on the server (the
  * /login page) and inside client components (register-form, login-modal).
  */
+import Link from "next/link";
 import type { ComponentProps, ReactNode } from "react";
 import { Icon, Logo, ckBtn, type IconName } from "@/components/ds";
 
@@ -196,7 +197,11 @@ export function AuthShell({
   return (
     <main className="flex min-h-screen justify-center bg-[color:var(--champagne)] px-5 py-10 text-[color:var(--ink)] sm:py-14">
       <div className="w-full max-w-[412px]">
-        <Logo size={28} />
+        {/* The global header is hidden on the auth routes (ChromeGate), so this
+            wordmark is the only way back out - it has to be a link. */}
+        <Link href="/" aria-label="Click home" className="inline-flex">
+          <Logo size={28} />
+        </Link>
         <h1 className="font-display mt-7 text-[26px] font-semibold leading-[1.15] tracking-[-0.01em] text-[color:var(--ink)]">
           {title}
         </h1>

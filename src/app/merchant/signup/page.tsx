@@ -6,7 +6,11 @@ import { StepAuthCard } from "@/components/merchant-signup-wizard";
 // first wizard step; logged-out visitors get the OAuth/email auth gate.
 // The "already a merchant" redirect (→ /merchant) lives in the layout, so it
 // fires uniformly for every step page too.
-export default async function MerchantSignupPage() {
+export default async function MerchantSignupPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ emailSent?: string }>;
+}) {
   const session = await auth();
   if (session?.user) {
     redirect("/merchant/signup/business");
@@ -14,10 +18,15 @@ export default async function MerchantSignupPage() {
 
   const googleConfigured = !!(process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET);
   const metaConfigured = !!(process.env.AUTH_FACEBOOK_ID && process.env.AUTH_FACEBOOK_SECRET);
+  const emailSent = (await searchParams)?.emailSent === "1";
 
   return (
     <>
-      <StepAuthCard googleConfigured={googleConfigured} metaConfigured={metaConfigured} />
+      <StepAuthCard
+        googleConfigured={googleConfigured}
+        metaConfigured={metaConfigured}
+        emailSent={emailSent}
+      />
       <HostPitch />
     </>
   );

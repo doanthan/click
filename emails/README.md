@@ -36,6 +36,7 @@ No `unsubscribeUrl` on any of these — security mail is transactional and exemp
 | `password-reset.html` | When a user starts the `/forgot-password` flow. | `Reset your Click password` |
 | `signin-link.html` | Magic-link sign-in for an existing account (`requestEmailSignIn`, `mode: "login"`). | `Your Click sign-in link` |
 | `signup-link.html` | Magic-link confirmation that finishes creating a new account (`mode: "signup"`). | `Finish creating your Click account` |
+| `signin-no-account.html` | Someone tried to sign in on an address with no Click account. Carries a working signup link so one tap sets the account up. | `No Click account on this address yet` |
 
 ### Merchant-facing
 
@@ -286,15 +287,20 @@ No `unsubscribeUrl` here — security mail is transactional and exempt from pref
 | `requestIpLabel` | e.g. `an IP in Sydney, Australia` — never the raw IP. Optional but recommended for trust. |
 | `supportEmail` |  |
 
-### `signin-link.html` and `signup-link.html`
+### `signin-link.html`, `signup-link.html` and `signin-no-account.html`
 
-Same three variables, different copy. These carry a live one-time credential, which is why they are the only templated emails that do **not** go through `logEmailEvent` — see the comment in `src/app/login/actions.ts`.
+Same variables, different copy. These carry a live one-time credential, which is why they are the only templated emails that do **not** go through `logEmailEvent` — see the comment in `src/app/login/actions.ts`.
 
 | Variable | Notes |
 | --- | --- |
 | `verifyUrl` | One-shot signed URL. Also rendered as plain text below the button. |
 | `expiryWindowLabel` | e.g. `15 minutes`. Derived from `TOKEN_TTL_MINUTES` in `src/lib/auth-magic-link.ts` — never hard-code it, the copy and the token must not disagree. |
+| `attemptedEmail` | `signin-no-account` only. The address that was typed into the sign-in form. It is echoed back only in the mail sent *to* that address, so it leaks nothing. |
 | `supportEmail` |  |
+
+**Why `signin-no-account` exists.** A sign-in attempt on an unknown address used to return "Email sent" to the browser and send nothing at all, so a genuinely new person who landed on `/login` instead of `/signup` waited forever for mail that was never coming. Answering "no such account" in the browser instead is not an option — that is a user-enumeration oracle. So the token is now issued on both paths, the browser response stays byte-identical, and only the template differs. Only someone reading that inbox learns anything.
+
+This also closed a real leak: the old early return never reached `issueMagicLink`, and the rate limiter counts `auth_magic_links` rows, so a *known* address started throwing `RateLimitError` on the 6th attempt within an hour while an unknown one never did. Six posts told you whether an account existed. `tests/release-config.test.mjs` guards both properties.
 
 ### `waitlist-joined-attendee.html`
 
@@ -364,7 +370,7 @@ This one is a tax document — `taxLabel` and the `ABN` line in the footer matte
 
 ## Dev log: viewing sends in Supabase
 
-There's no SMTP provider wired yet, but rendered emails *are* persisted to a Postgres table so you can inspect what would have gone out. Quick path:
+Every rendered email is persisted to a Postgres table as well as delivered, so you can inspect exactly what went out. Quick path:
 
 1. Apply migration `database/012_email_events.sql` (run it through your usual Supabase migration flow). It creates the `email_events` table.
 2. Trigger something that fires a template — easiest is to sign in with a brand-new Google account. `ensureProfileForSession` in `src/lib/event-repository.ts` detects a freshly-inserted profile (`xmax = 0` on the upsert) and calls `logEmailEvent({ template: "account-welcome", … })`.

@@ -16,7 +16,12 @@ export type EmailDeliveryResult = {
   reason?: string;
 };
 
-function escapeHtml(value: string) {
+// Exported for callers that interpolate UNTRUSTED text into a template var.
+// renderHtml deliberately does not escape - `suggestedEvents` in
+// event-cancelled-attendee is a server-built block of <tr>s and escaping it
+// would render the markup as visible text - so escaping is the caller's job
+// wherever the value did not come from our own database.
+export function escapeHtml(value: string) {
   return value
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")

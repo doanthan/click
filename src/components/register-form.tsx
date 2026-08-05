@@ -1,37 +1,19 @@
 "use client";
 
-import { useRef, useState } from "react";
 import { signInWithEmail, signInWithGoogle, signInWithMeta } from "@/app/login/actions";
-import {
-  AuthDivider,
-  AuthError,
-  Field,
-  AuthNote,
-  SsoButton,
-} from "@/components/auth-ui";
+import { AuthDivider, AuthError, Field, AuthNote, SsoButton } from "@/components/auth-ui";
 import { ckBtn } from "@/components/ds";
 
-type Intent =
-  | "dating"
-  | "friendship"
-  | "networking"
-  | "exploring"
-  | "hobbies"
-  | "wellness"
-  | "community"
-  | "new_in_town";
-export const REGISTER_PREFILL_KEY = "click:register-prefill";
-
-export type RegisterPrefill = {
-  displayName: string;
-  // Register now only captures the name - intent + location are collected once on
-  // onboarding (the next page) instead of being asked twice. Kept optional so any
-  // older prefill stash still parses cleanly.
-  intent?: Intent;
-  latitude?: number | null;
-  longitude?: number | null;
-  capturedAt: string;
-};
+// Signup used to open with "What should we call you?" and stash the answer in
+// sessionStorage for the onboarding form to pick up. It only ever worked on the
+// OAuth path (same-tab round trip) - a magic link opens in a NEW tab, which
+// gets empty sessionStorage, so the emailed path silently threw the name away
+// and onboarding showed a name derived from the email local part instead.
+//
+// Rather than plumb the name through the magic-link record, the field is gone:
+// onboarding's very first question is "First name", it's required there, and on
+// the OAuth path the provider gives us a name anyway. Asking twice and honouring
+// it once was the actual bug.
 
 type RegisterFormProps = {
   callbackUrl: string;
@@ -46,57 +28,10 @@ export function RegisterForm({
   googleConfigured,
   metaConfigured,
 }: RegisterFormProps) {
-  const [displayName, setDisplayName] = useState("");
-  // The name lives OUTSIDE the email <form> (it's shared with the OAuth
-  // buttons), so native `required` validation never fires for it. Without an
-  // explicit check the submit button used to be silently disabled - reported
-  // as "why can't I create an account". Validate on submit instead and say why.
-  const [nameError, setNameError] = useState("");
-  const nameInputRef = useRef<HTMLInputElement>(null);
-
-  function handleEmailSubmit(event: React.FormEvent<HTMLFormElement>) {
-    if (!displayName.trim()) {
-      event.preventDefault();
-      setNameError("Tell us your name first - the field is at the top.");
-      nameInputRef.current?.focus();
-      return;
-    }
-    setNameError("");
-    stashPrefill();
-  }
-
-  function stashPrefill() {
-    if (typeof window === "undefined") return;
-    const prefill: RegisterPrefill = {
-      displayName: displayName.trim(),
-      capturedAt: new Date().toISOString(),
-    };
-    try {
-      window.sessionStorage.setItem(REGISTER_PREFILL_KEY, JSON.stringify(prefill));
-    } catch {
-      // sessionStorage can be unavailable in private mode - ignore.
-    }
-  }
-
   return (
     <div className="grid gap-5">
-      <Field
-        label="What should we call you?"
-        icon="user"
-        ref={nameInputRef}
-        value={displayName}
-        onChange={(event) => {
-          setDisplayName(event.target.value);
-          if (event.target.value.trim()) setNameError("");
-        }}
-        autoComplete="name"
-        required
-        error={nameError || undefined}
-        placeholder="Jordan Lee"
-      />
-
       <div className="grid gap-2.5">
-        <form action={signInWithGoogle} onSubmit={stashPrefill}>
+        <form action={signInWithGoogle}>
           <input type="hidden" name="callbackUrl" value={callbackUrl} />
           <SsoButton
             provider="google"
@@ -106,7 +41,7 @@ export function RegisterForm({
         </form>
 
         {metaConfigured ? (
-          <form action={signInWithMeta} onSubmit={stashPrefill}>
+          <form action={signInWithMeta}>
             <input type="hidden" name="callbackUrl" value={callbackUrl} />
             <SsoButton provider="facebook" label="Sign up with Facebook" />
           </form>
@@ -115,8 +50,12 @@ export function RegisterForm({
 
       <AuthDivider />
 
-      <form action={signInWithEmail} onSubmit={handleEmailSubmit} className="grid gap-4">
+      <form action={signInWithEmail} className="grid gap-4">
         <input type="hidden" name="callbackUrl" value={callbackUrl} />
+        {/* Tells the action this is a signup and that the "check your inbox"
+            answer belongs back here, not on the login page. */}
+        <input type="hidden" name="mode" value="signup" />
+        <input type="hidden" name="formPath" value="/register" />
 
         {errorMessage ? <AuthError>{errorMessage}</AuthError> : null}
 

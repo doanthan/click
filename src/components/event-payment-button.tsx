@@ -162,7 +162,15 @@ export function EventPaymentButton({
       url?: string;
       clientSecret?: string;
       error?: string;
+      redirectTo?: string;
     };
+
+    // Onboarding isn't finished (403 + /onboarding), so there's a form to send
+    // them to rather than an error to read.
+    if (!response.ok && payload.redirectTo) {
+      window.location.href = payload.redirectTo;
+      return;
+    }
 
     if (!response.ok || (!payload.url && !payload.clientSecret)) {
       setState("error");

@@ -11,7 +11,7 @@ import {
   issueMagicLink,
   revokeMagicLink,
 } from "@/lib/auth-magic-link";
-import { renderTemplate, sendTransactionalEmail } from "@/lib/email";
+import { escapeHtml, renderTemplate, sendTransactionalEmail } from "@/lib/email";
 
 const SUPPORT_EMAIL = "hello@letsclick.app";
 
@@ -72,8 +72,11 @@ async function requestEmailSignIn(input: {
   // limiting. (It did NOT used to be: this branch returned early without
   // touching issueMagicLink, so a known address started returning RateLimited
   // after 5 tries while an unknown one never did. Six posts told you whether an
-  // account existed.) Issuing it as a signup is what makes the link in that
-  // email actually work - one tap creates the account.
+  // account existed.) The token is recorded with purpose "signup" as a record
+  // of intent only - nothing reads auth_magic_links.purpose back, so the link
+  // works the same either way. What makes one tap create the account is
+  // consumeMagicLink returning the address and ensureProfileForSession
+  // inserting the profile downstream.
   const noAccount =
     purpose === "login" && !(await profileExistsByEmail(input.email));
   const tokenPurpose = noAccount ? "signup" : purpose;
@@ -114,7 +117,11 @@ async function requestEmailSignIn(input: {
   const rendered = await renderTemplate(template, {
     verifyUrl,
     expiryWindowLabel,
-    attemptedEmail: input.email,
+    // Escaped: this is unauthenticated, attacker-chosen input and renderHtml
+    // does not escape. EMAIL_RE rejects whitespace but not angle brackets, so
+    // "<b>x</b>@example.com" passes the gate and would otherwise be
+    // interpolated into the mail body as live markup.
+    attemptedEmail: escapeHtml(input.email),
     supportEmail: SUPPORT_EMAIL,
   }).catch((error) => {
     console.warn("magic-link template render failed", { template, error });
@@ -162,19 +169,33 @@ export async function signInWithMeta(formData: FormData) {
   });
 }
 
+// Where to send the browser back to after asking for a link. Defaults to
+// /login, but the form that submitted says where it lives - a signup on
+// /register or /merchant/signup used to be answered by the LOGIN page reading
+// "Welcome back · Sign in to pick up where you left off", which is the wrong
+// page and the wrong sentence for someone creating an account.
+function safeFormPath(value: string) {
+  if (!value.startsWith("/") || value.startsWith("//")) return "/login";
+  // Strip any query/hash the caller tacked on - we own the query string here.
+  return value.split(/[?#]/)[0];
+}
+
 export async function signInWithEmail(formData: FormData) {
   const rawCallback = getFormValue(formData, "callbackUrl");
   const callbackUrl = safeCallbackUrl(rawCallback);
   const email = getFormValue(formData, "email").trim().toLowerCase();
   const mode = getFormValue(formData, "mode");
+  const formPath = safeFormPath(getFormValue(formData, "formPath"));
 
   const result = await requestEmailSignIn({ email, mode, callbackUrl });
   if (result.error) {
     redirect(
-      `/login?${new URLSearchParams({ error: result.error, callbackUrl: rawCallback }).toString()}`,
+      `${formPath}?${new URLSearchParams({ error: result.error, callbackUrl: rawCallback }).toString()}`,
     );
   }
-  redirect(`/login?${new URLSearchParams({ emailSent: "1", callbackUrl: rawCallback }).toString()}`);
+  redirect(
+    `${formPath}?${new URLSearchParams({ emailSent: "1", callbackUrl: rawCallback }).toString()}`,
+  );
 }
 
 export async function signOutOfClick() {

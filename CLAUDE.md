@@ -75,7 +75,7 @@ Public bucket = anyone with the URL can read (avatars rendered on event cards, h
 | Template | Trigger site |
 | --- | --- |
 | `account-welcome` | `ensureProfileForSession` in `src/lib/event-repository.ts`, on fresh insert only (detected via `xmax = 0`) |
-| `rsvp-attendee` + `rsvp-merchant` | `registerForEvent` in `src/lib/event-repository.ts`, after commit on the confirmed-RSVP branch (waitlisted still uses legacy `sendWorkflowEmail`) |
+| `rsvp-attendee` + `rsvp-merchant` | `registerForEvent` in `src/lib/event-repository.ts`, after commit on the confirmed-RSVP branch (the waitlisted branch logs `waitlist-joined-attendee`) |
 | `event-created-merchant` | `createEventForMerchant` in `src/lib/event-repository.ts`, after the events insert + tag upsert |
 | `merchant-verified-merchant` + `merchant-rejected-merchant` | `updateMerchantVerificationForAdmin` in `src/lib/event-repository.ts`, branched on approved/rejected |
 | `merchant-application-received` | `registerMerchantWizardSubmit` in `src/lib/event-repository.ts`, after commit, first submission only (`xmax = 0`) |
@@ -84,21 +84,29 @@ Public bucket = anyone with the URL can read (avatars rendered on event cards, h
 | `rsvp-cancelled-attendee` + `rsvp-cancelled-merchant` | `cancelRegistration` in `src/lib/event-repository.ts`, after commit, via `logRsvpCancelledEmails` helper |
 | `event-cancelled-attendee` | `cancelMerchantEvent` in `src/lib/event-repository.ts`, fan-out to every affected attendee after commit |
 | `payment-receipt-attendee` | `markPaymentSucceeded` in `src/lib/event-repository.ts`, via `logPaymentReceiptEmail` helper (GST receipt, tax = total / 11) |
-| `password-reset` | `requestPasswordReset` in `src/app/forgot-password/actions.ts`, alongside the legacy `sendTransactionalEmail` magic-link send |
+| `password-reset` | **NOT WIRED - dead template.** Passwords are no longer stored; `requestPasswordReset` in `src/app/forgot-password/actions.ts` just delegates to `signInWithEmail`, so that page sends `signin-link` (or `signin-no-account`). Nothing calls `logEmailEvent({ template: "password-reset" })`. Delete the template + its union/`SUBJECTS` entries, or leave it parked - but do not trust this row's old claim that it fires. |
 | `waitlist-joined-attendee` | `registerForEvent` in `src/lib/event-repository.ts`, after commit on the waitlisted branch, via `logWaitlistJoinedEmail` |
 | `waitlist-promoted-attendee` | `logWaitlistPromotedEmail` in `src/lib/event-repository.ts`, called from all four promotion sites: `cancelRegistration`, `cancelGuestSeatForPurchaser`, `expireWaitlistOffers`, `expirePaymentHolds` |
 | `merchant-suspended-merchant` | `updateMerchantVerificationForAdmin` in `src/lib/event-repository.ts`, on the `suspended` branch |
+| `event-cancelled-merchant` | `cancelEvent` in `src/lib/event-repository.ts` (admin-initiated cancel), alongside the attendee fan-out |
+| `merchant-waitlisted-merchant` | `registerMerchantWizardSubmit` in `src/lib/event-repository.ts`, when the venue falls outside the launch pilot |
+| `mutual-click-attendee` | `sendClickInner` in `src/lib/event-repository.ts` - two sites, one per side of the mutual click |
+| `guest-invite` + `guest-spot-existing-user` | `processGuestSpotsForSession` in `src/lib/event-repository.ts`, branched on whether the guest address already has a profile |
+| `guest-spot-cancelled` | `cancelGuestSeatForPurchaser` in `src/lib/event-repository.ts` |
+| `report-received-admin` | `reportUser` in `src/lib/event-repository.ts` |
 | `merchant-monthly-report` | `sendMerchantMonthlyReports` in `src/lib/event-repository.ts`, driven by the `api/cron/merchant-monthly-reports` cron — one row per approved merchant who hosted ≥1 event in the target month (events/attendees/paid-revenue/top event) |
 
 `event-reminder-attendee` is wired too, via `sendEventReminders` in `src/lib/event-repository.ts` (cron route `api/cron/event-reminders`), which dedupes against existing `email_events` rows so a re-run can't double-send.
 
-**The two deliberate exceptions**, both in `src/app/login/actions.ts` (`requestEmailSignIn`): `signin-link` and `signup-link` render through `renderTemplate` but deliver through `sendTransactionalEmail`, NOT `logEmailEvent`. Two reasons, and both must still hold before you "fix" this — the delivery result gates a side effect (a failed send revokes the just-issued token, and `logEmailEvent` is `void` + fire-and-forget), and an `email_events` row would park a live one-time sign-in URL in a queryable table that `retryPendingEmailEvents` could re-deliver after the token was revoked.
+**The three deliberate exceptions**, all in `src/app/login/actions.ts` (`requestEmailSignIn`): `signin-link`, `signup-link` and `signin-no-account` render through `renderTemplate` but deliver through `sendTransactionalEmail`, NOT `logEmailEvent`. Two reasons, and both must still hold before you "fix" this — the delivery result gates a side effect (a failed send revokes the just-issued token, and `logEmailEvent` is `void` + fire-and-forget), and an `email_events` row would park a live one-time sign-in URL in a queryable table that `retryPendingEmailEvents` could re-deliver after the token was revoked.
+
+`signin-no-account` also carries a **security invariant**: a sign-in attempt on an unknown address must still issue a token, so the browser response and the rate limiting stay identical to the known-address path. Returning early there is a user-enumeration oracle. `tests/release-config.test.mjs` fails if anyone reinstates the early return.
 
 The one message still on plain text is the merchant status change to `pending` — rare, internal, no template.
 
 ### Existing `sendTransactionalEmail` (Resend)
 
-`src/lib/email.ts` also still exports `sendTransactionalEmail`, used by `forgot-password/actions.ts` and the waitlist branch of `registerForEvent`. Treat it as a separate, legacy path — when wiring a new template, prefer `logEmailEvent` and let the real-provider migration happen once for everything. **Don't add new callers of `sendTransactionalEmail`.**
+`src/lib/email.ts` also still exports `sendTransactionalEmail`. Both callers this section used to name are gone: `forgot-password/actions.ts` now just delegates to `signInWithEmail`, and the waitlist branch of `registerForEvent` logs `waitlist-joined-attendee`. What remains is the magic-link trio in `login/actions.ts` (deliberate, see above) and the `pending` merchant-status notice. Treat it as a separate, legacy path — when wiring a new template, prefer `logEmailEvent` and let the real-provider migration happen once for everything. **Don't add new callers of `sendTransactionalEmail`.**
 
 ## Page URI map & API routes
 

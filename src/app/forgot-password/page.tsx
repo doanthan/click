@@ -46,6 +46,13 @@ export default async function ForgotPasswordPage({
             </div>
           ) : (
             <form action={requestPasswordReset} className="grid gap-4">
+              {/* Without this the form submits no mode, requestEmailSignIn
+                  falls through to purpose "signup", and someone who already has
+                  an account gets "Finish creating your Click account" when they
+                  asked to get back INTO it. Unknown addresses still get the
+                  no-account email - that branch keys off the profile lookup,
+                  not off this field. */}
+              <input type="hidden" name="mode" value="login" />
               <label className="grid gap-2">
                 <span className="text-[12.5px] font-semibold text-[color:var(--slate)]">
                   Email

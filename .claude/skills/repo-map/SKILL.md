@@ -37,7 +37,7 @@ Every route in `src/app`. URI on the left, source file on the right. Use this to
 | `/auth` | `src/app/auth/page.tsx` |
 | `/forgot-password` | `src/app/forgot-password/page.tsx` |
 | `/post-login` | `src/app/post-login/page.tsx` |
-| `/onboarding` | `src/app/onboarding/page.tsx` |
+| `/onboarding` | `src/app/onboarding/page.tsx` - the attendee profile form, and a REQUIRED step: it collects the postcode + birth date that make up `onboardingComplete`. Rendered **chromeless** (`ChromeGate` in `src/components/chrome-gate.tsx` drops the global header, mobile bottom nav, and footer here and on the auth routes) so the app nav can't be used to walk out of it. The real enforcement is server-side - `assertBookingEligible` in `event-repository.ts` refuses an RSVP or a checkout hold to a profile missing either field, and `saveOnboarding` rejects a missing/under-18 birth date. |
 | `/qa-unlock` | `src/app/qa-unlock/route.ts` - GET only. `?key=<TEST_SWITCHER_KEY>` sets the httpOnly cookie that reveals the top-right QA persona switcher on a deployed environment; `?lock=1` clears it. 404s on a wrong/absent key or an unconfigured deployment. Gate lives in `src/lib/test-switcher.ts` and is re-checked by the `test-login` provider and every switcher server action. |
 | `/quiz` | `src/app/quiz/page.tsx` |
 | `/quiz/life` | `src/app/quiz/life/page.tsx` (auth gate in `layout.tsx`; redirects → `/quiz/life/life-stage`) |
@@ -77,7 +77,7 @@ Every route in `src/app`. URI on the left, source file on the right. Use this to
 | `/merchant/onboarding/create-events` | `src/app/merchant/onboarding/create-events/page.tsx` (walkthrough step 2/4) |
 | `/merchant/onboarding/payouts` | `src/app/merchant/onboarding/payouts/page.tsx` (walkthrough step 3/4 — Stripe Connect, skippable) |
 | `/merchant/onboarding/done` | `src/app/merchant/onboarding/done/page.tsx` (walkthrough step 4/4 → stamps `onboarding_completed_at`) |
-| `/merchant/events/create` | `src/app/merchant/events/create/page.tsx` (redirects → `/merchant/events/create/basics`) |
+| `/merchant/events/create` | `src/app/merchant/events/create/page.tsx` (redirects → `/merchant/events/create/basics`; the layout gates on approval **and** on `onboarding_completed_at`, redirecting → `/merchant/onboarding` - the approval email's "Create your first event" link lands here, and without the gate it skipped the walkthrough entirely) |
 | `/merchant/events/create/basics` | `src/app/merchant/events/create/basics/page.tsx` (wizard step 1/5) |
 | `/merchant/events/create/schedule` | `src/app/merchant/events/create/schedule/page.tsx` (wizard step 2/5) |
 | `/merchant/events/create/location` | `src/app/merchant/events/create/location/page.tsx` (wizard step 3/5) |

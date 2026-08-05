@@ -136,6 +136,16 @@ export type MerchantSignupProviderProps = {
   children: React.ReactNode;
 };
 
+// Wizard state lives in a context mounted in the route LAYOUT, so it survives
+// client-side navigation between the step pages - but not a full page load. A
+// refresh on step 3, or opening a step URL cold, used to reset every field to
+// blank while the uploaded documents (which POST immediately) still showed as
+// "Uploaded", so the wizard looked half-filled and Submit threw you back to
+// step 1. Mirror the answers into sessionStorage the way the event-create
+// wizard already does.
+const STORAGE_KEY = "click:merchant-signup-draft";
+const DRAFT_VERSION = 1;
+
 // 0 = Business, 1 = Contact, 2 = Documents.
 export type StepIndex = 0 | 1 | 2;
 const STEP_COUNT = 3;
@@ -170,6 +180,26 @@ type State = {
   submitMessage: string;
 };
 
+// The answer fields only - `uploads` is rebuilt server-side from
+// listMerchantDocuments, and submit status is per-attempt.
+type DraftFields = Omit<State, "uploads" | "submitState" | "submitMessage">;
+
+const DRAFT_FIELD_KEYS: ReadonlyArray<keyof DraftFields> = [
+  "businessName",
+  "tradingName",
+  "abn",
+  "acn",
+  "eventCategoryIds",
+  "contactEmail",
+  "phone",
+  "websiteUrl",
+  "socials",
+  "addressStreet",
+  "addressSuburb",
+  "addressState",
+  "addressPostcode",
+];
+
 type Action =
   | {
       type: "field";
@@ -182,6 +212,7 @@ type Action =
   | { type: "social"; platform: SocialPlatform; value: string }
   | { type: "toggleCategory"; id: string }
   | { type: "upload"; docType: DocumentType; info: { fileName: string } | null }
+  | { type: "hydrate"; values: Partial<DraftFields> }
   | { type: "submitStart" }
   | { type: "submitError"; message: string }
   | { type: "submitSuccess" };
@@ -213,6 +244,8 @@ function reducer(state: State, action: Action): State {
         uploads: { ...state.uploads, [action.docType]: action.info },
         submitMessage: "",
       };
+    case "hydrate":
+      return { ...state, ...action.values };
     case "submitStart":
       return { ...state, submitState: "submitting", submitMessage: "" };
     case "submitError":
@@ -303,11 +336,58 @@ export function MerchantSignupProvider({
     { sessionEmail, sessionName, existingDocs, existingProfile },
     initialState,
   );
+
+  // Restore, then persist. Hydration can't be a lazy useReducer init without an
+  // SSR/CSR mismatch, so it's an effect that runs once; the persist effect
+  // waits on the ref so it can't clobber the draft on first paint.
+  const hydratedRef = useRef(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.sessionStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const draft = JSON.parse(raw) as Partial<DraftFields> & { v?: number };
+        if (draft.v === DRAFT_VERSION) {
+          const values: Partial<DraftFields> = {};
+          for (const key of DRAFT_FIELD_KEYS) {
+            if (draft[key] !== undefined) {
+              Object.assign(values, { [key]: draft[key] });
+            }
+          }
+          dispatch({ type: "hydrate", values });
+        }
+      }
+    } catch {
+      // sessionStorage / parse can fail in private mode - ignore.
+    }
+    hydratedRef.current = true;
+  }, []);
+
+  useEffect(() => {
+    if (!hydratedRef.current || typeof window === "undefined") return;
+    try {
+      const draft: Record<string, unknown> = { v: DRAFT_VERSION };
+      for (const key of DRAFT_FIELD_KEYS) draft[key] = state[key];
+      window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(draft));
+    } catch {
+      // Quota / private mode - the draft is a convenience, never load-bearing.
+    }
+  }, [state]);
+
   return (
     <WizardContext.Provider value={{ state, dispatch, categories }}>
       {children}
     </WizardContext.Provider>
   );
+}
+
+/** Drop the saved draft once the application is in - a refresh must not resurrect it. */
+function clearSignupDraft() {
+  try {
+    window.sessionStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // ignore
+  }
 }
 
 // ---------- step validation ----------
@@ -502,6 +582,7 @@ export function WizardShell({
     }
 
     dispatch({ type: "submitSuccess" });
+    clearSignupDraft();
     router.push("/merchant-pending");
     router.refresh();
   }
@@ -581,9 +662,11 @@ function SectionCard({ children }: { children: React.ReactNode }) {
 export function StepAuthCard({
   googleConfigured,
   metaConfigured,
+  emailSent = false,
 }: {
   googleConfigured: boolean;
   metaConfigured: boolean;
+  emailSent?: boolean;
 }) {
   // Use the same actions as /login / /merchant/login but route the callback
   // back to /merchant/signup so the user lands inside the wizard at Step 1.
@@ -609,6 +692,16 @@ export function StepAuthCard({
       </div>
 
       <div className="rounded-[18px] bg-[color:var(--paper)] p-6 shadow-[var(--shadow-sm)]">
+        {emailSent ? (
+          <p
+            role="status"
+            className="mb-4 rounded-xl bg-[color:var(--lavender-100)] px-4 py-3 text-sm leading-6 text-[color:var(--ink)]"
+          >
+            Check your inbox - we&apos;ve sent a one-time link. Open it and we&apos;ll bring you
+            straight back to the host application.
+          </p>
+        ) : null}
+
         <form action={signInWithGoogle} className="grid gap-3">
           <input type="hidden" name="callbackUrl" value={callbackUrl} />
           <button
@@ -642,6 +735,10 @@ export function StepAuthCard({
 
         <form action={signInWithEmail} className="grid gap-3">
           <input type="hidden" name="callbackUrl" value={callbackUrl} />
+          {/* Answer the "check your inbox" back here, on the host funnel - not
+              on the attendee login page saying "Welcome back". */}
+          <input type="hidden" name="mode" value="signup" />
+          <input type="hidden" name="formPath" value="/merchant/signup" />
           <label className="grid gap-2 text-[12.5px] font-semibold text-[color:var(--slate)]">
             Business email
             <input

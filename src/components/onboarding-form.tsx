@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { interestTagCategories } from "@/lib/click-data";
 import { regionFromPostcode } from "@/lib/geo";
-import { REGISTER_PREFILL_KEY, type RegisterPrefill } from "@/components/register-form";
+import { AvatarUploader } from "@/components/avatar-uploader";
 import { BirthDatePicker } from "@/components/birth-date-picker";
 import { AuthError, AuthNote, Field } from "@/components/auth-ui";
 import {
@@ -68,6 +68,12 @@ type SubmitState = "idle" | "submitting" | "error";
 
 type OnboardingFormProps = {
   initialName: string;
+  // Existing profile values, so someone sent back through onboarding (e.g. an
+  // older account that predates the required birth date) isn't retyping what we
+  // already hold. Only a 4-digit postcode is reusable - profiles.suburb used to
+  // store a suburb NAME, and that can't seed a postcode field.
+  initialPostcode?: string;
+  initialPhotoUrl?: string | null;
   // Deep link the visitor was headed to before signup interrupted them (already
   // validated by safeNext on the server). Finishing the form resumes that trip
   // instead of dumping them on /dashboard.
@@ -94,12 +100,17 @@ function ageFromBirthDate(iso: string): number | null {
   return age;
 }
 
-export function OnboardingForm({ initialName, next }: OnboardingFormProps) {
+export function OnboardingForm({
+  initialName,
+  initialPostcode = "",
+  initialPhotoUrl = null,
+  next,
+}: OnboardingFormProps) {
   const router = useRouter();
   const maxBirthDate = useMemo(() => getMaxBirthDate(), []);
 
   const [displayName, setDisplayName] = useState(initialName);
-  const [postcode, setPostcode] = useState("");
+  const [postcode, setPostcode] = useState(initialPostcode);
   const [birthDate, setBirthDate] = useState("");
   const [intents, setIntents] = useState<Set<Intent>>(new Set(["friendship"]));
   // Dating visibility default OFF - opt-in is the safer default on a
@@ -109,7 +120,6 @@ export function OnboardingForm({ initialName, next }: OnboardingFormProps) {
   const [tags, setTags] = useState<Set<string>>(new Set());
   const [bio, setBio] = useState("");
 
-  const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   const [state, setState] = useState<SubmitState>("idle");
   const [message, setMessage] = useState("");
 
@@ -125,29 +135,14 @@ export function OnboardingForm({ initialName, next }: OnboardingFormProps) {
   const hydratedRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
-  // Hydrate from sessionStorage (signup prefill) and localStorage (draft) once.
-  // This is the "synchronize React with an external store on mount" pattern -
-  // we can't lazy-init from browser storage without an SSR/CSR hydration
-  // mismatch, so the one-render-cost from effect-driven setState is the lesser
-  // evil. Rule disabled for the whole block intentionally.
+  // Hydrate the saved draft from localStorage once. This is the "synchronize
+  // React with an external store on mount" pattern - we can't lazy-init from
+  // browser storage without an SSR/CSR hydration mismatch, so the one-render
+  // cost from effect-driven setState is the lesser evil. Rule disabled for the
+  // whole block intentionally.
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (typeof window === "undefined") return;
-
-    try {
-      const raw = window.sessionStorage.getItem(REGISTER_PREFILL_KEY);
-      if (raw) {
-        const prefill = JSON.parse(raw) as RegisterPrefill;
-        if (prefill.displayName) setDisplayName(prefill.displayName);
-        if (prefill.intent) setIntents(new Set([prefill.intent]));
-        if (typeof prefill.latitude === "number" && typeof prefill.longitude === "number") {
-          setCoords({ latitude: prefill.latitude, longitude: prefill.longitude });
-        }
-        window.sessionStorage.removeItem(REGISTER_PREFILL_KEY);
-      }
-    } catch {
-      // sessionStorage / parse can fail in private mode - ignore.
-    }
 
     try {
       const raw = window.localStorage.getItem(STORAGE_KEY);
@@ -253,7 +248,6 @@ export function OnboardingForm({ initialName, next }: OnboardingFormProps) {
           displayName,
           // Stored in profiles.suburb - we now collect a 4-digit AU postcode here.
           suburb: postcode.trim(),
-          age: "", // age is derived from birthDate server-side now
           bio,
           intents: Array.from(intents),
           tags: Array.from(tags),
@@ -356,13 +350,16 @@ export function OnboardingForm({ initialName, next }: OnboardingFormProps) {
                 you the moment Click reaches your area.
               </AuthNote>
             ) : null}
-            {coords ? (
-              <p className="flex items-center gap-2 text-[12.5px] text-[color:var(--slate)]">
-                <Icon name="check" size={14} className="text-[color:var(--sage)]" />
-                Using {coords.latitude.toFixed(3)}, {coords.longitude.toFixed(3)} to sort events
-                near you.
-              </p>
-            ) : null}
+          </Section>
+
+          {/* ----- Photo (optional, but it's what unlocks the click pool) ----- */}
+          <Section
+            glyph={<Icon name="camera" size={19} />}
+            eyebrow="Your face"
+            title="Add a photo"
+            subtitle="Optional - but you only show up in Click with someone once you have one, so it's worth the ten seconds."
+          >
+            <AvatarUploader initialUrl={initialPhotoUrl} displayName={displayName} />
           </Section>
 
           {/* ----- Birth date ----- */}

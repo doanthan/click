@@ -1,6 +1,6 @@
 import { cache } from "react";
 import type { Session } from "next-auth";
-import type { PoolClient } from "pg";
+import type { Pool, PoolClient } from "pg";
 import { mkdir, readFile, writeFile } from "fs/promises";
 import os from "os";
 import path from "path";
@@ -128,11 +128,12 @@ type ProfileRow = {
 export type OnboardingInput = {
   displayName: string;
   suburb: string;
-  age: string;
   bio: string;
   intents: string[];
   tags: string[];
-  birthDate?: string;
+  // Required: the 18+ gate is enforced from this, server-side. `age` is derived
+  // from it and is no longer accepted from the client.
+  birthDate: string;
   datingVisible?: boolean;
   flexibleDiscovery?: boolean;
 };
@@ -187,6 +188,9 @@ export type ProfileStatus = {
   exists: boolean;
   role: "attendee" | "merchant" | "admin";
   onboardingComplete: boolean;
+  // Whatever is stored in profiles.suburb. Now a 4-digit AU postcode, but older
+  // rows hold a suburb NAME - callers that re-display it must handle both.
+  suburb: string | null;
   merchantProfile: MerchantProfileRow | null;
   bookmarkedEventIds: string[];
   registeredEventIds: string[];
@@ -3286,6 +3290,7 @@ export async function registerForEvent(eventId: string, session: Session | null)
 
   try {
     const profile = await ensureProfileForSession(session);
+    await assertBookingEligible(pool, profile.id);
     const client = await pool.connect();
 
     try {
@@ -4605,7 +4610,10 @@ export async function updateMerchantVerificationForAdmin(
         rejectionReason:
           trimmedReason ||
           "Our reviewer flagged something in your application. Reply to this email and we'll walk you through it.",
-        resubmitUrl: `${origin}/merchant/signup/documents`,
+        // Step 1, not the Documents step: every document is optional, so the
+        // flagged detail is almost never there, and the holding page's own
+        // "Resubmit application" button already starts at the top.
+        resubmitUrl: `${origin}/merchant/signup`,
         supportEmail: SUPPORT_EMAIL,
         unsubscribeUrl: `${origin}/account-settings`,
       },
@@ -4874,6 +4882,7 @@ export async function getAdminMembers(): Promise<AdminMemberRow[]> {
       email: string;
       role: string;
       suburb: string | null;
+      birth_date: Date | null;
       intents: string[] | null;
       bookmarks: string;
       registrations: string;
@@ -4891,6 +4900,7 @@ export async function getAdminMembers(): Promise<AdminMemberRow[]> {
         profile.email::text,
         profile.role::text,
         profile.suburb,
+        profile.birth_date,
         profile.connection_intents::text[] as intents,
         coalesce(count(distinct bookmark.event_id), 0) as bookmarks,
         -- Confirmed seats only (bug board #161): a waitlist spot or an unpaid
@@ -4922,10 +4932,10 @@ export async function getAdminMembers(): Promise<AdminMemberRow[]> {
       email: row.email,
       role: (row.role as AdminMemberRow["role"]) ?? "attendee",
       suburb: row.suburb,
-      // Mirrors getProfileStatus's onboardingComplete: suburb is the field
-      // saveOnboarding enforces. An email-only signup (bug board #164) is not
-      // a countable attendee until they finish onboarding.
-      onboardingComplete: !!row.suburb,
+      // Mirrors getProfileStatus's onboardingComplete: suburb + birth_date are
+      // the fields saveOnboarding enforces. An email-only signup (bug board
+      // #164) is not a countable attendee until they finish onboarding.
+      onboardingComplete: !!row.suburb && !!row.birth_date,
       intents: row.intents ?? [],
       bookmarks: Number(row.bookmarks),
       registrations: Number(row.registrations),
@@ -6376,6 +6386,7 @@ async function getProfileStatusUncached(session: Session | null): Promise<Profil
       exists: false,
       role: "attendee",
       onboardingComplete: false,
+      suburb: null,
       merchantProfile: null,
       bookmarkedEventIds: [],
       registeredEventIds: [],
@@ -6389,8 +6400,8 @@ async function getProfileStatusUncached(session: Session | null): Promise<Profil
   try {
     const profile = await ensureProfileForSession(session);
     const [statusResult, bookmarksResult, registrationsResult, merchant] = await Promise.all([
-      pool.query<{ suburb: string | null; bio: string | null; photo_url: string | null; dating_visible: boolean; has_gallery: boolean }>(
-        `select suburb, bio, photo_url, dating_visible, cardinality(gallery_photos) > 0 as has_gallery from profiles where id = $1::uuid`,
+      pool.query<{ suburb: string | null; bio: string | null; birth_date: Date | null; photo_url: string | null; dating_visible: boolean; has_gallery: boolean }>(
+        `select suburb, bio, birth_date, photo_url, dating_visible, cardinality(gallery_photos) > 0 as has_gallery from profiles where id = $1::uuid`,
         [profile.id],
       ),
       pool.query<{ slug: string }>(
@@ -6416,15 +6427,18 @@ async function getProfileStatusUncached(session: Session | null): Promise<Profil
     ]);
 
     const row = statusResult.rows[0];
-    // Onboarding only requires the fields saveOnboarding enforces (name +
-    // suburb). Bio was made an OPTIONAL final step, so gating completion on it
-    // bounced anyone who skipped their bio back to /onboarding on every login.
-    const onboardingComplete = !!row?.suburb;
+    // Onboarding requires exactly the fields saveOnboarding enforces: suburb
+    // (the postcode) and birth_date. Bio stays an OPTIONAL final step - gating
+    // completion on it bounced anyone who skipped their bio back to /onboarding
+    // on every login. birth_date IS required: it's the 18+ gate, and a profile
+    // that never supplied one has never passed it, so it isn't onboarded.
+    const onboardingComplete = !!row?.suburb && !!row?.birth_date;
 
     return {
       exists: true,
       role: profile.role,
       onboardingComplete,
+      suburb: row?.suburb ?? null,
       merchantProfile: merchant,
       bookmarkedEventIds: bookmarksResult.rows.map((entry) => entry.slug),
       registeredEventIds: registrationsResult.rows.map((entry) => entry.slug),
@@ -6444,6 +6458,7 @@ async function getProfileStatusUncached(session: Session | null): Promise<Profil
       exists: !!email,
       role: "attendee",
       onboardingComplete: false,
+      suburb: null,
       merchantProfile: null,
       bookmarkedEventIds: [],
       registeredEventIds: [],
@@ -6641,6 +6656,43 @@ export async function markMerchantOnboardingComplete(session: Session | null) {
   );
 }
 
+/**
+ * Refuses a seat to anyone who hasn't finished onboarding.
+ *
+ * This is the trust boundary for the 18+ rule. /onboarding is a form, and a
+ * form is not a gate: the app chrome used to render over the top of it, so a
+ * fresh signup could tap "Discover" and book an event with no postcode and no
+ * birth date on file. Both booking entry points (free RSVP and paid checkout)
+ * route through here, so the age check can't be walked around by picking the
+ * other one.
+ *
+ * Same rule as ProfileStatus.onboardingComplete - keep the two in step.
+ */
+async function assertBookingEligible(pool: Pool, profileId: string) {
+  const result = await pool.query<{ suburb: string | null; birth_date: Date | null }>(
+    `select suburb, birth_date from profiles where id = $1::uuid`,
+    [profileId],
+  );
+  const row = result.rows[0];
+  if (row?.suburb && row.birth_date) return;
+
+  const error = new Error("Finish setting up your profile before you book - it takes a minute.");
+  error.name = "OnboardingRequiredError";
+  throw error;
+}
+
+// Whole years elapsed since `birthDate`, counted on calendar boundaries so a
+// birthday that hasn't landed yet this year doesn't round someone up into 18.
+function ageFromBirthDate(birthDate: Date): number {
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const hasHadBirthday =
+    today.getMonth() > birthDate.getMonth() ||
+    (today.getMonth() === birthDate.getMonth() && today.getDate() >= birthDate.getDate());
+  if (!hasHadBirthday) age -= 1;
+  return age;
+}
+
 export async function saveOnboarding(input: OnboardingInput, session: Session | null) {
   const pool = getPostgresPool();
   const email = getSessionEmail(session);
@@ -6659,36 +6711,25 @@ export async function saveOnboarding(input: OnboardingInput, session: Session | 
     throw error;
   }
 
-  const ageValue = input.age.trim() ? Number.parseInt(input.age.trim(), 10) : null;
-  if (ageValue !== null && (!Number.isFinite(ageValue) || ageValue < 18 || ageValue > 120)) {
-    const error = new Error("Age must be 18 or older.");
-    error.name = "ValidationError";
-    throw error;
+  // The 18+ gate lives HERE, not only in the form. Birth date used to be
+  // optional on this path, so a POST straight at /api/onboarding minted a
+  // finished profile with birth_date null and an age nobody ever checked.
+  const rawBirthDate = input.birthDate?.trim() ?? "";
+  if (!rawBirthDate) {
+    throw validationError("Your birth date is required - Click is 18+.");
   }
-
-  let birthDateValue: string | null = null;
-  let derivedAge = ageValue;
-  if (input.birthDate && input.birthDate.trim()) {
-    const parsed = new Date(input.birthDate.trim());
-    if (Number.isNaN(parsed.getTime())) {
-      const error = new Error("Birth date must be a valid date.");
-      error.name = "ValidationError";
-      throw error;
-    }
-    const today = new Date();
-    let computedAge = today.getFullYear() - parsed.getFullYear();
-    const hasHadBirthday =
-      today.getMonth() > parsed.getMonth() ||
-      (today.getMonth() === parsed.getMonth() && today.getDate() >= parsed.getDate());
-    if (!hasHadBirthday) computedAge -= 1;
-    if (computedAge < 18) {
-      const error = new Error("You must be 18 or older to use Click.");
-      error.name = "ValidationError";
-      throw error;
-    }
-    birthDateValue = parsed.toISOString().slice(0, 10);
-    derivedAge = derivedAge ?? computedAge;
+  const parsedBirthDate = new Date(rawBirthDate);
+  if (Number.isNaN(parsedBirthDate.getTime())) {
+    throw validationError("Birth date must be a valid date.");
   }
+  const derivedAge = ageFromBirthDate(parsedBirthDate);
+  if (derivedAge < 18) {
+    throw validationError("You must be 18 or older to use Click.");
+  }
+  if (derivedAge > 120) {
+    throw validationError("That birth date doesn't look right.");
+  }
+  const birthDateValue = parsedBirthDate.toISOString().slice(0, 10);
 
   // Mirrors the connection_intent enum in database/001_schema.sql + 008_intent_extras.sql.
   const allowedIntents = [
@@ -7000,7 +7041,7 @@ export async function recordMerchantDocument(
     sizeBytes: number;
   },
   session: Session | null,
-): Promise<MerchantDocumentRow> {
+): Promise<MerchantDocumentRow & { previousFilePath: string | null }> {
   const pool = getPostgresPool();
   const email = getSessionEmail(session);
 
@@ -7009,6 +7050,16 @@ export async function recordMerchantDocument(
 
   const profile = await ensureProfileForSession(session);
   const merchant = await getMerchantProfile(pool, profile.id);
+
+  // The row is replaced on re-upload, but the OLD storage object isn't - so
+  // every re-pick used to leave a 5 MB orphan in the private bucket that
+  // nothing referenced or cleaned up. Hand the previous key back so the route
+  // can delete it, which caps an account at one object per document type.
+  const previous = await pool.query<{ file_path: string }>(
+    `select file_path from merchant_documents where profile_id = $1::uuid and document_type = $2::merchant_document_type`,
+    [profile.id, input.documentType],
+  );
+  const previousFilePath = previous.rows[0]?.file_path ?? null;
 
   const result = await pool.query<MerchantDocumentRow>(
     `
@@ -7037,7 +7088,7 @@ export async function recordMerchantDocument(
     ],
   );
 
-  return result.rows[0];
+  return { ...result.rows[0], previousFilePath };
 }
 
 export async function listMerchantDocuments(
@@ -9596,6 +9647,7 @@ export async function createPaymentHold(
   if (!pool) throw databaseUnavailableError();
 
   const profile = await ensureProfileForSession(session);
+  await assertBookingEligible(pool, profile.id);
   const client = await pool.connect();
 
   try {

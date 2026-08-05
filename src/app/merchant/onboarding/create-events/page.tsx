@@ -4,6 +4,8 @@ import { OnboardingNav } from "@/components/merchant-onboarding-wizard";
 // (src/components/event-create-wizard.tsx). Teaches the shape of event
 // creation without making them build one yet - the real CTA is on the last
 // onboarding step.
+// Keep this list diffed against STEP_TITLES in src/components/event-create-wizard.tsx.
+// It used to list a "Price" step that doesn't exist and omit Media entirely.
 const STEPS = [
   {
     n: "01",
@@ -12,8 +14,8 @@ const STEPS = [
   },
   {
     n: "02",
-    title: "Schedule & capacity",
-    body: "Choose the start date/time and how many seats you're opening. We stop bookings at capacity and run a waitlist automatically.",
+    title: "Schedule, capacity & price",
+    body: "Choose the start date/time, how many seats you're opening, and what a ticket costs - leave it at 0 to run it free. We stop bookings at capacity and run a waitlist automatically.",
   },
   {
     n: "03",
@@ -22,8 +24,8 @@ const STEPS = [
   },
   {
     n: "04",
-    title: "Price",
-    body: "Leave it free, or set a ticket price. Paid events use Stripe checkout and pay out to the bank account you connect next.",
+    title: "Media",
+    body: "Add your photos. This is the single biggest lever on whether an event fills - skip it and we fall back to a plain category placeholder.",
   },
   {
     n: "05",

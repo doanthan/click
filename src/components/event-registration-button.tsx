@@ -94,7 +94,7 @@ export function EventRegistrationButton({
       redirectTo?: string;
     };
 
-    if (response.status === 402 && payload.redirectTo) {
+    if (payload.redirectTo && !response.ok) {
       window.location.href = payload.redirectTo;
       return;
     }
@@ -148,7 +148,7 @@ export function EventRegistrationButton({
       redirectTo?: string;
     };
 
-    if (response.status === 402 && payload.redirectTo) {
+    if (payload.redirectTo && !response.ok) {
       window.location.href = payload.redirectTo;
       return;
     }

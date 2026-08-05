@@ -36,6 +36,16 @@ function responseForError(error: unknown) {
     );
   }
 
+  // Signed in, but the profile has no postcode / birth date yet, so the 18+
+  // gate was never passed. Carry the destination so the button can hand them
+  // to the form instead of just printing an error they can't act on.
+  if (error.name === "OnboardingRequiredError") {
+    return NextResponse.json(
+      { error: error.message, redirectTo: "/onboarding" },
+      { status: 403 },
+    );
+  }
+
   if (error.name === "NotFoundError") {
     return NextResponse.json({ error: error.message }, { status: 404 });
   }

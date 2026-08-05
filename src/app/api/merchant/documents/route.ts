@@ -129,6 +129,16 @@ export async function POST(request: Request) {
       },
       session,
     );
+    // The metadata row is replaced on re-upload, so the object it used to point
+    // at is now unreachable. Drop it, or every re-pick leaves a 5 MB orphan in
+    // the private bucket. Best-effort: a failed cleanup must not fail the
+    // upload the user just completed.
+    if (row.previousFilePath && row.previousFilePath !== objectKey) {
+      await supabase.storage
+        .from(BUCKET)
+        .remove([row.previousFilePath])
+        .catch(() => undefined);
+    }
     return NextResponse.json({ ok: true, document: row });
   } catch (error) {
     // Best-effort: try to remove the orphan object so the bucket doesn't

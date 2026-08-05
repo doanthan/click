@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { AuthedRedirect } from "@/components/authed-redirect";
-import { AuthShell } from "@/components/auth-ui";
+import { AuthNote, AuthShell } from "@/components/auth-ui";
 import { RegisterForm } from "@/components/register-form";
 
 export const metadata = {
@@ -14,11 +14,16 @@ type RegisterPageProps = {
   searchParams?: Promise<{
     callbackUrl?: string;
     error?: string;
+    emailSent?: string;
   }>;
 };
 
 const errorCopy: Record<string, string> = {
   CredentialsSignin: "Enter a valid email address to continue.",
+  InvalidEmail: "Enter a valid email address to continue.",
+  RateLimited: "Too many signup emails were requested. Try again in an hour.",
+  EmailUnavailable:
+    "We could not send your signup email right now. Try Google or try again later.",
   OAuthSignin: "The social signup could not start. Check the provider configuration.",
   OAuthCallback: "The social signup callback failed. Check the provider callback URL.",
   Configuration: "Authentication is missing provider or secret configuration.",
@@ -46,6 +51,7 @@ export default async function RegisterPage({ searchParams }: RegisterPageProps) 
   }
 
   const errorMessage = params?.error ? errorCopy[params.error] ?? "Sign up failed." : "";
+  const emailSent = params?.emailSent === "1";
   const googleConfigured = !!(process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET);
   const metaConfigured = !!(process.env.AUTH_FACEBOOK_ID && process.env.AUTH_FACEBOOK_SECRET);
 
@@ -63,6 +69,17 @@ export default async function RegisterPage({ searchParams }: RegisterPageProps) 
       }
     >
       <AuthedRedirect />
+
+      {/* The signup is answered HERE now, in signup language - it used to hand
+          you to /login, which greets you with "Welcome back". */}
+      {emailSent ? (
+        <div className="mb-5">
+          <AuthNote icon="mail">
+            Check your inbox - we&apos;ve sent a one-time link that finishes creating your account.
+          </AuthNote>
+        </div>
+      ) : null}
+
       <RegisterForm
         callbackUrl={callbackUrl}
         errorMessage={errorMessage}

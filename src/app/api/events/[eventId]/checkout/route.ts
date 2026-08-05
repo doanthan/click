@@ -30,6 +30,15 @@ function errorResponse(error: unknown) {
   if (error.name === "AuthRequiredError") {
     return NextResponse.json({ error: error.message }, { status: 401 });
   }
+  // Same 18+ / onboarding gate the free RSVP path enforces - checkout must not
+  // be the way around it.
+  if (error.name === "OnboardingRequiredError") {
+    return NextResponse.json(
+      { error: error.message, redirectTo: "/onboarding" },
+      { status: 403 },
+    );
+  }
+
   if (error.name === "NotFoundError") {
     return NextResponse.json({ error: error.message }, { status: 404 });
   }

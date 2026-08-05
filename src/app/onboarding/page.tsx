@@ -29,12 +29,25 @@ export default async function OnboardingPage({
     redirect(next ?? "/dashboard");
   }
 
+  // Anyone sent back here with a profile already part-filled (an account from
+  // before the birth date was required, say) shouldn't retype what we hold.
+  // Only a 4-digit postcode is reusable: profiles.suburb used to store a suburb
+  // NAME, which can't seed a postcode field.
+  const savedPostcode = /^\d{4}$/.test(status.suburb?.trim() ?? "")
+    ? status.suburb!.trim()
+    : "";
+
   // One calm column on the cream ground. The form owns its own chrome (wordmark
   // header, scrolling body, sticky Continue bar), so the page is just the ground
   // - the old lg-only aside repeated the form's headline word for word.
   return (
     <main className="min-h-[100dvh] bg-[color:var(--champagne)] text-[color:var(--ink)]">
-      <OnboardingForm initialName={session.user.name ?? ""} next={next} />
+      <OnboardingForm
+        initialName={session.user.name ?? ""}
+        initialPostcode={savedPostcode}
+        initialPhotoUrl={status.photoUrl}
+        next={next}
+      />
     </main>
   );
 }

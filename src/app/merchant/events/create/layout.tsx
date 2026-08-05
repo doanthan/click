@@ -52,6 +52,16 @@ export default async function CreateEventLayout({
     );
   }
 
+  // The one-time post-approval walkthrough runs BEFORE the first event, the
+  // same way /merchant gates it. Without this, the approval email's "Create
+  // your first event" link (createEventUrl) dropped merchants straight in here,
+  // so they built an event and only afterwards got bounced into a "You're
+  // approved - here's how events work" tour. It's four pages and the last one
+  // stamps onboarding_completed_at, so this can't loop.
+  if (!status.merchantProfile.onboarding_completed_at) {
+    redirect("/merchant/onboarding");
+  }
+
   // NO payout gate here. Onboarding explicitly offers "Skip for now - you can
   // keep going and run free events", so blocking the whole wizard on
   // charges_enabled dead-ended every merchant who took that offer. Stripe

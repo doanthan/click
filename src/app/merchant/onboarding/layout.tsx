@@ -39,11 +39,13 @@ export default async function MerchantOnboardingLayout({
           You&apos;re approved
         </span>
         <h1 className="font-display mt-3 text-4xl font-bold leading-[0.96] tracking-[-0.025em] sm:text-5xl">
-          Let&apos;s get you <span className="text-[color:var(--rose)]">paid</span>.
+          Let&apos;s get you <span className="text-[color:var(--rose)]">hosting</span>.
         </h1>
+        {/* Not "let's get you paid" - the payout step is skippable and free
+            events are a first-class path, so the frame has to fit both. */}
         <p className="mt-2 max-w-2xl text-sm font-medium leading-6 text-[color:var(--mauve)]">
-          A quick lap around hosting on Click, then connect your bank so paid
-          events can pay out.
+          A quick lap around hosting on Click. Running free events? You&apos;re
+          already set - connect a bank account only when you want to charge.
         </p>
 
         <div className="mt-5 grid gap-6">

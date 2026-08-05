@@ -7,6 +7,7 @@ import SupportWidget from "@/components/support/support-widget";
 import { TestAccountSwitcher } from "@/components/test-account-switcher";
 import { SessionFreshness } from "@/components/session-freshness";
 import { LoginModalHost } from "@/components/login-modal-host";
+import { ChromeGate } from "@/components/chrome-gate";
 import { SiteFooter, SiteHeader, SiteHeaderShell } from "@/components/site-chrome";
 import { auth } from "@/auth";
 import { isLocalDevelopment } from "@/lib/runtime-mode";
@@ -86,13 +87,7 @@ export default async function RootLayout({
           cz-shortcut-listen, Grammarly) inject attributes onto <body> before
           React hydrates. This suppresses only body's own attribute mismatch,
           not mismatches inside the component tree. */}
-      {/* pb on mobile reserves space for the fixed MobileBottomNav (its own
-          height + the device safe-area inset) so page + footer content is never
-          hidden behind it; cleared from lg up where the bottom bar is hidden. */}
-      <body
-        className="min-h-full flex flex-col pb-[calc(56px+env(safe-area-inset-bottom))] lg:pb-0"
-        suppressHydrationWarning
-      >
+      <body className="min-h-full flex flex-col" suppressHydrationWarning>
         {/* First tab stop everywhere: jump past the sticky header straight to
             the page content. */}
         <a href="#main-content" className="skip-link">
@@ -100,17 +95,31 @@ export default async function RootLayout({
         </a>
         {/* The live header awaits the session profile + notification queries;
             stream it so those round-trips never block first paint of the page
-            body. The shell keeps the bar's height so nothing shifts. */}
-        <Suspense fallback={<SiteHeaderShell />}>
-          <SiteHeader />
-        </Suspense>
+            body. The shell keeps the bar's height so nothing shifts.
+            ChromeGate drops the whole bar on the auth + onboarding routes,
+            which draw their own wordmark and must not offer a way out. */}
+        <ChromeGate>
+          <Suspense fallback={<SiteHeaderShell />}>
+            <SiteHeader />
+          </Suspense>
+        </ChromeGate>
         {/* Every page renders its own <main>; this wrapper is the one stable
             skip-link target above them all. flex-1 keeps short pages pushing
             the footer down, exactly as the bare children did. */}
         <div id="main-content" tabIndex={-1} className="flex min-w-0 flex-1 flex-col outline-none">
           {children}
         </div>
-        <SiteFooter />
+        <ChromeGate>
+          <SiteFooter />
+          {/* Reserves the fixed MobileBottomNav's height (its own + the device
+              safe-area inset) so page and footer content is never hidden behind
+              it. It sits WITH the nav rather than on <body> so a chromeless
+              route doesn't reserve space for a bar it never renders - and so
+              logged-out visitors, who never get the bar, don't either. */}
+          {session?.user ? (
+            <div aria-hidden className="h-[calc(56px+env(safe-area-inset-bottom))] lg:hidden" />
+          ) : null}
+        </ChromeGate>
         <LoginModalHost
           googleConfigured={googleConfigured}
           metaConfigured={metaConfigured}
