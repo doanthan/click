@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ANON_SCOPE, scopedKey, useAccountScope } from "@/lib/account-scope";
 
 /**
  * Versioned client-side draft persistence for long forms.
@@ -19,12 +20,18 @@ import { useCallback, useEffect, useRef, useState } from "react";
  *
  * Persistence is gated on `hydrated` for the mirror-image reason - writing
  * before the read lands would clobber the saved draft with the defaults.
+ *
+ * Every key is namespaced to the signed-in account (see lib/account-scope), so
+ * switching accounts in one browser can never hand the next person the last
+ * one's answers. The one crossing that IS wanted - a draft started while logged
+ * out, then carried through sign-in - is handled by the adoption step in the
+ * read effect below.
  */
 
 type Stored<T> = { v: number; values: T };
 
 export function useFormDraft<T>({
-  key,
+  key: rawKey,
   version,
   storage = "session",
   values,
@@ -43,6 +50,9 @@ export function useFormDraft<T>({
 }): { hydrated: boolean; restored: boolean; clear: () => void } {
   const [hydrated, setHydrated] = useState(false);
   const [restored, setRestored] = useState(false);
+
+  const scope = useAccountScope();
+  const key = scopedKey(scope, rawKey);
 
   // `apply` is almost always an inline closure, so it changes identity every
   // render. Keeping the latest in a ref lets the rehydrate effect stay
@@ -71,6 +81,26 @@ export function useFormDraft<T>({
      diverges, the window closes and drafting resumes. */
   const clearedAtRef = useRef<string | null>(null);
 
+  /* The form's values as it FIRST rendered, serialised. Nothing is written to
+     storage while the values still match this, which fixes a draft the user
+     never made: on mount the read effect finds nothing, flips `hydrated`, and
+     the write effect below used to persist the untouched defaults immediately.
+     The next mount then read those defaults straight back and announced
+     "picked up where you left off - the answers you had already typed are
+     still here" to someone who had typed nothing. Reproducible on every form
+     using this hook: open it, reload, read the note.
+
+     Empty string is the "cannot compare" sentinel - a real serialised payload
+     is never "", so the guard simply never fires and we fall back to the old
+     always-write behaviour rather than losing drafting altogether. */
+  const [pristine] = useState(() => {
+    try {
+      return JSON.stringify({ v: version, values } satisfies Stored<T>);
+    } catch {
+      return "";
+    }
+  });
+
   const pick = useCallback(
     () => (storage === "local" ? window.localStorage : window.sessionStorage),
     [storage],
@@ -85,15 +115,33 @@ export function useFormDraft<T>({
     let saved: T | null = null;
     try {
       const store = pick();
-      const raw = store.getItem(key);
-      if (raw) {
+      const read = (from: string): T | null => {
+        const raw = store.getItem(from);
+        if (!raw) return null;
         const parsed = JSON.parse(raw) as Partial<Stored<T>>;
         if (parsed && parsed.v === version && parsed.values !== undefined) {
-          saved = parsed.values as T;
-        } else {
-          // A draft written against an older shape. Dropping it beats applying
-          // half of it into a form whose fields have since moved.
-          store.removeItem(key);
+          return parsed.values as T;
+        }
+        // A draft written against an older shape. Dropping it beats applying
+        // half of it into a form whose fields have since moved.
+        store.removeItem(from);
+        return null;
+      };
+
+      saved = read(key);
+
+      // Adoption. A draft started while logged OUT belongs to whoever signs in
+      // next: the homepage quiz teaser collects four answers and then sends the
+      // visitor to log in, and dropping them at that door is the exact inverse
+      // of the endowed progress the teaser just sold. Moving it under the
+      // account's own key also means it is adopted once, not shared onward with
+      // the next person to use the browser.
+      if (saved === null && scope !== ANON_SCOPE) {
+        const anonKey = scopedKey(ANON_SCOPE, rawKey);
+        saved = read(anonKey);
+        if (saved !== null) {
+          store.setItem(key, JSON.stringify({ v: version, values: saved } satisfies Stored<T>));
+          store.removeItem(anonKey);
         }
       }
     } catch {
@@ -109,7 +157,7 @@ export function useFormDraft<T>({
       setHydrated(true);
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [key, version, pick]);
+  }, [key, rawKey, scope, version, pick]);
 
   useEffect(() => {
     if (!hydrated || typeof window === "undefined") return;
@@ -133,13 +181,18 @@ export function useFormDraft<T>({
       clearedAtRef.current = null;
     }
 
+    // Still pristine - the user has not touched anything, so there is no draft
+    // to save. `restored` exempts a draft we just applied: those values came
+    // from storage, not from the defaults, and must keep being written through.
+    if (!restored && pristine === serialised) return;
+
     try {
       pick().setItem(key, serialised);
     } catch {
       // Quota or private mode - non-fatal. The in-memory form still works, the
       // user just loses the reload safety net.
     }
-  }, [hydrated, key, version, values, pick]);
+  }, [hydrated, restored, pristine, key, version, values, pick]);
 
   /* Kept in a ref so `clear` stays referentially stable: call sites hold it
      across renders and some list it in their own effect deps. A ref read is

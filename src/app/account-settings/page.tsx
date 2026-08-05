@@ -6,6 +6,7 @@ import { Button, ButtonLink, Icon, type IconName } from "@/components/ds";
 import { EmptyState } from "@/components/empty-state";
 import { signOutOfClick } from "@/app/login/actions";
 import { getOwnProfile, type AccountSettings } from "@/lib/event-repository";
+import { SettingsTabs } from "./settings-tabs";
 
 const DEFAULT_SETTINGS: AccountSettings = {
   notifications: {
@@ -50,7 +51,24 @@ export default async function AccountSettingsPage({ searchParams }: AccountSetti
 
   const profile = await getOwnProfile(session);
   const settings = profile?.settings ?? DEFAULT_SETTINGS;
-  const label = TABS.find((t) => t.key === tab)?.label ?? "Settings";
+
+  /* Every panel is built here, once, from the single settings object above -
+     all five derive from it, so re-running this per tab bought nothing. They go
+     to SettingsTabs as ReactNodes: the fetching stays on the server, only the
+     "which one is showing" moved to the client. */
+  const panels: Record<TabKey, React.ReactNode> = {
+    account: (
+      <AccountTab
+        displayName={profile?.displayName ?? "-"}
+        email={profile?.email ?? session.user.email ?? "-"}
+        suburb={profile?.suburb ?? "-"}
+      />
+    ),
+    notifications: <NotificationsTab settings={settings} />,
+    privacy: <PrivacyTab settings={settings} />,
+    payments: <PaymentsTab />,
+    security: <SecurityTab email={profile?.email ?? session.user.email ?? "-"} />,
+  };
 
   return (
     <main className="min-h-screen bg-[color:var(--champagne)] pb-24 text-[color:var(--ink)]">
@@ -59,59 +77,7 @@ export default async function AccountSettingsPage({ searchParams }: AccountSetti
           Settings
         </h1>
 
-        <div className="mt-6 grid items-start gap-8 lg:grid-cols-[232px_minmax(0,1fr)] lg:gap-11">
-          {/* Sub-nav: a sticky column on desktop, a scrollable rail on mobile. */}
-          <nav className="ckRail -mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1 lg:sticky lg:top-6 lg:mx-0 lg:flex-col lg:overflow-visible lg:px-0">
-            {TABS.map((t) => {
-              const on = t.key === tab;
-              return (
-                <Link
-                  key={t.key}
-                  href={`/account-settings?tab=${t.key}`}
-                  aria-current={on ? "page" : undefined}
-                  className={`flex shrink-0 items-center gap-2.5 whitespace-nowrap rounded-[12px] px-3.5 py-2.5 text-[14.5px] transition-colors ${
-                    on
-                      ? "bg-[color:var(--lavender-100)] font-semibold text-[color:var(--purple-800)]"
-                      : "font-medium text-[color:var(--ink-soft)] hover:bg-[color:var(--lavender-100)]"
-                  }`}
-                >
-                  <Icon
-                    name={t.icon}
-                    size={18}
-                    className={on ? "text-[color:var(--purple)]" : "text-[color:var(--slate)]"}
-                  />
-                  {t.label}
-                </Link>
-              );
-            })}
-          </nav>
-
-          {/* Narrow content column: capped, left-aligned, whitespace to the right.
-              key={tab} remounts it per tab so the 240ms rise plays on the swap -
-              every tab is a server round-trip, and without it the panel replaces
-              itself in one hard frame that reads as "did that do anything?".
-              Resting state is fully visible; the rise is purely additive. */}
-          <div key={tab} className="rise-soft min-w-0 max-w-[640px]">
-            <h2 className="font-display text-[length:var(--text-h2)] font-semibold leading-tight tracking-[-0.01em]">
-              {label}
-            </h2>
-            <div className="mt-4 h-px bg-[color:var(--mist)]" />
-
-            {tab === "account" ? (
-              <AccountTab
-                displayName={profile?.displayName ?? "-"}
-                email={profile?.email ?? session.user.email ?? "-"}
-                suburb={profile?.suburb ?? "-"}
-              />
-            ) : null}
-            {tab === "notifications" ? <NotificationsTab settings={settings} /> : null}
-            {tab === "privacy" ? <PrivacyTab settings={settings} /> : null}
-            {tab === "payments" ? <PaymentsTab /> : null}
-            {tab === "security" ? (
-              <SecurityTab email={profile?.email ?? session.user.email ?? "-"} />
-            ) : null}
-          </div>
-        </div>
+        <SettingsTabs tabs={TABS} initialTab={tab} panels={panels} />
       </div>
     </main>
   );

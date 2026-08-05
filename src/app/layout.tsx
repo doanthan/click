@@ -10,6 +10,7 @@ import { LoginModalHost } from "@/components/login-modal-host";
 import { ChromeGate } from "@/components/chrome-gate";
 import { SiteFooter, SiteHeader, SiteHeaderShell } from "@/components/site-chrome";
 import { auth } from "@/auth";
+import { AccountScopeProvider } from "@/lib/account-scope";
 import { isLocalDevelopment } from "@/lib/runtime-mode";
 import { isTestSwitcherUnlocked } from "@/lib/test-switcher";
 import "./globals.css";
@@ -88,6 +89,10 @@ export default async function RootLayout({
           React hydrates. This suppresses only body's own attribute mismatch,
           not mismatches inside the component tree. */}
       <body className="min-h-full flex flex-col" suppressHydrationWarning>
+        {/* Tells every form draft which account it belongs to, so one browser
+            signing in as several people (the QA switcher, a shared laptop)
+            never hands the next person the last one's half-filled form. */}
+        <AccountScopeProvider scope={session?.user?.email}>
         {/* First tab stop everywhere: jump past the sticky header straight to
             the page content. */}
         <a href="#main-content" className="skip-link">
@@ -96,8 +101,11 @@ export default async function RootLayout({
         {/* The live header awaits the session profile + notification queries;
             stream it so those round-trips never block first paint of the page
             body. The shell keeps the bar's height so nothing shifts.
-            ChromeGate drops the whole bar on the auth + onboarding routes,
-            which draw their own wordmark and must not offer a way out. */}
+            ChromeGate drops the whole bar on the auth, quiz and onboarding
+            routes, which draw their own wordmark. That wordmark is a link home:
+            those surfaces carry no app nav, but a screen with no way out at all
+            is a trap, and the real gate on an unfinished profile is server-side
+            (assertBookingEligible), not the missing header. */}
         <ChromeGate>
           <Suspense fallback={<SiteHeaderShell />}>
             <SiteHeader />
@@ -157,6 +165,7 @@ export default async function RootLayout({
         {qaSwitcherUnlocked ? (
           <TestAccountSwitcher currentEmail={session?.user?.email ?? null} />
         ) : null}
+        </AccountScopeProvider>
       </body>
     </html>
   );

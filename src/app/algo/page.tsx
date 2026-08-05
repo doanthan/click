@@ -10,6 +10,7 @@ import {
 import { DEFAULT_COHORT_WEIGHTS, MODEL_VERSION } from "@/lib/matching/weights";
 import { SUB_TAG_PATTERNS } from "@/lib/matching/sub-tags";
 import { COHORTS, type CohortId, type FeatureName } from "@/lib/matching/types";
+import { Badge } from "@/components/ds";
 import V2Toggle from "@/components/algo/v2-toggle";
 import { isProductionDeployment } from "@/lib/runtime-mode";
 
@@ -231,15 +232,15 @@ export default async function AlgoPage({
       >
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="max-w-2xl">
-            <div className="flex items-center gap-2">
-              <span
-                className={`inline-block size-2.5 rounded-full ${
-                  matchingV2Enabled ? "bg-[color:var(--rose)]" : "bg-[color:var(--mauve)]"
-                }`}
-              />
-              <span className="font-mono text-[0.7rem] font-black uppercase tracking-[0.2em] text-[color:var(--ink)]">
+            {/* Live/off state rides on a Badge, never on a coloured dot. The
+                dot here was --rose, and --rose RESOLVES to Deep Purple - the
+                one primary-action colour - so a passive status indicator was
+                painted as though it were a CTA. Status colours belong on badges
+                only: sage is the DS success/live tone, neutral carries "off". */}
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone={matchingV2Enabled ? "sage" : "neutral"}>
                 {matchingV2Enabled ? "v2 is LIVE" : "v2 is OFF - production serves v1"}
-              </span>
+              </Badge>
               <span className="rounded-full bg-[color:var(--ink)] px-2 py-0.5 font-mono text-[0.55rem] uppercase tracking-wide text-[color:var(--on-deep)]">
                 {MODEL_VERSION}
               </span>
@@ -258,7 +259,12 @@ export default async function AlgoPage({
                   The engine below is fully built and verified, but the live{" "}
                   <strong>People</strong> + <strong>Discovery</strong> surfaces still rank with v1
                   (and the weights at{" "}
-                  <Link href="/admin/matching" className="text-[color:var(--rose)] underline">
+                  {/* Deep Purple is right for a link - a link IS an action - but
+                      say so with the intent-named token. --rose is the historic
+                      accent alias that happens to resolve to the same hex, and
+                      leaning on it is how status indicators nearby ended up
+                      wearing the primary-action colour in the first place. */}
+                  <Link href="/admin/matching" className="text-[color:var(--purple)] underline">
                     /admin/matching
                   </Link>
                   ). Flip the switch to send real traffic through v2.

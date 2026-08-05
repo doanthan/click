@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
-import { createPortal } from "react-dom";
+import { useId, useRef, useState, type ReactNode } from "react";
+import { ModalShell } from "./modal-shell";
 
 /**
  * Branded replacement for window.confirm / window.prompt.
@@ -100,67 +100,10 @@ function ConfirmDialogBody({
   const [value, setValue] = useState(promptDefaultValue);
   const titleId = useId();
   const descId = useId();
+  // Handed to ModalShell as the node to focus on open: the prompt field when
+  // there is one, otherwise the safe (cancel) button rather than the destructive
+  // one. Assigned through the ref callbacks further down.
   const initialFocusRef = useRef<HTMLElement | null>(null);
-  const cardRef = useRef<HTMLDivElement>(null);
-
-  // Keep the latest busy/onCancel for the mount-scoped key handler without
-  // re-running the focus effect (which would steal focus on every keystroke).
-  // Synced in an effect - never mutated during render.
-  const latest = useRef({ busy, onCancel });
-  useEffect(() => {
-    latest.current = { busy, onCancel };
-  });
-
-  // Focus the first control on open, lock body scroll, wire Escape, and restore
-  // focus to the trigger on close. Mount-scoped, so no setState in an effect.
-  useEffect(() => {
-    const previouslyFocused = document.activeElement;
-    const raf = window.requestAnimationFrame(() => initialFocusRef.current?.focus());
-
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape" && !latest.current.busy) {
-        e.preventDefault();
-        latest.current.onCancel();
-        return;
-      }
-      // Focus trap: keep Tab/Shift+Tab cycling inside the dialog so focus can't
-      // wander to the (inert) page behind the aria-modal surface.
-      if (e.key === "Tab") {
-        const card = cardRef.current;
-        if (!card) return;
-        const focusables = Array.from(
-          card.querySelectorAll<HTMLElement>(
-            'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
-          ),
-        ).filter((el) => el.offsetParent !== null || el === document.activeElement);
-        if (focusables.length === 0) return;
-        const first = focusables[0];
-        const last = focusables[focusables.length - 1];
-        const active = document.activeElement;
-        if (!card.contains(active)) {
-          e.preventDefault();
-          first.focus();
-        } else if (e.shiftKey && active === first) {
-          e.preventDefault();
-          last.focus();
-        } else if (!e.shiftKey && active === last) {
-          e.preventDefault();
-          first.focus();
-        }
-      }
-    }
-    document.addEventListener("keydown", onKey);
-
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-
-    return () => {
-      window.cancelAnimationFrame(raf);
-      document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prevOverflow;
-      if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus();
-    };
-  }, []);
 
   const confirmDisabled = busy || (Boolean(promptLabel) && promptRequired && value.trim() === "");
 
@@ -175,99 +118,96 @@ function ConfirmDialogBody({
   // one Deep Purple primary. Status colours never land on a CTA.
   const confirmClasses = tone === "rose" ? "ck-btn--danger" : "ck-btn--primary";
 
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[120] flex items-end justify-center p-4 sm:items-center"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby={titleId}
-      aria-describedby={description ? descId : undefined}
+  return (
+    // The portal, the scrim, Escape, the focus move/trap/restore and the
+    // body-scroll lock all live in ModalShell now - this file carried one of the
+    // four hand-rolled copies of that block.
+    <ModalShell
+      onClose={onCancel}
+      labelledBy={titleId}
+      describedBy={description ? descId : undefined}
+      /* Bottom sheet on phones, centred from sm up - where the thumb is. */
+      align="sheet"
+      zIndex={120}
+      /* While the confirmed action is in flight, neither Escape nor a scrim tap
+         may close the dialog: the request is already committed and dismissing
+         the only surface reporting on it reads as "nothing happened". */
+      dismissible={!busy}
+      initialFocusRef={initialFocusRef}
+      scrimClassName="bg-[color:var(--surface-deep)]/45 backdrop-blur-[2px]"
+      cardClassName="step-enter-fwd w-full max-w-md rounded-[20px] bg-[color:var(--paper)] p-6 shadow-[var(--shadow-lg)] sm:p-7"
     >
-      {/* Backdrop */}
-      <button
-        type="button"
-        aria-label="Cancel"
-        tabIndex={-1}
-        onClick={() => !busy && onCancel()}
-        className="absolute inset-0 cursor-default bg-[color:var(--surface-deep)]/45 backdrop-blur-[2px]"
-      />
-      <div
-        ref={cardRef}
-        className="step-enter-fwd relative z-10 w-full max-w-md rounded-[20px] bg-[color:var(--paper)] p-6 shadow-[var(--shadow-lg)] sm:p-7"
+      <span className="eyebrow">{headerBadge}</span>
+      <h2
+        id={titleId}
+        className="font-display mt-4 text-2xl font-semibold leading-tight tracking-[-0.025em] text-[color:var(--ink)] sm:text-3xl"
       >
-        <span className="eyebrow">{headerBadge}</span>
-        <h2
-          id={titleId}
-          className="font-display mt-4 text-2xl font-semibold leading-tight tracking-[-0.025em] text-[color:var(--ink)] sm:text-3xl"
+        {title}
+      </h2>
+      {description ? (
+        <p id={descId} className="mt-3 text-sm font-medium leading-6 text-[color:var(--mauve)]">
+          {description}
+        </p>
+      ) : null}
+
+      {promptLabel ? (
+        <label className="mt-5 block">
+          <span className="text-[12.5px] font-semibold text-[color:var(--slate)]">
+            {promptLabel}
+          </span>
+          {promptMultiline ? (
+            <textarea
+              ref={(el) => {
+                initialFocusRef.current = el;
+              }}
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              placeholder={promptPlaceholder}
+              rows={3}
+              disabled={busy}
+              className="mt-2 w-full resize-none rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] px-4 py-3 text-base leading-6 text-[color:var(--ink)] placeholder:text-[color:var(--ink-faint)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)] disabled:opacity-60"
+            />
+          ) : (
+            <input
+              ref={(el) => {
+                initialFocusRef.current = el;
+              }}
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              placeholder={promptPlaceholder}
+              disabled={busy}
+              onKeyDown={(e) => e.key === "Enter" && submit()}
+              className="mt-2 w-full rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] px-4 py-3 text-base text-[color:var(--ink)] placeholder:text-[color:var(--ink-faint)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)] disabled:opacity-60"
+            />
+          )}
+        </label>
+      ) : null}
+
+      <div className="mt-6 flex flex-wrap justify-end gap-3">
+        <button
+          ref={
+            promptLabel
+              ? undefined
+              : (el) => {
+                  initialFocusRef.current = el;
+                }
+          }
+          type="button"
+          onClick={() => !busy && onCancel()}
+          disabled={busy}
+          className="ck-btn ck-btn--secondary ck-btn--md"
         >
-          {title}
-        </h2>
-        {description ? (
-          <p id={descId} className="mt-3 text-sm font-medium leading-6 text-[color:var(--mauve)]">
-            {description}
-          </p>
-        ) : null}
-
-        {promptLabel ? (
-          <label className="mt-5 block">
-            <span className="text-[12.5px] font-semibold text-[color:var(--slate)]">
-              {promptLabel}
-            </span>
-            {promptMultiline ? (
-              <textarea
-                ref={(el) => {
-                  initialFocusRef.current = el;
-                }}
-                value={value}
-                onChange={(e) => setValue(e.target.value)}
-                placeholder={promptPlaceholder}
-                rows={3}
-                disabled={busy}
-                className="mt-2 w-full resize-none rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] px-4 py-3 text-base leading-6 text-[color:var(--ink)] placeholder:text-[color:var(--ink-faint)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)] disabled:opacity-60"
-              />
-            ) : (
-              <input
-                ref={(el) => {
-                  initialFocusRef.current = el;
-                }}
-                value={value}
-                onChange={(e) => setValue(e.target.value)}
-                placeholder={promptPlaceholder}
-                disabled={busy}
-                onKeyDown={(e) => e.key === "Enter" && submit()}
-                className="mt-2 w-full rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] px-4 py-3 text-base text-[color:var(--ink)] placeholder:text-[color:var(--ink-faint)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)] disabled:opacity-60"
-              />
-            )}
-          </label>
-        ) : null}
-
-        <div className="mt-6 flex flex-wrap justify-end gap-3">
-          <button
-            ref={
-              promptLabel
-                ? undefined
-                : (el) => {
-                    initialFocusRef.current = el;
-                  }
-            }
-            type="button"
-            onClick={() => !busy && onCancel()}
-            disabled={busy}
-            className="ck-btn ck-btn--secondary ck-btn--md"
-          >
-            {cancelLabel}
-          </button>
-          <button
-            type="button"
-            onClick={submit}
-            disabled={confirmDisabled}
-            className={`ck-btn ck-btn--md ${confirmClasses}`}
-          >
-            {busy ? "Working…" : confirmLabel}
-          </button>
-        </div>
+          {cancelLabel}
+        </button>
+        <button
+          type="button"
+          onClick={submit}
+          disabled={confirmDisabled}
+          className={`ck-btn ck-btn--md ${confirmClasses}`}
+        >
+          {busy ? "Working…" : confirmLabel}
+        </button>
       </div>
-    </div>,
-    document.body,
+    </ModalShell>
   );
 }

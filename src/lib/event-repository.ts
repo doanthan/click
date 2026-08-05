@@ -17,6 +17,7 @@ import {
   type EventItem,
   type EventStatus,
 } from "./click-data";
+import { LIFE_QUIZ_SECTION_OPTIONS } from "./life-quiz-sections";
 import {
   DEFAULT_MATCHING_WEIGHTS,
   type MatchingWeights,
@@ -138,17 +139,11 @@ export type OnboardingInput = {
   flexibleDiscovery?: boolean;
 };
 
-export type MerchantSignupInput = {
-  businessName: string;
-  contactEmail: string;
-  websiteUrl: string;
-  abn: string;
-};
-
-// Full payload from the 4-step wizard. The minimal MerchantSignupInput above
-// stays for the legacy short form; this superset is what /api/merchant accepts
-// once the wizard ships. Document uploads land separately via
-// /api/merchant/documents (matched by profile_id) before this submit.
+// Full payload from the 4-step wizard - the only shape /api/merchant accepts.
+// (The legacy short form and its MerchantSignupInput are gone: the non-wizard
+// fallback route was removed, which skipped this payload's server-side
+// validation.) Document uploads land separately via /api/merchant/documents
+// (matched by profile_id) before this submit.
 export type MerchantWizardInput = {
   businessName: string;
   tradingName: string;
@@ -6497,7 +6492,11 @@ export async function getProfileCompletion(
   const empty = (): ProfileCompletion => {
     const items: ProfileCompletionItem[] = [
       { key: "photo", label: "Add a photo to Click with others", done: false, href: "/profile/edit" },
-      { key: "suburb", label: "Set your suburb", done: false, href: "/onboarding" },
+      // /profile/edit, NOT /onboarding: the onboarding form writes a raw
+      // postcode into profiles.suburb, which is exactly the legacy shape
+      // /profile/edit now detects and repairs (splitSuburb + the postcode →
+      // suburb lookup). Steering here at /onboarding recreated the bug.
+      { key: "suburb", label: "Set your suburb", done: false, href: "/profile/edit" },
       { key: "bio", label: "Write a short bio", done: false, href: "/profile/edit" },
       { key: "tags", label: "Pick at least 3 interests", done: false, href: "/profile/edit" },
       { key: "quiz", label: "Take the Click quiz", done: false, href: "/quiz/life" },
@@ -6555,7 +6554,9 @@ export async function getProfileCompletion(
         done: !!row?.photo_url || (row?.gallery_count ?? 0) > 0,
         href: "/profile/edit",
       },
-      { key: "suburb", label: "Set your suburb", done: !!row?.suburb, href: "/onboarding" },
+      // Same reason as the `empty()` list above - /profile/edit is the only
+      // surface that stores a real suburb name and repairs a legacy postcode.
+      { key: "suburb", label: "Set your suburb", done: !!row?.suburb, href: "/profile/edit" },
       { key: "bio", label: "Write a short bio", done: !!row?.bio, href: "/profile/edit" },
       { key: "tags", label: "Pick at least 3 interests", done: tagCount >= 3, href: "/profile/edit" },
       { key: "quiz", label: "Take the Click quiz", done: quizComplete, href: "/quiz/life" },
@@ -6804,60 +6805,6 @@ export async function saveOnboarding(input: OnboardingInput, session: Session | 
   }
 
   return { ok: true, profileId: profile.id };
-}
-
-export async function registerMerchantProfile(input: MerchantSignupInput, session: Session | null) {
-  const pool = getPostgresPool();
-  const email = getSessionEmail(session);
-
-  if (!email) throw authError();
-  if (!pool) throw databaseUnavailableError();
-
-  const businessName = input.businessName.trim();
-  const contactEmail = input.contactEmail.trim().toLowerCase();
-
-  if (!businessName || !contactEmail) {
-    const error = new Error("Business name and contact email are required.");
-    error.name = "ValidationError";
-    throw error;
-  }
-
-  const abnError = validateOptionalAbn(input.abn);
-  if (abnError) {
-    const error = new Error(abnError);
-    error.name = "ValidationError";
-    throw error;
-  }
-  const abn = normalizeAbn(input.abn);
-
-  const profile = await ensureProfileForSession(session);
-
-  const result = await pool.query<MerchantProfileRow>(
-    `
-      insert into merchant_profiles (profile_id, business_name, contact_email, website_url, abn)
-      values ($1::uuid, $2, $3, nullif($4, ''), nullif($5, ''))
-      on conflict (profile_id) do update
-      set
-        business_name = excluded.business_name,
-        contact_email = excluded.contact_email,
-        website_url = excluded.website_url,
-        abn = excluded.abn,
-        updated_at = now()
-      returning id::text, business_name, contact_email::text, verification_status,
-        business_type, stripe_connect_account_id, charges_enabled, payouts_enabled,
-        details_submitted, onboarding_completed_at::text
-    `,
-    [profile.id, businessName, contactEmail, input.websiteUrl.trim(), abn],
-  );
-
-  if (profile.role === "attendee") {
-    await pool.query(
-      `update profiles set role = 'merchant', updated_at = now() where id = $1::uuid`,
-      [profile.id],
-    );
-  }
-
-  return result.rows[0];
 }
 
 const AU_STATES = ["NSW", "VIC", "QLD", "WA", "SA", "TAS", "ACT", "NT"] as const;
@@ -13412,44 +13359,158 @@ export async function getLatestPersonaForSession(
   }
 }
 
+// The Life Quiz taxonomy - which option slugs each section owns, and therefore
+// the entire blast radius of the retake DELETE below.
+//
+// Imported from src/lib/life-quiz-sections.ts, which the wizard imports too. It
+// used to be a hand-synced copy of SECTIONS in life-quiz-wizard.tsx, because a
+// server module cannot import an array out of a "use client" file - it gets a
+// client-reference proxy. Moving the taxonomy into a JSX-free lib module both
+// sides import removes that hazard: adding a wizard option without updating the
+// server copy used to silently make that answer impossible to deselect, since a
+// slug this map does not know is never deletable.
+
+// The slugs this profile currently carries FROM the Life Quiz, so a retake can
+// pre-populate instead of opening on an empty board. This getter is what makes
+// the authoritative save below honest: the user sees the answers they already
+// have and deselects the ones they no longer identify with, rather than the
+// server quietly deciding on their behalf.
+//
+// Read-only, and returns [] rather than throwing so a quiz page still renders
+// when the pool is down or the visitor is signed out.
+export async function getLifeQuizSelections(
+  session: Session | null,
+): Promise<string[]> {
+  const pool = getPostgresPool();
+  if (!pool || !getSessionEmail(session)) return [];
+
+  try {
+    const profile = await ensureProfileForSession(session);
+    const result = await pool.query<{ slug: string }>(
+      `
+        select t.slug
+        from user_tags ut
+        join tags t on t.id = ut.tag_id
+        where ut.profile_id = $1::uuid
+          and ut.source = 'quiz'
+          and t.tag_type = 'life'
+      `,
+      [profile.id],
+    );
+    return result.rows.map((r) => r.slug);
+  } catch {
+    return [];
+  }
+}
+
 export async function saveLifeQuizTags(
   session: Session | null,
   tagSlugs: string[],
+  // Section slugs (keys of LIFE_QUIZ_SECTION_OPTIONS) the user was actually
+  // shown this sitting. Omitted, we infer them from the submitted slugs, which
+  // is strictly narrower and provably safe: a slug can only reach here if its
+  // section was on screen and tapped. Pass it explicitly to let someone clear a
+  // section outright - under inference alone, deselecting every option in a
+  // section leaves that section's old tags in place, because nothing in the
+  // payload proves the section was ever visited.
+  shownSections?: string[],
 ) {
   const pool = getPostgresPool();
   if (!pool) throw databaseUnavailableError();
   const email = getSessionEmail(session);
   if (!email) throw authError();
-  if (tagSlugs.length === 0) return;
+
+  const slugs = Array.from(
+    new Set(tagSlugs.map((s) => s.trim().toLowerCase()).filter(Boolean)),
+  ).slice(0, 64);
+
+  // The delete's blast radius, resolved before any SQL runs: only sections this
+  // map knows AND that we can show the user was shown, expanded to exactly the
+  // option slugs those sections own. An unknown section slug is dropped here.
+  const sections = (
+    shownSections ??
+    Object.keys(LIFE_QUIZ_SECTION_OPTIONS).filter((section) =>
+      LIFE_QUIZ_SECTION_OPTIONS[section].some((option) => slugs.includes(option)),
+    )
+  ).filter((section) => section in LIFE_QUIZ_SECTION_OPTIONS);
+  const deletable = sections.flatMap((section) => LIFE_QUIZ_SECTION_OPTIONS[section]);
+
+  // Nothing to write and nothing we are allowed to clear - leave the profile be.
+  if (slugs.length === 0 && deletable.length === 0) return;
 
   const profile = await ensureProfileForSession(session);
 
-  // The Life Quiz defines its own taxonomy (life-stage / availability /
-  // event-style / energy). Historically those slugs were NOT seeded into
-  // `tags`, so the old "link by existing slug" insert matched nothing and the
-  // quiz never registered as completed. Create any missing slugs first (as
-  // 'life' tags, label titleised from the slug), then link — so every answer
-  // persists and `lifeQuizCompleted` flips true. Two statements because a
-  // data-modifying CTE's inserts aren't visible to a SELECT in the same query.
-  await pool.query(
-    `
-      insert into tags (label, slug, tag_type, admin_managed)
-      select initcap(replace(slug, '-', ' ')), slug, 'life', false
-      from unnest($1::text[]) as slug
-      on conflict (slug) do nothing
-    `,
-    [tagSlugs],
-  );
-  await pool.query(
-    `
-      insert into user_tags (profile_id, tag_id, source)
-      select $1::uuid, t.id, 'quiz'
-      from tags t
-      where t.slug = any($2::text[])
-      on conflict (profile_id, tag_id) do update set source = 'quiz'
-    `,
-    [profile.id, tagSlugs],
-  );
+  // One transaction end to end: a partial apply here would be a profile with
+  // neither the old answers nor the new ones.
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+
+    // The Life Quiz defines its own taxonomy (life-stage / availability /
+    // event-style / energy). Historically those slugs were NOT seeded into
+    // `tags`, so the old "link by existing slug" insert matched nothing and the
+    // quiz never registered as completed. Create any missing slugs first (as
+    // 'life' tags, label titleised from the slug), then link - so every answer
+    // persists and `lifeQuizCompleted` flips true. Separate statements because a
+    // data-modifying CTE's inserts aren't visible to a SELECT in the same query.
+    if (slugs.length > 0) {
+      await client.query(
+        `
+          insert into tags (label, slug, tag_type, admin_managed)
+          select initcap(replace(slug, '-', ' ')), slug, 'life', false
+          from unnest($1::text[]) as slug
+          on conflict (slug) do nothing
+        `,
+        [slugs],
+      );
+    }
+
+    // Retaking the quiz is authoritative, so a life stage you no longer identify
+    // with can actually come off - it used to be permanent, since this function
+    // only ever inserted. Four independent guards keep that from reaching one row
+    // more than the user just decided about:
+    //   source = 'quiz'        - never an onboarding, admin or music-picker tag
+    //   tag_type = 'life'      - never an interest or vibe tag that shares a slug
+    //   slug = any($2)         - only options of a section they were shown
+    //   not slug = any($3)     - and never something still selected
+    // An empty $3 is not null-ish here: `slug = any('{}')` is false, so a section
+    // deliberately cleared clears, which is the whole point.
+    if (deletable.length > 0) {
+      await client.query(
+        `
+          delete from user_tags ut
+          using tags t
+          where ut.tag_id = t.id
+            and ut.profile_id = $1::uuid
+            and ut.source = 'quiz'
+            and t.tag_type = 'life'
+            and t.slug = any($2::text[])
+            and not (t.slug = any($3::text[]))
+        `,
+        [profile.id, deletable, slugs],
+      );
+    }
+
+    if (slugs.length > 0) {
+      await client.query(
+        `
+          insert into user_tags (profile_id, tag_id, source)
+          select $1::uuid, t.id, 'quiz'
+          from tags t
+          where t.slug = any($2::text[])
+          on conflict (profile_id, tag_id) do update set source = 'quiz'
+        `,
+        [profile.id, slugs],
+      );
+    }
+
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export type MerchantAllAttendeesRow = {
@@ -14555,6 +14616,43 @@ export async function saveCuratedMatchLabel(
       }),
     ],
   );
+}
+
+// Undo for the matching lab: drops the calling admin's own most recent curated
+// label. The insert above has no upsert key and had no delete path, so a mis-tap
+// used to sit in the ML training set permanently.
+//
+// Scoped deliberately tight - `labeler_profile_id = actor.id` plus `limit 1` in
+// a subquery, so it can only ever reach ONE row, always the caller's own. It is
+// never a blanket delete and it can never reach another operator's judgment,
+// including on the same pair. `created_at desc, id desc` because created_at can
+// tie inside a millisecond; the id breaks the tie so "most recent" is a single
+// deterministic row rather than an arbitrary one of two.
+//
+// Returns false when the caller has no labels left to undo, so the UI can say
+// "nothing to undo" instead of reporting a success that removed nothing.
+export async function deleteLastCuratedMatchLabel(
+  session: Session | null,
+): Promise<boolean> {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+  const actor = await requireAdminProfile(session);
+
+  const result = await pool.query(
+    `
+      delete from curated_match_labels
+      where id = (
+        select id
+        from curated_match_labels
+        where labeler_profile_id = $1::uuid
+        order by created_at desc, id desc
+        limit 1
+      )
+    `,
+    [actor.id],
+  );
+
+  return (result.rowCount ?? 0) > 0;
 }
 
 export type MatchingLabStats = {

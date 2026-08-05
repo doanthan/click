@@ -77,16 +77,25 @@ export function AdminMerchantVerification({
           <p className="eyebrow">Verification decision</p>
           <p className="mt-2 text-sm font-semibold text-[color:var(--ink)]">
             {isApproved
-              ? "Approved & trusted - their events now publish without per-event review."
+              ? "Approved & trusted - their events skip per-event review once payouts are connected."
               : isRejected
                 ? "Declined - this merchant cannot publish events."
                 : "Review the details, documents and ABN above, then approve or decline."}
           </p>
+          {/* This used to promise events "publish straight to live (no
+              per-event review)" full stop, which is not what the code does:
+              createEventForMerchant only writes 'live' when auto-approve AND
+              Stripe Connect (charges + payouts) are both on, and that gate
+              ignores price - so a trusted host with no payouts still has every
+              event, free ones included, land in the pending queue. See the
+              "Stripe Connect" stat above for where this merchant stands. */}
           <p className="mt-1 text-xs text-[color:var(--slate)]">
-            Approving auto-trusts this merchant, so their events publish straight
-            to live (no per-event review) and sends an approval email. Need manual
-            review instead? Flip the trust toggle below. Declining notifies them
-            with your reason. You can change this later.
+            Approving auto-trusts this merchant and sends an approval email.
+            Their events then skip per-event review - but only once their Stripe
+            payouts are connected; until then every event, free ones included,
+            still waits in the pending queue. Need manual review instead? Flip
+            the trust toggle below. Declining notifies them with your reason.
+            You can change this later.
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
@@ -112,7 +121,7 @@ export function AdminMerchantVerification({
       <ConfirmDialog
         open={pending === "approved"}
         title="Approve this merchant?"
-        description="They'll be approved AND auto-trusted - their events publish straight to live without per-event review (you can switch them back to manual review with the trust toggle). They'll get an approval email. You can change this later."
+        description="They'll be approved AND auto-trusted, and they'll get an approval email. Trusted events skip per-event review once their Stripe payouts are connected - until then every event still lands in the pending queue. You can switch them back to manual review with the trust toggle later."
         confirmLabel="Approve merchant"
         tone="peach"
         busy={saving === "approved"}

@@ -68,7 +68,6 @@ export default async function OnboardingPage({
         initialPhotoUrl={status.photoUrl}
         previewEvents={previewEvents}
         next={next}
-        accountKey={session.user.email ?? null}
       />
     </main>
   );

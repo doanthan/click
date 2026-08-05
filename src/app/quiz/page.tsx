@@ -9,8 +9,10 @@ export const metadata = {
 
 type QuizIndexPageProps = {
   // Both quizzes redirect here when they finish - the life quiz also carries
-  // `saved`, the number of tags it actually wrote.
-  searchParams?: Promise<{ from?: string; saved?: string }>;
+  // `saved`, the number of tags it actually wrote, and `cleared`, set when a
+  // retake deliberately turned every answer off. Both zero-tag endings arrive as
+  // saved=0, and they are not the same event.
+  searchParams?: Promise<{ from?: string; saved?: string; cleared?: string }>;
 };
 
 export default async function QuizIndexPage({ searchParams }: QuizIndexPageProps) {
@@ -55,6 +57,15 @@ export default async function QuizIndexPage({ searchParams }: QuizIndexPageProps
               title="Your life tags are in."
               sub={`${savedCount} ${savedCount === 1 ? "answer" : "answers"} saved. Click leans your suggestions toward rooms that fit where you're at.`}
             />
+          ) : params?.cleared === "1" ? (
+            // A retake that turned every answer off. That IS a write - the quiz
+            // is authoritative now - so it gets a confirmation, not the
+            // "nothing happened" note below.
+            <QuizSavedNote
+              badge="Updated"
+              title="Your life tags are cleared."
+              sub="You turned every answer off, so those tags are off your profile now. The Life quiz is open whenever you want to set them again."
+            />
           ) : (
             // Distinguishable by design: skipping every section writes nothing,
             // so it must not read like a save.
@@ -96,9 +107,11 @@ export default async function QuizIndexPage({ searchParams }: QuizIndexPageProps
             title="Where you're at right now."
             body="Life stage, availability, event style - so the right rooms come to you."
             cta={
-              // "Add to", not "Update": saveLifeQuizTags only ever inserts, so
-              // a retake can add answers but cannot take one away.
-              lifeQuizCompleted ? "Add to the Life quiz" : "Take the Life quiz"
+              // "Update" is honest again: a retake opens on the answers you
+              // already have and saveLifeQuizTags is authoritative within the
+              // sections it shows, so it can take an answer away as well as add
+              // one. It said "Add to" while the save could only ever insert.
+              lifeQuizCompleted ? "Update the Life quiz" : "Take the Life quiz"
             }
             href="/quiz/life"
             done={lifeQuizCompleted}

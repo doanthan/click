@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import {
+  ensureProfileForSession,
   recordMerchantDocument,
   type MerchantDocumentType,
 } from "@/lib/event-repository";
@@ -83,9 +84,17 @@ export async function POST(request: Request) {
     );
   }
 
-  // Decode user/profile ID from the session for path scoping. We use the
-  // email-derived profile ID rather than the email itself so paths stay opaque.
-  const profileId = session.user.id ?? `auth:${session.user.email}`;
+  // Scope the object path by profile UUID. This used to read
+  // `session.user.id ?? `auth:${session.user.email}`` - but src/auth.ts sets no
+  // session callback, so session.user.id is ALWAYS undefined and the fallback
+  // was the only branch that ever ran. Every KYC document therefore landed at
+  // `auth%3Asomeone%40example.com/...`, i.e. the applicant's email address
+  // written into the storage key, signed URLs and every bucket listing - the
+  // opposite of what the comment here used to claim. ensureProfileForSession is
+  // request-cached and recordMerchantDocument below calls it anyway, so
+  // resolving the real id costs nothing.
+  const profile = await ensureProfileForSession(session);
+  const profileId = profile.id;
   const dotIdx = file.name.lastIndexOf(".");
   const fallbackExt = dotIdx >= 0 ? file.name.slice(dotIdx + 1).toLowerCase() : "";
   const ext = extensionFor(file.type, fallbackExt);

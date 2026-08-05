@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { LifeQuizProvider } from "@/components/life-quiz-wizard";
 import { Icon, Logo } from "@/components/ds";
+import { getLifeQuizSelections } from "@/lib/event-repository";
 
 export const metadata = {
   title: "Life Quiz",
@@ -15,7 +16,12 @@ export const metadata = {
 // unmount/reset when you go Life stage → Availability → Event style → Energy.
 //
 // The layout also handles the auth redirect once, instead of repeating it in
-// every step page.
+// every step page, and it is where the profile's CURRENT quiz answers are read.
+// That read belongs here for the same reason the provider does: it has to
+// happen once for the whole flow, before any step mounts. It is also what makes
+// the authoritative save honest - the wizard opens on the answers you already
+// have, so turning one off is a decision you can see yourself making rather
+// than a section the server decided was empty because you never opened it.
 //
 // Chrome mirrors the DS quiz takeover (`click-app-v2/quiz.jsx`): wordmark, one
 // quiet back link, and a narrow centred column. The step counter, the endowed
@@ -29,6 +35,10 @@ export default async function LifeQuizLayout({
   if (!session?.user) {
     redirect("/login?callbackUrl=/quiz/life");
   }
+
+  // Read-only, and [] on any failure, so a pool hiccup still renders a usable
+  // quiz - it just renders it blank, the way it always used to.
+  const initialSelected = await getLifeQuizSelections(session);
 
   return (
     <main className="min-h-[100dvh] bg-[color:var(--champagne)] px-5 py-6 text-[color:var(--ink)] sm:py-8">
@@ -47,7 +57,7 @@ export default async function LifeQuizLayout({
           </Link>
         </div>
 
-        <LifeQuizProvider>{children}</LifeQuizProvider>
+        <LifeQuizProvider initialSelected={initialSelected}>{children}</LifeQuizProvider>
       </div>
     </main>
   );

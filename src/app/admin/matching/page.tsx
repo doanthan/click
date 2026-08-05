@@ -1,6 +1,7 @@
 import { getEventsForExplore, getSystemSettings } from "@/lib/event-repository";
-import { scorePersonalizedEvent, type UserMatchContext } from "@/lib/personalized-matching";
+import type { UserMatchContext } from "@/lib/personalized-matching";
 import { updateMatchingWeightsAction } from "./actions";
+import { MatchingWeightPreview } from "./weight-preview";
 
 export const metadata = {
   title: "Matching Formula | Admin",
@@ -19,7 +20,9 @@ export default async function AdminMatchingPage() {
   const weights = settings.matchingWeights;
 
   // Build a representative "sample member" from the most common tags across the
-  // live catalogue, so the preview below reacts to the weights you set.
+  // live catalogue. The scoring itself happens in MatchingWeightPreview so the
+  // ranking can be recomputed from the weights in the form BEFORE they are
+  // saved - see that file for why the form stays uncontrolled.
   const tagCounts = new Map<string, number>();
   for (const event of events) {
     for (const tag of event.tags) tagCounts.set(tag, (tagCounts.get(tag) ?? 0) + 1);
@@ -35,11 +38,6 @@ export default async function AdminMatchingPage() {
     persona: { openness: "curious", socialEnergy: "ambivert" },
   };
 
-  const preview = events
-    .map((event) => scorePersonalizedEvent(event, sampleCtx, weights))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 8);
-
   return (
     <div className="space-y-8 py-6">
       <header>
@@ -53,7 +51,7 @@ export default async function AdminMatchingPage() {
         </p>
       </header>
 
-      <div className="grid gap-8 lg:grid-cols-[1fr_1fr]">
+      <MatchingWeightPreview events={events} ctx={sampleCtx} savedWeights={weights}>
         <form
           action={updateMatchingWeightsAction}
           className="rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)] p-6"
@@ -114,51 +112,7 @@ export default async function AdminMatchingPage() {
             Save weights
           </button>
         </form>
-
-        <div className="rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)] p-6">
-          {/* Named for what it is. This list is scored server-side from the
-              SAVED weights (see `weights` above), so it does not react to the
-              form on the left - calling it a "live preview" told operators the
-              opposite. A real dry-run preview is a separate piece of work. */}
-          <h2 className="eyebrow">Current ranking</h2>
-          <p className="mt-2 text-xs font-medium leading-5 text-[color:var(--slate)]">
-            What a sample member interested in{" "}
-            <span className="font-semibold text-[color:var(--ink)]">
-              {sampleTags.length > 0 ? sampleTags.join(", ") : "the most common tags"}
-            </span>{" "}
-            sees right now, with the saved weights. It updates after you save, not as you type.
-          </p>
-          {preview.length > 0 ? (
-            <ol className="mt-4 space-y-2">
-              {preview.map((scored, i) => (
-                <li
-                  key={scored.event.id}
-                  className="flex items-center gap-3 rounded-xl bg-[color:var(--champagne)] p-3"
-                >
-                  <span className="grid size-7 shrink-0 place-items-center rounded-full bg-[color:var(--purple)] text-xs font-semibold text-[color:var(--champagne)]">
-                    {i + 1}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-semibold text-[color:var(--ink)]">
-                      {scored.event.title}
-                    </span>
-                    <span className="block truncate text-[11px] font-medium text-[color:var(--slate)]">
-                      {scored.reasons.length > 0 ? scored.reasons.join(" · ") : scored.event.category}
-                    </span>
-                  </span>
-                  <span className="shrink-0 text-xs font-semibold tabular-nums text-[color:var(--purple)]">
-                    {scored.score.toFixed(1)}
-                  </span>
-                </li>
-              ))}
-            </ol>
-          ) : (
-            <p className="mt-4 text-sm font-medium text-[color:var(--slate)]">
-              No live events to preview yet.
-            </p>
-          )}
-        </div>
-      </div>
+      </MatchingWeightPreview>
     </div>
   );
 }

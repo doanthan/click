@@ -263,7 +263,6 @@ export function AdminTagManager({ tags }: { tags: AdminTagRow[] }) {
                   ? "Add a tag with the form on the left to start building your taxonomy."
                   : "Try a different search term or clear the type filter to see more tags."
               }
-              tone="ink"
             />
           </div>
         ) : null}

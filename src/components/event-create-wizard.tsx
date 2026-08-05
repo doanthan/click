@@ -22,7 +22,12 @@ import { InfoNote, WizardStepper } from "./merchant-ds";
 import { ConfirmDialog } from "./confirm-dialog";
 import { MapboxAutocomplete, type MapboxPlace } from "./mapbox-autocomplete";
 import { toTitleCase } from "@/lib/text-format";
-import { EVENT_CREATE_STORAGE_KEY } from "@/lib/event-create-storage";
+import {
+  EVENT_CREATE_DRAFT_VERSION,
+  EVENT_CREATE_STORAGE_KEY,
+} from "@/lib/event-create-storage";
+import { CAPACITY_PATTERN, PRICE_PATTERN, sanitizeAmount } from "@/lib/amounts";
+import { useFormDraft } from "@/lib/use-form-draft";
 
 // Create-event - multi-step wizard. Each step has its own URL so users can
 // bookmark, link to, and browser-back through them:
@@ -98,11 +103,12 @@ const STEP_PCT = [24, 52, 72, 88, 96] as const;
 // it survives client-side navigation between step pages. It does NOT survive a
 // full page load - a refresh or a direct deep-link to a later step (e.g. opening
 // /review on its own) starts a fresh context and resets to these defaults. To
-// keep entered values across those reloads too, we mirror the state into
-// sessionStorage and rehydrate from it on mount.
+// keep entered values across those reloads too, useFormDraft mirrors the state
+// into sessionStorage and rehydrates from it on mount.
 // Shared with the "Duplicate event" action, which seeds a prefilled draft into
-// this same slot (see src/lib/event-create-storage.ts).
-const STORAGE_KEY = EVENT_CREATE_STORAGE_KEY;
+// this same slot in the same { v, values } envelope (see
+// src/lib/event-create-storage.ts). The key is scoped to the signed-in account
+// by the hook - two hosts sharing a browser must not share a half-built event.
 
 const initial: WizardValues = {
   title: "",
@@ -167,13 +173,15 @@ function validateStep(step: StepIndex, v: WizardValues): FieldErrors {
     // "1.5" silently became 15 - a 10x guest list nobody typed. The field now
     // keeps what was typed and this is what rejects it, so the merchant sees
     // their own value next to the reason it was refused.
-    if (!/^\d+$/.test(v.capacity.trim()) || Number.parseInt(v.capacity, 10) < 1) {
+    if (!CAPACITY_PATTERN.test(v.capacity.trim()) || Number.parseInt(v.capacity, 10) < 1) {
       errors.capacity = "Capacity must be a whole number of seats, e.g. 12.";
     }
     // Stripe runs in live mode, so a price that reads differently from what was
     // typed is a real charge on a real card. The same strip turned "12.50" into
-    // "1250" and the Review card showed "$1250" as if it were intended.
-    if (v.price.trim() && !/^\d+(\.\d{1,2})?$/.test(v.price.trim())) {
+    // "1250" and the Review card showed "$1250" as if it were intended. Both
+    // patterns live in lib/amounts.ts alongside sanitizeAmount so the keystroke
+    // handler and the validator can be tested together - tests/amounts.test.mjs.
+    if (v.price.trim() && !PRICE_PATTERN.test(v.price.trim())) {
       errors.price = "Price must be a dollar amount, e.g. 12.50.";
     }
   }
@@ -202,18 +210,11 @@ function fieldAnchorId(field: keyof WizardValues) {
   return `ce-field-${field}`;
 }
 
-/* Keep the digits and at most one decimal point, capped at `decimals` places.
-   Deliberately NOT a "make it a valid number" transform: a controlled input that
-   rewrites what you typed is exactly how "12.50" became "1250". Anything this
-   leaves malformed ("12.", "") is validateStep's problem, not the keystroke's. */
-function sanitizeAmount(raw: string, decimals: number): string {
-  const cleaned = raw.replace(/[^0-9.]/g, "");
-  const dot = cleaned.indexOf(".");
-  if (dot === -1) return cleaned;
-  const whole = cleaned.slice(0, dot);
-  const fraction = cleaned.slice(dot + 1).replace(/\./g, "").slice(0, decimals);
-  return `${whole}.${fraction}`;
-}
+/* sanitizeAmount (keep the digits and at most one decimal point, truncating
+   extra places rather than rounding) now lives in lib/amounts.ts with the two
+   patterns above. It moved out of this file for one reason: `node --test` cannot
+   import a .tsx module, so the only money path in the wizard had no way to be
+   covered. See tests/amounts.test.mjs. */
 
 // ---------- date helpers (DateTimePicker + RecurrencePicker) ----------
 
@@ -358,6 +359,11 @@ type WizardContextValue = {
   // wizard silently opens full of last month's event with no explanation.
   restoredDraft: boolean;
   discardDraft: () => void;
+  // Drops the saved draft WITHOUT touching the form on screen. WizardShell calls
+  // it on the success branch of submit, once every occurrence has published -
+  // never before, or a partial failure leaves the dates that failed with nothing
+  // to retry from.
+  clearDraft: () => void;
   // Mutable, NOT state: WizardShell remounts on every step route, so a piece of
   // state would reset with it. The provider lives in the layout and survives, so
   // the flag rides here and tells the freshly-mounted shell whether it arrived
@@ -407,51 +413,37 @@ export function EventCreateProvider({
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [submitting, setSubmitting] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [restoredDraft, setRestoredDraft] = useState(false);
-  // Gate persistence until after the rehydrate effect runs, so we don't clobber
-  // saved progress with the default state on first paint.
-  const [hydrated, setHydrated] = useState(false);
   const navigatedRef = useRef(false);
 
-  // Rehydrate from sessionStorage on mount (client only). Done in an effect
-  // rather than the useState initializer so server + first client render agree
-  // on the defaults (no hydration mismatch); the saved values flash in right
-  // after mount.
+  // Draft persistence is the shared useFormDraft hook, same as every other long
+  // form in the app: it reads inside an effect (never a useState initializer, or
+  // server and first client render disagree and React throws a hydration
+  // mismatch), rAF-gates the apply past first paint, and namespaces the key per
+  // account so two hosts sharing a browser cannot see each other's half-built
+  // event.
   //
-  // NOT switched to the shared useFormDraft hook: that hook stores a versioned
-  // { v, values } envelope, and merchant-event-duplicate-button.tsx:48 writes a
-  // BARE values object into this same key. Adopting the envelope here would make
-  // every "Duplicate event" seed look like a stale draft and get dropped.
-  useEffect(() => {
-    let saved: Partial<WizardValues> | null = null;
-    try {
-      const raw = sessionStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        saved = JSON.parse(raw) as Partial<WizardValues>;
-      }
-    } catch {
-      // Malformed / unavailable storage - fall back to defaults.
-    }
-    const frame = window.requestAnimationFrame(() => {
-      if (saved) {
-        setValues((v) => ({ ...v, ...saved }));
-        setRestoredDraft(true);
-      }
-      setHydrated(true);
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, []);
+  // This used to be a hand-rolled pair of effects, because the hook stores a
+  // versioned { v, values } envelope while "Duplicate event" wrote a BARE values
+  // object into the same slot - adopting the envelope on one side only would
+  // have made every duplicate look like a stale draft. Both sides now stamp
+  // EVENT_CREATE_DRAFT_VERSION. A bare draft left over from the previously
+  // deployed duplicate button has no `v`, so the hook removes it and the wizard
+  // opens empty: discarding it whole beats half-applying a shape we cannot
+  // verify into a form the merchant is about to publish for money.
+  const { restored, clear: clearDraft } = useFormDraft<WizardValues>({
+    key: EVENT_CREATE_STORAGE_KEY,
+    version: EVENT_CREATE_DRAFT_VERSION,
+    storage: "session",
+    values,
+    apply: (saved) => setValues((v) => ({ ...v, ...saved })),
+  });
 
-  // Persist every change once hydrated so a refresh or a direct deep-link to a
-  // later step keeps what the merchant has entered.
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(values));
-    } catch {
-      // Storage full / unavailable - non-fatal, the in-memory state still works.
-    }
-  }, [values, hydrated]);
+  // Counts "Start over" presses. Two jobs: it retires the restored-draft note
+  // (the hook's own `restored` latches for the life of the mount and knows
+  // nothing about the merchant throwing the draft away), and it sequences the
+  // clear - see the effect below.
+  const [discardCount, setDiscardCount] = useState(0);
+  const restoredDraft = restored && discardCount === 0;
 
   const set = <K extends keyof WizardValues>(key: K, value: WizardValues[K]) => {
     setValues((v) => ({ ...v, [key]: value }));
@@ -466,19 +458,27 @@ export function EventCreateProvider({
   };
 
   // "Start over" from the restored-draft note. Irreversible, so WizardShell puts
-  // a ConfirmDialog in front of it.
+  // a ConfirmDialog in front of it. Only the in-memory reset happens here; the
+  // storage clear is deferred one commit, below.
   const discardDraft = () => {
-    try {
-      sessionStorage.removeItem(STORAGE_KEY);
-    } catch {
-      // Nothing to do - a draft we cannot remove is still harmless, and the
-      // in-memory reset below is what the merchant actually asked for.
-    }
     setValues({ ...initial, category: categoryOptions[0] ?? "" });
     setFieldErrors({});
     setStepError(null);
-    setRestoredDraft(false);
+    setDiscardCount((n) => n + 1);
   };
+
+  // The clear has to land AFTER the emptied form has been committed, not with
+  // it. useFormDraft's clear() snapshots the values as they are at the call and
+  // suppresses writes only while they stay identical, so clearing first would
+  // key that window to the draft we are throwing away, the reset would read as a
+  // genuine edit, and the empty form would be written straight back as a fresh
+  // draft - the merchant reloads and is told "picked up where you left off" over
+  // a blank wizard. Running it in an effect puts it after the hook's own write
+  // effect for this render, so the removeItem is the last word.
+  useEffect(() => {
+    if (discardCount === 0) return;
+    clearDraft();
+  }, [discardCount, clearDraft]);
 
   return (
     <WizardContext.Provider
@@ -497,6 +497,7 @@ export function EventCreateProvider({
         setFieldErrors,
         restoredDraft,
         discardDraft,
+        clearDraft,
         navigatedRef,
         submitting,
         setSubmitting,
@@ -525,6 +526,7 @@ export function WizardShell({
     setFieldErrors,
     restoredDraft,
     discardDraft,
+    clearDraft,
     navigatedRef,
     submitting,
     setSubmitting,
@@ -730,11 +732,9 @@ export function WizardShell({
         // Only a clean sweep drops the saved draft, and only here on the success
         // branch. Clearing it before the partial-failure branch below (as this
         // used to) left the dates that failed with nothing to retry from.
-        try {
-          sessionStorage.removeItem(STORAGE_KEY);
-        } catch {
-          // Non-fatal.
-        }
+        // clearDraft is useFormDraft's clear() - it swallows a blocked storage
+        // write itself, so there is nothing to catch here.
+        clearDraft();
         toast.success(
           liveNow
             ? startsAtList.length === 1

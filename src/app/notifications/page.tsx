@@ -1,10 +1,10 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { Icon } from "@/components/ds";
 import { SubmitButton } from "@/components/ds-client";
 import { getNotificationsForSession } from "@/lib/event-repository";
-import { markAllReadAction, markReadAction } from "./actions";
+import { markAllReadAction } from "./actions";
+import { NotificationItem } from "./notification-item";
 
 export const metadata = {
   title: "Notifications",
@@ -66,8 +66,21 @@ export default async function NotificationsPage() {
                 Unread
               </p>
             ) : null}
+            {/* The timestamp is formatted HERE, on the server, and passed down
+                as a string: NotificationItem is a Client Component now, and
+                running Intl in the browser against a different timezone than
+                the render that produced the HTML is a hydration mismatch. */}
             {unread.map((n, i) => (
-              <NotificationItem key={n.id} {...n} unread first={i === 0} />
+              <NotificationItem
+                key={n.id}
+                id={n.id}
+                title={n.title}
+                body={n.body}
+                actionUrl={n.actionUrl}
+                timestamp={dateFormatter.format(new Date(n.createdAt))}
+                unread
+                first={i === 0}
+              />
             ))}
 
             {read.length > 0 ? (
@@ -76,80 +89,19 @@ export default async function NotificationsPage() {
               </p>
             ) : null}
             {read.map((n) => (
-              <NotificationItem key={n.id} {...n} unread={false} />
+              <NotificationItem
+                key={n.id}
+                id={n.id}
+                title={n.title}
+                body={n.body}
+                actionUrl={n.actionUrl}
+                timestamp={dateFormatter.format(new Date(n.createdAt))}
+                unread={false}
+              />
             ))}
           </div>
         )}
       </div>
     </main>
-  );
-}
-
-function NotificationItem({
-  id,
-  title,
-  body,
-  actionUrl,
-  createdAt,
-  unread,
-  first,
-}: {
-  id: string;
-  title: string;
-  body: string;
-  actionUrl: string | null;
-  createdAt: string;
-  unread: boolean;
-  first?: boolean;
-}) {
-  const ts = new Date(createdAt);
-  return (
-    // rise-soft unconditionally, never toggled on a state: an item that gets
-    // marked read moves between the Unread and Earlier lists, so React remounts
-    // it and the 8px rise replays - the reorder reads as movement instead of a
-    // teleport. The resting state is fully visible either way.
-    <div
-      className={`rise-soft flex items-start gap-3 px-4 py-3.5 ${first ? "" : "border-t border-[color:var(--line-soft)]"} ${
-        unread ? "bg-[color:var(--lavender-100)]" : ""
-      }`}
-    >
-      <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full bg-[color:var(--lavender-100)] text-[color:var(--purple)]">
-        <Icon name="bell" size={17} />
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className={`text-sm leading-snug text-[color:var(--ink)] ${unread ? "font-semibold" : "font-medium"}`}>
-          {title}
-        </p>
-        {body ? <p className="mt-0.5 text-[13px] leading-relaxed text-[color:var(--slate)]">{body}</p> : null}
-        <p className="mt-1 text-[12px] text-[color:var(--ink-faint)]">{dateFormatter.format(ts)}</p>
-        <div className="mt-2 flex flex-wrap items-center gap-3">
-          {actionUrl ? (
-            <Link href={actionUrl} className="font-display text-[13px] font-semibold text-[color:var(--purple)] hover:underline">
-              View →
-            </Link>
-          ) : null}
-          {/* "Open" sat beside "View" reading as its synonym. It actually shows
-              the emailed copy of this notification, so it says so. */}
-          <Link
-            href={`/notifications/${id}/email`}
-            className="font-display text-[13px] font-semibold text-[color:var(--slate)] hover:text-[color:var(--ink)]"
-          >
-            Read the email
-          </Link>
-          {unread ? (
-            // The one mutation in the row, so it is the one control that looks
-            // like a button - and SubmitButton gives it the pending state the
-            // bare submit never had.
-            <form action={markReadAction}>
-              <input type="hidden" name="notification_id" value={id} />
-              <SubmitButton variant="secondary" size="sm" pendingLabel="Marking…">
-                Mark read
-              </SubmitButton>
-            </form>
-          ) : null}
-        </div>
-      </div>
-      {unread ? <span className="mt-2 size-2 shrink-0 rounded-full bg-[color:var(--purple)]" /> : null}
-    </div>
   );
 }

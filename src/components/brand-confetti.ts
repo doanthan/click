@@ -1,9 +1,32 @@
 "use client";
 
-// Brand-coloured celebratory confetti for genuine success moments (saving your
-// Click persona, a confirmed RSVP). Dynamic-imports canvas-confetti exactly
+// Brand-coloured celebratory confetti. Dynamic-imports canvas-confetti exactly
 // like src/components/support/support-widget.tsx so it stays out of the initial
 // bundle.
+//
+// WHERE THIS IS ALLOWED - settled, please don't re-litigate. The header used to
+// say "genuine success moments" with no boundary, and the drift that followed
+// left one surface deleting its burst while four others kept theirs.
+//
+// The DS bans confetti in exactly ONE place: "context/Click Design System/
+// README.md" line 114, inside the mutual-coordination MODAL set - "Premium
+// restraint - dopamine via a real moment, never gamification trinkets (no
+// confetti/badges/streaks) or dark patterns". That sentence is scoped to the
+// mutual / click / coordination surfaces, and the same line prescribes what
+// goes there instead: "a soft pop animation, prefers-reduced-motion safe".
+// The general gamification ban at README line 174 lists depleting counters,
+// streaks, points, leaderboards, loss/urgency, guilt nudges and fake scarcity -
+// confetti is deliberately NOT on that list.
+//
+// So the boundary is:
+//   BANNED  on anything depicting a mutual click, a click, or coordination.
+//           mutual-toast.tsx is the worked example - it re-pops a single ✦
+//           spark glyph (.pop-in) rather than firing particles.
+//   ALLOWED on a genuine personal completion the user themselves just
+//           finished: finishing the quiz (home-quiz.tsx), a confirmed RSVP
+//           (event-rsvp-success-overlay.tsx), completing onboarding
+//           (onboarding-form.tsx).
+// Check any fifth call site against that line before adding it.
 //
 // IMPORTANT: the global prefers-reduced-motion CSS block in globals.css freezes
 // CSS animations but does NOT cover canvas-confetti's JS-driven canvas, so we

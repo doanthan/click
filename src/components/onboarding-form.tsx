@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { interestTagCategories } from "@/lib/click-data";
 import { regionFromPostcode } from "@/lib/geo";
+import { scopedKey, useAccountScope } from "@/lib/account-scope";
 import { AvatarUploader } from "@/components/avatar-uploader";
 import { BirthDatePicker } from "@/components/birth-date-picker";
 import { AuthError, AuthNote, Field } from "@/components/auth-ui";
@@ -186,8 +187,6 @@ type OnboardingFormProps = {
   // validated by safeNext on the server). Finishing the form resumes that trip
   // instead of dumping them on /dashboard.
   next?: string | null;
-  // Signed-in email, used only to namespace the localStorage draft.
-  accountKey?: string | null;
 };
 
 // 18 years ago today, ISO yyyy-mm-dd - the max value the <input type="date"> accepts.
@@ -220,10 +219,13 @@ export function OnboardingForm({
   initialPhotoUrl = null,
   previewEvents = [],
   next,
-  accountKey,
 }: OnboardingFormProps) {
   const router = useRouter();
-  const storageKey = `${STORAGE_KEY}:${accountKey ?? "anon"}`;
+  // Per-account draft key - see lib/account-scope. This form keeps its own
+  // storage rather than useFormDraft (its restore is field-by-field: interests
+  // never come back, and the saved step drives a history.replaceState), but it
+  // scopes the key through the same helper.
+  const storageKey = scopedKey(useAccountScope(), STORAGE_KEY);
   const maxBirthDate = useMemo(() => getMaxBirthDate(), []);
 
   const [step, setStep] = useState(0);

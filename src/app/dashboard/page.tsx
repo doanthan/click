@@ -106,6 +106,11 @@ export default async function DashboardPage() {
 
   const upcoming = dashboard.upcomingEvents;
   const saved = dashboard.savedEvents;
+  // Whether the viewer has enough interests for matching to have something to
+  // work with - the "click with someone" empty state below says something
+  // different depending on the answer. getProfileCompletion marks this done at
+  // 3+ tags, the same bar the matcher cares about.
+  const hasInterests = completion.items.find((i) => i.key === "tags")?.done ?? false;
   const bookmarkSet = new Set(profileStatus.bookmarkedEventIds);
   const registeredSet = new Set(profileStatus.registeredEventIds);
   const waitlistedSet = new Set(profileStatus.waitlistedEventIds);
@@ -265,14 +270,30 @@ export default async function DashboardPage() {
             </Reveal>
           ) : (
             <Reveal delay={60}>
-              <EmptyState
-                eyebrow="Nobody yet"
-                icon={<Icon name="users" size={24} stroke={1.7} />}
-                title="Tell us what you're into."
-                body="A few interests on your profile is all we need to start surfacing people with real overlap."
-                actionHref="/profile/edit"
-                actionLabel="Add interests"
-              />
+              {/* Two different reasons land here and they need different
+                  sentences. Someone who has just picked their interests in
+                  onboarding was being told "tell us what you're into" and sent
+                  to /profile/edit to do the thing they had already done - the
+                  first thing a brand-new member saw on their dashboard. */}
+              {hasInterests ? (
+                <EmptyState
+                  eyebrow="Nobody yet"
+                  icon={<Icon name="users" size={24} stroke={1.7} />}
+                  title="No one to show you just yet."
+                  body="We only suggest people with real overlap, so this fills up as more members join near you. Going to an event is the fastest way to meet them."
+                  actionHref="/discover"
+                  actionLabel="See what's on"
+                />
+              ) : (
+                <EmptyState
+                  eyebrow="Nobody yet"
+                  icon={<Icon name="users" size={24} stroke={1.7} />}
+                  title="Tell us what you're into."
+                  body="A few interests on your profile is all we need to start surfacing people with real overlap."
+                  actionHref="/profile/edit"
+                  actionLabel="Add interests"
+                />
+              )}
             </Reveal>
           )}
         </Section>

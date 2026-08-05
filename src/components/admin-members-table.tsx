@@ -636,7 +636,6 @@ export function AdminMembersTable({
                   ? "Nothing here for the current role, event or search. Clear the filters to see everyone."
                   : "No members to show yet."
               }
-              tone="rose"
               action={
                 filtersActive ? (
                   <button

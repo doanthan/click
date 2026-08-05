@@ -404,7 +404,6 @@ export function AdminTransactionsTable({
                       ? "Nothing here for the current status, merchant or search. Clear the filters to see the full 30-day ledger."
                       : "No payment_transactions in the last 30 days. Run Sync from Stripe to backfill anything the webhook missed."
                   }
-                  tone="rose"
                   action={
                     filtersActive ? (
                       <button

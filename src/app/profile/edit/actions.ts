@@ -57,6 +57,21 @@ export async function saveProfileEditAction(formData: FormData) {
   const age =
     ageParsed !== null && Number.isFinite(ageParsed) && ageParsed >= 18 ? ageParsed : undefined;
 
+  // Blank suburb means "leave the stored suburb alone", not "clear it" - the
+  // same "absent field → leave unchanged" idiom as `age` above.
+  //
+  // The suburb <select> can only be filled from the postcode lookup beside it,
+  // and that lookup is a client-side fetch. With scripting off - or simply
+  // before the lookup lands - the select posts "", and updateOwnProfile turns
+  // "" into NULL (`params.push(input.suburb.trim() || null)`), so someone
+  // editing only their bio silently wiped their suburb, taking profile
+  // completion and the `same_suburb` matching feature down with it. This form
+  // has no way to clear a suburb on purpose either (its empty <option> is
+  // `disabled`), so treating blank as "unchanged" costs no capability. The
+  // client-side pair check in profile-edit-form.tsx is the friendly first line;
+  // this is the belt that holds when there is no JavaScript to run it.
+  const suburb = strField(formData, "suburb").trim();
+
   // Discovery toggles submit a hidden "true"/"false" field each. Absent field
   // (e.g. dating toggle hidden because dating isn't selected) → leave unchanged.
   const boolField = (key: string) => {
@@ -78,7 +93,7 @@ export async function saveProfileEditAction(formData: FormData) {
 
   await updateOwnProfile(session, {
     displayName: strField(formData, "display_name"),
-    suburb: strField(formData, "suburb"),
+    suburb: suburb || undefined,
     bio: strField(formData, "bio"),
     photoUrl: strField(formData, "photo_url"),
     age,

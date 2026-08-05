@@ -27,21 +27,14 @@ export function EmptyState({
   /** Or a simple link action. */
   actionHref?: string;
   actionLabel?: string;
-  /**
-   * @deprecated Dead prop - never read, and the names lie: --peach now resolves
-   * to Lavender and --rose to Deep Purple. The DS empty state has ONE quiet
-   * look, so nothing here would honour a tone even if it were wired.
-   *
-   * ON ITS WAY OUT, but it cannot go yet: four call sites still spell it, and
-   * TypeScript rejects an unknown JSX prop, so deleting this line before they do
-   * breaks the typecheck. Strip the attribute from all four, THEN delete this:
-   *   admin-tag-manager.tsx        tone="ink"
-   *   admin-merchants-table.tsx    tone="ink"
-   *   admin-transactions-table.tsx tone="rose"
-   *   admin-members-table.tsx      tone="rose"
-   * (admin-event-queue.tsx's tone="peach" is already gone.)
+  /*
+   * There is deliberately NO `tone` prop. It used to exist, was never read, and
+   * its value names actively misled: --rose resolves to Deep Purple and --peach
+   * to Lavender, so tone="rose" read as "danger" while naming the primary-action
+   * colour. The DS empty state has exactly ONE quiet look - lavender wash, ink
+   * headline, slate body - so re-adding a tone here would be a new divergence,
+   * not a restored feature. Colour that carries meaning belongs on a Badge.
    */
-  tone?: "peach" | "rose" | "ink";
   /** Drop the frame + surface so it can sit cleanly inside an existing card. */
   bare?: boolean;
   className?: string;

@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { fireBrandConfetti } from "./brand-confetti";
+import { ModalShell } from "./modal-shell";
 
 export type EventSuccessDetails = {
   title: string;
@@ -21,8 +22,6 @@ export function EventRsvpSuccessOverlay({
   details: EventSuccessDetails;
   onClose: () => void;
 }) {
-  const cardRef = useRef<HTMLDivElement>(null);
-
   useEffect(() => {
     // The 66 lines of hand-rolled canvas physics that used to live here started
     // their RAF loop unconditionally, and the global reduced-motion CSS block
@@ -30,134 +29,100 @@ export function EventRsvpSuccessOverlay({
     // got a full-screen particle storm at the emotional peak of the flow.
     // fireBrandConfetti guards with window.matchMedia (brand-confetti.ts) and is
     // the same burst every other celebration in the app already uses.
+    //
+    // Deliberately its OWN effect with an empty dep array. It used to share the
+    // focus/scroll effect, which was keyed on [onClose] - and every caller passes
+    // an inline arrow, so any re-render of the parent while this overlay was open
+    // re-fired the burst. One completion, one celebration.
     void fireBrandConfetti({ x: 0.5, y: 0.4 });
-
-    // Focus + trap + restore. This card can now open on its own after a paid
-    // return, so leaving focus behind on the page under a scroll-locked scrim
-    // would strand a keyboard user outside a dialog they never opened.
-    const previouslyFocused = document.activeElement;
-    const raf = window.requestAnimationFrame(() => cardRef.current?.focus());
-
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        onClose();
-        return;
-      }
-      if (e.key === "Tab") {
-        const card = cardRef.current;
-        if (!card) return;
-        const focusables = Array.from(
-          card.querySelectorAll<HTMLElement>(
-            'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
-          ),
-        ).filter((el) => el.offsetParent !== null || el === document.activeElement);
-        if (focusables.length === 0) return;
-        const first = focusables[0];
-        const last = focusables[focusables.length - 1];
-        const active = document.activeElement;
-        if (!card.contains(active)) {
-          e.preventDefault();
-          first.focus();
-        } else if (e.shiftKey && active === first) {
-          e.preventDefault();
-          last.focus();
-        } else if (!e.shiftKey && active === last) {
-          e.preventDefault();
-          first.focus();
-        }
-      }
-    }
-    document.addEventListener("keydown", onKey);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-
-    return () => {
-      window.cancelAnimationFrame(raf);
-      document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prevOverflow;
-      if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus();
-    };
-  }, [onClose]);
+  }, []);
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="rsvp-success-title"
-      className="fixed inset-0 z-[120] flex items-center justify-center p-4"
-    >
-      <div className="absolute inset-0 bg-[color:var(--surface-deep)]/70 backdrop-blur-sm" />
+    // Focus move/trap/restore, Escape and the body-scroll lock are ModalShell's
+    // now. They matter here as much as on any other dialog: this card can open on
+    // its own after a paid return, so leaving focus behind on a scroll-locked page
+    // would strand a keyboard user outside a dialog they never opened.
+    <ModalShell
+      onClose={onClose}
+      labelledBy="rsvp-success-title"
+      /* Above the event quick-view / booking dialog tier (z-100) that this can
+         open on top of, and matching the pre-migration z-[120]. canvas-confetti
+         paints its own <canvas> on <body> at z-index 100, so the burst stays
+         behind this card and in front of the page - unchanged by the portal. */
+      zIndex={120}
+      /* No scrim dismissal, as before: the three actions here (calendar, my
+         confirmed events, Done) are the whole point of the moment, and a stray
+         tap beside the card should not skip past them. Escape and ✕ still close. */
+      closeOnScrim={false}
+      scrimClassName="bg-[color:var(--surface-deep)]/70 backdrop-blur-sm"
+      /* Capped and scrolling: a long venue name on a short phone used to push
+         the three actions past the bottom of the screen. The cap stays inside
+         the shell's p-4 padding box, because a centred flex child that outgrows
+         its container loses its top edge with no way to reach it.
 
-      {/* The card is capped and scrolls: a long venue name on a short phone
-          used to push the three actions past the bottom of the screen. The cap
-          stays inside the wrapper's padding box, because a centred flex child
-          that outgrows its container loses its top edge with no way to reach
-          it. */}
-      <div
-        ref={cardRef}
-        tabIndex={-1}
-        className="rise-soft relative max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-[var(--radius-xl)] bg-[color:var(--paper)] p-7 text-center shadow-[var(--shadow-lg)] outline-none"
+         .rise-soft is additive only - the resting state of the card is visible,
+         motion never gates it. */
+      cardClassName="rise-soft max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-[var(--radius-xl)] bg-[color:var(--paper)] p-7 text-center shadow-[var(--shadow-lg)]"
+    >
+      <button
+        type="button"
+        aria-label="Close"
+        onClick={onClose}
+        className="absolute right-4 top-4 grid size-9 place-items-center rounded-lg text-[color:var(--slate)] hover:bg-[color:var(--lavender-100)] hover:text-[color:var(--ink)]"
       >
+        ✕
+      </button>
+
+      <p className="eyebrow">Click ✷</p>
+      <h2
+        id="rsvp-success-title"
+        className="font-display mt-2 text-4xl font-semibold leading-tight tracking-[-0.025em] text-[color:var(--ink)]"
+      >
+        You&apos;re in!
+      </h2>
+
+      <div className="rise-soft rise-d1 mt-5 rounded-2xl bg-[color:var(--champagne-deep)] p-5 text-left">
+        <p className="font-display text-2xl font-semibold leading-tight tracking-[-0.025em] text-[color:var(--ink)]">
+          {details.title}
+        </p>
+        <p className="mt-3 text-sm font-semibold text-[color:var(--ink)]">
+          {details.dateLabel}
+        </p>
+        <p className="text-sm font-medium text-[color:var(--slate)]">
+          {details.timeLabel}
+        </p>
+        <p className="mt-2 text-sm font-semibold text-[color:var(--ink)]">
+          {details.location}
+        </p>
+        <p className="text-sm font-medium text-[color:var(--slate)]">
+          {details.suburb}
+        </p>
+      </div>
+
+      <div className="rise-soft rise-d2 mt-6 grid gap-2">
+        <a
+          href={details.calendarUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="ck-btn ck-btn--md ck-btn--full ck-btn--primary"
+        >
+          Add to calendar
+        </a>
+        <Link
+          href="/confirmed-events"
+          className="ck-btn ck-btn--md ck-btn--full ck-btn--secondary"
+        >
+          See my confirmed events
+        </Link>
         <button
           type="button"
-          aria-label="Close"
           onClick={onClose}
-          className="absolute right-4 top-4 grid size-9 place-items-center rounded-lg text-[color:var(--slate)] hover:bg-[color:var(--lavender-100)] hover:text-[color:var(--ink)]"
+          className="ck-btn ck-btn--md ck-btn--full ck-btn--ghost"
         >
-          ✕
+          Done
         </button>
-
-        <p className="eyebrow">Click ✷</p>
-        <h2
-          id="rsvp-success-title"
-          className="font-display mt-2 text-4xl font-semibold leading-tight tracking-[-0.025em] text-[color:var(--ink)]"
-        >
-          You&apos;re in!
-        </h2>
-
-        <div className="rise-soft rise-d1 mt-5 rounded-2xl bg-[color:var(--champagne-deep)] p-5 text-left">
-          <p className="font-display text-2xl font-semibold leading-tight tracking-[-0.025em] text-[color:var(--ink)]">
-            {details.title}
-          </p>
-          <p className="mt-3 text-sm font-semibold text-[color:var(--ink)]">
-            {details.dateLabel}
-          </p>
-          <p className="text-sm font-medium text-[color:var(--slate)]">
-            {details.timeLabel}
-          </p>
-          <p className="mt-2 text-sm font-semibold text-[color:var(--ink)]">
-            {details.location}
-          </p>
-          <p className="text-sm font-medium text-[color:var(--slate)]">
-            {details.suburb}
-          </p>
-        </div>
-
-        <div className="rise-soft rise-d2 mt-6 grid gap-2">
-          <a
-            href={details.calendarUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="ck-btn ck-btn--md ck-btn--full ck-btn--primary"
-          >
-            Add to calendar
-          </a>
-          <Link
-            href="/confirmed-events"
-            className="ck-btn ck-btn--md ck-btn--full ck-btn--secondary"
-          >
-            See my confirmed events
-          </Link>
-          <button
-            type="button"
-            onClick={onClose}
-            className="ck-btn ck-btn--md ck-btn--full ck-btn--ghost"
-          >
-            Done
-          </button>
-        </div>
       </div>
-    </div>
+    </ModalShell>
   );
 }
 

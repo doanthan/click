@@ -321,9 +321,12 @@ export function ProfileEditForm({
     }
     // The suburb <select> can only be filled from the postcode field above it, so
     // a native `required` on the select would anchor the browser's bubble to the
-    // one control the user cannot act on. Validate the pair here and point at the
-    // postcode instead. preventDefault stops the server action: React only runs a
-    // form `action` when the submit event was not default-prevented.
+    // one control the user cannot act on (and would lock a no-JS visitor out of
+    // the form entirely - see the <noscript> beside the pair). Validate the pair
+    // here and point at the postcode instead. preventDefault stops the server
+    // action: React only runs a form `action` when the submit event was not
+    // default-prevented. saveProfileEditAction carries the matching server-side
+    // belt, so a blank suburb that gets past this can no longer write NULL.
     event.preventDefault();
     setSuburbError(
       isValidPostcode(postcode)
@@ -437,6 +440,25 @@ export function ProfileEditForm({
             ))}
           </FormField>
         </div>
+
+        {/* No-JS honesty. The suburb options are fetched by handlePostcodeChange,
+            so with scripting off this select is stuck on whatever the server
+            rendered and the pair check in handleSubmit below never runs. Say
+            that out loud rather than leaving a control that looks broken.
+
+            Deliberately NOT a native `required` on the select: server-side its
+            only options are the already-saved suburb (if any), so `required`
+            adds nothing when a suburb exists and makes the whole form
+            permanently unsubmittable when one doesn't - a no-JS visitor could
+            no longer edit their bio or tags either. The real guard is in
+            saveProfileEditAction, which now treats a blank suburb as "leave
+            unchanged" instead of writing NULL. */}
+        <noscript>
+          <p className="mt-2 max-w-[520px] text-[13px] leading-[1.55] text-[color:var(--slate)]">
+            Looking your suburb up from your postcode needs JavaScript. Everything else on this
+            page still saves without it, and your suburb is left exactly as it is.
+          </p>
+        </noscript>
       </Group>
 
       {/* ----- Bio ----- */}

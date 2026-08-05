@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, useTransition } from "react";
+import { useId, useRef, useState, useTransition } from "react";
 import { setAccountSetting } from "@/app/account-settings/actions";
 import { Icon } from "@/components/ds";
+import { useSavedFlash } from "@/components/ds-client";
 import type { AccountSettingKey } from "@/lib/event-repository";
 
 /**
@@ -129,39 +130,32 @@ export function AccountSettingToggle({
   initialOn: boolean;
 }) {
   const [on, setOn] = useState(initialOn);
-  const [status, setStatus] = useState<"idle" | "saved" | "failed">("idle");
+  // The shared flash, not a local timer: it owns the one-timer-cancelled-on-
+  // unmount invariant, and `hold` is the reason a failure is not on a timer -
+  // "didn't save" has to stay on screen long enough to read and act on.
+  const { flashed, flash, hold, reset } = useSavedFlash<"saved" | "failed">();
   const [pending, startTransition] = useTransition();
   // Every tap takes a ticket and only the newest one is allowed to write the
   // UI. Without this, two quick taps whose responses land out of order leave
   // the knob showing a value the server has already overwritten.
   const ticketRef = useRef(0);
-  const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(
-    () => () => {
-      if (savedTimer.current) clearTimeout(savedTimer.current);
-    },
-    [],
-  );
 
   function toggle() {
     const next = !on;
     const ticket = ++ticketRef.current;
     setOn(next);
-    setStatus("idle");
-    if (savedTimer.current) clearTimeout(savedTimer.current);
+    reset();
     startTransition(async () => {
       try {
         const stored = await setAccountSetting(settingKey, next);
         if (ticket !== ticketRef.current) return;
         // Settle on what the server actually stored, not on what we guessed.
         setOn(stored.value);
-        setStatus("saved");
-        savedTimer.current = setTimeout(() => setStatus("idle"), 3000);
+        flash("saved");
       } catch {
         if (ticket !== ticketRef.current) return;
         setOn(!next);
-        setStatus("failed");
+        hold("failed");
       }
     });
   }
@@ -174,11 +168,11 @@ export function AccountSettingToggle({
       onToggle={toggle}
       busy={pending}
       note={
-        status === "failed" ? (
+        flashed === "failed" ? (
           <span className="text-[color:var(--danger)]">
             Didn&apos;t save - give it another go
           </span>
-        ) : status === "saved" ? (
+        ) : flashed === "saved" ? (
           <span className="inline-flex items-center gap-1 text-[color:var(--sage)]">
             <Icon name="check" size={13} stroke={2.6} />
             Saved

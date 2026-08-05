@@ -334,7 +334,6 @@ export function AdminMerchantsTable({ merchants }: { merchants: AdminMerchantRow
                   ? "Merchant applications will appear here once businesses sign up."
                   : "Try a different status filter or clear your search to see more."
               }
-              tone="ink"
             />
           </div>
         ) : (

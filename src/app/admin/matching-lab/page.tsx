@@ -4,7 +4,9 @@ import {
   getMatchingLabStats,
   type LabelMember,
 } from "@/lib/event-repository";
-import { submitLabelAction } from "./actions";
+import { SubmitButton } from "@/components/ds-client";
+import { submitLabelAction, undoLastLabelAction } from "./actions";
+import { JudgmentShortcuts } from "./judgment-shortcuts";
 
 export const metadata = {
   title: "Matching Lab | Admin",
@@ -28,13 +30,19 @@ function pct(n: number, total: number) {
 export default async function MatchingLabPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ save?: string }>;
+  searchParams?: Promise<{ save?: string; undo?: string }>;
 }) {
   const session = await auth();
+  const params = await searchParams;
   // A failed judgment redirects here with ?save=failed - see actions.ts. The
   // action used to swallow the error and revalidate, which made a dropped label
   // indistinguishable from a saved one.
-  const saveFailed = (await searchParams)?.save === "failed";
+  const saveFailed = params?.save === "failed";
+  // Undo reports three distinct outcomes so "nothing was there to undo" never
+  // reads as "your mistake is gone".
+  const undoResult = params?.undo === "done" || params?.undo === "empty" || params?.undo === "failed"
+    ? params.undo
+    : null;
   const [pairResult, stats] = await Promise.all([
     // Resolve the failure into a FLAG rather than into null: a permissions or
     // query error used to collapse into the "no unlabeled pairs" empty state,
@@ -107,8 +115,9 @@ export default async function MatchingLabPage({
         <h2 className="eyebrow">Curate a pair</h2>
         <p className="mt-1 max-w-2xl text-xs font-medium text-[color:var(--slate)]">
           &ldquo;Would you introduce these two?&rdquo; Your call is stored with the feature vector at
-          label time. The viewer&apos;s cohort drives the predicted score. Each judgment is a
-          permanent row - there is no undo yet, so read the pair before you decide.
+          label time. The viewer&apos;s cohort drives the predicted score. Each judgment writes a row
+          into the training set, so read the pair before you decide - Undo below takes back your own
+          most recent one.
         </p>
 
         {saveFailed ? (
@@ -118,6 +127,33 @@ export default async function MatchingLabPage({
           >
             That judgment was NOT saved - the write was rejected. Check you are still signed in as
             an admin, then judge the pair again.
+          </p>
+        ) : null}
+
+        {undoResult === "failed" ? (
+          <p
+            role="alert"
+            className="mt-4 rounded-2xl border border-[color:var(--danger)] bg-[color:var(--paper)] p-4 text-sm font-semibold text-[color:var(--danger)]"
+          >
+            Nothing was undone - the delete was rejected, so your last judgment is still in the
+            training set. Check you are still signed in as an admin and try again. The server log
+            has the detail.
+          </p>
+        ) : undoResult === "empty" ? (
+          <p
+            role="status"
+            className="mt-4 rounded-2xl border border-[color:var(--line)] bg-[color:var(--champagne)] p-4 text-sm font-medium text-[color:var(--ink)]"
+          >
+            Nothing to undo - you have no curated judgments on record. Undo only ever reaches your
+            own labels, never another operator&apos;s.
+          </p>
+        ) : undoResult === "done" ? (
+          <p
+            role="status"
+            className="mt-4 rounded-2xl border border-[color:var(--line)] bg-[color:var(--champagne)] p-4 text-sm font-medium text-[color:var(--ink)]"
+          >
+            Your most recent judgment is gone from the training set. That pair is unlabeled again,
+            so it can come back around below.
           </p>
         ) : null}
 
@@ -169,11 +205,14 @@ export default async function MatchingLabPage({
               />
             </label>
 
+            {/* data-judgment is how JudgmentShortcuts finds the submitter for a
+                keystroke. Keep the three values in sync with KEY_TO_JUDGMENT. */}
             <div className="mt-4 flex flex-wrap gap-2">
               <button
                 type="submit"
                 name="judgment"
                 value="strong_fit"
+                data-judgment="strong_fit"
                 className="ck-btn ck-btn--primary ck-btn--sm"
               >
                 Strong fit
@@ -182,6 +221,7 @@ export default async function MatchingLabPage({
                 type="submit"
                 name="judgment"
                 value="maybe"
+                data-judgment="maybe"
                 className="ck-btn ck-btn--secondary ck-btn--sm"
               >
                 Maybe
@@ -190,6 +230,7 @@ export default async function MatchingLabPage({
                 type="submit"
                 name="judgment"
                 value="not_a_fit"
+                data-judgment="not_a_fit"
                 className="ck-btn ck-btn--ghost ck-btn--sm text-[color:var(--slate)]"
               >
                 Not a fit
@@ -198,6 +239,10 @@ export default async function MatchingLabPage({
                 saves → next pair
               </span>
             </div>
+
+            {/* Keyed on the pair so the component remounts when a new pair
+                arrives - that reset is what re-arms its one-judgment latch. */}
+            <JudgmentShortcuts key={`${pair.a.id}:${pair.b.id}`} />
           </form>
         ) : pairResult.failed ? (
           <p
@@ -216,6 +261,25 @@ export default async function MatchingLabPage({
             and reload.
           </p>
         )}
+
+        {/* Undo sits OUTSIDE the judgment form - nested forms are invalid, and
+            an undo must never be able to ride along on a judgment submit. It
+            also stays reachable when there is no pair on screen, which is
+            exactly when you notice the last call was wrong.
+
+            No confirm step on purpose: this IS the confirm-step alternative. A
+            dialog in front of the one control that repairs a mistake would just
+            add a second thing to get wrong, and the action can only ever reach
+            one row - your own latest. */}
+        <form action={undoLastLabelAction} className="mt-4 flex flex-wrap items-center gap-3">
+          <SubmitButton variant="secondary" size="sm" pendingLabel="Undoing…">
+            Undo last label
+          </SubmitButton>
+          <span className="text-[11px] font-medium text-[color:var(--slate)]">
+            Removes your own most recent judgment, and only that one. Another operator&apos;s labels
+            are never touched.
+          </span>
+        </form>
       </section>
     </div>
   );

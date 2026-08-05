@@ -27,9 +27,10 @@ import {
 } from "@/lib/abn";
 import { useFormDraft } from "@/lib/use-form-draft";
 import { MapboxAutocomplete, type MapboxPlace } from "./mapbox-autocomplete";
-import { Badge, Button, EndowedProgress } from "./ds";
+import { Badge, Button, EndowedProgress, FormField } from "./ds";
 import { SubmitButton } from "./ds-client";
 import { InfoNote, WizardStepper } from "./merchant-ds";
+import { useDisclosure } from "./use-disclosure";
 
 // Merchant signup — multi-step wizard covering spec §1. Each step has its own
 // URL so users can bookmark, link to, and browser-back through them:
@@ -197,6 +198,47 @@ export const STEP_PATHS = [
   "/merchant/signup/documents",
 ] as const;
 
+/* One message per offending field, rather than one message per attempt. The old
+   validator returned a single string and bailed on the FIRST failure, so a host
+   with three missing fields learned one requirement per Next - from a strip down
+   by the nav buttons that never said which field it meant. Same shape and same
+   "focus the first offender" rule as the event-create wizard's FieldErrors, so
+   the two wizards behave identically.
+
+   Spelled out as its own union rather than derived from State: State carries the
+   error map itself, and deriving the keys from it would make the type circular. */
+type ErrorField =
+  | "businessName"
+  | "abn"
+  | "acn"
+  | "eventCategoryIds"
+  | "contactEmail"
+  | "phone"
+  | "addressStreet"
+  | "addressSuburb"
+  | "addressState"
+  | "addressPostcode";
+
+type FieldErrors = Partial<Record<ErrorField, string>>;
+
+/** DOM id for a field's control, so validation can focus the one at fault.
+    Composite controls (address, state, categories) anchor their WRAPPER instead
+    of an input - `focusFieldAnchor` reaches inside for the real control. */
+function fieldAnchorId(field: ErrorField) {
+  return `ms-field-${field}`;
+}
+
+/* Editing a field retires its error - leaving it up while the host fixes the
+   value is how a form starts reading as broken rather than picky. Returns the
+   SAME map when there was nothing to clear, so an ordinary keystroke doesn't
+   allocate a new object per character. */
+function withoutError(errors: FieldErrors, key: string): FieldErrors {
+  if (!(key in errors)) return errors;
+  const next = { ...errors };
+  delete next[key as ErrorField];
+  return next;
+}
+
 type State = {
   // Business
   businessName: string;
@@ -216,14 +258,22 @@ type State = {
   addressPostcode: string;
   // Documents
   uploads: Record<DocumentType, { fileName: string } | null>;
+  // Validation - one entry per offending field, keyed so each control can render
+  // its own message. The strip above the nav only carries the summary.
+  fieldErrors: FieldErrors;
   // Submission
   submitState: "idle" | "submitting" | "success" | "error";
   submitMessage: string;
 };
 
 // The answer fields only - `uploads` is rebuilt server-side from
-// listMerchantDocuments, and submit status is per-attempt.
-type DraftFields = Omit<State, "uploads" | "submitState" | "submitMessage">;
+// listMerchantDocuments, submit status is per-attempt, and `fieldErrors` is a
+// verdict on the answers rather than an answer (a restored draft re-validates
+// on the next Next, so persisting stale marks would be noise).
+type DraftFields = Omit<
+  State,
+  "uploads" | "fieldErrors" | "submitState" | "submitMessage"
+>;
 
 const DRAFT_FIELD_KEYS: ReadonlyArray<keyof DraftFields> = [
   "businessName",
@@ -246,7 +296,12 @@ type Action =
       type: "field";
       key: keyof Omit<
         State,
-        "uploads" | "submitState" | "submitMessage" | "eventCategoryIds" | "socials"
+        | "uploads"
+        | "fieldErrors"
+        | "submitState"
+        | "submitMessage"
+        | "eventCategoryIds"
+        | "socials"
       >;
       value: string;
     }
@@ -254,6 +309,10 @@ type Action =
   | { type: "toggleCategory"; id: string }
   | { type: "upload"; docType: DocumentType; info: { fileName: string } | null }
   | { type: "hydrate"; values: Partial<DraftFields> }
+  /** Both halves of a validation verdict in one dispatch: the per-field marks and
+      the summary strip. Passing an empty map + empty message is how a passing
+      step clears the last one. */
+  | { type: "validation"; errors: FieldErrors; message: string }
   | { type: "submitStart" }
   | { type: "submitError"; message: string }
   | { type: "submitSuccess" };
@@ -261,8 +320,15 @@ type Action =
 function reducer(state: State, action: Action): State {
   switch (action.type) {
     case "field":
-      // Editing any field invalidates a stale submit error — clear it.
-      return { ...state, [action.key]: action.value, submitMessage: "" };
+      // Editing any field invalidates a stale submit error - and the mark on the
+      // field being edited, which is now a verdict on a value that no longer
+      // exists.
+      return {
+        ...state,
+        [action.key]: action.value,
+        fieldErrors: withoutError(state.fieldErrors, action.key),
+        submitMessage: "",
+      };
     case "social":
       return {
         ...state,
@@ -276,6 +342,7 @@ function reducer(state: State, action: Action): State {
         eventCategoryIds: has
           ? state.eventCategoryIds.filter((id) => id !== action.id)
           : [...state.eventCategoryIds, action.id],
+        fieldErrors: withoutError(state.fieldErrors, "eventCategoryIds"),
         submitMessage: "",
       };
     }
@@ -287,8 +354,10 @@ function reducer(state: State, action: Action): State {
       };
     case "hydrate":
       return { ...state, ...action.values };
+    case "validation":
+      return { ...state, fieldErrors: action.errors, submitMessage: action.message };
     case "submitStart":
-      return { ...state, submitState: "submitting", submitMessage: "" };
+      return { ...state, submitState: "submitting", fieldErrors: {}, submitMessage: "" };
     case "submitError":
       return { ...state, submitState: "error", submitMessage: action.message };
     case "submitSuccess":
@@ -339,6 +408,7 @@ function initialState(props: {
     addressState: (prefill?.addressState as AuState | "") ?? "",
     addressPostcode: prefill?.addressPostcode ?? "",
     uploads: existing,
+    fieldErrors: {},
     submitState: "idle",
     submitMessage: "",
   };
@@ -401,9 +471,13 @@ export function MerchantSignupProvider({
 
   // Restore, then persist - via the shared hook, which owns the two rules this
   // used to hand-roll: the read happens in an effect (never a lazy initializer,
-  // or the server and first client render disagree) and writes stop dead once
-  // clear() has run, so submitting can't have its own draft rewritten back over
-  // the top of it a render later.
+  // or the server and first client render disagree), and clear() opens a narrow
+  // window rather than a permanent latch. Inside that window the hook writes
+  // nothing while the values stay byte-identical to the ones clear() saw, so the
+  // re-renders that FOLLOW a submit can't resurrect the draft it just removed -
+  // but the moment the host genuinely edits something again, drafting resumes.
+  // That matters here because submit() can fail and leave the wizard open: from
+  // the next keystroke on, the form is protected again.
   //
   // sessionStorage, deliberately, NOT localStorage: the draft carries an ABN, a
   // phone number and a street address, and localStorage would leave that sitting
@@ -520,34 +594,72 @@ function isValidAuPhone(raw: string): boolean {
   );
 }
 
-function validateStep(step: StepIndex, state: State): string | null {
+/* Every failure on the step, not just the first. Insertion order below is DOM
+   order within the step, and Object.keys preserves it for string keys - that is
+   what makes "focus the first offender" land on the topmost field rather than an
+   arbitrary one. */
+function validateStep(step: StepIndex, state: State): FieldErrors {
+  const errors: FieldErrors = {};
+
   if (step === 0) {
     const name = state.businessName.trim();
-    if (name.length < 2 || name.length > 100)
-      return "Business name must be 2–100 characters.";
-    // ABN is optional for now — only validate the format when supplied.
-    const abnError = validateOptionalAbn(state.abn);
-    if (abnError) return abnError;
-    const acnError = validateOptionalAcn(state.acn);
-    if (acnError) return acnError;
-    if (state.eventCategoryIds.length === 0)
-      return "Pick at least one event category.";
-    return null;
-  }
-  if (step === 1) {
-    if (!state.contactEmail.includes("@")) return "Enter a valid contact email.";
-    if (!isValidAuPhone(state.phone)) {
-      return "Phone must be a valid Australian mobile or landline (e.g. 0412 345 678 or 02 9646 8888).";
+    if (name.length < 2 || name.length > 100) {
+      errors.businessName = "Business name must be 2-100 characters.";
     }
-    if (!state.addressStreet.trim()) return "Street address is required.";
-    if (!state.addressSuburb.trim()) return "Suburb is required.";
-    if (!state.addressState) return "Pick a state.";
-    if (!/^[0-9]{4}$/.test(state.addressPostcode.trim()))
-      return "Postcode must be 4 digits.";
-    return null;
+    // ABN and ACN are optional for now - only the format is checked, and only
+    // when something was actually typed (both validators pass an empty value).
+    const abnError = validateOptionalAbn(state.abn);
+    if (abnError) errors.abn = abnError;
+    const acnError = validateOptionalAcn(state.acn);
+    if (acnError) errors.acn = acnError;
+    if (state.eventCategoryIds.length === 0) {
+      errors.eventCategoryIds = "Pick at least one event category.";
+    }
   }
-  // All documents are optional at signup; admins can request follow-ups during verification.
-  return null;
+
+  if (step === 1) {
+    if (!state.contactEmail.includes("@")) {
+      errors.contactEmail = "Enter a valid contact email.";
+    }
+    if (!isValidAuPhone(state.phone)) {
+      // auPhoneHint pinpoints WHY a typed number failed; it has nothing useful
+      // to say about an empty field, so that case gets its own line.
+      errors.phone = state.phone.trim()
+        ? auPhoneHint(state.phone)
+        : "Add a phone number - mobile, landline or business line.";
+    }
+    if (!state.addressStreet.trim()) errors.addressStreet = "Add the street address.";
+    if (!state.addressSuburb.trim()) errors.addressSuburb = "Add the suburb.";
+    if (!state.addressState) errors.addressState = "Pick a state.";
+    if (!/^[0-9]{4}$/.test(state.addressPostcode.trim())) {
+      errors.addressPostcode = "Postcode must be 4 digits.";
+    }
+  }
+
+  // Step 2: all documents are optional at signup; admins can request follow-ups
+  // during verification.
+  return errors;
+}
+
+/**
+ * Move focus onto the control that failed, and bring it into view.
+ *
+ * Half the fields anchor a real input, which is the easy case. The other half -
+ * the address autocomplete, the state popover, the category picker - are
+ * composites whose control is owned by a child component we don't pass ids
+ * through, so those anchor their WRAPPER and we reach inside for the first
+ * focusable thing. When there is nothing focusable at all (a category picker
+ * with no categories loaded) we still scroll, so the message is at least on
+ * screen rather than silently below the fold.
+ */
+function focusFieldAnchor(field: ErrorField) {
+  const anchor = document.getElementById(fieldAnchorId(field));
+  if (!anchor) return;
+  const target = anchor.matches("input, select, textarea, button")
+    ? anchor
+    : anchor.querySelector<HTMLElement>("input, select, textarea, button");
+  target?.focus();
+  (target ?? anchor).scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
 // ---------- wizard shell ----------
@@ -564,12 +676,38 @@ export function WizardShell({
   const isLast = step === STEP_COUNT - 1;
   const submitting = state.submitState === "submitting";
 
+  /**
+   * Shared by goNext and submit: mark every offending field and say how many in
+   * the one strip above the nav.
+   *
+   * `focusFirst` is false on the submit path, where we are about to route to
+   * another step - focus would land on a control that is being unmounted a tick
+   * later, which is worse than not moving it at all.
+   */
+  function showFieldErrors(
+    errors: FieldErrors,
+    { stepLabel, focusFirst }: { stepLabel?: string; focusFirst: boolean },
+  ) {
+    const keys = Object.keys(errors) as ErrorField[];
+    // One failure reads better as itself than as a count of one.
+    const summary =
+      keys.length === 1
+        ? (errors[keys[0]] as string)
+        : `${keys.length} things still need a moment${stepLabel ? ` on ${stepLabel}` : ""} - they're marked below.`;
+    dispatch({ type: "validation", errors, message: summary });
+    if (!focusFirst) return;
+    // Land the host ON the offending control. The strip by the nav buttons says
+    // something is wrong; only this says where.
+    requestAnimationFrame(() => focusFieldAnchor(keys[0]));
+  }
+
   function goNext() {
-    const error = validateStep(step, state);
-    if (error) {
-      dispatch({ type: "submitError", message: error });
+    const errors = validateStep(step, state);
+    if (Object.keys(errors).length > 0) {
+      showFieldErrors(errors, { focusFirst: true });
       return;
     }
+    dispatch({ type: "validation", errors: {}, message: "" });
     router.push(STEP_PATHS[step + 1]);
   }
 
@@ -589,9 +727,12 @@ export function WizardShell({
     // Re-run every step's validation on final submit — guards against a user
     // editing an earlier step after passing it, or deep-linking past one.
     for (let s = 0; s < STEP_COUNT; s++) {
-      const error = validateStep(s as StepIndex, state);
-      if (error) {
-        dispatch({ type: "submitError", message: error });
+      const errors = validateStep(s as StepIndex, state);
+      if (Object.keys(errors).length > 0) {
+        // Name the step in the summary: from step 3 the marked fields are two
+        // routes away, so "3 things still need a moment" alone would send the
+        // host looking on the page they're standing on.
+        showFieldErrors(errors, { stepLabel: STEP_TITLES[s], focusFirst: false });
         router.push(STEP_PATHS[s]);
         return;
       }
@@ -867,89 +1008,79 @@ export function StepAuthCard({
   );
 }
 
-// ---------- field primitives ----------
-
-function FieldLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="text-[12.5px] font-semibold text-[color:var(--slate)]">
-      {children}
-    </span>
-  );
-}
-
-// The control treatment is .ck-input (globals.css, beside .ck-btn) - one class
-// for every input in the app, and no local focus string to drift from it. The
-// wrapper stays because these fields still use their own 12.5px Slate label; the
-// shared FormField is the migration this file has not taken yet.
-function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  return <input {...props} className={`ck-input w-full ${props.className ?? ""}`} />;
-}
-
 // ---------- section · business ----------
+
+/* Every labelled control below is the shared FormField from ds.tsx - the label,
+   the "Required" marker, the .ck-input treatment, the hint line and the error
+   slot all come from one place, so this wizard cannot drift from the event
+   wizard or the profile forms. The local FieldLabel + TextInput pair that used
+   to live here (a 12.5px Slate label over a hand-assembled .ck-input) is gone;
+   the two composites that genuinely cannot be a FormField - the category
+   fieldset and the document upload rows - copy its label treatment inline and
+   say so at the site. */
 
 export function BusinessSection() {
   const { state, dispatch, categories } = useWizard();
+  const { fieldErrors } = state;
   return (
     <div className="grid gap-5">
       <h2 className="font-display text-3xl font-semibold leading-tight">Business details</h2>
 
-      <label className="grid gap-2">
-        <FieldLabel>Business name *</FieldLabel>
-        <TextInput
-          value={state.businessName}
-          onChange={(e) => dispatch({ type: "field", key: "businessName", value: e.target.value })}
-          placeholder="Sydney Table Friends"
-          required
-        />
-      </label>
+      <FormField
+        label="Business name"
+        required
+        error={fieldErrors.businessName}
+        id={fieldAnchorId("businessName")}
+        value={state.businessName}
+        onChange={(e) => dispatch({ type: "field", key: "businessName", value: e.target.value })}
+        placeholder="Sydney Table Friends"
+      />
 
-      <label className="grid gap-2">
-        <FieldLabel>Trading name (if different)</FieldLabel>
-        <TextInput
-          value={state.tradingName}
-          onChange={(e) => dispatch({ type: "field", key: "tradingName", value: e.target.value })}
-          placeholder="STF Events"
-        />
-      </label>
+      <FormField
+        label="Trading name"
+        hint="Only if you trade under a different name."
+        value={state.tradingName}
+        onChange={(e) => dispatch({ type: "field", key: "tradingName", value: e.target.value })}
+        placeholder="STF Events"
+      />
 
       <div className="grid gap-5 sm:grid-cols-2">
-        <label className="grid gap-2">
-          <FieldLabel>ABN (optional · real registered ABN, e.g. 51 824 753 556)</FieldLabel>
-          <TextInput
-            value={state.abn}
-            inputMode="numeric"
-            maxLength={14}
-            onChange={(e) =>
-              dispatch({
-                type: "field",
-                key: "abn",
-                value: normalizeAbn(e.target.value).slice(0, 11),
-              })
-            }
-            onBlur={() =>
-              dispatch({ type: "field", key: "abn", value: formatAbn(state.abn) })
-            }
-            placeholder="11 222 333 444"
-          />
-        </label>
+        <FormField
+          label="ABN"
+          hint="Optional - your real registered ABN, e.g. 51 824 753 556."
+          error={fieldErrors.abn}
+          id={fieldAnchorId("abn")}
+          value={state.abn}
+          inputMode="numeric"
+          maxLength={14}
+          onChange={(e) =>
+            dispatch({
+              type: "field",
+              key: "abn",
+              value: normalizeAbn(e.target.value).slice(0, 11),
+            })
+          }
+          onBlur={() => dispatch({ type: "field", key: "abn", value: formatAbn(state.abn) })}
+          placeholder="11 222 333 444"
+        />
 
-        <label className="grid gap-2">
-          <FieldLabel>ACN (optional, 9 digits)</FieldLabel>
-          <TextInput
-            value={state.acn}
-            inputMode="numeric"
-            onChange={(e) => dispatch({ type: "field", key: "acn", value: e.target.value })}
-            onBlur={() =>
-              dispatch({ type: "field", key: "acn", value: formatAcn(state.acn) })
-            }
-            placeholder="000 000 000"
-          />
-        </label>
+        <FormField
+          label="ACN"
+          hint="Optional - 9 digits."
+          error={fieldErrors.acn}
+          id={fieldAnchorId("acn")}
+          value={state.acn}
+          inputMode="numeric"
+          onChange={(e) => dispatch({ type: "field", key: "acn", value: e.target.value })}
+          onBlur={() => dispatch({ type: "field", key: "acn", value: formatAcn(state.acn) })}
+          placeholder="000 000 000"
+        />
       </div>
 
       <CategoryPicker
         categories={categories}
         selectedIds={state.eventCategoryIds}
+        error={fieldErrors.eventCategoryIds}
         onToggle={(id) => dispatch({ type: "toggleCategory", id })}
       />
     </div>
@@ -961,10 +1092,13 @@ export function BusinessSection() {
 function CategoryPicker({
   categories,
   selectedIds,
+  error,
   onToggle,
 }: {
   categories: CategoryOption[];
   selectedIds: string[];
+  /** The message validateStep raised for `eventCategoryIds`, if any. */
+  error?: string;
   onToggle: (id: string) => void;
 }) {
   const [query, setQuery] = useState("");
@@ -977,14 +1111,42 @@ function CategoryPicker({
     return c.name.toLowerCase().includes(q) || c.slug.toLowerCase().includes(q);
   });
 
+  // Own the id/message wiring the way FormField would, since this control cannot
+  // be one: a group of toggles needs a <fieldset>/<legend>, and FormField renders
+  // a <label> (which would then claim the search box as its control).
+  const errorId = `${fieldAnchorId("eventCategoryIds")}-error`;
+
   return (
-    <fieldset className="grid gap-3">
-      <legend className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
-        <FieldLabel>Event categories you host * (pick at least one)</FieldLabel>
-        <span className="text-[12.5px] font-semibold text-[color:var(--slate)]">
+    <fieldset id={fieldAnchorId("eventCategoryIds")} className="grid gap-3">
+      <legend className="mb-1 flex w-full flex-wrap items-baseline justify-between gap-2">
+        {/* Label treatment copied verbatim from FormField (13.5px Ink semibold +
+            the quiet Required marker) so the picker reads as the same species of
+            field as the four above it. */}
+        <span className="flex items-baseline gap-2">
+          <span className="text-[13.5px] font-semibold text-[color:var(--ink)]">
+            Event categories you host
+          </span>
+          <span aria-hidden className="text-[11.5px] font-medium text-[color:var(--slate)]">
+            Required
+          </span>
+        </span>
+        <span className="text-[12.5px] font-medium text-[color:var(--slate)]">
           {selectedIds.length} selected
         </span>
       </legend>
+
+      {/* Directly under the legend rather than under the control, which is where
+          FormField puts it: the picker is tall, and a message below the tag grid
+          would sit a screenful away from the thing it is talking about. */}
+      {error ? (
+        <span id={errorId} role="alert" className="text-[12.5px] font-medium text-[color:var(--danger)]">
+          {error}
+        </span>
+      ) : (
+        <span className="text-[12.5px] leading-[1.5] text-[color:var(--slate)]">
+          Pick at least one - it&apos;s how we put your events in front of the right locals.
+        </span>
+      )}
 
       {categories.length === 0 ? (
         <p className="text-sm font-medium text-[color:var(--slate)]">
@@ -1015,7 +1177,9 @@ function CategoryPicker({
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search categories…"
               aria-label="Search event categories"
-              className="ck-input w-full"
+              aria-invalid={error ? true : undefined}
+              aria-describedby={error ? errorId : undefined}
+              className={`ck-input w-full ${error ? "ck-input--invalid" : ""}`}
             />
           </div>
 
@@ -1049,6 +1213,17 @@ function CategoryPicker({
 
 export function ContactSection() {
   const { state, dispatch } = useWizard();
+  const { fieldErrors } = state;
+
+  // The five optional handles start folded away - see the panel below.
+  // Destructured, like every other useDisclosure call site: the react-hooks/refs
+  // rule flags any `x.something` read during render on an object that also
+  // carries a ref, even when the property read is plain state.
+  const {
+    open: socialsOpen,
+    setOpen: setSocialsOpen,
+    ref: socialsRef,
+  } = useDisclosure<HTMLDivElement>();
 
   // Picking a Mapbox suggestion fills street + suburb/state/postcode in one go.
   // Mapbox occasionally omits the region/state on an address feature, which left
@@ -1094,130 +1269,182 @@ export function ContactSection() {
   const outsidePilot = /^\d{4}$/.test(postcode) && !isSydneyPostcode(postcode);
   const areaLabel = state.addressSuburb.trim() || "That area";
 
+  /* Two sources feed one error slot. The live check answers while you type (and
+     stays quiet until you have typed something), and validateStep's mark arrives
+     on Next - which is also the only one that can speak for an EMPTY field. The
+     mark clears itself on the next keystroke, so the live check takes back over
+     the moment the host starts fixing it. */
+  const phoneTyped = state.phone.trim() !== "";
+  const phoneValid = isValidAuPhone(state.phone);
+  const phoneError =
+    fieldErrors.phone ?? (phoneTyped && !phoneValid ? auPhoneHint(state.phone) : undefined);
+
+  const socialCount = SOCIAL_PLATFORMS.filter((p) => state.socials[p.value].trim()).length;
+  const socialsPanelId = "ms-socials-panel";
+
   return (
     <div className="grid gap-5">
       <h2 className="font-display text-3xl font-semibold leading-tight">Contact & address</h2>
 
       <div className="grid gap-5 sm:grid-cols-2">
-        <label className="grid gap-2">
-          <FieldLabel>Contact email *</FieldLabel>
-          <TextInput
-            type="email"
-            value={state.contactEmail}
-            onChange={(e) => dispatch({ type: "field", key: "contactEmail", value: e.target.value })}
-            placeholder="bookings@example.com"
-            required
-          />
-        </label>
-        <label className="grid gap-2">
-          <FieldLabel>Phone * (AU)</FieldLabel>
-          <TextInput
-            type="tel"
-            inputMode="tel"
-            autoComplete="tel"
-            value={state.phone}
-            onChange={(e) => dispatch({ type: "field", key: "phone", value: e.target.value })}
-            onBlur={() =>
-              dispatch({ type: "field", key: "phone", value: formatAuPhone(state.phone) })
-            }
-            placeholder="0412 345 678"
-            aria-invalid={state.phone.trim() !== "" && !isValidAuPhone(state.phone)}
-            required
-          />
-          {state.phone.trim() === "" ? (
-            <p className="text-xs font-medium leading-5 text-[color:var(--slate)]">
-              Mobile, landline or business line - e.g. 0412 345 678, 02 9646 8888 or 1300 123 456. Spaces, brackets and +61 are fine.
-            </p>
-          ) : isValidAuPhone(state.phone) ? (
-            <p className="text-xs font-semibold leading-5 text-[color:var(--purple)]">
-              ✓ Looks good.
-            </p>
-          ) : (
-            <p className="text-xs font-semibold leading-5 text-[color:var(--danger)]">
-              {auPhoneHint(state.phone)}
-            </p>
-          )}
-        </label>
+        <FormField
+          label="Contact email"
+          required
+          type="email"
+          error={fieldErrors.contactEmail}
+          id={fieldAnchorId("contactEmail")}
+          value={state.contactEmail}
+          onChange={(e) => dispatch({ type: "field", key: "contactEmail", value: e.target.value })}
+          placeholder="bookings@example.com"
+        />
+        <FormField
+          label="Phone (AU)"
+          required
+          type="tel"
+          inputMode="tel"
+          autoComplete="tel"
+          error={phoneError}
+          hint={
+            phoneTyped && phoneValid ? (
+              <span className="font-semibold text-[color:var(--purple)]">✓ Looks good.</span>
+            ) : (
+              "Mobile, landline or business line - e.g. 0412 345 678, 02 9646 8888 or 1300 123 456. Spaces, brackets and +61 are fine."
+            )
+          }
+          id={fieldAnchorId("phone")}
+          value={state.phone}
+          onChange={(e) => dispatch({ type: "field", key: "phone", value: e.target.value })}
+          onBlur={() =>
+            dispatch({ type: "field", key: "phone", value: formatAuPhone(state.phone) })
+          }
+          placeholder="0412 345 678"
+        />
       </div>
 
-      <label className="grid gap-2">
-        <FieldLabel>Website (optional)</FieldLabel>
-        <TextInput
-          type="url"
-          value={state.websiteUrl}
-          onChange={(e) => dispatch({ type: "field", key: "websiteUrl", value: e.target.value })}
-          placeholder="https://www.yourbusiness.com.au"
-        />
-      </label>
+      <FormField
+        label="Website"
+        hint="Optional."
+        type="url"
+        value={state.websiteUrl}
+        onChange={(e) => dispatch({ type: "field", key: "websiteUrl", value: e.target.value })}
+        placeholder="https://www.yourbusiness.com.au"
+      />
 
-      <div className="grid gap-2.5">
-        <FieldLabel>Social profiles (optional)</FieldLabel>
-        <div className="grid gap-2.5">
-          {SOCIAL_PLATFORMS.map((opt) => (
-            <label
-              key={opt.value}
-              className="grid gap-1.5 sm:grid-cols-[7rem_1fr] sm:items-center sm:gap-3"
-            >
-              <span className="text-[12.5px] font-semibold text-[color:var(--slate)]">
-                {opt.label}
-              </span>
-              <TextInput
+      {/* Five optional inputs sitting open is most of what made this step look
+          long, and "how much longer is this" is the exact question the form is
+          trying not to raise. Folded away behind the shared useDisclosure hook -
+          the same open/close behaviour as every header menu, so Escape closes it
+          and returns focus to the trigger (which has to stay the FIRST button
+          inside the ref for that to land).
+
+          The trade-off that hook carries: it also closes on an outside pointer
+          press or when focus leaves the panel, so tapping the next field folds
+          it away mid-fill. The count on the trigger is what makes that safe -
+          nothing typed here can vanish quietly, and every handle stays in state
+          and still submits. */}
+      <div ref={socialsRef} className="grid gap-2.5">
+        <button
+          type="button"
+          onClick={() => setSocialsOpen((o) => !o)}
+          aria-expanded={socialsOpen}
+          aria-controls={socialsPanelId}
+          className="flex w-full items-center justify-between gap-3 rounded-xl border-[1.5px] border-[color:var(--mist)] bg-[color:var(--paper)] px-4 py-3 text-left hover:border-[color:var(--slate)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--purple)]"
+        >
+          <span className="grid min-w-0 gap-0.5">
+            <span className="text-[13.5px] font-semibold text-[color:var(--ink)]">
+              Social profiles
+            </span>
+            <span className="text-[12.5px] leading-[1.5] text-[color:var(--slate)]">
+              {socialCount > 0
+                ? `${socialCount} added - handy for verifying hosts without formal documents yet.`
+                : "Optional - handy for verifying hosts without formal documents yet."}
+            </span>
+          </span>
+          <svg
+            viewBox="0 0 12 8"
+            width="12"
+            height="8"
+            aria-hidden="true"
+            className={`flex-none text-[color:var(--slate)] transition-transform ${socialsOpen ? "rotate-180" : ""}`}
+          >
+            <path
+              d="M1 1.5l5 5 5-5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+        {socialsOpen ? (
+          <div id={socialsPanelId} className="rise-soft grid gap-4 sm:grid-cols-2">
+            {SOCIAL_PLATFORMS.map((opt) => (
+              <FormField
+                key={opt.value}
+                label={opt.label}
                 value={state.socials[opt.value]}
                 onChange={(e) =>
                   dispatch({ type: "social", platform: opt.value, value: e.target.value })
                 }
                 placeholder={opt.placeholder}
-                aria-label={`${opt.label} handle`}
               />
-            </label>
-          ))}
-        </div>
-        <span className="text-xs font-medium text-[color:var(--slate)]">
-          Add any networks you&apos;re on - handy for verifying hosts who don&apos;t have formal documents yet.
-        </span>
+            ))}
+          </div>
+        ) : null}
       </div>
 
-      <label className="grid gap-2">
-        <FieldLabel>Street address *</FieldLabel>
-        <MapboxAutocomplete
-          value={state.addressStreet}
-          onValueChange={(v) => dispatch({ type: "field", key: "addressStreet", value: v })}
-          onSelect={handlePick}
-          placeholder="Start typing - e.g. 42 Crown Street, Surry Hills"
-        />
-        <span className="text-xs font-medium text-[color:var(--slate)]">
-          Pick a suggestion and we&apos;ll fill in suburb, state &amp; postcode.
-        </span>
-      </label>
+      <FormField
+        label="Street address"
+        required
+        hint="Pick a suggestion and we'll fill in suburb, state and postcode."
+        error={fieldErrors.addressStreet}
+      >
+        {/* The autocomplete owns its own input, so the anchor for "focus the
+            first offender" sits on this wrapper and focusFieldAnchor reaches
+            inside for the control. */}
+        <div id={fieldAnchorId("addressStreet")}>
+          <MapboxAutocomplete
+            value={state.addressStreet}
+            onValueChange={(v) => dispatch({ type: "field", key: "addressStreet", value: v })}
+            onSelect={handlePick}
+            placeholder="Start typing - e.g. 42 Crown Street, Surry Hills"
+          />
+        </div>
+      </FormField>
 
       <div className="grid gap-5 sm:grid-cols-[2fr_1fr_1fr]">
-        <label className="grid gap-2">
-          <FieldLabel>Suburb *</FieldLabel>
-          <TextInput
-            value={state.addressSuburb}
-            onChange={(e) => dispatch({ type: "field", key: "addressSuburb", value: e.target.value })}
-            placeholder="Surry Hills"
-            required
-          />
-        </label>
-        <label className="grid gap-2">
-          <FieldLabel>State *</FieldLabel>
-          <StateSelect
-            value={state.addressState}
-            onChange={(value) => dispatch({ type: "field", key: "addressState", value })}
-          />
-        </label>
-        <label className="grid gap-2">
-          <FieldLabel>Postcode *</FieldLabel>
-          <TextInput
-            value={state.addressPostcode}
-            inputMode="numeric"
-            maxLength={4}
-            onChange={(e) => handlePostcodeChange(e.target.value)}
-            placeholder="2010"
-            required
-          />
-        </label>
+        <FormField
+          label="Suburb"
+          required
+          error={fieldErrors.addressSuburb}
+          id={fieldAnchorId("addressSuburb")}
+          value={state.addressSuburb}
+          onChange={(e) => dispatch({ type: "field", key: "addressSuburb", value: e.target.value })}
+          placeholder="Surry Hills"
+        />
+        <FormField label="State" required error={fieldErrors.addressState}>
+          {/* Same wrapper-anchor arrangement as the street field: the popover's
+              trigger button is StateSelect's, not ours. */}
+          <div id={fieldAnchorId("addressState")}>
+            <StateSelect
+              value={state.addressState}
+              invalid={Boolean(fieldErrors.addressState)}
+              onChange={(value) => dispatch({ type: "field", key: "addressState", value })}
+            />
+          </div>
+        </FormField>
+        <FormField
+          label="Postcode"
+          required
+          error={fieldErrors.addressPostcode}
+          id={fieldAnchorId("addressPostcode")}
+          value={state.addressPostcode}
+          inputMode="numeric"
+          maxLength={4}
+          onChange={(e) => handlePostcodeChange(e.target.value)}
+          placeholder="2010"
+        />
       </div>
 
       {outsidePilot ? (
@@ -1239,9 +1466,13 @@ export function ContactSection() {
 // it stays compact inside the narrow Suburb / State / Postcode row.
 function StateSelect({
   value,
+  invalid,
   onChange,
 }: {
   value: AuState | "";
+  // The wrapping FormField owns the label and the message; the trigger is ours,
+  // so the --danger hairline and aria-invalid have to be passed down.
+  invalid?: boolean;
   onChange: (value: AuState) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -1273,10 +1504,16 @@ function StateSelect({
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="listbox"
         aria-expanded={open}
+        // No aria-invalid: role="button" does not support it, and asserting it
+        // anyway is a lie to a screen reader rather than a hint. The wrapping
+        // FormField's message already carries role="alert", which is what
+        // actually announces the failure.
         className={`flex w-full items-center justify-between gap-2 rounded-xl border bg-[color:var(--paper)] px-4 py-3 text-base text-[color:var(--ink)] outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--purple)] ${
           open
             ? "border-[color:var(--purple)]"
-            : "border-[color:var(--mist)] hover:border-[color:var(--slate)]"
+            : invalid
+              ? "border-[color:var(--danger)]"
+              : "border-[color:var(--mist)] hover:border-[color:var(--slate)]"
         }`}
       >
         <span className={value ? "" : "text-[color:var(--slate)]"}>
@@ -1351,6 +1588,9 @@ export function DocumentsSection() {
   return (
     <div className="grid gap-5">
       <h2 className="font-display text-3xl font-semibold leading-tight">Documents</h2>
+
+      <ApplicationRecap />
+
       {/* Written for a restaurant owner, not an engineer: the sentence this
           replaced said "private Supabase Storage bucket" and "signed URLs", which
           is leaked plumbing on the one step where trust is being asked for. It
@@ -1381,6 +1621,116 @@ export function DocumentsSection() {
         dispatch={dispatch}
       />
     </div>
+  );
+}
+
+/**
+ * The read-only recap of everything typed on steps 1 and 2, above the uploads.
+ *
+ * Step 3 is where a host is asked to hand over identity documents, and that is
+ * the one moment in this form worth being able to re-read the earlier answers.
+ * Until now the only way was to walk two steps back: the ANSWERS survive that
+ * trip (they live in the provider, and in the session draft), but the place in
+ * the form does not, and the uploads are on this page. So the answers come here
+ * instead. Each group keeps an Edit link, which is the same jump the stepper
+ * dots offer - just next to the thing you would be editing.
+ *
+ * Read-only on purpose: two editable copies of the same field is how one of
+ * them ends up stale.
+ */
+function ApplicationRecap() {
+  const { state, categories } = useWizard();
+
+  const chosen = categories.filter((c) => state.eventCategoryIds.includes(c.id));
+  const handles = SOCIAL_PLATFORMS.filter((p) => state.socials[p.value].trim()).map(
+    (p) => `${p.label}: ${state.socials[p.value].trim()}`,
+  );
+  const address = [
+    state.addressStreet.trim(),
+    state.addressSuburb.trim(),
+    [state.addressState, state.addressPostcode.trim()].filter(Boolean).join(" "),
+  ]
+    .filter(Boolean)
+    .join(", ");
+
+  /* `always` rows are the ones the wizard requires, so they render even when
+     empty (a host who deep-linked straight to this step can see WHAT is missing
+     here rather than only finding out when Submit bounces them). Optional rows
+     with nothing in them are simply left out - a list of blanks is noise. */
+  type Row = { label: string; value: string; always?: boolean };
+  const groups: Array<{ title: string; href: string; rows: Row[] }> = [
+    {
+      title: "Business",
+      href: STEP_PATHS[0],
+      rows: [
+        { label: "Business name", value: state.businessName.trim(), always: true },
+        { label: "Trading name", value: state.tradingName.trim() },
+        { label: "ABN", value: state.abn.trim() },
+        { label: "ACN", value: state.acn.trim() },
+        {
+          label: chosen.length === 1 ? "Category" : "Categories",
+          value: chosen.map((c) => c.name).join(", "),
+          always: true,
+        },
+      ],
+    },
+    {
+      title: "Contact & address",
+      href: STEP_PATHS[1],
+      rows: [
+        { label: "Contact email", value: state.contactEmail.trim(), always: true },
+        { label: "Phone", value: state.phone.trim(), always: true },
+        { label: "Website", value: state.websiteUrl.trim() },
+        { label: "Socials", value: handles.join(" · ") },
+        { label: "Address", value: address, always: true },
+      ],
+    },
+  ];
+
+  return (
+    <section
+      aria-label="What you're sending"
+      className="grid gap-4 rounded-2xl border border-[color:var(--line)] bg-[color:var(--champagne)] p-4"
+    >
+      {groups.map((group) => (
+        <div key={group.title} className="grid gap-2">
+          <div className="flex items-baseline justify-between gap-3">
+            <h3 className="font-display text-[13.5px] font-semibold text-[color:var(--ink)]">
+              {group.title}
+            </h3>
+            <Link
+              href={group.href}
+              className="text-[12.5px] font-semibold text-[color:var(--purple)] underline underline-offset-4 hover:text-[color:var(--purple-hover)]"
+            >
+              Edit {group.title.toLowerCase()}
+            </Link>
+          </div>
+          <dl className="grid gap-1.5">
+            {group.rows
+              .filter((row) => row.always || row.value)
+              .map((row) => (
+                <div
+                  key={row.label}
+                  className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 border-t border-[color:var(--mist)] pt-1.5 first:border-0 first:pt-0"
+                >
+                  <dt className="text-[12.5px] font-medium text-[color:var(--slate)]">
+                    {row.label}
+                  </dt>
+                  <dd
+                    className={`min-w-0 text-right text-[13px] ${
+                      row.value
+                        ? "font-semibold text-[color:var(--ink)]"
+                        : "text-[color:var(--slate)]"
+                    }`}
+                  >
+                    {row.value || "Not added yet"}
+                  </dd>
+                </div>
+              ))}
+          </dl>
+        </div>
+      ))}
+    </section>
   );
 }
 
@@ -1527,7 +1877,12 @@ function DocumentUploadRow({
       className="grid gap-3 rounded-2xl border border-[color:var(--line)] bg-[color:var(--champagne)] p-4"
     >
       <div className="flex flex-wrap items-baseline justify-between gap-3">
-        <FieldLabel>{label}</FieldLabel>
+        {/* Not a FormField: the row is a file input plus a badge, a progress bar
+            and a live region, and FormField renders a <label> around its child -
+            which would make a click anywhere in the row (including on the bar,
+            mid-upload) re-open the file picker. Only the LABEL treatment is
+            borrowed, verbatim, so it still reads as the same field vocabulary. */}
+        <span className="text-[13.5px] font-semibold text-[color:var(--ink)]">{label}</span>
         {existing ? (
           // The DS Badge, not a hand-rolled span: the raw --sage hue on its own
           // 14% tint is the contrast regression BADGE_TONE warns about, and Badge
@@ -1545,6 +1900,9 @@ function DocumentUploadRow({
         type="file"
         accept={UPLOAD_ACCEPT}
         onChange={onChange}
+        // The heading above is a plain span (see the note there), so it names
+        // nothing - without this the row announces as an unlabelled file input.
+        aria-label={label}
         // aria-disabled, not disabled: disabling a control the user just used
         // blurs it, and a keyboard user lands back at the top of the document.
         // The guard in onChange is what actually blocks the second pick.

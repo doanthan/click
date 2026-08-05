@@ -197,6 +197,24 @@ export function MerchantEventEditForm({
   function removeImage(url: string) {
     setMessage(null);
     setImages((prev) => prev.filter((u) => u !== url));
+
+    // Photos upload the instant they are picked, so a photo added and then
+    // removed before saving used to leave an object nothing would ever
+    // reference again. Reclaim exactly those: a URL that was NOT in the images
+    // the server handed us on mount is new to this editing session, so no event
+    // points at it. A photo that arrived with the event only leaves the array -
+    // the merchant may still abandon the edit, and the live event would then be
+    // pointing at a deleted object. (The route re-checks both facts itself; the
+    // save that follows is what actually drops the photo from the event.)
+    if (initialImages.includes(url)) return;
+    // Fire-and-forget on purpose: a failed cleanup leaves one orphaned object,
+    // which is the situation we already lived with, whereas surfacing it here
+    // would put a scary message on a plain, reversible "remove this photo".
+    void fetch("/api/upload/event-image", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    }).catch(() => {});
   }
 
   const selectedSlugs = useMemo(() => new Set(tags.map((t) => t.slug)), [tags]);
