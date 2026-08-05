@@ -51,6 +51,13 @@ export function HeaderRoleSwitcher({
 
   const showPortalSwitcher = roles.length > 1;
 
+  // The header's "Host an event" button is desktop-only (hidden sm:inline-flex)
+  // and the mobile bottom bar has no host tab, so on a phone this menu was the
+  // only reachable route to hosting - and it didn't carry one.
+  const links = roles.includes("merchant")
+    ? ACCOUNT_LINKS
+    : [...ACCOUNT_LINKS, { label: "Host an event", href: "/merchant/signup" }];
+
   return (
     <div className="relative block" ref={ref}>
       {/* Disclosure, not an ARIA menu: the panel is a list of plain links, so
@@ -87,7 +94,7 @@ export function HeaderRoleSwitcher({
           <div className="my-1 h-px bg-[color:var(--line-soft)]" />
 
           <ul>
-            {ACCOUNT_LINKS.map((link) => {
+            {links.map((link) => {
               const active = pathname === link.href;
               return (
                 <li key={link.href}>

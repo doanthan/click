@@ -1,7 +1,17 @@
 "use client";
 
+import { useState } from "react";
 import { signInWithEmail, signInWithGoogle, signInWithMeta } from "@/app/login/actions";
-import { AuthDivider, AuthError, Field, AuthNote, SsoButton } from "@/components/auth-ui";
+import {
+  AuthDivider,
+  AuthError,
+  Field,
+  AuthNote,
+  HOST_SIGNUP_CALLBACK_URL,
+  SignupRoleChoice,
+  SsoButton,
+  type SignupRole,
+} from "@/components/auth-ui";
 import { ckBtn } from "@/components/ds";
 
 // Signup used to open with "What should we call you?" and stash the answer in
@@ -28,11 +38,23 @@ export function RegisterForm({
   googleConfigured,
   metaConfigured,
 }: RegisterFormProps) {
+  // Attend or Host, same fork the login modal offers. Seeded from the incoming
+  // callbackUrl because the email path bounces back HERE with
+  // ?emailSent=1&callbackUrl=… - without the seed, "check your inbox" would
+  // silently flip a host applicant back to the attendee card.
+  const [role, setRole] = useState<SignupRole>(
+    callbackUrl === HOST_SIGNUP_CALLBACK_URL ? "host" : "attendee",
+  );
+  const isHost = role === "host";
+  const formCallbackUrl = isHost ? HOST_SIGNUP_CALLBACK_URL : callbackUrl;
+
   return (
     <div className="grid gap-5">
+      <SignupRoleChoice value={role} onChange={setRole} />
+
       <div className="grid gap-2.5">
         <form action={signInWithGoogle}>
-          <input type="hidden" name="callbackUrl" value={callbackUrl} />
+          <input type="hidden" name="callbackUrl" value={formCallbackUrl} />
           <SsoButton
             provider="google"
             disabled={!googleConfigured}
@@ -42,7 +64,7 @@ export function RegisterForm({
 
         {metaConfigured ? (
           <form action={signInWithMeta}>
-            <input type="hidden" name="callbackUrl" value={callbackUrl} />
+            <input type="hidden" name="callbackUrl" value={formCallbackUrl} />
             <SsoButton provider="facebook" label="Sign up with Facebook" />
           </form>
         ) : null}
@@ -51,7 +73,7 @@ export function RegisterForm({
       <AuthDivider />
 
       <form action={signInWithEmail} className="grid gap-4">
-        <input type="hidden" name="callbackUrl" value={callbackUrl} />
+        <input type="hidden" name="callbackUrl" value={formCallbackUrl} />
         {/* Tells the action this is a signup and that the "check your inbox"
             answer belongs back here, not on the login page. */}
         <input type="hidden" name="mode" value="signup" />
@@ -70,14 +92,21 @@ export function RegisterForm({
         />
 
         <button type="submit" className={ckBtn("primary", "lg", { full: true })}>
-          <span className="ck-btn__label">Create account</span>
+          <span className="ck-btn__label">{isHost ? "Create host account" : "Create account"}</span>
         </button>
       </form>
 
-      <AuthNote>
-        Click is piloting in inner Sydney. Somewhere else? Sign up anyway - we&apos;ll tell you the
-        moment Click reaches you.
-      </AuthNote>
+      {isHost ? (
+        <AuthNote icon="info">
+          Next up is the host application: business details, address, documents, review. Free events
+          cost nothing to host.
+        </AuthNote>
+      ) : (
+        <AuthNote>
+          Click is piloting in inner Sydney. Somewhere else? Sign up anyway - we&apos;ll tell you the
+          moment Click reaches you.
+        </AuthNote>
+      )}
     </div>
   );
 }

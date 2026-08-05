@@ -58,7 +58,7 @@ export default async function RegisterPage({ searchParams }: RegisterPageProps) 
   return (
     <AuthShell
       title="Create your account"
-      sub="One step to real-life events near you."
+      sub="Real-life events near you - come along, or host your own."
       footer={
         <p className="text-center text-sm text-[color:var(--slate)]">
           Already on Click?{" "}

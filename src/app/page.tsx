@@ -377,7 +377,9 @@ export default async function Home() {
                 <ButtonLink href="/discover" variant="onPurple" size="lg">
                   See what&apos;s on
                 </ButtonLink>
-                <Link href="/merchant" className="font-display text-sm font-semibold text-[color:var(--champagne)] hover:underline">
+                {/* /merchant/signup, not /merchant - the latter bounces a
+                    logged-out visitor through /merchant/login first. */}
+                <Link href="/merchant/signup" className="font-display text-sm font-semibold text-[color:var(--champagne)] hover:underline">
                   Host an event <span className="nudge-arrow" aria-hidden>→</span>
                 </Link>
               </div>

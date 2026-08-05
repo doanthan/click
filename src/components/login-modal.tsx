@@ -12,7 +12,10 @@ import {
   AuthError,
   Field,
   AuthNote,
+  HOST_SIGNUP_CALLBACK_URL,
+  SignupRoleChoice,
   SsoButton,
+  type SignupRole,
 } from "@/components/auth-ui";
 import { Icon, Logo, ckBtn } from "@/components/ds";
 import {
@@ -31,15 +34,14 @@ type LoginModalProps = {
 };
 
 type Mode = "login" | "signup";
-type SignupRole = "attendee" | "host";
 
 const initialEmailState: EmailLoginFormState = { error: null, sent: false };
 
 // Attendee signups route through /post-login, which sends anyone with an
-// incomplete profile to /onboarding. Host signups land directly on the merchant
-// wizard - it detects the fresh session and skips its own inline auth step.
+// incomplete profile to /onboarding. Host signups aim at the merchant wizard -
+// /post-login carries it through onboarding as ?next= for a brand-new account.
+// (HOST_SIGNUP_CALLBACK_URL is shared with the /register form via auth-ui.)
 const ATTENDEE_SIGNUP_CALLBACK_URL = "/post-login";
-const HOST_SIGNUP_CALLBACK_URL = "/merchant/signup";
 
 export function LoginModal({
   open,
@@ -185,41 +187,7 @@ export function LoginModal({
         </div>
 
         {isSignup ? (
-          <fieldset aria-label="What kind of account?" className="mt-3 grid grid-cols-2 gap-2.5">
-            {(
-              [
-                { value: "attendee", title: "Attend", body: "RSVP and meet people" },
-                { value: "host", title: "Host", body: "List and run events" },
-              ] as const
-            ).map((option) => {
-              const active = role === option.value;
-              return (
-                <label
-                  key={option.value}
-                  className={`cursor-pointer rounded-xl border-[1.5px] px-3.5 py-3 text-left transition-colors ${
-                    active
-                      ? "border-[color:var(--purple-500)] bg-[color:var(--lavender-100)]"
-                      : "border-[color:var(--mist-strong)] bg-[color:var(--paper)] hover:bg-[color:var(--lavender-100)]"
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="signup-role"
-                    value={option.value}
-                    checked={active}
-                    onChange={() => setRole(option.value)}
-                    className="sr-only"
-                  />
-                  <span className="block text-[15px] font-semibold text-[color:var(--ink)]">
-                    {option.title}
-                  </span>
-                  <span className="mt-0.5 block text-[12.5px] text-[color:var(--slate)]">
-                    {option.body}
-                  </span>
-                </label>
-              );
-            })}
-          </fieldset>
+          <SignupRoleChoice value={role} onChange={setRole} className="mt-3" />
         ) : null}
 
         <h2

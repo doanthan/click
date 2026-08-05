@@ -123,7 +123,12 @@ export async function SiteFooter() {
   const links: Array<[string, string]> = [
     ["Discover", "/discover"],
     ["How it works", "/how-it-works"],
-    ["Host an event", "/merchant"],
+    // /merchant/signup, not /merchant: for a logged-OUT visitor /merchant is
+    // gated by the proxy and bounces to /merchant/login, so the footer's supply
+    // link cost a new host two extra hops through a login they have no account
+    // for. /merchant/signup self-routes for every session state (auth gate ->
+    // wizard -> existing merchants redirected to /merchant by its layout).
+    ["Host an event", "/merchant/signup"],
     ["Safety", "/safety"],
     ["Privacy", "/privacy"],
     ["Terms", "/terms"],

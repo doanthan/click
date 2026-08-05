@@ -82,6 +82,17 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
               Create your account
             </Link>
           </p>
+          {/* The host path used to exist only inside the login MODAL, so anyone
+              who landed on this full page had no way to find it. */}
+          <p className="mt-2 text-center text-sm text-[color:var(--slate)]">
+            Want to run events?{" "}
+            <Link
+              href="/merchant/signup"
+              className="font-semibold text-[color:var(--purple)] hover:underline"
+            >
+              Host on Click
+            </Link>
+          </p>
           <p className="mt-2 text-center text-sm text-[color:var(--slate)]">
             Want a look around first?{" "}
             <Link href="/discover" className="font-semibold text-[color:var(--purple)] hover:underline">
