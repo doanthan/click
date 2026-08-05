@@ -10,6 +10,7 @@ import { LoginModalHost } from "@/components/login-modal-host";
 import { SiteFooter, SiteHeader, SiteHeaderShell } from "@/components/site-chrome";
 import { auth } from "@/auth";
 import { isLocalDevelopment } from "@/lib/runtime-mode";
+import { isTestSwitcherUnlocked } from "@/lib/test-switcher";
 import "./globals.css";
 
 // Display voice - Poppins, the Click DS face: headings, the lowercase
@@ -69,6 +70,11 @@ export default async function RootLayout({
   const metaConfigured = !!(process.env.AUTH_FACEBOOK_ID && process.env.AUTH_FACEBOOK_SECRET);
   const showInternalTools = isLocalDevelopment();
   const session = await auth();
+  // Separate from showInternalTools: the persona switcher is the one internal
+  // tool that also runs on a deployed environment, for a browser that unlocked
+  // it with TEST_SWITCHER_KEY. The Supabase drawer and demo credentials stay
+  // local-only.
+  const qaSwitcherUnlocked = await isTestSwitcherUnlocked();
 
   return (
     <html
@@ -139,7 +145,7 @@ export default async function RootLayout({
         {/* Pre-launch: shown to everyone, signed in or not, so a bug on the
             signed-out surfaces (login, register, discover) can be reported. */}
         <SupportWidget />
-        {showInternalTools ? (
+        {qaSwitcherUnlocked ? (
           <TestAccountSwitcher currentEmail={session?.user?.email ?? null} />
         ) : null}
       </body>

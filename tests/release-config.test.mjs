@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
@@ -257,5 +257,138 @@ test("public media uploads prefer R2 over the Supabase fallback", () => {
   ]) {
     const source = readFileSync(path.join(root, file), "utf8");
     assert.match(source, /isR2PublicMediaConfigured\(\)/, `${file} does not prefer R2`);
+  }
+});
+
+test("every email template has an .html file, a subject, and vice versa", () => {
+  // Adding half of a template pair is silent at runtime: logEmailEvent catches
+  // the missing-file error and warn-logs it, so the email just never arrives.
+  const email = readFileSync(path.join(root, "src/lib/email.ts"), "utf8");
+
+  const union = email.match(/export type EmailTemplate =([\s\S]*?);/)?.[1];
+  assert.ok(union, "could not find the EmailTemplate union");
+  const declared = [...union.matchAll(/"([a-z0-9-]+)"/g)].map((m) => m[1]);
+  assert.ok(declared.length > 20, `parsed only ${declared.length} templates`);
+
+  const subjects = email.match(/const SUBJECTS[\s\S]*?\n};/)?.[0];
+  assert.ok(subjects, "could not find the SUBJECTS map");
+
+  for (const template of declared) {
+    assert.ok(
+      existsSync(path.join(root, "emails", `${template}.html`)),
+      `${template} is in the union but emails/${template}.html does not exist`,
+    );
+    assert.ok(
+      subjects.includes(`"${template}":`),
+      `${template} is in the union but has no subject in SUBJECTS`,
+    );
+  }
+
+  const files = readdirSync(path.join(root, "emails"))
+    .filter((f) => f.endsWith(".html"))
+    .map((f) => f.replace(/\.html$/, ""));
+  for (const file of files) {
+    assert.ok(
+      declared.includes(file),
+      `emails/${file}.html exists but ${file} is not in the EmailTemplate union`,
+    );
+  }
+});
+
+test("an unknown sign-in address is indistinguishable from a known one", () => {
+  // This branch used to return { sent: true } early, before issueMagicLink:
+  // no token, no email, and - because the rate limiter counts auth_magic_links
+  // rows - no rate limiting either. So a known address started throwing
+  // RateLimitError on the 6th post within an hour while an unknown one never
+  // did, which is a user-enumeration oracle. Both paths must issue a token.
+  const actions = readFileSync(path.join(root, "src/app/login/actions.ts"), "utf8");
+
+  // Anchor on the call site, not the import - between the account lookup and
+  // the token issue there must be no early return.
+  const beforeIssue = actions.slice(0, actions.indexOf("issueMagicLink({"));
+  const afterLookup = beforeIssue.slice(beforeIssue.lastIndexOf("profileExistsByEmail"));
+  assert.doesNotMatch(
+    afterLookup,
+    /return\s*\{/,
+    "the no-account branch returns before issueMagicLink - that restores the oracle",
+  );
+
+  assert.match(actions, /purpose: tokenPurpose/, "both paths must issue a token");
+  assert.match(actions, /"signin-no-account"/);
+});
+
+test("the QA persona switcher cannot be reached without the unlock key", () => {
+  // The switcher hands out admin and merchant sessions on a public domain, so
+  // the TEST_SWITCHER_KEY cookie is the whole security boundary. Three things
+  // must hold, and the third is the one that is easy to lose in a refactor.
+  const auth = readFileSync(path.join(root, "src/auth.ts"), "utf8");
+  const actions = readFileSync(path.join(root, "src/app/login/actions.ts"), "utf8");
+  const layout = readFileSync(path.join(root, "src/app/layout.tsx"), "utf8");
+  const gate = readFileSync(path.join(root, "src/lib/test-switcher.ts"), "utf8");
+
+  // 1. Registering the provider is NOT the gate: authorize() must re-check the
+  //    cookie, or anyone can POST /api/auth/callback/test-login with
+  //    email=admin@click.local and get an admin session.
+  const authorizeBody = auth.slice(
+    auth.indexOf('id: "test-login"'),
+    auth.indexOf('id: "test-login"') + 900,
+  );
+  assert.match(
+    authorizeBody,
+    /isTestSwitcherUnlocked/,
+    "test-login authorize() must verify the unlock cookie itself",
+  );
+  assert.match(authorizeBody, /@click\.local/, "test-login must stay in the seed namespace");
+
+  // 2. Every server action behind the switcher checks the same gate.
+  for (const action of [
+    "signOutOfTestAccount",
+    "signInAsTestAccount",
+    "startTestJourney",
+    "resetTestAccounts",
+  ]) {
+    const body = actions.slice(actions.indexOf(`export async function ${action}`));
+    assert.match(
+      body.slice(0, 400),
+      /assertTestSwitcherUnlocked/,
+      `${action} must assert the QA switcher is unlocked`,
+    );
+  }
+
+  // 3. A short key is treated as unconfigured rather than quietly guarding the
+  //    admin console with a handful of characters.
+  assert.match(gate, /MIN_KEY_LENGTH\s*=\s*(2[4-9]|[3-9]\d)/);
+  assert.match(gate, /timingSafeEqual/, "key comparison must be timing-safe");
+  assert.match(
+    gate,
+    /catch\s*\{[^}]*return false/s,
+    "an unreadable cookie jar must fail closed",
+  );
+
+  // 4. The layout mounts it behind the unlock check, not the local-dev flag.
+  assert.match(layout, /qaSwitcherUnlocked \? \(?\s*<TestAccountSwitcher/);
+});
+
+test("QA provisioning can only ever touch the @click.local namespace", () => {
+  // The switcher now writes to whatever database it is pointed at, including
+  // production. The blast radius is the seed namespace and nothing else, so
+  // every persona address and every DELETE must be scoped to it.
+  const personas = readFileSync(path.join(root, "src/lib/qa-personas.ts"), "utf8");
+  const provision = readFileSync(path.join(root, "src/lib/qa-provision.ts"), "utf8");
+
+  const emails = [...personas.matchAll(/email:\s*"([^"]+)"/g)].map((m) => m[1]);
+  assert.ok(emails.length >= 5, "expected the persona list to be found");
+  for (const email of emails) {
+    assert.ok(email.endsWith("@click.local"), `${email} escapes the seed namespace`);
+  }
+
+  // Each DELETE is scoped either to click.local or to the QA event slug list.
+  const deletes = [...provision.matchAll(/delete from [\s\S]{0,220}?`/g)].map((m) => m[0]);
+  assert.ok(deletes.length >= 3, "expected the delete statements to be found");
+  for (const statement of deletes) {
+    assert.ok(
+      /click\.local/.test(statement) || /QA_EVENTS|slug = any/.test(statement),
+      `unscoped delete in qa-provision.ts:\n${statement}`,
+    );
   }
 });

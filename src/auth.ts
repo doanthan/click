@@ -4,6 +4,7 @@ import Credentials from "next-auth/providers/credentials";
 import Facebook from "next-auth/providers/facebook";
 import Google from "next-auth/providers/google";
 import { isLocalDevelopment } from "@/lib/runtime-mode";
+import { isTestSwitcherConfigured } from "@/lib/test-switcher";
 
 function getStringCredential(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -68,18 +69,28 @@ providers.push(
   }),
 );
 
-// Local-only identity switcher for seeded QA accounts. Production email auth
-// uses the single-use token provider above; knowing an email address alone can
-// never create a session.
-if (isLocalDevelopment()) {
+// Identity switcher for the seeded QA personas. Production email auth uses the
+// single-use token provider above; knowing an email address alone can never
+// create a session.
+//
+// Registered in local dev, and on a deployed environment only when
+// TEST_SWITCHER_KEY is set. Registration is not the security boundary though -
+// `authorize` re-checks the unlock cookie on every attempt, because a provider
+// that merely exists can be driven by POSTing straight at
+// /api/auth/callback/test-login. Without that check, "email=admin@click.local"
+// would be an admin session for anyone who guessed the provider id.
+if (isLocalDevelopment() || isTestSwitcherConfigured()) {
   providers.push(
     Credentials({
       id: "test-login",
-      name: "Local test account",
+      name: "QA persona",
       credentials: {
         email: { label: "Email", type: "email" },
       },
       async authorize(credentials) {
+        const { isTestSwitcherUnlocked } = await import("@/lib/test-switcher");
+        if (!(await isTestSwitcherUnlocked())) return null;
+
         const email = getStringCredential(credentials?.email).toLowerCase();
         if (!email || !email.endsWith("@click.local")) return null;
 

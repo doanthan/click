@@ -38,6 +38,7 @@ Every route in `src/app`. URI on the left, source file on the right. Use this to
 | `/forgot-password` | `src/app/forgot-password/page.tsx` |
 | `/post-login` | `src/app/post-login/page.tsx` |
 | `/onboarding` | `src/app/onboarding/page.tsx` |
+| `/qa-unlock` | `src/app/qa-unlock/route.ts` - GET only. `?key=<TEST_SWITCHER_KEY>` sets the httpOnly cookie that reveals the top-right QA persona switcher on a deployed environment; `?lock=1` clears it. 404s on a wrong/absent key or an unconfigured deployment. Gate lives in `src/lib/test-switcher.ts` and is re-checked by the `test-login` provider and every switcher server action. |
 | `/quiz` | `src/app/quiz/page.tsx` |
 | `/quiz/life` | `src/app/quiz/life/page.tsx` (auth gate in `layout.tsx`; redirects → `/quiz/life/life-stage`) |
 | `/quiz/life/life-stage` | `src/app/quiz/life/life-stage/page.tsx` (wizard step 1/4) |

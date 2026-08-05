@@ -4,7 +4,8 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { signIn, signOut } from "@/auth";
 import { profileExistsByEmail } from "@/lib/event-repository";
-import { assertLocalDevelopment } from "@/lib/runtime-mode";
+import { assertTestSwitcherUnlocked } from "@/lib/test-switcher";
+import { provisionQaPersona, resetQaData } from "@/lib/qa-provision";
 import {
   TOKEN_TTL_MINUTES,
   issueMagicLink,
@@ -180,32 +181,50 @@ export async function signOutOfClick() {
   await signOut({ redirectTo: "/" });
 }
 
-// Clear the session from the test-account switcher so you can exercise the
+// Clear the session from the persona switcher so you can exercise the
 // signed-out ("Not signed in") state without leaving wherever you're testing.
 // `redirectTo` is constrained to a local path and defaults to "/".
 //
-// SECURITY: this action is hard-gated to the local Next.js dev server.
+// SECURITY: local dev, or a deployed environment where this browser holds the
+// TEST_SWITCHER_KEY unlock cookie. See src/lib/test-switcher.ts.
 export async function signOutOfTestAccount(formData: FormData) {
-  assertLocalDevelopment("Test-account sign-out");
+  await assertTestSwitcherUnlocked("QA persona sign-out");
   const next = getFormValue(formData, "redirectTo");
   const dest = next.startsWith("/") && !next.startsWith("//") ? next : "/";
 
   await signOut({ redirectTo: dest });
 }
 
-// Instant sign-in as one of the seeded test accounts so you can hop between
-// Attendee / Merchant / Admin without the login/logout dance. Funnels through
+// Instant sign-in as one of the seeded QA personas so you can hop between
+// attendee / merchant / admin without the login/logout dance. Funnels through
 // /post-login like every other sign-in, so the destination is decided by the
-// same admin/merchant/onboarding gates.
+// same admin/merchant/onboarding gates - the persona is a real session, not a
+// bypass of the routing you are trying to test.
 //
-// SECURITY: this action is hard-gated to the local Next.js dev server and only
-// accepts the seeded @click.local namespace.
+// SECURITY: unlocked QA session only, and only the @click.local namespace that
+// 032_clear_seed_data.sql sweeps. The provider itself re-checks the same gate.
 export async function signInAsTestAccount(formData: FormData) {
-  assertLocalDevelopment("Test-account sign-in");
+  await assertTestSwitcherUnlocked("QA persona sign-in");
   const email = getFormValue(formData, "email").toLowerCase();
   if (!email.endsWith("@click.local")) return;
 
+  // Make the persona real before minting the session, so there is no seed
+  // script to run first and no half-provisioned state to explain. Deliberately
+  // NOT caught: signing you in as a persona whose rows failed to write would
+  // put you in a state you'd then report as a bug.
+  await provisionQaPersona(email);
+
   await signIn("test-login", { email, redirectTo: "/post-login" });
+}
+
+// Delete every QA persona and their events so the sign-up journeys start from
+// zero again - the merchant application in particular is one-way, so without
+// this you can only walk it once. Signs you out, since the session's own
+// profile is one of the rows being removed.
+export async function resetTestAccounts() {
+  await assertTestSwitcherUnlocked("QA data reset");
+  await resetQaData();
+  await signOut({ redirectTo: "/" });
 }
 
 // Kick off a /test journey as the persona's seeded account. Unlike
@@ -214,9 +233,9 @@ export async function signInAsTestAccount(formData: FormData) {
 // it actually begins rather than being re-routed by the role gates. `next` is
 // constrained to a local path.
 //
-// SECURITY: same local-only and @click.local restrictions as the switcher.
+// SECURITY: same unlock and @click.local restrictions as the switcher.
 export async function startTestJourney(formData: FormData) {
-  assertLocalDevelopment("Test journeys");
+  await assertTestSwitcherUnlocked("Test journeys");
   const email = getFormValue(formData, "email").toLowerCase();
   if (!email.endsWith("@click.local")) return;
 
