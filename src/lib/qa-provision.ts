@@ -7,9 +7,10 @@ import { QA_EVENTS, QA_PERSONAS, findQaPersona, type QaPersona } from "@/lib/qa-
 // persona and the rows it needs exist by the time the session is minted.
 //
 // Everything here is confined to the @click.local namespace that
-// 032_clear_seed_data.sql already sweeps, and every statement is an idempotent
-// upsert inside one transaction - so a re-run changes nothing and a failure
-// leaves the database exactly as it was.
+// 032_clear_seed_data.sql already sweeps, and every write is idempotent inside
+// one transaction - so a re-run changes nothing, and a failed profile write
+// leaves the database exactly as it was. (A failed seed-event write rolls back
+// to its own savepoint and the rest still commits; see provisionQaPersona.)
 //
 // Callers are gated by src/lib/test-switcher.ts. Nothing in this file checks
 // permissions; it assumes the caller already did.
@@ -89,8 +90,10 @@ async function upsertPersona(
 
 /**
  * Prepare `email`'s persona, plus the host personas and their two events so
- * there is always something to book. Throws if the write fails - a QA tool that
- * quietly signs you in as the wrong thing is worse than one that errors.
+ * there is always something to book. Throws if a PROFILE write fails - a QA
+ * tool that quietly signs you in as the wrong thing is worse than one that
+ * errors. The two seed events are best-effort by comparison: each is wrapped in
+ * its own savepoint and a failure there is warn-logged, not raised.
  */
 export async function provisionQaPersona(email: string): Promise<void> {
   const target = findQaPersona(email);
@@ -127,47 +130,78 @@ export async function provisionQaPersona(email: string): Promise<void> {
     }
 
     for (const event of QA_EVENTS) {
-      await client.query(
-        `
-        insert into events (
-          slug, title, description, host_profile_id, merchant_profile_id,
-          group_name, host_name, category, status, booking_model,
-          starts_at, ends_at, location_name, address, suburb, city,
-          price_cents, capacity, relationship_goal
-        )
-        select
-          $1, $2, $3, p.id, m.id,
-          m.business_name, p.display_name, $5, 'live'::event_status,
-          'click_managed'::booking_model,
-          now() + ($6::text || ' days')::interval,
-          now() + ($6::text || ' days')::interval + interval '2 hours',
-          $7, $7, $8, 'Sydney',
-          $9::integer, $10::integer, 'Meet a couple of familiar faces.'
-        from profiles p
-        join merchant_profiles m on m.profile_id = p.id
-        where p.email = $4::citext
-        on conflict (slug) do update set
-          title = excluded.title,
-          status = excluded.status,
-          starts_at = excluded.starts_at,
-          ends_at = excluded.ends_at,
-          price_cents = excluded.price_cents,
-          capacity = excluded.capacity,
-          updated_at = now()
-        `,
-        [
-          event.slug,
-          event.title,
-          event.description,
-          event.ownerEmail,
-          event.category,
-          String(event.daysFromNow),
-          event.locationName,
-          event.suburb,
-          event.priceCents,
-          event.capacity,
-        ],
-      );
+      // Each seed event gets its own savepoint: the personas are the point of
+      // this tool, the demo catalogue is garnish, and a host persona that
+      // created its own event over this slot by hand legitimately trips the
+      // overlap guard below. Losing a seed event must not take the whole
+      // persona switch down with it.
+      await client.query("savepoint qa_seed_event");
+      try {
+        // Re-date first, and INSERT only when nothing owns the slug. This can
+        // NOT be an INSERT that upserts on the slug conflict, because the
+        // prevent_merchant_event_overlap trigger is BEFORE INSERT, so it runs
+        // before the conflict is resolved, and `new.id` is a freshly defaulted
+        // uuid - so it sees the row already sitting on this slug as a DIFFERENT
+        // event of the same merchant covering the same two hours and raises
+        // "merchant has an overlapping live event". That made the first persona
+        // switch after a reset work and every switch after it fail. The UPDATE
+        // fires the same trigger with the row's real id, which the guard's
+        // `existing.id <> new.id` correctly excludes.
+        const redated = await client.query(
+          `
+          update events set
+            title = $2,
+            status = 'live'::event_status,
+            starts_at = now() + ($3::text || ' days')::interval,
+            ends_at = now() + ($3::text || ' days')::interval + interval '2 hours',
+            price_cents = $4::integer,
+            capacity = $5::integer,
+            updated_at = now()
+          where slug = $1
+          `,
+          [event.slug, event.title, String(event.daysFromNow), event.priceCents, event.capacity],
+        );
+
+        if (redated.rowCount === 0) {
+          await client.query(
+            `
+            insert into events (
+              slug, title, description, host_profile_id, merchant_profile_id,
+              group_name, host_name, category, status, booking_model,
+              starts_at, ends_at, location_name, address, suburb, city,
+              price_cents, capacity, relationship_goal
+            )
+            select
+              $1, $2, $3, p.id, m.id,
+              m.business_name, p.display_name, $5, 'live'::event_status,
+              'click_managed'::booking_model,
+              now() + ($6::text || ' days')::interval,
+              now() + ($6::text || ' days')::interval + interval '2 hours',
+              $7, $7, $8, 'Sydney',
+              $9::integer, $10::integer, 'Meet a couple of familiar faces.'
+            from profiles p
+            join merchant_profiles m on m.profile_id = p.id
+            where p.email = $4::citext
+            `,
+            [
+              event.slug,
+              event.title,
+              event.description,
+              event.ownerEmail,
+              event.category,
+              String(event.daysFromNow),
+              event.locationName,
+              event.suburb,
+              event.priceCents,
+              event.capacity,
+            ],
+          );
+        }
+        await client.query("release savepoint qa_seed_event");
+      } catch (error) {
+        await client.query("rollback to savepoint qa_seed_event");
+        console.warn("[qa] seed event skipped", { slug: event.slug, error });
+      }
     }
 
     await client.query("commit");
