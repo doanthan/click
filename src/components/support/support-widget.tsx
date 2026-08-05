@@ -476,13 +476,15 @@ export default function SupportWidget() {
 
   return (
     <div data-support-widget>
-      {/* Floating trigger */}
+      {/* Floating trigger. bottom-20 alone sat ON the mobile bottom nav once a
+          notched phone added its safe-area inset (56px tabs + ~34px inset >
+          80px), so the offset carries the inset too. Above lg the nav is gone. */}
       {!open && (
         <button
           type="button"
           onClick={() => setOpen(true)}
           aria-label="Report a bug"
-          className="fixed bottom-20 right-5 z-[80] flex items-center gap-2 rounded-full px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:scale-105"
+          className="fixed right-5 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-[80] flex items-center gap-2 rounded-full px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:scale-105 lg:bottom-5"
           style={{ backgroundColor: ACCENT }}
         >
           <BugIcon />

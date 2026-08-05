@@ -1,9 +1,17 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
 import { useMemo, useRef, useState } from "react";
 import { openLoginModal } from "./login-modal-host";
-import { EventCheckoutModal } from "./event-checkout-modal";
+
+// Split out of the browse bundle: the Stripe SDKs are ~50KB of JS that only a
+// shopper who has actually started checkout ever needs. Every event card pulls
+// this component in via EventDetailModal, so a static import taxed discovery.
+const EventCheckoutModal = dynamic(
+  () => import("./event-checkout-modal").then((m) => m.EventCheckoutModal),
+  { ssr: false },
+);
 
 type PaymentState = "idle" | "submitting" | "redirecting" | "paying" | "error";
 

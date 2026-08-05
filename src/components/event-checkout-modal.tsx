@@ -7,11 +7,22 @@ import {
 } from "@stripe/react-stripe-js";
 import { useEffect } from "react";
 
-// Loaded once per page. The publishable key is inlined at build time for the
-// client; when it's missing the button never opens this modal (it falls back to
-// a hosted redirect), so the non-null assertion is safe at the call site.
+// The publishable key is inlined at build time for the client; when it's
+// missing the button never opens this modal (it falls back to a hosted
+// redirect), so the null branch below is the "not configured" state.
 const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
-const stripePromise = publishableKey ? loadStripe(publishableKey) : null;
+
+// Stripe.js is fetched on FIRST CHECKOUT, not on module evaluation. Calling
+// loadStripe() at the top level made merely importing this file (EventCard →
+// EventDetailModal → EventPaymentButton) pull js.stripe.com plus Stripe's
+// m.stripe.network fingerprinting frame on every browse page. Memoised so
+// re-renders and a second modal reuse the one promise.
+let stripePromise: ReturnType<typeof loadStripe> | null = null;
+function getStripe() {
+  if (!publishableKey) return null;
+  stripePromise ??= loadStripe(publishableKey);
+  return stripePromise;
+}
 
 // On-page Stripe Embedded Checkout in a modal. Stripe redirects the top window
 // to the session's return_url on completion, so there's no onComplete handler —
@@ -24,6 +35,8 @@ export function EventCheckoutModal({
   clientSecret: string;
   onClose: () => void;
 }) {
+  const stripe = getStripe();
+
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       if (event.key === "Escape") onClose();
@@ -79,10 +92,10 @@ export function EventCheckoutModal({
             ✕
           </button>
         </div>
-        {stripePromise ? (
+        {stripe ? (
           <div className="overflow-hidden rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)] p-2 sm:p-3">
             <EmbeddedCheckoutProvider
-              stripe={stripePromise}
+              stripe={stripe}
               options={{ clientSecret }}
             >
               <EmbeddedCheckout />

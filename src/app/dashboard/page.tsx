@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { auth, isAdminEmail } from "@/auth";
 import { EventCard } from "@/components/event-card";
 import { CategoryCircle, Icon, Spark, categoryGlyphKey } from "@/components/ds";
+import { EmptyState } from "@/components/empty-state";
 import { MomentBanner, Section } from "@/components/dashboard-ds";
 import { Reveal } from "@/components/reveal";
 import { PostEventClickCard } from "@/components/post-event-click-card";
@@ -269,15 +270,14 @@ export default async function DashboardPage() {
             </Reveal>
           ) : (
             <Reveal delay={60}>
-              <div className="rounded-[var(--radius-xl)] bg-[color:var(--lav-bg)] px-6 py-7 text-center">
-                <p className="text-sm leading-relaxed text-[color:var(--ink-soft)]">
-                  Add a few interests to{" "}
-                  <Link href="/profile/edit" className="font-semibold text-[color:var(--purple)]">
-                    your profile
-                  </Link>{" "}
-                  and we&apos;ll start surfacing people with real overlap.
-                </p>
-              </div>
+              <EmptyState
+                eyebrow="Nobody yet"
+                icon={<Icon name="users" size={24} stroke={1.7} />}
+                title="Tell us what you're into."
+                body="A few interests on your profile is all we need to start surfacing people with real overlap."
+                actionHref="/profile/edit"
+                actionLabel="Add interests"
+              />
             </Reveal>
           )}
         </Section>
@@ -350,11 +350,14 @@ export default async function DashboardPage() {
             </div>
           ) : (
             <Reveal delay={60}>
-              <div className="rounded-[var(--radius-xl)] bg-[color:var(--lav-bg)] px-6 py-7 text-center">
-                <p className="text-sm leading-relaxed text-[color:var(--ink-soft)]">
-                  Nothing saved yet - your next event is where it happens.
-                </p>
-              </div>
+              <EmptyState
+                eyebrow="Nothing saved yet"
+                icon={<Icon name="bookmark" size={24} stroke={1.7} />}
+                title="Save the ones you're eyeing."
+                body="Hit Save on any event and it waits for you here - your next one is where it happens."
+                actionHref="/discover"
+                actionLabel="See what's on"
+              />
             </Reveal>
           )}
         </Section>
@@ -443,12 +446,16 @@ function SetupRow({
   item: { key: string; label: string; done: boolean; href: string };
   featured?: boolean;
 }) {
+  // The WHOLE row is the link, not just the 13px "Add →" - the row is the
+  // affordance people aim at, and on a phone a text link that small is a miss
+  // waiting to happen. min-h-11 keeps every row at the 44px touch floor.
   return (
-    <div
-      className={`flex items-center gap-3.5 ${
+    <Link
+      href={item.href}
+      className={`group flex min-h-11 items-center gap-3.5 transition-colors ${
         featured
-          ? "my-1.5 rounded-xl bg-[color-mix(in_srgb,var(--lavender)_15%,var(--paper))] px-3 py-2.5"
-          : "border-t border-[color:var(--line-soft)] px-0.5 py-3"
+          ? "my-1.5 rounded-xl bg-[color-mix(in_srgb,var(--lavender)_15%,var(--paper))] px-3 py-2.5 hover:bg-[color:var(--lavender-200)]"
+          : "border-t border-[color:var(--line-soft)] px-0.5 py-3 hover:bg-[color:var(--lavender-100)]"
       }`}
     >
       <span
@@ -465,13 +472,13 @@ function SetupRow({
           ) : null}
         </span>
       </span>
-      <Link
-        href={item.href}
-        className="font-display shrink-0 text-[13px] font-semibold text-[color:var(--purple)] hover:underline"
+      <span
+        aria-hidden
+        className="font-display shrink-0 text-[13px] font-semibold text-[color:var(--purple)] group-hover:underline"
       >
         Add →
-      </Link>
-    </div>
+      </span>
+    </Link>
   );
 }
 

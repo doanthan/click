@@ -30,9 +30,16 @@ export function ClickRadar({
           <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[color:var(--lavender-100)] text-[color:var(--purple)]">
             <Icon name="trend" size={16} />
           </span>
-          <p className="text-sm leading-snug text-[color:var(--ink-soft)]">
+          <p className="min-w-0 flex-1 text-sm leading-snug text-[color:var(--ink-soft)]">
             As you go to events, your radar sharpens.
           </p>
+          {/* The row is otherwise a dead end - give it the one next step. */}
+          <Link
+            href="/discover"
+            className="font-display shrink-0 text-[13px] font-semibold text-[color:var(--purple)] hover:underline"
+          >
+            Find one →
+          </Link>
         </div>
       </div>
     );

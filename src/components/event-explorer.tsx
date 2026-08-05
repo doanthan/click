@@ -163,7 +163,11 @@ export function EventExplorer({
   const [timeOfDay, setTimeOfDay] = useState<TimeOfDay>("all");
   const [freeOnly, setFreeOnly] = useState(false);
   const [distanceKm, setDistanceKm] = useState<number>(MAX_DISTANCE_KM);
-  const [sortMode, setSortMode] = useState<SortMode>("nearest");
+  // Default to "soonest", not "nearest": until someone shares a location we
+  // measure from Sydney CBD, so "Nearest" would silently rank an event on a
+  // guess about where they are. Sharing a location switches it (see below) -
+  // that's the point of tapping it.
+  const [sortMode, setSortMode] = useState<SortMode>("soonest");
   const [tagFilter, setTagFilter] = useState(initialTag);
   const [categoryFilter, setCategoryFilter] = useState(initialCategory);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -261,18 +265,26 @@ export function EventExplorer({
   }, [events]);
 
   // Sync tag/category to the URL so deep links from /events?tag=… still work.
+  //
+  // DEBOUNCED, because router.replace re-runs the page on the server: every
+  // keystroke used to cost a full RSC round trip (and the discover page's DB
+  // queries with it) for a filter that is entirely client-side. The list itself
+  // updates instantly off `searchQuery`; only the shareable URL waits.
   useEffect(() => {
     if (skipFirstSync.current) {
       skipFirstSync.current = false;
       return;
     }
-    const next = new URLSearchParams();
-    if (tagFilter.trim()) next.set("tag", tagFilter.trim());
-    if (categoryFilter) next.set("category", categoryFilter);
-    if (searchQuery.trim()) next.set("q", searchQuery.trim());
-    if (dateWindow !== "all") next.set("date", dateWindow);
-    const queryString = next.toString();
-    router.replace(queryString ? `${pathname}?${queryString}` : pathname, { scroll: false });
+    const timer = setTimeout(() => {
+      const next = new URLSearchParams();
+      if (tagFilter.trim()) next.set("tag", tagFilter.trim());
+      if (categoryFilter) next.set("category", categoryFilter);
+      if (searchQuery.trim()) next.set("q", searchQuery.trim());
+      if (dateWindow !== "all") next.set("date", dateWindow);
+      const queryString = next.toString();
+      router.replace(queryString ? `${pathname}?${queryString}` : pathname, { scroll: false });
+    }, 350);
+    return () => clearTimeout(timer);
   }, [tagFilter, categoryFilter, searchQuery, dateWindow, router, pathname]);
 
   function requestLocation() {
@@ -288,6 +300,8 @@ export function EventExplorer({
         setLocationStatus("shared");
         setLocationQuery("Your current location");
         setSelectedSuburb("All Sydney");
+        // Now that distance means something real, rank by it.
+        setSortMode("nearest");
       },
       () => setLocationStatus("denied"),
       { enableHighAccuracy: true, timeout: 8000, maximumAge: 60_000 },
@@ -400,6 +414,7 @@ export function EventExplorer({
             setLocationStatus("shared");
             setLocationQuery(place.suburb || place.name || place.address);
             setSelectedSuburb("All Sydney");
+            setSortMode("nearest");
           }}
           placeholder="Bondi, Parramatta, Sydney CBD"
         />
@@ -498,8 +513,10 @@ export function EventExplorer({
       </label>
 
       {/* The canonical category treatment: ONE purple line glyph on a lavender
-          disc; selected fills purple. Never an emoji, never a per-category hue. */}
-      {availableCategories.length > 0 ? (
+          disc; selected fills purple. Never an emoji, never a per-category hue.
+          Hidden while the catalogue is empty - sixteen category discs above a
+          "no events yet" panel are sixteen taps that all lead nowhere. */}
+      {!nothingToShow && availableCategories.length > 0 ? (
         <nav aria-label="Browse by category" className="ckRail mt-5 -mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1 lg:flex-wrap lg:overflow-visible">
           <button
             type="button"
@@ -529,23 +546,26 @@ export function EventExplorer({
 
       <div className="mt-5 flex items-start gap-9">
         {/* The filter sidebar appears only from 1024 up; below that the Filters
-            button → bottom sheet carries the same controls. */}
-        <aside className="sticky top-20 hidden w-[260px] shrink-0 lg:block">
-          {filterBody}
-          {anyFilter ? (
-            <button
-              type="button"
-              onClick={resetAll}
-              className="font-display inline-flex items-center gap-1.5 text-[13.5px] font-semibold text-[color:var(--purple)] hover:underline"
-            >
-              <Icon name="x" size={15} stroke={2.2} />
-              Reset all
-            </button>
-          ) : null}
-        </aside>
+            button → bottom sheet carries the same controls. With an empty
+            catalogue there is nothing to narrow, so the whole rig stands down. */}
+        {!nothingToShow ? (
+          <aside className="sticky top-20 hidden w-[260px] shrink-0 lg:block">
+            {filterBody}
+            {anyFilter ? (
+              <button
+                type="button"
+                onClick={resetAll}
+                className="font-display inline-flex items-center gap-1.5 text-[13.5px] font-semibold text-[color:var(--purple)] hover:underline"
+              >
+                <Icon name="x" size={15} stroke={2.2} />
+                Reset all
+              </button>
+            ) : null}
+          </aside>
+        ) : null}
 
         <div className="min-w-0 flex-1">
-          <div className="mb-4 flex items-center justify-between gap-3">
+          <div className={`mb-4 flex items-center justify-between gap-3 ${nothingToShow ? "hidden" : ""}`}>
             <span className="text-sm font-semibold text-[color:var(--ink)]">
               {totalCount} {totalCount === 1 ? "event" : "events"}
             </span>
