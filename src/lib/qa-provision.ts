@@ -1,3 +1,4 @@
+import { isAdminEmail } from "@/auth";
 import { getPostgresPool } from "@/lib/postgres";
 import { QA_EVENTS, QA_PERSONAS, findQaPersona, type QaPersona } from "@/lib/qa-personas";
 
@@ -17,6 +18,17 @@ async function upsertPersona(
   client: { query: (text: string, values?: unknown[]) => Promise<unknown> },
   persona: QaPersona,
 ) {
+  // This app has TWO admin checks, and they read different sources: the /admin
+  // pages gate on isAdminEmail (the ADMIN_EMAILS env var), while the admin
+  // repository actions gate on requireAdminProfile (profiles.role). Writing
+  // role='admin' here regardless would put the admin persona in a half-state -
+  // refused by the console, yet authorized to verify merchants and approve
+  // events through the API. So the seeded role follows ADMIN_EMAILS: the
+  // persona has admin power exactly when the deployment says that address is
+  // an admin, and none at all when it doesn't.
+  const role =
+    persona.role === "admin" && !isAdminEmail(persona.email) ? "attendee" : persona.role;
+
   await client.query(
     `
     insert into profiles (
@@ -33,7 +45,7 @@ async function upsertPersona(
     `,
     [
       `qa:${persona.email.split("@")[0]}`,
-      persona.role,
+      role,
       persona.email,
       persona.displayName,
       persona.suburb,
