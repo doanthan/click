@@ -7,6 +7,8 @@ import test from "node:test";
 // >= 23.6); the repo runs Node 24.
 import {
   sanitizeAmount,
+  formatMoney,
+  formatPriceLabel,
   PRICE_PATTERN,
   CAPACITY_PATTERN,
 } from "../src/lib/amounts.ts";
@@ -82,4 +84,35 @@ test("the patterns are not global, so repeated tests stay honest", () => {
   assert.equal(CAPACITY_PATTERN.global, false);
   assert.ok(PRICE_PATTERN.test("12.50"));
   assert.ok(PRICE_PATTERN.test("12.50"));
+});
+
+// Display side of the same money path. A $12.50 event used to advertise "$12"
+// on the card and the detail page (maximumFractionDigits: 0), then the pay
+// button - a different formatter with the default two digits - quoted "$25.00"
+// for two seats. Quoting a number the card does not charge is the bug.
+test("cents are shown when there are cents, hidden when there are none", () => {
+  assert.equal(formatMoney(3500), "$35");
+  assert.equal(formatMoney(1200), "$12");
+  assert.equal(formatMoney(1250), "$12.50");
+  assert.equal(formatMoney(1205), "$12.05");
+});
+
+test("the quoted price is never rounded down", () => {
+  // The regression itself: $12.50 must never render as "$12".
+  assert.notEqual(formatMoney(1250), "$12");
+  assert.equal(formatPriceLabel(1250), "$12.50");
+  // Two seats at $12.50 is the number the pay button shows, same helper.
+  assert.equal(formatMoney(2500), "$25");
+  assert.equal(formatMoney(2501), "$25.01");
+});
+
+test("only formatPriceLabel knows about free", () => {
+  assert.equal(formatPriceLabel(0), "Free");
+  // formatMoney stays literal so a $0.00 refund or receipt line reads honestly.
+  assert.equal(formatMoney(0), "$0");
+});
+
+test("thousands separate and a missing currency falls back to AUD", () => {
+  assert.equal(formatMoney(123456), "$1,234.56");
+  assert.equal(formatMoney(1250, ""), "$12.50");
 });

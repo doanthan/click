@@ -1,5 +1,5 @@
 /**
- * Cancellation refund policy — single source of truth for the tiered refund a
+ * Cancellation refund policy - single source of truth for the tiered refund a
  * user receives when THEY cancel a paid booking. Imported by both the server
  * (to initiate the actual Stripe refund) and the client (to show the exact
  * dollar amount in the cancel dialog), so the number the user sees always
@@ -7,17 +7,19 @@
  *
  * Tiers (hours before the event starts):
  *   ≥ 48h  → 100% refund
- *   24–48h → 50% refund
+ *   24-48h → 50% refund
  *   < 24h  → no refund
  *
  * A MERCHANT cancelling the whole event is always a 100% refund and does NOT
- * go through this function — see `cancelMerchantEvent`.
+ * go through this function - see `cancelMerchantEvent`.
  *
  * Note: the refund is computed on the full amount the buyer paid
  * (`amount_cents` = ticket + booking fee). We refund the booking fee too on
- * partial/full refunds — simpler and more generous than splitting it out, and
+ * partial/full refunds - simpler and more generous than splitting it out, and
  * we don't persist the fee/ticket split on the transaction anyway.
  */
+
+import { formatMoney } from "./amounts";
 
 export type RefundTier = "full" | "half" | "none";
 
@@ -25,7 +27,7 @@ export type RefundQuote = {
   /** Amount to refund, in cents (already rounded). */
   refundCents: number;
   tier: RefundTier;
-  /** 100 | 50 | 0 — for copy like "50% refund". */
+  /** 100 | 50 | 0 - for copy like "50% refund". */
   percent: 0 | 50 | 100;
   /** Whole hours until the event starts (negative if already started). */
   hoursUntilStart: number;
@@ -69,14 +71,13 @@ export function quoteCancellationRefund(
   };
 }
 
-/** Human label for the cancel dialog, e.g. "Full refund — $35.00". */
+/** Human label for the cancel dialog, e.g. "Full refund - $35" or "- $12.50". */
 export function refundQuoteLabel(quote: RefundQuote, currency = "AUD"): string {
-  const dollars = new Intl.NumberFormat("en-AU", {
-    style: "currency",
-    currency,
-  }).format(quote.refundCents / 100);
+  // Same helper the ticket price and the pay button use: a refund quoted as
+  // "$12.50" against a ticket sold as "$12.50" is the whole point.
+  const dollars = formatMoney(quote.refundCents, currency);
 
-  if (quote.tier === "full") return `Full refund — ${dollars}`;
-  if (quote.tier === "half") return `Partial refund (50%) — ${dollars}`;
-  return "No refund — cancelling within 24 hours of the event";
+  if (quote.tier === "full") return `Full refund - ${dollars}`;
+  if (quote.tier === "half") return `Partial refund (50%) - ${dollars}`;
+  return "No refund - cancelling within 24 hours of the event";
 }

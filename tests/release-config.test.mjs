@@ -94,10 +94,14 @@ test("checkout reuses an active hold and only books published event states", () 
     path.join(root, "src/app/api/events/[eventId]/checkout/route.ts"),
     "utf8",
   );
-  assert.match(
-    checkout,
-    /idempotencyKey: `click-checkout-\$\{hold\.paymentTransactionId\}`/,
-  );
+  // The key stays scoped to the payment transaction, so a double-click or a
+  // lost response still replays one Session instead of creating two. It now
+  // ALSO carries a digest of the submitted guests: when corrected guest details
+  // force the route to expire and rebuild the Session, a transaction-only key
+  // would make Stripe replay its cached response and hand back the very Session
+  // we just expired - typo'd invite address and all.
+  assert.match(checkout, /idempotencyKey: `click-checkout-\$\{hold\.paymentTransactionId\}-\$\{createHash\(/);
+  assert.match(checkout, /\.update\(submittedGuests\)/);
   assert.match(checkout, /expires_at: Math\.floor\(hold\.holdExpiresAt\.getTime\(\) \/ 1000\)/);
   assert.match(checkout, /if \(hold && !hold\.reused\)/);
 
@@ -454,3 +458,453 @@ test("QA provisioning can only ever touch the @click.local namespace", () => {
   }
 });
 
+
+test("the public profile projection exposes interest tags only", () => {
+  // user_tags carries three kinds of tag. Life-quiz answers land there as
+  // tag_type 'life' - "Recently single", "New parent", "Career pivot" - and
+  // getPublicProfileById used to select the lot, so answers collected to tune
+  // suggestions rendered as public chips to anyone with the URL, signed out
+  // included. getOwnProfile filters, so the owner never saw them on their own
+  // profile and could not discover the disclosure. Keep the filter in the SQL:
+  // this function IS the public projection.
+  const repo = readFileSync(path.join(root, "src/lib/event-repository.ts"), "utf8");
+  const fn = repo.slice(repo.indexOf("export async function getPublicProfileById"));
+  const body = fn.slice(0, fn.indexOf("\nexport "));
+
+  assert.match(
+    body,
+    /join tags tag on tag\.id = ut\.tag_id\s+where ut\.profile_id = \$1::uuid\s+and tag\.tag_type = 'interest'/,
+    "getPublicProfileById must filter user_tags down to tag_type 'interest'",
+  );
+});
+
+test("a paid booking always records the PaymentIntent that can refund it", () => {
+  // stripe_payment_intent_id is the ONLY key syncTransactionFromStripe matches
+  // on, so without it stripe_charge_id can never backfill and issueRefund
+  // dead-ends at "no captured charge to refund yet" - unrefundable by any path,
+  // including the admin console's "Sync from Stripe". Stripe creates the PI
+  // lazily, so the webhook is usually the first place it exists.
+  const webhook = readFileSync(
+    path.join(root, "src/app/api/webhooks/stripe/route.ts"),
+    "utf8",
+  );
+  const completed = webhook.slice(webhook.indexOf('case "checkout.session.completed"'));
+  const branch = completed.slice(0, completed.indexOf("case \"checkout.session.expired\""));
+  assert.match(
+    branch,
+    /attachPaymentIntent\(/,
+    "the checkout.session.completed branch must attach the PaymentIntent",
+  );
+
+  // The cron backstop must attach BEFORE markPaymentSucceeded's short-circuit,
+  // or it skips exactly the rows a webhook already confirmed - the ones that
+  // need repairing.
+  const sync = readFileSync(path.join(root, "src/lib/stripe-sync.ts"), "utf8");
+  const reconcile = sync.slice(sync.indexOf("export async function reconcilePendingPayments"));
+  const scoped = reconcile.slice(0, reconcile.indexOf("\nexport "));
+  assert.ok(
+    scoped.indexOf("attachPaymentIntent(") < scoped.indexOf("markPaymentSucceeded("),
+    "reconcilePendingPayments must attach the PI before the confirmed short-circuit",
+  );
+});
+
+test("the bug queue is readable only by an operator, but anyone may report", () => {
+  // A support ticket carries the reporter's name and their free-text account of
+  // what broke. GET used to answer any anonymous caller, and PATCH let anyone
+  // close, reword or reopen someone else's ticket. Reporting stays open on
+  // purpose so a broken signed-out surface can still be reported.
+  const list = readFileSync(path.join(root, "src/app/api/support/ticket/route.ts"), "utf8");
+  const get = list.slice(list.indexOf("export async function GET"));
+  assert.match(get, /canTriageSupportTickets\(\)/, "GET must gate on an operator");
+
+  const post = list.slice(
+    list.indexOf("export async function POST"),
+    list.indexOf("export async function GET"),
+  );
+  assert.doesNotMatch(
+    post,
+    /canTriageSupportTickets\(\)/,
+    "reporting must stay open to everyone",
+  );
+
+  const patch = readFileSync(
+    path.join(root, "src/app/api/support/ticket/[ticketRef]/route.ts"),
+    "utf8",
+  );
+  assert.match(patch, /canTriageSupportTickets\(\)/, "PATCH must gate on an operator");
+
+  // The gate itself: admins, or a browser holding the QA unlock. Local dev stays
+  // open so nothing changes while developing.
+  const access = readFileSync(path.join(root, "src/lib/support-access.ts"), "utf8");
+  assert.match(access, /isTestSwitcherUnlocked\(\)/);
+  assert.match(access, /isAdminEmail\(/);
+});
+
+test("a guarded deep link survives sign-in", () => {
+  // Every consumer of ?callbackUrl runs it through a guard that requires a
+  // leading "/" and rejects "//". The middleware used to send request.nextUrl
+  // .href - absolute - so the guard rejected it and silently substituted
+  // /post-login. Every deep link into a guarded route was dropped at sign-in:
+  // a host tapping "View bookings" in an RSVP email landed on /merchant.
+  const proxy = readFileSync(path.join(root, "src/proxy.ts"), "utf8");
+  assert.match(
+    proxy,
+    /callbackUrl",\s*\n?\s*request\.nextUrl\.pathname \+ request\.nextUrl\.search/,
+    "the middleware must send a path-relative callbackUrl",
+  );
+  assert.doesNotMatch(proxy, /callbackUrl", request\.nextUrl\.href/);
+
+  for (const file of ["src/app/login/page.tsx", "src/app/register/page.tsx"]) {
+    const page = readFileSync(path.join(root, file), "utf8");
+    assert.match(page, /startsWith\("\/"\)/, `${file} must still reject absolute callbacks`);
+  }
+});
+
+test("the event JSON and .ics routes gate exactly what the page gates", () => {
+  // The page 404s a pending/rejected/cancelled event and hides the venue until
+  // you RSVP. Both sibling routes served the same record with neither gate, so
+  // the whole thing was one curl away from being decorative.
+  for (const file of [
+    "src/app/api/events/[eventId]/route.ts",
+    "src/app/api/events/[eventId]/ics/route.ts",
+  ]) {
+    const route = readFileSync(path.join(root, file), "utf8");
+    assert.match(route, /PUBLIC_EVENT_STATUSES\.has\(event\.status\)/, `${file} status gate`);
+    assert.match(route, /viewerCanSeeVenue\(/, `${file} venue gate`);
+  }
+
+  // One definition, shared - not a copy per call site.
+  const repo = readFileSync(path.join(root, "src/lib/event-repository.ts"), "utf8");
+  assert.match(repo, /export const PUBLIC_EVENT_STATUSES/);
+  const page = readFileSync(path.join(root, "src/app/events/[slug]/page.tsx"), "utf8");
+  assert.doesNotMatch(
+    page,
+    /const PUBLIC_EVENT_STATUSES = new Set/,
+    "the page must import the shared set, not redeclare it",
+  );
+});
+
+test("the pilot boundary has exactly one definition", () => {
+  // The wizard's notice and the server's waitlist branch used different postcode
+  // lists, so a host in Camden or Penrith saw no out-of-pilot warning, was told
+  // "in the queue within 1 business day", and was then emailed "Click isn't live
+  // in your suburb". Two contradictory messages about the same submission.
+  const geo = readFileSync(path.join(root, "src/lib/geo.ts"), "utf8");
+  assert.match(geo, /export function isWithinSydneyPilot/);
+
+  const wizard = readFileSync(path.join(root, "src/components/merchant-signup-wizard.tsx"), "utf8");
+  assert.match(wizard, /isWithinSydneyPilot\(/);
+  assert.doesNotMatch(
+    wizard,
+    /const SYDNEY_POSTCODE_RANGES/,
+    "the wizard must not carry its own copy of the ranges",
+  );
+
+  const repo = readFileSync(path.join(root, "src/lib/event-repository.ts"), "utf8");
+  assert.match(repo, /const isWithinPilotArea = isWithinSydneyPilot/);
+});
+
+test("a refund releases the seat and tells the attendee", () => {
+  // issueRefund only ever moved money. An admin refund left the buyer confirmed
+  // on the roster, holding a seat the waitlist never got, still on the reminder
+  // list, and never notified.
+  const sync = readFileSync(path.join(root, "src/lib/stripe-sync.ts"), "utf8");
+  assert.match(sync, /settleRefundedBooking\(/);
+  assert.match(
+    sync,
+    /input\.settleBooking && newStatus === "refunded"/,
+    "seat release is for FULL refunds only",
+  );
+
+  // Opt-in, because cancelRegistration already cancels the seat AND promotes the
+  // queue before calling issueRefund - doing it twice would promote two people
+  // into one freed seat.
+  const repo = readFileSync(path.join(root, "src/lib/event-repository.ts"), "utf8");
+  const cancelRegistration = repo.slice(
+    repo.indexOf("export async function cancelRegistration"),
+    repo.indexOf("export async function cancelRegistration") + 12000,
+  );
+  assert.doesNotMatch(
+    cancelRegistration,
+    /settleBooking: true/,
+    "the attendee-cancel path must not double-release the seat",
+  );
+
+  const refundRoute = readFileSync(
+    path.join(root, "src/app/api/admin/transactions/[id]/refund/route.ts"),
+    "utf8",
+  );
+  assert.match(refundRoute, /settleBooking: true/, "the admin console refund must settle");
+});
+
+test("moving real money needs a second tap", () => {
+  // The amount box opens pre-filled with the full refundable balance against a
+  // LIVE key. Every other destructive admin action is behind ConfirmDialog.
+  const table = readFileSync(path.join(root, "src/components/admin-transactions-table.tsx"), "utf8");
+  assert.match(table, /ConfirmDialog/);
+  assert.match(table, /onClick=\{requestRefund\}/, "the button must stage, not submit");
+  assert.doesNotMatch(table, /onClick=\{submit\}/);
+});
+
+test("the host's RSVP notification links somewhere that exists", () => {
+  // /merchant/events/[eventId] resolves its param as a SLUG, so the UUID this
+  // used to send 404'd - both CTAs in the host's primary notification were dead.
+  const repo = readFileSync(path.join(root, "src/lib/event-repository.ts"), "utf8");
+  assert.doesNotMatch(
+    repo,
+    /merchant\/events\/\$\{row\.event_id\}/,
+    "merchant event links must use the slug, never the UUID",
+  );
+});
+
+test("a lapsed plan can be re-planned, and a re-suggestion is not born expired", () => {
+  const repo = readFileSync(path.join(root, "src/lib/event-repository.ts"), "utf8");
+  // expireClickLifecycles parks a still-ACTIVE mutual at coord_state 'dormant',
+  // and the drawer renders those as the open "suggest a plan" step - so the
+  // guard has to accept them or every suggestion that step invites fails.
+  assert.match(
+    repo,
+    /mutual\.coord_state !== "open" && mutual\.coord_state !== "dormant"/,
+  );
+  // Re-pointing an accepted-but-dead plan must reset the clock: an accepted row
+  // is exempt from clock-expiry, so its deadline is routinely already past, and
+  // flipping status back to 'pending' without moving expires_at re-projected the
+  // pair straight to "This plan wound down".
+  const proposeAlt = repo.slice(
+    repo.indexOf("export async function proposeAlternativeForProposal"),
+    repo.indexOf("export async function proposeAlternativeForProposal") + 9000,
+  );
+  assert.match(proposeAlt, /expires_at = now\(\) \+ interval/);
+});
+
+test("a mutual with nothing to suggest does not fake a plan", () => {
+  // Creating the proposal with a null event advanced coord_state to 'proposed',
+  // which asks the other person "you in?" about a plan that does not exist and
+  // renders no Confirm button, because there is no event to confirm.
+  const repo = readFileSync(path.join(root, "src/lib/event-repository.ts"), "utf8");
+  assert.match(repo, /if \(suggestedEvent\) \{/);
+  assert.doesNotMatch(repo, /\[mutualClickId, suggestedEvent\?\.id \?\? null, profile\.id\]/);
+});
+
+test("the host funnel's only email path reports its own failures", () => {
+  // signInWithEmail redirects to /merchant/signup?error=<code> on a failed send
+  // (RateLimited trips at 5/hour). The page read only ?emailSent, so it
+  // re-rendered byte-identical - a dead button on the entry point to the whole
+  // merchant funnel.
+  const page = readFileSync(path.join(root, "src/app/merchant/signup/page.tsx"), "utf8");
+  assert.match(page, /authErrorMessage\(params\?\.error\)/);
+  assert.match(page, /errorMessage=\{errorMessage\}/);
+
+  // One error table, so a code can't be handled on one surface and not another.
+  const copy = readFileSync(path.join(root, "src/lib/auth-error-copy.ts"), "utf8");
+  for (const code of ["RateLimited", "EmailUnavailable"]) {
+    assert.match(copy, new RegExp(code), `${code} needs copy`);
+  }
+});
+
+test("the host landing page states no metric it cannot compute", () => {
+  // "7 days · Avg. time to first booking" and "94% · Show-up rate" were invented
+  // figures presented as measured platform performance to businesses making a
+  // commercial decision, on a platform with no public traffic.
+  const page = readFileSync(path.join(root, "src/app/merchant/signup/page.tsx"), "utf8");
+  // Scope to the RENDERED tiles. The comment above them deliberately quotes the
+  // claims that were removed, so a whole-file grep would match its own
+  // documentation and never fail for the reason that matters.
+  const tiles = page.slice(page.indexOf("<dl className="), page.indexOf("</dl>"));
+  for (const claim of ["Avg. time to first booking", "Show-up rate", "94%"]) {
+    assert.doesNotMatch(
+      tiles,
+      new RegExp(claim.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+      `"${claim}" is not a number this platform can compute`,
+    );
+  }
+  // The fee is percentage-only: calculateApplicationFee has no fixed component
+  // and booking_fee_bps defaults to 0, so "+ 30c" overstated it.
+  assert.doesNotMatch(tiles, /2\.9% \+ 30/);
+});
+
+test("the signup wizard collects the business type Stripe onboarding needs", () => {
+  // Every merchant was created with identity.entity_type "company", so an AU
+  // sole trader was asked for a registered company name and ACN they don't have
+  // and could never finish onboarding - or run a paid event.
+  const wizard = readFileSync(path.join(root, "src/components/merchant-signup-wizard.tsx"), "utf8");
+  assert.match(wizard, /BusinessTypePicker/);
+  assert.match(wizard, /sole_trader/);
+  assert.match(wizard, /businessType: state\.businessType \|\| null/);
+
+  const connect = readFileSync(path.join(root, "src/lib/stripe-connect.ts"), "utf8");
+  assert.match(connect, /businessType === "sole_trader" \? "individual" : "company"/);
+
+  // A partial edit that omits the field must not wipe a good value.
+  const repo = readFileSync(path.join(root, "src/lib/event-repository.ts"), "utf8");
+  assert.match(
+    repo,
+    /business_type = coalesce\(excluded\.business_type, merchant_profiles\.business_type\)/,
+  );
+});
+
+test("a rejected merchant's resubmission reaches the admin queue", () => {
+  // The notification + confirmation were gated on `is_new`, so a resubmission
+  // pinged nobody - while /merchant-pending promised "back into the admin queue
+  // and we'll email you the outcome".
+  const repo = readFileSync(path.join(root, "src/lib/event-repository.ts"), "utf8");
+  assert.match(repo, /const wasRejected = priorStatus\.rows\[0\]\?\.verification_status === "rejected"/);
+  assert.match(repo, /if \(upsert\.rows\[0\]\.is_new \|\| resubmitted\)/);
+});
+
+test("removing every event photo actually removes the cover", () => {
+  // `array_length(NULL, 1) >= 1` is NULL, never true, so the cover survived
+  // every removal: the grid said "Photos (0/5)" and "Saved.", then the old photo
+  // came back on reload with no way out of the loop.
+  const repo = readFileSync(path.join(root, "src/lib/event-repository.ts"), "utf8");
+  assert.match(repo, /image_url = case when \$7::boolean then \(\$8::text\[\]\)\[1\] else image_url end/);
+});
+
+test("a buyer who pays for a dead event is told, not 404'd", () => {
+  const page = readFileSync(path.join(root, "src/app/events/[slug]/page.tsx"), "utf8");
+  assert.match(page, /getUnfulfilledPaymentNotice\(/);
+  const repo = readFileSync(path.join(root, "src/lib/event-repository.ts"), "utf8");
+  assert.match(repo, /export async function getUnfulfilledPaymentNotice/);
+});
+
+test("a multi-seat checkout can be resumed", () => {
+  // createPaymentHold rejects a mismatched party size, so the solo "Reserve &
+  // pay" CTA errored for the full 31-minute hold with no control to resume the
+  // real 3-seat checkout.
+  const button = readFileSync(path.join(root, "src/components/event-payment-button.tsx"), "utf8");
+  assert.match(button, /resumeSeatCount/);
+  const page = readFileSync(path.join(root, "src/app/events/[slug]/page.tsx"), "utf8");
+  assert.match(page, /resumeSeatCount=\{event\.heldSeatCount\}/);
+});
+
+test("post-event and onboarding surfaces stop swallowing outcomes", () => {
+  // The dashboard's click action caught every error and returned nothing, so a
+  // closed window or a spent cap made the button do visibly nothing.
+  const actions = readFileSync(path.join(root, "src/app/dashboard/actions.ts"), "utf8");
+  assert.match(actions, /Promise<ClickResult>/);
+  assert.doesNotMatch(actions, /\/\/ Swallow;/);
+
+  // The onboarding draft restored every field EXCEPT the interests the user had
+  // just tapped, and collapsed the history stack so Back had nothing to walk.
+  const form = readFileSync(path.join(root, "src/components/onboarding-form.tsx"), "utf8");
+  assert.match(form, /setTags\(new Set\(draft\.tags\)\)/);
+  assert.match(form, /for \(let i = 1; i <= draft\.step; i \+= 1\)/);
+});
+
+test("a life-quiz answer can never collide with a seeded interest tag", () => {
+  // `creative` is an admin-managed interest tag in 002_seed.sql. The quiz linked
+  // the user to THAT row, so an interest they never picked appeared on their
+  // profile - and the retake's delete is guarded on tag_type='life', so it could
+  // never be removed.
+  const sections = readFileSync(path.join(root, "src/lib/life-quiz-sections.ts"), "utf8");
+  assert.doesNotMatch(sections, /slug: "creative"/);
+  assert.match(sections, /slug: "creative-hands-on"/);
+});
+
+test("retiring a checkout session cannot cancel the seat the buyer is paying for", () => {
+  // The corrected-guest path expires Session A and builds Session B against the
+  // SAME payment transaction. Stripe then fires checkout.session.expired for A
+  // while the buyer is entering their card on B. Two things have to hold or that
+  // stale event fails a live transaction and cancels a seat someone is paying
+  // for - they get charged, force-refunded, and end up with nothing.
+  const repo = readFileSync(path.join(root, "src/lib/event-repository.ts"), "utf8");
+
+  // 1. The replacement Session must actually be stored. `is null` alone made the
+  //    rebuild a no-op, leaving every reconcile path judging the transaction by
+  //    the Session the buyer had abandoned.
+  const attach = repo.slice(
+    repo.indexOf("export async function attachCheckoutSession"),
+    repo.indexOf("export async function attachCheckoutSession") + 1200,
+  );
+  assert.match(
+    attach,
+    /stripe_checkout_session_id is null or stripe_checkout_session_id <> \$2/,
+    "a deliberate session replacement must overwrite, not silently no-op",
+  );
+
+  // 2. A failure that names a session must be ignored unless that session is
+  //    still the transaction's current one.
+  const failed = repo.slice(
+    repo.indexOf("export async function markPaymentFailed"),
+    repo.indexOf("export async function markPaymentFailed") + 2000,
+  );
+  assert.match(failed, /stripeCheckoutSessionId\?: string \| null/);
+  assert.match(
+    failed,
+    /stripe_checkout_session_id = \$2::text/,
+    "a stale session's expiry must not fail the current transaction",
+  );
+
+  // 3. The webhook has the session id in hand, so it must pass it. Without this
+  //    the guard above is never armed on the one path that needs it.
+  const webhook = readFileSync(
+    path.join(root, "src/app/api/webhooks/stripe/route.ts"),
+    "utf8",
+  );
+  assert.match(webhook, /markPaymentFailed\(id, session\.id\)/);
+  // The payment_intent.* branch has no session and must stay unconditional.
+  assert.match(webhook, /markPaymentFailed\(id\);/);
+});
+
+test("a banned or suspended account cannot book, pay, or join a waitlist", () => {
+  // is_banned / suspended_at only ever filtered the click and matching queries,
+  // so someone removed for harassing an attendee could still sign in and buy a
+  // seat at the same event as the person who reported them.
+  const repo = readFileSync(path.join(root, "src/lib/event-repository.ts"), "utf8");
+  const gate = repo.slice(
+    repo.indexOf("async function assertBookingEligible"),
+    repo.indexOf("async function assertBookingEligible") + 1600,
+  );
+  assert.match(gate, /select suburb, birth_date, is_banned, suspended_at/);
+  assert.match(gate, /row\?\.is_banned \|\| row\?\.suspended_at/);
+  assert.match(gate, /error\.name = "ForbiddenError"/);
+
+  // The gate is only worth having in one place if every booking path routes
+  // through it. Two entry points cover all three: the waitlist branch lives
+  // inside registerForEvent, so a waitlist join is gated by the same call.
+  for (const entry of ["registerForEvent", "createPaymentHold"]) {
+    const start = repo.indexOf(`export async function ${entry}`);
+    assert.ok(start > -1, `${entry} not found`);
+    assert.match(
+      repo.slice(start, start + 900),
+      /await assertBookingEligible\(/,
+      `${entry} must go through the shared eligibility gate`,
+    );
+  }
+
+  // Both entry routes must translate the refusal, or it surfaces as a 500 that
+  // reads like Click is broken rather than "this account cannot book".
+  for (const route of [
+    "src/app/api/events/[eventId]/checkout/route.ts",
+    "src/app/api/events/[eventId]/register/route.ts",
+  ]) {
+    const source = readFileSync(path.join(root, route), "utf8");
+    assert.match(
+      source,
+      /error\.name === "ForbiddenError"[\s\S]{0,120}status: 403/,
+      `${route} must answer a banned account with 403`,
+    );
+  }
+});
+
+test("a suspended host cannot take money through the direct event URL", () => {
+  // Suspension hid the host's events from Discover and revoked event
+  // auto-approval, but getEventBySlug never checked it - so an admin who had
+  // just suspended a host for cause could still watch them charge anyone
+  // holding the link.
+  const repo = readFileSync(path.join(root, "src/lib/event-repository.ts"), "utf8");
+  const start = repo.indexOf("export async function createPaymentHold");
+  assert.ok(start > -1, "createPaymentHold not found");
+  const hold = repo.slice(start, start + 9000);
+
+  assert.match(
+    hold,
+    /merchant\.verification_status as merchant_verification_status/,
+    "the hold query must load the host's verification status",
+  );
+  assert.match(
+    hold,
+    /event\.merchant_verification_status === "suspended"/,
+    "a suspended host's paid event must refuse the hold",
+  );
+});

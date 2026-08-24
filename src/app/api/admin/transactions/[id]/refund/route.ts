@@ -68,6 +68,11 @@ export async function POST(request: Request, context: RouteContext) {
       amountCents,
       reason,
       adminProfileId,
+      // The admin console is the one refund path with nothing else behind it -
+      // no cancellation flow already released the seat or emailed the attendee.
+      // Without this the buyer stayed `confirmed` on the roster, held a seat the
+      // waitlist could have had, kept getting reminders, and was never told.
+      settleBooking: true,
     });
     revalidatePath("/admin/transactions");
     return NextResponse.json({ ok: true, refund: result });

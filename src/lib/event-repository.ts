@@ -27,6 +27,7 @@ import {
   scorePersonalizedEvent,
 } from "./personalized-matching";
 import { resolveAvatarImage } from "./avatar-images";
+import { PILOT_AREA_LABEL, isWithinSydneyPilot } from "./geo";
 import { buildEventMediaGallery, type MediaItem } from "./event-media";
 import {
   fallbackEventImage,
@@ -44,6 +45,7 @@ import { buildPairFeatures, scorePair } from "./matching/score";
 import { MODEL_VERSION } from "./matching/weights";
 import type { UserFeatures } from "./matching/types";
 import { logEmailEvent, sendTransactionalEmail } from "./email";
+import { formatPriceLabel } from "./amounts";
 import {
   resolveProfilePrompts,
   sanitizeProfilePrompts,
@@ -551,15 +553,6 @@ function formatTime(date: Date) {
   }).format(date);
 }
 
-function formatPrice(priceCents: number) {
-  if (priceCents === 0) return "Free";
-  return new Intl.NumberFormat("en-AU", {
-    style: "currency",
-    currency: "AUD",
-    maximumFractionDigits: 0,
-  }).format(priceCents / 100);
-}
-
 function eventStatusFromDb(status: string): EventStatus {
   if (status === "featured") return "Featured";
   if (status === "waitlist") return "Waitlist";
@@ -600,7 +593,7 @@ function eventFromRow(row: EventRow): EventItem {
     distanceKm: distanceKmFromSydney(lat, lng),
     lat,
     lng,
-    price: formatPrice(row.price_cents),
+    price: formatPriceLabel(row.price_cents),
     attendees: Number(row.confirmed_attendees),
     attendeeAvatars: row.attendee_avatars ?? [],
     capacity: row.capacity,
@@ -723,15 +716,6 @@ function formatEmailDates(startsAt: Date, endsAt: Date | null, timezone: string)
   return { eventLongDate, eventShortDate, eventStartTime, eventEndTime };
 }
 
-function priceLabel(priceCents: number, currency: string) {
-  if (priceCents <= 0) return "Free";
-  return new Intl.NumberFormat("en-AU", {
-    style: "currency",
-    currency: currency || "AUD",
-    maximumFractionDigits: 0,
-  }).format(priceCents / 100);
-}
-
 // Post-commit emailer for a confirmed RSVP. Runs OUTSIDE the txn so a failed
 // template lookup never rolls back the booking. Pulls everything needed for
 // both templates in a single query so we don't re-walk the tree twice.
@@ -832,8 +816,8 @@ async function logRsvpEmails(
     // the existing price slot. Falls back to the event's listed price for
     // free RSVPs.
     const priceLabelForEmail = receipt && receipt.amountPaidCents > 0
-      ? `${priceLabel(receipt.amountPaidCents, receipt.currency)} · Paid`
-      : priceLabel(row.price_cents, row.currency);
+      ? `${formatPriceLabel(receipt.amountPaidCents, receipt.currency)} · Paid`
+      : formatPriceLabel(row.price_cents, row.currency);
 
     await logEmailEvent({
       template: "rsvp-attendee",
@@ -877,8 +861,14 @@ async function logRsvpEmails(
           eventStartTime: dates.eventStartTime,
           eventVenue: row.location_name,
           eventSpotsFilledLabel: spotsLabel,
-          attendeesUrl: `${origin}/merchant/events/${row.event_id}`,
-          eventDashboardUrl: `${origin}/merchant/events/${row.event_id}`,
+          // event_SLUG, not event_id. /merchant/events/[eventId] resolves its
+          // param as a slug (getMerchantEventDetail: `where event.slug = $1`), so
+          // a UUID matched nothing and the page called notFound(). Both CTAs in
+          // the host's primary notification - "see your attendee list" and the
+          // dashboard link - landed on a 404. logRsvpCancelledEmails at :1276
+          // always had this right; only this one was passing the id.
+          attendeesUrl: `${origin}/merchant/events/${row.event_slug}`,
+          eventDashboardUrl: `${origin}/merchant/events/${row.event_slug}`,
           supportEmail: SUPPORT_EMAIL,
           unsubscribeUrl: `${origin}/account-settings`,
         },
@@ -1024,6 +1014,213 @@ async function logWaitlistPromotedEmail(
   } catch (error) {
     console.warn("logWaitlistPromotedEmail failed", {
       eventSlug: promotion.eventSlug,
+      error,
+    });
+  }
+}
+
+/**
+ * Everything that has to happen to the BOOKING once money has gone back.
+ *
+ * issueRefund only ever touched the ledger. An admin refunding a ticket from
+ * /admin/transactions moved the money and flipped payment_transactions to
+ * 'refunded', and then: the attendee stayed `confirmed` on the merchant's
+ * roster, kept holding a seat against capacity so the next waitlister was never
+ * promoted, stayed on the reminder list, and was told nothing at all - no
+ * notification, no email. They would have turned up to an event they had been
+ * refunded for.
+ *
+ * `releaseSeat` is opt-in and defaults off on purpose. cancelRegistration and
+ * the settled-after-cancellation auto-refund BOTH cancel the seat themselves
+ * before calling issueRefund, and cancelRegistration also promotes the queue -
+ * doing it again here would promote two people into one freed seat.
+ *
+ * Best-effort and post-commit throughout: the money has already moved, so
+ * nothing in here may throw back into the refund.
+ */
+/**
+ * "You paid, but the event died while you were paying."
+ *
+ * markPaymentSucceeded already handles the money for this case: it flips the
+ * capture to paid, cancels the seat, and issues a full refund. What it could not
+ * do is tell the buyer, because /events/[slug] hides a cancelled or unpublished
+ * event from everyone - so Stripe returned them to a 404. Their card had been
+ * charged real money on the LIVE key and the only trace was a notification
+ * buried in the dashboard.
+ *
+ * Returns a notice when this viewer has a settled payment on this event whose
+ * seat is cancelled, so the page can say what happened. Null otherwise, and the
+ * 404 stands.
+ */
+export async function getUnfulfilledPaymentNotice(
+  slug: string,
+  session: Session | null,
+): Promise<{ amountLabel: string; refunded: boolean; eventTitle: string } | null> {
+  const pool = getPostgresPool();
+  const email = getSessionEmail(session);
+  if (!pool || !email) return null;
+
+  try {
+    const result = await pool.query<{
+      amount_cents: number;
+      currency: string;
+      status: string;
+      event_title: string;
+    }>(
+      `
+        select pt.amount_cents, pt.currency::text, pt.status::text, e.title as event_title
+        from payment_transactions pt
+        join events e on e.id = pt.event_id
+        join profiles p on p.id = pt.profile_id
+        join event_attendees ea
+          on ea.event_id = pt.event_id and ea.profile_id = pt.profile_id
+        where e.slug = $1
+          and p.email = $2
+          and pt.status in ('paid', 'refunded', 'partially_refunded')
+          and ea.status = 'cancelled'
+        order by pt.updated_at desc
+        limit 1
+      `,
+      [slug, email],
+    );
+    const row = result.rows[0];
+    if (!row) return null;
+    return {
+      amountLabel: formatAud(row.amount_cents, row.currency || "AUD"),
+      refunded: row.status === "refunded",
+      eventTitle: row.event_title,
+    };
+  } catch (error) {
+    console.warn("getUnfulfilledPaymentNotice failed", { slug, error });
+    return null;
+  }
+}
+
+export async function settleRefundedBooking(input: {
+  paymentTransactionId: string;
+  refundedAmountCents: number;
+  /** Cancel the seat + guest seats and promote the queue. See above. */
+  releaseSeat: boolean;
+  /** Skip the email when the caller already sends its own refund copy. */
+  notify: boolean;
+}) {
+  const pool = getPostgresPool();
+  if (!pool) return;
+
+  try {
+    const detail = await pool.query<{
+      profile_id: string;
+      email: string;
+      display_name: string | null;
+      event_id: string;
+      event_title: string;
+      event_slug: string;
+      starts_at: Date;
+      ends_at: Date | null;
+      timezone: string;
+      currency: string;
+    }>(
+      `
+        select pt.profile_id::text,
+               p.email::text,
+               p.display_name,
+               e.id::text as event_id,
+               e.title as event_title,
+               e.slug as event_slug,
+               e.starts_at,
+               e.ends_at,
+               e.timezone,
+               pt.currency::text
+        from payment_transactions pt
+        join profiles p on p.id = pt.profile_id
+        join events e on e.id = pt.event_id
+        where pt.id = $1::uuid
+        limit 1
+      `,
+      [input.paymentTransactionId],
+    );
+    const row = detail.rows[0];
+    if (!row) return;
+
+    let promotion: WaitlistPromotion | null = null;
+
+    if (input.releaseSeat) {
+      const client = await pool.connect();
+      try {
+        await client.query("begin");
+        const cancelled = await client.query<{ id: string }>(
+          `
+            update event_attendees
+            set status = 'cancelled', hold_expires_at = null, updated_at = now()
+            where event_id = $1::uuid
+              and profile_id = $2::uuid
+              and status in ('confirmed', 'pending_payment')
+            returning id::text
+          `,
+          [row.event_id, row.profile_id],
+        );
+        // Only touch the queue if THIS call is what freed the seat. A replayed
+        // refund finds the row already cancelled and must not promote again.
+        if ((cancelled.rowCount ?? 0) > 0) {
+          await cancelGuestSeatsForTransaction(client, input.paymentTransactionId);
+          promotion = await promoteNextWaitlister(
+            client,
+            row.event_id,
+            row.event_title,
+            row.event_slug,
+          );
+          await client.query(
+            `
+              insert into notifications (profile_id, title, body, action_url)
+              values ($1::uuid, $2, $3, $4)
+            `,
+            [
+              row.profile_id,
+              "Booking refunded",
+              `Your booking for ${row.event_title} was refunded. Your spot has been released.`,
+              `/events/${row.event_slug}`,
+            ],
+          );
+        }
+        await client.query("commit");
+      } catch (error) {
+        await client.query("rollback").catch(() => {});
+        throw error;
+      } finally {
+        client.release();
+      }
+    }
+
+    if (promotion) await logWaitlistPromotedEmail(pool, promotion);
+
+    if (input.notify) {
+      const origin = emailOrigin();
+      const dates = formatEmailDates(
+        row.starts_at,
+        row.ends_at,
+        row.timezone || "Australia/Sydney",
+      );
+      await logEmailEvent({
+        template: "booking-refunded-attendee",
+        toEmail: row.email,
+        toProfileId: row.profile_id,
+        vars: {
+          firstName: (row.display_name || "").split(/\s+/)[0] || "there",
+          eventTitle: row.event_title,
+          eventLongDate: dates.eventLongDate,
+          refundAmount: formatAud(input.refundedAmountCents, row.currency || "AUD"),
+          refundReasonLine: input.releaseSeat
+            ? "Your spot has been released, so there's nothing to cancel."
+            : "Nothing more is needed from you.",
+          discoverUrl: `${origin}/discover`,
+          supportEmail: SUPPORT_EMAIL,
+          unsubscribeUrl: `${origin}/account-settings`,
+        },
+      });
+    }
+  } catch (error) {
+    console.warn("settleRefundedBooking failed", {
+      paymentTransactionId: input.paymentTransactionId,
       error,
     });
   }
@@ -1525,7 +1722,7 @@ function eventItemFromInput(input: CreateEventInput, session: Session | null): E
     ),
     lat: input.latitude ?? sydneyReference.lat,
     lng: input.longitude ?? sydneyReference.lng,
-    price: formatPrice(priceCents),
+    price: formatPriceLabel(priceCents),
     attendees: 0,
     capacity,
     image: fallbackEventImage(category, title),
@@ -1825,6 +2022,7 @@ async function loadMerchantProfile(
 export type MerchantSignupPrefill = {
   businessName: string;
   tradingName: string;
+  businessType: string;
   abn: string;
   acn: string;
   eventCategoryIds: string[];
@@ -1848,6 +2046,7 @@ export async function getMerchantSignupPrefill(
   const result = await pool.query<{
     business_name: string | null;
     trading_name: string | null;
+    business_type: string | null;
     abn: string | null;
     acn: string | null;
     phone: string | null;
@@ -1860,7 +2059,7 @@ export async function getMerchantSignupPrefill(
     address_postcode: string | null;
   }>(
     `
-      select business_name, trading_name, abn, acn, phone, contact_email::text,
+      select business_name, trading_name, business_type, abn, acn, phone, contact_email::text,
              website_url, socials, address_street, address_suburb,
              address_state, address_postcode
       from merchant_profiles
@@ -1882,6 +2081,7 @@ export async function getMerchantSignupPrefill(
   return {
     businessName: row.business_name ?? "",
     tradingName: row.trading_name ?? "",
+    businessType: row.business_type ?? "",
     abn: row.abn ?? "",
     acn: row.acn ?? "",
     eventCategoryIds: cats.rows.map((c) => c.tag_category_id),
@@ -2349,10 +2549,15 @@ export async function updateMerchantEventDetails(
               else pending_address
             end,
             image_urls = case when $7::boolean then $8::text[] else image_urls end,
-            image_url = case
-              when $7::boolean and array_length($8::text[], 1) >= 1 then ($8::text[])[1]
-              else image_url
-            end,
+            -- Subscripting a NULL array yields NULL, which is exactly what we
+            -- want when the merchant removed every photo: $8 is null in that
+            -- case, so the cover clears with the gallery. The old
+            -- 'array_length($8, 1) >= 1' guard evaluated to NULL there, never
+            -- true, so image_url kept the removed cover - the grid said
+            -- "Photos (0/5)" and said "Saved.", then the old photo came back on
+            -- reload with no way out of the loop. Every reader already handles a
+            -- null cover through resolveEventImage's category fallback.
+            image_url = case when $7::boolean then ($8::text[])[1] else image_url end,
             updated_at = now()
         where id = $1::uuid
       `,
@@ -2974,6 +3179,12 @@ export type EventDetail = EventItem & {
   // 30-minute window is still open (offered_until > now, accepted_at is null).
   // Drives the "Confirm your spot" CTA. Null otherwise.
   waitlistOfferExpiresAt: string | null;
+  // Seats on the viewer's own LIVE payment hold (purchaser + named guests).
+  // Only set while viewerRsvpStatus === 'pending_payment'. The resume CTA has to
+  // re-request exactly this many seats: createPaymentHold rejects a mismatched
+  // party size, so a solo "Reserve & pay" against a 3-seat hold just errored for
+  // the full 31 minutes with no way to act on it.
+  heldSeatCount: number | null;
   // 1-based queue position when the viewer is on the waitlist (e.g. "#3"),
   // counting only people still ahead of them. Null when not waitlisted.
   waitlistPosition: number | null;
@@ -2988,6 +3199,38 @@ export type EventDetail = EventItem & {
   // already on this event).
   viewerClashEventTitle: string | null;
 };
+
+// Statuses an event must be in to be visible to the public. Pending (awaiting
+// admin review), Rejected and Cancelled are hidden. Lives here, not in the page,
+// because /events/[slug], /api/events/[eventId] and .../ics all have to agree:
+// the page 404'd an unreviewed event while the JSON route beside it served the
+// whole listing, so the gate was one `fetch` away from being pointless.
+export const PUBLIC_EVENT_STATUSES = new Set(["Featured", "Live", "Waitlist", "Locked"]);
+
+// The owning merchant and admins can preview their own not-yet-public event, and
+// they also see the venue without RSVPing to their own listing.
+export function isEventOperator(
+  event: Pick<EventDetail, "merchantProfileId">,
+  profileStatus: ProfileStatus | null,
+) {
+  if (!profileStatus) return false;
+  if (profileStatus.role === "admin") return true;
+  return (
+    Boolean(event.merchantProfileId) &&
+    profileStatus.merchantProfile?.id === event.merchantProfileId
+  );
+}
+
+// The venue is what an RSVP buys: the page shows the suburb plus "venue revealed
+// when you RSVP" and only unlocks `location`/`address` once you're confirmed.
+// The API projections have to enforce the same thing or the gate is decorative -
+// curl the JSON and the street address is right there, no account needed.
+export function viewerCanSeeVenue(
+  event: Pick<EventDetail, "merchantProfileId" | "viewerRsvpStatus">,
+  profileStatus: ProfileStatus | null,
+) {
+  return event.viewerRsvpStatus === "confirmed" || isEventOperator(event, profileStatus);
+}
 
 export async function getEventBySlug(
   slug: string,
@@ -3010,6 +3253,7 @@ export async function getEventBySlug(
       viewerRsvpStatus: null,
       waitlistOfferExpiresAt: null,
       waitlistPosition: null,
+      heldSeatCount: null,
       merchantProfileId: null,
       viewerClashEventTitle: null,
       media: buildEventMediaGallery({
@@ -3120,6 +3364,7 @@ export async function getEventBySlug(
         viewerRsvpStatus: null,
         waitlistOfferExpiresAt: null,
         waitlistPosition: null,
+        heldSeatCount: null,
         merchantProfileId: null,
         viewerClashEventTitle: null,
         media: buildEventMediaGallery({
@@ -3137,6 +3382,7 @@ export async function getEventBySlug(
     let viewerRsvpStatus: EventDetail["viewerRsvpStatus"] = null;
     let waitlistOfferExpiresAt: string | null = null;
     let waitlistPosition: number | null = null;
+    let heldSeatCount: number | null = null;
     let viewerClashEventTitle: string | null = null;
     const email = getSessionEmail(session);
 
@@ -3189,6 +3435,35 @@ export async function getEventBySlug(
       ) {
         viewerRsvpStatus = status;
       }
+
+      // Party size on the live hold, so the resume CTA can ask for the same
+      // seats it already reserved. Mirrors createPaymentHold's own count:
+      // the purchaser plus every guest_spots row that isn't cancelled.
+      if (status === "pending_payment") {
+        const seats = await pool.query<{ seat_count: string }>(
+          `
+            select (
+              1 + (
+                select count(*)
+                from guest_spots gs
+                where gs.payment_transaction_id = pt.id and gs.status <> 'cancelled'
+              )
+            )::text as seat_count
+            from event_attendees ea
+            join profiles p on p.id = ea.profile_id
+            join events e on e.id = ea.event_id
+            join payment_transactions pt on pt.id = ea.payment_transaction_id
+            where p.email = $1 and e.slug = $2
+              and ea.status = 'pending_payment'
+              and ea.hold_expires_at > now()
+              and pt.status = 'pending'
+            limit 1
+          `,
+          [email, slug],
+        );
+        const parsed = Number(seats.rows[0]?.seat_count);
+        heldSeatCount = Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+      }
       // Surface a live promotion offer only while it's actually claimable: the
       // viewer is waitlisted, was offered the seat, hasn't accepted, and the
       // 30-minute window is still open.
@@ -3238,6 +3513,7 @@ export async function getEventBySlug(
       viewerRsvpStatus,
       waitlistOfferExpiresAt,
       waitlistPosition,
+      heldSeatCount,
       merchantProfileId: row.merchant_profile_id ?? null,
       media: buildEventMediaGallery({
         // Real uploads only: the image_urls[] array when set, else the single
@@ -3266,6 +3542,7 @@ export async function getEventBySlug(
         viewerRsvpStatus: null,
         waitlistOfferExpiresAt: null,
         waitlistPosition: null,
+        heldSeatCount: null,
         merchantProfileId: null,
         viewerClashEventTitle: null,
         media: buildEventMediaGallery({
@@ -6670,11 +6947,30 @@ export async function markMerchantOnboardingComplete(session: Session | null) {
  * Same rule as ProfileStatus.onboardingComplete - keep the two in step.
  */
 async function assertBookingEligible(pool: Pool, profileId: string) {
-  const result = await pool.query<{ suburb: string | null; birth_date: Date | null }>(
-    `select suburb, birth_date from profiles where id = $1::uuid`,
+  const result = await pool.query<{
+    suburb: string | null;
+    birth_date: Date | null;
+    is_banned: boolean;
+    suspended_at: Date | null;
+  }>(
+    `select suburb, birth_date, is_banned, suspended_at from profiles where id = $1::uuid`,
     [profileId],
   );
   const row = result.rows[0];
+
+  // A ban or suspension only ever filtered the click and matching queries, so
+  // someone removed for harassing another attendee could still sign in and buy a
+  // seat at the same event as the person who reported them. This is the single
+  // choke point every booking path routes through - the free RSVP, the paid
+  // hold, and the waitlist - so the check belongs here rather than in each one.
+  if (row?.is_banned || row?.suspended_at) {
+    const error = new Error(
+      "This account can't book events right now. Email hello@letsclick.app if you think that's wrong.",
+    );
+    error.name = "ForbiddenError";
+    throw error;
+  }
+
   if (row?.suburb && row.birth_date) return;
 
   const error = new Error("Finish setting up your profile before you book - it takes a minute.");
@@ -6821,15 +7117,10 @@ const AU_PHONE_RE = /^(?:\+?61|0)\d{9}$/;
 
 // Launch pilot is Greater Sydney. A merchant whose venue is outside this area
 // is parked on the host waitlist (emailed, not auto-rejected) until we open
-// their region — see registerMerchantWizardSubmit. Sydney metro postcodes are
-// NSW 2000–2234 (city + suburbs) plus the 1xxx business-district PO range.
-const PILOT_AREA_LABEL = "Greater Sydney";
-function isWithinPilotArea(state: string, postcode: string): boolean {
-  if (state !== "NSW") return false;
-  const code = Number(postcode);
-  if (!Number.isFinite(code)) return false;
-  return (code >= 2000 && code <= 2234) || (code >= 1000 && code <= 1999);
-}
+// their region - see registerMerchantWizardSubmit. Both the ranges and the label
+// come from geo.ts so the wizard's out-of-pilot notice and this branch can never
+// drift apart again - see isWithinSydneyPilot for what they used to disagree on.
+const isWithinPilotArea = isWithinSydneyPilot;
 
 function validationError(message: string): Error {
   const error = new Error(message);
@@ -7184,6 +7475,17 @@ export async function registerMerchantWizardSubmit(
   try {
     await client.query("begin");
 
+    // The status BEFORE the upsert. RETURNING only ever hands back the new row,
+    // and the upsert's own CASE flips rejected → pending, so this is the only
+    // way to tell "a rejected host just resubmitted" apart from "an already-
+    // pending host edited a field". The first has to reach the admin queue; the
+    // second must not spam it.
+    const priorStatus = await client.query<{ verification_status: string }>(
+      `select verification_status from merchant_profiles where profile_id = $1::uuid`,
+      [profile.id],
+    );
+    const wasRejected = priorStatus.rows[0]?.verification_status === "rejected";
+
     const upsert = await client.query<MerchantProfileRow & { is_new: boolean }>(
       `
         insert into merchant_profiles (
@@ -7203,7 +7505,12 @@ export async function registerMerchantWizardSubmit(
           trading_name = excluded.trading_name,
           abn = excluded.abn,
           acn = excluded.acn,
-          business_type = excluded.business_type,
+          -- coalesce, not a bare overwrite: this upsert also runs for edits that
+          -- don't carry every field, and assigning excluded.business_type
+          -- directly wiped a good value back to null whenever the caller omitted
+          -- it. Null here means "unchanged", which is what a partial edit means;
+          -- the wizard now always sends a real value, so it can still change it.
+          business_type = coalesce(excluded.business_type, merchant_profiles.business_type),
           phone = excluded.phone,
           contact_email = excluded.contact_email,
           website_url = excluded.website_url,
@@ -7285,10 +7592,19 @@ export async function registerMerchantWizardSubmit(
 
     await client.query("commit");
 
-    // Log the merchant-application-received confirmation on first submission
-    // only (xmax = 0). Re-submitting after an edit upserts and must not re-fire
-    // the "we've got your application" email. Fire-and-forget, post-commit.
-    if (upsert.rows[0].is_new) {
+    // First submission (xmax = 0), OR a rejected host resubmitting after fixing
+    // what the admin flagged. Both put an application into the review queue, so
+    // both owe the host a confirmation and the admins a notification.
+    //
+    // This used to be `is_new` alone, which meant a resubmission wrote no
+    // email_events row and pinged no admin - while /merchant-pending promised
+    // "your application goes back into the admin queue and we'll email you the
+    // outcome". The application then sat invisible until someone happened to
+    // open /admin/merchants, which is exactly the polling this notification
+    // exists to remove. An edit by an already-pending or approved host still
+    // fires nothing, which is the point of gating on wasRejected.
+    const resubmitted = !upsert.rows[0].is_new && wasRejected;
+    if (upsert.rows[0].is_new || resubmitted) {
       const origin = emailOrigin();
       const merchantFirstName =
         (profile.display_name || businessName).split(/\s+/)[0] || "there";
@@ -7345,12 +7661,16 @@ export async function registerMerchantWizardSubmit(
             where role = 'admin'
           `,
           [
-            withinPilot
-              ? "New merchant awaiting verification"
-              : "New merchant on the waitlist (outside pilot)",
-            withinPilot
-              ? `${businessName} just signed up and is waiting for verification.`
-              : `${businessName} signed up from ${suburb || input.addressState}, outside the ${PILOT_AREA_LABEL} pilot — parked on the host waitlist.`,
+            !withinPilot
+              ? "New merchant on the waitlist (outside pilot)"
+              : resubmitted
+                ? "Merchant resubmitted after rejection"
+                : "New merchant awaiting verification",
+            !withinPilot
+              ? `${businessName} signed up from ${suburb || input.addressState}, outside the ${PILOT_AREA_LABEL} pilot - parked on the host waitlist.`
+              : resubmitted
+                ? `${businessName} fixed their application and it's back in the queue.`
+                : `${businessName} just signed up and is waiting for verification.`,
             "/admin/merchants",
           ],
         )
@@ -7810,24 +8130,37 @@ async function sendClickInner(
         // Attach the system's first suggested event as the live coordination attempt so
         // /proposals keeps working against the new schema. The fuller propose/decline/
         // counter handshake (§B4) + read-time multi-suggestion generation land in 2.5.
-        await client.query(
-          `
-            insert into click_proposals
-              (mutual_click_id, suggested_event_id, proposed_by, status, expires_at)
-            values (
-              $1::uuid, $2::uuid, $3::uuid, 'pending', now() + interval '${MUTUAL_CLOCK_DAYS} days'
-            )
-            on conflict (mutual_click_id) where status = 'pending' do update
-            set suggested_event_id =
-                  coalesce(click_proposals.suggested_event_id, excluded.suggested_event_id),
-                updated_at = now()
-          `,
-          [mutualClickId, suggestedEvent?.id ?? null, profile.id],
-        );
-        await client.query(
-          `update mutual_clicks set coord_state = 'proposed', updated_at = now() where id = $1::uuid`,
-          [mutualClickId],
-        );
+        //
+        // ONLY when something was actually suggestable. The catalogue routinely
+        // has no upcoming event with 2+ free seats matching either person's tags
+        // (the normal state at launch), and this used to insert the proposal
+        // anyway with suggested_event_id = null, then advance coord_state to
+        // 'proposed'. That projects as the "proposed" step: the receiver is asked
+        // "{name}'s keen for the event - you in?" with no Confirm button to press,
+        // because there is no event to confirm, while the sender is told "You're
+        // in - waiting on {name}" having proposed nothing. Leaving the mutual at
+        // 'open' renders the suggest picker instead, which is both honest and
+        // actionable.
+        if (suggestedEvent) {
+          await client.query(
+            `
+              insert into click_proposals
+                (mutual_click_id, suggested_event_id, proposed_by, status, expires_at)
+              values (
+                $1::uuid, $2::uuid, $3::uuid, 'pending', now() + interval '${MUTUAL_CLOCK_DAYS} days'
+              )
+              on conflict (mutual_click_id) where status = 'pending' do update
+              set suggested_event_id =
+                    coalesce(click_proposals.suggested_event_id, excluded.suggested_event_id),
+                  updated_at = now()
+            `,
+            [mutualClickId, suggestedEvent.id, profile.id],
+          );
+          await client.query(
+            `update mutual_clicks set coord_state = 'proposed', updated_at = now() where id = $1::uuid`,
+            [mutualClickId],
+          );
+        }
         // Mark both clicks of THIS process as mutual + link them to the relationship row.
         const updateSurfaceCond =
           surface === "discovery" ? "event_id is null" : "event_id = $4::uuid";
@@ -9612,6 +9945,7 @@ export async function createPaymentHold(
       merchant_profile_id: string | null;
       merchant_stripe_account_id: string | null;
       merchant_charges_enabled: boolean | null;
+      merchant_verification_status: string | null;
       confirmed_attendees: string;
       has_ended: boolean;
       has_live_waitlist_offer: boolean;
@@ -9629,6 +9963,7 @@ export async function createPaymentHold(
           event.merchant_profile_id::text,
           merchant.stripe_connect_account_id as merchant_stripe_account_id,
           merchant.charges_enabled as merchant_charges_enabled,
+          merchant.verification_status as merchant_verification_status,
           (coalesce(event.ends_at, event.starts_at) <= now()) as has_ended,
           exists (
             select 1
@@ -9723,6 +10058,15 @@ export async function createPaymentHold(
     // connected account via destination charge. Platform-managed events
     // (merchant_profile_id IS NULL) skip this and bill into the platform.
     if (event.merchant_profile_id) {
+      // Suspending a host hid their events from Discover and revoked event
+      // auto-approval, but never closed the direct event URL - so an admin who
+      // had just suspended a host for cause could still watch that host take
+      // live money from anyone holding the link.
+      if (event.merchant_verification_status === "suspended") {
+        const error = new Error("This event isn't accepting bookings right now.");
+        error.name = "ValidationError";
+        throw error;
+      }
       if (!event.merchant_stripe_account_id || !event.merchant_charges_enabled) {
         const error = new Error(
           "This event isn't accepting payments yet — the host is finishing payout setup.",
@@ -10483,11 +10827,18 @@ export async function attachCheckoutSession(
   const pool = getPostgresPool();
   if (!pool || !stripeCheckoutSessionId) return;
 
+  // `is null` alone made the corrected-guest rebuild a silent no-op: the row kept
+  // pointing at the Session we just expired, so every reconcile path judged the
+  // transaction by a Session the buyer had abandoned. Writing whenever the id
+  // DIFFERS keeps the race this guard was for - two concurrent creates share an
+  // idempotency key, so Stripe hands back the same Session id and the second
+  // write is a no-op - while letting a deliberate replacement land.
   await pool.query(
     `
       update payment_transactions
       set stripe_checkout_session_id = $2, updated_at = now()
-      where id = $1::uuid and stripe_checkout_session_id is null
+      where id = $1::uuid
+        and (stripe_checkout_session_id is null or stripe_checkout_session_id <> $2)
     `,
     [paymentTransactionId, stripeCheckoutSessionId],
   );
@@ -10664,6 +11015,16 @@ export async function markPaymentSucceeded(paymentTransactionId: string): Promis
               : "payment_settled_after_booking_hold_ended",
           },
         }).catch(() => {});
+        // The in-app notification above is not enough on its own. Someone who
+        // paid on their phone and closed the app got no signal at all that the
+        // booking had failed or that money was coming back. releaseSeat is false
+        // - the seat was already cancelled in the transaction above.
+        await settleRefundedBooking({
+          paymentTransactionId: payment.id,
+          refundedAmountCents: refundResult.amountCents,
+          releaseSeat: false,
+          notify: true,
+        });
       } catch {
         await pool
           .query(
@@ -11076,12 +11437,21 @@ export async function getPublicProfileById(profileId: string): Promise<PublicPro
         `,
         [profileId],
       ),
+      // Interest tags ONLY. Life-quiz answers ride in user_tags too, as
+      // tag_type 'life' ("Recently single", "New parent", "Career pivot"), and
+      // this query used to return them - so answers collected to tune
+      // suggestions rendered as public chips under "Into" to anyone with the
+      // URL, signed out included. getOwnProfile filters the same way, which
+      // meant the owner never saw them on their own profile and had no way to
+      // discover the disclosure. Keep the filter here, not in the caller: this
+      // function IS the public projection.
       pool.query<{ slug: string; label: string }>(
         `
           select tag.slug, tag.label
           from user_tags ut
           join tags tag on tag.id = ut.tag_id
           where ut.profile_id = $1::uuid
+            and tag.tag_type = 'interest'
           order by tag.label asc
         `,
         [profileId],
@@ -12207,6 +12577,7 @@ export async function resolveReport(
 export type PostEventCoAttendee = {
   id: string;
   displayName: string;
+  photoUrl: string | null;
   suburb: string | null;
   alreadyClicked: boolean;
 };
@@ -12235,6 +12606,7 @@ export async function getPostEventClickPrompts(
       ended_at: Date;
       other_id: string;
       other_name: string;
+      other_photo_url: string | null;
       other_suburb: string | null;
       already_clicked: boolean;
     }>(
@@ -12245,6 +12617,9 @@ export async function getPostEventClickPrompts(
           coalesce(e.ends_at, e.starts_at) as ended_at,
           other.id::text as other_id,
           other.display_name as other_name,
+          -- Clicking is a face-first decision (the same reason the discovery
+          -- pool hard-requires a photo), so the roster carries the face too.
+          other.photo_url as other_photo_url,
           other.suburb as other_suburb,
           -- Scoped to THIS event on purpose: the constraint this mirrors is
           -- uq_click_post_event (sender_id, receiver_id, event_id), so a click
@@ -12298,6 +12673,7 @@ export async function getPostEventClickPrompts(
       entry.coAttendees.push({
         id: row.other_id,
         displayName: row.other_name,
+        photoUrl: row.other_photo_url,
         suburb: row.other_suburb,
         alreadyClicked: row.already_clicked,
       });
@@ -12328,6 +12704,7 @@ export async function getPostEventClickPromptForEvent(
       ended_at: Date;
       other_id: string;
       other_name: string;
+      other_photo_url: string | null;
       other_suburb: string | null;
       already_clicked: boolean;
     }>(
@@ -12338,6 +12715,9 @@ export async function getPostEventClickPromptForEvent(
           coalesce(e.ends_at, e.starts_at) as ended_at,
           other.id::text as other_id,
           other.display_name as other_name,
+          -- Clicking is a face-first decision (the same reason the discovery
+          -- pool hard-requires a photo), so the roster carries the face too.
+          other.photo_url as other_photo_url,
           other.suburb as other_suburb,
           -- Scoped to THIS event on purpose: the constraint this mirrors is
           -- uq_click_post_event (sender_id, receiver_id, event_id), so a click
@@ -12387,6 +12767,7 @@ export async function getPostEventClickPromptForEvent(
       coAttendees: result.rows.map((row) => ({
         id: row.other_id,
         displayName: row.other_name,
+        photoUrl: row.other_photo_url,
         suburb: row.other_suburb,
         alreadyClicked: row.already_clicked,
       })),
@@ -12985,11 +13366,21 @@ export async function proposeAlternativeForProposal(
     // Re-point the suggestion. `status='pending', confirmed_* = null` is a no-op for a
     // pending row but reopens an accepted-dead one (C12); coord_state → 'proposed' below
     // mirrors it so a re-suggested plan is live again for both.
+    //
+    // expires_at MUST be reset with it. getProposalsForSession treats a row as
+    // expired when `status is distinct from 'accepted' and expires_at <= now()`;
+    // an accepted plan is exempt, so its deadline is routinely already in the
+    // past by the time the agreed event dies. Flipping status back to 'pending'
+    // without moving the clock therefore re-projected the pair straight to "This
+    // plan wound down" the instant they re-suggested - the recovery step handed
+    // them a dead card. Same window a fresh suggestion gets, so re-suggesting
+    // and suggesting behave identically.
     await client.query(
       `
         update click_proposals
         set suggested_event_id = $2::uuid, proposed_by = $3::uuid,
             status = 'pending', confirmed_by = null, confirmed_at = null,
+            expires_at = now() + interval '${MUTUAL_CLOCK_DAYS} days',
             alternatives_count = alternatives_count + 1, updated_at = now()
         where id = $1::uuid
       `,
@@ -13164,7 +13555,16 @@ export async function suggestPlanForMutual(
       await client.query("rollback");
       throw validationError("This connection is no longer available.");
     }
-    if (mutual.coord_state !== "open") {
+    // 'dormant' belongs here with 'open'. expireClickLifecycles parks a still-
+    // ACTIVE mutual at coord_state='dormant' once its only proposal lapses
+    // (:8034-8042), and that pair keeps showing on /proposals: the lateral join
+    // only picks pending/accepted plans, so the row comes back with no plan
+    // attached and projectStep renders it as the "open" suggest step, picker and
+    // all. Rejecting 'dormant' here meant every suggestion that step invited
+    // failed with "suggest an alternative instead" - pointing at an alternative
+    // that cannot exist, since the drawer holds no proposal id for these rows.
+    // 'proposed' (a live plan) and 'confirmed_together' / 'released' stay out.
+    if (mutual.coord_state !== "open" && mutual.coord_state !== "dormant") {
       // A plan is already on the table - re-point it, don't stack a second one.
       await client.query("rollback");
       throw validationError("There's already a plan here - suggest an alternative instead.");
@@ -14927,7 +15327,20 @@ export async function getEventAttendeePreview(
   }
 }
 
-export async function markPaymentFailed(paymentTransactionId: string) {
+export async function markPaymentFailed(
+  paymentTransactionId: string,
+  // The Checkout Session this failure came from, when it came from one.
+  //
+  // The corrected-guest path in /api/events/[eventId]/checkout expires a Session
+  // and builds a replacement against the SAME transaction, so Stripe fires
+  // checkout.session.expired for a Session the buyer has already moved off.
+  // Without this guard that stale event fails a live transaction and cancels the
+  // seat while the buyer is entering their card on the replacement - they get
+  // charged, then force-refunded, and no seat. Callers with no Session in hand
+  // (payment_intent.* failures, the checkout route's own cleanup) pass nothing
+  // and keep the old unconditional behaviour.
+  stripeCheckoutSessionId?: string | null,
+) {
   const pool = getPostgresPool();
   if (!pool) throw databaseUnavailableError();
 
@@ -14944,9 +15357,14 @@ export async function markPaymentFailed(paymentTransactionId: string) {
         update payment_transactions
         set status = 'failed', updated_at = now()
         where id = $1::uuid and status = 'pending'
+          and (
+            $2::text is null
+            or stripe_checkout_session_id is null
+            or stripe_checkout_session_id = $2::text
+          )
         returning id::text, event_id::text, profile_id::text
       `,
-      [paymentTransactionId],
+      [paymentTransactionId, stripeCheckoutSessionId ?? null],
     );
     const payment = paymentResult.rows[0];
     if (!payment) {

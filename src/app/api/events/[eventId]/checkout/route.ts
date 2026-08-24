@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import {
@@ -14,7 +15,7 @@ type RouteContext = {
   params: Promise<{ eventId: string }>;
 };
 
-function errorResponse(error: unknown) {
+function errorResponse(error: unknown, eventSlug: string) {
   if (!(error instanceof Error)) {
     return NextResponse.json({ error: "Unknown checkout error." }, { status: 500 });
   }
@@ -31,10 +32,14 @@ function errorResponse(error: unknown) {
     return NextResponse.json({ error: error.message }, { status: 401 });
   }
   // Same 18+ / onboarding gate the free RSVP path enforces - checkout must not
-  // be the way around it.
+  // be the way around it. Same ?next= too, so a buyer sent to the form comes
+  // back to the event they were paying for.
   if (error.name === "OnboardingRequiredError") {
     return NextResponse.json(
-      { error: error.message, redirectTo: "/onboarding" },
+      {
+        error: error.message,
+        redirectTo: `/onboarding?next=${encodeURIComponent(`/events/${eventSlug}`)}`,
+      },
       { status: 403 },
     );
   }
@@ -45,10 +50,16 @@ function errorResponse(error: unknown) {
   if (error.name === "ConflictError") {
     return NextResponse.json({ error: error.message }, { status: 409 });
   }
-  // Merchant hasn't finished Connect onboarding — the listing shouldn't have
+  // Merchant hasn't finished Connect onboarding - the listing shouldn't have
   // been live, but we still block at the buyer's checkout as a backstop.
   if (error.name === "PayoutsNotReadyError") {
     return NextResponse.json({ error: error.message }, { status: 409 });
+  }
+  // A banned or suspended account. Without this branch assertBookingEligible's
+  // refusal fell through to a generic 500, which reads as "Click is broken"
+  // rather than "this account cannot book".
+  if (error.name === "ForbiddenError") {
+    return NextResponse.json({ error: error.message }, { status: 403 });
   }
   if (error.name === "ValidationError") {
     return NextResponse.json({ error: error.message }, { status: 400 });
@@ -100,7 +111,7 @@ export async function POST(request: Request, context: RouteContext) {
       }
     }
   } catch {
-    // No/invalid JSON body — treat as a solo booking.
+    // No/invalid JSON body - treat as a solo booking.
   }
 
   let hold: Awaited<ReturnType<typeof createPaymentHold>> | null = null;
@@ -115,7 +126,7 @@ export async function POST(request: Request, context: RouteContext) {
     // page instead of redirecting away. It needs a publishable key on the
     // client, so we only use it when NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY is set;
     // otherwise we fall back to the hosted full-page redirect. Both reconcile
-    // through the same `?booked=1&session_id=` return — `{CHECKOUT_SESSION_ID}`
+    // through the same `?booked=1&session_id=` return - `{CHECKOUT_SESSION_ID}`
     // is a Stripe template literal substituted on return (leave the braces raw).
     const useEmbedded = Boolean(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY);
     const uiModeParams = useEmbedded
@@ -131,6 +142,12 @@ export async function POST(request: Request, context: RouteContext) {
           cancel_url: `${appUrl}${returnPath}?canceled=1`,
         };
 
+    // Guest details ride ONLY in Checkout Session metadata (never persisted as
+    // PII before payment), and the webhook reads them back to name the seats. So
+    // whether the submitted guests match the ones on an existing Session decides
+    // whether that Session can be reused - it is the payload, not a detail.
+    const submittedGuests = JSON.stringify(hold.guests ?? []);
+
     // A duplicate request that arrives after the first request attached its
     // Session should return that exact Checkout instead of issuing another
     // create call. This is the common double-click/lost-response retry path.
@@ -138,21 +155,38 @@ export async function POST(request: Request, context: RouteContext) {
       const existingSession = await stripe.checkout.sessions.retrieve(
         hold.stripeCheckoutSessionId,
       );
+      // ...UNLESS the buyer corrected the guest details in between. Returning
+      // the stale Session meant someone who spotted a typo in a friend's email,
+      // closed the modal, fixed it and paid again sent the invite to the typo'd
+      // address - while their own confirmation read "Spots saved for: <friend>"
+      // as though it had worked, with no way to correct it for the rest of the
+      // 31-minute hold. Only when guests were actually submitted this time: a
+      // bare resume POST carries none and must not discard a good Session.
+      const guestsChanged =
+        (hold.guests?.length ?? 0) > 0 &&
+        submittedGuests !== (existingSession.metadata?.guest_details ?? "[]");
+
       if (existingSession.status === "open") {
-        if (useEmbedded && existingSession.client_secret) {
-          return NextResponse.json({ clientSecret: existingSession.client_secret });
+        if (!guestsChanged) {
+          if (useEmbedded && existingSession.client_secret) {
+            return NextResponse.json({ clientSecret: existingSession.client_secret });
+          }
+          if (!useEmbedded && existingSession.url) {
+            return NextResponse.json({ url: existingSession.url });
+          }
         }
-        if (!useEmbedded && existingSession.url) {
-          return NextResponse.json({ url: existingSession.url });
-        }
+        // Corrected details: retire the stale Session so the buyer can't pay
+        // against the old metadata, then fall through and build a fresh one.
+        await stripe.checkout.sessions.expire(hold.stripeCheckoutSessionId);
+      } else {
+        const error = new Error(
+          existingSession.payment_status === "paid"
+            ? "This checkout is already paid. Refresh the event to see your booking."
+            : "This checkout is no longer open. Refresh the event to start again.",
+        );
+        error.name = "ConflictError";
+        throw error;
       }
-      const error = new Error(
-        existingSession.payment_status === "paid"
-          ? "This checkout is already paid. Refresh the event to see your booking."
-          : "This checkout is no longer open. Refresh the event to start again.",
-      );
-      error.name = "ConflictError";
-      throw error;
     }
 
     const checkoutSession = await stripe.checkout.sessions.create({
@@ -208,11 +242,9 @@ export async function POST(request: Request, context: RouteContext) {
         event_uuid: hold.eventUuid,
         event_slug: hold.eventSlug,
         // Named guests ride here only (never persisted as PII until the webhook
-        // confirms payment — an abandoned checkout leaves zero guest data). The
+        // confirms payment - an abandoned checkout leaves zero guest data). The
         // webhook reads this to name the reserved seats. Spec 19 §4.4/§13.
-        ...(hold.guests.length > 0
-          ? { guest_details: JSON.stringify(hold.guests) }
-          : {}),
+        ...(hold.guests.length > 0 ? { guest_details: submittedGuests } : {}),
       },
       payment_intent_data: {
         metadata: {
@@ -243,11 +275,22 @@ export async function POST(request: Request, context: RouteContext) {
             }
           : {}),
       },
-    }, { idempotencyKey: `click-checkout-${hold.paymentTransactionId}` });
+    }, {
+      // The guest digest is part of the key, not decoration. When corrected
+      // details force us to expire and rebuild above, a key of the transaction
+      // id alone would make Stripe replay its cached response - handing back the
+      // Session we just expired, with the typo'd address still on it, and the
+      // fix would silently do nothing. Same guests, same key: the double-click
+      // and lost-response retries this protects stay protected.
+      idempotencyKey: `click-checkout-${hold.paymentTransactionId}-${createHash("sha256")
+        .update(submittedGuests)
+        .digest("hex")
+        .slice(0, 16)}`,
+    });
 
     // The session id is always present at creation and is our durable Stripe
     // handle for reconciliation. The PaymentIntent is usually null here (Stripe
-    // creates it lazily on payment), so attach it only when present — the
+    // creates it lazily on payment), so attach it only when present - the
     // webhook / reconcile path backfills it once the buyer pays.
     await attachCheckoutSession(hold.paymentTransactionId, checkoutSession.id);
     if (typeof checkoutSession.payment_intent === "string") {
@@ -274,6 +317,6 @@ export async function POST(request: Request, context: RouteContext) {
         // best-effort cleanup
       }
     }
-    return errorResponse(error);
+    return errorResponse(error, eventId);
   }
 }

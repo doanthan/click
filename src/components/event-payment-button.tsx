@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useMemo, useRef, useState } from "react";
 import { openLoginModal } from "./login-modal-host";
 import { Badge, Button } from "./ds";
+import { formatMoney } from "@/lib/amounts";
 
 // Stand-in for the checkout modal while its chunk is still in flight. The gap
 // between the pay tap and Stripe painting stacks three uninstrumented waits
@@ -47,12 +48,6 @@ function emptyRow(): GuestRow {
   return { firstName: "", email: "", dob: "" };
 }
 
-function formatAud(cents: number) {
-  return new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" }).format(
-    cents / 100,
-  );
-}
-
 // Whole years between dob and the event date - mirrors the server's 18+ gate.
 function ageAt(dobIso: string, eventIso: string): number | null {
   const dob = new Date(`${dobIso}T00:00:00Z`);
@@ -91,6 +86,12 @@ export function EventPaymentButton({
   availableSeats,
   perSeatCents,
   eventDateISO,
+  // Seats already reserved on a live hold this buyer is coming back to finish.
+  // When set, the party size is FIXED to it: createPaymentHold refuses a
+  // different count, so a resume that asked for 1 seat against a 3-seat hold
+  // just returned "You already have a checkout open for 3 seats" for the whole
+  // 31-minute window, with no control anywhere to resume the real one.
+  resumeSeatCount,
 }: {
   eventId: string;
   priceLabel: string;
@@ -98,6 +99,7 @@ export function EventPaymentButton({
   availableSeats?: number;
   perSeatCents?: number;
   eventDateISO?: string;
+  resumeSeatCount?: number | null;
 }) {
   const checkoutAttemptRef = useRef<string | null>(null);
   const [state, setState] = useState<PaymentState>("idle");
@@ -112,7 +114,7 @@ export function EventPaymentButton({
   );
   const guestsEnabled = allowGuests && maxTickets > 1;
 
-  const [tickets, setTickets] = useState(1);
+  const [tickets, setTickets] = useState(resumeSeatCount ?? 1);
   const [namingOn, setNamingOn] = useState(false);
   const [rows, setRows] = useState<GuestRow[]>([]);
   const [consent, setConsent] = useState(false);
@@ -173,10 +175,14 @@ export function EventPaymentButton({
       .filter((r) => !rowError(r, eventDateISO))
       .map((r) => ({ firstName: r.firstName.trim(), email: r.email.trim(), dob: r.dob }));
 
+    // A resume must re-request the seats it already holds, whether or not the
+    // guest picker is on screen (it isn't, on the pending-payment CTA).
     const body =
-      guestsEnabled && tickets > 1
-        ? JSON.stringify({ tickets, guests })
-        : undefined;
+      resumeSeatCount && resumeSeatCount > 1
+        ? JSON.stringify({ tickets: resumeSeatCount, guests })
+        : guestsEnabled && tickets > 1
+          ? JSON.stringify({ tickets, guests })
+          : undefined;
 
     let response: Response;
     try {
@@ -263,7 +269,7 @@ export function EventPaymentButton({
           : null;
 
   const payLabel = useMemo(() => {
-    if (guestsEnabled && tickets > 1) return `Reserve ${tickets} seats · ${formatAud(totalCents)}`;
+    if (guestsEnabled && tickets > 1) return `Reserve ${tickets} seats · ${formatMoney(totalCents)}`;
     return `Reserve & pay ${priceLabel}`;
   }, [guestsEnabled, tickets, totalCents, priceLabel]);
 

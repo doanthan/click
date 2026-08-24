@@ -8,7 +8,7 @@ type RouteContext = {
   }>;
 };
 
-function responseForError(error: unknown) {
+function responseForError(error: unknown, eventSlug: string) {
   if (!(error instanceof Error)) {
     return NextResponse.json({ error: "Unknown RSVP error." }, { status: 500 });
   }
@@ -38,16 +38,27 @@ function responseForError(error: unknown) {
 
   // Signed in, but the profile has no postcode / birth date yet, so the 18+
   // gate was never passed. Carry the destination so the button can hand them
-  // to the form instead of just printing an error they can't act on.
+  // to the form instead of just printing an error they can't act on - and carry
+  // the event on as ?next= so finishing the form lands them back on the event,
+  // ready to tap RSVP again, instead of on /dashboard with the event gone.
   if (error.name === "OnboardingRequiredError") {
     return NextResponse.json(
-      { error: error.message, redirectTo: "/onboarding" },
+      {
+        error: error.message,
+        redirectTo: `/onboarding?next=${encodeURIComponent(`/events/${eventSlug}`)}`,
+      },
       { status: 403 },
     );
   }
 
   if (error.name === "NotFoundError") {
     return NextResponse.json({ error: error.message }, { status: 404 });
+  }
+
+  // A banned or suspended account - assertBookingEligible refuses the free RSVP
+  // the same way it refuses a paid hold.
+  if (error.name === "ForbiddenError") {
+    return NextResponse.json({ error: error.message }, { status: 403 });
   }
 
   if (error.name === "ValidationError") {
@@ -77,7 +88,7 @@ export async function POST(_request: Request, context: RouteContext) {
       registration,
     });
   } catch (error) {
-    return responseForError(error);
+    return responseForError(error, eventId);
   }
 }
 
@@ -89,6 +100,6 @@ export async function DELETE(_request: Request, context: RouteContext) {
     const result = await cancelRegistration(eventId, session);
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
-    return responseForError(error);
+    return responseForError(error, eventId);
   }
 }

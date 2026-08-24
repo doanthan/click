@@ -49,3 +49,33 @@ export const PRICE_PATTERN = /^\d+(\.\d{1,2})?$/;
  * silently became 15 - a 10x guest list nobody typed.
  */
 export const CAPACITY_PATTERN = /^\d+$/;
+
+/**
+ * Render cents as money for a human.
+ *
+ * Whole dollars stay clean ("$35"); anything with cents shows them ("$12.50").
+ * The old display helpers hardcoded `maximumFractionDigits: 0`, so a $12.50
+ * event advertised "$12" on the card, the detail page and the dialog title -
+ * then the pay button, which used a DIFFERENT formatter with the default two
+ * digits, flipped to "$25.00" for two seats. Two money formats in one control,
+ * on a LIVE Stripe key. One helper is the fix: the number a person is quoted is
+ * the number their card is charged.
+ *
+ * Not "Free"-aware on purpose - a refund quote and a receipt both need "$0.00"
+ * to stay honest. Use `formatPriceLabel` where zero means free.
+ */
+export function formatMoney(cents: number, currency = "AUD"): string {
+  const showCents = cents % 100 !== 0;
+  return new Intl.NumberFormat("en-AU", {
+    style: "currency",
+    currency: currency || "AUD",
+    minimumFractionDigits: showCents ? 2 : 0,
+    maximumFractionDigits: showCents ? 2 : 0,
+  }).format(cents / 100);
+}
+
+/** Ticket-price label: free events say so, everything else is `formatMoney`. */
+export function formatPriceLabel(cents: number, currency = "AUD"): string {
+  if (cents <= 0) return "Free";
+  return formatMoney(cents, currency);
+}

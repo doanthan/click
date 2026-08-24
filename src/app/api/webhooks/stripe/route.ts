@@ -1,6 +1,7 @@
 import type Stripe from "stripe";
 import { NextResponse } from "next/server";
 import {
+  attachPaymentIntent,
   markPaymentFailed,
   markPaymentSucceeded,
   processGuestSpotsForSession,
@@ -22,6 +23,15 @@ export const runtime = "nodejs";
 
 function paymentIdFromMetadata(metadata: Record<string, string> | null | undefined) {
   return metadata?.payment_transaction_id ?? null;
+}
+
+// session.payment_intent is a bare id, an expanded object, or null depending on
+// how the session was created and whether the buyer has paid yet.
+function stripePaymentIntentId(
+  paymentIntent: string | Stripe.PaymentIntent | null | undefined,
+) {
+  if (!paymentIntent) return null;
+  return typeof paymentIntent === "string" ? paymentIntent : paymentIntent.id;
 }
 
 // Thin notifications from a v2 event destination are `"object": "v2.core.event"`;
@@ -147,6 +157,16 @@ export async function POST(request: Request) {
         }
         const id = paymentIdFromMetadata(session.metadata);
         if (id) {
+          // Capture the PaymentIntent FIRST, before anything that can throw.
+          // Stripe creates the PI lazily, so it is normally null when the
+          // Checkout Session is created and this webhook is the first place it
+          // exists. Without it stripe_payment_intent_id stays null forever -
+          // and that column is the only key syncTransactionFromStripe matches
+          // on, so stripe_charge_id can never backfill and issueRefund
+          // dead-ends with "no captured charge to refund yet". A buyer who
+          // closed the tab after paying was unrefundable by any code path,
+          // including the admin console's "Sync from Stripe".
+          await attachPaymentIntent(id, stripePaymentIntentId(session.payment_intent));
           const confirmed = await markPaymentSucceeded(id);
           // Name the reserved guest seats from session metadata (spec 19 §5).
           // A replayed paid Checkout Session may belong to a booking that was
@@ -164,7 +184,11 @@ export async function POST(request: Request) {
       case "checkout.session.async_payment_failed": {
         const session = event.data.object;
         const id = paymentIdFromMetadata(session.metadata);
-        if (id) await markPaymentFailed(id);
+        // Pass the Session id: the checkout route can retire a Session and build
+        // a replacement against the same transaction, and this event then names
+        // a Session the buyer has already moved off. markPaymentFailed ignores it
+        // unless it is still the transaction's current Session.
+        if (id) await markPaymentFailed(id, session.id);
         break;
       }
       case "payment_intent.payment_failed":

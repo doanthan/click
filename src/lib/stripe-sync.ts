@@ -35,6 +35,7 @@ import {
   markPaymentFailed,
   markPaymentSucceeded,
   processGuestSpotsForSession,
+  settleRefundedBooking,
   updateMerchantConnectStatus,
 } from "./event-repository";
 import { writeAuditLog } from "@/utils/admin/audit-logger";
@@ -364,7 +365,7 @@ export async function reconcilePendingTransactionsForMerchant(
         });
         paid += 1;
       } else if (s.status === "expired") {
-        await markPaymentFailed(row.id);
+        await markPaymentFailed(row.id, row.session_id);
         failed += 1;
       }
     } catch (error) {
@@ -407,6 +408,15 @@ export async function reconcilePendingPayments(
     const paymentTransactionId = session.metadata?.payment_transaction_id ?? null;
     if (!paymentTransactionId) continue;
     try {
+      // Backfill the PI before the `confirmed` short-circuit, not after. A row
+      // the webhook already confirmed returns confirmed=false here, so doing
+      // this later would skip exactly the rows that need it - and until the
+      // webhook started attaching the PI itself, every webhook-confirmed
+      // booking was left unrefundable. Attaching first makes this cron the
+      // self-healing backstop for those rows. No-op once set.
+      if (typeof session.payment_intent === "string") {
+        await attachPaymentIntent(paymentTransactionId, session.payment_intent);
+      }
       const confirmed = await markPaymentSucceeded(paymentTransactionId);
       if (!confirmed) continue;
       // Name any reserved guest seats from the session metadata. The webhook and
@@ -676,6 +686,17 @@ export type IssueRefundInput = {
   amountCents?: number; // omit for full remaining
   reason?: RefundReason;
   adminProfileId: string | null;
+  /**
+   * Cancel the attendee's seat, release it to the waitlist, and email them -
+   * for a FULL refund only. Off by default because most callers
+   * (cancelRegistration, the settled-after-cancellation auto-refund, the bulk
+   * event-cancellation path) already cancelled the seat themselves and send
+   * their own copy; doing it twice would promote two people into one seat.
+   *
+   * The admin console passes true: a refund issued from /admin/transactions is
+   * the one path with nothing else behind it.
+   */
+  settleBooking?: boolean;
 };
 
 export type IssueRefundResult = {
@@ -895,6 +916,19 @@ export async function issueRefund(
       new_status: newStatus,
     },
   });
+
+  // Release the seat + tell the attendee. Full refunds only: a partial refund
+  // (a policy tier, a goodwill adjustment) leaves them going. Best-effort by
+  // construction - settleRefundedBooking swallows its own errors, because the
+  // money has already moved and nothing here may undo that.
+  if (input.settleBooking && newStatus === "refunded") {
+    await settleRefundedBooking({
+      paymentTransactionId: txn.id,
+      refundedAmountCents,
+      releaseSeat: true,
+      notify: true,
+    });
+  }
 
   return {
     refundId: localRefundId,
