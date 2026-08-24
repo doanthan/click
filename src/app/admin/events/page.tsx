@@ -2,12 +2,15 @@ import { Suspense } from "react";
 import { AdminEventQueue } from "@/components/admin-event-queue";
 import { AdminPageHeader } from "@/components/admin-page-header";
 import { getAdminEvents, getProfileTagOptions } from "@/lib/event-repository";
+import { requireAdminPage } from "@/lib/admin-guard";
 
 export const metadata = {
   title: "Events Management | Admin",
 };
 
 export default async function AdminEventsPage() {
+  await requireAdminPage();
+
   const [events, tagOptions] = await Promise.all([
     getAdminEvents(),
     getProfileTagOptions(),

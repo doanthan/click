@@ -1,12 +1,15 @@
 import { AdminTagManager } from "@/components/admin-tag-manager";
 import { AdminPageHeader } from "@/components/admin-page-header";
 import { getAdminTags } from "@/lib/event-repository";
+import { requireAdminPage } from "@/lib/admin-guard";
 
 export const metadata = {
   title: "Tags & Categories | Admin",
 };
 
 export default async function AdminTagsPage() {
+  await requireAdminPage();
+
   const tags = await getAdminTags();
 
   return (

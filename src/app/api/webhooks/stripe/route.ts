@@ -191,11 +191,29 @@ export async function POST(request: Request) {
         if (id) await markPaymentFailed(id, session.id);
         break;
       }
-      case "payment_intent.payment_failed":
       case "payment_intent.canceled": {
+        // Terminal - this PaymentIntent will never be paid, so failing the
+        // transaction unconditionally is correct.
         const intent = event.data.object;
         const id = paymentIdFromMetadata(intent.metadata);
         if (id) await markPaymentFailed(id);
+        break;
+      }
+      case "payment_intent.payment_failed": {
+        // Deliberately NOT handled, and it must stay that way.
+        //
+        // Stripe fires this on every declined card while the Checkout Session
+        // stays OPEN for the buyer to retry, and a PaymentIntent carries no
+        // Session id to hand markPaymentFailed - so this cancelled the
+        // pending_payment seat mid-retry. The retry then succeeded against a
+        // booking with no seat left, markPaymentSucceeded took the
+        // newSettlementHasNoSeat branch, and the buyer was charged, force-
+        // refunded, and shown "Booking unavailable". One declined card was
+        // enough.
+        //
+        // Real abandonment is already covered twice over: checkout.session
+        // .expired fails the transaction (guarded by Session id), and the
+        // hold-expiry cron releases the seat once the hold lapses.
         break;
       }
       case "charge.refunded": {

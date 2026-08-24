@@ -6,12 +6,15 @@ import {
   getAdminMetrics,
   getAdminWeeklyTrend,
 } from "@/lib/event-repository";
+import { requireAdminPage } from "@/lib/admin-guard";
 
 export const metadata = {
   title: "Dashboard | Admin",
 };
 
 export default async function AdminOverviewPage() {
+  await requireAdminPage();
+
   // getAdminMetrics computes every live metric from its own COUNT queries; the
   // `events` argument only feeds the DB-down fallback's event/pending counts,
   // and getAdminEvents()'s own fallback already returns [] (so events.length /

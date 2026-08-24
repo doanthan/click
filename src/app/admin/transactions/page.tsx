@@ -4,6 +4,7 @@ import {
   listAdminPayouts,
   listAdminTransactions,
 } from "@/lib/event-repository";
+import { requireAdminPage } from "@/lib/admin-guard";
 
 export const metadata = {
   title: "Transactions Management | Admin",
@@ -16,6 +17,8 @@ function isoDaysAgo(days: number) {
 }
 
 export default async function AdminTransactionsPage() {
+  await requireAdminPage();
+
   const dateFrom = isoDaysAgo(30);
   const [transactions, payouts, connectAccounts] = await Promise.all([
     listAdminTransactions({ dateFrom, limit: 200 }),

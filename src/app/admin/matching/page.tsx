@@ -2,6 +2,7 @@ import { getEventsForExplore, getSystemSettings } from "@/lib/event-repository";
 import type { UserMatchContext } from "@/lib/personalized-matching";
 import { updateMatchingWeightsAction } from "./actions";
 import { MatchingWeightPreview } from "./weight-preview";
+import { requireAdminPage } from "@/lib/admin-guard";
 
 export const metadata = {
   title: "Matching Formula | Admin",
@@ -16,6 +17,8 @@ const WEIGHT_FIELDS: { key: string; label: string; hint: string; max: number }[]
 ];
 
 export default async function AdminMatchingPage() {
+  await requireAdminPage();
+
   const [settings, events] = await Promise.all([getSystemSettings(), getEventsForExplore()]);
   const weights = settings.matchingWeights;
 

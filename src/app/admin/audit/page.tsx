@@ -2,6 +2,7 @@ import { AdminPageHeader } from "@/components/admin-page-header";
 import { InfoCard } from "@/components/click-ui";
 import { securityRows } from "@/lib/click-data";
 import { getAdminAuditLog } from "@/lib/event-repository";
+import { requireAdminPage } from "@/lib/admin-guard";
 
 export const metadata = {
   title: "Audit Log | Admin",
@@ -27,6 +28,8 @@ function formatMetadata(metadata: Record<string, unknown>) {
 }
 
 export default async function AdminAuditPage() {
+  await requireAdminPage();
+
   const audit = await getAdminAuditLog();
 
   return (

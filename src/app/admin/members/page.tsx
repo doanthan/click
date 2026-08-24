@@ -1,12 +1,15 @@
 import { AdminMembersTable } from "@/components/admin-members-table";
 import { AdminPageHeader } from "@/components/admin-page-header";
 import { getAdminEventOptions, getAdminMembers } from "@/lib/event-repository";
+import { requireAdminPage } from "@/lib/admin-guard";
 
 export const metadata = {
   title: "Attendees Management | Admin",
 };
 
 export default async function AdminMembersPage() {
+  await requireAdminPage();
+
   const [members, options] = await Promise.all([
     getAdminMembers(),
     // Only the {slug,title} picker is needed here, not the full events payload.

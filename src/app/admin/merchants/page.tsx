@@ -1,6 +1,7 @@
 import { AdminMerchantsTable } from "@/components/admin-merchants-table";
 import { AdminPageHeader } from "@/components/admin-page-header";
 import { getAdminMerchants } from "@/lib/event-repository";
+import { requireAdminPage } from "@/lib/admin-guard";
 
 export const metadata = {
   title: "Merchants Management | Admin",
@@ -13,6 +14,8 @@ export default async function AdminMerchantsPage({
 }: {
   searchParams: Promise<{ status?: string }>;
 }) {
+  await requireAdminPage();
+
   const [merchants, params] = await Promise.all([getAdminMerchants(), searchParams]);
   const initialStatus = (STATUS_VALUES as readonly string[]).includes(params.status ?? "")
     ? (params.status as (typeof STATUS_VALUES)[number])

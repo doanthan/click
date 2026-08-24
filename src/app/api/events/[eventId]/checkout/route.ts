@@ -148,6 +148,13 @@ export async function POST(request: Request, context: RouteContext) {
     // whether that Session can be reused - it is the payload, not a detail.
     const submittedGuests = JSON.stringify(hold.guests ?? []);
 
+    // A Session we are replacing, expired only AFTER the replacement is
+    // attached to the transaction. Expiring it here - while the DB still names
+    // it - makes Stripe's checkout.session.expired arrive against the id
+    // markPaymentFailed is still guarding on, so the guard passes and the stale
+    // event cancels the seat the buyer is at that moment paying for.
+    let staleSessionId: string | null = null;
+
     // A duplicate request that arrives after the first request attached its
     // Session should return that exact Checkout instead of issuing another
     // create call. This is the common double-click/lost-response retry path.
@@ -175,9 +182,11 @@ export async function POST(request: Request, context: RouteContext) {
             return NextResponse.json({ url: existingSession.url });
           }
         }
-        // Corrected details: retire the stale Session so the buyer can't pay
-        // against the old metadata, then fall through and build a fresh one.
-        await stripe.checkout.sessions.expire(hold.stripeCheckoutSessionId);
+        // Corrected details: mark the stale Session for retirement so the buyer
+        // can't pay against the old metadata, then fall through and build a
+        // fresh one. The actual expire happens after attachCheckoutSession
+        // below - see staleSessionId.
+        staleSessionId = hold.stripeCheckoutSessionId;
       } else {
         const error = new Error(
           existingSession.payment_status === "paid"
@@ -295,6 +304,23 @@ export async function POST(request: Request, context: RouteContext) {
     await attachCheckoutSession(hold.paymentTransactionId, checkoutSession.id);
     if (typeof checkoutSession.payment_intent === "string") {
       await attachPaymentIntent(hold.paymentTransactionId, checkoutSession.payment_intent);
+    }
+
+    // Only now retire the Session we replaced. The transaction already names
+    // the new Session, so when Stripe delivers checkout.session.expired for the
+    // old id, markPaymentFailed's guard sees a Session this transaction has
+    // moved off and ignores it - instead of cancelling a live seat. Never move
+    // this above attachCheckoutSession.
+    //
+    // Best-effort: the replacement is already built and returned below, so a
+    // failure to expire the old Session must not fail the buyer's checkout. The
+    // worst case is a Session that lapses on its own at the hold deadline.
+    if (staleSessionId) {
+      try {
+        await stripe.checkout.sessions.expire(staleSessionId);
+      } catch (error) {
+        console.warn("Failed to expire the replaced checkout session", error);
+      }
     }
 
     if (useEmbedded) {

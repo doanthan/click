@@ -11,6 +11,7 @@ import type {
   AdminMerchantDetailEvent,
   AdminMerchantDocument,
 } from "@/lib/event-repository";
+import { requireAdminPage } from "@/lib/admin-guard";
 
 const DOCUMENT_LABELS: Record<string, string> = {
   abn_certificate: "ABN certificate",
@@ -130,6 +131,8 @@ function fullAddress(merchant: {
 export default async function AdminMerchantDetailPage({
   params,
 }: AdminMerchantDetailPageProps) {
+  await requireAdminPage();
+
   const { merchantId } = await params;
   const merchant = await getAdminMerchantDetail(merchantId);
   if (!merchant) notFound();

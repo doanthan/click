@@ -842,8 +842,81 @@ test("retiring a checkout session cannot cancel the seat the buyer is paying for
     "utf8",
   );
   assert.match(webhook, /markPaymentFailed\(id, session\.id\)/);
-  // The payment_intent.* branch has no session and must stay unconditional.
+
+  // 4. payment_intent.canceled is terminal, so it stays unconditional.
   assert.match(webhook, /markPaymentFailed\(id\);/);
+
+  // 5. payment_intent.payment_failed must NOT fail the transaction. It fires on
+  //    every declined card while the Checkout Session is still OPEN for retry,
+  //    and it carries no Session id to arm the guard above - so handling it
+  //    cancelled the pending_payment seat mid-retry, and the successful retry
+  //    settled against nothing: charged, force-refunded, "Booking unavailable".
+  //
+  //    This assertion used to demand the opposite. It read the two bundled
+  //    cases as one "payment_intent.* branch" and required the unconditional
+  //    call, which is how the defect passed a green suite.
+  const failedCase = webhook.slice(
+    webhook.indexOf('case "payment_intent.payment_failed"'),
+    webhook.indexOf(
+      'case "',
+      webhook.indexOf('case "payment_intent.payment_failed"') + 10,
+    ),
+  );
+  assert.ok(failedCase.length > 0, "payment_intent.payment_failed case not found");
+  // Match the CALL, not the name: the comment in that case explains the defect
+  // and necessarily says "markPaymentFailed" out loud.
+  assert.doesNotMatch(
+    failedCase,
+    /markPaymentFailed\s*\(/,
+    "a declined card must not cancel the seat the buyer is retrying against",
+  );
+
+  // 6. The replaced Session is expired only AFTER the replacement is attached.
+  //    Expire first and the transaction still names the old id, so the stale
+  //    checkout.session.expired passes the guard and kills a live seat - the
+  //    guard is defeated by statement order alone.
+  const checkout = readFileSync(
+    path.join(root, "src/app/api/events/[eventId]/checkout/route.ts"),
+    "utf8",
+  );
+  const attachAt = checkout.indexOf("await attachCheckoutSession(");
+  const expireAt = checkout.indexOf("sessions.expire(staleSessionId)");
+  assert.ok(attachAt > -1, "attachCheckoutSession call not found");
+  assert.ok(expireAt > -1, "the staged expire of the replaced session not found");
+  assert.ok(
+    expireAt > attachAt,
+    "the replaced session must be expired only after the new one is attached",
+  );
+});
+
+test("every admin page enforces admin access on its own segment", () => {
+  // src/app/admin/layout.tsx is not a boundary: a layout renders once per
+  // segment entry, and an RSC request carrying a crafted Next-Router-State-Tree
+  // resumes at the first mismatched segment, so a nested admin page can execute
+  // without the layout ever running. The header is shape-checked, not
+  // authenticated, and anyone can mint a session via the open magic-link
+  // signup. Admin WRITES were always safe (requireAdminProfile); this closes
+  // read exposure - KYC signed URLs, every member's email, the live ledger.
+  const dir = path.join(root, "src/app/admin");
+  const pages = [];
+  const walk = (current) => {
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.name === "page.tsx") pages.push(full);
+    }
+  };
+  walk(dir);
+
+  assert.ok(pages.length >= 14, `expected the admin console, found ${pages.length} pages`);
+  for (const page of pages) {
+    const src = readFileSync(page, "utf8");
+    assert.match(
+      src,
+      /requireAdminPage\(\)|await auth\(\)/,
+      `${path.relative(root, page)} relies on the layout for authorization`,
+    );
+  }
 });
 
 test("a banned or suspended account cannot book, pay, or join a waitlist", () => {

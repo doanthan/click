@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Badge, Tag, type BadgeTone } from "@/components/ds";
 import { getAdminMemberDetail } from "@/lib/event-repository";
+import { requireAdminPage } from "@/lib/admin-guard";
 
 export const metadata = {
   title: "Member Profile | Admin",
@@ -60,6 +61,8 @@ function roleTone(role: "attendee" | "merchant" | "admin"): BadgeTone {
 export default async function AdminMemberDetailPage({
   params,
 }: AdminMemberDetailPageProps) {
+  await requireAdminPage();
+
   const { memberId } = await params;
   const member = await getAdminMemberDetail(memberId);
   if (!member) notFound();
