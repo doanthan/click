@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { auth, isAdminEmail } from "@/auth";
+import { SUPPORT_EMAIL_DEFAULT } from "@/lib/email-templates/tokens";
 import { getProfileStatus, getUnreadNotificationCount } from "@/lib/event-repository";
 import { ButtonLink, Logo } from "./ds";
 import { HeaderNav, type HeaderNavItem } from "./header-nav";
@@ -178,10 +179,10 @@ export async function SiteFooter() {
 
         {/* Row 2 - copyright left, social + email right */}
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="text-[12.5px] whitespace-nowrap text-[color:var(--ink-faint)]">
+          <span className="text-[12.5px] whitespace-nowrap text-[color:var(--slate)]">
             © {new Date().getFullYear()} Click · Made in Sydney
           </span>
-          <span className="inline-flex items-center gap-1.5 text-[12.5px] text-[color:var(--ink-faint)]">
+          <span className="inline-flex items-center gap-1.5 text-[12.5px] text-[color:var(--slate)]">
             <SocialLink label="Click's Instagram" href="https://instagram.com/click.irl">
               <rect x="3" y="3" width="18" height="18" rx="5" />
               <circle cx="12" cy="12" r="4" />
@@ -192,8 +193,11 @@ export async function SiteFooter() {
               <path d="M16.5 11.5c-.2-3.1-2-4.7-4.6-4.7-2.4 0-4.3 1.5-4.3 3.8 0 2 1.5 3.3 3.6 3.3 2.4 0 3.6-1.6 3.6-3.9" />
               <path d="M9.3 13.2c.6 1.2 1.8 1.6 3 1.5 2-.2 3-1.6 2.8-4" />
             </SocialLink>
-            <a href="mailto:hello@click.au" className="ml-1.5 transition-colors hover:text-[color:var(--purple-700)]">
-              hello@click.au
+            <a
+              href={`mailto:${SUPPORT_EMAIL_DEFAULT}`}
+              className="ml-1.5 transition-colors hover:text-[color:var(--purple-700)]"
+            >
+              {SUPPORT_EMAIL_DEFAULT}
             </a>
           </span>
         </div>

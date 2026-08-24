@@ -73,7 +73,13 @@ export const SECTIONS: Section[] = [
     options: [
       { slug: "small-table", label: "Small table" },
       { slug: "active", label: "Active / outdoors" },
-      { slug: "creative", label: "Creative / hands-on" },
+      // NOT "creative": database/002_seed.sql:43 already seeds that slug as an
+      // admin-managed `interest` tag. saveLifeQuizTags upserts by slug, so the
+      // answer linked the user to the INTEREST tag - which then showed up as an
+      // interest they never picked, and could never be taken off again, because
+      // the retake's delete is guarded on tag_type = 'life'. Every life-quiz
+      // slug has to stay out of the seeded interest/vibe namespace.
+      { slug: "creative-hands-on", label: "Creative / hands-on" },
       { slug: "high-energy", label: "High energy" },
       { slug: "quiet-setting", label: "Quiet setting" },
     ],

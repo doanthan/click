@@ -325,6 +325,13 @@ type FormFieldChrome = {
   hint?: ReactNode;
   /** Right-aligned affordance beside the label, e.g. a character count. */
   action?: ReactNode;
+  /** ESCAPE-HATCH PATH ONLY: the id of the one control inside `children` that
+      the label names. Set it and the label becomes a real <label htmlFor>, so
+      clicking the text focuses that control. Leave it off when the children are
+      a group of controls rather than one (a chip row, a tag picker) - the
+      wrapper then becomes role="group" and clicking the label does nothing,
+      which is the correct behaviour for a group. */
+  htmlFor?: string;
 };
 
 /* `children` rides in on each variant's native props:
@@ -342,7 +349,7 @@ export type FormFieldProps =
    would otherwise warn about unknown props. `required` deliberately STAYS in
    the rest so it lands on the element as the native attribute, which is what
    gives the field browser constraint validation with JS disabled. */
-const FORM_FIELD_CHROME = ["label", "as", "error", "hint", "action"] as const;
+const FORM_FIELD_CHROME = ["label", "as", "error", "hint", "action", "htmlFor"] as const;
 
 function stripFormFieldChrome<P extends FormFieldProps>(props: P) {
   const control: Record<string, unknown> = { ...props };
@@ -366,15 +373,32 @@ function formFieldControl(props: FormFieldProps, className: string) {
  * A labelled form control. Hook-free and server-renderable like the rest of this
  * file, so it works inside a Server Component and with scripting off.
  *
- * The wrapping <label> associates implicitly with the first labelable control
- * inside it, which is why the escape hatch still gets a working label.
+ * On the NATIVE path the wrapper is a <label> and associates implicitly with the
+ * control it wraps - the input/select/textarea is the only labelable descendant,
+ * so that is exactly right.
  *
- * On the escape-hatch path (children in place of the control) the caller owns
- * the control, so .ck-input, aria-invalid and the native `required` attribute
- * are the caller's to apply - only the label / marker / error chrome is ours.
+ * On the ESCAPE-HATCH path (children in place of the control) it is not. A
+ * <label> forwards a click on its text to its first LABELABLE descendant, and
+ * <button> is labelable - so clicking the word "Tags" fired the first tag's
+ * Remove button and deleted it, and clicking "Who's this event for?" toggled the
+ * first intent chip. The wrapper is a plain <div> there instead, and the label
+ * text is associated explicitly:
+ *   - `htmlFor` given → a real <label htmlFor>, so clicking it focuses that one
+ *     control (the behaviour the implicit label was there for).
+ *   - no `htmlFor` → the children are a GROUP, not one control, so the wrapper
+ *     carries role="group" + the label as its accessible name and a click on the
+ *     text correctly does nothing.
+ *
+ * The caller still owns .ck-input, aria-invalid and native `required` on that
+ * path - only the label / marker / error chrome is ours.
+ *
+ * `content-start` matters: this is a grid, and a FormField sitting in a taller
+ * grid row (a two-column pair where the sibling is a textarea, say) stretched
+ * its own auto rows to fill, which is what turned the Category select into a
+ * 166px-tall control instead of the 44px .ck-input is defined as.
  */
 export function FormField(props: FormFieldProps) {
-  const { label, required, error, hint, action } = props;
+  const { label, required, error, hint, action, htmlFor } = props;
 
   const controlClass = [
     "ck-input",
@@ -389,11 +413,21 @@ export function FormField(props: FormFieldProps) {
   // A select's children are its options, so they stay inside the control.
   const custom = props.as !== "select" && props.children !== undefined;
 
-  return (
-    <label className="grid gap-1.5">
+  const labelClass = "text-[13.5px] font-semibold text-[color:var(--ink)]";
+  const labelText =
+    custom && htmlFor ? (
+      <label htmlFor={htmlFor} className={labelClass}>
+        {label}
+      </label>
+    ) : (
+      <span className={labelClass}>{label}</span>
+    );
+
+  const chrome = (
+    <>
       <span className="flex items-baseline justify-between gap-3">
         <span className="flex items-baseline gap-2">
-          <span className="text-[13.5px] font-semibold text-[color:var(--ink)]">{label}</span>
+          {labelText}
           {required ? (
             // aria-hidden: the native `required` attribute below is what actually
             // reaches assistive tech, so this marker is purely visual.
@@ -412,7 +446,25 @@ export function FormField(props: FormFieldProps) {
       ) : hint ? (
         <span className="text-[12.5px] leading-[1.5] text-[color:var(--slate)]">{hint}</span>
       ) : null}
-    </label>
+    </>
+  );
+
+  if (!custom) {
+    return <label className="grid content-start gap-1.5">{chrome}</label>;
+  }
+
+  // A group only earns its accessible name from a string label; a ReactNode
+  // label has no text we can safely flatten, so we leave the role off rather
+  // than announce an empty group.
+  const groupLabel = !htmlFor && typeof label === "string" ? label : undefined;
+  return (
+    <div
+      className="grid content-start gap-1.5"
+      role={groupLabel ? "group" : undefined}
+      aria-label={groupLabel}
+    >
+      {chrome}
+    </div>
   );
 }
 

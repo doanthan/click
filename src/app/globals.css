@@ -463,6 +463,11 @@ body {
   white-space: nowrap;
 }
 .ck-tag--dense { height: 22px; padding: 0 8px; }
+/* Tap-sized tag. Same look, 44px box - for the places a tag is the PRIMARY
+   control rather than a label (the quick-time chips in the date picker, the
+   "tap to add" tag cloud). A 24px target beside 44px buttons is the same
+   affordance asking for three times the precision. */
+.ck-tag--tap { height: 44px; padding: 0 14px; font-size: 13px; }
 .ck-tag--selected { background: var(--purple); border-color: transparent; color: var(--champagne); }
 .ck-tag--select { cursor: pointer; transition: background-color .14s ease, border-color .14s ease; }
 .ck-tag--select:hover:not(.ck-tag--selected) { background: var(--lavender-100); border-color: var(--slate); }
@@ -541,13 +546,6 @@ body {
     radial-gradient(circle at 11px 11px, var(--noise-dot-b) 1px, transparent 0);
   background-size: 22px 22px, 22px 22px;
   background-position: 0 0, 11px 11px;
-}
-
-.stamp-grid {
-  background-image:
-    linear-gradient(var(--grid-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
-  background-size: 36px 36px;
 }
 
 .confetti-field {

@@ -130,7 +130,12 @@ async function bakeAnnotations(shot: Shot, annotations: Annotation[]): Promise<B
   );
 }
 
-export default function SupportWidget() {
+// `canTriage` is resolved on the server (see src/lib/support-access.ts) and
+// decides whether the "Bugs on this page" tab exists at all. Anyone may REPORT;
+// only an operator may read the queue, because a ticket carries the reporter's
+// name and whatever they typed. This is presentation only - both the list and
+// the triage mutations are enforced server-side.
+export default function SupportWidget({ canTriage = false }: { canTriage?: boolean }) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<"report" | "list">("report");
 
@@ -204,6 +209,7 @@ export default function SupportWidget() {
   const [editSubmitting, setEditSubmitting] = useState(false);
 
   const loadBugs = useCallback(async () => {
+    if (!canTriage) return;
     setLoadingBugs(true);
     try {
       const res = await fetch(`/api/support/ticket?url=${encodeURIComponent(pageUrl())}`);
@@ -213,7 +219,7 @@ export default function SupportWidget() {
     } finally {
       setLoadingBugs(false);
     }
-  }, []);
+  }, [canTriage]);
 
   const capture = useCallback(async () => {
     setCapturing(true);
@@ -523,9 +529,11 @@ export default function SupportWidget() {
             {/* Tabs */}
             <nav className="flex border-b border-black/10 text-sm">
               <TabButton active={tab === "report"} onClick={() => setTab("report")}>Report</TabButton>
-              <TabButton active={tab === "list"} onClick={() => setTab("list")}>
-                Bugs on this page{bugs.length ? ` (${bugs.length})` : ""}
-              </TabButton>
+              {canTriage ? (
+                <TabButton active={tab === "list"} onClick={() => setTab("list")}>
+                  Bugs on this page{bugs.length ? ` (${bugs.length})` : ""}
+                </TabButton>
+              ) : null}
             </nav>
 
             <div className="flex-1 overflow-y-auto p-4">

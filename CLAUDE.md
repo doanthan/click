@@ -94,6 +94,7 @@ Public bucket = anyone with the URL can read (avatars rendered on event cards, h
 | `guest-invite` + `guest-spot-existing-user` | `processGuestSpotsForSession` in `src/lib/event-repository.ts`, branched on whether the guest address already has a profile |
 | `guest-spot-cancelled` | `cancelGuestSeatForPurchaser` in `src/lib/event-repository.ts` |
 | `report-received-admin` | `reportUser` in `src/lib/event-repository.ts` |
+| `booking-refunded-attendee` | `settleRefundedBooking` in `src/lib/event-repository.ts`, from two callers: `issueRefund` in `src/lib/stripe-sync.ts` when `settleBooking: true` and the refund is FULL (the admin console passes it; `cancelRegistration` and the bulk event-cancel path must not, they already cancel the seat and send their own copy), and `markPaymentSucceeded`'s settled-after-cancellation branch, which needed the email but not the seat release |
 | `merchant-monthly-report` | `sendMerchantMonthlyReports` in `src/lib/event-repository.ts`, driven by the `api/cron/merchant-monthly-reports` cron — one row per approved merchant who hosted ≥1 event in the target month (events/attendees/paid-revenue/top event) |
 
 `event-reminder-attendee` is wired too, via `sendEventReminders` in `src/lib/event-repository.ts` (cron route `api/cron/event-reminders`), which dedupes against existing `email_events` rows so a re-run can't double-send.

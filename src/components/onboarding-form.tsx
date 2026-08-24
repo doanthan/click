@@ -300,15 +300,32 @@ export function OnboardingForm({
           }
           if (typeof draft.datingVisible === "boolean") setDatingVisible(draft.datingVisible);
           if (typeof draft.flexibleDiscovery === "boolean") setFlexibleDiscovery(draft.flexibleDiscovery);
-          // Intentionally NOT restoring `draft.tags`: interests are optional and
-          // restoring them silently makes the picker look pre-filled on a fresh
-          // visit ("I haven't touched anything"). Interests always start empty.
+          // Interests ARE restored. This used to be skipped on the theory that a
+          // pre-filled picker reads as "I haven't touched anything" on a fresh
+          // visit - but a draft only exists once you HAVE touched something, and
+          // every neighbouring field here (name, postcode, birth date, intents,
+          // bio) is restored on exactly that reasoning. The old behaviour dropped
+          // someone back onto the interests step with their own picks wiped and
+          // the footer reading "Pick a few - or skip.", while the tags sat
+          // untouched in localStorage.
+          if (Array.isArray(draft.tags) && draft.tags.length) {
+            setTags(new Set(draft.tags));
+          }
           if (typeof draft.bio === "string") setBio(draft.bio);
           // Resume where they stopped. Never resume onto `done` - that state is
           // only reachable by an actual successful save.
           if (typeof draft.step === "number" && draft.step > 0 && draft.step < DONE) {
             setStep(draft.step);
-            window.history.replaceState(null, "", `#${STEPS[draft.step].key}`);
+            // Rebuild the history stack rather than collapsing it into one entry.
+            // goBack() delegates to window.history.back(), so a lone replaceState
+            // left the footer's Back button with nothing behind it: it either did
+            // nothing at all (first entry in a fresh tab, the magic-link case) or
+            // ejected the user out of onboarding entirely. Replaying the pushes
+            // makes Back walk the wizard exactly as it does going forward.
+            window.history.replaceState(null, "", `#${STEPS[0].key}`);
+            for (let i = 1; i <= draft.step; i += 1) {
+              window.history.pushState(null, "", `#${STEPS[i].key}`);
+            }
           }
         }
       }

@@ -145,7 +145,8 @@ export type EmailTemplate =
   | "mutual-click-attendee"
   | "guest-invite"
   | "guest-spot-existing-user"
-  | "guest-spot-cancelled";
+  | "guest-spot-cancelled"
+  | "booking-refunded-attendee";
 
 // Where the .html files live. Override with CLICK_EMAILS_DIR if Next moves
 // cwd somewhere unexpected in your deploy; otherwise resolves from repo root.
@@ -195,6 +196,8 @@ const SUBJECTS: Record<EmailTemplate, (vars: Record<string, string>) => string> 
     `A spot opened - ${v.eventTitle ?? "your event"}`,
   "merchant-suspended-merchant": (v) =>
     `${v.businessName ?? "Your account"} has been suspended on Click`,
+  "booking-refunded-attendee": (v) =>
+    `Refunded - ${v.eventTitle ?? "your booking"}`,
   "payment-receipt-attendee": (v) =>
     `Receipt - ${v.eventTitle ?? "your event"}${v.totalLabel ? ` (${v.totalLabel})` : ""}`,
   "report-received-admin": (v) =>

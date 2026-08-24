@@ -14,6 +14,7 @@ import type {
   AdminPayoutRow,
   AdminTransactionRow,
 } from "@/lib/event-repository";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { EmptyState } from "@/components/empty-state";
 import { Badge, type BadgeTone } from "@/components/ds";
 
@@ -533,9 +534,17 @@ function TransactionDetail({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Holds the amount awaiting confirmation. Every other destructive action in
+  // this console (reject event, cancel event, reject merchant, delete tag,
+  // suspend member, maintenance mode) is gated behind ConfirmDialog; the one
+  // that moves real money on the LIVE key was not. The amount box opens
+  // pre-filled with the full refundable balance, so a single mis-aimed tap - or
+  // one meant for the row below - issued a full refund with no undo, reversed
+  // the merchant's transfer, and clawed back the platform fee.
+  const [pendingCents, setPendingCents] = useState<number | null>(null);
   const refundable_lt_total = row.refundedAmountCents > 0;
 
-  async function submit() {
+  function requestRefund() {
     setError(null);
     setSuccess(null);
     const cents = Math.round(Number(amount.replace(/[^0-9.]/g, "")) * 100);
@@ -543,6 +552,16 @@ function TransactionDetail({
       setError("Amount must be a positive number.");
       return;
     }
+    if (cents > refundable) {
+      setError(`Amount is more than the ${formatMoney(refundable, row.currency)} still refundable.`);
+      return;
+    }
+    setPendingCents(cents);
+  }
+
+  async function submit(cents: number) {
+    setError(null);
+    setSuccess(null);
     setSubmitting(true);
     try {
       const res = await fetch(`/api/admin/transactions/${row.id}/refund`, {
@@ -569,13 +588,39 @@ function TransactionDetail({
       setError(e instanceof Error ? e.message : "Refund failed.");
     } finally {
       setSubmitting(false);
+      setPendingCents(null);
     }
   }
 
   const canRefund = refundable > 0 && (row.status === "paid" || row.status === "partially_refunded");
+  const refundTarget = row.attendeeName ?? row.attendeeEmail ?? "this attendee";
 
   return (
     <div className="border-t border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-5 text-sm text-[color:var(--slate)]">
+      <ConfirmDialog
+        open={pendingCents !== null}
+        tone="rose"
+        title="Issue this refund?"
+        confirmLabel={
+          pendingCents !== null
+            ? `Refund ${formatMoney(pendingCents, row.currency)}`
+            : "Refund"
+        }
+        busy={submitting}
+        description={
+          <>
+            {pendingCents !== null ? formatMoney(pendingCents, row.currency) : ""} goes back
+            to {refundTarget}
+            {row.eventTitle ? ` for ${row.eventTitle}` : ""}. Stripe refunds cannot be
+            undone, and for a merchant-hosted event this also reverses the merchant&apos;s
+            transfer and claws back the platform fee.
+          </>
+        }
+        onConfirm={() => {
+          if (pendingCents !== null) void submit(pendingCents);
+        }}
+        onCancel={() => setPendingCents(null)}
+      />
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="space-y-2">
           <p className="eyebrow">Details</p>
@@ -661,7 +706,7 @@ function TransactionDetail({
                 </label>
                 <button
                   type="button"
-                  onClick={submit}
+                  onClick={requestRefund}
                   disabled={submitting}
                   className="ck-btn ck-btn--primary ck-btn--sm self-end"
                 >

@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import Link from "next/link";
 import { SubmitButton } from "@/components/ds-client";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { PAIR_SUPPRESSION_DAYS } from "@/lib/clicks/constants";
 import {
   confirmProposalAction,
   declineProposalAction,
@@ -85,11 +86,14 @@ function ReleaseControl({ onRequest }: { onRequest: () => void }) {
       aria-disabled={pending || undefined}
       className="text-[13px] font-semibold text-[color:var(--slate)] underline decoration-dotted underline-offset-2 hover:text-[color:var(--ink)] aria-disabled:opacity-50"
     >
-      {/* "Hiding…" - this ends the plan for you; it sends nothing to them. The
-          old shared label said "Sending…", which on the safety exit implied a
-          message had gone to the other person: the exact fear that stops people
-          using it. */}
-      {pending ? "Hiding…" : "Not feeling it"}
+      {/* "Ending…" - this ends the plan on BOTH sides; it still sends nothing to
+          them. Not "Sending…", which on the safety exit implied a message had
+          gone to the other person: the exact fear that stops people using it.
+          Not "Hiding…" either - that implied the plan lived on for them, which
+          releaseMutualForSession has never done. It writes only to clicks,
+          mutual_clicks and pair_suppressions: no seat, no payment, which is why
+          the dialog can promise the booking survives. */}
+      {pending ? "Ending…" : "Not feeling it"}
     </button>
   );
 }
@@ -202,7 +206,34 @@ export function CoordinationDrawer({
   // which owns the 3-alt cap).
   const freshSuggest = step === "open" && !entry.suggestedEventSlug;
 
+  // An empty catalogue is a normal launch-week state (nothing upcoming with two
+  // free seats). Rendering the form anyway gave a select holding only its own
+  // disabled placeholder, and `required` then met "Send suggestion" with the
+  // browser's native "Please select an item in the list." - no explanation, and
+  // the single action on this whole surface simply did not work. Say so instead,
+  // and point somewhere useful.
   const picker = picking ? (
+    catalogue.length === 0 ? (
+      <div className="rise-soft mt-4 rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-4">
+        <p className="eyebrow">Nothing to suggest yet</p>
+        <p className="mt-2 text-sm leading-relaxed text-[color:var(--slate)]">
+          There&apos;s nothing upcoming with room for two right now. New events land all
+          the time - have a look and come back when you spot one.
+        </p>
+        <div className="mt-3 flex gap-2">
+          <Link href="/discover" className="ck-btn ck-btn--sm ck-btn--primary">
+            <span className="ck-btn__label">Browse events</span>
+          </Link>
+          <button
+            type="button"
+            onClick={() => setPicking(false)}
+            className="ck-btn ck-btn--sm ck-btn--secondary"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    ) : (
     <form
       action={freshSuggest ? suggestAction : proposeAction}
       className="rise-soft mt-4 rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-4"
@@ -246,6 +277,7 @@ export function CoordinationDrawer({
         </p>
       ) : null}
     </form>
+    )
   ) : null;
 
   return createPortal(
@@ -328,9 +360,14 @@ export function CoordinationDrawer({
             trap - on the most emotionally loaded control on the screen. */}
         <ConfirmDialog
           open={confirmRelease}
-          title={`Hide this connection with ${firstName}?`}
-          description={`${firstName} isn't told, and nothing is sent. This plan just stops showing up for you.`}
-          confirmLabel="Hide this connection"
+          title={`End this connection with ${firstName}?`}
+          description={
+            `This ends the plan for both of you. ${firstName} isn't told, and no message is sent - ` +
+            `the plan simply stops showing for you both. Click won't suggest either of you to the ` +
+            `other for the next ${PAIR_SUPPRESSION_DAYS} days. Any seat you've already booked ` +
+            `stays booked.`
+          }
+          confirmLabel="End this connection"
           cancelLabel="Keep it"
           tone="rose"
           onConfirm={() => {

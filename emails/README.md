@@ -368,6 +368,21 @@ This one is a tax document — `taxLabel` and the `ABN` line in the footer matte
 | `supportEmail` |  |
 | `unsubscribeUrl` |  |
 
+### `booking-refunded-attendee.html`
+
+Sent when money goes back for a booking the attendee did NOT cancel themselves - an admin refund from `/admin/transactions`, or a charge that settled after the event was pulled or the hold lapsed. An attendee-initiated cancellation is `rsvp-cancelled-attendee`, which carries its own `refundLine`; do not send both.
+
+| Variable | Notes |
+| --- | --- |
+| `firstName` |  |
+| `eventTitle` |  |
+| `eventLongDate` |  |
+| `refundAmount` | The amount actually refunded, e.g. `$28.00` - not necessarily the ticket price. |
+| `refundReasonLine` | One sentence after the amount. Says the spot was released when this refund is what released it; otherwise says nothing more is needed. |
+| `discoverUrl` | `/discover`. |
+| `supportEmail` |  |
+| `unsubscribeUrl` |  |
+
 ## Dev log: viewing sends in Supabase
 
 Every rendered email is persisted to a Postgres table as well as delivered, so you can inspect exactly what went out. Quick path:
