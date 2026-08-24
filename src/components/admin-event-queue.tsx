@@ -671,8 +671,27 @@ export function AdminEventQueue({
           <EmptyState
             bare
             eyebrow="Nothing to triage"
-            title="No events match this filter."
-            body="Try a different status, region, or date range - or clear the search to widen the queue."
+            title={
+              filter === "Pending" && events.length > 0
+                ? "No events waiting for review."
+                : "No events match this filter."
+            }
+            body={
+              filter === "Pending" && events.length > 0
+                ? "The pending queue is clear. Switch to All to browse every event on the platform."
+                : "Try a different status, region, or date range - or clear the search to widen the queue."
+            }
+            action={
+              events.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => writeParams({ status: "all", when: "all", q: null, page: null })}
+                  className="ck-btn ck-btn--secondary ck-btn--sm"
+                >
+                  View all events
+                </button>
+              ) : undefined
+            }
           />
         ) : (
           pageRows.map((event) => {

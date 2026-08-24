@@ -392,9 +392,11 @@ function MemberRow({
           </Link>
         )}
         <p className="text-xs text-[color:var(--slate)]">{member.email}</p>
+        {/* Informational, not an error - most email-only signups sit here, so a
+            red flag on every second row just reads as noise. */}
         {!member.onboardingComplete ? (
-          <p className="mt-1 text-xs font-semibold text-[color:var(--coral-ink)]">
-            Onboarding incomplete - not counted as attendee
+          <p className="mt-1 text-xs text-[color:var(--slate)]">
+            Onboarding incomplete · not counted as attendee
           </p>
         ) : null}
         {member.intents.length > 0 ? (

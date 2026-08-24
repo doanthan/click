@@ -31,13 +31,16 @@ export default async function AdminOverviewPage() {
         description="Platform health at a glance - members, events, merchants, and revenue."
       />
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <MetricCard label="Members" value={metrics.totalMembers.toLocaleString()} tone="cream" />
-        <MetricCard label="New this week" value={metrics.newMembersThisWeek.toLocaleString()} tone="peach" />
-        <MetricCard label="Pending events" value={metrics.pendingEvents.toLocaleString()} tone="rose" />
-        <MetricCard label="Pending merchants" value={metrics.pendingMerchants.toLocaleString()} tone="ink" />
-        <MetricCard label="Total events" value={metrics.totalEvents.toLocaleString()} tone="peach" />
+        {/* "Onboarded" because this counts profiles that finished onboarding
+            (suburb set) - the Attendees page lists every profile, so its All
+            count can be higher. */}
+        <MetricCard label="Onboarded members" value={metrics.totalMembers.toLocaleString()} tone="cream" href="/admin/members" />
+        <MetricCard label="New this week" value={metrics.newMembersThisWeek.toLocaleString()} tone="peach" href="/admin/members" />
+        <MetricCard label="Pending events" value={metrics.pendingEvents.toLocaleString()} tone="rose" href="/admin/events" />
+        <MetricCard label="Pending merchants" value={metrics.pendingMerchants.toLocaleString()} tone="ink" href="/admin/merchants?status=pending" />
+        <MetricCard label="Total events" value={metrics.totalEvents.toLocaleString()} tone="peach" href="/admin/events?status=all&when=all" />
         <MetricCard label="Confirmed RSVPs" value={metrics.confirmedRsvps.toLocaleString()} tone="cream" />
-        <MetricCard label="Merchants" value={metrics.totalMerchants.toLocaleString()} tone="rose" />
+        <MetricCard label="Merchants" value={metrics.totalMerchants.toLocaleString()} tone="rose" href="/admin/merchants" />
         <MetricCard label="Mutual Clicks" value={metrics.mutualClicks.toLocaleString()} tone="ink" />
       </div>
 

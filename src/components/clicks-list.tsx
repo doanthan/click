@@ -21,16 +21,29 @@ type Tone = "sage" | "amber" | "neutral";
 function rowState(e: ProposalEntry): { label: string; tone: Tone; sub: string } {
   const first = e.otherName.split(/\s+/)[0];
   if (e.isExpired) return { label: "Wound down", tone: "neutral", sub: "Cross paths again and you can pick it up." };
+  // A seat you're holding outranks everything: it stays "both going" through the
+  // night itself. Only a genuinely dead event (cancelled) is "fell through".
   if (e.status === "confirmed") {
-    if (!e.suggestedEventSlug) return { label: "Pick a plan", tone: "amber", sub: "That plan fell through - pick another." };
+    if (!e.suggestedEventSlug || e.suggestedEventCancelled)
+      return { label: "Pick a plan", tone: "amber", sub: "That plan fell through - pick another." };
     if (e.viewerHasSeat) {
       return e.otherHasSeat
         ? { label: "Both going", tone: "sage", sub: `You're both going to ${e.suggestedEventTitle ?? "the event"}.` }
         : { label: "You're in", tone: "sage", sub: `Your seat's locked - waiting on ${first}.` };
     }
+    // Confirmed but seatless on an event that's closed to you - never prompt an
+    // RSVP that cannot happen.
+    if (!e.suggestedEventJoinable)
+      return {
+        label: "Pick a plan",
+        tone: "amber",
+        sub: e.suggestedEventStarted ? "That one's already started - pick another." : "That one filled up - pick another.",
+      };
     return { label: "RSVP needed", tone: "amber", sub: `RSVP to lock in your seat.` };
   }
   // pending
+  if (e.suggestionUnavailable)
+    return { label: "Pick a plan", tone: "amber", sub: `${e.suggestedEventTitle ?? "That plan"} is off the table - pick another.` };
   if (e.coordState === "proposed") {
     return e.proposedByMe
       ? { label: "Waiting", tone: "amber", sub: `Waiting on ${first} to say yes.` }

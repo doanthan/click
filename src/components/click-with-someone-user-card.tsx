@@ -75,7 +75,7 @@ export function ClickWithSomeoneUserCard({
   const actions = (
     <form action={formAction} className={layout === "row" ? "contents sm:block" : "contents"}>
       <input type="hidden" name="profile_id" value={person.id} />
-      <div className={layout === "row" ? "flex items-center gap-2 sm:flex-col sm:gap-2.5" : "flex items-center gap-2"}>
+      <div className={layout === "row" ? "flex flex-col gap-2 sm:gap-2.5" : "flex flex-wrap items-center gap-2"}>
         {sent ? (
           <span className={ckBtn("pending", "sm", { full: true })} aria-live="polite">
             <span className="ck-btn__label">clicked</span>
@@ -95,8 +95,9 @@ export function ClickWithSomeoneUserCard({
   const card =
     "rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] shadow-[var(--shadow-sm)]";
 
-  // WIDE ROW - avatar + content + a right-hand action column on desktop; the
-  // same card stacks to the paired bottom row on mobile.
+  // WIDE ROW - avatar + content + a right-hand action column on desktop; on
+  // mobile the pair stacks full-width (side by side, two nowrap --full buttons
+  // sat at their text width and pushed the card past a 320px viewport).
   if (layout === "row") {
     return (
       <article className={`${card} flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:gap-5 sm:p-5`}>

@@ -6,8 +6,17 @@ export const metadata = {
   title: "Merchants Management | Admin",
 };
 
-export default async function AdminMerchantsPage() {
-  const merchants = await getAdminMerchants();
+const STATUS_VALUES = ["all", "pending", "approved", "rejected", "suspended"] as const;
+
+export default async function AdminMerchantsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ status?: string }>;
+}) {
+  const [merchants, params] = await Promise.all([getAdminMerchants(), searchParams]);
+  const initialStatus = (STATUS_VALUES as readonly string[]).includes(params.status ?? "")
+    ? (params.status as (typeof STATUS_VALUES)[number])
+    : "all";
 
   return (
     <div className="space-y-8 py-10">
@@ -16,7 +25,7 @@ export default async function AdminMerchantsPage() {
         title="Merchants"
         description="Review host applications and manage merchant accounts."
       />
-      <AdminMerchantsTable merchants={merchants} />
+      <AdminMerchantsTable merchants={merchants} initialStatus={initialStatus} />
     </div>
   );
 }

@@ -214,11 +214,13 @@ export default async function AdminMerchantDetailPage({
                 : "—"
             }
           />
+          {/* `?? "—"` alone misses empty strings - the wizard can submit "" for
+              the optional fields, which then rendered as a blank cell. */}
           <Stat
             label="ABN"
-            value={merchant.abn ?? "—"}
+            value={merchant.abn?.trim() || "—"}
             action={
-              merchant.abn ? (
+              merchant.abn?.trim() ? (
                 <a
                   href={abrSearchUrl(merchant.abn)}
                   target="_blank"
@@ -230,12 +232,12 @@ export default async function AdminMerchantDetailPage({
               ) : null
             }
           />
-          <Stat label="ACN" value={merchant.acn ?? "—"} />
+          <Stat label="ACN" value={merchant.acn?.trim() || "—"} />
           <Stat
             label="Socials"
             value={socials.length ? socials.map((s) => s.label).join(" · ") : "—"}
           />
-          <Stat label="Phone" value={merchant.phone ?? "—"} />
+          <Stat label="Phone" value={merchant.phone?.trim() || "—"} />
           <Stat label="Address" value={address ?? "—"} />
           <Stat
             label="Stripe Connect"

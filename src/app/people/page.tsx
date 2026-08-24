@@ -3,7 +3,14 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { ClickRadar } from "@/components/click-radar";
 import { ClickWithSomeoneUserCard } from "@/components/click-with-someone-user-card";
-import { Avatar, Icon } from "@/components/ds";
+import { Avatar, Icon, ckBtn } from "@/components/ds";
+import {
+  DISCOVERY_CLICK_WINDOW_DAYS,
+  MUTUAL_CLOCK_DAYS,
+  POST_EVENT_CLICK_CAP,
+  POST_EVENT_CLICK_WINDOW_HOURS,
+  POST_EVENT_PROMPT_DELAY_HOURS,
+} from "@/lib/clicks/constants";
 import {
   getMutualClicksForSession,
   getPersonalizedDiscovery,
@@ -30,8 +37,15 @@ export default async function PeoplePage() {
     getProfileStatus(session),
   ]);
 
-  // The daily set is a small, curated pool - a drip, not an endless feed.
-  const dailySet = suggested.slice(0, 3);
+  // The daily set is a small, curated pool - a drip, not an endless feed. People
+  // you've already clicked drop OUT of it (same rule the dashboard uses): the set
+  // was a hard stop at three, so once you'd clicked all three the page showed the
+  // same three muted "clicked" cards forever with nothing left to do and no word
+  // on what happens next.
+  const clickable = suggested.filter((p) => !p.alreadyClicked);
+  const dailySet = clickable.slice(0, 3);
+  // You've worked through everyone we had, rather than never having had anyone.
+  const setExhausted = dailySet.length === 0 && suggested.length > 0;
 
   // Your clicks, grouped by state. A plan exists once both are going; everything
   // else is a live mutual, which is ALWAYS the actionable "suggest a plan" card
@@ -47,11 +61,46 @@ export default async function PeoplePage() {
           click with someone
         </h1>
         <p className="mt-1.5 text-sm font-medium text-[color:var(--slate)]">
-          A small, intentional set - no endless feed.{" "}
-          <Link href="/how-it-works" className="font-semibold text-[color:var(--purple)] hover:underline">
-            How clicking works →
-          </Link>
+          A small, intentional set - no endless feed.
         </p>
+
+        {/* The rules, where the question actually gets asked. /how-it-works is the
+            MARKETING page and teases the mechanic on purpose, so the link that used
+            to sit here answered "how does this work" with a pitch. A native
+            <details> costs no client JS, and every number below is read from
+            clicks/constants.ts so the copy cannot drift from the enforcement. */}
+        <details className="group mt-3 rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] px-4 py-3">
+          <summary className="cursor-pointer list-none text-[13.5px] font-semibold text-[color:var(--purple)] marker:content-none">
+            How clicking works
+            <span aria-hidden className="ml-1 inline-block transition-transform group-open:rotate-90">
+              →
+            </span>
+          </summary>
+          <ul className="mt-3 grid gap-2 text-[13.5px] leading-6 text-[color:var(--ink-soft)]">
+            <li>
+              <strong className="font-semibold text-[color:var(--ink)]">It stays private.</strong>{" "}
+              They are never told. Nothing shows up on their side unless they click you too.
+            </li>
+            <li>
+              <strong className="font-semibold text-[color:var(--ink)]">Nothing is a chat.</strong>{" "}
+              When it is mutual you both see it at the same moment, and what opens is a plan -
+              there is no messaging anywhere in Click.
+            </li>
+            <li>
+              <strong className="font-semibold text-[color:var(--ink)]">Clicks expire.</strong> A
+              click waits {DISCOVERY_CLICK_WINDOW_DAYS} days for them to click back, then quietly
+              lapses. A mutual has {MUTUAL_CLOCK_DAYS} days to turn into a plan.
+            </li>
+            <li>
+              <strong className="font-semibold text-[color:var(--ink)]">
+                After an event, it opens up.
+              </strong>{" "}
+              Who was there appears {POST_EVENT_PROMPT_DELAY_HOURS} hours after it ends, and you
+              have {POST_EVENT_CLICK_WINDOW_HOURS} hours from the end of the event to click up to{" "}
+              {POST_EVENT_CLICK_CAP} of them.
+            </li>
+          </ul>
+        </details>
 
         {/* ---- The daily set ---- */}
         <section className="mt-7">
@@ -85,6 +134,22 @@ export default async function PeoplePage() {
                 <span>Clicking is anonymous - we&apos;ll only show you if it&apos;s mutual.</span>
               </p>
             </>
+          ) : setExhausted ? (
+            // The end of the drip is a STATE, not an absence. Say the clicks are
+            // sent, say they're private, and point at the thing that actually
+            // refills the set - going to more events.
+            <div className="rounded-[var(--radius-xl)] bg-[color:var(--lav-bg)] px-6 py-8 text-center">
+              <p className="font-display text-[15px] font-semibold text-[color:var(--ink)]">
+                That&apos;s everyone for now.
+              </p>
+              <p className="mx-auto mt-1.5 max-w-[420px] text-sm leading-relaxed text-[color:var(--ink-soft)]">
+                Your clicks are sent and stay private - we&apos;ll tell you the moment one is
+                mutual. New people show up as you go to more events.
+              </p>
+              <Link href="/discover" className={`${ckBtn("primary", "sm")} mt-4`}>
+                <span className="ck-btn__label">Find an event →</span>
+              </Link>
+            </div>
           ) : (
             <div className="rounded-[var(--radius-xl)] bg-[color:var(--lav-bg)] px-6 py-8 text-center">
               <p className="mx-auto max-w-[380px] text-sm leading-relaxed text-[color:var(--ink-soft)]">
@@ -130,15 +195,30 @@ export default async function PeoplePage() {
                       // A live mutual is the your-move card - it earns the soft
                       // lavender-wash fill; the action is always a purple verb.
                       yourMove
+                      // A dead suggestion is not "no suggestion": say it's off and
+                      // point at the fix, rather than silently reverting to the
+                      // never-suggested copy.
                       line={
-                        m.suggestedEventSlug
-                          ? m.suggestedByOther
-                            ? `${m.otherDisplayName.split(" ")[0]} suggested a plan`
-                            : "Waiting to hear back on your plan"
-                          : "Pick something you'd both enjoy"
+                        !m.suggestedEventSlug
+                          ? "Pick something you'd both enjoy"
+                          : !m.suggestedEventJoinable
+                            ? `${m.suggestedEventTitle ?? "That plan"} is off the table`
+                            : m.planAccepted
+                              ? "You both said yes - grab your seat"
+                              : m.suggestedByOther
+                                ? `${m.otherDisplayName.split(" ")[0]} suggested a plan`
+                                : "Waiting to hear back on your plan"
                       }
                       actionLabel={
-                        m.suggestedEventSlug ? (m.suggestedByOther ? "See their plan →" : "See your plan →") : "Suggest a plan →"
+                        !m.suggestedEventSlug
+                          ? "Suggest a plan →"
+                          : !m.suggestedEventJoinable
+                            ? "Pick another plan →"
+                            : m.planAccepted
+                              ? "See your plan →"
+                              : m.suggestedByOther
+                                ? "See their plan →"
+                                : "See your plan →"
                       }
                     />
                   ))}

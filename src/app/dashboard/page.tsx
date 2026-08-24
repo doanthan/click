@@ -124,6 +124,11 @@ export default async function DashboardPage() {
   const yourMove = mutualClicks.filter((m) => {
     if (m.bothGoingEventSlug) return false; // already settled - both going
     if (!m.suggestedEventSlug) return true; // fresh mutual - you can propose
+    if (!m.suggestedEventJoinable) return true; // the plan died under you - pick another
+    // Agreed, and your seat is the thing still missing. This used to fall through
+    // to `false` (you proposed it) or vanish entirely, so the one moment where the
+    // dashboard should have said "go book it" said nothing.
+    if (m.planAccepted) return !viewerHasSeat(m.suggestedEventSlug);
     if (m.suggestedByOther) return !viewerHasSeat(m.suggestedEventSlug); // their plan, your reply
     return false; // you proposed - it's their move now
   });
@@ -180,7 +185,25 @@ export default async function DashboardPage() {
           </div>
         ) : coord ? (
           <div className="rise-soft rise-d2 mt-6 max-w-[760px]">
-            {coord.suggestedEventSlug && coord.suggestedByOther ? (
+            {coord.suggestedEventSlug && !coord.suggestedEventJoinable ? (
+              <MomentBanner
+                icon="calendar"
+                eyebrow="your clicks"
+                title={`${coord.suggestedEventTitle ?? "That plan"} is off the table`}
+                sub={`Pick something else with ${coord.otherDisplayName.split(" ")[0]} and you're back on.`}
+                actionLabel="Pick another plan →"
+                actionHref="/proposals"
+              />
+            ) : coord.planAccepted && coord.suggestedEventSlug ? (
+              <MomentBanner
+                icon="calendar"
+                eyebrow={`with ${coord.otherDisplayName.split(" ")[0]}`}
+                title="You agreed on a plan - grab your seat"
+                sub={coord.suggestedEventTitle ?? undefined}
+                actionLabel="RSVP now →"
+                actionHref={`/events/${coord.suggestedEventSlug}`}
+              />
+            ) : coord.suggestedEventSlug && coord.suggestedByOther ? (
               <MomentBanner
                 icon="calendar"
                 eyebrow={`from ${coord.otherDisplayName.split(" ")[0]}`}

@@ -59,10 +59,16 @@ function gcalUrl(title: string, startIso: string | null): string | null {
 type Step = "reveal" | "open" | "proposed" | "confirmed" | "gone" | "expired";
 
 // Projection from the entry (§2). `gone` = C12: a confirmed plan whose agreed event
-// died (no live suggestion left) - a failed attempt, never a terminal.
+// genuinely died - cancelled, or the row is missing. A plan does NOT become `gone`
+// because the night started or the event sold out: this used to key off the mere
+// absence of a slug, and since the query dropped the event as soon as it was no
+// longer bookable, every successful plan flipped to "that plan fell through" at
+// the moment it was happening.
 function projectStep(entry: ProposalEntry): Exclude<Step, "reveal"> {
   if (entry.status === "expired" || entry.isExpired) return "expired";
-  if (entry.status === "confirmed") return entry.suggestedEventSlug ? "confirmed" : "gone";
+  if (entry.status === "confirmed") {
+    return entry.suggestedEventSlug && !entry.suggestedEventCancelled ? "confirmed" : "gone";
+  }
   return entry.coordState === "proposed" ? "proposed" : "open";
 }
 
@@ -135,7 +141,7 @@ export function CoordinationDrawer({
 
   // When a successful action revalidates /proposals, close the picker after the
   // fresh server state renders so local UI never fights the server truth.
-  const sig = `${entry.status}|${entry.coordState}|${entry.suggestedEventSlug ?? ""}`;
+  const sig = `${entry.status}|${entry.coordState}|${entry.suggestedEventSlug ?? ""}|${entry.suggestedEventJoinable}`;
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => setPicking(false));
     return () => window.cancelAnimationFrame(frame);
@@ -204,7 +210,7 @@ export function CoordinationDrawer({
   // An open mutual with no live plan → a FRESH suggestion keyed on the mutual
   // (suggestPlanAction). A live pending plan is re-pointed instead (proposeAlternative,
   // which owns the 3-alt cap).
-  const freshSuggest = step === "open" && !entry.suggestedEventSlug;
+  const freshSuggest = step === "open" && !entry.id;
 
   // An empty catalogue is a normal launch-week state (nothing upcoming with two
   // free seats). Rendering the form anyway gave a select holding only its own
@@ -477,7 +483,7 @@ function CoordinationBody({
               )}
             </p>
             <div className="mt-5 flex flex-wrap gap-2">
-              {cal ? (
+              {cal && !entry.suggestedEventStarted ? (
                 <a
                   href={cal}
                   target="_blank"
@@ -497,8 +503,8 @@ function CoordinationBody({
               ) : null}
             </div>
           </>
-        ) : (
-          // Viewer still needs a seat - keep the live RSVP.
+        ) : entry.suggestedEventJoinable ? (
+          // Viewer still needs a seat, and can still get one - keep the live RSVP.
           <>
             <h2 id={titleId} className={headingClass}>
               {entry.confirmedByMe
@@ -523,6 +529,45 @@ function CoordinationBody({
                 RSVP to {eventTitle} →
               </Link>
             ) : null}
+          </>
+        ) : (
+          // Confirmed, no seat, and no seat left to take. Name the reason - a
+          // started event and a sold-out one are different disappointments - and
+          // never leave the person with a dead RSVP button as their only control.
+          <>
+            <h2 id={titleId} className={headingClass}>
+              {entry.suggestedEventStarted
+                ? `${eventTitle} has already started.`
+                : `${eventTitle} filled up before you got a seat.`}
+            </h2>
+            <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--ink-soft)]">
+              {entry.otherHasSeat ? (
+                <>
+                  {firstName} has a seat, you don&apos;t - so this one got away. Pick something
+                  else together and you&apos;re back on.
+                </>
+              ) : (
+                <>Neither of you got a seat. Pick something else together and you&apos;re back on.</>
+              )}
+            </p>
+            <div className="mt-5 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={onTogglePicker}
+                className="ck-btn ck-btn--md ck-btn--primary"
+              >
+                Suggest another plan
+              </button>
+              {entry.suggestedEventSlug ? (
+                <Link
+                  href={`/events/${entry.suggestedEventSlug}`}
+                  className="ck-btn ck-btn--md ck-btn--secondary"
+                >
+                  View {eventTitle} →
+                </Link>
+              ) : null}
+            </div>
+            {picker}
           </>
         )
       ) : step === "gone" ? (
@@ -559,7 +604,17 @@ function CoordinationBody({
         // open / proposed - a plan is (or can be) on the table.
         <>
           <h2 id={titleId} className={headingClass}>
-            {step === "proposed" && entry.proposedByMe ? (
+            {entry.suggestionUnavailable ? (
+              <>
+                {eventTitle}{" "}
+                {entry.suggestedEventCancelled
+                  ? "was called off"
+                  : entry.suggestedEventStarted
+                    ? "has already started"
+                    : "filled up"}{" "}
+                - pick another together.
+              </>
+            ) : step === "proposed" && entry.proposedByMe ? (
               <>You&apos;re in - waiting on {firstName}</>
             ) : step === "proposed" ? (
               <>
@@ -590,7 +645,7 @@ function CoordinationBody({
 
           <div className="mt-5 flex flex-wrap items-center gap-2">
             {/* The proposer is waiting; only the recipient (or an open mutual) confirms. */}
-            {!(step === "proposed" && entry.proposedByMe) && entry.suggestedEventSlug ? (
+            {!(step === "proposed" && entry.proposedByMe) && entry.suggestedEventJoinable ? (
               <form action={confirmAction}>
                 <input type="hidden" name="proposal_id" value={entry.id} />
                 {/* Confirming a plan is agreeing to a night out, not sending a

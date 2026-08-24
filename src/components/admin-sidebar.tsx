@@ -1,9 +1,9 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode, SVGProps } from "react";
+import { Logo } from "@/components/ds";
 import { PortalMobileNav, type PortalMobileNavItem } from "./portal-mobile-nav";
 
 export type AdminTabKey =
@@ -197,7 +197,9 @@ export function AdminSidebar({ counts }: { counts: AdminSidebarCounts }) {
           className={`size-5 shrink-0 ${isActive ? "" : "text-[color:var(--slate)]"}`}
         />
         <span className="min-w-0 flex-1 truncate">{item.label}</span>
-        {typeof count === "number" ? (
+        {/* A zero badge is noise - triage badges (pending events/merchants,
+            open reports) simply disappear when the queue is clear. */}
+        {typeof count === "number" && count > 0 ? (
           <span
             className={`rounded-full px-2 py-0.5 text-[0.65rem] font-semibold tabular-nums ${
               isActive
@@ -217,7 +219,7 @@ export function AdminSidebar({ counts }: { counts: AdminSidebarCounts }) {
       key: item.key,
       label: item.label,
       href: item.href,
-      count: counts[item.key],
+      count: counts[item.key] || undefined,
       active: isActiveItem(pathname, item),
     }),
   );
@@ -227,21 +229,11 @@ export function AdminSidebar({ counts }: { counts: AdminSidebarCounts }) {
       <PortalMobileNav title="Admin Console" items={mobileItems} />
       <aside className="hidden lg:sticky lg:top-6 lg:block lg:w-[17.5rem] lg:shrink-0">
       <nav aria-label="Admin console" className="flex flex-col rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)] p-3">
-        <div className="flex items-center gap-3 px-2 pb-4 pt-2">
-          <Image
-            src="/click_blob_mascot.svg"
-            alt=""
-            width={44}
-            height={44}
-            aria-hidden
-            className="h-11 w-11 shrink-0"
-          />
-          <span className="min-w-0">
-            <span className="click-wordmark block truncate text-2xl text-[color:var(--ink)]">
-              Let&apos;s Click
-            </span>
-            <span className="eyebrow mt-0.5 block">Admin Console</span>
-          </span>
+        <div className="px-2 pb-4 pt-2">
+          <Link href="/admin" aria-label="Click admin dashboard" className="inline-flex">
+            <Logo size={30} />
+          </Link>
+          <span className="eyebrow mt-1 block">Admin Console</span>
         </div>
 
         <div className="flex flex-col gap-1">{NAV_PRIMARY.map(renderItem)}</div>

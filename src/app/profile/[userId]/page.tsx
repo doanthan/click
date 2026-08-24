@@ -1,10 +1,16 @@
 import { notFound } from "next/navigation";
 import { auth } from "@/auth";
 import { Avatar, ButtonLink, Icon, Tag } from "@/components/ds";
+import { ProfileClickButton } from "@/components/profile-click-button";
 import { ProfileSafetyControls } from "@/components/profile-safety-controls";
 import { VerifiedTick } from "@/components/verified-tick";
 import { formatIntent } from "@/lib/click-data";
-import { getOwnProfile, getPublicProfileById, getSafetyState } from "@/lib/event-repository";
+import {
+  getOwnProfile,
+  getPublicProfileById,
+  getSafetyState,
+  getViewerClickState,
+} from "@/lib/event-repository";
 
 export const metadata = {
   title: "Profile",
@@ -33,8 +39,10 @@ export default async function PublicProfilePage({ params }: PublicProfilePagePro
   }
 
   const isOwnProfile = ownProfile?.id === userId;
-  const safetyState =
-    session?.user && !isOwnProfile ? await getSafetyState(session, userId) : null;
+  const [safetyState, clickState] =
+    session?.user && !isOwnProfile
+      ? await Promise.all([getSafetyState(session, userId), getViewerClickState(session, userId)])
+      : [null, null];
 
   // "Open to dating" is mutual opt-in (CLICK_LANGUAGE v14): the dating intent
   // renders only when the owner has dating mode on AND the viewer is also open
@@ -141,6 +149,22 @@ export default async function PublicProfilePage({ params }: PublicProfilePagePro
               </div>
             ) : null}
           </article>
+
+          {clickState?.isMutual ? (
+            // Already mutual: clicking again is meaningless, so the surface hands
+            // over to the thing that IS still to be done - agreeing on a plan.
+            <div className="mt-5">
+              <ButtonLink href="/proposals" size="md">
+                See your click with {profile.displayName.split(/\s+/)[0]} →
+              </ButtonLink>
+            </div>
+          ) : clickState && !safetyState?.isBlocked ? (
+            <ProfileClickButton
+              profileId={userId}
+              firstName={profile.displayName.split(/\s+/)[0]}
+              alreadyClicked={clickState.alreadyClicked}
+            />
+          ) : null}
 
           {!session?.user ? (
             <p className="mt-5 text-[13px] leading-6 text-[color:var(--slate)]">

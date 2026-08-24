@@ -167,9 +167,16 @@ function MerchantActions({
   );
 }
 
-export function AdminMerchantsTable({ merchants }: { merchants: AdminMerchantRow[] }) {
+export function AdminMerchantsTable({
+  merchants,
+  initialStatus = "all",
+}: {
+  merchants: AdminMerchantRow[];
+  /** Preselect a status chip - lets the dashboard link straight to ?status=pending. */
+  initialStatus?: StatusFilter;
+}) {
   const [rows, setRows] = useState(merchants);
-  const [status, setStatus] = useState<StatusFilter>("all");
+  const [status, setStatus] = useState<StatusFilter>(initialStatus);
   const [query, setQuery] = useState("");
   // Merchant id currently mid-request (drives the reject dialog's busy state).
   const [busyId, setBusyId] = useState<string | null>(null);

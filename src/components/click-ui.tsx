@@ -74,7 +74,18 @@ export function PageHero({ eyebrow, title, body, children }: PageHeroProps) {
 
 type MetricTone = "peach" | "rose" | "cream" | "ink" | "aqua" | "pink" | "white";
 
-export function MetricCard({ label, value, tone = "peach" }: { label: string; value: string; tone?: MetricTone }) {
+export function MetricCard({
+  label,
+  value,
+  tone = "peach",
+  href,
+}: {
+  label: string;
+  value: string;
+  tone?: MetricTone;
+  /** When set, the whole tile links through to the page behind the number. */
+  href?: string;
+}) {
   // legacy aliases → new palette (purple fills take cream text - never dark-on-purple)
   const t = tone === "aqua" ? "peach" : tone === "pink" ? "rose" : tone === "white" ? "cream" : tone;
   const palette =
@@ -86,11 +97,22 @@ export function MetricCard({ label, value, tone = "peach" }: { label: string; va
           ? "bg-[color:var(--surface-deep)] text-[color:var(--on-deep)]"
           : "bg-[color:var(--lavender-100)] text-[color:var(--ink)]";
 
-  return (
-    <article className={`rounded-2xl ${palette} p-5 shadow-[var(--shadow-sm)]`}>
+  const card = (
+    <article className={`rounded-2xl ${palette} p-5 shadow-[var(--shadow-sm)] ${href ? "transition-shadow hover:shadow-[var(--shadow-md)]" : ""}`}>
       <p className="text-[12.5px] font-semibold opacity-70">{label}</p>
       <p className="font-display mt-2 text-5xl font-semibold leading-none tracking-[-0.03em] tabular-nums">{value}</p>
     </article>
+  );
+
+  if (!href) return card;
+  return (
+    <Link
+      href={href}
+      aria-label={`${label}: ${value} - view details`}
+      className="block rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--purple)]"
+    >
+      {card}
+    </Link>
   );
 }
 
