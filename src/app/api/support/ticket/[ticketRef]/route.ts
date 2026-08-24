@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import type { BugStatus } from "@/lib/support-repository";
 import { editTicket, markTicketFixed, reopenTicketForRefix } from "@/lib/support-repository";
+import { canTriageSupportTickets } from "@/lib/support-access";
 
 const BUG_STATUSES: BugStatus[] = ["open", "ai_fixed", "fixed", "not_issue"];
 
@@ -21,7 +22,13 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ ticketRef: string }> },
 ) {
-  // Pre-launch: signed-out testers can tick a bug off / send it back too.
+  // Operators only. This used to be open to signed-out testers, which meant any
+  // visitor could close, reword or reopen anyone's ticket - and it reads back
+  // through the same widget tab that exposed the queue.
+  if (!(await canTriageSupportTickets())) {
+    return NextResponse.json({ error: "Not found." }, { status: 404 });
+  }
+
   const session = await auth();
   const { ticketRef } = await params;
   const body = (await request.json().catch(() => ({}))) as {

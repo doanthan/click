@@ -15,15 +15,20 @@ import { MyGuestSeats } from "@/components/my-guest-seats";
 import { PostEventClickCard } from "@/components/post-event-click-card";
 import { ShareEventButton } from "@/components/share-event-button";
 import {
+  PUBLIC_EVENT_STATUSES,
   getEventAttendeePreview,
   getEventBySlug,
   getMyGuestSeatsForEvent,
   getPostEventClickPromptForEvent,
   getProfileStatus,
   getSystemSettings,
+  getUnfulfilledPaymentNotice,
+  isEventOperator,
 } from "@/lib/event-repository";
+import { SUPPORT_EMAIL_DEFAULT } from "@/lib/email-templates/tokens";
 import { reconcileCheckoutSession } from "@/lib/stripe-sync";
 import { quoteCancellationRefund, refundQuoteLabel } from "@/lib/refund-policy";
+import { formatPriceLabel } from "@/lib/amounts";
 
 type PageProps = {
   params: Promise<{ slug: string }>;
@@ -34,13 +39,6 @@ type PageProps = {
     cancelled?: string;
   }>;
 };
-
-// Statuses an event must be in to be visible to the public. Pending (awaiting
-// admin review), Rejected, and Cancelled events are hidden - the discover/browse
-// queries already exclude them, and this gate closes the direct-URL hole so an
-// unreviewed event can't be shared around before approval. The owning merchant
-// and admins are exempt so they can still preview.
-const PUBLIC_EVENT_STATUSES = new Set(["Featured", "Live", "Waitlist", "Locked"]);
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params;
@@ -89,15 +87,6 @@ function formatTimeRange(startIso: string, endIso: string | null) {
   const start = formatter.format(new Date(startIso));
   const end = endIso ? formatter.format(new Date(endIso)) : null;
   return end ? `${start} - ${end}` : start;
-}
-
-function formatPrice(cents: number, currency: string) {
-  if (cents === 0) return "Free";
-  return new Intl.NumberFormat("en-AU", {
-    style: "currency",
-    currency,
-    maximumFractionDigits: 0,
-  }).format(cents / 100);
 }
 
 // Google Calendar "add event" deep-link. Dates are UTC basic-format
@@ -159,8 +148,45 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
   const isOwner =
     Boolean(event.merchantProfileId) &&
     profileStatus?.merchantProfile?.id === event.merchantProfileId;
-  if (!PUBLIC_EVENT_STATUSES.has(event.status) && !isAdmin && !isOwner) {
-    notFound();
+  if (!PUBLIC_EVENT_STATUSES.has(event.status) && !isEventOperator(event, profileStatus)) {
+    // Unless this viewer just paid for it. Stripe returns the buyer here with
+    // ?session_id after checkout, and if the merchant or an admin cancelled or
+    // unpublished the event while their card was being entered, the gate above
+    // used to 404 them - no confirmation, no mention of the charge, no refund
+    // message, no support link, for a real charge on the LIVE key. The money is
+    // already handled (markPaymentSucceeded cancels the seat and refunds in
+    // full); this is the only place that can actually tell them so.
+    const notice = search?.session_id
+      ? await getUnfulfilledPaymentNotice(slug, session)
+      : null;
+    if (!notice) notFound();
+    return (
+      <main className="mx-auto w-full max-w-2xl px-4 py-16 sm:px-6">
+        <p className="eyebrow">Payment received</p>
+        <h1 className="font-display mt-3 text-3xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)] sm:text-4xl">
+          {notice.eventTitle} was called off while you were paying.
+        </h1>
+        <p className="mt-5 text-base leading-7 font-medium text-[color:var(--slate)]">
+          Your card was charged {notice.amountLabel}, and the host pulled the event
+          before we could confirm your spot.{" "}
+          {notice.refunded
+            ? "We've already refunded you in full - it goes back to the card you paid with, usually within 3 to 5 business days."
+            : "A full refund is on its way back to the card you paid with. If it hasn't landed within 5 business days, reply to your receipt and we'll chase it."}
+        </p>
+        <p className="mt-4 text-base leading-7 font-medium text-[color:var(--slate)]">
+          You don&apos;t need to do anything. Nothing was booked and there&apos;s
+          nothing to cancel.
+        </p>
+        <div className="mt-8 flex flex-wrap gap-3">
+          <Link href="/discover" className="ck-btn ck-btn--primary">
+            <span className="ck-btn__label">Find something else</span>
+          </Link>
+          <a href={`mailto:${SUPPORT_EMAIL_DEFAULT}`} className="ck-btn ck-btn--secondary">
+            <span className="ck-btn__label">Contact support</span>
+          </a>
+        </div>
+      </main>
+    );
   }
 
   const startsAtMs = new Date(event.startsAt).getTime();
@@ -183,6 +209,9 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
   // still open - drives the "Confirm your spot" CTA.
   const waitlistOfferExpiresAt = isWaitlisted ? event.waitlistOfferExpiresAt : null;
   const isPendingPayment = event.viewerRsvpStatus === "pending_payment";
+  // Seats on the viewer's live hold, so the resume CTA quotes and re-requests
+  // the party they actually reserved rather than a solo seat.
+  const heldSeats = Math.max(1, event.heldSeatCount ?? 1);
   const isFull = event.attendees >= event.capacity;
   const isWaitlistMode = event.status === "Waitlist" || isFull;
   const isPaid = event.priceCents > 0;
@@ -386,13 +415,13 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                     isPaid ? "text-[color:var(--ink)]" : "text-[color:var(--sage)]"
                   }`}
                 >
-                  {formatPrice(hasBookingFee ? totalCents : event.priceCents, "AUD")}
+                  {formatPriceLabel(hasBookingFee ? totalCents : event.priceCents, "AUD")}
                 </span>
                 {isPaid ? <span className="text-[13px] font-medium text-[color:var(--slate)]">per person</span> : null}
               </div>
               {hasBookingFee ? (
                 <p className="mt-1 text-xs font-medium text-[color:var(--slate)]">
-                  {formatPrice(event.priceCents, "AUD")} ticket + {formatPrice(bookingFeeCents, "AUD")} booking fee
+                  {formatPriceLabel(event.priceCents, "AUD")} ticket + {formatPriceLabel(bookingFeeCents, "AUD")} booking fee
                 </p>
               ) : null}
 
@@ -495,7 +524,9 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                     {isPendingPayment && isPaid ? (
                       <div className="grid gap-2">
                         <div className="rounded-[var(--radius-md)] bg-[color:var(--lav-bg)] p-3 text-[13px] text-[color:var(--ink-soft)]">
-                          Your seat is held while your previous checkout finishes. Complete payment to lock it in.
+                          {heldSeats > 1
+                            ? `Your ${heldSeats} seats are held while your previous checkout finishes. Complete payment to lock them in.`
+                            : "Your seat is held while your previous checkout finishes. Complete payment to lock it in."}
                         </div>
                         {showStripeUnavailableHint ? (
                           <p className="rounded-[var(--radius-md)] bg-[color:var(--lav-bg)] p-3 text-[13px] text-[color:var(--ink-soft)]">
@@ -503,7 +534,11 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                             paid bookings.
                           </p>
                         ) : (
-                          <EventPaymentButton eventId={event.id} priceLabel={formatPrice(totalCents, "AUD")} />
+                          <EventPaymentButton
+                            eventId={event.id}
+                            priceLabel={formatPriceLabel(totalCents * heldSeats, "AUD")}
+                            resumeSeatCount={event.heldSeatCount}
+                          />
                         )}
                       </div>
                     ) : isRegistered || isWaitlisted ? (
@@ -518,7 +553,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                               paid bookings.
                             </p>
                           ) : (
-                            <EventPaymentButton eventId={event.id} priceLabel={formatPrice(totalCents, "AUD")} />
+                            <EventPaymentButton eventId={event.id} priceLabel={formatPriceLabel(totalCents, "AUD")} />
                           )}
                           <EventRegistrationButton eventId={event.id} initiallyRegistered isWaitlist />
                         </div>
@@ -555,7 +590,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                       ) : (
                         <EventBookingDialog
                           triggerLabel="RSVP"
-                          title={`Reserve a seat for ${formatPrice(totalCents, "AUD")}?`}
+                          title={`Reserve a seat for ${formatPriceLabel(totalCents, "AUD")}?`}
                           body={
                             <>
                               {event.viewerClashEventTitle ? (
@@ -566,8 +601,8 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                               ) : null}
                               {hasBookingFee ? (
                                 <>
-                                  That&apos;s {formatPrice(event.priceCents, "AUD")} ticket +{" "}
-                                  {formatPrice(bookingFeeCents, "AUD")} booking fee.{" "}
+                                  That&apos;s {formatPriceLabel(event.priceCents, "AUD")} ticket +{" "}
+                                  {formatPriceLabel(bookingFeeCents, "AUD")} booking fee.{" "}
                                 </>
                               ) : null}
                               We&apos;ll hold your seat through Stripe checkout. If you don&apos;t complete payment, the
@@ -577,7 +612,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                         >
                           <EventPaymentButton
                             eventId={event.id}
-                            priceLabel={formatPrice(totalCents, "AUD")}
+                            priceLabel={formatPriceLabel(totalCents, "AUD")}
                             allowGuests
                             availableSeats={Math.max(0, event.capacity - event.attendees)}
                             perSeatCents={totalCents}

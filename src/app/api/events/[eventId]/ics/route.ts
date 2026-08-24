@@ -1,5 +1,11 @@
 import { auth } from "@/auth";
-import { getEventBySlug } from "@/lib/event-repository";
+import {
+  PUBLIC_EVENT_STATUSES,
+  getEventBySlug,
+  getProfileStatus,
+  isEventOperator,
+  viewerCanSeeVenue,
+} from "@/lib/event-repository";
 
 type RouteContext = {
   params: Promise<{ eventId: string }>;
@@ -32,6 +38,11 @@ export async function GET(_request: Request, context: RouteContext) {
     return new Response("Event not found", { status: 404 });
   }
 
+  const profileStatus = session?.user ? await getProfileStatus(session) : null;
+  if (!PUBLIC_EVENT_STATUSES.has(event.status) && !isEventOperator(event, profileStatus)) {
+    return new Response("Event not found", { status: 404 });
+  }
+
   const start = new Date(event.startsAt);
   if (Number.isNaN(start.getTime())) {
     return new Response("Event has no valid start time", { status: 422 });
@@ -42,7 +53,14 @@ export async function GET(_request: Request, context: RouteContext) {
       ? new Date(event.endsAt)
       : new Date(start.getTime() + 2 * 60 * 60 * 1000);
 
-  const location = [event.location, event.suburb].filter(Boolean).join(", ");
+  // The header above promises suburb-level only, and until now the file shipped
+  // the venue name to anyone with the link - a .ics is the one artefact people
+  // forward, so it leaked further than the page ever would. Honour the same gate
+  // the page uses: full venue for a confirmed attendee (or the host/an admin),
+  // suburb alone for everyone else.
+  const location = viewerCanSeeVenue(event, profileStatus)
+    ? [event.location, event.address, event.suburb, event.city].filter(Boolean).join(", ")
+    : event.suburb;
   const baseUrl =
     process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") || "https://www.letsclick.app";
   const eventUrl = `${baseUrl}/events/${event.id}`;

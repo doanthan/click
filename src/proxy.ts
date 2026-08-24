@@ -8,7 +8,15 @@ function redirectToLogin(request: NextRequest, target: "customer" | "merchant" =
   // /login. Same NextAuth backend, different UI per spec §1.
   const loginPath = target === "merchant" ? "/merchant/login" : "/login";
   const loginUrl = new URL(loginPath, request.url);
-  loginUrl.searchParams.set("callbackUrl", request.nextUrl.href);
+  // Path-relative, not .href. Every consumer of ?callbackUrl runs it through a
+  // safeCallbackUrl/isSafeRelative guard that requires a leading "/" and rejects
+  // "//" (login/page.tsx, register/page.tsx, login/actions.ts, auth/page.tsx),
+  // so an absolute https://… URL failed the guard and silently became
+  // /post-login - every deep link into a guarded route was dropped at sign-in.
+  loginUrl.searchParams.set(
+    "callbackUrl",
+    request.nextUrl.pathname + request.nextUrl.search,
+  );
   return NextResponse.redirect(loginUrl);
 }
 

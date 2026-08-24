@@ -13,6 +13,7 @@ import { auth } from "@/auth";
 import { AccountScopeProvider } from "@/lib/account-scope";
 import { isLocalDevelopment } from "@/lib/runtime-mode";
 import { isTestSwitcherUnlocked } from "@/lib/test-switcher";
+import { canTriageSupportTickets } from "@/lib/support-access";
 import "./globals.css";
 
 // Display voice - Poppins, the Click DS face: headings, the lowercase
@@ -77,6 +78,8 @@ export default async function RootLayout({
   // it with TEST_SWITCHER_KEY. The Supabase drawer and demo credentials stay
   // local-only.
   const qaSwitcherUnlocked = await isTestSwitcherUnlocked();
+  // Anyone may report a bug; only an operator may read the queue back.
+  const canTriageBugs = await canTriageSupportTickets();
 
   return (
     <html
@@ -160,8 +163,10 @@ export default async function RootLayout({
         <SessionFreshness />
         {showInternalTools ? <DevSupabaseDrawer /> : null}
         {/* Pre-launch: shown to everyone, signed in or not, so a bug on the
-            signed-out surfaces (login, register, discover) can be reported. */}
-        <SupportWidget />
+            signed-out surfaces (login, register, discover) can be reported.
+            Reporting only - the "Bugs on this page" tab reads other people's
+            tickets (reporter name + free text), so it needs canTriageBugs. */}
+        <SupportWidget canTriage={canTriageBugs} />
         {qaSwitcherUnlocked ? (
           <TestAccountSwitcher currentEmail={session?.user?.email ?? null} />
         ) : null}

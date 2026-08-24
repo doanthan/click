@@ -3,6 +3,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { signIn, signOut } from "@/auth";
+import { authErrorMessage } from "@/lib/auth-error-copy";
 import { profileExistsByEmail } from "@/lib/event-repository";
 import { assertTestSwitcherUnlocked } from "@/lib/test-switcher";
 import { provisionQaPersona, resetQaData } from "@/lib/qa-provision";
@@ -268,15 +269,6 @@ export async function startTestJourney(formData: FormData) {
 
 export type EmailLoginFormState = { error: string | null; sent: boolean };
 
-const errorCopyByType: Record<string, string> = {
-  CredentialsSignin: "Enter a valid email address to continue.",
-  Configuration: "Authentication is missing provider or secret configuration.",
-  InvalidEmail: "Enter a valid email address to continue.",
-  EmailNotFound: "No account found for that email. Check the spelling, or sign up.",
-  RateLimited: "Too many sign-in emails were requested. Try again in an hour.",
-  EmailUnavailable: "We could not send a sign-in email right now. Try Google or try again later.",
-};
-
 export async function signInWithEmailFromModal(
   _prev: EmailLoginFormState,
   formData: FormData,
@@ -287,7 +279,7 @@ export async function signInWithEmailFromModal(
 
   const result = await requestEmailSignIn({ email, mode, callbackUrl });
   return {
-    error: result.error ? errorCopyByType[result.error] ?? "Login failed." : null,
+    error: result.error ? authErrorMessage(result.error) : null,
     sent: result.sent,
   };
 }

@@ -9,6 +9,7 @@ import {
   type NetworkEntry,
 } from "@/lib/support-repository";
 import { checkRateLimit, getClientIp, rateLimitResponse } from "@/lib/rate-limit";
+import { canTriageSupportTickets } from "@/lib/support-access";
 
 export const runtime = "nodejs";
 const SCREENSHOT_MAX_BYTES = 5 * 1024 * 1024;
@@ -112,6 +113,13 @@ export async function POST(request: Request) {
 
 // GET /api/support/ticket?url=<pathname> — open bugs for a page (the checklist).
 export async function GET(request: Request) {
+  // Operators only. A ticket carries the reporter's name and their free-text
+  // account of what broke; this used to answer any anonymous caller. Reporting
+  // (POST) stays open on purpose - see canTriageSupportTickets.
+  if (!(await canTriageSupportTickets())) {
+    return NextResponse.json({ bugs: [] }, { status: 403 });
+  }
+
   const url = new URL(request.url).searchParams.get("url");
   if (!url) {
     return NextResponse.json({ bugs: [] });
