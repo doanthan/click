@@ -1,4 +1,5 @@
 import { auth } from "@/auth";
+import { SUPPORT_EMAIL_DEFAULT } from "@/lib/email-templates/tokens";
 import { getProfileStatus, type MerchantProfileRow } from "@/lib/event-repository";
 import { Button, ButtonLink, Icon } from "@/components/ds";
 import { InfoNote, SectionLabel, StatusPill, mCard } from "@/components/merchant-ds";
@@ -77,8 +78,8 @@ export async function SettingsTab({
         ) : null}
         <InfoNote>
           Editing business name / website / ABN ships with merchant self-service. For now, email{" "}
-          <b className="font-semibold text-[color:var(--purple-700)]">merchants@click.au</b> to
-          update details.
+          <b className="font-semibold text-[color:var(--purple-700)]">{SUPPORT_EMAIL_DEFAULT}</b>{" "}
+          to update details.
         </InfoNote>
       </section>
 
@@ -107,8 +108,8 @@ export async function SettingsTab({
         <SectionLabel>Support</SectionLabel>
         <p className="text-[13.5px] leading-relaxed text-[color:var(--slate)]">
           Need a human? Email{" "}
-          <b className="font-semibold text-[color:var(--purple-700)]">merchants@click.au</b> - we
-          reply the same business day.
+          <b className="font-semibold text-[color:var(--purple-700)]">{SUPPORT_EMAIL_DEFAULT}</b>{" "}
+          - we reply the same business day.
         </p>
         {/* Native <details> is the accordion: no client bundle, keyboard-accessible
             for free, and it degrades with JS off. */}

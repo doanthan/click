@@ -7,6 +7,7 @@ import {
   getMerchantTagOptions,
   getProfileStatus,
 } from "@/lib/event-repository";
+import { getPlatformFeeBps } from "@/lib/stripe-connect";
 
 export const metadata = {
   title: "Create event",
@@ -78,19 +79,31 @@ export default async function CreateEventLayout({
   ]);
   const categoryOptions = categoryRows.map((c) => c.name);
 
+  // Read server-side and handed down: PLATFORM_FEE_BPS is a server env var, and
+  // the Schedule step has to be able to tell a merchant what they will actually
+  // receive before they price a live-Stripe ticket.
+  const platformFeeBps = getPlatformFeeBps();
+
   return (
     <main className="min-h-screen bg-[color:var(--champagne)] text-[color:var(--ink)]">
       <section className="bg-[color:var(--champagne)] py-8">
-        <div className="mx-auto max-w-4xl px-4 sm:px-6">
-          <EventCreateProvider
-            categoryOptions={categoryOptions}
-            tagOptions={tagOptions}
-            hostNameOptions={createOptions.hostNames}
-            venueOptions={createOptions.venues}
-            chargesEnabled={status.merchantProfile.charges_enabled === true}
-          >
-            {children}
-          </EventCreateProvider>
+        {/* .ck-page outside, the form's own cap inside and NOT centred - the DS
+            rule for a narrow page: same left edge as /merchant (so stepping into
+            the wizard doesn't slide the column sideways), whitespace falls to
+            the right, and the form still stops at a readable width. */}
+        <div className="ck-page">
+          <div className="max-w-4xl">
+            <EventCreateProvider
+              categoryOptions={categoryOptions}
+              tagOptions={tagOptions}
+              hostNameOptions={createOptions.hostNames}
+              venueOptions={createOptions.venues}
+              chargesEnabled={status.merchantProfile.charges_enabled === true}
+              platformFeeBps={platformFeeBps}
+            >
+              {children}
+            </EventCreateProvider>
+          </div>
         </div>
       </section>
     </main>

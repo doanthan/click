@@ -6,6 +6,8 @@ import {
   signInWithGoogle,
   signInWithMeta,
 } from "@/app/login/actions";
+import { SsoButton } from "@/components/auth-ui";
+import { authErrorMessage } from "@/lib/auth-error-copy";
 
 // Merchant-branded sign-in surface. Hits the exact same NextAuth backend as
 // the customer /login — only the copy, default callback, and signup CTA
@@ -26,14 +28,6 @@ type LoginPageProps = {
   }>;
 };
 
-const errorCopy: Record<string, string> = {
-  CredentialsSignin: "Enter a valid email address to continue.",
-  InvalidEmail: "Enter a valid email address to continue.",
-  EmailNotFound: "No account found for that email. Check the spelling, or sign up.",
-  OAuthSignin: "The social login could not start. Check the provider configuration.",
-  OAuthCallback: "The social login callback failed. Check the provider callback URL.",
-  Configuration: "Authentication is missing provider or secret configuration.",
-};
 
 function safeMerchantCallbackUrl(value: string | undefined) {
   // Restrict callbacks to /merchant* — a merchant logging in via this surface
@@ -63,7 +57,7 @@ export default async function MerchantLoginPage({ searchParams }: LoginPageProps
     redirect(callbackUrl);
   }
 
-  const errorMessage = params?.error ? errorCopy[params.error] ?? "Login failed." : "";
+  const errorMessage = authErrorMessage(params?.error);
   const googleConfigured = !!(process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET);
   const metaConfigured = !!(process.env.AUTH_FACEBOOK_ID && process.env.AUTH_FACEBOOK_SECRET);
 
@@ -129,32 +123,30 @@ export default async function MerchantLoginPage({ searchParams }: LoginPageProps
           </div>
 
           <div className="p-6 sm:p-7">
+            {/* The shared SsoButton, not a local copy - see the header comment in
+                auth-ui.tsx. This page was the last surface still carrying its own
+                marks and its own button, and they had drifted: the local GoogleMark
+                used a different SVG to the one /login renders, and Facebook sat on a
+                hardcoded #1877F2 slab that is not in the palette. */}
             <div className="grid gap-3">
               <form action={signInWithGoogle}>
                 <input type="hidden" name="callbackUrl" value={callbackUrl} />
-                <button
-                  type="submit"
+                <SsoButton
+                  provider="google"
                   disabled={!googleConfigured}
-                  aria-label="Continue with Google"
-                  className="ck-btn ck-btn--secondary ck-btn--lg ck-btn--full"
-                >
-                  <GoogleMark className="size-6 shrink-0" />
-                  <span>{googleConfigured ? "Continue with Google" : "Google · setup required"}</span>
-                </button>
+                  label={googleConfigured ? "Continue with Google" : "Google · setup required"}
+                />
               </form>
 
-              <form action={signInWithMeta}>
-                <input type="hidden" name="callbackUrl" value={callbackUrl} />
-                <button
-                  type="submit"
-                  disabled={!metaConfigured}
-                  aria-label="Continue with Facebook"
-                  className="flex min-h-[52px] w-full items-center justify-center gap-3 rounded-xl bg-[#1877F2] px-5 text-base font-semibold text-white transition hover:bg-[#1566d6] disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <FacebookMark className="size-6 shrink-0" />
-                  <span>{metaConfigured ? "Continue with Facebook" : "Facebook · setup required"}</span>
-                </button>
-              </form>
+              {/* An unconfigured provider is hidden rather than shown disabled - a
+                  dead "setup required" button reads as a broken site, and this is
+                  the surface a prospective host lands on. Same rule as /login. */}
+              {metaConfigured ? (
+                <form action={signInWithMeta}>
+                  <input type="hidden" name="callbackUrl" value={callbackUrl} />
+                  <SsoButton provider="facebook" label="Continue with Facebook" />
+                </form>
+              ) : null}
             </div>
 
             <div className="my-7 flex items-center gap-3">
@@ -233,38 +225,3 @@ export default async function MerchantLoginPage({ searchParams }: LoginPageProps
   );
 }
 
-/* ---------- Brand marks (matched to /login) ---------- */
-
-function GoogleMark({ className = "" }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" aria-hidden>
-      <path
-        fill="#FFC107"
-        d="M43.611 20.083H42V20H24v8h11.303C33.972 31.668 29.418 34 24 34c-5.523 0-10.5-4.477-10.5-10S18.477 14 24 14c2.504 0 4.789.945 6.523 2.488l5.657-5.657C32.945 7.582 28.713 6 24 6 14.059 6 6 14.059 6 24s8.059 18 18 18 18-8.059 18-18c0-1.341-.138-2.65-.389-3.917z"
-      />
-      <path
-        fill="#FF3D00"
-        d="M6.306 14.691l6.571 4.819C14.655 16.108 19.001 14 24 14c2.504 0 4.789.945 6.523 2.488l5.657-5.657C32.945 7.582 28.713 6 24 6 16.318 6 9.656 10.337 6.306 14.691z"
-      />
-      <path
-        fill="#4CAF50"
-        d="M24 42c4.626 0 8.882-1.578 12.247-4.275l-6.184-5.057C28.084 33.987 26.13 35 24 35c-5.4 0-9.94-3.317-11.273-8h-6.5C9.45 37.61 16.118 42 24 42z"
-      />
-      <path
-        fill="#1976D2"
-        d="M43.611 20.083H42V20H24v8h11.303c-.792 2.218-2.227 4.106-4.087 5.474l.005-.003 6.184 5.057C36.971 39.205 42 34.5 42 24c0-1.341-.138-2.65-.389-3.917z"
-      />
-    </svg>
-  );
-}
-
-function FacebookMark({ className = "" }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden>
-      <path
-        fill="currentColor"
-        d="M22 12.061C22 6.504 17.523 2 12 2S2 6.504 2 12.061C2 17.084 5.657 21.245 10.438 22v-7.03H7.898v-2.91h2.54v-2.213c0-2.523 1.493-3.917 3.776-3.917 1.094 0 2.238.196 2.238.196v2.476h-1.262c-1.243 0-1.63.775-1.63 1.57v1.888h2.773l-.443 2.91h-2.33V22C18.343 21.245 22 17.084 22 12.061Z"
-      />
-    </svg>
-  );
-}

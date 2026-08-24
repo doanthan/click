@@ -71,7 +71,10 @@ export default async function MerchantSignupLayout({
         <div className="mt-4 flex max-w-2xl items-start gap-3 rounded-xl border border-[color:var(--line)] bg-[color:var(--lavender-100)] px-4 py-3 text-sm leading-6 text-[color:var(--ink)]">
           <span aria-hidden="true" className="mt-0.5 text-base leading-none text-[color:var(--purple)]">ⓘ</span>
           <span>
-            We&apos;re piloting in <span className="font-semibold">Sydney</span> first. Outside Sydney?
+            {/* {" "} is load-bearing: JSX drops the leading space of the text node
+                after </span>, so this rendered as "Sydneyfirst." in production. */}
+            We&apos;re piloting in <span className="font-semibold">Sydney</span>{" "}
+            first. Outside Sydney?
             Sign up anyway - we&apos;ll add you to the waitlist and email you when we launch in your city.
           </span>
         </div>

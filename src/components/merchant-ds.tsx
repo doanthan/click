@@ -198,22 +198,31 @@ export function StatusPill({ status, label }: { status: string; label?: string }
  *
  * Pass `paths` to make completed steps navigate (our wizards are route-driven);
  * omit it for a read-only progress display.
+ *
+ * `completed` is the truth about which steps actually hold valid input. Without
+ * it completion is inferred from POSITION - every step before the current one
+ * gets a green tick - so deep-linking to the last step of a route-driven wizard
+ * painted a full row of ticks over an empty form. Pass it and a step only reads
+ * as done when it really is; omit it and the positional default stands (fine
+ * for a linear flow you cannot deep-link into).
  */
 export function WizardStepper({
   steps,
   current,
   paths,
+  completed,
   className = "",
 }: {
   steps: readonly string[];
   current: number;
   paths?: readonly string[];
+  completed?: readonly boolean[];
   className?: string;
 }) {
   return (
     <ol className={`flex items-center gap-2 ${className}`}>
       {steps.map((title, i) => {
-        const done = i < current;
+        const done = i < current && (completed ? completed[i] === true : true);
         const active = i === current;
 
         const dot = (

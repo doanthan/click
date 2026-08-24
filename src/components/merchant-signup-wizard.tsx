@@ -25,6 +25,7 @@ import {
   validateOptionalAbn,
   validateOptionalAcn,
 } from "@/lib/abn";
+import { isWithinSydneyPilot } from "@/lib/geo";
 import { useFormDraft } from "@/lib/use-form-draft";
 import { MapboxAutocomplete, type MapboxPlace } from "./mapbox-autocomplete";
 import { Badge, Button, EndowedProgress, FormField } from "./ds";
@@ -111,21 +112,6 @@ const SOCIAL_PLATFORMS = [
 ] as const;
 type SocialPlatform = (typeof SOCIAL_PLATFORMS)[number]["value"];
 
-// Greater Sydney postcode ranges — the area covered by the launch pilot. Used to
-// show out-of-area hosts the waitlist notice. Kept deliberately inclusive so we
-// don't tell a genuine Sydney host they're outside the pilot.
-const SYDNEY_POSTCODE_RANGES: ReadonlyArray<readonly [number, number]> = [
-  [2000, 2249], // metro core + eastern/inner/northern/southern suburbs
-  [2555, 2574], // Macarthur (Camden, Campbelltown)
-  [2740, 2786], // Penrith, Blue Mountains, western fringe
-];
-
-function isSydneyPostcode(postcode: string): boolean {
-  if (!/^\d{4}$/.test(postcode)) return false;
-  const n = Number(postcode);
-  return SYDNEY_POSTCODE_RANGES.some(([lo, hi]) => n >= lo && n <= hi);
-}
-
 // Client-side postcode → state lookup via the bundled AU table (the table
 // itself is server-only, so we hit its API route). Returns "" on any miss.
 async function lookupStateForPostcode(postcode: string): Promise<string> {
@@ -150,6 +136,7 @@ type ExistingDoc = { documentType: DocumentType; fileName: string };
 export type MerchantSignupPrefill = {
   businessName: string;
   tradingName: string;
+  businessType: string;
   abn: string;
   acn: string;
   eventCategoryIds: string[];
@@ -209,6 +196,7 @@ export const STEP_PATHS = [
    error map itself, and deriving the keys from it would make the type circular. */
 type ErrorField =
   | "businessName"
+  | "businessType"
   | "abn"
   | "acn"
   | "eventCategoryIds"
@@ -220,6 +208,17 @@ type ErrorField =
   | "addressPostcode";
 
 type FieldErrors = Partial<Record<ErrorField, string>>;
+
+// The four the merchant_profiles check constraint allows
+// (database/009_merchant_full_signup.sql). Order is the order they're offered.
+const BUSINESS_TYPES = [
+  { value: "sole_trader", label: "Sole trader" },
+  { value: "company", label: "Company" },
+  { value: "partnership", label: "Partnership" },
+  { value: "trust", label: "Trust" },
+] as const;
+
+type BusinessType = (typeof BUSINESS_TYPES)[number]["value"];
 
 /** DOM id for a field's control, so validation can focus the one at fault.
     Composite controls (address, state, categories) anchor their WRAPPER instead
@@ -243,6 +242,10 @@ type State = {
   // Business
   businessName: string;
   tradingName: string;
+  // Drives Stripe Connect's identity.entity_type (sole_trader → "individual",
+  // everything else → "company"). Collected here because nothing else can know
+  // it, and getting it wrong makes the hosted onboarding unfinishable.
+  businessType: BusinessType | "";
   abn: string;
   acn: string;
   eventCategoryIds: string[];
@@ -278,6 +281,7 @@ type DraftFields = Omit<
 const DRAFT_FIELD_KEYS: ReadonlyArray<keyof DraftFields> = [
   "businessName",
   "tradingName",
+  "businessType",
   "abn",
   "acn",
   "eventCategoryIds",
@@ -396,6 +400,7 @@ function initialState(props: {
     businessName:
       prefill?.businessName || (props.sessionName ? `${props.sessionName}'s Events` : ""),
     tradingName: prefill?.tradingName ?? "",
+    businessType: (prefill?.businessType as BusinessType) || "",
     abn: prefill?.abn ?? "",
     acn: prefill?.acn ?? "",
     eventCategoryIds: prefill?.eventCategoryIds ?? [],
@@ -606,6 +611,13 @@ function validateStep(step: StepIndex, state: State): FieldErrors {
     if (name.length < 2 || name.length > 100) {
       errors.businessName = "Business name must be 2-100 characters.";
     }
+    // Required, unlike ABN/ACN: this one is not paperwork we can chase later.
+    // It picks the Stripe Connect entity type, and a sole trader sent through
+    // the company flow is asked for a registered company name and ACN they do
+    // not have - a dead end with no route to a paid event.
+    if (!state.businessType) {
+      errors.businessType = "Pick how the business is set up.";
+    }
     // ABN and ACN are optional for now - only the format is checked, and only
     // when something was actually typed (both validators pass an empty value).
     const abnError = validateOptionalAbn(state.abn);
@@ -744,6 +756,7 @@ export function WizardShell({
       mode: "wizard" as const,
       businessName: state.businessName.trim(),
       tradingName: state.tradingName.trim(),
+      businessType: state.businessType || null,
       abn: normalizeAbn(state.abn),
       acn: normalizeAcn(state.acn),
       eventCategoryIds: state.eventCategoryIds,
@@ -919,10 +932,14 @@ export function StepAuthCard({
   googleConfigured,
   metaConfigured,
   emailSent = false,
+  errorMessage = "",
 }: {
   googleConfigured: boolean;
   metaConfigured: boolean;
   emailSent?: boolean;
+  // Rendered above the providers when a magic-link send failed. Empty string
+  // when there's nothing to say.
+  errorMessage?: string;
 }) {
   // Use the same actions as /login / /merchant/login but route the callback
   // back to /merchant/signup so the user lands inside the wizard at Step 1.
@@ -948,6 +965,15 @@ export function StepAuthCard({
       </div>
 
       <div className="rounded-[18px] bg-[color:var(--paper)] p-6 shadow-[var(--shadow-sm)]">
+        {errorMessage ? (
+          <p
+            role="alert"
+            className="mb-4 rounded-xl border border-[color:var(--danger)] px-4 py-3 text-sm font-medium leading-6 text-[color:var(--danger)]"
+          >
+            {errorMessage}
+          </p>
+        ) : null}
+
         {emailSent ? (
           <p
             role="status"
@@ -1044,6 +1070,12 @@ export function BusinessSection() {
         placeholder="STF Events"
       />
 
+      <BusinessTypePicker
+        value={state.businessType}
+        error={fieldErrors.businessType}
+        onChange={(value) => dispatch({ type: "field", key: "businessType", value })}
+      />
+
       <div className="grid gap-5 sm:grid-cols-2">
         <FormField
           label="ABN"
@@ -1084,6 +1116,74 @@ export function BusinessSection() {
         onToggle={(id) => dispatch({ type: "toggleCategory", id })}
       />
     </div>
+  );
+}
+
+// How the business is legally set up. Single-choice, so radios - but drawn as
+// the same chip vocabulary the category picker uses, since four short options
+// don't warrant a popover. Same fieldset/legend + own error wiring as
+// CategoryPicker, for the same reason: FormField renders a <label>, which can't
+// name a group of controls.
+function BusinessTypePicker({
+  value,
+  error,
+  onChange,
+}: {
+  value: BusinessType | "";
+  error?: string;
+  onChange: (value: BusinessType) => void;
+}) {
+  const errorId = `${fieldAnchorId("businessType")}-error`;
+  return (
+    <fieldset id={fieldAnchorId("businessType")} className="grid gap-3">
+      <legend className="mb-1 flex items-baseline gap-2">
+        <span className="text-[13.5px] font-semibold text-[color:var(--ink)]">
+          How is the business set up?
+        </span>
+        <span aria-hidden className="text-[11.5px] font-medium text-[color:var(--slate)]">
+          Required
+        </span>
+      </legend>
+
+      {error ? (
+        <span id={errorId} role="alert" className="text-[12.5px] font-medium text-[color:var(--danger)]">
+          {error}
+        </span>
+      ) : (
+        <span className="text-[12.5px] leading-[1.5] text-[color:var(--slate)]">
+          Stripe asks for different details depending on this, so it saves you a
+          round trip when you set up payouts.
+        </span>
+      )}
+
+      <div className="flex flex-wrap gap-2">
+        {BUSINESS_TYPES.map((option) => {
+          const selected = value === option.value;
+          return (
+            <label
+              key={option.value}
+              className={`cursor-pointer rounded-xl border px-4 py-2.5 text-sm font-semibold transition-colors ${
+                selected
+                  ? "border-[color:var(--purple)] bg-[color:var(--purple)] text-[color:var(--paper)]"
+                  : error
+                    ? "border-[color:var(--danger)] text-[color:var(--ink)] hover:border-[color:var(--slate)]"
+                    : "border-[color:var(--mist)] text-[color:var(--ink)] hover:border-[color:var(--slate)]"
+              }`}
+            >
+              <input
+                type="radio"
+                name="businessType"
+                value={option.value}
+                checked={selected}
+                onChange={() => onChange(option.value)}
+                className="sr-only"
+              />
+              {option.label}
+            </label>
+          );
+        })}
+      </div>
+    </fieldset>
   );
 }
 
@@ -1265,8 +1365,11 @@ export function ContactSection() {
   }
 
   // Show the waitlist notice once the host has entered an out-of-Sydney area.
+  // Same predicate the server branches on (isWithinPilotArea is this function),
+  // so the notice on this form and the outcome they're emailed always agree.
   const postcode = state.addressPostcode.trim();
-  const outsidePilot = /^\d{4}$/.test(postcode) && !isSydneyPostcode(postcode);
+  const outsidePilot =
+    /^\d{4}$/.test(postcode) && !isWithinSydneyPilot(state.addressState || null, postcode);
   const areaLabel = state.addressSuburb.trim() || "That area";
 
   /* Two sources feed one error slot. The live check answers while you type (and
@@ -1408,6 +1511,7 @@ export function ContactSection() {
             value={state.addressStreet}
             onValueChange={(v) => dispatch({ type: "field", key: "addressStreet", value: v })}
             onSelect={handlePick}
+            ariaLabel="Street address"
             placeholder="Start typing - e.g. 42 Crown Street, Surry Hills"
           />
         </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 // `@mapbox/search-js-react` touches `document` at import time, so it can't be
 // bundled into the SSR pass. next/dynamic with `ssr: false` lazy-loads it on
@@ -159,6 +159,7 @@ export function MapboxAutocomplete({
   proximity,
   country = "AU",
   className,
+  ariaLabel,
 }: {
   value: string;
   onValueChange: (value: string) => void;
@@ -167,8 +168,20 @@ export function MapboxAutocomplete({
   proximity?: { lat: number; lng: number };
   country?: string;
   className?: string;
+  /** Accessible name for the search input. SearchBox renders its own <input>
+      that we cannot label from the outside, and the wrapping FormField is a
+      role="group" rather than a <label> (a <label> there forwarded clicks to
+      whatever labelable element it found first), so the name is plumbed in and
+      applied to the real input below. */
+  ariaLabel?: string;
 }) {
   const boxRef = useRef<HTMLDivElement>(null);
+
+  // Same querySelector the retrieve handler already uses to reach the input.
+  useEffect(() => {
+    if (!ariaLabel) return;
+    boxRef.current?.querySelector("input")?.setAttribute("aria-label", ariaLabel);
+  }, [ariaLabel, value]);
 
   // Stable options object — a fresh literal each render would re-assign
   // `.options` on the SearchBox (it keys a useEffect on the prop) every
@@ -217,6 +230,7 @@ export function MapboxAutocomplete({
       <input
         value={value}
         onChange={(e) => onValueChange(e.target.value)}
+        aria-label={ariaLabel}
         placeholder={`${placeholder} (set NEXT_PUBLIC_MAPBOX_TOKEN)`}
         className={
           className ??

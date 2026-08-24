@@ -6,6 +6,7 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import {
   EVENT_CREATE_DRAFT_VERSION,
   EVENT_CREATE_STORAGE_KEY,
+  eventCreateDraftStorage,
 } from "@/lib/event-create-storage";
 import { scopedKey, useAccountScope } from "@/lib/account-scope";
 import type { EventDuplicateDraft } from "@/lib/event-repository";
@@ -16,7 +17,9 @@ type DuplicateState = "idle" | "loading" | "error";
 // attendees, no date) and drops the merchant into the normal create flow so
 // they pick a fresh date/time, tweak anything, and publish - which is what
 // pushes the copy into discovery. Handy for recurring events. The draft is
-// seeded into the same sessionStorage slot the wizard rehydrates from.
+// seeded into the same browser-storage slot the wizard rehydrates from - which
+// Storage that is comes from eventCreateDraftStorage(), so this side and
+// useFormDraft can never drift apart and strand a seeded draft.
 // Bug board #184 (choose the date), #185 (no "Copy of" prefix), #191 (prefill +
 // publish to discovery).
 export function MerchantEventDuplicateButton({ eventId }: { eventId: string }) {
@@ -38,7 +41,7 @@ export function MerchantEventDuplicateButton({ eventId }: { eventId: string }) {
   function startDuplicate() {
     let hasDraft = false;
     try {
-      hasDraft = sessionStorage.getItem(storageKey) != null;
+      hasDraft = eventCreateDraftStorage().getItem(storageKey) != null;
     } catch {
       // Storage blocked (private mode, iframe) - there is no draft to lose.
     }
@@ -74,7 +77,7 @@ export function MerchantEventDuplicateButton({ eventId }: { eventId: string }) {
       // through useFormDraft, which drops any payload whose `v` does not match
       // EVENT_CREATE_DRAFT_VERSION. Writing the bare draft object - as this used
       // to - would now silently discard every duplicate.
-      sessionStorage.setItem(
+      eventCreateDraftStorage().setItem(
         storageKey,
         JSON.stringify({ v: EVENT_CREATE_DRAFT_VERSION, values: payload.draft }),
       );

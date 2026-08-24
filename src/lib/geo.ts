@@ -85,6 +85,44 @@ const MELBOURNE_POSTCODE_RANGES: readonly PostcodeRange[] = [
   [3910, 3944], // Frankston / Mornington Peninsula
 ];
 
+// NSW PO-box / business-district range. Not a suburb anyone lives in, but a
+// legitimate registered business address, so it counts as inside the pilot for
+// merchant signup. Deliberately NOT part of SYDNEY_POSTCODE_RANGES: those drive
+// regionFromPostcode, and a PO box is not a region an attendee is "in".
+const NSW_PO_BOX_RANGE: PostcodeRange = [1000, 1999];
+
+export const PILOT_AREA_LABEL = "Greater Sydney";
+
+/**
+ * The ONE answer to "is this address inside the launch pilot?".
+ *
+ * There were two, and they disagreed. The merchant wizard used 2000-2249 /
+ * 2555-2574 / 2740-2786 with no state check, while the server used NSW plus
+ * 2000-2234 / 1000-1999. So a host in Camden (2570), Campbelltown (2560) or
+ * Penrith (2750) saw no out-of-pilot notice on the form, submitted, was told
+ * "in the admin queue... within 1 business day", and then received an email
+ * saying Click isn't live in their suburb - two contradictory messages and
+ * nothing they could do about either. The admin bell said "outside pilot" for a
+ * host the form had treated as inside it.
+ *
+ * Resolved toward the wider, already-documented Greater Sydney ranges in
+ * SYDNEY_POSTCODE_RANGES rather than the server's narrower list: those outer
+ * rings are genuinely Sydney, and the form had been promising them for longer.
+ * The NSW requirement is kept from the server side - every range here is a NSW
+ * range, so a non-NSW state alongside one of them is a mis-filled form.
+ */
+export function isWithinSydneyPilot(
+  state: string | null | undefined,
+  postcode: string | null | undefined,
+): boolean {
+  if (state && state !== "NSW") return false;
+  if (!postcode || !/^\d{4}$/.test(postcode.trim())) return false;
+  const code = Number.parseInt(postcode.trim(), 10);
+  return [...SYDNEY_POSTCODE_RANGES, NSW_PO_BOX_RANGE].some(
+    ([lo, hi]) => code >= lo && code <= hi,
+  );
+}
+
 export function regionFromPostcode(postcode: string | null | undefined): Region {
   if (!postcode) return "Other";
   const code = Number.parseInt(postcode.trim(), 10);

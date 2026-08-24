@@ -17,12 +17,13 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { toast } from "sonner";
-import { Badge, EndowedProgress, FormField } from "./ds";
+import { Badge, EndowedProgress, FormField, Icon } from "./ds";
 import { InfoNote, WizardStepper } from "./merchant-ds";
 import { ConfirmDialog } from "./confirm-dialog";
 import { MapboxAutocomplete, type MapboxPlace } from "./mapbox-autocomplete";
 import { toTitleCase } from "@/lib/text-format";
 import {
+  EVENT_CREATE_DRAFT_STORAGE,
   EVENT_CREATE_DRAFT_VERSION,
   EVENT_CREATE_STORAGE_KEY,
 } from "@/lib/event-create-storage";
@@ -148,6 +149,10 @@ function validateStep(step: StepIndex, v: WizardValues): FieldErrors {
   if (step === 0) {
     if (!v.title.trim()) errors.title = "Give the event a title.";
     if (!v.groupName.trim()) errors.groupName = "Add the group or host name.";
+    // Category used to be seeded to categoryOptions[0] - alphabetically first,
+    // so every event nobody touched published as "Career". It starts empty now,
+    // which makes this the check that stops a wrong one going out.
+    if (!v.category.trim()) errors.category = "Pick the category it belongs in.";
     if (!v.relationshipGoal.trim()) {
       errors.relationshipGoal = "Say why people should come - one line is plenty.";
     }
@@ -300,6 +305,17 @@ function formatLocalDateTimeString(date: Date, hour: number, minute: number) {
   return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}T${pad2(hour)}:${pad2(minute)}`;
 }
 
+/** Short human label for one occurrence's datetime-local string, e.g. "Sat 6 Sep". */
+function occurrenceLabel(startsAt: string) {
+  const parsed = parseLocalDateTime(startsAt);
+  if (!parsed) return startsAt;
+  return new Intl.DateTimeFormat("en-AU", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  }).format(parsed.date);
+}
+
 // Returns one Date per occurrence. "none" → just the start. Capped at 26 to
 // match validateStep so a typo can't blow up the queue.
 function computeOccurrenceDates(
@@ -347,6 +363,11 @@ type WizardContextValue = {
   // until payouts are live - the Schedule step's price field says so rather than
   // letting the merchant find out from an admin rejection.
   chargesEnabled: boolean;
+  // Click's cut of a paid ticket, in basis points (PLATFORM_FEE_BPS, read
+  // server-side in the route layout). The Schedule step spends it on one line of
+  // "you'll receive $X" - a merchant should never learn the take rate from
+  // their first payout.
+  platformFeeBps: number;
   stepError: string | null;
   setStepError: Dispatch<SetStateAction<string | null>>;
   // Per-field validation messages for the step currently on screen. Each step
@@ -369,6 +390,11 @@ type WizardContextValue = {
   // the flag rides here and tells the freshly-mounted shell whether it arrived
   // by navigation (move focus) or by first load (leave focus alone).
   navigatedRef: React.MutableRefObject<boolean>;
+  // Which step the messages currently in `fieldErrors` / `stepError` were raised
+  // for. Also mutable-not-state, and for the same reason. Only goNext and goBack
+  // used to clear them, so jumping via the stepper carried "3 things still need
+  // a moment" onto a step none of them were about.
+  errorStepRef: React.MutableRefObject<StepIndex | null>;
   submitting: boolean;
   setSubmitting: Dispatch<SetStateAction<boolean>>;
   // True while the Media step has one or more image uploads in flight. Set by
@@ -396,6 +422,7 @@ export function EventCreateProvider({
   hostNameOptions = [],
   venueOptions = [],
   chargesEnabled = false,
+  platformFeeBps = 0,
   children,
 }: {
   categoryOptions: string[];
@@ -403,17 +430,20 @@ export function EventCreateProvider({
   hostNameOptions?: string[];
   venueOptions?: string[];
   chargesEnabled?: boolean;
+  platformFeeBps?: number;
   children: React.ReactNode;
 }) {
-  const [values, setValues] = useState<WizardValues>(() => ({
-    ...initial,
-    category: categoryOptions[0] ?? "",
-  }));
+  // NO category seed. This used to be `categoryOptions[0]`, and the options come
+  // back `order by name asc`, so every event a merchant didn't think to change
+  // published as "Career" - with no Category row on Review to catch it either.
+  // Empty + required + a placeholder option is the whole fix.
+  const [values, setValues] = useState<WizardValues>(() => ({ ...initial }));
   const [stepError, setStepError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [submitting, setSubmitting] = useState(false);
   const [uploading, setUploading] = useState(false);
   const navigatedRef = useRef(false);
+  const errorStepRef = useRef<StepIndex | null>(null);
 
   // Draft persistence is the shared useFormDraft hook, same as every other long
   // form in the app: it reads inside an effect (never a useState initializer, or
@@ -433,7 +463,13 @@ export function EventCreateProvider({
   const { restored, clear: clearDraft } = useFormDraft<WizardValues>({
     key: EVENT_CREATE_STORAGE_KEY,
     version: EVENT_CREATE_DRAFT_VERSION,
-    storage: "session",
+    // localStorage, not session: a half-built event is 15+ fields of work and
+    // sessionStorage threw it away when the tab closed. The key is already
+    // namespaced per account by the hook, so a shared browser still can't
+    // surface one host's draft to another, and "Start over" clears it outright.
+    // Imported, not literal - the duplicate button writes this same slot by
+    // hand and the two must not drift.
+    storage: EVENT_CREATE_DRAFT_STORAGE,
     values,
     apply: (saved) => setValues((v) => ({ ...v, ...saved })),
   });
@@ -461,9 +497,10 @@ export function EventCreateProvider({
   // a ConfirmDialog in front of it. Only the in-memory reset happens here; the
   // storage clear is deferred one commit, below.
   const discardDraft = () => {
-    setValues({ ...initial, category: categoryOptions[0] ?? "" });
+    setValues({ ...initial });
     setFieldErrors({});
     setStepError(null);
+    errorStepRef.current = null;
     setDiscardCount((n) => n + 1);
   };
 
@@ -491,6 +528,7 @@ export function EventCreateProvider({
         hostNameOptions,
         venueOptions,
         chargesEnabled,
+        platformFeeBps,
         stepError,
         setStepError,
         fieldErrors,
@@ -499,6 +537,7 @@ export function EventCreateProvider({
         discardDraft,
         clearDraft,
         navigatedRef,
+        errorStepRef,
         submitting,
         setSubmitting,
         uploading,
@@ -528,12 +567,23 @@ export function WizardShell({
     discardDraft,
     clearDraft,
     navigatedRef,
+    errorStepRef,
     submitting,
     setSubmitting,
     uploading,
   } = useWizard();
   const router = useRouter();
   const isLast = step === STEP_COUNT - 1;
+  // Which steps genuinely hold valid input, so the stepper's ticks mean
+  // something. Deep-linking to /review used to paint four green ticks over an
+  // empty event because "done" was inferred from position alone.
+  const completedSteps = useMemo(
+    () =>
+      STEP_TITLES.map(
+        (_, i) => Object.keys(validateStep(i as StepIndex, values)).length === 0,
+      ),
+    [values],
+  );
   const errorRef = useRef<HTMLParagraphElement>(null);
   const stepBodyRef = useRef<HTMLDivElement>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
@@ -542,6 +592,21 @@ export function WizardShell({
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(
     null,
   );
+  // Non-null after a partial failure: the exact occurrence start times that did
+  // not get created. Submit re-POSTs only these until they all land.
+  const [retryDates, setRetryDates] = useState<string[] | null>(null);
+
+  // ...but a retry list is only valid for the schedule it came from. Editing the
+  // start, the frequency or the count means a different set of occurrences, so
+  // the armed list is dropped and Submit goes back to creating all of them.
+  const scheduleKey = `${values.startsAt}|${values.recurrenceFreq}|${values.recurrenceCount}`;
+  const scheduleAtFailureRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (scheduleAtFailureRef.current === null) return;
+    if (scheduleAtFailureRef.current === scheduleKey) return;
+    scheduleAtFailureRef.current = null;
+    setRetryDates(null);
+  }, [scheduleKey]);
 
   // Each step is its own route, so this shell REMOUNTS on every Next / Back and
   // focus falls back to <body>. Move it to the top of the new step body - which
@@ -551,8 +616,24 @@ export function WizardShell({
   useEffect(() => {
     if (!navigatedRef.current) return;
     navigatedRef.current = false;
-    stepBodyRef.current?.focus();
+    // preventScroll, then scroll ourselves. focus()'s own scroll ignores
+    // scroll-margin-top on the focused element, so the step's <h1> landed
+    // ~20px up behind the sticky site header on every Next / Back.
+    stepBodyRef.current?.focus({ preventScroll: true });
+    stepBodyRef.current?.scrollIntoView({ block: "start" });
   }, [navigatedRef]);
+
+  // Validation messages belong to the step that raised them. Arriving at a
+  // DIFFERENT step - via the stepper, a Review "Edit" link, or the back button,
+  // none of which route through goNext/goBack - used to carry "3 things still
+  // need a moment" onto a step none of them were about. The submit path sets
+  // errorStepRef to the step it is bouncing to, so its messages survive.
+  useEffect(() => {
+    if (errorStepRef.current === step) return;
+    errorStepRef.current = null;
+    setStepError(null);
+    setFieldErrors({});
+  }, [step, errorStepRef, setStepError, setFieldErrors]);
 
   /**
    * Shared by goNext and submit: mark every offending field and say how many.
@@ -562,9 +643,16 @@ export function WizardShell({
    */
   function showFieldErrors(
     errors: FieldErrors,
-    { stepLabel, focusFirst }: { stepLabel?: string; focusFirst: boolean },
+    {
+      stepLabel,
+      focusFirst,
+      forStep = step,
+    }: { stepLabel?: string; focusFirst: boolean; forStep?: StepIndex },
   ) {
     const keys = Object.keys(errors) as Array<keyof WizardValues>;
+    // Stamp which step these belong to BEFORE the route change, so the shell
+    // that mounts on the offending step keeps them instead of clearing them.
+    errorStepRef.current = forStep;
     setFieldErrors(errors);
     const summary =
       keys.length === 1
@@ -596,6 +684,7 @@ export function WizardShell({
     }
     setFieldErrors({});
     setStepError(null);
+    errorStepRef.current = null;
     navigatedRef.current = true;
     router.push(STEP_PATHS[step + 1]);
   }
@@ -603,6 +692,7 @@ export function WizardShell({
   function goBack() {
     if (step > 0) {
       setStepError(null);
+      errorStepRef.current = null;
       navigatedRef.current = true;
       router.push(STEP_PATHS[step - 1]);
     }
@@ -614,7 +704,11 @@ export function WizardShell({
     for (let s = 0; s < STEP_COUNT; s++) {
       const errors = validateStep(s as StepIndex, values);
       if (Object.keys(errors).length > 0) {
-        showFieldErrors(errors, { stepLabel: STEP_TITLES[s], focusFirst: false });
+        showFieldErrors(errors, {
+          stepLabel: STEP_TITLES[s],
+          focusFirst: false,
+          forStep: s as StepIndex,
+        });
         navigatedRef.current = true;
         router.push(STEP_PATHS[s]);
         return;
@@ -632,14 +726,24 @@ export function WizardShell({
         values.recurrenceFreq,
         Number.parseInt(values.recurrenceCount, 10) || 1,
       );
-      const startsAtList = occurrences.length
-        ? occurrences.map((d) =>
-            formatLocalDateTimeString(d, d.getHours(), d.getMinutes()),
-          )
-        : [values.startsAt];
+      // retryDates is set only by the partial-failure branch below: it holds the
+      // occurrences that did NOT get created, so a retry re-POSTs those and
+      // nothing else. Without it, pressing Submit again after a partial failure
+      // duplicated every occurrence that had already succeeded.
+      const startsAtList =
+        retryDates ??
+        (occurrences.length
+          ? occurrences.map((d) =>
+              formatLocalDateTimeString(d, d.getHours(), d.getMinutes()),
+            )
+          : [values.startsAt]);
 
       let okCount = 0;
-      const errors: string[] = [];
+      // The DATE that failed, not just the reason. "3 failed - retry from the
+      // merchant dashboard" told a merchant neither which three of their 26
+      // occurrences were missing nor where on the dashboard to do anything
+      // about it.
+      const failures: Array<{ startsAt: string; date: string; reason: string }> = [];
       let firstTitle: string | undefined;
       // Whether the created event(s) went straight live (trusted / auto-approved
       // merchant) vs landed in the pending review queue - drives the toast copy.
@@ -707,7 +811,11 @@ export function WizardShell({
             window.location.href = payload.redirect;
             return;
           }
-          errors.push(payload.error ?? "Submission failed.");
+          failures.push({
+            startsAt,
+            date: occurrenceLabel(startsAt),
+            reason: payload.error ?? "Submission failed.",
+          });
           continue;
         }
         okCount++;
@@ -716,8 +824,9 @@ export function WizardShell({
       }
 
       if (okCount === 0) {
-        const msg = errors[0] ?? "Submission failed.";
+        const msg = failures[0]?.reason ?? "Submission failed.";
         setStepError(msg);
+        errorStepRef.current = step;
         toast.error(msg);
         return;
       }
@@ -728,27 +837,44 @@ export function WizardShell({
       // contradiction of the trust they were just granted (bug board #180).
       const liveNow =
         firstStatus === "live" || firstStatus === "featured" || firstStatus === "Live";
-      if (errors.length === 0) {
-        // Only a clean sweep drops the saved draft, and only here on the success
-        // branch. Clearing it before the partial-failure branch below (as this
-        // used to) left the dates that failed with nothing to retry from.
-        // clearDraft is useFormDraft's clear() - it swallows a blocked storage
-        // write itself, so there is nothing to catch here.
-        clearDraft();
-        toast.success(
-          liveNow
-            ? startsAtList.length === 1
-              ? `🎉 ${label} is live - members can find it on Discover now.`
-              : `🎉 ${okCount} occurrences of ${label} are live on Discover.`
-            : startsAtList.length === 1
-              ? `${label} submitted for admin review.`
-              : `${okCount} occurrences of ${label} submitted for admin review.`,
+      if (failures.length > 0) {
+        // PARTIAL FAILURE - stay put. Navigating to the dashboard (as both
+        // branches used to) took the merchant away from the only screen that
+        // knew which dates were missing, and the ones that DID publish were
+        // invisible from here, so the honest thing was a hidden success and an
+        // unnamed failure at once. Name both, keep the draft, don't move.
+        const dates = failures.map((f) => f.date).join(", ");
+        const reasons = Array.from(new Set(failures.map((f) => f.reason)));
+        // Arm the retry with EXACTLY the dates that failed, so pressing the
+        // button again cannot duplicate the ones that already published.
+        setRetryDates(failures.map((f) => f.startsAt));
+        scheduleAtFailureRef.current = scheduleKey;
+        setStepError(
+          `${okCount} of ${startsAtList.length} dates were created and are safe on your events tab. These were not: ${dates}. ${reasons.join(" ")} The button below now retries only the missing dates.`,
         );
-      } else {
-        toast.success(`${okCount} of ${startsAtList.length} submitted`, {
-          description: `${errors.length} failed - retry from the merchant dashboard.`,
+        errorStepRef.current = step;
+        toast.error(`${failures.length} of ${startsAtList.length} dates failed`, {
+          description: dates,
         });
+        return;
       }
+      setRetryDates(null);
+      scheduleAtFailureRef.current = null;
+
+      // Only a clean sweep drops the saved draft. Clearing it before the
+      // partial-failure branch above (as this used to) left the dates that
+      // failed with nothing to retry from. clearDraft is useFormDraft's clear()
+      // - it swallows a blocked storage write itself, so nothing to catch here.
+      clearDraft();
+      toast.success(
+        liveNow
+          ? startsAtList.length === 1
+            ? `🎉 ${label} is live - members can find it on Discover now.`
+            : `🎉 ${okCount} occurrences of ${label} are live on Discover.`
+          : startsAtList.length === 1
+            ? `${label} submitted for admin review.`
+            : `${okCount} occurrences of ${label} submitted for admin review.`,
+      );
       router.push("/merchant?tab=events");
       router.refresh();
     } catch {
@@ -769,10 +895,25 @@ export function WizardShell({
           carries none - so the back half doesn't feel like it stalled. */}
       <div className="space-y-3.5 border-b border-[color:var(--mist)] px-5 py-4">
         <EndowedProgress step={step} total={STEP_COUNT} pct={STEP_PCT[step]} />
-        <WizardStepper steps={STEP_TITLES} current={step} paths={STEP_PATHS} />
+        <WizardStepper
+          steps={STEP_TITLES}
+          current={step}
+          // Links go dead while photos are in flight: the stepper was the one
+          // way out of the Media step that goNext's upload guard never saw, and
+          // leaving mid-upload unmounts the tiles that were still uploading.
+          paths={uploading ? undefined : STEP_PATHS}
+          completed={completedSteps}
+        />
       </div>
 
-      <div ref={stepBodyRef} tabIndex={-1} className="space-y-5 p-6 outline-none">
+      {/* scroll-mt clears the sticky site header (49px, 69px from sm) plus a
+          little air - focus()'s scroll does not honour it, so the effect above
+          calls scrollIntoView, which does. */}
+      <div
+        ref={stepBodyRef}
+        tabIndex={-1}
+        className="space-y-5 scroll-mt-[57px] p-6 outline-none sm:scroll-mt-[77px]"
+      >
         {/* A restored draft used to arrive silently, which is worst on the
             "Duplicate event" path - the merchant opens Create event and finds it
             already full of last month's event with no explanation. */}
@@ -806,28 +947,44 @@ export function WizardShell({
             while. Without a counter the merchant cannot tell a working submit
             from a hung one, and the natural response - reload - leaves half the
             occurrences created. */}
-        {progress ? (
-          <EndowedProgress
-            step={progress.done}
-            total={progress.total}
-            label={
-              progress.total === 1
-                ? "Creating your event…"
-                : `Creating ${Math.min(progress.done + 1, progress.total)} of ${progress.total}…`
-            }
-            className="rise-soft"
-          />
-        ) : null}
+        {/* aria-live: the Submit button goes `disabled` the moment this appears,
+            which drops keyboard focus to <body>. Announcing the progress is what
+            replaces the context that focus loss took away. */}
+        <div aria-live="polite" aria-atomic="true">
+          {progress ? (
+            <EndowedProgress
+              step={progress.done}
+              total={progress.total}
+              label={
+                progress.total === 1
+                  ? "Creating your event…"
+                  : `Creating ${Math.min(progress.done + 1, progress.total)} of ${progress.total}…`
+              }
+              className="rise-soft"
+            />
+          ) : null}
+        </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-          <button
-            type="button"
-            onClick={goBack}
-            disabled={step === 0 || submitting}
-            className="ck-btn ck-btn--secondary ck-btn--md"
-          >
-            ← Back
-          </button>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={goBack}
+              disabled={step === 0 || submitting}
+              className="ck-btn ck-btn--secondary ck-btn--md"
+            >
+              ← Back
+            </button>
+            {/* A wizard with no exit is how a half-built event ends in a
+                force-quit. The draft is in localStorage, so leaving genuinely
+                costs nothing but the trip back - say so on the button. */}
+            <Link
+              href="/merchant?tab=events"
+              className="text-sm font-semibold text-[color:var(--slate)] underline underline-offset-2 hover:text-[color:var(--purple)]"
+            >
+              Save &amp; exit
+            </Link>
+          </div>
           {isLast ? (
             <button
               type="button"
@@ -837,7 +994,11 @@ export function WizardShell({
               disabled={submitting}
               className="ck-btn ck-btn--primary ck-btn--md"
             >
-              {submitting ? "Submitting…" : "Submit for review"}
+              {submitting
+                ? "Submitting…"
+                : retryDates
+                  ? `Retry ${retryDates.length} ${retryDates.length === 1 ? "date" : "dates"}`
+                  : "Submit for review"}
             </button>
           ) : (
             <button
@@ -883,6 +1044,11 @@ export function WizardShell({
 // createEventForMerchant so the UI can't promise more than the backend keeps.
 const MAX_TAGS = 8;
 
+// The TagPicker's search box. Fixed rather than generated because ds.tsx is
+// hook-free (it renders on the server too), so FormField cannot mint an id of
+// its own to hand its label - and there is only ever one tag picker on screen.
+const TAG_SEARCH_ID = "ce-tag-search";
+
 function parseTags(value: string): string[] {
   return value
     .split(",")
@@ -901,10 +1067,13 @@ function TagPicker({
   value,
   options,
   onChange,
+  id,
 }: {
   value: string;
   options: string[];
   onChange: (next: string) => void;
+  /** id of the search input, so the wrapping FormField's label can point at it. */
+  id?: string;
 }) {
   const [query, setQuery] = useState("");
 
@@ -965,17 +1134,24 @@ function TagPicker({
 
   return (
     <div className="grid gap-2">
+      {/* Adding or removing a tag re-renders the cloud under the pointer and
+          says nothing. One polite live region covers both directions. */}
+      <p aria-live="polite" className="sr-only">
+        {selected.length === 0
+          ? "No tags selected"
+          : `${selected.length} of ${MAX_TAGS} tags selected: ${selected.join(", ")}`}
+      </p>
       {selected.length > 0 ? (
         <ul className="flex flex-wrap gap-2">
           {selected.map((tag) => (
             <li key={tag.toLowerCase()}>
-              <span className="ck-tag ck-tag--selected">
+              <span className="ck-tag ck-tag--selected ck-tag--tap">
                 {tag}
                 <button
                   type="button"
                   onClick={() => removeTag(tag)}
                   aria-label={`Remove ${tag}`}
-                  className="grid size-4 place-items-center rounded-full text-[0.75rem] leading-none text-[color:var(--champagne)] hover:opacity-75"
+                  className="-mr-1.5 grid size-7 place-items-center rounded-full text-sm leading-none text-[color:var(--champagne)] hover:opacity-75"
                 >
                   ×
                 </button>
@@ -986,6 +1162,7 @@ function TagPicker({
       ) : null}
 
       <input
+        id={id}
         type="text"
         value={query}
         disabled={atLimit}
@@ -1020,7 +1197,10 @@ function TagPicker({
                     <button
                       type="button"
                       onClick={() => addTag(opt)}
-                      className="ck-tag ck-tag--select touch-manipulation"
+                      // --tap, not the bare 24px tag: here the tag IS the
+                      // control, and a 24px target next to 44px buttons asks
+                      // for three times the precision for no reason.
+                      className="ck-tag ck-tag--select ck-tag--tap touch-manipulation"
                     >
                       <span aria-hidden className="text-[color:var(--slate)]">+</span> {opt}
                     </button>
@@ -1194,6 +1374,10 @@ export function BasicsSection() {
           hint="Pick a saved name or type a new one."
           required
           error={fieldErrors.groupName}
+          // htmlFor, because the control below is ours, not FormField's. Without
+          // it the wrapping <label> forwarded a click on the text to the first
+          // labelable thing it could find - see the note on FormField.
+          htmlFor={fieldAnchorId("groupName")}
         >
           <Combobox
             id={fieldAnchorId("groupName")}
@@ -1208,20 +1392,35 @@ export function BasicsSection() {
         <FormField
           as="select"
           label="Category"
+          hint="Sets the badge on your card and the category cover if you skip photos."
+          required
+          error={fieldErrors.category}
+          id={fieldAnchorId("category")}
           value={values.category}
           onChange={(e) => set("category", e.target.value)}
         >
           {categoryOptions.length === 0 ? (
             <option value="">No categories available</option>
           ) : (
-            categoryOptions.map((c) => <option key={c}>{c}</option>)
+            <>
+              {/* An empty, non-selectable first option. Seeding the first real
+                  category instead published every untouched event as "Career". */}
+              <option value="" disabled>
+                Pick a category…
+              </option>
+              {categoryOptions.map((c) => (
+                <option key={c}>{c}</option>
+              ))}
+            </>
           )}
         </FormField>
         <FormField
           label="Tags"
-          hint="Search and pick from Click's tag list. Top 5 used for matching."
+          hint={`Search and pick from Click's tag list - up to ${MAX_TAGS}. They're what we match members on, so pick the ones that really describe the night.`}
+          htmlFor={TAG_SEARCH_ID}
         >
           <TagPicker
+            id={TAG_SEARCH_ID}
             value={values.tags}
             options={tagOptions}
             onChange={(next) => set("tags", next)}
@@ -1229,8 +1428,11 @@ export function BasicsSection() {
         </FormField>
       </div>
       <div className="space-y-5 rise-soft rise-d3">
+        {/* No htmlFor: these chips are a GROUP, not one control, so FormField
+            renders role="group" and a click on the label correctly does nothing.
+            It used to toggle the first chip and rewrite the goal sentence. */}
         <FormField
-          label="Who's this event for? (intent)"
+          label="Who's this event for?"
           hint="Pick one or more - we'll draft the goal line below, which you can edit."
         >
           <div className="flex flex-wrap gap-2">
@@ -1258,7 +1460,8 @@ export function BasicsSection() {
           </div>
         </FormField>
         <FormField
-          label="Why should people come? (relationship goal)"
+          label="Why should people come?"
+          hint="One line. It's the &ldquo;Why this event&rdquo; panel on your event page."
           required
           error={fieldErrors.relationshipGoal}
           id={fieldAnchorId("relationshipGoal")}
@@ -1283,7 +1486,22 @@ export function BasicsSection() {
 }
 
 export function ScheduleSection() {
-  const { values, set, fieldErrors, chargesEnabled } = useWizard();
+  const { values, set, fieldErrors, chargesEnabled, platformFeeBps } = useWizard();
+  // What the host actually receives. Stripe is in LIVE mode and the platform fee
+  // is a real deduction on a real payout, so the wizard says the number before
+  // the price is set rather than letting the first payout say it.
+  const priceCents = Math.round((Number.parseFloat(values.price) || 0) * 100);
+  const isPaid = priceCents > 0 && PRICE_PATTERN.test(values.price.trim());
+  const feeCents = isPaid ? Math.floor((priceCents * platformFeeBps) / 10000) : 0;
+  const netCents = priceCents - feeCents;
+  const money = (cents: number) =>
+    new Intl.NumberFormat("en-AU", {
+      style: "currency",
+      currency: "AUD",
+      minimumFractionDigits: cents % 100 === 0 ? 0 : 2,
+      maximumFractionDigits: cents % 100 === 0 ? 0 : 2,
+    }).format(cents / 100);
+
   return (
     <div className="space-y-4 rise-soft">
       <header className="rise-soft rise-d1">
@@ -1329,7 +1547,7 @@ export function ScheduleSection() {
         <div className="grid gap-3 md:grid-cols-2">
           <FormField
             label="Capacity"
-            hint="Max number of guests."
+            hint="Total seats at this event."
             required
             error={fieldErrors.capacity}
             id={fieldAnchorId("capacity")}
@@ -1343,8 +1561,11 @@ export function ScheduleSection() {
             placeholder="12"
           />
           <FormField
-            label="Price"
-            hint="Enter 0 for free. Dollars and cents, e.g. 12.50."
+            label="Price per person"
+            // "Price" beside "Capacity" read as the price of the whole event to
+            // anyone listing a table or a room, and Stripe is live: a host who
+            // meant $120 for eight seats charged each of the eight $120.
+            hint="What ONE guest pays. Enter 0 for free. Dollars and cents, e.g. 12.50."
             error={fieldErrors.price}
             id={fieldAnchorId("price")}
             // type="text" + inputMode="decimal", NOT type="number": the number
@@ -1358,13 +1579,64 @@ export function ScheduleSection() {
             placeholder="0"
           />
         </div>
-        {/* Free events publish without Stripe; a paid one can't be approved until
-            payouts are live. Say it here, at the moment the price is typed, rather
-            than letting the merchant discover it from an admin rejection later. */}
-        {!chargesEnabled && Number(values.price) > 0 ? (
+        {/* The money facts, at the moment the price is typed. Every line here was
+            previously something a host only found out from their first payout,
+            their tax return, or an attendee asking for a refund. */}
+        {isPaid ? (
+          <div className="space-y-2 rounded-xl border border-[color:var(--mist)] bg-[color:var(--lav-bg)] px-4 py-3 text-sm leading-6 text-[color:var(--slate)]">
+            <p className="text-[color:var(--ink)]">
+              Each guest pays{" "}
+              <strong className="font-semibold">{money(priceCents)}</strong>
+              {platformFeeBps > 0 ? (
+                <>
+                  . Click keeps{" "}
+                  {/* 290 bps reads "2.9%", not "2.90%" - up to two places, no
+                      trailing zero. */}
+                  <strong className="font-semibold">
+                    {new Intl.NumberFormat("en-AU", {
+                      maximumFractionDigits: 2,
+                    }).format(platformFeeBps / 100)}
+                    %
+                  </strong>{" "}
+                  ({money(feeCents)}), so you receive{" "}
+                  <strong className="font-semibold">{money(netCents)}</strong> per
+                  seat.
+                </>
+              ) : (
+                <>. You receive the full amount - Click takes no cut.</>
+              )}
+            </p>
+            <p>
+              This price is GST-inclusive - the tax invoice takes the GST out of
+              it (one eleventh of what the guest paid), it is never added on top.
+              Guests may also see a separate booking fee; that one is Click&rsquo;s,
+              not yours.
+            </p>
+            <p>
+              Cancellations: a guest cancelling 48+ hours out gets a full refund,
+              24-48 hours out gets half, and under 24 hours gets none. If you
+              cancel the event, everyone is refunded in full.
+            </p>
+            {!chargesEnabled ? (
+              <p className="text-[color:var(--ink)]">
+                Payout setup isn&rsquo;t finished, so everything you create stays in
+                review - free events included - until it is.{" "}
+                <a
+                  href="/merchant/onboarding/payouts"
+                  className="font-medium text-[color:var(--purple)] underline underline-offset-2"
+                >
+                  Set up payouts
+                </a>
+              </p>
+            ) : null}
+          </div>
+        ) : !chargesEnabled ? (
           <p className="rounded-xl border border-[color:var(--mist)] bg-[color:var(--lav-bg)] px-4 py-3 text-sm leading-6 text-[color:var(--slate)]">
-            You haven&rsquo;t finished payout setup, so a paid event stays in review
-            until you do - free events publish as normal.{" "}
+            {/* NOT "free events publish as normal" - createEventForMerchant only
+                publishes straight to live when auto-approve AND Stripe are both
+                ready, so an unfinished payout setup holds free events too. */}
+            Until payout setup is finished, everything you create stays in review -
+            free events included.{" "}
             <a
               href="/merchant/onboarding/payouts"
               className="font-medium text-[color:var(--purple)] underline underline-offset-2"
@@ -1457,8 +1729,22 @@ function DateTimePicker({
       }`}
     >
       <legend className="flex flex-wrap items-baseline justify-between gap-2 px-2">
-        <span className="text-[12.5px] font-semibold text-[color:var(--slate)]">
-          Start time
+        <span className="flex items-baseline gap-2">
+          <span className="text-[12.5px] font-semibold text-[color:var(--slate)]">
+            Start time
+          </span>
+          {/* The one required field on this step that carried no marker, because
+              it is a fieldset rather than a FormField and so never got one. */}
+          <span className="text-[11.5px] font-medium text-[color:var(--slate)]">
+            Required
+          </span>
+          {/* The server reads this string as Sydney wall time (see
+              parseEventStart), but the picker builds it from the BROWSER's
+              clock. For a host outside Sydney those are different times, and
+              nothing said which one they were setting. */}
+          <span className="text-[11.5px] font-medium text-[color:var(--slate)]">
+            · Sydney time
+          </span>
         </span>
         <span className="text-[12.5px] font-semibold text-[color:var(--purple)]">
           {summary ?? "Pick a day + time"}
@@ -1482,7 +1768,7 @@ function DateTimePicker({
           onClick={() => setCursor((c) => addMonths(c, -1))}
           disabled={!canGoBackMonth}
           aria-label="Previous month"
-          className="rounded-lg border border-[color:var(--mist)] bg-[color:var(--paper)] px-3 py-1.5 text-sm font-semibold text-[color:var(--ink)] hover:bg-[color:var(--lavender-100)] disabled:opacity-40 disabled:cursor-not-allowed"
+          className="size-11 rounded-lg border border-[color:var(--mist)] bg-[color:var(--paper)] text-sm font-semibold text-[color:var(--ink)] hover:bg-[color:var(--lavender-100)] disabled:cursor-not-allowed disabled:opacity-40"
         >
           ←
         </button>
@@ -1493,7 +1779,7 @@ function DateTimePicker({
           type="button"
           onClick={() => setCursor((c) => addMonths(c, 1))}
           aria-label="Next month"
-          className="rounded-lg border border-[color:var(--mist)] bg-[color:var(--paper)] px-3 py-1.5 text-sm font-semibold text-[color:var(--ink)] hover:bg-[color:var(--lavender-100)]"
+          className="size-11 rounded-lg border border-[color:var(--mist)] bg-[color:var(--paper)] text-sm font-semibold text-[color:var(--ink)] hover:bg-[color:var(--lavender-100)]"
         >
           →
         </button>
@@ -1515,8 +1801,11 @@ function DateTimePicker({
           const isPast = date < today;
           const isToday = sameDay(date, today);
           const isSelected = selectedDate ? sameDay(date, selectedDate) : false;
+          // h-11, not h-8: at 390px these were 36x32 boxes, the smallest tap
+          // targets in a wizard whose every other control is min-h-11. Seven
+          // 44px cells + gaps still fit inside the max-w-sm card.
           const base =
-            "h-8 flex items-center justify-center rounded-lg text-xs font-semibold transition-colors";
+            "h-11 flex items-center justify-center rounded-lg text-[13px] font-semibold transition-colors";
           const stateClass = isSelected
             ? "bg-[color:var(--purple)] text-[color:var(--champagne)]"
             : isPast
@@ -1525,7 +1814,11 @@ function DateTimePicker({
                 ? `bg-[color:var(--paper)] text-[color:var(--ink)] hover:bg-[color:var(--lavender-100)] ${
                     isToday ? "ring-1 ring-[color:var(--purple)]" : ""
                   }`
-                : "bg-transparent text-[color:var(--slate)]/50 hover:bg-[color:var(--lavender-100)]";
+                // Full-strength Slate, not /50. Out-of-month days ARE pickable
+                // (deliberately - so the end of last month and the start of next
+                // stay reachable), and half-opacity made them read as disabled,
+                // exactly like the past days two branches up.
+                : "bg-transparent text-[color:var(--slate)] hover:bg-[color:var(--lavender-100)]";
           return (
             <button
               key={i}
@@ -1608,7 +1901,8 @@ function DateTimePicker({
                 key={t.label}
                 type="button"
                 onClick={() => pickTime(t.hour, t.minute)}
-                className={`ck-tag ck-tag--select ${active ? "ck-tag--selected" : ""}`}
+                aria-pressed={active}
+                className={`ck-tag ck-tag--select ck-tag--tap ${active ? "ck-tag--selected" : ""}`}
               >
                 {t.label}
               </button>
@@ -1643,6 +1937,15 @@ function RecurrencePicker({
   const occurrences = computeOccurrenceDates(startsAt, freq, n);
   const showPreview = freq !== "none" && occurrences.length > 0;
 
+  function selectFreq(value: RecurrenceFreq) {
+    onFreqChange(value);
+    // Bump the count to a sensible default when switching off "none" -
+    // otherwise the user lands on "1" and has to type.
+    if (value !== "none" && (Number.parseInt(count, 10) || 0) < 2) {
+      onCountChange("4");
+    }
+  }
+
   return (
     <fieldset className="rounded-2xl border border-[color:var(--mist)] bg-[color:var(--champagne)] px-5 py-4">
       <legend className="flex flex-wrap items-baseline justify-between gap-2 px-2">
@@ -1654,12 +1957,16 @@ function RecurrencePicker({
         </span>
       </legend>
 
+      {/* A real radiogroup: arrow keys move between the options and only the
+          checked one is in the tab order. It announced itself as a radiogroup
+          before this and then behaved like four unrelated buttons, so keyboard
+          users tabbed through every option and arrow keys did nothing. */}
       <div
         role="radiogroup"
         aria-label="Recurrence"
         className="mt-3 flex flex-wrap gap-2"
       >
-        {FREQ_OPTIONS.map((opt) => {
+        {FREQ_OPTIONS.map((opt, i) => {
           const active = opt.value === freq;
           return (
             <button
@@ -1667,15 +1974,31 @@ function RecurrencePicker({
               type="button"
               role="radio"
               aria-checked={active}
+              tabIndex={active ? 0 : -1}
               title={opt.hint}
-              onClick={() => {
-                onFreqChange(opt.value);
-                // Bump the count to a sensible default when switching off
-                // "none" - otherwise the user lands on "1" and has to type.
-                if (opt.value !== "none" && (Number.parseInt(count, 10) || 0) < 2) {
-                  onCountChange("4");
-                }
+              onKeyDown={(e) => {
+                const delta =
+                  e.key === "ArrowRight" || e.key === "ArrowDown"
+                    ? 1
+                    : e.key === "ArrowLeft" || e.key === "ArrowUp"
+                      ? -1
+                      : 0;
+                if (delta === 0) return;
+                e.preventDefault();
+                const next =
+                  FREQ_OPTIONS[
+                    (i + delta + FREQ_OPTIONS.length) % FREQ_OPTIONS.length
+                  ];
+                selectFreq(next.value);
+                // Focus follows selection in a radiogroup, and the buttons are
+                // siblings, so the next/previous element is the right target.
+                const group = e.currentTarget.parentElement;
+                const target = group?.children[
+                  (i + delta + FREQ_OPTIONS.length) % FREQ_OPTIONS.length
+                ] as HTMLElement | undefined;
+                target?.focus();
               }}
+              onClick={() => selectFreq(opt.value)}
               className={`min-h-11 rounded-xl border px-4 text-sm font-medium transition-colors ${
                 active
                   ? "border-transparent bg-[color:var(--purple)] text-[color:var(--champagne)]"
@@ -1832,21 +2155,26 @@ export function LocationSection() {
         <h1 className="font-display mt-2 text-3xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)]">
           Where in Sydney?
         </h1>
+        {/* No "pin it on the map" - this step has never rendered a map, and the
+            promise appeared twice. What picking a suggestion really does is
+            capture coordinates, which is what puts the event in a suburb search
+            and a distance sort. Say that instead. */}
         <p className="mt-1 text-sm leading-6 text-[color:var(--slate)]">
-          Search a street address to fill the suburb, pin it on the map, and
-          auto-fill the venue name - edit it below if needed.
+          Search a street address to fill in the suburb, capture the exact
+          coordinates, and suggest a venue name - all editable below.
         </p>
       </header>
 
       <div className="space-y-5 rise-soft rise-d2">
         <FormField
           label="Find address"
-          hint="Powered by Mapbox. Bias is Australia; pick a suggestion to fill the suburb, capture exact coordinates, and suggest a venue name."
+          hint="Powered by Mapbox, biased to Australia. This box is just the search - what you pick fills the fields below."
         >
           <MapboxAutocomplete
             value={query}
             onValueChange={setQuery}
             onSelect={handlePick}
+            ariaLabel="Find address"
             placeholder="e.g. 48 Spencer Road, Potts Point"
           />
         </FormField>
@@ -1854,9 +2182,10 @@ export function LocationSection() {
         <div className="grid gap-4 md:grid-cols-2">
           <FormField
             label="Venue name"
-            hint="Pick a saved venue or type a new one."
+            hint="Pick a saved venue or type a new one. Only shown to guests once they have a confirmed seat."
             required
             error={fieldErrors.locationName}
+            htmlFor={fieldAnchorId("locationName")}
           >
             <Combobox
               id={fieldAnchorId("locationName")}
@@ -1899,8 +2228,8 @@ export function LocationSection() {
         {pinned
           ? // Number(...) guards against a stale sessionStorage duplicate draft
             // that seeded string coords before the #223 repository fix landed.
-            `Pinned at ${Number(values.latitude).toFixed(5)}, ${Number(values.longitude).toFixed(5)}`
-          : "No coordinates yet - picking a suggestion will pin this on the map."}
+            `Coordinates captured (${Number(values.latitude).toFixed(5)}, ${Number(values.longitude).toFixed(5)}) - this event will show up in nearby searches.`
+          : "No coordinates yet - pick a search suggestion above and this event can be found by distance."}
       </p>
 
       {outsidePilotArea ? (
@@ -2219,6 +2548,17 @@ export function MediaSection() {
     commit(next);
   }
 
+  // Keyboard/touch path for reordering. Drag-and-drop was the only way to set
+  // the gallery order past the cover, and it works with neither. Repeated
+  // presses walk a photo forward one slot at a time.
+  function moveEarlier(id: string) {
+    const from = pending.findIndex((p) => p.id === id);
+    if (from <= 0) return;
+    const next = [...pending];
+    [next[from - 1], next[from]] = [next[from], next[from - 1]];
+    commit(next);
+  }
+
   function onTileDragStart(index: number) {
     return (event: ReactDragEvent<HTMLDivElement>) => {
       dragIndexRef.current = index;
@@ -2271,17 +2611,30 @@ export function MediaSection() {
   return (
     <div className="space-y-5 rise-soft">
       <header className="rise-soft rise-d1">
-        <p className="eyebrow">Step 4 · Media</p>
+        <p className="eyebrow">Step 4 · Media · Optional</p>
         <h1 className="font-display mt-2 text-3xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)]">
           Drop in a few real photos.
         </h1>
+        {/* This is the only step that validates nothing, and the only one that
+            never said so - so a host with no photos to hand had no way to know
+            they could just press Next. */}
         <p className="mt-2 text-sm leading-6 text-[color:var(--slate)]">
           Add up to {MEDIA_MAX_PHOTOS} photos. The first one is the cover - use{" "}
           <span className="font-semibold text-[color:var(--ink)]">Set cover</span> on
-          any tile (or drag to reorder) to choose it. Drop, paste, or tap to
-          upload.
+          any tile to choose it. Drop, paste, or tap to upload.{" "}
+          <span className="font-semibold text-[color:var(--ink)]">
+            You can skip this step
+          </span>{" "}
+          - we&rsquo;ll use a cover for your category instead.
         </p>
       </header>
+
+      {/* Adding, removing and reordering all change this grid silently. */}
+      <p aria-live="polite" className="sr-only">
+        {pending.length === 0
+          ? "No photos added"
+          : `${pending.length} of ${MEDIA_MAX_PHOTOS} photos. Cover: ${pending[0].name}.`}
+      </p>
 
       {/* Drop / paste zone - focusable so paste works on click, mirrors the
           "drop anything here" affordance of Claude's chat composer. */}
@@ -2407,14 +2760,24 @@ export function MediaSection() {
                   </span>
                   <div className="flex shrink-0 items-center gap-1.5">
                     {!isCover && tile.status === "done" ? (
-                      <button
-                        type="button"
-                        onClick={() => makeCover(tile.id)}
-                        className="rounded-lg border border-[color:var(--mist)] bg-[color:var(--paper)] px-2 py-1 text-[11px] font-semibold text-[color:var(--ink)] hover:bg-[color:var(--lavender-100)]"
-                        aria-label={`Set ${tile.name} as cover`}
-                      >
-                        Set cover
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => moveEarlier(tile.id)}
+                          className="rounded-lg border border-[color:var(--mist)] bg-[color:var(--paper)] px-2 py-1 text-[11px] font-semibold text-[color:var(--ink)] hover:bg-[color:var(--lavender-100)]"
+                          aria-label={`Move ${tile.name} one place earlier`}
+                        >
+                          <span aria-hidden>←</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => makeCover(tile.id)}
+                          className="rounded-lg border border-[color:var(--mist)] bg-[color:var(--paper)] px-2 py-1 text-[11px] font-semibold text-[color:var(--ink)] hover:bg-[color:var(--lavender-100)]"
+                          aria-label={`Set ${tile.name} as cover`}
+                        >
+                          Set cover
+                        </button>
+                      </>
                     ) : null}
                     <button
                       type="button"
@@ -2436,7 +2799,7 @@ export function MediaSection() {
 }
 
 export function ReviewSection() {
-  const { values } = useWizard();
+  const { values, platformFeeBps } = useWizard();
   const allTags = useMemo(() => parseTags(values.tags), [values.tags]);
   const tagsPreview = allTags.slice(0, 3);
 
@@ -2466,14 +2829,26 @@ export function ReviewSection() {
       ? `${timeFormat.format(validStart)} – ${timeFormat.format(validEnd)}`
       : timeFormat.format(validStart)
     : "Pick a time";
+  // Formatted the way the SERVER will format it. `$${values.price}` echoed the
+  // raw keystrokes, so "0.00" previewed as "$0.00" when it publishes as Free,
+  // and ".5" previewed as "$.5".
+  const priceCents = Math.round((Number.parseFloat(values.price) || 0) * 100);
   const priceLabel =
-    !values.price || values.price === "0" ? "Free" : `$${values.price}`;
+    priceCents <= 0
+      ? "Free"
+      : new Intl.NumberFormat("en-AU", {
+          style: "currency",
+          currency: "AUD",
+          minimumFractionDigits: priceCents % 100 === 0 ? 0 : 2,
+          maximumFractionDigits: priceCents % 100 === 0 ? 0 : 2,
+        }).format(priceCents / 100);
   const capacity = Number.parseInt(values.capacity, 10);
   const seatsLabel =
     Number.isFinite(capacity) && capacity > 0 ? `${capacity} seats` : "Seats TBA";
-  const location =
-    [values.locationName, values.suburb].filter(Boolean).join(", ") ||
-    "Location TBA";
+  // The live card hides the venue until a guest has a confirmed seat - it shows
+  // the suburb and a lock. The preview used to print "Bar Lucia, Potts Point",
+  // which told the host their venue was public when it is not.
+  const suburbLabel = values.suburb || "Suburb TBA";
   const durationLabel =
     DURATION_OPTIONS.find((o) => o.value === values.durationMinutes)?.label ?? "";
   const photoCount = values.images.filter(Boolean).length;
@@ -2483,6 +2858,24 @@ export function ReviewSection() {
       : photoCount === 1
         ? "1 photo"
         : `${photoCount} photos`;
+  // The last screen before a LIVE Stripe listing is the last chance to see the
+  // take rate. Same arithmetic as calculateApplicationFee (floor).
+  const netCents = priceCents - Math.floor((priceCents * platformFeeBps) / 10000);
+  const payoutLabel =
+    priceCents <= 0
+      ? "Free"
+      : platformFeeBps > 0
+        ? `${priceLabel} per guest · you receive ${new Intl.NumberFormat("en-AU", {
+            style: "currency",
+            currency: "AUD",
+            minimumFractionDigits: netCents % 100 === 0 ? 0 : 2,
+            maximumFractionDigits: netCents % 100 === 0 ? 0 : 2,
+          }).format(netCents / 100)}`
+        : `${priceLabel} per guest`;
+  const repeatLabel =
+    values.recurrenceFreq === "none"
+      ? "Just once"
+      : `${values.recurrenceCount} events, ${values.recurrenceFreq} - all created on submit`;
 
   return (
     <div className="space-y-5 rise-soft">
@@ -2497,9 +2890,15 @@ export function ReviewSection() {
         </p>
       </header>
 
+      {/* Built to match ds EventCard, not to look like it: 16:9 cover (not a
+          fixed 240px box), no scrim, the date/time line above the title, suburb
+          + lock where the venue is NOT shown, tags, then price in the footer.
+          The old preview had a scrim, a seats chip, the description and the
+          venue name - four things the real card does not show - so "here's how
+          your card will look" was a card that has never existed. */}
       <div className="mx-auto w-full max-w-sm rise-soft rise-d2">
-        <article className="group relative min-w-0 overflow-hidden rounded-2xl bg-[color:var(--paper)] shadow-[var(--shadow-sm)]">
-          <div className="relative block h-60 overflow-hidden">
+        <article className="flex min-w-0 flex-col overflow-hidden rounded-[var(--radius-xl)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] shadow-[var(--shadow-sm)]">
+          <div className="relative aspect-[16/9] w-full shrink-0 overflow-hidden bg-[color:var(--champagne-deep)]">
             {cover ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
@@ -2511,60 +2910,69 @@ export function ReviewSection() {
               <div className="grid size-full place-items-center bg-[color:var(--lavender-100)] px-6 text-center">
                 <span className="text-[12.5px] font-semibold text-[color:var(--slate)]">
                   {values.category
-                    ? `${values.category} · cover photo`
+                    ? `${values.category} cover - we'll supply one`
                     : "Add a cover photo on the media step"}
                 </span>
               </div>
             )}
-            <div className="absolute inset-0 bg-gradient-to-t from-[color:var(--ink)]/30 via-transparent to-transparent" />
             <span className="absolute left-3 top-3">
               <Badge tone="amber">Pending review</Badge>
             </span>
-            <span className="absolute bottom-3 left-3 rounded-lg bg-[color:var(--paper)]/95 px-3 py-2 text-xs font-semibold leading-tight text-[color:var(--ink)] shadow-[var(--shadow-xs)]">
-              {dateLabel}
-              <span className="block text-[11px] font-medium text-[color:var(--slate)]">
-                {timeLabel}
-              </span>
-            </span>
-            <span className="absolute bottom-3 right-3 rounded-lg bg-[color:var(--paper)]/95 px-2.5 py-1.5 text-[11px] font-semibold text-[color:var(--ink)] shadow-[var(--shadow-xs)]">
-              {seatsLabel}
-            </span>
           </div>
 
-          <div className="p-5">
-            <p className="break-words text-[12.5px] font-semibold text-[color:var(--slate)]">
-              {values.suburb || "-"} · {values.category || "-"} · {priceLabel}
+          <div className="flex flex-col p-4">
+            <p className="min-w-0 truncate text-[13px] font-semibold text-[color:var(--slate)]">
+              {dateLabel} · {timeLabel}
             </p>
-            <h3 className="font-display mt-2 text-[length:var(--card-title)] font-semibold leading-snug tracking-[-0.02em] text-[color:var(--ink)]">
+            <h3 className="font-display mt-1 line-clamp-2 min-w-0 text-[length:var(--card-title)] font-semibold leading-6 tracking-[-0.01em] text-[color:var(--ink)]">
               {values.title || "Untitled event"}
             </h3>
-            <p className="mt-1 text-sm font-medium text-[color:var(--slate)]">
-              {location}
+            <p className="mt-1 flex min-w-0 items-center gap-1.5 text-[13.5px] font-medium text-[color:var(--slate)]">
+              <span className="truncate">{suburbLabel}</span>
+              <Icon
+                name="lock"
+                size={12}
+                stroke={2.2}
+                className="text-[color:var(--ink-faint)]"
+                style={{ flex: "none" }}
+              />
+              <span className="sr-only">Venue shown when a guest RSVPs</span>
             </p>
-            {values.groupName ? (
-              <p className="mt-1 text-xs font-medium text-[color:var(--slate)]">
-                Hosted by {values.groupName}
-              </p>
-            ) : null}
-            <p className="mt-3 text-sm leading-6 text-[color:var(--slate)]">
-              {values.description || "Add a description on the basics step."}
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {tagsPreview.length > 0 ? (
+                tagsPreview.map((t) => (
+                  <span key={t} className="ck-tag">
+                    {t}
+                  </span>
+                ))
+              ) : (
+                <span className="text-[13px] font-medium text-[color:var(--ink-faint)]">
+                  No tags yet
+                </span>
+              )}
+            </div>
+            <p className="mt-2 text-[13px] font-medium text-[color:var(--slate)]">
+              Be one of the first
             </p>
-            <div className="mt-4 flex flex-wrap gap-1.5">
-              {values.recurrenceFreq !== "none" ? (
-                <span className="ck-tag">
-                  {values.recurrenceCount}× {values.recurrenceFreq}
-                </span>
-              ) : null}
-              {tagsPreview.map((t) => (
-                <span key={t} className="ck-tag">
-                  {t}
-                </span>
-              ))}
+            <div className="mt-4 flex items-center justify-between gap-2.5 border-t border-[color:var(--mist)] pt-3">
+              <span
+                className={`font-display text-base font-semibold ${
+                  priceCents <= 0
+                    ? "text-[color:var(--sage)]"
+                    : "text-[color:var(--ink)]"
+                }`}
+              >
+                {priceLabel}
+              </span>
+              <span className="ck-btn ck-btn--primary ck-btn--sm pointer-events-none">
+                View
+              </span>
             </div>
           </div>
         </article>
         <p className="mt-3 text-center text-xs font-medium text-[color:var(--slate)]">
-          Preview · public listing card
+          Preview · the card members see on Discover. Your venue name stays
+          hidden until someone has a seat.
         </p>
       </div>
 
@@ -2574,10 +2982,17 @@ export function ReviewSection() {
           below the card, and quieter, so the card stays the hero of the step. */}
       <dl className="mx-auto grid w-full max-w-sm gap-px overflow-hidden rounded-2xl bg-[color:var(--mist)] rise-soft rise-d3">
         {[
+          // Category was the one field with a silent default and no row here to
+          // catch it, which is how events published as "Career".
+          { label: "Category", value: values.category, step: 0 },
+          { label: "Venue", value: values.locationName, step: 2 },
           { label: "Street address", value: values.address, step: 2 },
+          { label: "Description", value: values.description, step: 0 },
           { label: "Why people should come", value: values.relationshipGoal, step: 0 },
           { label: "Runs for", value: durationLabel, step: 1 },
-          { label: "Capacity", value: `${values.capacity || "-"} seats`, step: 1 },
+          { label: "Capacity", value: seatsLabel, step: 1 },
+          { label: "Price per person", value: payoutLabel, step: 1 },
+          { label: "Repeats", value: repeatLabel, step: 1 },
           { label: "Tags", value: allTags.join(", "), step: 0 },
           { label: "Photos", value: photosLabel, step: 3 },
         ].map((row) => (

@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import type { MerchantEventSummary } from "@/lib/event-repository";
 import { Icon, Tag } from "./ds";
 import { CapacityMeter, StatusPill, mCard } from "./merchant-ds";
+import { formatPriceLabel } from "@/lib/amounts";
 
 const dateFormatter = new Intl.DateTimeFormat("en-AU", {
   weekday: "short",
@@ -29,17 +30,6 @@ function formatWhen(startsAt: string, endsAt: string | null) {
   const end = new Date(endsAt);
   if (Number.isNaN(end.getTime())) return start;
   return `${start} - ${timeFormatter.format(end)}`;
-}
-
-const priceFormatter = new Intl.NumberFormat("en-AU", {
-  style: "currency",
-  currency: "AUD",
-  maximumFractionDigits: 0,
-});
-
-function formatPrice(cents: number) {
-  if (cents === 0) return "Free";
-  return priceFormatter.format(cents / 100);
 }
 
 function isPast(event: MerchantEventSummary) {
@@ -248,7 +238,7 @@ export function MerchantEventsPanel({
                   {event.title}
                 </p>
                 <p className="mt-0.5 truncate text-xs text-[color:var(--slate)]">
-                  {event.locationName}, {event.suburb} · {formatPrice(event.priceCents)} ·{" "}
+                  {event.locationName}, {event.suburb} · {formatPriceLabel(event.priceCents)} ·{" "}
                   {event.category}
                 </p>
               </div>

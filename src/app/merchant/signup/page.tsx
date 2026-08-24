@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { StepAuthCard } from "@/components/merchant-signup-wizard";
+import { authErrorMessage } from "@/lib/auth-error-copy";
 
 // Entry point for /merchant/signup. Logged-in users are forwarded to the
 // first wizard step; logged-out visitors get the OAuth/email auth gate.
@@ -9,7 +10,7 @@ import { StepAuthCard } from "@/components/merchant-signup-wizard";
 export default async function MerchantSignupPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ emailSent?: string }>;
+  searchParams?: Promise<{ emailSent?: string; error?: string }>;
 }) {
   const session = await auth();
   if (session?.user) {
@@ -18,7 +19,14 @@ export default async function MerchantSignupPage({
 
   const googleConfigured = !!(process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET);
   const metaConfigured = !!(process.env.AUTH_FACEBOOK_ID && process.env.AUTH_FACEBOOK_SECRET);
-  const emailSent = (await searchParams)?.emailSent === "1";
+  const params = await searchParams;
+  const emailSent = params?.emailSent === "1";
+  // signInWithEmail redirects here with ?error=<code> when the send fails - most
+  // often RateLimited, since the limit is 5 an hour. This page used to read only
+  // ?emailSent, so a failed send re-rendered it byte-identical: no error, no
+  // "check your inbox", nothing. On the sole email path into the entire host
+  // funnel that reads as a dead button, and tapping again just burns the limit.
+  const errorMessage = authErrorMessage(params?.error);
 
   return (
     <>
@@ -26,6 +34,7 @@ export default async function MerchantSignupPage({
         googleConfigured={googleConfigured}
         metaConfigured={metaConfigured}
         emailSent={emailSent}
+        errorMessage={errorMessage}
       />
       <HostPitch />
     </>
@@ -67,13 +76,27 @@ function HostPitch() {
         </ul>
       </div>
       <aside className="rounded-[18px] bg-[color:var(--paper)] p-6 shadow-[var(--shadow-sm)] sm:p-8">
-        <p className="eyebrow">Quick numbers</p>
+        <p className="eyebrow">The deal</p>
+        {/* Every tile here has to be something we can point at in the code or the
+            database. The first two used to read "7 days · Avg. time to first
+            booking" and "94% · Show-up rate" - invented figures, presented as
+            measured platform performance, to businesses making a commercial
+            decision, on a platform that has not opened to the public. That is
+            the shape of claim that becomes an ACL misleading-conduct problem the
+            day it goes live, and the promise the first cohort of hosts would
+            measure us against.
+
+            The fee was wrong too: PLATFORM_FEE_BPS is 290 and
+            calculateApplicationFee is purely percentage-based - there is no 30c
+            fixed component anywhere in the charge path, and booking_fee_bps is
+            0. Put real numbers back here once events/event_attendees can
+            actually produce them. */}
         <dl className="mt-5 grid gap-4 sm:grid-cols-2">
           {[
-            ["7 days", "Avg. time to first booking"],
-            ["94%", "Show-up rate"],
             ["$0", "Listing fee for free events"],
-            ["2.9% + 30¢", "Click managed fee per paid ticket"],
+            ["2.9%", "Click fee per paid ticket"],
+            ["Sydney", "Where the pilot runs today"],
+            ["Once", "ABN check, then list any time"],
           ].map(([num, label]) => (
             <div
               key={label}

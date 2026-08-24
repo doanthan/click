@@ -7,6 +7,7 @@ import { MerchantEventDuplicateButton } from "@/components/merchant-event-duplic
 import { EDIT_SECTION_ID, MerchantEventEditForm } from "@/components/merchant-event-edit-form";
 import { MerchantEventResubmitButton } from "@/components/merchant-event-resubmit-button";
 import { GuestCheckInToggle } from "@/components/guest-check-in-toggle";
+import { formatPriceLabel } from "@/lib/amounts";
 import {
   getMerchantEventDetail,
   getProfileStatus,
@@ -49,15 +50,6 @@ function formatWhen(startsAt: string, endsAt: string | null) {
   const end = new Date(endsAt);
   if (Number.isNaN(end.getTime())) return start;
   return `${start} – ${timeFormatter.format(end)}`;
-}
-
-function formatPrice(cents: number) {
-  if (cents === 0) return "Free";
-  return new Intl.NumberFormat("en-AU", {
-    style: "currency",
-    currency: "AUD",
-    maximumFractionDigits: 0,
-  }).format(cents / 100);
 }
 
 // DS merchant status vocabulary: confirmed lavender, pending/waitlist amber.
@@ -235,7 +227,7 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
             label="Seats left"
             value={Math.max(0, event.capacity - confirmedSeats).toString()}
           />
-          <Metric label="Price" value={formatPrice(event.priceCents)} />
+          <Metric label="Price" value={formatPriceLabel(event.priceCents)} />
         </div>
 
         <div className="mt-6 rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)] p-5">

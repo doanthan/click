@@ -217,75 +217,90 @@ export function AdminMerchantsTable({ merchants }: { merchants: AdminMerchantRow
   ) {
     setBusyId(merchantId);
 
-    const response = await fetch(`/api/admin/merchants/${merchantId}/verification`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: nextStatus, ...(reason ? { reason } : {}) }),
-    });
-    const payload = (await response.json().catch(() => ({}))) as {
-      error?: string;
-      verificationStatus?: string;
-    };
+    // try/finally, not a bare await. `fetch` REJECTS on a dropped connection
+    // (offline, 502, suspended tab) rather than returning !ok, so the old code
+    // never reached setBusyId(null) - and the ConfirmDialog disables Escape, the
+    // scrim tap and Cancel while busy. The operator was left staring at a frozen
+    // dialog with no idea whether the merchant had been rejected, and the only
+    // way out of the admin console was a full page reload.
+    try {
+      const response = await fetch(`/api/admin/merchants/${merchantId}/verification`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: nextStatus, ...(reason ? { reason } : {}) }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        verificationStatus?: string;
+      };
 
-    if (!response.ok) {
-      toast.error(payload.error ?? "Update failed.");
+      if (!response.ok) {
+        toast.error(payload.error ?? "Update failed.");
+        return;
+      }
+
+      setRows((current) =>
+        current.map((merchant) =>
+          merchant.id === merchantId
+            ? {
+                ...merchant,
+                verificationStatus: payload.verificationStatus ?? nextStatus,
+              }
+            : merchant,
+        ),
+      );
+      toast.success(
+        nextStatus === "approved"
+          ? "Merchant approved."
+          : nextStatus === "suspended"
+            ? "Merchant suspended."
+            : nextStatus === "rejected"
+              ? "Merchant rejected."
+              : "Merchant updated.",
+      );
+    } catch {
+      toast.error("Could not reach the server - the merchant is unchanged.");
+    } finally {
       setBusyId(null);
       setPendingReject(null);
-      return;
     }
-
-    setRows((current) =>
-      current.map((merchant) =>
-        merchant.id === merchantId
-          ? {
-              ...merchant,
-              verificationStatus: payload.verificationStatus ?? nextStatus,
-            }
-          : merchant,
-      ),
-    );
-    toast.success(
-      nextStatus === "approved"
-        ? "Merchant approved."
-        : nextStatus === "suspended"
-          ? "Merchant suspended."
-          : nextStatus === "rejected"
-            ? "Merchant rejected."
-            : "Merchant updated.",
-    );
-    setBusyId(null);
-    setPendingReject(null);
   }
 
   async function updateAutoApprove(merchantId: string, next: boolean) {
     setBusyId(merchantId);
 
-    const response = await fetch(`/api/admin/merchants/${merchantId}/auto-approve`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ autoApprove: next }),
-    });
-    const payload = (await response.json().catch(() => ({}))) as {
-      error?: string;
-      autoApproveEvents?: boolean;
-    };
+    try {
+      const response = await fetch(`/api/admin/merchants/${merchantId}/auto-approve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ autoApprove: next }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        autoApproveEvents?: boolean;
+      };
 
-    if (!response.ok) {
-      toast.error(payload.error ?? "Update failed.");
+      if (!response.ok) {
+        toast.error(payload.error ?? "Update failed.");
+        return;
+      }
+
+      const applied = payload.autoApproveEvents ?? next;
+      setRows((current) =>
+        current.map((merchant) =>
+          merchant.id === merchantId
+            ? { ...merchant, autoApproveEvents: applied }
+            : merchant,
+        ),
+      );
+      toast.success(
+        applied ? "Trusted - events auto-publish." : "Review required for future events.",
+      );
+    } catch {
+      toast.error("Could not reach the server - nothing changed.");
+    } finally {
       setBusyId(null);
-      return;
     }
-
-    const applied = payload.autoApproveEvents ?? next;
-    setRows((current) =>
-      current.map((merchant) =>
-        merchant.id === merchantId
-          ? { ...merchant, autoApproveEvents: applied }
-          : merchant,
-      ),
-    );
-    toast.success(applied ? "Trusted - events auto-publish." : "Review required for future events.");
-    setBusyId(null);
   }
 
   return (

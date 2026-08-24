@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { FormField } from "@/components/ds";
+import { SUPPORT_EMAIL_DEFAULT } from "@/lib/email-templates/tokens";
 import { useFormDraft } from "@/lib/use-form-draft";
 import { useUnsavedGuard } from "@/lib/use-unsaved-guard";
 
@@ -517,7 +518,7 @@ export function MerchantEventEditForm({
 
           <p className="rounded-xl border border-dashed border-[color:var(--mist-strong)] bg-[color:var(--champagne)] p-3 text-xs leading-5 text-[color:var(--slate)]">
             Changing the price, date/time or capacity affects people who may have
-            already booked - those need a review. Email support@click.local to
+            already booked - those need a review. Email {SUPPORT_EMAIL_DEFAULT} to
             request a change.
           </p>
 

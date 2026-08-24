@@ -1,4 +1,4 @@
-// Single source of truth for the create-event wizard's sessionStorage slot.
+// Single source of truth for the create-event wizard's browser-storage slot.
 // Kept in its own tiny module so the "Duplicate event" button can seed a
 // prefilled draft into the exact key the wizard rehydrates from, without
 // pulling the whole 83KB wizard bundle onto the merchant event page.
@@ -16,3 +16,17 @@ export const EVENT_CREATE_STORAGE_KEY = "click:event-create-wizard";
 // the wizard opens empty rather than half-applying a shape it cannot verify.
 // Bump only when WizardValues changes shape - older drafts are then discarded.
 export const EVENT_CREATE_DRAFT_VERSION = 1;
+
+// Which Storage the slot lives in - localStorage, so a half-built event (15+
+// fields) survives closing the tab. Both writers must agree or "Duplicate
+// event" seeds a slot the wizard never reads, so the choice lives HERE and both
+// sides import it: useFormDraft takes the string, the duplicate button takes the
+// object. Anything in this slot is per-account scoped by `scopedKey`.
+export const EVENT_CREATE_DRAFT_STORAGE = "local" as const;
+
+/** The Storage object EVENT_CREATE_DRAFT_STORAGE names. Browser-only. */
+export function eventCreateDraftStorage(): Storage {
+  return EVENT_CREATE_DRAFT_STORAGE === "local"
+    ? window.localStorage
+    : window.sessionStorage;
+}

@@ -111,6 +111,20 @@ export async function POST(request: Request) {
   }
   const normalizedWebsiteUrl = normalizedWebsite.url ?? "";
 
+  // merchant_profiles.business_type carries a check constraint
+  // (database/009_merchant_full_signup.sql), so an unrecognised value would come
+  // back as a constraint violation rather than a usable message. Null is allowed
+  // and means "leave it alone" - the upsert coalesces it.
+  const rawBusinessType = payload.businessType as unknown;
+  const businessType =
+    typeof rawBusinessType === "string" && rawBusinessType ? rawBusinessType : null;
+  if (
+    businessType !== null &&
+    !["sole_trader", "company", "partnership", "trust"].includes(businessType)
+  ) {
+    return NextResponse.json({ error: "Pick how the business is set up." }, { status: 400 });
+  }
+
   try {
     const merchant = await registerMerchantWizardSubmit(
       {
@@ -118,7 +132,7 @@ export async function POST(request: Request) {
         tradingName: stringField(payload.tradingName),
         abn: stringField(payload.abn),
         acn: stringField(payload.acn),
-        businessType: payload.businessType as MerchantWizardInput["businessType"],
+        businessType: businessType as MerchantWizardInput["businessType"],
         eventCategoryIds: Array.isArray(payload.eventCategoryIds)
           ? (payload.eventCategoryIds as unknown[]).map(String)
           : [],
