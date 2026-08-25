@@ -1,10 +1,5 @@
+import { formatMoney } from "@/lib/amounts";
 import type { AdminTrendBucket } from "@/lib/event-repository";
-
-const priceFormatter = new Intl.NumberFormat("en-AU", {
-  style: "currency",
-  currency: "AUD",
-  maximumFractionDigits: 0,
-});
 
 const dateFormatter = new Intl.DateTimeFormat("en-AU", {
   day: "numeric",
@@ -22,7 +17,7 @@ const metrics: Metric[] = [
   { key: "members", label: "New members", format: (n) => n.toLocaleString(), bar: "border border-[color:var(--line-strong)] bg-[color:var(--lavender-300)]" },
   { key: "events", label: "New events", format: (n) => n.toLocaleString(), bar: "bg-[color:var(--purple-600)]" },
   { key: "rsvps", label: "RSVPs", format: (n) => n.toLocaleString(), bar: "bg-[color:var(--purple-400)]" },
-  { key: "revenueCents", label: "Paid revenue", format: (n) => priceFormatter.format(n / 100), bar: "border border-[color:var(--line-strong)] bg-[color:var(--lavender-400)]" },
+  { key: "revenueCents", label: "Paid revenue", format: (n) => formatMoney(n), bar: "border border-[color:var(--line-strong)] bg-[color:var(--lavender-400)]" },
 ];
 
 export function AdminTrendChart({ buckets }: { buckets: AdminTrendBucket[] }) {

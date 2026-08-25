@@ -4,7 +4,7 @@ import { auth, isAdminEmail } from "@/auth";
 import { EventCard } from "@/components/event-card";
 import { CategoryCircle, Icon, Spark, categoryGlyphKey } from "@/components/ds";
 import { EmptyState } from "@/components/empty-state";
-import { MomentBanner, Section } from "@/components/dashboard-ds";
+import { CardRail, MomentBanner, Section } from "@/components/dashboard-ds";
 import { Reveal } from "@/components/reveal";
 import { PostEventClickCard } from "@/components/post-event-click-card";
 import { ClickRadar } from "@/components/click-radar";
@@ -168,7 +168,12 @@ export default async function DashboardPage() {
               icon="calendar"
               eyebrow={postEvent.eventTitle}
               title="Did you click with anyone?"
-              sub="No rush - just the people who were actually there."
+              /* No sub. The banner's whole job is to get you to the card, and the
+                 card 250px below already states the window - from the same
+                 constant, next to the taps it governs, and it is the ONLY carrier
+                 on /events/[slug], where there is no banner. Everything else true
+                 here ("who was actually there", "private unless mutual") is the
+                 Section sub's line. A sub can only repeat one of them. */
               actionLabel="See who was there"
               actionHref="#who-was-there"
             />
@@ -252,18 +257,16 @@ export default async function DashboardPage() {
         {/* ---- You're going ---- */}
         {upcoming.length > 0 ? (
           <Section title="You're going" actionLabel="All bookings" actionHref="/confirmed-events">
-            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {upcoming.slice(0, 3).map((event, i) => (
-                <Reveal key={event.id} delay={i * 70} className="min-w-0">
-                  <EventCard
-                    event={event}
-                    bookmarked={bookmarkSet.has(event.id)}
-                    registered
-                    bookingStatus={bookingStatusFor(event.id)}
-                  />
-                </Reveal>
-              ))}
-            </div>
+            <CardRail items={upcoming.slice(0, 3)}>
+              {(event) => (
+                <EventCard
+                  event={event}
+                  bookmarked={bookmarkSet.has(event.id)}
+                  registered
+                  bookingStatus={bookingStatusFor(event.id)}
+                />
+              )}
+            </CardRail>
           </Section>
         ) : null}
 
@@ -343,7 +346,7 @@ export default async function DashboardPage() {
         {/* ---- Who was there (the post-event click surface) ---- */}
         {activePrompts.length > 0 ? (
           <div id="who-was-there" className="scroll-mt-24">
-            <Section title="Did you click with anyone?" sub="Only the people who were actually there.">
+            <Section title="Who was there" sub="Only the people who were actually there. It stays private unless it is mutual.">
               <div className="grid gap-5 lg:grid-cols-2">
                 {activePrompts.map((prompt, i) => (
                   <Reveal key={prompt.eventSlug} delay={i * 80} className="min-w-0">
@@ -363,36 +366,32 @@ export default async function DashboardPage() {
             actionLabel="See all"
             actionHref="/discover"
           >
-            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {personalized.events.slice(0, 3).map((event, i) => (
-                <Reveal key={event.id} delay={i * 70} className="min-w-0">
-                  <EventCard
-                    event={event}
-                    bookmarked={bookmarkSet.has(event.id)}
-                    registered={registeredSet.has(event.id)}
-                    bookingStatus={bookingStatusFor(event.id)}
-                  />
-                </Reveal>
-              ))}
-            </div>
+            <CardRail items={personalized.events.slice(0, 3)}>
+              {(event) => (
+                <EventCard
+                  event={event}
+                  bookmarked={bookmarkSet.has(event.id)}
+                  registered={registeredSet.has(event.id)}
+                  bookingStatus={bookingStatusFor(event.id)}
+                />
+              )}
+            </CardRail>
           </Section>
         ) : null}
 
         {/* ---- Saved & waitlist ---- */}
         <Section title="Saved & waitlist" actionLabel="See all" actionHref="/bookmarks">
           {savedAndWaitlisted.length > 0 ? (
-            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {savedAndWaitlisted.slice(0, 3).map((event, i) => (
-                <Reveal key={event.id} delay={i * 70} className="min-w-0">
-                  <EventCard
-                    event={event}
-                    bookmarked={savedIds.has(event.id)}
-                    registered={registeredSet.has(event.id)}
-                    bookingStatus={bookingStatusFor(event.id)}
-                  />
-                </Reveal>
-              ))}
-            </div>
+            <CardRail items={savedAndWaitlisted.slice(0, 3)}>
+              {(event) => (
+                <EventCard
+                  event={event}
+                  bookmarked={savedIds.has(event.id)}
+                  registered={registeredSet.has(event.id)}
+                  bookingStatus={bookingStatusFor(event.id)}
+                />
+              )}
+            </CardRail>
           ) : (
             <Reveal delay={60}>
               <EmptyState
@@ -409,7 +408,7 @@ export default async function DashboardPage() {
 
         {/* ---- Browse by category ---- */}
         <Section title="Or find your own thing" sub="Browse by what you feel like doing." actionLabel="See all" actionHref="/discover">
-          <div className="ckRail -mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1 lg:flex-wrap lg:overflow-visible">
+          <div className="ckRail -mx-5 flex gap-1.5 overflow-x-auto px-5 pb-1 lg:mx-0 lg:flex-wrap lg:overflow-visible lg:px-0">
             {BROWSE_CATEGORIES.map((category, i) => (
               <Reveal key={category} delay={i * 40} className="shrink-0">
                 <Link
@@ -468,7 +467,7 @@ function FinishSetupCard({
 
       {rest.length > 0 ? (
         <details className="group mt-1">
-          <summary className="font-display inline-flex cursor-pointer list-none items-center gap-1.5 py-1 text-[13px] font-semibold text-[color:var(--purple)] [&::-webkit-details-marker]:hidden">
+          <summary className="font-display -my-2 inline-flex cursor-pointer list-none items-center gap-1.5 py-3 text-[13px] font-semibold text-[color:var(--purple)] [&::-webkit-details-marker]:hidden">
             <span className="group-open:hidden">See all · {rest.length} left</span>
             <span className="hidden group-open:inline">Show less</span>
             <Icon name="chevD" size={14} stroke={2.2} className="transition-transform group-open:rotate-180" />
@@ -564,14 +563,17 @@ function hostRowFor(merchant: { business_name: string; verification_status: stri
 
 function QuietRow({ icon, label, href, cta }: { icon: "ticket" | "settings"; label: string; href: string; cta: string }) {
   return (
-    <div className="rise-soft rise-d4 mt-3 flex max-w-[760px] flex-wrap items-center gap-3 rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] px-4 py-3">
+    <Link
+      href={href}
+      className="rise-soft rise-d4 group mt-3 flex min-h-11 max-w-[760px] flex-wrap items-center gap-3 rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] px-4 py-3 transition-colors hover:bg-[color:var(--lavender-100)]"
+    >
       <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[color:var(--lavender-100)] text-[color:var(--purple)]">
         <Icon name={icon} size={16} />
       </span>
-      <span className="min-w-0 flex-1 text-sm font-medium text-[color:var(--ink-soft)]">{label}</span>
-      <Link href={href} className="font-display text-[13px] font-semibold text-[color:var(--purple)] hover:underline">
+      <span className="min-w-0 flex-1 basis-40 text-sm font-medium text-[color:var(--ink-soft)]">{label}</span>
+      <span className="font-display shrink-0 text-[13px] font-semibold whitespace-nowrap text-[color:var(--purple)] group-hover:underline">
         {cta}
-      </Link>
-    </div>
+      </span>
+    </Link>
   );
 }

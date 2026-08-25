@@ -107,12 +107,26 @@ export default async function ClaimPage({ params, searchParams }: PageProps) {
       </Frame>
     );
   }
-  if (spot.state === "claimed") {
+  // Terminal only when they arrived with no action. This guard used to sit above
+  // the release / remove blocks below and swallow them, so the "Can't make it?"
+  // link in the invite email landed a guest who HAD claimed on "You've already
+  // joined" with no way out - and claiming writes no event_attendees row
+  // (claimGuestSpotForProfile only updates guest_spots), so there was nothing to
+  // cancel from a dashboard either. Both flows accept a claimed seat at the data
+  // layer already: releaseGuestSpotByToken matches `status in ('invited',
+  // 'claimed')` and removeGuestDetailsByToken matches anything but 'cancelled'.
+  if (spot.state === "claimed" && !action) {
     return (
       <Frame>
         <h1 style={TITLE}>You&apos;ve already joined.</h1>
         <p style={BODY}>Your spot at {spot.eventTitle} is set.</p>
         <Link href="/login" style={LINK}>Sign in →</Link>
+        <p style={{ ...BODY, fontSize: 13, color: "var(--mauve)", margin: "28px 0 0", textAlign: "center" }}>
+          Can&apos;t make it?{" "}
+          <Link href={`/claim/${token}?action=release`} style={LINK}>Let {purchaser} know</Link>
+          {" · "}
+          <Link href={`/claim/${token}?action=remove`} style={LINK}>Remove my details</Link>
+        </p>
       </Frame>
     );
   }

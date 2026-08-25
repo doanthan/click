@@ -13,10 +13,10 @@ import {
 } from "@/components/merchant-ds";
 import { MerchantCalendar } from "@/components/merchant-calendar";
 import { getPlatformFeeBps } from "@/lib/stripe-connect";
+import { formatMoney } from "@/lib/amounts";
 import {
   CreateEventButton,
   TabHeader,
-  formatMoney,
   type MerchantEvent,
 } from "./merchant-portal-shared";
 

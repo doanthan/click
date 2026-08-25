@@ -200,18 +200,27 @@ export function SkeletonCardGrid({
   return (
     <div className={`grid gap-5 ${columns}`}>
       {Array.from({ length: count }).map((_, i) => (
-        <article
-          key={i}
-          className="overflow-hidden rounded-2xl border border-[color:var(--mist)] bg-[color:var(--paper)]"
-        >
-          <Skeleton className="aspect-[3/2] w-full rounded-none" />
-          <div className="p-5">
-            <Skeleton className="h-3 w-20 rounded-full" />
-            <Skeleton className="mt-3 h-6 w-3/4 rounded-md" />
-            <SkeletonText className="mt-3" lines={2} />
-          </div>
-        </article>
+        <SkeletonEventCard key={i} />
       ))}
     </div>
+  );
+}
+
+/**
+ * One skeleton EventCard. Split out of SkeletonCardGrid so the grid and the
+ * mobile scroll-rail stand in for the SAME shape - the cover is 16:9 and the
+ * body p-4 because that is what the real EventCard is; anything else collapses
+ * the moment the page resolves.
+ */
+export function SkeletonEventCard() {
+  return (
+    <article className="overflow-hidden rounded-2xl border border-[color:var(--mist)] bg-[color:var(--paper)]">
+      <Skeleton className="aspect-[16/9] w-full rounded-none" />
+      <div className="p-4">
+        <Skeleton className="h-3 w-20 rounded-full" />
+        <Skeleton className="mt-3 h-6 w-3/4 rounded-md" />
+        <SkeletonText className="mt-3" lines={2} />
+      </div>
+    </article>
   );
 }

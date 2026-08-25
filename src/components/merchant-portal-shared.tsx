@@ -5,12 +5,6 @@ import { getMerchantEvents } from "@/lib/event-repository";
 
 export type MerchantEvent = Awaited<ReturnType<typeof getMerchantEvents>>[number];
 
-export const priceFormatter = new Intl.NumberFormat("en-AU", {
-  style: "currency",
-  currency: "AUD",
-  maximumFractionDigits: 0,
-});
-
 export const dateTimeFormatter = new Intl.DateTimeFormat("en-AU", {
   day: "numeric",
   month: "short",
@@ -18,24 +12,10 @@ export const dateTimeFormatter = new Intl.DateTimeFormat("en-AU", {
   minute: "2-digit",
 });
 
-/**
- * An event's PRICE. "Free" is the right word here - it's what an attendee pays,
- * and the DS prints it on the card exactly like this.
- */
-export function formatPrice(cents: number) {
-  if (cents === 0) return "Free";
-  return priceFormatter.format(cents / 100);
-}
-
-/**
- * MONEY - revenue, payouts, refunds. Never "Free": a $0 revenue figure is a
- * number, not a pricing model, and "Free" in a Revenue tile reads as a broken
- * stat. Always "$0", and the StatCard's `note` carries the scope
- * ("$0 · free events so far").
- */
-export function formatMoney(cents: number) {
-  return priceFormatter.format(cents / 100);
-}
+// Money lives in @/lib/amounts now - `formatMoney` for revenue, payouts and
+// refunds (never "Free": a $0 revenue figure is a number, not a pricing model),
+// `formatPriceLabel` where zero means free. The local pair rounded to whole
+// dollars, so a $12.50 charge told the host they were paid "$13".
 
 // Suspense fallbacks for the two async tabs. They mirror each tab's real
 // geometry so the body doesn't jump on hydration: bookings = filter bar + door

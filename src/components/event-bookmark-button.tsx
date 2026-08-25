@@ -79,7 +79,7 @@ export function EventBookmarkButton({
         aria-pressed={saved}
         aria-label={saved ? "Saved to bookmarks" : "Save event"}
         title={state === "error" && message ? message : saved ? "Saved" : "Save"}
-        className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--champagne)_92%,transparent)] text-[color:var(--ink)] shadow-[var(--shadow-xs)] transition hover:bg-[color:var(--paper)] disabled:cursor-not-allowed disabled:opacity-60"
+        className="flex size-11 shrink-0 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--champagne)_92%,transparent)] text-[color:var(--ink)] shadow-[var(--shadow-xs)] transition hover:bg-[color:var(--paper)] disabled:cursor-not-allowed disabled:opacity-60 lg:size-9"
       >
         <svg
           viewBox="0 0 24 24"

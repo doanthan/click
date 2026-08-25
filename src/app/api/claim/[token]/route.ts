@@ -81,7 +81,11 @@ export async function POST(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Unknown action." }, { status: 400 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Action failed.";
-    const status = (error as Error)?.name === "DatabaseUnavailableError" ? 503 : 500;
+    const name = (error as Error)?.name;
+    // A banned account claiming a +1 gets the same 403 the RSVP and checkout
+    // routes give, so the person reads why instead of "something went wrong".
+    const status =
+      name === "ForbiddenError" ? 403 : name === "DatabaseUnavailableError" ? 503 : 500;
     return NextResponse.json({ error: message }, { status });
   }
 }

@@ -46,6 +46,18 @@ function responseForError(error: unknown) {
     return NextResponse.json({ error: error.message }, { status: 409 });
   }
 
+  // A banned or suspended account accepting a promotion - same 403 the RSVP and
+  // checkout routes give. Without this branch the refusal fell through to the
+  // catch-all below and read as a 500, i.e. "Click is broken", not "not you".
+  if (error.name === "ForbiddenError") {
+    return NextResponse.json({ error: error.message }, { status: 403 });
+  }
+
+  // The profile has no suburb / birth date, so the 18+ gate was never passed.
+  if (error.name === "OnboardingRequiredError") {
+    return NextResponse.json({ error: error.message }, { status: 403 });
+  }
+
   if (error.name === "DatabaseUnavailableError") {
     return NextResponse.json({ error: error.message }, { status: 503 });
   }

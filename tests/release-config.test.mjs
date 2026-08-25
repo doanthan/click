@@ -1009,8 +1009,18 @@ test("a banned or suspended account cannot book, pay, or join a waitlist", () =>
     repo.indexOf("async function assertBookingEligible") + 1600,
   );
   assert.match(gate, /select suburb, birth_date, is_banned, suspended_at/);
-  assert.match(gate, /row\?\.is_banned \|\| row\?\.suspended_at/);
-  assert.match(gate, /error\.name = "ForbiddenError"/);
+  // The ban half moved into a shared predicate so the guest +1 claim - the
+  // fourth seat-acquiring route - can decide it identically off the row it
+  // already reads. The gate must still route through it, and the predicate must
+  // still be the thing that carries the refusal.
+  assert.match(gate, /assertNotBannedFromSeats\(row\)/);
+  const banRule = repo.slice(
+    repo.indexOf("function assertNotBannedFromSeats"),
+    repo.indexOf("async function assertBookingEligible"),
+  );
+  assert.match(banRule, /row\?\.is_banned/);
+  assert.match(banRule, /row\?\.suspended_at/);
+  assert.match(banRule, /error\.name = "ForbiddenError"/);
 
   // The gate is only worth having in one place if every booking path routes
   // through it. Two entry points cover all three: the waitlist branch lives

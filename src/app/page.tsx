@@ -249,7 +249,10 @@ export default async function Home() {
               <Reveal
                 key={event.id}
                 delay={index * 70}
-                className="home-reveal w-[84vw] max-w-[340px] shrink-0 snap-center sm:w-auto sm:max-w-none sm:min-w-0"
+                // reveal--rail: the peek is the affordance that says the row scrolls,
+                // and at 26px into the viewport the observer never fires, so the
+                // next card sat at opacity 0 until you had already swiped.
+                className="home-reveal reveal--rail w-[84vw] max-w-[340px] shrink-0 snap-center sm:w-auto sm:max-w-none sm:min-w-0"
               >
                 <EventCard event={event} priority={index === 0} />
               </Reveal>

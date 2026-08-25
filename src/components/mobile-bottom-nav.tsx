@@ -32,7 +32,7 @@ export function MobileBottomNav({ tabs }: { tabs: BottomNavTab[] }) {
   return (
     <nav
       aria-label="Primary"
-      className="fixed inset-x-0 bottom-0 z-50 border-t border-[color:var(--line)] bg-[color:var(--champagne)]/95 backdrop-blur-xl pb-[env(safe-area-inset-bottom)] lg:hidden"
+      className="fixed inset-x-0 bottom-0 z-50 border-t border-[color:var(--line)] bg-[color:var(--champagne)] pb-[env(safe-area-inset-bottom)] lg:hidden"
     >
       <ul className="mx-auto flex max-w-md items-stretch justify-around">
         {tabs.map((tab) => {

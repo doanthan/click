@@ -5,10 +5,29 @@ declare global {
   var clickStripeClient: Stripe | undefined;
 }
 
+// Opt-in escape hatch for pointing the production deployment at a Stripe
+// sandbox (UAT on the real domain, before we take real money). Unset - the
+// default, and the launch state - leaves the live-only refusal below exactly as
+// it was, so forgetting this var can never silently arm test mode.
+//
+// Setting it is NOT sufficient on its own. NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+// is inlined at build, so the browser keeps whatever key the last build baked
+// in until you redeploy - and a split pair (test secret, live publishable)
+// fails at the payment step with a client_secret mode mismatch. Merchants'
+// stripe_connect_account_id values are live-mode objects too: they 404 under a
+// test key until each host re-runs /merchant/onboarding.
+function isStripeTestModeAllowed() {
+  return process.env.STRIPE_ALLOW_TEST_MODE === "true";
+}
+
 export function getStripeClient() {
   const secretKey = process.env.STRIPE_SECRET_KEY;
   if (!secretKey) return null;
-  if (isProductionDeployment() && !secretKey.startsWith("sk_live_")) {
+  if (
+    isProductionDeployment() &&
+    !isStripeTestModeAllowed() &&
+    !secretKey.startsWith("sk_live_")
+  ) {
     console.error("[stripe] Refusing to initialize a non-live Stripe key in production.");
     return null;
   }

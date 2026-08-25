@@ -12,6 +12,7 @@ import type {
   AdminMerchantDocument,
 } from "@/lib/event-repository";
 import { requireAdminPage } from "@/lib/admin-guard";
+import { formatMoney as formatAmount } from "@/lib/amounts";
 
 const DOCUMENT_LABELS: Record<string, string> = {
   abn_certificate: "ABN certificate",
@@ -41,13 +42,13 @@ const dateTimeFormatter = new Intl.DateTimeFormat("en-AU", {
   minute: "2-digit",
 });
 
+// Same helper the ledger and the sibling member page use. This one rounded to
+// whole dollars, so the merchant detail page and /admin/members disagreed about
+// the amount of the same transaction. The try/catch stays for a currency code
+// Intl refuses.
 function formatMoney(amountCents: number, currency: string) {
   try {
-    return new Intl.NumberFormat("en-AU", {
-      style: "currency",
-      currency: currency || "AUD",
-      maximumFractionDigits: 0,
-    }).format(amountCents / 100);
+    return formatAmount(amountCents, currency);
   } catch {
     return `${(amountCents / 100).toFixed(2)} ${currency}`;
   }

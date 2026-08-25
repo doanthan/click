@@ -632,7 +632,8 @@ export function TagRow({
   /** Hold the row's height even with no tags, so cards in a row stay aligned. */
   reserveHeight?: boolean;
 }) {
-  if (!tags.length) return reserveHeight ? <div className="h-[22px]" aria-hidden /> : null;
+  if (!tags.length)
+    return reserveHeight ? <div className="h-0 sm:h-[22px] [.ckRail_&]:h-[22px]" aria-hidden /> : null;
 
   const GAP = 6;
   const widthOf = (label: string) => 18 + label.length * 6.6;

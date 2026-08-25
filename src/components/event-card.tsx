@@ -109,7 +109,7 @@ export function EventCard({
             <Icon name="calendar" size={13} stroke={2.1} />
             {event.date} · {formatEventTimeRange(event)}
           </p>
-          <h3 className="font-display mt-1 line-clamp-2 min-h-12 min-w-0 text-[length:var(--card-title)] font-semibold leading-6 tracking-[-0.01em] text-[color:var(--ink)]">
+          <h3 className="font-display mt-1 line-clamp-2 min-w-0 text-[length:var(--card-title)] font-semibold leading-6 tracking-[-0.01em] text-[color:var(--ink)] sm:min-h-12 [.ckRail_&]:min-h-12">
             <Link href={`/events/${event.id}`} className="hover:underline">
               {event.title}
             </Link>
@@ -142,10 +142,19 @@ export function EventCard({
         {/* Block 2 - tags, then the going row. The tag row RESERVES its height
             even when an event has no tags, so cards in a row keep their footers
             on one line (the DS gets equal height by reserving, never by
-            stretching a flex gap). */}
+            stretching a flex gap) - but only where there IS a row: from sm up,
+            or inside a horizontal rail. One card alone in a phone column has
+            nothing to line up with, and the reserved strip just reads as a
+            hole between the venue and the going line. */}
         <div className="mt-3 min-w-0">
           <TagRow tags={event.tags} max={3} reserveHeight />
-          <div className="mt-2">
+          {/* Reserved like the tag row above, and for the same reason: the avatar
+              branch is an inline-flex on a text baseline, so it measures 32px
+              against the 24px of "Be one of the first" - a mixed row of cards
+              staggered by 8px at the footer. Reserve only where there IS a row
+              (sm+, or inside a rail); a lone card on a phone has nothing to
+              line up with. */}
+          <div className="mt-2 sm:min-h-8 [.ckRail_&]:min-h-8">
             {goingCount >= 3 && goingFaces.length > 0 ? (
               <AvatarStack people={goingFaces} max={4} size={26} label={`${goingCount} going`} />
             ) : (

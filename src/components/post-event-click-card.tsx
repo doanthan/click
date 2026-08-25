@@ -18,16 +18,15 @@ export function PostEventClickCard({ prompt }: { prompt: PostEventClickPrompt })
       <p className="text-xs font-semibold text-[color:var(--slate)]">
         You were there · {shortDate.format(new Date(prompt.endedAt))}
       </p>
-      <h3 className="font-display mt-1.5 text-[1.3rem] leading-tight font-semibold tracking-[-0.01em] text-[color:var(--ink)]">
-        Did you click with anyone at{" "}
-        <Link href={`/events/${prompt.eventSlug}`} className="text-[color:var(--purple)] hover:underline">
+      <h3 className="font-display mt-1 text-[1.18rem] leading-tight font-semibold tracking-[-0.01em] text-balance text-[color:var(--ink)] sm:text-[1.3rem]">
+        <Link href={`/events/${prompt.eventSlug}`} className="hover:underline">
           {prompt.eventTitle}
         </Link>
-        ?
       </h3>
       <p className="mt-1.5 text-sm leading-relaxed text-[color:var(--slate)]">
-        Tap up to {POST_EVENT_CLICK_CAP} people you&apos;d like to see again. It&apos;s completely private - they only
-        ever hear about it if they click you back.
+        Tap up to {POST_EVENT_CLICK_CAP}{" "}
+        people you&apos;d like to see again. It&apos;s completely private - they only ever hear about it if they click
+        you back.
       </p>
       {/* Both numbers come from src/lib/clicks/constants.ts, the same source the
           server guards read - the cap used to surface only as a thrown error on
@@ -63,9 +62,12 @@ function CoAttendeeRow({
     <li className="rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-3">
       <div className="flex items-center gap-3">
         <Avatar name={person.displayName} src={person.photoUrl} size={40} />
+        {/* The name is the only route to this person's profile from here, and
+            at 14px it was a ~20px-tall target beside a 44px button. Padding
+            grows the hit box; the negative margin keeps the row height. */}
         <Link
           href={`/profile/${person.id}`}
-          className="font-display min-w-0 flex-1 truncate text-sm font-semibold text-[color:var(--ink)] hover:underline"
+          className="font-display -my-3 min-w-0 flex-1 truncate py-3 text-sm font-semibold text-[color:var(--ink)] hover:underline"
         >
           {firstName}
         </Link>

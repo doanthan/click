@@ -511,3 +511,140 @@ test("browsing shares the front page's motion system, and reduced motion really 
   assert.match(reduce, /animation-delay: 0\.01ms !important;/);
   assert.match(reduce, /transition-delay: 0\.01ms !important;/);
 });
+
+test("a banned account cannot take a seat by claiming a guest +1", () => {
+  // assertBookingEligible is described in its own comment as "the single choke
+  // point every booking path routes through" - but it only ever guarded three:
+  // the free RSVP, the paid hold and the waitlist. The guest claim is the
+  // fourth, and it puts someone in the same room for free, so a ban stopped
+  // an account booking while a forwarded invite walked it straight past.
+  const claim = repo.slice(
+    repo.indexOf("export async function claimGuestSpotForProfile"),
+    repo.indexOf("export type GuestTokenActionResult"),
+  );
+  assert.match(claim, /assertNotBannedFromSeats\(who\.rows\[0\]\)/);
+  // Off the row the claim already reads - not a second round-trip.
+  assert.match(claim, /p\.is_banned/);
+  assert.match(claim, /p\.suspended_at/);
+  // Before the mismatch branch, or a refusal becomes a way to probe whether a
+  // given address was the one invited.
+  assert.ok(
+    claim.indexOf("assertNotBannedFromSeats(") < claim.indexOf("email-mismatch"),
+    "the ban check must run before the email-mismatch response",
+  );
+});
+
+test("the booking gate and the guest claim decide a ban the same way", () => {
+  // One predicate, one message. Two copies of `is_banned || suspended_at` is
+  // how the admin-email check drifted before it was centralised.
+  assert.match(repo, /function assertNotBannedFromSeats\(/);
+  const booking = repo.slice(repo.indexOf("async function assertBookingEligible"), repo.indexOf("async function assertBookingEligible") + 1400);
+  assert.match(booking, /assertNotBannedFromSeats\(row\)/);
+  assert.doesNotMatch(
+    booking,
+    /if \(row\?\.is_banned \|\| row\?\.suspended_at\)/,
+    "assertBookingEligible is deciding the ban itself again",
+  );
+  const route = readFileSync(path.join(root, "src/app/api/claim/[token]/route.ts"), "utf8");
+  // A ban is a 403 with the reason, like the RSVP and checkout routes - not the
+  // 500 an unmapped error name used to produce.
+  assert.match(route, /name === "ForbiddenError" \? 403/);
+});
+
+test("money on the merchant and admin surfaces is never rounded to whole dollars", () => {
+  // maximumFractionDigits: 0 rounds, and it rounds UP - a $12.50 payout told the
+  // host "$13". Every money surface routes through @/lib/amounts, which shows
+  // cents only when there are cents.
+  for (const rel of [
+    "src/components/merchant-portal-shared.tsx",
+    "src/app/admin/merchants/[merchantId]/page.tsx",
+    "src/components/merchant-finances-tab.tsx",
+    "src/components/merchant-dashboard-tab.tsx",
+  ]) {
+    const src = readFileSync(path.join(root, rel), "utf8");
+    assert.doesNotMatch(src, /maximumFractionDigits: 0/, `${rel} is rounding money again`);
+  }
+  const shared = readFileSync(path.join(root, "src/components/merchant-portal-shared.tsx"), "utf8");
+  // The old rounding helpers are gone, not merely unused - an exported one is a
+  // re-import away from coming back.
+  assert.doesNotMatch(shared, /export function formatMoney|export function formatPrice|priceFormatter/);
+});
+
+test("the post-event window is named where the prompt is offered", () => {
+  // The banner above the prompt used to say "No rush" for a surface that hard-
+  // closes at event end + 48h. The window is named on the CARD - the component
+  // that offers the taps - so it travels to BOTH surfaces that render the
+  // prompt, including /events/[slug], which has no banner above it at all.
+  const dashboard = readFileSync(path.join(root, "src/app/dashboard/page.tsx"), "utf8");
+  const detail = readFileSync(path.join(root, "src/app/events/[slug]/page.tsx"), "utf8");
+  const card = readFileSync(path.join(root, "src/components/post-event-click-card.tsx"), "utf8");
+  assert.doesNotMatch(dashboard, /No rush/);
+  assert.match(card, /POST_EVENT_CLICK_WINDOW_HOURS/);
+  // Naming it on the card only counts if the card is what these pages render.
+  assert.match(dashboard, /<PostEventClickCard/);
+  assert.match(detail, /<PostEventClickCard/);
+  // One deadline, one place. The banner restating the card's line verbatim is
+  // how this surface grew three headings saying the same thing before.
+  assert.doesNotMatch(dashboard, /hours after the event/);
+});
+
+test("no unwired proposal clock sits beside the one that ships", () => {
+  // PROPOSAL_RESPONSE_WINDOW_HOURS = 48 had zero references while both proposal
+  // writers stamp MUTUAL_CLOCK_DAYS (7 days). Wiring it up would have silently
+  // cut every live proposal to 48 hours.
+  const constants = readFileSync(path.join(root, "src/lib/clicks/constants.ts"), "utf8");
+  assert.doesNotMatch(constants, /export const PROPOSAL_RESPONSE_WINDOW_HOURS/);
+  assert.doesNotMatch(repo, /PROPOSAL_RESPONSE_WINDOW_HOURS/);
+  assert.match(repo, /interval '\$\{MUTUAL_CLOCK_DAYS\} days'/);
+});
+
+test("accepting a waitlist promotion is behind the same gate as joining one", () => {
+  // JOINING a waitlist routes through registerForEvent and was gated there.
+  // ACCEPTING the promotion routed through nothing - so someone banned after
+  // they joined, then promoted by expireWaitlistOffers or cancelRegistration,
+  // could POST at the accept route and sit in the room with whoever reported
+  // them. Free events only: paid offers bounce to createPaymentHold, gated.
+  const start = repo.indexOf("export async function acceptWaitlistOffer");
+  assert.ok(start > -1, "acceptWaitlistOffer not found");
+  const accept = repo.slice(start, start + 1600);
+  assert.match(accept, /await assertBookingEligible\(pool, profile\.id\)/);
+  // Before the transaction opens, so a refusal never holds a pool connection.
+  // Matched on the full statement, not the bare "pool.connect()" - the comment
+  // above the gate names that call, and a substring check finds the prose first.
+  assert.ok(
+    accept.indexOf("await assertBookingEligible")
+      < accept.indexOf("const client = await pool.connect()"),
+    "the gate must run before the transaction opens",
+  );
+  const route = readFileSync(
+    path.join(root, "src/app/api/events/[eventId]/waitlist/accept/route.ts"),
+    "utf8",
+  );
+  // Without this branch the refusal fell through to the catch-all 500.
+  assert.match(route, /error\.name === "ForbiddenError"/);
+});
+
+test("every route that can put someone in a room goes through a ban gate", () => {
+  // The completeness guard. If you add a sixth way to hold a seat, this fails
+  // and you decide deliberately which of the two gates it belongs behind -
+  // assertBookingEligible (ban + onboarding) or assertNotBannedFromSeats (ban
+  // only, for the guest claim, whose invited friend onboards afterwards).
+  const gated = repo.match(/await assertBookingEligible\(pool, profile\.id\)/g) ?? [];
+  assert.equal(
+    gated.length,
+    3,
+    "expected registerForEvent, createPaymentHold and acceptWaitlistOffer - a change here means a seat route was added or lost its gate",
+  );
+  assert.match(repo, /assertNotBannedFromSeats\(who\.rows\[0\]\)/);
+});
+
+test("the merchant monthly report does not round a host's revenue", () => {
+  // The one money document a host forwards to a bookkeeper. A local formatAud
+  // shadowed the module-level one with maximumFractionDigits: 0, so a
+  // $1,234.50 month arrived as "$1,235".
+  const start = repo.indexOf("sendMerchantMonthlyReports");
+  assert.ok(start > -1, "sendMerchantMonthlyReports not found");
+  const fn = repo.slice(start, start + 4000);
+  assert.doesNotMatch(fn, /maximumFractionDigits: 0/);
+  assert.doesNotMatch(fn, /const formatAud =/, "the rounding shadow is back");
+});

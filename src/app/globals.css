@@ -359,6 +359,15 @@ body {
 .ck-btn--lg { min-height: 52px; padding: 0 24px; font-size: 16px; }
 .ck-btn--full { width: 100%; }
 
+/* --sm is 36px because a mouse can hit 36px - a thumb cannot, and --sm is the
+   size EVERY primary action on the app surfaces uses (the moment banner CTA,
+   "click with X", RSVP, the empty-state action). On a touch pointer it comes
+   up to the same 44px floor the rest of the app is built to; the padding and
+   type stay put, so nothing about the desktop density moves. */
+@media (pointer: coarse) {
+  .ck-btn--sm { min-height: 44px; }
+}
+
 /* primary - the one flat Deep-Purple CTA. Never a gradient, never a glow. */
 .ck-btn--primary { background: var(--purple); color: var(--champagne); }
 .ck-btn--primary:hover:not([disabled]):not(.ck-btn--loading) { background: var(--purple-hover); transform: translateY(-1px); }
@@ -512,13 +521,18 @@ body {
 
      < 640px : 44 + (12 * 2) + 1 = 69
      >= 640  : 44 + (14 * 2) + 1 = 73
-     >= 1024 : the bell drops to 36px, so 36 + 28 + 1 = 65
+     >= 1024 : the bell drops to size-9, but HeaderNav appears - and a nav link
+               is 21.75px of line box + py-[9px] = 39.75px, which is taller than
+               the 36px bell, the 38px account button and the 26px wordmark.
+               So 40 + 28 + 1 = 69, NOT the 65 this derived from the bell alone.
+               Measured: 68.4px at 1707px wide. SiteHeaderShell reserves the
+               same 40px via lg:h-10 - the two have to move together.
 
    The old 49px left the top 20px of the portal's sticky section switcher
    smeared behind the header's own backdrop-blur band. */
 :root { --header-h: 69px; }
 @media (min-width: 640px) { :root { --header-h: 73px; } }
-@media (min-width: 1024px) { :root { --header-h: 65px; } }
+@media (min-width: 1024px) { :root { --header-h: 69px; } }
 }
 
 /* ---------- Highlight & marker ----------
@@ -1091,6 +1105,15 @@ body:has([data-home-hero]) .site-header--marketing .ck-btn {
      an animating ancestor transform would become their containing block. */
   .reveal--fade { transform: none; }
   .reveal.is-in { opacity: 1; transform: none; }
+  /* Rail variant. A card sitting in a HORIZONTAL scroll-row is only a few dozen
+     pixels into the viewport - under the observer's 0.1 threshold - so it stays
+     at opacity 0 and the partial next-card PEEK, the whole affordance that says
+     "this row scrolls", is invisible until you have already swiped. Below sm the
+     rail is live, so its items simply start visible; from sm the track is a grid,
+     every card is in view vertically, and the staggered reveal is right again. */
+  @media (max-width: 639.98px) {
+    .reveal--rail { opacity: 1; transform: none; }
+  }
   /* Safety valve: (scripting: enabled) still matches when the bundle itself
      never runs (chunk 404 after a deploy, hydration crash). Un-hide everything
      after 2.5s; the <Reveal> island stamps .js-live on mount, cancelling this

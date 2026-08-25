@@ -36,20 +36,25 @@ export function Section({
           <div className="mb-3.5 flex items-baseline justify-between gap-4 sm:mb-4.5">
             <div>
               {title ? (
-                <h2 className="font-display text-[1.075rem] leading-tight font-semibold tracking-[-0.01em] text-[color:var(--ink)] sm:text-[1.3rem]">
+                <h2 className="font-display text-[1.075rem] leading-tight font-semibold tracking-[-0.01em] text-balance text-[color:var(--ink)] sm:text-[1.3rem]">
                   {title}
                 </h2>
               ) : null}
               {sub ? (
-                <p className="mt-1.5 max-w-[520px] text-[13.5px] leading-relaxed font-medium text-[color:var(--slate)] sm:text-sm">
+                <p className="mt-1.5 max-w-[520px] text-[13.5px] leading-relaxed font-medium text-pretty text-[color:var(--slate)] sm:text-sm">
                   {sub}
                 </p>
               ) : null}
             </div>
             {actionLabel && actionHref ? (
+              /* The label is 13.5px, so the natural box is ~20px tall - the smallest
+                 target on the page, and the only way into each list. The padding
+                 grows the HIT box to the 44px floor and the equal negative margin
+                 takes that growth back out of the layout, so the link sits exactly
+                 where it did. */
               <Link
                 href={actionHref}
-                className="font-display inline-flex shrink-0 items-center gap-1.5 text-[13.5px] font-semibold whitespace-nowrap text-[color:var(--purple)] hover:underline"
+                className="font-display -my-3 -mr-2 inline-flex shrink-0 items-center gap-1.5 py-3 pr-2 text-[13.5px] font-semibold whitespace-nowrap text-[color:var(--purple)] hover:underline"
               >
                 {actionLabel}
                 <span className="nudge-arrow inline-flex">
@@ -62,6 +67,49 @@ export function Section({
       ) : null}
       {children}
     </section>
+  );
+}
+
+/**
+ * CardRail - the DS mobile treatment for an EVENT STRIP.
+ *
+ * "One card system, varied by section: scroll-rows on mobile; tidy grids on
+ * desktop" - and, at 375: "horizontal scroll-row with a partial next-card PEEK
+ * (~88-90% width + 16px gap), not a cramped clipping 2-up grid". Three sections
+ * of three cards stacked 1-up is the "wall of identical cards" the dashboard
+ * prompt names as the biggest failure mode; it also ran the phone page to four
+ * and a bit screens of scroll.
+ *
+ * Same track the home page already uses, so the two surfaces swipe identically.
+ *
+ * ONE card gets the plain grid instead: a lone card has nothing to sit beside,
+ * so a scroll container buys nothing and the equal-height reservations inside
+ * EventCard (which key off .ckRail) would just open a hole under the title.
+ */
+const RAIL_TRACK =
+  "ckRail -mx-5 flex snap-x snap-mandatory gap-4 overflow-x-auto px-5 pb-4 sm:mx-0 sm:grid sm:grid-cols-2 sm:gap-5 sm:overflow-visible sm:px-0 sm:pb-0 lg:grid-cols-3";
+// reveal--rail: below sm these are visible from the start, so the next-card peek
+// is actually on screen. From sm the track is a grid and the stagger comes back.
+const RAIL_ITEM =
+  "reveal--rail w-[84vw] max-w-[340px] shrink-0 snap-center sm:w-auto sm:max-w-none sm:min-w-0";
+const PLAIN_GRID = "grid gap-5 sm:grid-cols-2 lg:grid-cols-3";
+
+export function CardRail<T extends { id: string }>({
+  items,
+  children,
+}: {
+  items: T[];
+  children: (item: T, index: number) => ReactNode;
+}) {
+  const rail = items.length > 1;
+  return (
+    <div className={rail ? RAIL_TRACK : PLAIN_GRID}>
+      {items.map((item, i) => (
+        <Reveal key={item.id} delay={i * 70} className={rail ? RAIL_ITEM : "min-w-0"}>
+          {children(item, i)}
+        </Reveal>
+      ))}
+    </div>
   );
 }
 
@@ -106,18 +154,18 @@ export function MomentBanner({
               {eyebrow}
             </div>
           ) : null}
-          <h2 className="font-display text-[1.11rem] leading-tight font-semibold tracking-[-0.01em] text-[color:var(--purple-800)] sm:text-[1.3rem]">
+          <h2 className="font-display text-[1.11rem] leading-tight font-semibold tracking-[-0.01em] text-balance text-[color:var(--purple-800)] sm:text-[1.3rem]">
             {title}
           </h2>
           {sub ? (
-            <p className="mt-1.5 max-w-[460px] text-[13.5px] leading-relaxed text-[color:var(--purple-800)]/80 sm:text-sm">
+            <p className="mt-1.5 max-w-[460px] text-[13.5px] leading-relaxed text-pretty text-[color:var(--purple-800)]/80 sm:text-sm">
               {sub}
             </p>
           ) : null}
         </div>
       </div>
-      <div className="flex shrink-0 flex-wrap items-center gap-2.5">
-        <Link href={actionHref} className="ck-btn ck-btn--sm ck-btn--primary">
+      <div className="flex w-full shrink-0 flex-wrap items-center gap-2.5 sm:w-auto">
+        <Link href={actionHref} className="ck-btn ck-btn--sm ck-btn--primary w-full sm:w-auto">
           <span className="ck-btn__label">{actionLabel}</span>
         </Link>
         {secondary}

@@ -1,3 +1,4 @@
+import { formatMoney } from "@/lib/amounts";
 import type { MerchantFinancesSummary } from "@/lib/event-repository";
 
 const MONTH_SHORT = new Intl.DateTimeFormat("en-AU", {
@@ -10,10 +11,6 @@ function monthLabel(key: string) {
   // Anchor mid-month at noon UTC so the Sydney-formatted short month never
   // drifts to the neighbouring month.
   return MONTH_SHORT.format(new Date(Date.UTC(year, month - 1, 15, 12)));
-}
-
-function dollars(cents: number) {
-  return `$${(cents / 100).toLocaleString("en-AU", { maximumFractionDigits: 0 })}`;
 }
 
 // Last 6 calendar months ending this month (Australia/Sydney), as "YYYY-MM".
@@ -57,7 +54,7 @@ export function MerchantFinancesAnalytics({
           Revenue · last 6 months
         </span>
         <span className="text-[13px] font-semibold text-[color:var(--slate)]">
-          {dollars(total)} paid
+          {formatMoney(total)} paid
         </span>
       </div>
 
@@ -78,12 +75,12 @@ export function MerchantFinancesAnalytics({
                     figure is still on the bar's title tooltip and in the totals
                     above the chart. */}
                 <span className="hidden text-[11px] font-semibold tabular-nums text-[color:var(--ink)] sm:block">
-                  {m.paidCents > 0 ? dollars(m.paidCents) : ""}
+                  {m.paidCents > 0 ? formatMoney(m.paidCents) : ""}
                 </span>
                 <div
                   className="flex w-full items-end rounded-t-md"
                   style={{ height: "120px" }}
-                  title={`${m.label}: ${dollars(m.paidCents)} paid`}
+                  title={`${m.label}: ${formatMoney(m.paidCents)} paid`}
                 >
                   <div
                     className="w-full rounded-t-md bg-[color:var(--sage)]"

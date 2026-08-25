@@ -8,6 +8,7 @@ import {
   type ConsoleEntry,
   type NetworkEntry,
 } from "@/lib/support-repository";
+import { keepOwnOriginUrl } from "@/lib/support-url";
 import { checkRateLimit, getClientIp, rateLimitResponse } from "@/lib/rate-limit";
 import { canTriageSupportTickets } from "@/lib/support-access";
 
@@ -57,17 +58,23 @@ export async function POST(request: Request) {
   const expected = (form.get("expected") as string | null)?.trim() || null;
 
   // Page URL: prefer the explicit field from the client, fall back to referer.
+  // Both are reporter-supplied and both become an =HYPERLINK on the operators'
+  // triage board, so both go through keepOwnOriginUrl - a URL on someone else's
+  // host is reduced to its path rather than left as a link off our own board.
   const metadata = safeParse<Record<string, unknown>>(form.get("client_metadata"), {});
-  const url =
-    (typeof metadata.url === "string" && metadata.url) ||
-    request.headers.get("referer") ||
-    null;
+  const requestHost = request.headers.get("host");
+  const url = keepOwnOriginUrl(
+    (typeof metadata.url === "string" && metadata.url) || request.headers.get("referer"),
+    requestHost,
+  );
   if (typeof metadata.url !== "string" && url) metadata.url = url;
   // Absolute URL (incl. origin) for the clickable Sheet link.
   const fullUrl =
-    (typeof metadata.fullUrl === "string" && metadata.fullUrl) ||
-    request.headers.get("referer") ||
-    url;
+    keepOwnOriginUrl(
+      (typeof metadata.fullUrl === "string" && metadata.fullUrl) ||
+        request.headers.get("referer"),
+      requestHost,
+    ) || url;
 
   const screenshotEntry = form.get("screenshot");
   let screenshot: Buffer | null = null;

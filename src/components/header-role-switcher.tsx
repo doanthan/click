@@ -74,7 +74,7 @@ export function HeaderRoleSwitcher({
         onClick={() => setOpen((o) => !o)}
         aria-label="Account menu"
         aria-expanded={open}
-        className="flex items-center gap-1.5 rounded-full p-0.5"
+        className="flex min-h-11 items-center gap-1.5 rounded-full p-0.5 lg:min-h-0"
       >
         <Avatar name={userLabel} src={avatarUrl} size={34} ring={open} />
         <Icon

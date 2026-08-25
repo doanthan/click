@@ -4275,6 +4275,15 @@ export async function acceptWaitlistOffer(eventId: string, session: Session | nu
   if (!pool) throw databaseUnavailableError();
 
   const profile = await ensureProfileForSession(session);
+
+  // JOINING a waitlist goes through registerForEvent and is gated there;
+  // ACCEPTING the promotion did not go through anything. Someone banned after
+  // they joined, then promoted by expireWaitlistOffers or cancelRegistration,
+  // could POST straight at this and take the seat. Gated before pool.connect()
+  // so a refusal never opens a transaction. Paid offers bounce to
+  // createPaymentHold below, which has its own call - free ones confirmed here.
+  await assertBookingEligible(pool, profile.id);
+
   const client = await pool.connect();
 
   try {
@@ -7411,6 +7420,22 @@ export async function markMerchantOnboardingComplete(session: Session | null) {
 }
 
 /**
+ * The seat-holding ban gate, as a pure predicate over a row the caller already
+ * has - no second round-trip, and no second copy of the rule to drift out of
+ * step. `assertBookingEligible` is the booking half (ban + onboarding); the
+ * guest +1 claim wants only this half, because the invited friend signs up
+ * through the invite and fills in their profile afterwards.
+ */
+function assertNotBannedFromSeats(row: { is_banned: boolean; suspended_at: Date | null } | undefined) {
+  if (!row?.is_banned && !row?.suspended_at) return;
+  const error = new Error(
+    "This account can't book events right now. Email hello@letsclick.app if you think that's wrong.",
+  );
+  error.name = "ForbiddenError";
+  throw error;
+}
+
+/**
  * Refuses a seat to anyone who hasn't finished onboarding.
  *
  * This is the trust boundary for the 18+ rule. /onboarding is a form, and a
@@ -7437,15 +7462,13 @@ async function assertBookingEligible(pool: Pool, profileId: string) {
   // A ban or suspension only ever filtered the click and matching queries, so
   // someone removed for harassing another attendee could still sign in and buy a
   // seat at the same event as the person who reported them. This is the single
-  // choke point every booking path routes through - the free RSVP, the paid
-  // hold, and the waitlist - so the check belongs here rather than in each one.
-  if (row?.is_banned || row?.suspended_at) {
-    const error = new Error(
-      "This account can't book events right now. Email hello@letsclick.app if you think that's wrong.",
-    );
-    error.name = "ForbiddenError";
-    throw error;
-  }
+  // choke point most booking paths route through - the free RSVP, the paid
+  // hold, joining a waitlist, and accepting a waitlist promotion - so the check
+  // belongs here rather than in each one. The guest +1 claim is the one seat
+  // route that wants the ban half WITHOUT the onboarding half, so it calls
+  // assertNotBannedFromSeats directly. Five routes, one rule; if you add a
+  // sixth way to hold a seat, it goes through one of these two.
+  assertNotBannedFromSeats(row);
 
   if (row?.suburb && row.birth_date) return;
 
@@ -11709,11 +11732,15 @@ export async function claimGuestSpotForProfile(
     guest_email: string | null;
     claimer_email: string | null;
     claimer_name: string | null;
+    is_banned: boolean;
+    suspended_at: Date | null;
   }>(
     `
       select gs.guest_email::text,
              p.email::text as claimer_email,
-             p.display_name as claimer_name
+             p.display_name as claimer_name,
+             p.is_banned,
+             p.suspended_at
       from guest_spots gs
       cross join profiles p
       where gs.claim_token = $1::uuid and p.id = $2::uuid
@@ -11721,6 +11748,12 @@ export async function claimGuestSpotForProfile(
     `,
     [token, profileId],
   );
+  // A claimed +1 is a seat in the same room, taken for free - so the ban that
+  // stops the RSVP, the paid hold and the waitlist has to stop this too, or a
+  // forwarded invite is the way straight past all three. Checked before the
+  // mismatch branch below so a refusal can't be used to probe who was invited.
+  assertNotBannedFromSeats(who.rows[0]);
+
   const invitedEmail = who.rows[0]?.guest_email?.trim().toLowerCase() ?? "";
   const claimerEmail = who.rows[0]?.claimer_email?.trim().toLowerCase() ?? "";
   const claimerName = who.rows[0]?.claimer_name?.trim() || null;
@@ -15753,12 +15786,10 @@ export async function sendMerchantMonthlyReports(opts: {
     year: "numeric",
     timeZone: "Australia/Sydney",
   }).format(new Date(Date.UTC(opts.year, opts.month - 1, 15, 12)));
-  const formatAud = (cents: number) =>
-    new Intl.NumberFormat("en-AU", {
-      style: "currency",
-      currency: "AUD",
-      maximumFractionDigits: 0,
-    }).format(cents / 100);
+  // No local formatAud here on purpose. The shadow this replaced rounded to
+  // whole dollars, so a $1,234.50 month reached the host as "$1,235" in the one
+  // document they forward to a bookkeeper. The module-level formatAud takes the
+  // Intl default of two digits, matching every other money email.
   const origin = emailOrigin();
 
   try {

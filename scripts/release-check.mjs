@@ -131,14 +131,44 @@ if (value("NEXT_PUBLIC_APP_URL") !== "https://www.letsclick.app") {
 if (value("CLICK_MECHANIC_ENABLED") && value("CLICK_MECHANIC_ENABLED") !== "true") {
   errors.push("CLICK_MECHANIC_ENABLED must be true after the staging Click QA flow passes.");
 }
+// Production normally demands live keys. STRIPE_ALLOW_TEST_MODE=true opts the
+// deployment into a Stripe sandbox for UAT on the real domain, and must match
+// isStripeTestModeAllowed() in src/lib/stripe.ts - set it in only one of the
+// two and the app refuses the very key this gate just waved through.
+const allowStripeTestMode = value("STRIPE_ALLOW_TEST_MODE") === "true";
+const stripeKeyIssues = [];
 if (value("STRIPE_SECRET_KEY") && !value("STRIPE_SECRET_KEY").startsWith("sk_live_")) {
-  errors.push("STRIPE_SECRET_KEY must be a live-mode key.");
+  stripeKeyIssues.push("STRIPE_SECRET_KEY must be a live-mode key.");
 }
 if (
   value("NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY") &&
   !value("NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY").startsWith("pk_live_")
 ) {
-  errors.push("NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY must be a live-mode key.");
+  stripeKeyIssues.push("NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY must be a live-mode key.");
+}
+if (!allowStripeTestMode) {
+  errors.push(...stripeKeyIssues);
+} else {
+  if (stripeKeyIssues.length > 0) {
+    warnings.push(
+      `STRIPE_ALLOW_TEST_MODE=true: this deploy runs against a Stripe sandbox, so no real money moves (${stripeKeyIssues.length} live-key check(s) waived). Unset it and restore live keys before launch.`,
+    );
+  }
+  // A split pair is the one combination that fails silently. Both halves pass
+  // their own prefix check, then the server mints a test-mode Session while the
+  // browser bundle carries a live pk_, and Stripe.js rejects the client_secret
+  // with a mode mismatch - at the payment step, in front of the buyer.
+  if (value("STRIPE_SECRET_KEY") && value("NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY")) {
+    const secretMode = value("STRIPE_SECRET_KEY").startsWith("sk_live_") ? "live" : "test";
+    const publishableMode = value("NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY").startsWith("pk_live_")
+      ? "live"
+      : "test";
+    if (secretMode !== publishableMode) {
+      errors.push(
+        `STRIPE_SECRET_KEY is ${secretMode}-mode but NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY is ${publishableMode}-mode. Embedded checkout fails on a split pair.`,
+      );
+    }
+  }
 }
 if (value("STRIPE_WEBHOOK_SECRET") && !value("STRIPE_WEBHOOK_SECRET").startsWith("whsec_")) {
   errors.push("STRIPE_WEBHOOK_SECRET must be a Stripe webhook signing secret.");

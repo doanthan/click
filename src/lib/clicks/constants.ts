@@ -1,4 +1,4 @@
-// Click-mechanic tunables (TECH/21_CLICK_MECHANIC.md v9). Centralised so the three
+// Click-mechanic tunables (TECH/21_CLICK_MECHANIC.md v9). Centralised so the two
 // coincidental 48-hour constants (§B3.2) and the two distinct 7-day clocks (§5) can be
 // tuned independently and never silently move each other. The spec frames these as
 // platform_settings keys; until a settings table exists they live here as the single
@@ -26,9 +26,12 @@ export const PAIR_SUPPRESSION_DAYS = 90;
 /** Rediscovery cooldown after a soft release (§B7.9). */
 export const REDISCOVERY_COOLDOWN_DAYS = 30;
 
-// ── Coordination handshake (§B4 / §B3.2 — three independent 48h timers) ──────────────
-/** A sent proposal expires this long after it's sent (§B4.2). */
-export const PROPOSAL_RESPONSE_WINDOW_HOURS = 48;
+// ── Coordination handshake (§B4 / §B3.2 - one 48h timer) ─────────────────────────────
+// No PROPOSAL_RESPONSE_WINDOW_HOURS. The spec's §B4.2 48-hour proposal clock was never
+// shipped: both writers stamp `expires_at = now() + interval '${MUTUAL_CLOCK_DAYS} days'`,
+// so a sent proposal runs the mutual's 7 days. The constant sat unreferenced beside the
+// code contradicting it - wiring it up would have silently cut every live proposal from
+// 7 days to 48 hours. Change the two writers first if the spec is meant to win.
 /** Events sooner than this are never *suggested* (manual propose still allowed) (§B3.2). */
 export const SUGGESTION_LEADTIME_FLOOR_HOURS = 48;
 /** Suggestion ceiling — the load-spreader (§B3.2). */

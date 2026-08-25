@@ -10,7 +10,7 @@ import { LoginTrigger } from "./login-trigger";
 import { MobileBottomNav, type BottomNavTab } from "./mobile-bottom-nav";
 
 const HEADER_SHELL =
-  "sticky top-0 z-50 border-b border-[color:var(--line-soft)] bg-[color:var(--champagne)]/90 backdrop-blur-xl";
+  "sticky top-0 z-50 border-b border-[color:var(--line-soft)] bg-[color:var(--champagne)]";
 const HEADER_ROW = "mx-auto flex max-w-[1200px] items-center justify-between gap-4 px-5 py-3 sm:px-8 sm:py-3.5";
 
 /**
@@ -29,7 +29,7 @@ export function SiteHeaderShell({ marketing = true }: { marketing?: boolean }) {
     <header className={`${HEADER_SHELL}${marketing ? " site-header--marketing" : ""}`}>
       <div className={HEADER_ROW}>
         <Logo size={26} />
-        <div className="h-9" aria-hidden />
+        <div className="h-11 lg:h-10" aria-hidden />
       </div>
     </header>
   );
@@ -63,7 +63,7 @@ export async function SiteHeader() {
     return (
       <header className={`${HEADER_SHELL} site-header--marketing`}>
         <div className={HEADER_ROW}>
-          <Link href="/" aria-label="Click home" className="flex items-center">
+          <Link href="/" aria-label="Click home" className="flex min-h-11 items-center lg:min-h-0">
             <Logo size={26} />
           </Link>
           <div className="flex items-center gap-2">
@@ -109,7 +109,7 @@ export async function SiteHeader() {
     <>
       <header className={HEADER_SHELL}>
         <div className={HEADER_ROW}>
-          <Link href={logoHref} aria-label="Click home" className="flex items-center">
+          <Link href={logoHref} aria-label="Click home" className="flex min-h-11 items-center lg:min-h-0">
             <Logo size={26} />
           </Link>
 

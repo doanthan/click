@@ -537,17 +537,25 @@ export default function SupportWidget({ canTriage = false }: { canTriage?: boole
           notched phone added its safe-area inset (56px tabs + ~34px inset >
           80px), so the offset carries the inset too. Above lg the nav is gone.
           rounded-xl is radius-12: in this DS a pill is a tag or an avatar, and
-          this is a button, so it wears the one button footprint. */}
+          this is a button, so it wears the one button footprint.
+
+          Icon-only below lg. This thing is fixed, so whatever it covers it
+          covers permanently - and at 390px the full "Report a bug" label was
+          parked on top of the dashboard's "See all on your radar" link and the
+          empty-state body copy, with no scroll position that revealed them. The
+          label returns at lg where there is room for it; aria-label carries the
+          name for everyone in between. min-h-11/min-w-11 keeps the 44px
+          coarse-pointer target the label used to provide. */}
       {!open && (
         <button
           type="button"
           onClick={() => setOpen(true)}
           aria-label="Report a bug"
-          className="fixed right-5 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-[80] flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-[color:var(--champagne)] shadow-lg transition hover:scale-105 lg:bottom-5"
+          className="fixed right-5 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-[80] flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-xl p-3 text-sm font-semibold text-[color:var(--champagne)] shadow-lg transition hover:scale-105 lg:bottom-5 lg:px-4 lg:py-3"
           style={{ backgroundColor: ACCENT }}
         >
           <BugIcon />
-          <span>Report a bug</span>
+          <span className="hidden lg:inline">Report a bug</span>
         </button>
       )}
 

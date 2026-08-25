@@ -41,7 +41,7 @@ export function EmptyState({
 }) {
   return (
     <div
-      className={`flex flex-col items-center px-6 py-12 text-center ${
+      className={`flex flex-col items-center px-5 py-9 text-center sm:px-6 sm:py-12 ${
         bare ? "" : "rounded-[var(--radius-xl)] bg-[color:var(--lav-bg)]"
       } ${className}`}
     >

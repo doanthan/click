@@ -10,10 +10,10 @@ import {
   type MerchantFinancesSummary,
 } from "@/lib/event-repository";
 import { reconcilePendingTransactionsForMerchant } from "@/lib/stripe-sync";
+import { formatMoney } from "@/lib/amounts";
 import {
   TabHeader,
   dateTimeFormatter,
-  formatMoney,
 } from "./merchant-portal-shared";
 
 // Payout-status row at the top of the Finances tab. Drives a five-state badge

@@ -26,21 +26,22 @@ export function ClickRadar({
   if (rows.length === 0) {
     return (
       <div className="overflow-hidden rounded-[var(--radius-xl)] border border-[color:var(--line-soft)] bg-[color:var(--paper)]">
-        <div className="flex items-center gap-3.5 px-4 py-4">
+        {/* The whole row is the link, same as the populated rows below - the
+            "Find one" text on its own was a 13px, ~20px-tall target. */}
+        <Link
+          href="/discover"
+          className="flex min-h-11 items-center gap-3.5 px-4 py-4 transition-colors hover:bg-[color:var(--lavender-100)]"
+        >
           <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[color:var(--lavender-100)] text-[color:var(--purple)]">
             <Icon name="trend" size={16} />
           </span>
-          <p className="min-w-0 flex-1 text-sm leading-snug text-[color:var(--ink-soft)]">
+          <span className="min-w-0 flex-1 text-sm leading-snug text-[color:var(--ink-soft)]">
             As you go to events, your radar sharpens.
-          </p>
-          {/* The row is otherwise a dead end - give it the one next step. */}
-          <Link
-            href="/discover"
-            className="font-display shrink-0 text-[13px] font-semibold text-[color:var(--purple)] hover:underline"
-          >
+          </span>
+          <span className="font-display shrink-0 text-[13px] font-semibold whitespace-nowrap text-[color:var(--purple)]">
             Find one →
-          </Link>
-        </div>
+          </span>
+        </Link>
       </div>
     );
   }
@@ -51,7 +52,7 @@ export function ClickRadar({
         <Link
           key={event.id}
           href={`/events/${event.id}`}
-          className={`flex items-center gap-3.5 px-4 py-4 transition-colors hover:bg-[color:var(--lavender-100)] ${
+          className={`flex min-h-11 items-center gap-3.5 px-4 py-4 transition-colors hover:bg-[color:var(--lavender-100)] ${
             i > 0 ? "border-t border-[color:var(--line-soft)]" : ""
           }`}
         >
