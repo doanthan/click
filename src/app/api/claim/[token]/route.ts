@@ -18,9 +18,11 @@ export async function POST(request: Request, context: RouteContext) {
   const { token } = await context.params;
 
   let action = "";
+  let confirmDifferentEmail = false;
   try {
     const body = await request.json();
     action = String(body?.action ?? "");
+    confirmDifferentEmail = body?.confirmDifferentEmail === true;
   } catch {
     return NextResponse.json({ error: "Missing action." }, { status: 400 });
   }
@@ -51,8 +53,23 @@ export async function POST(request: Request, context: RouteContext) {
       if (!profile) {
         return NextResponse.json({ error: "Couldn't load your profile." }, { status: 401 });
       }
-      const res = await claimGuestSpotForProfile(token, profile.id);
+      const res = await claimGuestSpotForProfile(token, profile.id, {
+        allowDifferentEmail: confirmDifferentEmail,
+      });
       if (!res.ok) {
+        // A forwarded invite is a legitimate thing to do - but the claimer has
+        // to see whose seat they are taking first, and the purchaser is then
+        // told who actually took it.
+        if (res.reason === "email-mismatch") {
+          return NextResponse.json(
+            {
+              error: `This spot was saved for ${res.invitedEmailMasked}.`,
+              reason: "email-mismatch",
+              invitedEmailMasked: res.invitedEmailMasked,
+            },
+            { status: 409 },
+          );
+        }
         return NextResponse.json(
           { error: "This spot is no longer available." },
           { status: 409 },

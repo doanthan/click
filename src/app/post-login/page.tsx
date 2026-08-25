@@ -32,6 +32,18 @@ export default async function PostLoginPage({ searchParams }: PostLoginPageProps
 
   const status = await getProfileStatus(session);
 
+  // A failed profile read reports onboardingComplete: false, and this page read
+  // that as "brand-new attendee" - so a transient blip on the profiles query
+  // took an existing member who has been on Click for months and dropped them
+  // back at step one of the five-step wizard, on top of the profile they
+  // already have. `degraded` exists precisely to tell "they have not onboarded"
+  // apart from "we could not find out"; the host gates already honour it via
+  // assertProfileStatusUsable, and this one did not. When we do not know, we do
+  // not send anyone to onboarding: nothing is lost by letting them through for
+  // one navigation, because the next clean read offers the form again and
+  // booking stays gated server-side by assertBookingEligible either way.
+  const needsOnboarding = !status.onboardingComplete && !status.degraded;
+
   // A brand-new attendee must finish onboarding before any deep link - a fresh
   // Google signup off /discover was otherwise handed straight back to /discover
   // and never saw the form.
@@ -45,7 +57,7 @@ export default async function PostLoginPage({ searchParams }: PostLoginPageProps
   // application collects its own contact details, and booking stays gated
   // server-side by assertBookingEligible whatever this page decides.
   const isHostRoute = !!explicitNext && explicitNext.startsWith("/merchant");
-  if (explicitNext && (status.onboardingComplete || status.merchantProfile || isHostRoute)) {
+  if (explicitNext && (!needsOnboarding || status.merchantProfile || isHostRoute)) {
     redirect(explicitNext);
   }
 
@@ -66,7 +78,7 @@ export default async function PostLoginPage({ searchParams }: PostLoginPageProps
     redirect("/merchant");
   }
 
-  if (!status.onboardingComplete) {
+  if (needsOnboarding) {
     // A host-only account never fills in the attendee profile, so this branch
     // used to trap every pending, rejected and suspended host in the attendee
     // form on EVERY login - the approved-only check above let them fall right

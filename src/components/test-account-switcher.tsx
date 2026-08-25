@@ -25,7 +25,11 @@ import { QA_PERSONAS } from "@/lib/qa-personas";
 //    (used on /test). `redirectTo` controls where sign-out lands so the inline
 //    panel can keep you on /test instead of bouncing home.
 
-const GROUPS = ["Start of the journey", "Skip ahead"] as const;
+const GROUPS = [
+  "Start of the journey",
+  "Clicking with each other",
+  "Skip ahead",
+] as const;
 
 function PersonaButton({
   label,

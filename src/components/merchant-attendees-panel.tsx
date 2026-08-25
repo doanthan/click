@@ -3,7 +3,10 @@
 import { useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 import type { MerchantAllAttendeesRow } from "@/lib/event-repository";
-import { toggleAttendeeCheckInAction } from "@/app/merchant/actions";
+import {
+  toggleAttendeeCheckInAction,
+  toggleGuestCheckInAction,
+} from "@/app/merchant/actions";
 import { Avatar, Button, Icon } from "./ds";
 import { StatusPill, mCard } from "./merchant-ds";
 
@@ -21,8 +24,10 @@ function csvEscape(value: string) {
   return value;
 }
 
+// h-11 (44px), matching .ck-input and the DS's stated minimum touch target.
+// This is the door-running surface; nothing on it should be under the floor.
 const selectClass =
-  "h-10 rounded-xl border border-[color:var(--mist-strong)] bg-[color:var(--paper)] px-3 text-[13px] font-medium text-[color:var(--ink)] outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--purple)]";
+  "h-11 rounded-xl border border-[color:var(--mist-strong)] bg-[color:var(--paper)] px-3 text-[13px] font-medium text-[color:var(--ink)] outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--purple)]";
 
 // Written out in full (not interpolated) so Tailwind's source scanner sees it.
 const ROW_GRID = "grid-cols-[1.4fr_1.8fr_1.4fr_1fr_1.1fr_0.9fr]";
@@ -58,6 +63,7 @@ export function MerchantAttendeesPanel({ rows }: { rows: MerchantAllAttendeesRow
       "Event",
       "Event date",
       "Name",
+      "Seat",
       "Email",
       "Status",
       "RSVP at",
@@ -68,6 +74,9 @@ export function MerchantAttendeesPanel({ rows }: { rows: MerchantAllAttendeesRow
         csvEscape(r.eventTitle),
         csvEscape(r.eventStartsAt),
         csvEscape(r.displayName),
+        // A printed door list has to distinguish the person who booked from the
+        // +1 they brought - they are different rows against different tables.
+        csvEscape(r.kind === "guest" ? "+1 guest" : "Ticket"),
         csvEscape(r.email),
         csvEscape(r.status),
         csvEscape(r.rsvpAt),
@@ -86,14 +95,26 @@ export function MerchantAttendeesPanel({ rows }: { rows: MerchantAllAttendeesRow
     toast.success(`Exported ${filtered.length} attendee${filtered.length === 1 ? "" : "s"}.`);
   }
 
+  // The two seat kinds check in against different tables - a ticket-holder
+  // writes event_attendees.checked_in_at, a +1 writes guest_spots.attended - so
+  // the row's `kind` picks the action. Same button, same toast, same undo.
   function checkIn(row: MerchantAllAttendeesRow) {
     const next = !row.checkedInAt;
     const form = new FormData();
-    form.set("attendee_id", row.attendeeId);
     form.set("next", String(next));
+    form.set("event_slug", row.eventSlug);
+    if (row.kind === "guest") {
+      form.set("guest_id", row.attendeeId);
+    } else {
+      form.set("attendee_id", row.attendeeId);
+    }
     startTransition(async () => {
       try {
-        await toggleAttendeeCheckInAction(form);
+        if (row.kind === "guest") {
+          await toggleGuestCheckInAction(form);
+        } else {
+          await toggleAttendeeCheckInAction(form);
+        }
         toast.success(next ? `Checked in ${row.displayName}.` : `Undid check-in for ${row.displayName}.`);
       } catch {
         toast.error("Could not update check-in. Try again.");
@@ -109,13 +130,15 @@ export function MerchantAttendeesPanel({ rows }: { rows: MerchantAllAttendeesRow
     if (row.status !== "confirmed") {
       return <StatusPill status={row.status} />;
     }
+    // size="md" (44px), not "sm" (36px): see the note on CheckInButton in
+    // check-in-toggle.tsx. Same control, same thumb, same door.
     return row.checkedInAt ? (
-      <Button variant="mutual" size="sm" onClick={() => checkIn(row)} disabled={isPending}>
+      <Button variant="mutual" size="md" onClick={() => checkIn(row)} disabled={isPending}>
         <Icon name="check" size={14} stroke={2.6} />
         In
       </Button>
     ) : (
-      <Button variant="secondary" size="sm" onClick={() => checkIn(row)} disabled={isPending}>
+      <Button variant="secondary" size="md" onClick={() => checkIn(row)} disabled={isPending}>
         Check in
       </Button>
     );
@@ -125,7 +148,7 @@ export function MerchantAttendeesPanel({ rows }: { rows: MerchantAllAttendeesRow
     <div className={`${mCard} overflow-hidden`}>
       <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-[color:var(--mist)] px-4 py-3.5">
         <div className="flex flex-wrap items-center gap-2.5">
-          <div className="flex h-10 min-w-[15rem] items-center gap-2 rounded-xl border border-[color:var(--mist-strong)] bg-[color:var(--paper)] px-3">
+          <div className="flex h-11 min-w-[15rem] items-center gap-2 rounded-xl border border-[color:var(--mist-strong)] bg-[color:var(--paper)] px-3">
             <Icon name="search" size={16} className="text-[color:var(--slate)]" />
             <input
               type="search"
@@ -220,7 +243,9 @@ export function MerchantAttendeesPanel({ rows }: { rows: MerchantAllAttendeesRow
                     {r.displayName}
                   </span>
                 </span>
-                <span className="truncate text-[12.5px] text-[color:var(--slate)]">{r.email}</span>
+                <span className="truncate text-[12.5px] text-[color:var(--slate)]">
+                  {r.email || "+1 seat - no email on file"}
+                </span>
                 <span className="truncate text-[12.5px] text-[color:var(--ink-soft)]">
                   {r.eventTitle}
                 </span>

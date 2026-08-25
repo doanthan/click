@@ -39,25 +39,35 @@ export function GuestClaimActions({
   redirectSlug?: string | null;
 }) {
   const router = useRouter();
-  const [state, setState] = useState<"idle" | "busy" | "done" | "error">("idle");
+  const [state, setState] = useState<"idle" | "busy" | "done" | "error" | "confirm-other">("idle");
   const [message, setMessage] = useState("");
+  const [invitedEmail, setInvitedEmail] = useState("");
   const copy = LABELS[action];
 
-  async function run() {
+  async function run(confirmDifferentEmail = false) {
     setState("busy");
     setMessage("");
     try {
       const res = await fetch(`/api/claim/${encodeURIComponent(token)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({ action, confirmDifferentEmail }),
       });
       const payload = (await res.json().catch(() => ({}))) as {
         ok?: boolean;
         error?: string;
         eventSlug?: string;
+        reason?: string;
+        invitedEmailMasked?: string;
       };
       if (!res.ok || !payload.ok) {
+        // The seat was saved for a different address. Say so, and let them take
+        // it deliberately - the person who paid is told who actually claimed it.
+        if (payload.reason === "email-mismatch") {
+          setInvitedEmail(payload.invitedEmailMasked || "the invited address");
+          setState("confirm-other");
+          return;
+        }
         setState("error");
         setMessage(payload.error || "Something went wrong. Try again.");
         return;
@@ -78,7 +88,10 @@ export function GuestClaimActions({
 
   if (state === "done") {
     return (
-      <div style={{ textAlign: "center" }}>
+      // Announced: on the release/remove paths the button is replaced in place
+      // and nothing else on the page moves, so a screen reader is otherwise
+      // given no sign the tap did anything.
+      <div role="status" style={{ textAlign: "center" }}>
         <p style={{ fontFamily: "var(--font-click-display), system-ui, sans-serif", fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", color: "var(--ink)", margin: "0 0 8px" }}>
           {copy.doneTitle}
         </p>
@@ -89,11 +102,73 @@ export function GuestClaimActions({
     );
   }
 
+  if (state === "confirm-other") {
+    return (
+      <div role="status" style={{ textAlign: "center" }}>
+        <p
+          style={{
+            fontFamily: "var(--font-click-display), system-ui, sans-serif",
+            fontSize: 20,
+            fontWeight: 600,
+            letterSpacing: "-0.02em",
+            color: "var(--ink)",
+            margin: "0 0 8px",
+          }}
+        >
+          This spot was saved for {invitedEmail}
+        </p>
+        <p style={{ fontFamily: SANS, fontSize: 15, color: "var(--mauve)", margin: "0 0 20px", lineHeight: 1.6 }}>
+          You&apos;re signed in as someone else. You can still take the seat - we&apos;ll tell the person who
+          bought it that you claimed it, so nobody turns up expecting a different name.
+        </p>
+        <button
+          type="button"
+          onClick={() => void run(true)}
+          style={{
+            appearance: "none",
+            border: "none",
+            cursor: "pointer",
+            background: "var(--purple)",
+            color: "var(--champagne)",
+            fontFamily: SANS,
+            fontSize: 16,
+            fontWeight: 600,
+            padding: "14px 28px",
+            borderRadius: 12,
+          }}
+        >
+          Claim it as me
+        </button>
+        <p style={{ fontFamily: SANS, fontSize: 14, color: "var(--mauve)", margin: "14px 0 0" }}>
+          Not yours?{" "}
+          <button
+            type="button"
+            onClick={() => setState("idle")}
+            style={{
+              appearance: "none",
+              background: "none",
+              border: "none",
+              padding: 0,
+              cursor: "pointer",
+              color: "var(--purple)",
+              fontFamily: SANS,
+              fontSize: 14,
+              fontWeight: 600,
+              textDecoration: "underline",
+            }}
+          >
+            Go back
+          </button>
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div style={{ textAlign: "center" }}>
       <button
         type="button"
-        onClick={run}
+        onClick={() => void run()}
         disabled={state === "busy"}
         style={{
           appearance: "none",
@@ -112,7 +187,7 @@ export function GuestClaimActions({
         {state === "busy" ? copy.busy : copy.idle}
       </button>
       {state === "error" && message ? (
-        <p style={{ fontFamily: SANS, fontSize: 14, color: "var(--danger)", margin: "14px 0 0" }}>
+        <p role="alert" style={{ fontFamily: SANS, fontSize: 14, color: "var(--danger)", margin: "14px 0 0" }}>
           {message}
         </p>
       ) : null}

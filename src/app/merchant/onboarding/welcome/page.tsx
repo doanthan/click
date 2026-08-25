@@ -12,7 +12,7 @@ import { OnboardingNav } from "@/components/merchant-onboarding-wizard";
 const HIGHLIGHTS = [
   {
     title: "Create events in minutes",
-    body: "A short guided wizard covers the details - date, venue, capacity, ticket price, photos. Submissions go live the moment they pass admin review.",
+    body: "A short guided wizard covers the details - date, venue, capacity, ticket price, photos. Publishing puts a free event on Discover straight away; a paid one needs your Stripe payouts live first.",
   },
   {
     title: "Free or paid - your call",
@@ -20,7 +20,11 @@ const HIGHLIGHTS = [
   },
   {
     title: "RSVPs + the door, handled",
-    body: "Bookings flow into your portal. Check people in on the day, message no-shows, and export a guest list whenever you need it.",
+    // No messaging feature exists anywhere in the product - the word "no-show"
+    // appeared in this sentence and nowhere else in the codebase. Promising it
+    // on the page that follows "You're approved" is the worst place to
+    // overclaim. Everything named here is a thing the portal actually does.
+    body: "Bookings flow into your portal. See who's coming, check guests in on the day, and export a guest list whenever you need it.",
   },
 ];
 

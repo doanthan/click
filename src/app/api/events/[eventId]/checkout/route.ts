@@ -5,6 +5,7 @@ import {
   attachCheckoutSession,
   attachPaymentIntent,
   createPaymentHold,
+  getSystemSettings,
   markPaymentFailed,
 } from "@/lib/event-repository";
 import { getAppUrl, getStripeClient } from "@/lib/stripe";
@@ -118,6 +119,10 @@ export async function POST(request: Request, context: RouteContext) {
 
   try {
     hold = await createPaymentHold(eventId, session, { seatCount, guests });
+
+    // Only read for the application_fee fallback below - createPaymentHold
+    // snapshots the fee from these same settings, so the two agree.
+    const { commissionRateBps } = await getSystemSettings();
 
     const appUrl = getAppUrl();
     const returnPath = `/events/${encodeURIComponent(hold.eventSlug)}`;
@@ -278,8 +283,18 @@ export async function POST(request: Request, context: RouteContext) {
           ? {
               transfer_data: { destination: hold.merchantStripeAccountId },
               on_behalf_of: hold.merchantStripeAccountId,
+              // The rate comes from system_settings, NOT from the env default.
+              // createPaymentHold snapshots the fee with
+              // `calculateApplicationFee(price, commissionRateBps)`; calling the
+              // helper with no rate here silently fell back to PLATFORM_FEE_BPS,
+              // so once an admin changed the commission in the console the two
+              // disagreed - and this is the number Stripe actually charges.
+              // The fallback only fires when the snapshot is null, which a
+              // merchant connecting Stripe after the hold row was written makes
+              // reachable.
               application_fee_amount: hold.applicationFeeCents ??
-                (calculateApplicationFee(hold.priceCents) + hold.bookingFeeCents) *
+                (calculateApplicationFee(hold.priceCents, commissionRateBps) +
+                  hold.bookingFeeCents) *
                   hold.seatCount,
             }
           : {}),

@@ -59,6 +59,8 @@ const ALIGN = {
   start: "items-start",
   /** Bottom sheet on phones, centred from sm up. */
   sheet: "items-end sm:items-center",
+  /** Bottom sheet at every width - for a panel that is only shown on phones. */
+  end: "items-end",
 } as const;
 
 export type ModalShellProps = {
@@ -105,6 +107,10 @@ export type ModalShellProps = {
   children: ReactNode;
 };
 
+// Every mounted shell listens on `document`, so "who owns Escape" has to be
+// decided somewhere shared. Last one mounted wins; it is popped on unmount.
+const openShells: symbol[] = [];
+
 export function ModalShell(props: ModalShellProps) {
   // Guard before any hook so the hook order can never change: a portal needs a
   // document, and this component is only ever reached on the client anyway.
@@ -142,6 +148,15 @@ function ModalShellBody({
   });
 
   useEffect(() => {
+    // Register on the shared stack BEFORE wiring the listener. Every shell
+    // listens on `document`, so two stacked shells - the booking dialog, then
+    // Stripe's checkout modal above it - both answered a single Escape: the top
+    // one closed as intended and the one underneath closed too, taking every
+    // typed +1 row with it. The checkout modal even tells you to press it.
+    const shellId = Symbol("modal-shell");
+    openShells.push(shellId);
+    const isTopmost = () => openShells[openShells.length - 1] === shellId;
+
     const previouslyFocused = document.activeElement;
 
     /* rAF, not a straight call: focus has to land after the browser has laid the
@@ -151,6 +166,10 @@ function ModalShellBody({
     });
 
     function onKey(event: KeyboardEvent) {
+      // A shell with something stacked on top of it is inert: the modal above
+      // owns both Escape and the Tab cycle until it closes.
+      if (!isTopmost()) return;
+
       if (event.key === "Escape" && latest.current.dismissible) {
         event.preventDefault();
         latest.current.onClose();
@@ -193,6 +212,8 @@ function ModalShellBody({
     document.body.style.overflow = "hidden";
 
     return () => {
+      const at = openShells.lastIndexOf(shellId);
+      if (at !== -1) openShells.splice(at, 1);
       window.cancelAnimationFrame(raf);
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = previousOverflow;

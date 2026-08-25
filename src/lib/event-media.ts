@@ -50,6 +50,6 @@ export function buildEventMediaGallery({
   return urls.map<MediaImage>((url, index) => ({
     kind: "image",
     url,
-    alt: index === 0 ? primaryAlt : `${primaryAlt} — photo ${index + 1}`,
+    alt: index === 0 ? primaryAlt : `${primaryAlt} - photo ${index + 1}`,
   }));
 }

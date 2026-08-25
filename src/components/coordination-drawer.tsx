@@ -104,15 +104,32 @@ function ReleaseControl({ onRequest }: { onRequest: () => void }) {
   );
 }
 
-export function CoordinationDrawer({
-  entry,
-  catalogue,
-  onClose,
-}: {
+type CoordinationDrawerProps = {
   entry: ProposalEntry;
   catalogue: ProposalCatalogueEvent[];
   onClose: () => void;
-}) {
+};
+
+// Same split as modal-shell.tsx, and for the same reason: the guard has to run
+// BEFORE any hook, so hook order can never differ between the two renders.
+//
+// This one actually fired. ClicksList seeds its open row from ?open=<mutualId>,
+// so a deep link into /proposals - which is exactly what every mutual
+// notification and the "it's mutual" email link to - renders this component on
+// the server, where createPortal's document.body target does not exist. The throw
+// was caught by the route's Suspense boundary, so the page fell back to
+// proposals/loading.tsx and re-rendered on the client: no error page, just a
+// blank-then-flash and the whole route silently downgraded from streamed SSR.
+export function CoordinationDrawer(props: CoordinationDrawerProps) {
+  if (typeof document === "undefined") return null;
+  return <CoordinationDrawerPanel {...props} />;
+}
+
+function CoordinationDrawerPanel({
+  entry,
+  catalogue,
+  onClose,
+}: CoordinationDrawerProps) {
   const [confirmState, confirmAction] = useActionState(confirmProposalAction, INITIAL);
   const [declineState, declineAction] = useActionState(declineProposalAction, INITIAL);
   const [proposeState, proposeAction] = useActionState(proposeAlternativeAction, INITIAL);
@@ -136,6 +153,10 @@ export function CoordinationDrawer({
   }
 
   const titleId = useId();
+  // The catalogue picker's only label sat unattached above the select, so a
+  // screen reader announced the one control on this step as an unlabelled
+  // combobox - "Pick an event…" and nothing about what the list is for.
+  const catalogueId = useId();
   const cardRef = useRef<HTMLDivElement>(null);
   const releaseFormRef = useRef<HTMLFormElement>(null);
 
@@ -249,8 +270,11 @@ export function CoordinationDrawer({
       ) : (
         <input type="hidden" name="proposal_id" value={entry.id} />
       )}
-      <label className="eyebrow block">Choose from the Click catalogue</label>
+      <label htmlFor={catalogueId} className="eyebrow block">
+        Choose from the Click catalogue
+      </label>
       <select
+        id={catalogueId}
         name="event_slug"
         required
         defaultValue=""
@@ -303,7 +327,7 @@ export function CoordinationDrawer({
       <div
         ref={cardRef}
         tabIndex={-1}
-        className="step-enter-fwd relative z-10 max-h-[92vh] w-full max-w-[540px] overflow-y-auto rounded-t-[24px] bg-[color:var(--paper)] p-6 shadow-[var(--shadow-lg)] outline-none sm:rounded-[24px] sm:p-7"
+        className="step-enter-fwd relative z-10 max-h-[92vh] w-full max-w-[540px] overflow-y-auto rounded-t-[24px] bg-[color:var(--paper)] p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-[var(--shadow-lg)] outline-none sm:rounded-[24px] sm:p-7"
       >
         <button
           type="button"
@@ -340,13 +364,20 @@ export function CoordinationDrawer({
           )}
         </div>
 
-        {/* SAFE-08: an in-flow safety exit at every step - block ends the plan. */}
+        {/* SAFE-08: an in-flow safety exit at every step that still HAS a plan to
+            end - block always remains. Not on the expired step: there is nothing
+            left to release there, releaseMutualForSession matches status='active'
+            only, and the confirm had already promised a 90-day suppression that
+            the throw meant was never written. Report or block stays, and is the
+            control that actually does something on a click that has run out. */}
         <div className="mt-6 border-t border-[color:var(--line-soft)] pt-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <form ref={releaseFormRef} action={releaseAction}>
-              <input type="hidden" name="mutual_id" value={entry.mutualId} />
-              <ReleaseControl onRequest={() => openReleaseConfirm(true)} />
-            </form>
+            {step !== "expired" ? (
+              <form ref={releaseFormRef} action={releaseAction}>
+                <input type="hidden" name="mutual_id" value={entry.mutualId} />
+                <ReleaseControl onRequest={() => openReleaseConfirm(true)} />
+              </form>
+            ) : null}
             <Link
               href={`/profile/${entry.otherId}#safety`}
               className="text-[13px] font-semibold text-[color:var(--slate)] underline decoration-dotted underline-offset-2 hover:text-[color:var(--ink)]"
@@ -458,6 +489,10 @@ function CoordinationBody({
 }) {
   const eventTitle = entry.suggestedEventTitle ?? "the event";
   const cal = step === "confirmed" ? gcalUrl(eventTitle, entry.suggestedEventStartsAt) : null;
+  // Mirrors proposeAlternativeForProposal exactly: the budget is joint, and a plan
+  // that can no longer be joined is recovered from rather than countered, so it
+  // neither spends the budget nor is stopped by it.
+  const capReached = entry.alternativesRemaining === 0 && !entry.suggestionUnavailable;
 
   return (
     <div>
@@ -594,10 +629,11 @@ function CoordinationBody({
       ) : step === "expired" ? (
         <>
           <h2 id={titleId} className={headingClass}>
-            This plan wound down.
+            Still out there.
           </h2>
           <p className="mt-3 rounded-2xl bg-[color:var(--lav-bg)] p-3 text-sm font-medium text-[color:var(--ink-soft)]">
-            Still out there - if you cross paths again, you can pick it back up.
+            This one didn&apos;t turn into a night out - if you cross paths again, you can pick it
+            back up.
           </p>
         </>
       ) : (
@@ -653,14 +689,49 @@ function CoordinationBody({
                 <SubmitButton pendingLabel="Confirming…">Confirm this plan</SubmitButton>
               </form>
             ) : null}
-            <button
-              type="button"
-              onClick={onTogglePicker}
-              disabled={entry.alternativesRemaining === 0 && !entry.proposedByMe}
-              className="ck-btn ck-btn--md ck-btn--secondary disabled:cursor-not-allowed"
-            >
-              {entry.suggestedEventSlug ? "Suggest alternative" : "Suggest a plan"}
-            </button>
+            <div className="grid gap-1">
+              {/* Out of alternatives = out of alternatives, for BOTH of them. The
+                  budget is joint and proposeAlternativeForProposal has never cared
+                  who proposed, so leaving the proposer's button live only ever
+                  bought them a 400. The exception is a plan that can no longer be
+                  joined: recovering from one doesn't spend the budget, so the way
+                  back has to stay open even at the cap - otherwise a pair whose
+                  venue cancelled after three alternatives had no move left at
+                  all. */}
+              <button
+                type="button"
+                onClick={onTogglePicker}
+                disabled={capReached}
+                aria-describedby={capReached ? "suggest-cap-note" : undefined}
+                className="ck-btn ck-btn--md ck-btn--secondary disabled:cursor-not-allowed"
+              >
+                {entry.suggestedEventSlug ? "Suggest alternative" : "Suggest a plan"}
+              </button>
+              {/* Say the number before it runs out, and explain the dead button
+                  when it has. alternativesRemaining was referenced exactly once
+                  in this component - its own definition.
+                  At the cap both sides used to read "it's their turn to pick",
+                  so each sat waiting for a move the other could not make: the
+                  budget is joint, so neither button is live. Split on who
+                  proposed. The proposer is genuinely waiting; the recipient
+                  still holds both live controls beside this note, and passing
+                  declines the plan, which drops the proposal row and hands the
+                  pair a fresh budget on the next suggestion. */}
+              {entry.suggestedEventSlug && entry.alternativesRemaining <= 2 && !entry.suggestionUnavailable ? (
+                <p
+                  id="suggest-cap-note"
+                  className="text-[11.5px] font-medium text-[color:var(--slate)]"
+                >
+                  {entry.alternativesRemaining === 0
+                    ? entry.proposedByMe
+                      ? `You've both used up the suggestions for this plan - it's with ${firstName} to confirm or pass.`
+                      : "You've both used up the suggestions for this plan - confirm it, or pass and you two can start fresh."
+                    : `${entry.alternativesRemaining} suggestion${
+                        entry.alternativesRemaining === 1 ? "" : "s"
+                      } left for this plan.`}
+                </p>
+              ) : null}
+            </div>
             {/* Decline is the recipient's no - returns to open, no blame (§B6). */}
             {step === "proposed" && !entry.proposedByMe ? (
               <form action={declineAction}>
@@ -673,12 +744,18 @@ function CoordinationBody({
           </div>
 
           {confirmError ? (
-            <p className="mt-3 rounded-[var(--radius-md)] bg-[color:var(--lav-bg)] px-3 py-2 text-xs font-medium text-[color:var(--ink-soft)]">
+            <p
+              role="alert"
+              className="mt-3 rounded-[var(--radius-md)] bg-[color-mix(in_srgb,var(--danger)_10%,var(--paper))] px-3 py-2 text-xs font-medium text-[color:var(--danger)]"
+            >
               {confirmError}
             </p>
           ) : null}
           {declineError ? (
-            <p className="mt-3 rounded-[var(--radius-md)] bg-[color:var(--lav-bg)] px-3 py-2 text-xs font-medium text-[color:var(--ink-soft)]">
+            <p
+              role="alert"
+              className="mt-3 rounded-[var(--radius-md)] bg-[color-mix(in_srgb,var(--danger)_10%,var(--paper))] px-3 py-2 text-xs font-medium text-[color:var(--danger)]"
+            >
               {declineError}
             </p>
           ) : null}

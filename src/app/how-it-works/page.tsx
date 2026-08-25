@@ -1,4 +1,6 @@
+import { auth } from "@/auth";
 import { ButtonLink, Icon, type IconName } from "@/components/ds";
+import { getPlatformFeeBps } from "@/lib/stripe-connect";
 
 export const metadata = {
   title: "How Click works",
@@ -56,7 +58,22 @@ function Eyebrow({ children }: { children: string }) {
   );
 }
 
-export default function HowItWorksPage() {
+export default async function HowItWorksPage() {
+  // The footer carries "How it works" on every signed-in surface too, so this
+  // is not a logged-out-only page. Both CTAs pointed at /signup, which for a
+  // member is a round trip: /signup -> /register -> /post-login -> the
+  // dashboard they just left, with nothing on this page having offered them a
+  // thing to do. Same page, one honest next step each - an account to make, or
+  // an event to find.
+  const session = await auth();
+  const signedIn = !!session?.user;
+  const ctaHref = signedIn ? "/discover" : "/signup";
+  const ctaLabel = signedIn ? "Find an event" : "Create your account";
+  // Derived, never a literal. This page used to hardcode "a flat 5% fee, paid
+  // out monthly" while production runs PLATFORM_FEE_BPS=290 - so the same host
+  // was quoted two different commissions one click apart. /merchant/signup:53
+  // already derives it the same way; this is the sibling that did not.
+  const feePercentLabel = `${Number((getPlatformFeeBps() / 100).toFixed(2))}%`;
   return (
     <main className="bg-[color:var(--champagne)] text-[color:var(--ink)]">
       {/* 1 · Hero */}
@@ -69,8 +86,8 @@ export default function HowItWorksPage() {
             Click gets you out doing things you love, in real life. The people you&apos;ll click with are already there.
           </p>
           <div className="mt-6">
-            <ButtonLink href="/signup" size="lg">
-              Request an invite
+            <ButtonLink href={ctaHref} size="lg">
+              {ctaLabel}
             </ButtonLink>
           </div>
         </div>
@@ -188,7 +205,7 @@ export default function HowItWorksPage() {
               who picked your thing on purpose.
             </p>
             <p className="mt-3 text-[14px] leading-[1.6] text-[color:var(--slate)] sm:text-[15px]">
-              Free events cost nothing to host. Paid events run through Stripe with a flat 5% fee, paid out monthly.
+              Free events cost nothing to host. Paid events run through Stripe with a flat {feePercentLabel} fee.
               Bookings, waitlists and door lists are handled for you.
             </p>
             <div className="mt-5">
@@ -208,12 +225,17 @@ export default function HowItWorksPage() {
         <p className="mx-auto mt-3 mb-6.5 max-w-[520px] text-[15.5px] leading-[1.6] text-[color:var(--ink-soft)] sm:text-[17px]">
           Find it. Show up. Everything else is a bonus.
         </p>
-        <ButtonLink href="/signup" size="lg">
-          Request an invite
+        <ButtonLink href={ctaHref} size="lg">
+          {ctaLabel}
         </ButtonLink>
-        <p className="mx-auto mt-4.5 max-w-[460px] text-[13.5px] leading-[1.55] text-[color:var(--slate)]">
-          Somewhere else? Request an invite anyway - we&apos;ll tell you the moment Click reaches you.
-        </p>
+        {/* The out-of-area note is a sign-up prompt, so it only speaks to
+            someone who has not signed up. A member already told us where they
+            are when they made the account. */}
+        {signedIn ? null : (
+          <p className="mx-auto mt-4.5 max-w-[460px] text-[13.5px] leading-[1.55] text-[color:var(--slate)]">
+            Somewhere else? Sign up anyway - we&apos;ll tell you the moment Click reaches you.
+          </p>
+        )}
       </section>
     </main>
   );

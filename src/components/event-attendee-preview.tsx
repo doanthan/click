@@ -21,12 +21,17 @@ export function EventAttendeePreview({
   isAuthenticated,
   viewerIsAttendee,
   eventSlug,
+  viewerOpenToDating = false,
 }: {
   items: EventAttendeePreviewRow[];
   totalConfirmed: number;
   isAuthenticated: boolean;
   viewerIsAttendee: boolean;
   eventSlug: string;
+  // Dating signals are MUTUAL opt-in everywhere else in the app - a friends-only
+  // viewer never sees a dating label. This aggregate was the one place that
+  // leaked "N here are open to dating" to everybody.
+  viewerOpenToDating?: boolean;
 }) {
   const heading = (
     <h2 className="font-display text-[1.075rem] font-semibold tracking-[-0.01em] text-[color:var(--ink)] sm:text-[1.15rem]">
@@ -74,8 +79,14 @@ export function EventAttendeePreview({
     }
     const signals: string[] = [];
     const topShared = Array.from(interestCounts.entries()).sort((a, b) => b[1] - a[1])[0];
-    if (topShared && topShared[1] >= 3) signals.push(`A few people you might click with are going - ${topShared[1]} also like ${topShared[0]}`);
-    if (datingCount >= 3) signals.push(`${datingCount} here are open to dating`);
+    if (topShared && topShared[1] >= 3) {
+      signals.push(
+        `A few people you might click with are going - at least ${topShared[1]} also like ${topShared[0]}`,
+      );
+    }
+    if (viewerOpenToDating && datingCount >= 3) {
+      signals.push(`At least ${datingCount} here are open to dating`);
+    }
 
     return (
       <section>

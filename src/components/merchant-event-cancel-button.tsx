@@ -54,7 +54,14 @@ export function MerchantEventCancelButton({
 
       if (!response.ok || !payload) {
         setState("error");
-        setMessage(payload?.error ?? "Could not cancel this event. Nothing has changed.");
+        // No payload means we do not know which side of the commit it failed
+        // on, so this must not assert that nothing changed - cancelEvent's
+        // post-commit failures are real cancellations. Send them to the page,
+        // which shows the true current status.
+        setMessage(
+          payload?.error ??
+            "We couldn't confirm whether the cancellation went through. Reload this page to see the event's current status before trying again.",
+        );
         return;
       }
 
@@ -109,7 +116,12 @@ export function MerchantEventCancelButton({
         open={confirming}
         tone="rose"
         title="Cancel this event?"
-        description={`${seatLine} Paid bookings are refunded. This cannot be undone.`}
+        // Names the money, not just the seats. "Paid bookings are refunded" read
+        // as an admin detail; what it actually means is the host gives back the
+        // night's takings, in full, with no partial option and no undo. No
+        // dollar figure: the page does not carry per-booking amounts, and an
+        // ESTIMATED total on an irreversible money dialog is worse than none.
+        description={`${seatLine} Every paid booking is refunded in full - the takings for this event leave your account, and there is no partial option and no undo.`}
         confirmLabel="Cancel event"
         cancelLabel="Keep the event"
         busy={state === "submitting"}

@@ -13,6 +13,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ErrorNote } from "@/components/avatar-uploader";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Icon } from "@/components/ds";
 
 const ACCEPT = "image/jpeg,image/png,image/webp";
@@ -25,6 +26,11 @@ export function ProfileGalleryUploader({ initialUrls }: { initialUrls: string[] 
   const [urls, setUrls] = useState<string[]>(initialUrls);
   const [pending, setPending] = useState(false);
   const [removing, setRemoving] = useState<string | null>(null);
+  // The remove icon used to delete on its first tap: no confirm, no undo, and
+  // the DELETE takes the object out of storage the moment the API answers, so
+  // a thumb landing on the corner of the wrong tile cost a photo for good.
+  // Holds the url awaiting confirmation.
+  const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Photos persist on upload, but with the only "Save profile" button at the
   // bottom of a long form, users thought they had to scroll down to save them
@@ -169,14 +175,19 @@ export function ProfileGalleryUploader({ initialUrls }: { initialUrls: string[] 
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={url} alt="" className="size-full object-cover" />
+            {/* The tap target is the full 44px box; the 28px disc inside it is
+                the visual, unchanged. A destructive control sitting on top of a
+                photo is the last one that should need an accurate thumb. */}
             <button
               type="button"
-              onClick={() => void handleRemove(url)}
+              onClick={() => setConfirmRemove(url)}
               disabled={removing === url}
               aria-label="Remove photo"
-              className="absolute right-1.5 top-1.5 grid size-7 place-items-center rounded-full bg-[color:var(--paper)] text-[color:var(--ink)] shadow-[var(--shadow-xs)] transition hover:bg-[color:var(--lavender-100)] disabled:opacity-50"
+              className="group/remove absolute right-0 top-0 grid size-11 place-items-center disabled:opacity-50"
             >
-              {removing === url ? "…" : <Icon name="x" size={13} stroke={2.4} />}
+              <span className="grid size-7 place-items-center rounded-full bg-[color:var(--paper)] text-[color:var(--ink)] shadow-[var(--shadow-xs)] transition group-hover/remove:bg-[color:var(--lavender-100)]">
+                {removing === url ? "…" : <Icon name="x" size={13} stroke={2.4} />}
+              </span>
             </button>
             {/* Choose this as the main avatar (bug board #220). */}
             <button
@@ -222,6 +233,24 @@ export function ProfileGalleryUploader({ initialUrls }: { initialUrls: string[] 
       />
 
       {error ? <ErrorNote>{error}</ErrorNote> : null}
+
+      {/* Portals onto document.body, so its buttons sit outside the profile form
+          this uploader renders inside and can never submit it. */}
+      <ConfirmDialog
+        open={confirmRemove !== null}
+        tone="rose"
+        badge="Remove"
+        title="Remove this photo?"
+        description="It comes off your profile straight away - you can upload it again whenever you like."
+        confirmLabel="Remove photo"
+        cancelLabel="Keep it"
+        onConfirm={() => {
+          const url = confirmRemove;
+          setConfirmRemove(null);
+          if (url) void handleRemove(url);
+        }}
+        onCancel={() => setConfirmRemove(null)}
+      />
     </div>
   );
 }

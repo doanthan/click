@@ -16,6 +16,12 @@ type Props = {
   min?: string;                          // defaults to 1920-01-01
   describedBy?: string;
   labelledBy?: string;
+  /**
+   * A typed date was rejected. "range" = outside the 18+ window, "format" =
+   * unparseable. The field reverts either way, so without this the entry just
+   * vanished and the caller could only say "pick your birth date".
+   */
+  onInvalid?: (reason: "range" | "format") => void;
   ref?: React.Ref<HTMLInputElement>;
 };
 
@@ -118,6 +124,7 @@ export function BirthDatePicker({
   min = DEFAULT_MIN,
   describedBy,
   labelledBy,
+  onInvalid,
   ref,
 }: Props) {
   const id = useId();
@@ -271,8 +278,11 @@ export function BirthDatePicker({
       setCursor(parsed);
       return;
     }
-    // Invalid or out of the 18+ range - revert to the committed value.
+    // Invalid or out of the 18+ range - revert, but SAY so. Silently blanking
+    // the field made a 17-year-old retype their real birth date over and over,
+    // and did the same to anyone whose formatting parseFlexible rejected.
     setText(fmtDisplay(selected));
+    onInvalid?.(parsed ? "range" : "format");
   }
 
   function shiftMonth(delta: number) {
@@ -436,7 +446,7 @@ export function BirthDatePicker({
                 </span>
               ) : (
                 <span className="tabular-nums">
-                  {yearPageStart} – {yearPageStart + 11}
+                  {yearPageStart} - {yearPageStart + 11}
                 </span>
               )}
               <ChevronIcon direction={mode === "days" ? "down" : "up"} />

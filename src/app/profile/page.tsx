@@ -32,6 +32,11 @@ export default async function OwnProfilePage() {
   // haven't rehosted an avatar yet - otherwise a user with a Google/Facebook
   // picture sees initials here while the header shows their real photo.
   const avatarUrl = profile.photoUrl ?? session.user.image ?? null;
+  // ...but say so. Nobody else can see that photo: the public projection reads
+  // photo_url straight from the row, and getSuggestedPeople drops members whose
+  // photo_url is blank - so this member was invisible in the click pool and had
+  // no way to find out why.
+  const avatarIsPrivateFallback = !profile.photoUrl && Boolean(session.user.image);
 
   return (
     <main className="min-h-screen bg-[color:var(--champagne)] pb-24 text-[color:var(--ink)]">
@@ -54,10 +59,19 @@ export default async function OwnProfilePage() {
                   <p className="mt-1.5 flex items-center gap-1.5 truncate text-[13.5px] font-medium text-[color:var(--slate)]">
                     <Icon name="pin" size={14} />
                     {profile.suburb ?? profile.city}
-                    {" · "}
-                    <span className="font-semibold text-[color:var(--purple)]">
-                      been to {profile.attendedCount} event{profile.attendedCount === 1 ? "" : "s"}
-                    </span>
+                    {/* Hidden (null) or zero shows the location alone. Rendering
+                        it unconditionally published "been to 0 events" for anyone
+                        who turned the privacy toggle off, and for every genuine
+                        newcomer - untrue, and deficit framing either way. */}
+                    {profile.attendedCount ? (
+                      <>
+                        {" · "}
+                        <span className="font-semibold text-[color:var(--purple)]">
+                          been to {profile.attendedCount} event
+                          {profile.attendedCount === 1 ? "" : "s"}
+                        </span>
+                      </>
+                    ) : null}
                   </p>
                 </div>
               </div>
@@ -65,6 +79,30 @@ export default async function OwnProfilePage() {
                 Edit profile
               </ButtonLink>
             </header>
+
+            {avatarIsPrivateFallback ? (
+              <p className="mt-4 rounded-[var(--radius-md)] bg-[color:var(--lav-bg)] px-4 py-3 text-[13px] font-medium text-[color:var(--ink-soft)]">
+                Only you can see this photo - it comes from the account you signed in with.{" "}
+                <Link href="/profile/edit" className="font-semibold text-[color:var(--purple)] underline">
+                  Add one to your Click profile
+                </Link>{" "}
+                so people can recognise you, and so you show up when people are looking for someone
+                to click with.
+              </p>
+            ) : null}
+
+            {/* What a stranger actually sees. The only "view your profile" route
+                used to be this owner view, which is not privacy-gated and shows
+                an OAuth photo nobody else gets. */}
+            <p className="mt-3 text-[13px] font-medium text-[color:var(--slate)]">
+              <Link
+                href={`/profile/${profile.id}`}
+                className="font-semibold text-[color:var(--purple)] underline"
+              >
+                See your public profile
+              </Link>{" "}
+              - exactly what someone else sees.
+            </p>
 
             <Rule />
 

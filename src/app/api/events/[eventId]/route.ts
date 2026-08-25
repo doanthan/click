@@ -33,13 +33,18 @@ export async function GET(_request: Request, context: RouteContext) {
       return NextResponse.json({ error: "Event not found." }, { status: 404 });
     }
 
-    // `address`/`city` are the post-RSVP reveal. `location` (the venue name)
-    // stays: the discover card already ships it to this same client and gates it
-    // in the markup, so redacting it here would only break the modal's in-place
-    // RSVP success reveal without making anything private.
+    // `address`, `city` AND `location` (the venue name) are all the post-RSVP
+    // reveal. The old comment argued the name could stay because the discover
+    // card already shipped it - so the card stopped shipping it (see
+    // getEventsForExplore) and this is now the only place it comes from, gated
+    // on a real confirmed seat. NOTE the modal does NOT re-fetch after an
+    // in-place RSVP - its effect is keyed [open, event.id] - so `location` is
+    // still "" at the moment the seat is confirmed. That is why the modal hands
+    // successDetails to the registration button only when it holds a venue, and
+    // otherwise lets it redirect to the unlocked event page instead.
     const payload = viewerCanSeeVenue(event, profileStatus)
       ? event
-      : { ...event, address: null, city: null };
+      : { ...event, address: null, city: null, location: "" };
 
     return NextResponse.json({ event: payload });
   } catch {

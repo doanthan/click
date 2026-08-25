@@ -182,6 +182,42 @@ export function toMerchantStatus(raw: string): MerchantStatus {
   return key in STATUS_MAP ? key : "draft";
 }
 
+/**
+ * What status a host should SEE for one of their events, as opposed to what the
+ * events row stores. "Ended" and "Full" are not stored statuses - they are the
+ * clock and the capacity - so every surface has to derive them, and three
+ * surfaces were doing it separately: the events panel and the calendar chip had
+ * it right, and the dashboard card printed the raw column, so a sold-out or
+ * finished event still read "Live" on the first screen a host opens.
+ *
+ * Precedence matters and is the same everywhere: Cancelled and Rejected win
+ * over Ended, because "not on" is what the host needs to read first.
+ *
+ * Returns a StatusPill key; pass it straight to <StatusPill status={...} /> or
+ * to merchantStatusLabel for the words.
+ */
+export function merchantEventDisplayStatus(event: {
+  status: string;
+  startsAt: string;
+  endsAt?: string | null;
+  confirmed: number;
+  capacity: number;
+  /** Pass the host's clock reading; server components should compute it once. */
+  nowMs?: number;
+}): string {
+  if (event.status === "Cancelled") return "cancelled";
+  if (event.status === "Rejected") return "rejected";
+  const now = event.nowMs ?? Date.now();
+  if (new Date(event.endsAt ?? event.startsAt).getTime() < now) return "ended";
+  if (event.confirmed >= event.capacity && event.status === "Live") return "full";
+  return event.status;
+}
+
+/** The words StatusPill would print for a status key. */
+export function merchantStatusLabel(status: string): string {
+  return STATUS_MAP[toMerchantStatus(status)].label;
+}
+
 export function StatusPill({ status, label }: { status: string; label?: string }) {
   const entry = STATUS_MAP[toMerchantStatus(status)];
   return <Badge tone={entry.tone}>{label ?? entry.label}</Badge>;
@@ -193,8 +229,12 @@ export function StatusPill({ status, label }: { status: string; label?: string }
  * WizardStepper - numbered progress dots joined by hairlines, for every
  * multi-step merchant flow (become a host, create event, post-approval
  * onboarding). Completed steps turn SAGE with a check and are clickable; the
- * current step is Deep Purple; upcoming steps are a quiet outline and are never
- * clickable (you can't skip ahead past unvalidated input).
+ * current step is Deep Purple; upcoming steps are a quiet outline.
+ *
+ * A step AHEAD is clickable only when the caller passed `completed` and every
+ * step before the target validates - so you still cannot skip past unvalidated
+ * input, but a host who has filled the whole wizard can jump straight back to
+ * Review instead of pressing Next once per step.
  *
  * Pass `paths` to make completed steps navigate (our wizards are route-driven);
  * omit it for a read-only progress display.
@@ -224,6 +264,18 @@ export function WizardStepper({
       {steps.map((title, i) => {
         const done = i < current && (completed ? completed[i] === true : true);
         const active = i === current;
+
+        // Forward jumps. Without these the stepper was a one-way ratchet, and
+        // the cost landed on the create-event wizard's Review step: its "Edit"
+        // links drop a host three or four steps back, and the only way back to
+        // Review was pressing Next once per step. A step ahead is reachable
+        // when every step before it validates - which the caller has to have
+        // told us, via `completed`. No `completed` (the signup and onboarding
+        // wizards) means we cannot know, so those keep the old backwards-only
+        // behaviour exactly.
+        const canJumpForward =
+          i > current && !!completed && completed.slice(0, i).every(Boolean);
+        const linkable = (done || canJumpForward) && !!paths?.[i];
 
         const dot = (
           <span
@@ -260,11 +312,15 @@ export function WizardStepper({
         );
 
         const inner =
-          done && paths?.[i] ? (
+          linkable && paths?.[i] ? (
             <Link
               href={paths[i]}
-              aria-label={`Go back to ${title}`}
-              className="inline-flex items-center gap-[7px] rounded-full transition-opacity hover:opacity-75 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--purple)]"
+              aria-label={i < current ? `Go back to ${title}` : `Go to ${title}`}
+              /* -my-2 py-2 grows the hit area to 40px without moving the dot:
+                 below sm the label is sr-only, so the whole target was the 24px
+                 dot itself - under the 44px a thumb needs, on the one control
+                 that moves between steps. */
+              className="-my-2 inline-flex items-center gap-[7px] rounded-full py-2 transition-opacity hover:opacity-75 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--purple)]"
             >
               {dot}
               {label}

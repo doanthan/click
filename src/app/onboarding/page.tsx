@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { OnboardingForm } from "@/components/onboarding-form";
+import { isDerivedFromEmail } from "@/lib/display-name";
 import { getEventsForExplore, getProfileStatus } from "@/lib/event-repository";
 import { safeNext } from "@/lib/safe-next";
 
@@ -63,7 +64,14 @@ export default async function OnboardingPage({
   return (
     <main className="min-h-[100dvh] bg-[color:var(--champagne)] text-[color:var(--ink)]">
       <OnboardingForm
-        initialName={session.user.name ?? ""}
+        // Blank rather than prefilled when the only "name" we have is one we
+        // built from their address. A prefilled field is a field nobody reads,
+        // and this one is published on their profile and every event roster.
+        initialName={
+          isDerivedFromEmail(session.user.name, session.user.email)
+            ? ""
+            : (session.user.name ?? "")
+        }
         initialPostcode={savedPostcode}
         initialPhotoUrl={status.photoUrl}
         previewEvents={previewEvents}

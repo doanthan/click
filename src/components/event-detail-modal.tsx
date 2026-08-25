@@ -1,12 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import type { EventItem } from "@/lib/click-data";
 import { Pill } from "./click-ui";
 import { ckBtn } from "./ds";
 import { EventBookmarkButton } from "./event-bookmark-button";
-import { EventPaymentButton } from "./event-payment-button";
 import { EventRegistrationButton } from "./event-registration-button";
 import type { EventSuccessDetails } from "./event-rsvp-success-overlay";
 import { EventImage } from "./event-image";
@@ -56,6 +56,16 @@ export function EventDetailModal({
   // ModalShell's job now (this file's copy had no trap at all, and reset body
   // overflow to "" rather than to what it had been). What is left here is the
   // one thing that is genuinely this modal's: fetching the live record.
+  // Close on navigation. Tag pills inside this modal are soft links back to
+  // /discover, so the grid behind would re-filter while the modal sat on top of
+  // it looking like nothing had happened.
+  const modalPathname = usePathname();
+  const openedAt = useRef(modalPathname);
+  useEffect(() => {
+    if (open && modalPathname !== openedAt.current) setOpen(false);
+    if (!open) openedAt.current = modalPathname;
+  }, [modalPathname, open]);
+
   useEffect(() => {
     if (!open) return;
 
@@ -114,6 +124,22 @@ export function EventDetailModal({
   // is shown beforehand, matching the event detail page's venue gate.
   const isLockedEvent = !isRegistered;
   const isPaid = data.priceCents > 0;
+  // Speak the card's vocabulary, not the database's. "Live" and "Locked" are
+  // publishing states for the host; the card the reader just tapped says
+  // "3 spots left" / "Waitlist" / "You're going".
+  const modalBadge = isRegistered
+    ? "You're going"
+    : isWaitlisted
+      ? "Waitlisted"
+      : isFull
+        ? "Waitlist"
+        : seatsLeft <= 3
+          ? `${seatsLeft} ${seatsLeft === 1 ? "spot" : "spots"} left`
+          : data.status === "Featured"
+            ? "Trending"
+            : !isPaid
+              ? "Free"
+              : null;
 
   // Handed to the RSVP button so a Discover-surface RSVP celebrates IN PLACE
   // rather than hard-navigating to /events/<id>?booked=1. Without it, someone who
@@ -121,11 +147,12 @@ export function EventDetailModal({
   // moment in the flow where the app should be answering instantly.
   //
   // On the venue: this reveals data.location only AFTER the RSVP succeeds, and
-  // every field here is already in this client component's payload (the card prop
-  // plus /api/events/<id>, neither of which redacts location_name). So this ships
-  // nothing to the browser that was not already there - unlike the event page,
-  // which builds successDetails server-side and therefore has to gate it on
-  // venueUnlocked before serialising it.
+  // Both sources DO redact the venue for a viewer with no seat: getEventsForExplore
+  // stopped shipping location_name on the card, and api/events/<id> returns
+  // location: "" unless viewerCanSeeVenue. This component fetches once on open
+  // (deps [open, event.id]) and never again, so after an in-place RSVP `location`
+  // is still the redacted "" - which is why successDetails is only handed to the
+  // button when it actually holds a venue. See the two call sites below.
   const successDetails: EventSuccessDetails = {
     title: data.title,
     dateLabel: data.date,
@@ -199,7 +226,7 @@ export function EventDetailModal({
              details. (The old markup meant to do this but never could: its scrim
              sat over the wrapper, so the target/currentTarget check never
              matched.) */
-          cardClassName="my-auto flex max-h-[calc(100dvh-2rem)] w-full max-w-3xl flex-col overflow-hidden rounded-[var(--radius-xl)] bg-[color:var(--paper)] shadow-[var(--shadow-lg)]"
+          cardClassName="rise-soft my-auto flex max-h-[calc(100dvh-2rem)] w-full max-w-3xl flex-col overflow-hidden rounded-[var(--radius-xl)] bg-[color:var(--paper)] shadow-[var(--shadow-lg)]"
         >
           <div className="relative h-52 w-full shrink-0 overflow-hidden sm:h-72">
             <EventImage
@@ -211,9 +238,11 @@ export function EventDetailModal({
               className="object-cover"
             />
             <div className="absolute inset-0 bg-gradient-to-t from-[color:var(--ink)]/40 via-transparent to-transparent" />
-            <span className="absolute left-4 top-4 rounded-lg bg-[color:var(--paper)] px-2.5 py-1.5 text-[12px] font-semibold text-[color:var(--ink)] shadow-[var(--shadow-xs)]">
-              {data.status}
-            </span>
+            {modalBadge ? (
+              <span className="absolute left-4 top-4 rounded-lg bg-[color:var(--paper)] px-2.5 py-1.5 text-[12px] font-semibold text-[color:var(--ink)] shadow-[var(--shadow-xs)]">
+                {modalBadge}
+              </span>
+            ) : null}
             <button
               type="button"
               aria-label="Close"
@@ -286,6 +315,11 @@ export function EventDetailModal({
                 <p className="font-display mt-1 text-2xl font-semibold leading-tight tracking-[-0.025em] text-[color:var(--ink)]">
                   {data.price}
                 </p>
+                {isPaid ? (
+                  <p className="mt-0.5 text-[11.5px] font-medium text-[color:var(--slate)]">
+                    Ticket price - any booking fee is shown before you pay.
+                  </p>
+                ) : null}
               </div>
             </div>
 
@@ -313,16 +347,18 @@ export function EventDetailModal({
                   initiallyRegistered
                   isWaitlist={isWaitlisted}
                   offerExpiresAt={data.waitlistOfferExpiresAt ?? null}
-                  successDetails={successDetails}
+                  successDetails={data.location ? successDetails : undefined}
                 />
               ) : isPaid && !isWaitlistMode ? (
-                <EventPaymentButton eventId={data.id} priceLabel={data.price} />
+                <Link href={`/events/${data.id}`} className="ck-btn ck-btn--md ck-btn--full ck-btn--primary">
+                  <span className="ck-btn__label">See details &amp; book</span>
+                </Link>
               ) : (
                 <EventRegistrationButton
                   eventId={data.id}
                   initiallyRegistered={false}
                   isWaitlist={isWaitlistMode}
-                  successDetails={successDetails}
+                  successDetails={data.location ? successDetails : undefined}
                 />
               )}
 

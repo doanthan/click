@@ -106,6 +106,12 @@ export default async function DashboardPage() {
 
   const upcoming = dashboard.upcomingEvents;
   const saved = dashboard.savedEvents;
+  // getDashboardData has always fetched these; the page simply never read them,
+  // so a member on three waitlists saw "Nothing saved yet" under a heading that
+  // promises their waitlist. Saved first, then waitlisted, deduped.
+  const savedIds = new Set(saved.map((event) => event.id));
+  const waitlisted = dashboard.waitlistedEvents.filter((event) => !savedIds.has(event.id));
+  const savedAndWaitlisted = [...saved, ...waitlisted];
   // Whether the viewer has enough interests for matching to have something to
   // work with - the "click with someone" empty state below says something
   // different depending on the answer. getProfileCompletion marks this done at
@@ -374,13 +380,13 @@ export default async function DashboardPage() {
 
         {/* ---- Saved & waitlist ---- */}
         <Section title="Saved & waitlist" actionLabel="See all" actionHref="/bookmarks">
-          {saved.length > 0 ? (
+          {savedAndWaitlisted.length > 0 ? (
             <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {saved.slice(0, 3).map((event, i) => (
+              {savedAndWaitlisted.slice(0, 3).map((event, i) => (
                 <Reveal key={event.id} delay={i * 70} className="min-w-0">
                   <EventCard
                     event={event}
-                    bookmarked
+                    bookmarked={savedIds.has(event.id)}
                     registered={registeredSet.has(event.id)}
                     bookingStatus={bookingStatusFor(event.id)}
                   />

@@ -21,7 +21,10 @@ function formatActionLabel(action: string) {
 
 function formatMetadata(metadata: Record<string, unknown>) {
   const entries = Object.entries(metadata);
-  if (entries.length === 0) return "-";
+  // Same call as the empty cells across the rest of the console: a word, not a
+  // lone dash, so a screen reader does not skip the cell and an operator can
+  // tell "this action carries no metadata" from a rendering fault.
+  if (entries.length === 0) return "No detail recorded";
   return entries
     .map(([key, value]) => `${key}: ${typeof value === "string" ? value : JSON.stringify(value)}`)
     .join(" · ");
@@ -34,10 +37,16 @@ export default async function AdminAuditPage() {
 
   return (
     <div className="space-y-8 py-10">
+      {/* The old description promised "every privileged admin action", but
+          getAdminAuditLog is a fixed `limit 40` with no offset and there is no
+          pager on this page - so an operator checking whether a ban or a refund
+          was logged would read "every" and conclude it never happened once 40
+          newer rows had pushed it off. Until the query takes a page, the header
+          says what is actually on screen. */}
       <AdminPageHeader
         eyebrow="Security"
         title="Audit Log"
-        description="Every privileged admin action, timestamped."
+        description="The 40 most recent privileged admin actions, newest first."
       />
       <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
         {securityRows.map(([title, body], index) => (

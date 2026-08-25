@@ -1,6 +1,20 @@
 import Link from "next/link";
 import { auth } from "@/auth";
-import { getProfileStatus } from "@/lib/event-repository";
+import {
+  assertProfileStatusUsable,
+  getMerchantEvents,
+  getProfileStatus,
+} from "@/lib/event-repository";
+import { PILOT_AREA_LABEL, isWithinSydneyPilot } from "@/lib/geo";
+
+const upcomingDateFormatter = new Intl.DateTimeFormat("en-AU", {
+  weekday: "short",
+  day: "numeric",
+  month: "short",
+  hour: "numeric",
+  minute: "2-digit",
+  timeZone: "Australia/Sydney",
+});
 
 // Spec §1 post-submission holding page. Shown to merchants whose application
 // has landed but isn't yet approved by admin (verification_status='pending').
@@ -20,7 +34,7 @@ function AccessDenied({
 }: {
   reason: string;
   // When the visitor has no application on file, point them INTO the host
-  // onboarding funnel instead of leaving "Back to Click" as the only exit —
+  // onboarding funnel instead of leaving "Back to Click" as the only exit -
   // "Host an event" should always lead to merchant onboarding, never a dead end.
   showHostCta?: boolean;
 }) {
@@ -55,6 +69,18 @@ function AccessDenied({
 export default async function MerchantPendingPage() {
   const session = await auth();
   const status = session?.user ? await getProfileStatus(session) : null;
+  // A failed profile read reports merchantProfile: null, and the branch below
+  // reads a null profile as "this person has never applied" - so one transient
+  // blip told a PENDING applicant, on the page whose whole job is holding their
+  // application, that they had not applied and should go and start one. That
+  // second application is an upsert over their real record.
+  //
+  // getProfileStatus already distinguishes the two: `degraded` means "we could
+  // not find out", not "there is nothing". Every merchant layout fails loudly on
+  // it through this same helper, and this page is the one those layouts redirect
+  // INTO, so it has to hold the same line. Throws into error.tsx next door,
+  // which offers a retry rather than a form.
+  if (status) assertProfileStatusUsable(status);
   const merchantProfile = status?.merchantProfile ?? null;
 
   // 'suspended' belongs here too. It used to fall through to the else branch
@@ -87,6 +113,46 @@ export default async function MerchantPendingPage() {
 
   const rejected = merchantProfile.verification_status === "rejected";
   const suspended = merchantProfile.verification_status === "suspended";
+
+  // A venue outside the launch pilot never enters the verification queue at all:
+  // registerMerchantWizardSubmit parks the host on the waitlist and emails
+  // merchant-waitlisted-merchant instead. The row still reads 'pending' either
+  // way, so this page - which only ever branched on verification_status - was
+  // promising a waitlisted host an admin decision "within 1 business day" that
+  // nobody was ever going to make. Same predicate as the wizard's own notice and
+  // as the server branch (isWithinSydneyPilot), read off the address the merchant
+  // row already carries, so all three tell the host the same story.
+  //
+  // No postcode means we can't claim they're outside the pilot - rows predating
+  // the wizard were written without an address - so those keep the queue copy
+  // rather than being waitlisted on a guess.
+  const postcode = merchantProfile.address_postcode?.trim() ?? "";
+  const waitlisted =
+    !rejected &&
+    !suspended &&
+    postcode !== "" &&
+    !isWithinSydneyPilot(merchantProfile.address_state, postcode);
+  // The email names the suburb it was given; the merchant row carries only state
+  // and postcode, so the page names the part of the address it actually has
+  // rather than inventing a suburb to match.
+  const venueArea = [merchantProfile.address_state, postcode].filter(Boolean).join(" ");
+
+  // A suspended host still has rooms full of people booked, and this page says
+  // so out loud ("Confirmed bookings still stand"). It then used to remove every
+  // way of meeting that obligation: /merchant redirects them here, so the door
+  // list, the attendee emails, the check-in toggles and the Cancel button all
+  // went with it. The event detail page itself never gated on approval - it only
+  // needs a merchant profile - so the data was reachable the whole time and
+  // simply had no link. This is that link.
+  const upcomingEvents = suspended
+    ? (await getMerchantEvents(session).catch(() => []))
+        .filter((event) => {
+          if (event.status === "Cancelled") return false;
+          // eslint-disable-next-line react-hooks/purity -- async server component, evaluated once per request
+          return new Date(event.endsAt ?? event.startsAt).getTime() >= Date.now();
+        })
+        .slice(0, 8)
+    : [];
   // Rejected and suspended share the alert treatment and, crucially, neither
   // gets the "get your first event live" prep checklist - it reads as "you can
   // publish now" to someone who can't (bug board #204, and a suspended host is
@@ -98,12 +164,25 @@ export default async function MerchantPendingPage() {
       <section className="mx-auto grid max-w-5xl gap-10 lg:grid-cols-[0.5fr_0.5fr] lg:items-start">
         <div className="lg:sticky lg:top-24">
           <span className={`sticker ${needsAttention ? "sticker--rose" : "sticker--peach"} inline-flex`}>
-            <span className={`size-2 rounded-full ${needsAttention ? "bg-[color:var(--champagne)]" : "bg-[color:var(--purple)] pulse-ring"}`} />
+            {/* The pulse-ring reads as "someone is looking at this right now",
+                which is the one thing a waitlisted host must not be told - their
+                dot is the same purple, just still. */}
+            <span
+              className={`size-2 rounded-full ${
+                needsAttention
+                  ? "bg-[color:var(--champagne)]"
+                  : waitlisted
+                    ? "bg-[color:var(--purple)]"
+                    : "bg-[color:var(--purple)] pulse-ring"
+              }`}
+            />
             {suspended
               ? "Hosting paused"
               : rejected
                 ? "Application needs another look"
-                : "Application received"}
+                : waitlisted
+                  ? "On the waitlist"
+                  : "Application received"}
           </span>
 
           <h1 className="font-display mt-6 text-5xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)] sm:text-6xl">
@@ -114,6 +193,10 @@ export default async function MerchantPendingPage() {
             ) : rejected ? (
               <>
                 We need to <span className="text-[color:var(--purple)]">talk it over</span>.
+              </>
+            ) : waitlisted ? (
+              <>
+                You’re <span className="text-[color:var(--purple)]">on the list</span>.
               </>
             ) : (
               <>
@@ -127,7 +210,9 @@ export default async function MerchantPendingPage() {
               ? "An admin has paused hosting on this account, so your events are hidden from Discover and you can’t publish new ones. Bookings people already hold still stand. Check your email for the reason, or reply to that email and we’ll sort it out with you."
               : rejected
                 ? "An admin reviewed your application and flagged something. Check your email for the reason and resubmit when you’ve addressed it."
-                : "Your merchant application is in the admin queue. We aim to review new merchants within 1 business day. We’ll email you the moment your portal unlocks."}
+                : waitlisted
+                  ? `We’re piloting Click in ${PILOT_AREA_LABEL} right now, and the venue address on your application (${venueArea}) sits outside it - so you’re on the host waitlist rather than in the review queue. Nothing to send us: we’ll email the moment we open up near you.`
+                  : "Your merchant application is in the admin queue. We aim to review new merchants within 1 business day. We’ll email you the moment your portal unlocks."}
           </p>
 
           <p className="mt-6 text-sm font-semibold text-[color:var(--ink)]">
@@ -156,6 +241,9 @@ export default async function MerchantPendingPage() {
           they can't (bug board #204). Steer them to fix + resubmit instead.
           Same for a suspended one, who additionally has live attendees to
           think about, so their panel explains what is and isn't still running.
+          And same for a waitlisted one: the checklist's whole premise is that
+          approval is a day away, which is the exact promise nobody is going to
+          keep for a venue outside the pilot.
         */}
         {suspended ? (
           <div className="rounded-[18px] bg-[color:var(--paper)] p-6 shadow-[var(--shadow-sm)]">
@@ -195,6 +283,35 @@ export default async function MerchantPendingPage() {
                 </li>
               ))}
             </ul>
+            {upcomingEvents.length > 0 ? (
+              <div className="mt-6 rounded-2xl border border-[color:var(--line)] bg-[color:var(--champagne)] p-4">
+                <p className="font-semibold text-[color:var(--ink)]">
+                  {upcomingEvents.length} night
+                  {upcomingEvents.length === 1 ? "" : "s"} still to run
+                </p>
+                <p className="mt-1 text-sm font-medium leading-6 text-[color:var(--slate)]">
+                  Open one to see the door list, check people in, or cancel it and
+                  refund everyone. These still work while your hosting is paused.
+                </p>
+                <ul className="mt-3 grid gap-1.5">
+                  {upcomingEvents.map((event) => (
+                    <li key={event.slug}>
+                      <Link
+                        href={`/merchant/events/${event.slug}`}
+                        className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 rounded-xl bg-[color:var(--paper)] px-3.5 py-2.5 text-sm font-semibold text-[color:var(--ink)] transition hover:bg-[color:var(--lavender-100)]"
+                      >
+                        <span className="min-w-0 truncate">{event.title}</span>
+                        <span className="text-[12.5px] font-medium tabular-nums text-[color:var(--slate)]">
+                          {upcomingDateFormatter.format(new Date(event.startsAt))} ·{" "}
+                          {event.confirmed}/{event.capacity} booked
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
             {/* Same address the suspension email came from, so replying there
                 and starting here land in the same place. */}
             <a
@@ -253,6 +370,61 @@ export default async function MerchantPendingPage() {
               Resubmit application →
             </Link>
           </div>
+        ) : waitlisted ? (
+          /* Mirrors what /emails/merchant-waitlisted-merchant.html actually tells
+             them - on the list, nothing to do, we email when we launch near you,
+             reply if the address looks wrong - so the page and the email a host
+             reads side by side say one thing rather than two. */
+          <div className="rounded-[18px] bg-[color:var(--paper)] p-6 shadow-[var(--shadow-sm)]">
+            <p className="eyebrow">What happens next</p>
+            <h2 className="mt-3 font-display text-3xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)]">
+              Nothing to do - we’ll come to you.
+            </h2>
+            <p className="mt-4 text-sm font-medium leading-7 text-[color:var(--slate)]">
+              Your application is saved exactly as you sent it. When Click opens up
+              near you we pick it straight back up, so you’ll never fill any of this
+              in twice.
+            </p>
+            <ul className="mt-6 grid gap-4">
+              {[
+                {
+                  t: "You’re on the host waitlist",
+                  d: `We’re piloting in ${PILOT_AREA_LABEL} first, so there’s no review date on this one and no decision for you to sit up waiting on.`,
+                },
+                {
+                  t: "You hear from us first",
+                  d: `The moment we open up around ${venueArea}, you’re in the first group we email to get your events live.`,
+                },
+                {
+                  t: "Everything you sent is on file",
+                  d: "Business details, contact, venue address and any documents you uploaded all stay saved with us.",
+                },
+                {
+                  t: "Address not quite right?",
+                  d: "If we’ve read your venue address wrong, email us and we’ll check it against the pilot again.",
+                },
+              ].map((item) => (
+                <li
+                  key={item.t}
+                  className="rounded-2xl border border-[color:var(--line)] bg-[color:var(--champagne)] p-4"
+                >
+                  <p className="font-semibold text-[color:var(--ink)]">{item.t}</p>
+                  <p className="mt-1 text-sm font-medium leading-6 text-[color:var(--slate)]">{item.d}</p>
+                </li>
+              ))}
+            </ul>
+
+            {/* Same address the waitlist email came from, so replying there and
+                starting here land in the same place. */}
+            <a
+              href={`mailto:hello@letsclick.app?subject=${encodeURIComponent(
+                `Host waitlist - ${merchantProfile.business_name}`,
+              )}`}
+              className="ck-btn ck-btn--secondary ck-btn--md mt-6"
+            >
+              Email us about this →
+            </a>
+          </div>
         ) : (
         /* First-event prep checklist per spec §1 post-submission. */
         <div className="rounded-[18px] bg-[color:var(--paper)] p-6 shadow-[var(--shadow-sm)]">
@@ -272,7 +444,7 @@ export default async function MerchantPendingPage() {
                 d: "Inner-city Sydney events fill fastest. Surry Hills, Newtown, and Darlinghurst are the best starting points.",
               },
               {
-                t: "Plan an intimate first event (10–20 people)",
+                t: "Plan an intimate first event (10-20 people)",
                 d: "Smaller events convert better on Click. Save big events for after you’ve built an audience.",
               },
               {

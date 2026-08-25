@@ -14,13 +14,21 @@ export type HeaderNavItem = { label: string; href: string; icon: IconName | "spa
  * purple. The "click" tab carries the ONE spark in the header (the DS rations
  * the sparkle hard - this and the three mechanic peaks, nowhere else).
  */
+// An event detail page belongs to the Discover lane: nothing else prefixes
+// /events/…, so the whole nav used to read as "you are nowhere".
+function isTabActive(pathname: string, href: string) {
+  if (href === "/") return pathname === "/";
+  if (href === "/discover" && pathname.startsWith("/events/")) return true;
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
 export function HeaderNav({ items }: { items: HeaderNavItem[] }) {
   const pathname = usePathname();
 
   return (
     <nav aria-label="Primary" className="hidden items-center gap-1.5 lg:flex">
       {items.map((item) => {
-        const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+        const active = isTabActive(pathname, item.href);
         return (
           <Link
             key={item.href}
@@ -29,7 +37,7 @@ export function HeaderNav({ items }: { items: HeaderNavItem[] }) {
             className={`inline-flex items-center gap-[7px] rounded-full px-[15px] py-[9px] text-[14.5px] transition-colors ${
               active
                 ? "bg-[color:var(--lavender-100)] font-semibold text-[color:var(--purple-700)]"
-                : "font-medium text-[color:var(--ink-soft)] hover:bg-[color:var(--lavender-100)]"
+                : "font-medium text-[color:var(--ink-soft)] hover:bg-[color:var(--lav-bg)]"
             }`}
           >
             {item.icon === "spark" ? (

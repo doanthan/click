@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { createUserClickForSession } from "@/lib/event-repository";
-import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 
 function errorResponse(error: unknown) {
   if (!(error instanceof Error)) {
@@ -11,9 +10,20 @@ function errorResponse(error: unknown) {
   if (error.name === "AuthRequiredError") {
     return NextResponse.json({ error: error.message }, { status: 401 });
   }
-  if (error.name === "NotFoundError") {
-    return NextResponse.json({ error: error.message }, { status: 404 });
+  if (error.name === "RateLimitedError") {
+    const retryAfter = (error as Error & { retryAfterSeconds?: number }).retryAfterSeconds ?? 60;
+    return NextResponse.json(
+      { error: error.message },
+      {
+        status: 429,
+        headers: { "Retry-After": String(retryAfter), "Cache-Control": "no-store" },
+      },
+    );
   }
+  // Deliberately NO NotFoundError branch. sendClickInner no longer raises one:
+  // an unknown profile id answers with the same 400 + same string as an
+  // ineligible receiver, so this endpoint can't be walked to enumerate which
+  // account ids are real.
   if (error.name === "ValidationError") {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
@@ -32,13 +42,9 @@ export async function POST(request: Request) {
   if (!session?.user?.email) {
     return NextResponse.json({ error: "You need to log in first." }, { status: 401 });
   }
-  const limit = await checkRateLimit({
-    scope: "send-click",
-    identity: session.user.email,
-    limit: 40,
-    windowSeconds: 60 * 60,
-  });
-  if (!limit.allowed) return rateLimitResponse(limit);
+  // The send-click hourly limit moved into createUserClickForSession so it also
+  // binds the two server actions, which are the paths the product actually uses.
+  // Counting here as well would just halve everyone's budget.
   const body = (await request.json().catch(() => ({}))) as {
     clickedProfileId?: string;
     sourceEventId?: string;

@@ -67,10 +67,16 @@ export function AvatarUploader({ initialUrl, displayName, onUploaded }: AvatarUp
     body.set("file", file);
 
     setPending(true);
+    // Same guard the gallery uploader two rows down already has: without it a
+    // stalled upload sat on "Uploading…" with the button disabled forever, so
+    // the member could not retry and could not tell whether the photo saved.
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30_000);
     try {
       const response = await fetch("/api/upload/avatar", {
         method: "POST",
         body,
+        signal: controller.signal,
       });
       const payload = (await response.json().catch(() => null)) as
         | { url?: string; error?: string }
@@ -93,6 +99,7 @@ export function AvatarUploader({ initialUrl, displayName, onUploaded }: AvatarUp
     } catch {
       setError("Upload failed. Check your connection and try again.");
     } finally {
+      clearTimeout(timeout);
       setPending(false);
     }
   }

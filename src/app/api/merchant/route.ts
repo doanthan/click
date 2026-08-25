@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { registerMerchantWizardSubmit, type MerchantWizardInput } from "@/lib/event-repository";
+import { normalizeWebsiteUrl } from "@/lib/website-url";
 
 function errorResponse(error: unknown) {
   if (!(error instanceof Error)) {
@@ -11,37 +12,17 @@ function errorResponse(error: unknown) {
     return NextResponse.json({ error: error.message }, { status: 401 });
   }
   if (error.name === "ValidationError") {
-    return NextResponse.json({ error: error.message }, { status: 400 });
+    // `field` rides along so the wizard can mark the offending input and route
+    // the host back to the step that owns it - a bare sentence on the Documents
+    // step is a rejection with nowhere to land.
+    const field = (error as Error & { field?: string }).field;
+    return NextResponse.json({ error: error.message, field }, { status: 400 });
   }
   if (error.name === "DatabaseUnavailableError") {
     return NextResponse.json({ error: error.message }, { status: 503 });
   }
 
   return NextResponse.json({ error: error.message || "Merchant signup failed." }, { status: 500 });
-}
-
-function normalizeHttpsWebsiteUrl(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) return { url: "" };
-
-  const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
-
-  try {
-    const parsed = new URL(withProtocol);
-
-    if (parsed.protocol !== "https:") {
-      return { error: "Website must start with https://." };
-    }
-
-    if (!parsed.hostname.includes(".")) {
-      return { error: "Enter a valid website domain, like https://www.google.com." };
-    }
-
-    const path = parsed.pathname === "/" ? "" : parsed.pathname;
-    return { url: `${parsed.protocol}//${parsed.host}${path}${parsed.search}${parsed.hash}` };
-  } catch {
-    return { error: "Enter a valid website URL, like https://www.google.com." };
-  }
 }
 
 const ALLOWED_SOCIAL_PLATFORMS = [
@@ -103,11 +84,14 @@ export async function POST(request: Request) {
     );
   }
 
-  const normalizedWebsite = normalizeHttpsWebsiteUrl(
+  const normalizedWebsite = normalizeWebsiteUrl(
     typeof payload.websiteUrl === "string" ? payload.websiteUrl : "",
   );
   if (normalizedWebsite.error) {
-    return NextResponse.json({ error: normalizedWebsite.error }, { status: 400 });
+    return NextResponse.json(
+      { error: normalizedWebsite.error, field: "websiteUrl" },
+      { status: 400 },
+    );
   }
   const normalizedWebsiteUrl = normalizedWebsite.url ?? "";
 
@@ -122,7 +106,10 @@ export async function POST(request: Request) {
     businessType !== null &&
     !["sole_trader", "company", "partnership", "trust"].includes(businessType)
   ) {
-    return NextResponse.json({ error: "Pick how the business is set up." }, { status: 400 });
+    return NextResponse.json(
+      { error: "Pick how the business is set up.", field: "businessType" },
+      { status: 400 },
+    );
   }
 
   try {

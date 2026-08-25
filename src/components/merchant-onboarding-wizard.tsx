@@ -85,11 +85,21 @@ export function OnboardingNav({
 
 // Kicks off Stripe Connect onboarding: asks the API to create (once) the
 // connected account + a hosted-onboarding link, then redirects the browser to
-// Stripe. The user returns to /merchant/onboarding/payouts?stripe=return.
+// Stripe. The user comes back to `returnTo`, or to whichever page they pressed
+// the button on when that is not given.
 export function ConnectPayoutsButton({
   label = "Connect with Stripe →",
+  returnTo,
 }: {
   label?: string;
+  /**
+   * Where Stripe should hand the host back. The payout step passes through the
+   * ?returnTo= it was linked with, so a host who started from Finances, from
+   * Settings or from the middle of the create wizard is returned THERE rather
+   * than dropped into a first-run walkthrough. Server-validated to a /merchant
+   * path in the connect route, never trusted as given.
+   */
+  returnTo?: string;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -102,6 +112,14 @@ export function ConnectPayoutsButton({
     try {
       const response = await fetch("/api/merchant/stripe/connect", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // Come back to the page the host actually pressed the button on. The
+        // route hardcoded /merchant/onboarding/payouts, so an established host
+        // connecting from Finances or Settings was returned into step 2 of 3 of
+        // a first-run walkthrough ending on "Create your first event".
+        body: JSON.stringify({
+          returnTo: returnTo || window.location.pathname + window.location.search,
+        }),
       });
       if (response.status === 401) {
         window.location.href = "/merchant/login?callbackUrl=/merchant/onboarding/payouts";
@@ -162,14 +180,30 @@ export function FinishOnboardingButton({
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
 
+  // This POST is what stamps onboarding_completed_at, and EVERY host surface
+  // gates on it: /merchant, /merchant/events/create and this wizard all bounce
+  // a host with no stamp back to /merchant/onboarding. So navigating anyway
+  // after a failed write did not "re-prompt at worst" - it dropped the host at
+  // step 1 of the tour they had just finished, with nothing explaining why, and
+  // pressing the button again repeated it. A bare `await fetch` also treats a
+  // 500 as success, since only a network error rejects.
   async function finish() {
     if (busy) return;
     setBusy(true);
+    setError("");
     try {
-      await fetch("/api/merchant/onboarding/complete", { method: "POST" });
+      const response = await fetch("/api/merchant/onboarding/complete", { method: "POST" });
+      if (!response.ok) {
+        setError("We couldn't save that just now. Try again in a moment.");
+        setBusy(false);
+        return;
+      }
     } catch {
-      // Non-fatal - they can still navigate; /merchant will re-prompt at worst.
+      setError("Couldn't reach the server. Check your connection and try again.");
+      setBusy(false);
+      return;
     }
     router.push(href);
     router.refresh();
@@ -179,14 +213,21 @@ export function FinishOnboardingButton({
     // aria-disabled rather than `disabled` for the same reason as the Stripe
     // button above: this is the last control in the flow, and blurring it would
     // dump a keyboard user to the top of the page on the way out.
-    <button
-      type="button"
-      onClick={finish}
-      aria-busy={busy}
-      aria-disabled={busy}
-      className={variant === "primary" ? primaryBtn : secondaryBtn}
-    >
-      {busy ? "One sec…" : label}
-    </button>
+    <div className="grid gap-1.5">
+      <button
+        type="button"
+        onClick={finish}
+        aria-busy={busy}
+        aria-disabled={busy}
+        className={variant === "primary" ? primaryBtn : secondaryBtn}
+      >
+        {busy ? "One sec…" : label}
+      </button>
+      {error ? (
+        <p role="alert" className="text-xs font-bold text-[color:var(--danger)]">
+          {error}
+        </p>
+      ) : null}
+    </div>
   );
 }

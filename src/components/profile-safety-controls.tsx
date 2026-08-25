@@ -50,7 +50,7 @@ export function ProfileSafetyControls({
   useEffect(() => {
     if (state.hasReported && !reportedRef.current) {
       setReportOpen(false);
-      toast.success("Report sent. Our safety team reviews within 24 hours.");
+      toast.success("Report sent. We've muted them too while our safety team reviews - within 24 hours.");
     }
     reportedRef.current = state.hasReported;
   }, [state.hasReported]);
@@ -121,8 +121,9 @@ export function ProfileSafetyControls({
       </div>
 
       <p className="mt-3 max-w-[520px] text-[12.5px] leading-[1.55] text-[color:var(--slate)]">
-        {BLOCK_CONSEQUENCE} Muting stops notifications. Reports go to our safety team and are
-        reviewed within 24 hours.
+        {BLOCK_CONSEQUENCE} Muting stops notifications. Reporting someone mutes them too. Reports go to our safety team and are
+        reviewed within 24 hours. The &ldquo;under review&rdquo; badge clears once that review closes - we
+        don&rsquo;t share the outcome, and anyone you muted stays muted until you unmute them.
       </p>
 
       {reportOpen && !state.hasReported ? (

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { submitPersonalityQuizAction } from "@/app/quiz/personality/actions";
 import {
   PERSONALITY_DRAFT,
@@ -9,6 +9,7 @@ import {
   type PersonalityDraft,
 } from "@/app/quiz/personality/draft";
 import { ckBtn, Icon } from "@/components/ds";
+import { ModalShell } from "@/components/modal-shell";
 import { useFormDraft } from "@/lib/use-form-draft";
 import { fireBrandConfetti } from "./brand-confetti";
 import { openLoginModal } from "./login-modal-host";
@@ -181,33 +182,17 @@ function LoggedOutQuizCta() {
 }
 
 function QuizModal({ onClose }: { onClose: () => void }) {
-  // Mirror the LoginModal chrome: lock scroll + close on Escape while open.
-  useEffect(() => {
-    function handleKey(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
-    }
-    document.body.style.overflow = "hidden";
-    document.addEventListener("keydown", handleKey);
-    return () => {
-      document.body.style.overflow = "";
-      document.removeEventListener("keydown", handleKey);
-    };
-  }, [onClose]);
-
+  // ModalShell owns Escape, the Tab trap, the scroll lock and focus restore.
+  // The hand-rolled version locked body scroll without trapping focus, so Tab
+  // walked out onto a page the reader could no longer scroll.
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="home-quiz-modal-title"
-      className="fixed inset-0 z-[100] flex items-center justify-center px-4 py-8"
+    <ModalShell
+      onClose={onClose}
+      labelledBy="home-quiz-modal-title"
+      zIndex={100}
+      className="px-4 py-8"
+      scrimClassName="bg-[rgba(28,24,48,0.5)]"
     >
-      <button
-        type="button"
-        aria-label="Close quiz"
-        onClick={onClose}
-        className="absolute inset-0 cursor-default bg-[rgba(28,24,48,0.5)]"
-      />
-
       <div className="relative z-10 max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-[var(--radius-xl)] bg-[color:var(--paper)] shadow-[0_12px_32px_rgba(28,24,48,0.14)]">
         <div className="flex items-center justify-between gap-3 border-b border-[color:var(--line-soft)] px-5 py-3.5">
           <span className="text-xs font-bold tracking-[0.08em] uppercase text-[color:var(--purple-500)]">
@@ -238,7 +223,7 @@ function QuizModal({ onClose }: { onClose: () => void }) {
           <QuizForm isLoggedIn={false} onLoggedOutSubmit={onClose} />
         </div>
       </div>
-    </div>
+    </ModalShell>
   );
 }
 
@@ -305,6 +290,17 @@ function QuizForm({
       return;
     }
     event.preventDefault();
+    // Logged out the radios are deliberately not `required` - the browser must
+    // not block a submit this handler owns - which left nothing at all between
+    // an untouched form and the login modal. So the button read "Log in to
+    // save", walked the visitor to signup, and saved them nothing: there was
+    // never anything in the draft to carry across. Mark the blanks with the
+    // same per-question markers the logged-in path already uses and stop here.
+    const missing = QUESTIONS.filter((q) => !answers[q.name]).map((q) => q.name);
+    if (missing.length > 0) {
+      setInvalid(missing);
+      return;
+    }
     // Close the quiz modal first so it isn't stacked behind the login modal.
     // The answers are already in storage, so /quiz/personality picks them up.
     onLoggedOutSubmit?.();

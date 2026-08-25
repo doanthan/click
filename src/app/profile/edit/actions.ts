@@ -95,7 +95,10 @@ export async function saveProfileEditAction(formData: FormData) {
     displayName: strField(formData, "display_name"),
     suburb: suburb || undefined,
     bio: strField(formData, "bio"),
-    photoUrl: strField(formData, "photo_url"),
+    // Absent, not empty: the same idiom this file already uses for suburb and
+    // age. There is no "remove photo" control, so a blank value here has only
+    // ever meant the hidden field was never re-seeded after a gallery upload.
+    photoUrl: strField(formData, "photo_url") || undefined,
     age,
     intents,
     interestTags: strList("interest_tag"),
@@ -105,7 +108,7 @@ export async function saveProfileEditAction(formData: FormData) {
     prompts,
   });
 
-  // Revalidate every surface that reflects profile completeness — not just
+  // Revalidate every surface that reflects profile completeness - not just
   // /profile. The dashboard's "profile completion %" reads bio/suburb/photo, so
   // without busting it the saved bio looks like it "hasn't been updated yet".
   revalidatePath("/profile");

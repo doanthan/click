@@ -12,7 +12,7 @@ import {
   SsoButton,
   type SignupRole,
 } from "@/components/auth-ui";
-import { ckBtn } from "@/components/ds";
+import { SubmitButton } from "@/components/ds-client";
 
 // Signup used to open with "What should we call you?" and stash the answer in
 // sessionStorage for the onboarding form to pick up. It only ever worked on the
@@ -91,9 +91,9 @@ export function RegisterForm({
           placeholder="you@example.com"
         />
 
-        <button type="submit" className={ckBtn("primary", "lg", { full: true })}>
-          <span className="ck-btn__label">{isHost ? "Create host account" : "Create account"}</span>
-        </button>
+        <SubmitButton size="lg" full pendingLabel="Creating your account…">
+          {isHost ? "Create host account" : "Create account"}
+        </SubmitButton>
       </form>
 
       {isHost ? (

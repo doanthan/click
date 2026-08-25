@@ -126,9 +126,19 @@ export function EventPaymentButton({
   const [touchedRows, setTouchedRows] = useState<ReadonlySet<number>>(new Set());
   const [attempted, setAttempted] = useState(false);
 
-  // Named rows = rows the user actually started filling in.
-  const namedRows = rows.filter((r) => r.firstName || r.email || r.dob);
-  const rowErrors = rows.map((r) => rowError(r, eventDateISO));
+  // Named rows = rows the user actually started filling in - but only while the
+  // naming block is actually on screen. `rows` survives unticking "Name your
+  // +1s", and reading it regardless meant three things at once: payment was
+  // blocked on a consent checkbox that had just unmounted, the error pointed at
+  // a control the user could not see, and the details they had decided not to
+  // share were still what got submitted. Unticking now means what it says.
+  const namingActive = namingOn && tickets > 1;
+  const namedRows = namingActive ? rows.filter((r) => r.firstName || r.email || r.dob) : [];
+  // Gated the same way namedRows is, and for the same reason - it was not, so
+  // half of the fix above never landed: a row half-filled before unticking still
+  // failed validation, and "Check the guest details above." pointed at a block
+  // that had already unmounted, with no way to reach it and no way to pay.
+  const rowErrors = namingActive ? rows.map((r) => rowError(r, eventDateISO)) : [];
   const hasRowError = rowErrors.some(Boolean);
   const needsConsent = namedRows.length > 0 && !consent;
   const totalCents = (perSeatCents ?? 0) * tickets;

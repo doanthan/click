@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
-import { getProfileStatus } from "@/lib/event-repository";
+import { assertProfileStatusUsable, getProfileStatus } from "@/lib/event-repository";
 import { OnboardingProgress } from "@/components/merchant-onboarding-wizard";
 
 export const metadata = {
@@ -30,6 +30,7 @@ export default async function MerchantOnboardingLayout({
   }
 
   const status = await getProfileStatus(session);
+  assertProfileStatusUsable(status);
   if (!status.merchantProfile) {
     redirect("/merchant/signup");
   }

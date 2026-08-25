@@ -10,7 +10,10 @@ export const AUTH_ERROR_COPY: Record<string, string> = {
   CredentialsSignin: "Enter a valid email address to continue.",
   Configuration: "Authentication is missing provider or secret configuration.",
   InvalidEmail: "Enter a valid email address to continue.",
-  EmailNotFound: "No account found for that email. Check the spelling, or sign up.",
+  // No EmailNotFound. Nothing produces it any more, and the sentence it used to
+  // carry ("No account found for that email") is precisely the user-enumeration
+  // oracle that requestEmailSignIn was changed to stop handing out. If a code
+  // path ever wants it back, the answer is no.
   RateLimited: "Too many sign-in emails were requested. Try again in an hour.",
   EmailUnavailable:
     "We could not send a sign-in email right now. Try Google or try again later.",

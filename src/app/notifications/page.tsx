@@ -15,6 +15,10 @@ const dateFormatter = new Intl.DateTimeFormat("en-AU", {
   month: "short",
   hour: "numeric",
   minute: "2-digit",
+  // Pinned like every other formatter in the app. Without it a 7:30pm Sydney
+  // notification was stamped 9:30am - on the one screen where the age of a
+  // 30-minute offer decides whether it is still worth tapping.
+  timeZone: "Australia/Sydney",
 });
 
 export default async function NotificationsPage() {

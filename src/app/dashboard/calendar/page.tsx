@@ -4,7 +4,7 @@ import { auth } from "@/auth";
 import { Reveal } from "@/components/reveal";
 import { UserCalendar } from "@/components/user-calendar";
 import { EventAgendaList } from "@/components/event-agenda-list";
-import { getConfirmedEvents } from "@/lib/event-repository";
+import { getConfirmedEvents, getProfileStatus } from "@/lib/event-repository";
 import { reconcileCheckoutSession } from "@/lib/stripe-sync";
 
 export const metadata = {
@@ -36,8 +36,18 @@ export default async function CalendarPage({ searchParams }: PageProps) {
   // The calendar shows the FULL history — upcoming RSVPs plus past events
   // (rendered as "Ended" chips) — so members can look back at where they've
   // been, not just what's coming up.
-  const confirmed = await getConfirmedEvents(session);
+  //
+  // getConfirmedEvents returns confirmed AND waitlisted seats in one bucket, so
+  // on its own this page can't tell a booked night from one you're still in line
+  // for - and it was labelling both "You're going". getProfileStatus carries the
+  // seat status, and it's memoised per request (the layout already loads it), so
+  // asking for it here costs no extra query.
+  const [confirmed, profileStatus] = await Promise.all([
+    getConfirmedEvents(session),
+    getProfileStatus(session),
+  ]);
   const calendarEvents = [...confirmed.upcoming, ...confirmed.past];
+  const waitlistedSet = new Set(profileStatus.waitlistedEventIds);
 
   return (
     <main className="min-h-screen bg-[color:var(--champagne)] pb-24 text-[color:var(--ink)]">
@@ -61,7 +71,12 @@ export default async function CalendarPage({ searchParams }: PageProps) {
         </div>
 
         <div className="rise-soft rise-d2 mt-8">
-          <UserCalendar events={calendarEvents} monthParam={search?.month} bookedSlug={search?.booked} />
+          <UserCalendar
+            events={calendarEvents}
+            monthParam={search?.month}
+            bookedSlug={search?.booked}
+            waitlistedEventIds={waitlistedSet}
+          />
         </div>
 
         {calendarEvents.length === 0 ? (
@@ -77,7 +92,11 @@ export default async function CalendarPage({ searchParams }: PageProps) {
           // otherwise sit behind the prev/next arrows. Below the fold, so it
           // reveals on scroll rather than joining the load cascade.
           <Reveal>
-            <EventAgendaList upcoming={confirmed.upcoming} past={confirmed.past} />
+            <EventAgendaList
+              upcoming={confirmed.upcoming}
+              past={confirmed.past}
+              waitlistedEventIds={waitlistedSet}
+            />
           </Reveal>
         )}
       </div>

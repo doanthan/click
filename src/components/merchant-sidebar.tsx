@@ -7,7 +7,7 @@ import { PortalMobileNav, type PortalMobileNavItem } from "./portal-mobile-nav";
 // Merchant portal tab keys. Unlike the admin console (which uses real routes +
 // usePathname), the merchant portal is a single page driven by `?tab=`, so the
 // active item is passed in from the server component rather than read from the
-// pathname — this component stays a server component as a result.
+// pathname - this component stays a server component as a result.
 export type MerchantTabKey =
   | "dashboard"
   | "events"

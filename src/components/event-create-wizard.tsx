@@ -5,11 +5,13 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
   type ClipboardEvent as ReactClipboardEvent,
   type DragEvent as ReactDragEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   type Dispatch,
   type SetStateAction,
 } from "react";
@@ -29,6 +31,8 @@ import {
 } from "@/lib/event-create-storage";
 import { CAPACITY_PATTERN, PRICE_PATTERN, sanitizeAmount } from "@/lib/amounts";
 import { useFormDraft } from "@/lib/use-form-draft";
+import { DURATION_OPTIONS } from "@/lib/event-duration";
+import { scopedKey, useAccountScope } from "@/lib/account-scope";
 
 // Create-event - multi-step wizard. Each step has its own URL so users can
 // bookmark, link to, and browser-back through them:
@@ -236,18 +240,6 @@ const QUICK_TIMES: Array<{ label: string; hour: number; minute: number }> = [
   { label: "7:30 PM", hour: 19, minute: 30 },
   { label: "8:00 PM", hour: 20, minute: 0 },
 ];
-const DURATION_OPTIONS: Array<{ value: string; label: string }> = [
-  { value: "30", label: "30 minutes" },
-  { value: "60", label: "1 hour" },
-  { value: "90", label: "1.5 hours" },
-  { value: "120", label: "2 hours" },
-  { value: "150", label: "2.5 hours" },
-  { value: "180", label: "3 hours" },
-  { value: "240", label: "4 hours" },
-  { value: "300", label: "5 hours" },
-  { value: "360", label: "6 hours" },
-  { value: "480", label: "8 hours" },
-];
 const FREQ_OPTIONS: Array<{ value: RecurrenceFreq; label: string; hint: string }> = [
   { value: "none", label: "Just once", hint: "Single event." },
   { value: "weekly", label: "Weekly", hint: "Same weekday + time every 7 days." },
@@ -345,6 +337,102 @@ function computeOccurrenceDates(
   return out;
 }
 
+// ---------- partial-submit retry ----------
+
+/**
+ * A recurring event is created one POST per occurrence. When some of them fail,
+ * the wizard arms a retry with EXACTLY the dates that did not land, so pressing
+ * Submit again cannot duplicate the ones that already published.
+ *
+ * That arm used to be `useState` inside WizardShell, and WizardShell REMOUNTS on
+ * every step route (its own comment says so). So the moment a host followed a
+ * Review "Edit" link to fix whatever the server rejected - the most likely next
+ * move after a partial failure - the arm was destroyed, Submit went back to
+ * creating ALL of them, and the occurrences that had already published were
+ * created a second time. On a paid event that is a duplicate live listing per
+ * date, each one able to take real money.
+ *
+ * So it lives on the provider, which is mounted in the create layout and
+ * survives every step change, and it is mirrored to storage so a reload or a
+ * closed tab cannot lose it either. The schedule it belongs to is stored with
+ * it: an arm is only valid for the exact start / frequency / count that
+ * produced it, and any edit to those means a different set of occurrences.
+ */
+type RetryArm = { scheduleKey: string; dates: string[] };
+
+const RETRY_ARM_KEY = "click:event-create-retry:v1";
+const RETRY_ARM_VERSION = 1;
+
+function useRetryArm() {
+  const [retryArm, setRetryArm] = useState<RetryArm | null>(null);
+  const scope = useAccountScope();
+  const key = scopedKey(scope, RETRY_ARM_KEY);
+  // Storage is read in an effect, never in a useState initializer: browser
+  // storage does not exist on the server, so lazy-initialising from it makes the
+  // server render and the first client render disagree. Same rule, and the same
+  // reason, as useFormDraft.
+  const hydratedRef = useRef(false);
+
+  useEffect(() => {
+    // rAF-gated for the same reason useFormDraft gates its own read: it pushes
+    // the state write past the commit of the server-matched first paint, so the
+    // restored arm lands as a change to an already-hydrated tree instead of
+    // racing it.
+    const frame = window.requestAnimationFrame(() => {
+      hydratedRef.current = true;
+      try {
+        const raw = window.localStorage.getItem(key);
+        if (!raw) return;
+        const parsed = JSON.parse(raw) as {
+          v?: number;
+          scheduleKey?: string;
+          dates?: string[];
+        };
+        if (
+          parsed.v !== RETRY_ARM_VERSION ||
+          typeof parsed.scheduleKey !== "string" ||
+          !Array.isArray(parsed.dates) ||
+          parsed.dates.length === 0 ||
+          !parsed.dates.every((d) => typeof d === "string")
+        ) {
+          window.localStorage.removeItem(key);
+          return;
+        }
+        setRetryArm({ scheduleKey: parsed.scheduleKey, dates: parsed.dates });
+      } catch {
+        // Private mode, quota, a corrupt value. Losing the arm degrades to "the
+        // retry re-creates everything", which is exactly where we started, so it
+        // is never worth throwing into the wizard over.
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [key]);
+
+  const armRetry = useCallback(
+    (arm: RetryArm | null) => {
+      setRetryArm(arm);
+      // Guarded on the read having happened: writing before it would clobber a
+      // saved arm with the initial null on the very first commit.
+      if (!hydratedRef.current) return;
+      try {
+        if (arm) {
+          window.localStorage.setItem(
+            key,
+            JSON.stringify({ v: RETRY_ARM_VERSION, ...arm }),
+          );
+        } else {
+          window.localStorage.removeItem(key);
+        }
+      } catch {
+        // Same reasoning as the read.
+      }
+    },
+    [key],
+  );
+
+  return { retryArm, armRetry };
+}
+
 // ---------- context ----------
 
 type WizardContextValue = {
@@ -363,6 +451,15 @@ type WizardContextValue = {
   // until payouts are live - the Schedule step's price field says so rather than
   // letting the merchant find out from an admin rejection.
   chargesEnabled: boolean;
+  // Whether payouts are live too. The publish gate needs BOTH: charges on with
+  // payouts off still cannot go live, because we could take the money and not
+  // pass it on.
+  payoutsEnabled: boolean;
+  // Whether an admin has already approved one of this host's events, so new
+  // ones skip the review queue (merchant_profiles.auto_approve_events). The
+  // Review step's card preview needs it to stop stamping "Pending review" on an
+  // event that will be on Discover the moment they press submit.
+  autoApproveEvents: boolean;
   // Click's cut of a paid ticket, in basis points (PLATFORM_FEE_BPS, read
   // server-side in the route layout). The Schedule step spends it on one line of
   // "you'll receive $X" - a merchant should never learn the take rate from
@@ -395,8 +492,20 @@ type WizardContextValue = {
   // used to clear them, so jumping via the stepper carried "3 things still need
   // a moment" onto a step none of them were about.
   errorStepRef: React.MutableRefObject<StepIndex | null>;
+  // Set by a Review "Edit" link before it navigates, read by the shell that
+  // mounts on the step it lands on, which then offers a one-tap way back to
+  // Review. State, NOT a ref like the two above: this one decides what the step
+  // renders, and a ref read during render is the thing React warns about. It
+  // survives the route change because the provider is mounted in the layout.
+  fromReview: boolean;
+  setFromReview: Dispatch<SetStateAction<boolean>>;
   submitting: boolean;
   setSubmitting: Dispatch<SetStateAction<boolean>>;
+  // The occurrences of a recurring event that did NOT get created, and the
+  // schedule they belong to. It rides HERE, on the provider, and is mirrored to
+  // storage - see useRetryArm below for why both.
+  retryArm: RetryArm | null;
+  armRetry: (arm: RetryArm | null) => void;
   // True while the Media step has one or more image uploads in flight. Set by
   // MediaSection, read by WizardShell to block "Next" until uploads settle so
   // a merchant can't advance with half-uploaded photos.
@@ -422,6 +531,8 @@ export function EventCreateProvider({
   hostNameOptions = [],
   venueOptions = [],
   chargesEnabled = false,
+  payoutsEnabled = false,
+  autoApproveEvents = false,
   platformFeeBps = 0,
   children,
 }: {
@@ -430,6 +541,8 @@ export function EventCreateProvider({
   hostNameOptions?: string[];
   venueOptions?: string[];
   chargesEnabled?: boolean;
+  payoutsEnabled?: boolean;
+  autoApproveEvents?: boolean;
   platformFeeBps?: number;
   children: React.ReactNode;
 }) {
@@ -442,8 +555,10 @@ export function EventCreateProvider({
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [submitting, setSubmitting] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const { retryArm, armRetry } = useRetryArm();
   const navigatedRef = useRef(false);
   const errorStepRef = useRef<StepIndex | null>(null);
+  const [fromReview, setFromReview] = useState(false);
 
   // Draft persistence is the shared useFormDraft hook, same as every other long
   // form in the app: it reads inside an effect (never a useState initializer, or
@@ -501,6 +616,9 @@ export function EventCreateProvider({
     setFieldErrors({});
     setStepError(null);
     errorStepRef.current = null;
+    // The arm belongs to the schedule that is being thrown away. Leaving it
+    // behind would let a brand-new event inherit "only create these 3 dates".
+    armRetry(null);
     setDiscardCount((n) => n + 1);
   };
 
@@ -528,6 +646,8 @@ export function EventCreateProvider({
         hostNameOptions,
         venueOptions,
         chargesEnabled,
+        payoutsEnabled,
+        autoApproveEvents,
         platformFeeBps,
         stepError,
         setStepError,
@@ -538,8 +658,12 @@ export function EventCreateProvider({
         clearDraft,
         navigatedRef,
         errorStepRef,
+        fromReview,
+        setFromReview,
         submitting,
         setSubmitting,
+        retryArm,
+        armRetry,
         uploading,
         setUploading,
       }}
@@ -560,6 +684,9 @@ export function WizardShell({
 }) {
   const {
     values,
+    chargesEnabled,
+    payoutsEnabled,
+    autoApproveEvents,
     stepError,
     setStepError,
     setFieldErrors,
@@ -568,12 +695,24 @@ export function WizardShell({
     clearDraft,
     navigatedRef,
     errorStepRef,
+    fromReview,
+    setFromReview,
     submitting,
     setSubmitting,
+    retryArm,
+    armRetry,
     uploading,
   } = useWizard();
   const router = useRouter();
   const isLast = step === STEP_COUNT - 1;
+  // Same gate as createEventForMerchant and the Review card: a trusted host
+  // publishes straight to Discover, so the button must not say "Submit for
+  // review" and then put the event live. A paid ticket still needs Connect
+  // finished (charges AND payouts); a free one needs neither.
+  const publishesImmediately =
+    autoApproveEvents &&
+    (Math.round((Number.parseFloat(values.price) || 0) * 100) === 0 ||
+      (chargesEnabled && payoutsEnabled));
   // Which steps genuinely hold valid input, so the stepper's ticks mean
   // something. Deep-linking to /review used to paint four green ticks over an
   // empty event because "done" was inferred from position alone.
@@ -586,27 +725,27 @@ export function WizardShell({
   );
   const errorRef = useRef<HTMLParagraphElement>(null);
   const stepBodyRef = useRef<HTMLDivElement>(null);
+  // Set by a Review "Edit" link; cleared by goNext, goBack and backToReview, so
+  // it only stays true while the host is on the detour it describes.
+  const cameFromReview = fromReview;
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   // How many occurrence POSTs have finished, out of how many the submit will
   // make. Null until submit starts, so the bar only exists during the wait.
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(
     null,
   );
-  // Non-null after a partial failure: the exact occurrence start times that did
-  // not get created. Submit re-POSTs only these until they all land.
-  const [retryDates, setRetryDates] = useState<string[] | null>(null);
-
-  // ...but a retry list is only valid for the schedule it came from. Editing the
-  // start, the frequency or the count means a different set of occurrences, so
-  // the armed list is dropped and Submit goes back to creating all of them.
+  // A retry arm is only valid for the schedule it came from. Editing the start,
+  // the frequency or the count means a different set of occurrences, so the arm
+  // is dropped and Submit goes back to creating all of them. The comparison is
+  // against the arm's OWN stored schedule rather than a ref, because the arm now
+  // outlives this component - a ref here would be null again on the very step
+  // change this guard exists to survive.
   const scheduleKey = `${values.startsAt}|${values.recurrenceFreq}|${values.recurrenceCount}`;
-  const scheduleAtFailureRef = useRef<string | null>(null);
+  const retryDates =
+    retryArm && retryArm.scheduleKey === scheduleKey ? retryArm.dates : null;
   useEffect(() => {
-    if (scheduleAtFailureRef.current === null) return;
-    if (scheduleAtFailureRef.current === scheduleKey) return;
-    scheduleAtFailureRef.current = null;
-    setRetryDates(null);
-  }, [scheduleKey]);
+    if (retryArm && retryArm.scheduleKey !== scheduleKey) armRetry(null);
+  }, [retryArm, scheduleKey, armRetry]);
 
   // Each step is its own route, so this shell REMOUNTS on every Next / Back and
   // focus falls back to <body>. Move it to the top of the new step body - which
@@ -686,16 +825,48 @@ export function WizardShell({
     setStepError(null);
     errorStepRef.current = null;
     navigatedRef.current = true;
+    setFromReview(false);
     router.push(STEP_PATHS[step + 1]);
   }
 
   function goBack() {
+    // The same guard goNext carries. MediaSection holds its in-flight tiles in
+    // its own state and only mirrors FINISHED uploads into values.images, so
+    // leaving the Media step while photos are still going unmounts them: not
+    // failed, not retried, just gone, with nothing said. goNext and the stepper
+    // both refused; Back and Exit did not.
+    if (uploading) {
+      toast.error("Hang on - your photos are still uploading.");
+      return;
+    }
     if (step > 0) {
       setStepError(null);
       errorStepRef.current = null;
       navigatedRef.current = true;
+      setFromReview(false);
       router.push(STEP_PATHS[step - 1]);
     }
+  }
+
+  // The one-tap way out of a Review "Edit" detour. Validates the step first, so
+  // a host cannot carry a half-fixed field back to Review and submit it - the
+  // same rule Next enforces, just with a different destination.
+  function backToReview() {
+    if (uploading) {
+      toast.error("Hang on - your photos are still uploading.");
+      return;
+    }
+    const errors = validateStep(step, values);
+    if (Object.keys(errors).length > 0) {
+      showFieldErrors(errors, { focusFirst: true });
+      return;
+    }
+    setFieldErrors({});
+    setStepError(null);
+    errorStepRef.current = null;
+    navigatedRef.current = true;
+    setFromReview(false);
+    router.push(STEP_PATHS[STEP_COUNT - 1]);
   }
 
   async function submit() {
@@ -847,8 +1018,7 @@ export function WizardShell({
         const reasons = Array.from(new Set(failures.map((f) => f.reason)));
         // Arm the retry with EXACTLY the dates that failed, so pressing the
         // button again cannot duplicate the ones that already published.
-        setRetryDates(failures.map((f) => f.startsAt));
-        scheduleAtFailureRef.current = scheduleKey;
+        armRetry({ scheduleKey, dates: failures.map((f) => f.startsAt) });
         setStepError(
           `${okCount} of ${startsAtList.length} dates were created and are safe on your events tab. These were not: ${dates}. ${reasons.join(" ")} The button below now retries only the missing dates.`,
         );
@@ -858,8 +1028,7 @@ export function WizardShell({
         });
         return;
       }
-      setRetryDates(null);
-      scheduleAtFailureRef.current = null;
+      armRetry(null);
 
       // Only a clean sweep drops the saved draft. Clearing it before the
       // partial-failure branch above (as this used to) left the dates that
@@ -906,13 +1075,13 @@ export function WizardShell({
         />
       </div>
 
-      {/* scroll-mt clears the sticky site header (49px, 69px from sm) plus a
+      {/* scroll-mt clears the sticky site header plus a
           little air - focus()'s scroll does not honour it, so the effect above
           calls scrollIntoView, which does. */}
       <div
         ref={stepBodyRef}
         tabIndex={-1}
-        className="space-y-5 scroll-mt-[57px] p-6 outline-none sm:scroll-mt-[77px]"
+        className="space-y-5 scroll-mt-[calc(var(--header-h)+8px)] p-6 outline-none"
       >
         {/* A restored draft used to arrive silently, which is worst on the
             "Duplicate event" path - the merchant opens Create event and finds it
@@ -943,6 +1112,29 @@ export function WizardShell({
           </p>
         ) : null}
 
+        {/* The arm outlives this component now; the stepError that explained it
+            does not - it is cleared the moment the host lands on a different
+            step. Without this the most likely journey after a partial failure
+            (Edit the field the server rejected, come back) ended on a button
+            reading "Retry 3 dates" with nothing on screen saying which three,
+            or why the other 23 were not going to be created again. Amber on a
+            note, never on the button. */}
+        {retryDates && !stepError ? (
+          <div
+            role="status"
+            className="rounded-xl border border-[color-mix(in_srgb,var(--amber)_38%,transparent)] bg-[color-mix(in_srgb,var(--amber)_9%,var(--paper))] px-4 py-3"
+          >
+            <p className="text-sm font-semibold text-[color:var(--ink)]">
+              {retryDates.length} {retryDates.length === 1 ? "date" : "dates"} still
+              to create.
+            </p>
+            <p className="mt-1 text-[13px] leading-relaxed text-[color:var(--ink-soft)]">
+              The rest of this series is already on your events tab. Submitting
+              again creates only {retryDates.map(occurrenceLabel).join(", ")}.
+            </p>
+          </div>
+        ) : null}
+
         {/* The submit fires one POST per occurrence, serially, and can take a
             while. Without a counter the merchant cannot tell a working submit
             from a hung one, and the natural response - reload - leaves half the
@@ -971,21 +1163,62 @@ export function WizardShell({
               type="button"
               onClick={goBack}
               disabled={step === 0 || submitting}
-              className="ck-btn ck-btn--secondary ck-btn--md"
+              // aria-disabled for the uploading case, not `disabled`: a real
+              // disabled button never dispatches a click, which would make
+              // goBack's explanation unreachable - the same reasoning as Next.
+              aria-disabled={uploading || undefined}
+              className="ck-btn ck-btn--secondary ck-btn--md aria-disabled:cursor-not-allowed aria-disabled:opacity-60"
             >
               ← Back
             </button>
             {/* A wizard with no exit is how a half-built event ends in a
-                force-quit. The draft is in localStorage, so leaving genuinely
-                costs nothing but the trip back - say so on the button. */}
+                force-quit. But "Save & exit" oversold it: the draft is in
+                localStorage, NOT on the server, so it does not follow the host
+                to their phone or survive a cleared browser - and "saved" is
+                exactly the word that makes someone assume it does. Say where it
+                is kept instead. */}
             <Link
               href="/merchant?tab=events"
-              className="text-sm font-semibold text-[color:var(--slate)] underline underline-offset-2 hover:text-[color:var(--purple)]"
+              title="Your answers stay in this browser until you submit"
+              // Third and last way out of the Media step that could take
+              // in-flight uploads with it. preventDefault rather than a
+              // disabled-looking link: the exit is legitimate, it just has to
+              // wait the few seconds the uploads need.
+              onClick={(e) => {
+                if (!uploading) return;
+                e.preventDefault();
+                toast.error("Hang on - your photos are still uploading.");
+              }}
+              aria-disabled={uploading || undefined}
+              className="text-sm font-semibold text-[color:var(--slate)] underline underline-offset-2 hover:text-[color:var(--purple)] aria-disabled:opacity-60"
             >
-              Save &amp; exit
+              Exit - kept in this browser
             </Link>
           </div>
-          {isLast ? (
+          {!isLast && cameFromReview ? (
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Next stays reachable, just quieter: the host came here from
+                  Review to change one thing, so "back to Review" is the action
+                  and "keep going" is the exception. */}
+              <button
+                type="button"
+                onClick={goNext}
+                aria-disabled={uploading || undefined}
+                className="ck-btn ck-btn--secondary ck-btn--md aria-disabled:cursor-not-allowed aria-disabled:opacity-60"
+              >
+                Next →
+              </button>
+              <button
+                type="button"
+                onClick={backToReview}
+                aria-disabled={uploading || undefined}
+                aria-busy={uploading || undefined}
+                className="ck-btn ck-btn--primary ck-btn--md aria-disabled:cursor-not-allowed aria-disabled:opacity-60"
+              >
+                {uploading ? "Uploading…" : "Done - back to review"}
+              </button>
+            </div>
+          ) : isLast ? (
             <button
               type="button"
               onClick={submit}
@@ -998,7 +1231,9 @@ export function WizardShell({
                 ? "Submitting…"
                 : retryDates
                   ? `Retry ${retryDates.length} ${retryDates.length === 1 ? "date" : "dates"}`
-                  : "Submit for review"}
+                  : publishesImmediately
+                    ? "Publish event"
+                    : "Submit for review"}
             </button>
           ) : (
             <button
@@ -1248,6 +1483,18 @@ function Combobox({
   invalid?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  // Which suggestion the arrow keys have landed on, -1 for "none - the field
+  // still holds exactly what was typed". The options are deliberately not tab
+  // stops (see tabIndex below), so the input never gives up focus; this index is
+  // what aria-activedescendant points at, which is how a screen reader hears the
+  // highlighted row move.
+  const [active, setActive] = useState(-1);
+  // Both call sites pass an anchor id, but the prop is optional and the option
+  // ids have to be unique per instance or aria-activedescendant would address
+  // the wrong list once two of these are on a page.
+  const fallbackId = useId();
+  const baseId = id ?? fallbackId;
+  const listId = `${baseId}-suggestions`;
 
   const suggestions = useMemo(() => {
     const q = value.trim().toLowerCase();
@@ -1257,8 +1504,73 @@ function Combobox({
       .slice(0, 8);
   }, [options, value]);
 
+  const listOpen = open && suggestions.length > 0;
+  const activeOption =
+    listOpen && active >= 0 && active < suggestions.length ? suggestions[active] : null;
+
+  // The list holds up to eight rows but the box scrolls at about six, so
+  // arrowing to the bottom used to highlight a row nobody could see.
+  useEffect(() => {
+    if (!activeOption) return;
+    document.getElementById(`${baseId}-suggestion-${active}`)?.scrollIntoView({ block: "nearest" });
+  }, [activeOption, active, baseId]);
+
+  function pick(next: string) {
+    onChange(next);
+    setOpen(false);
+    setActive(-1);
+  }
+
+  function onInputKeyDown(e: ReactKeyboardEvent<HTMLInputElement>) {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      if (suggestions.length === 0) return;
+      // preventDefault or the caret jumps to the start / end of the text while
+      // the highlight moves, which reads as the field eating your typing.
+      e.preventDefault();
+      if (!listOpen) {
+        // Arrowing is also how you get the list back after Escape.
+        setOpen(true);
+        setActive(e.key === "ArrowDown" ? 0 : suggestions.length - 1);
+        return;
+      }
+      setActive((i) =>
+        e.key === "ArrowDown" ? (i + 1) % suggestions.length : (i <= 0 ? suggestions.length : i) - 1,
+      );
+      return;
+    }
+    if (e.key === "Enter" && activeOption) {
+      // Only swallow Enter while a suggestion is highlighted. Freetext is the
+      // whole point of this control, so an un-arrowed Enter has to keep reaching
+      // the form rather than being silently absorbed here.
+      e.preventDefault();
+      pick(activeOption);
+      return;
+    }
+    if (e.key === "Escape" && listOpen) {
+      // Escape dismisses the suggestions and nothing else - it must not travel
+      // on to a surrounding dialog and throw away the half-filled step.
+      e.stopPropagation();
+      setOpen(false);
+      setActive(-1);
+    }
+  }
+
   return (
-    <div className="relative">
+    <div
+      className="relative"
+      // Focus leaving the whole control is what closes the list. This replaced a
+      // 120ms timer on the input's blur, which fired even when focus had moved
+      // INTO the list: the row the host was reaching for unmounted mid-Tab and
+      // left them at document.body, back at the top of the page. React's onBlur
+      // is focusout, so it can see relatedTarget - anything still inside this
+      // wrapper keeps the list up.
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+          setOpen(false);
+          setActive(-1);
+        }
+      }}
+    >
       <input
         id={id}
         type="text"
@@ -1266,28 +1578,59 @@ function Combobox({
         onChange={(e) => {
           onChange(transform ? transform(e.target.value) : e.target.value);
           setOpen(true);
+          // A fresh filter means the old highlight points at a row that may no
+          // longer be there, so typing always drops back to "nothing selected".
+          setActive(-1);
         }}
         onFocus={() => setOpen(true)}
-        onBlur={() => setTimeout(() => setOpen(false), 120)}
+        onKeyDown={onInputKeyDown}
         placeholder={placeholder}
         aria-invalid={invalid || undefined}
+        role="combobox"
+        aria-expanded={listOpen}
+        aria-controls={listOpen ? listId : undefined}
+        aria-activedescendant={activeOption ? `${baseId}-suggestion-${active}` : undefined}
+        aria-autocomplete="list"
+        // The browser's own autofill panel covers this list and steals the arrow
+        // keys for itself, so the keyboard path above would only work on fields
+        // the browser had no saved value for.
+        autoComplete="off"
         className={`ck-input w-full ${invalid ? "ck-input--invalid" : ""}`}
         required={required}
       />
-      {open && suggestions.length > 0 ? (
-        <ul className="absolute left-0 right-0 top-full z-20 mt-1 max-h-56 overflow-auto rounded-xl bg-[color:var(--paper)] py-1 shadow-[var(--shadow-md)]">
-          {suggestions.map((opt) => (
-            <li key={opt}>
+      {listOpen ? (
+        <ul
+          id={listId}
+          role="listbox"
+          className="absolute left-0 right-0 top-full z-20 mt-1 max-h-56 overflow-auto rounded-xl bg-[color:var(--paper)] py-1 shadow-[var(--shadow-md)]"
+        >
+          {suggestions.map((opt, i) => (
+            // role="presentation" so the listbox owns the options directly - a
+            // bare <li> in between makes the "option 3 of 8" count vanish.
+            <li key={opt} role="presentation">
               <button
                 type="button"
-                // onMouseDown (not onClick) so the pick lands before onBlur
-                // closes the dropdown.
+                id={`${baseId}-suggestion-${i}`}
+                role="option"
+                aria-selected={i === active}
+                // Not a tab stop. The input keeps focus and drives the list
+                // through aria-activedescendant, so Tab still means "leave this
+                // field" instead of walking eight suggestions one at a time.
+                tabIndex={-1}
+                // onMouseDown (not onClick) so the pick lands before focus
+                // leaves the input: macOS browsers don't focus a button on
+                // click, so waiting for onClick would let the focusout above
+                // close the list out from under the pointer. onClick is the twin
+                // for clicks that arrive with no mousedown ahead of them, which
+                // is what assistive tech dispatches.
                 onMouseDown={(e) => {
                   e.preventDefault();
-                  onChange(opt);
-                  setOpen(false);
+                  pick(opt);
                 }}
-                className="block w-full px-4 py-2 text-left text-sm font-medium text-[color:var(--ink)] hover:bg-[color:var(--lavender-100)]"
+                onClick={() => pick(opt)}
+                className={`block w-full px-4 py-2 text-left text-sm font-medium text-[color:var(--ink)] ${
+                  i === active ? "bg-[color:var(--lavender-100)]" : "hover:bg-[color:var(--lavender-100)]"
+                }`}
               >
                 {opt}
               </button>
@@ -1332,7 +1675,7 @@ export function BasicsSection() {
         ? prev.filter((l) => l !== label)
         : [...prev, label];
       const generated = composeGoalFromIntents(next);
-      // Only manage the goal text while it's empty or a phrasing we generated —
+      // Only manage the goal text while it's empty or a phrasing we generated -
       // never clobber a sentence the merchant wrote themselves.
       if (
         values.relationshipGoal.trim() === "" ||
@@ -1354,8 +1697,17 @@ export function BasicsSection() {
         <h1 className="font-display mt-2 text-3xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)]">
           What is this event?
         </h1>
+        {/* "You can edit any of this later" was not true - and it was least
+            true on this step. updateMerchantEventDetails accepts exactly five
+            fields: title, description, interest tags, address and photos. The
+            category and the relationship goal collected below are NOT among
+            them, and neither are date, price or capacity on the later steps.
+            Naming the editable set is the difference between a host taking care
+            over the right fields and finding out afterwards. */}
         <p className="mt-2 text-sm leading-6 text-[color:var(--slate)]">
-          Don&apos;t worry about getting it perfect - you can edit any of this later from your event page.
+          You can edit the title and description later from your event page.
+          Category and who it&apos;s for are fixed once you submit, so take a
+          moment on those.
         </p>
       </header>
       <div className="grid gap-4 rise-soft rise-d2 md:grid-cols-2">
@@ -1416,7 +1768,7 @@ export function BasicsSection() {
         </FormField>
         <FormField
           label="Tags"
-          hint={`Search and pick from Click's tag list - up to ${MAX_TAGS}. They're what we match members on, so pick the ones that really describe the night.`}
+          hint={`Search and pick from Click's tag list - up to ${MAX_TAGS}. They're how we put your event in front of the right members, so pick the ones that really describe the night.`}
           htmlFor={TAG_SEARCH_ID}
         >
           <TagPicker
@@ -1486,7 +1838,16 @@ export function BasicsSection() {
 }
 
 export function ScheduleSection() {
-  const { values, set, fieldErrors, chargesEnabled, platformFeeBps } = useWizard();
+  const { values, set, fieldErrors, chargesEnabled, payoutsEnabled, platformFeeBps } =
+    useWizard();
+  // The SAME gate the publish decision uses - createEventForMerchant's
+  // `stripeReady` is charges_enabled AND payouts_enabled (event-repository.ts),
+  // and WizardShell's publishesImmediately reads both too. This note used to
+  // check charges alone, so a host whose Connect account can take a card but
+  // cannot pay out yet - the ordinary middle of onboarding, and the state where
+  // we would be holding their money - was told nothing, then found out from an
+  // admin queue their paid event had not gone live.
+  const stripeReady = chargesEnabled && payoutsEnabled;
   // What the host actually receives. Stripe is in LIVE mode and the platform fee
   // is a real deduction on a real payout, so the wizard says the number before
   // the price is set rather than letting the first payout say it.
@@ -1617,12 +1978,16 @@ export function ScheduleSection() {
               24-48 hours out gets half, and under 24 hours gets none. If you
               cancel the event, everyone is refunded in full.
             </p>
-            {!chargesEnabled ? (
+            {!stripeReady ? (
               <p className="text-[color:var(--ink)]">
-                Payout setup isn&rsquo;t finished, so everything you create stays in
-                review - free events included - until it is.{" "}
+                {/* Scoped to the PAID event being priced. It used to add "free
+                    events included", which stopped being true when
+                    createEventForMerchant started gating on price:
+                    `needsStripe = priceCents > 0` (event-repository.ts:4369). */}
+                Payout setup isn&rsquo;t finished, so this paid event stays in review
+                until it is.{" "}
                 <a
-                  href="/merchant/onboarding/payouts"
+                  href={`/merchant/onboarding/payouts?returnTo=${encodeURIComponent(STEP_PATHS[1])}`}
                   className="font-medium text-[color:var(--purple)] underline underline-offset-2"
                 >
                   Set up payouts
@@ -1630,18 +1995,24 @@ export function ScheduleSection() {
               </p>
             ) : null}
           </div>
-        ) : !chargesEnabled ? (
+        ) : !stripeReady ? (
           <p className="rounded-xl border border-[color:var(--mist)] bg-[color:var(--lav-bg)] px-4 py-3 text-sm leading-6 text-[color:var(--slate)]">
-            {/* NOT "free events publish as normal" - createEventForMerchant only
-                publishes straight to live when auto-approve AND Stripe are both
-                ready, so an unfinished payout setup holds free events too. */}
-            Until payout setup is finished, everything you create stays in review -
-            free events included.{" "}
+            {/* This branch renders ONLY when the price is 0, and it used to say
+                an unfinished payout setup held free events in review too. That
+                was true once and is not any more: createEventForMerchant gates
+                on price - `needsStripe = priceCents > 0`, then
+                `autoApprove && (!needsStripe || stripeReady)` - so an approved
+                host's free event publishes with no Stripe at all. Onboarding
+                explicitly offers "skip for now, you can keep running free
+                events", so this note was telling the hosts who took that offer
+                that the offer was not real. */}
+            No payout setup needed for a free event - this publishes as normal. You
+            only need Stripe once you charge for a seat.{" "}
             <a
-              href="/merchant/onboarding/payouts"
+              href={`/merchant/onboarding/payouts?returnTo=${encodeURIComponent(STEP_PATHS[1])}`}
               className="font-medium text-[color:var(--purple)] underline underline-offset-2"
             >
-              Set up payouts
+              Set up payouts anyway
             </a>
           </p>
         ) : null}
@@ -2758,13 +3129,19 @@ export function MediaSection() {
                   <span className="truncate text-xs font-medium text-[color:var(--slate)]">
                     {tile.name}
                   </span>
+                  {/* These were ~25px tall with the destructive Remove sitting
+                      6px from Set cover, on a touch surface, where a mis-tap
+                      deletes a photo the host just waited on an upload for.
+                      min-h-9 gives a 36px box, and Remove is pushed a clear
+                      12px away from the constructive pair so the two are not
+                      one thumb-width apart. */}
                   <div className="flex shrink-0 items-center gap-1.5">
                     {!isCover && tile.status === "done" ? (
                       <>
                         <button
                           type="button"
                           onClick={() => moveEarlier(tile.id)}
-                          className="rounded-lg border border-[color:var(--mist)] bg-[color:var(--paper)] px-2 py-1 text-[11px] font-semibold text-[color:var(--ink)] hover:bg-[color:var(--lavender-100)]"
+                          className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-lg border border-[color:var(--mist)] bg-[color:var(--paper)] px-2 text-[11px] font-semibold text-[color:var(--ink)] hover:bg-[color:var(--lavender-100)]"
                           aria-label={`Move ${tile.name} one place earlier`}
                         >
                           <span aria-hidden>←</span>
@@ -2772,7 +3149,7 @@ export function MediaSection() {
                         <button
                           type="button"
                           onClick={() => makeCover(tile.id)}
-                          className="rounded-lg border border-[color:var(--mist)] bg-[color:var(--paper)] px-2 py-1 text-[11px] font-semibold text-[color:var(--ink)] hover:bg-[color:var(--lavender-100)]"
+                          className="inline-flex min-h-9 items-center justify-center rounded-lg border border-[color:var(--mist)] bg-[color:var(--paper)] px-2.5 text-[11px] font-semibold text-[color:var(--ink)] hover:bg-[color:var(--lavender-100)]"
                           aria-label={`Set ${tile.name} as cover`}
                         >
                           Set cover
@@ -2782,7 +3159,7 @@ export function MediaSection() {
                     <button
                       type="button"
                       onClick={() => removeTile(tile.id)}
-                      className="rounded-lg border border-[color:var(--mist)] bg-[color:var(--paper)] px-2 py-1 text-[11px] font-semibold text-[color:var(--danger)] hover:bg-[color:var(--danger)]/10"
+                      className="ml-3 inline-flex min-h-9 items-center justify-center rounded-lg border border-[color:var(--mist)] bg-[color:var(--paper)] px-2.5 text-[11px] font-semibold text-[color:var(--danger)] hover:bg-[color:var(--danger)]/10"
                       aria-label={`Remove ${tile.name}`}
                     >
                       Remove
@@ -2799,7 +3176,25 @@ export function MediaSection() {
 }
 
 export function ReviewSection() {
-  const { values, platformFeeBps } = useWizard();
+  const {
+    values,
+    platformFeeBps,
+    chargesEnabled,
+    payoutsEnabled,
+    autoApproveEvents,
+    setFromReview,
+  } = useWizard();
+  // Mirrors createEventForMerchant's publish gate exactly: a trusted host skips
+  // the queue, but a PAID event still needs Connect finished (charges AND
+  // payouts), because we cannot publish a ticket we can't route the money for.
+  // A free event needs neither. This card used to stamp "Pending review" on
+  // every preview, including events that are on Discover the instant the host
+  // presses submit.
+  // Same parse the Schedule step uses (line ~1517) - parsePriceCents itself is
+  // server-only, and this is a client component.
+  const paidTicket = Math.round((Number.parseFloat(values.price) || 0) * 100) > 0;
+  const publishesImmediately =
+    autoApproveEvents && (!paidTicket || (chargesEnabled && payoutsEnabled));
   const allTags = useMemo(() => parseTags(values.tags), [values.tags]);
   const tagsPreview = allTags.slice(0, 3);
 
@@ -2826,7 +3221,7 @@ export function ReviewSection() {
       : null;
   const timeLabel = validStart
     ? validEnd
-      ? `${timeFormat.format(validStart)} – ${timeFormat.format(validEnd)}`
+      ? `${timeFormat.format(validStart)} - ${timeFormat.format(validEnd)}`
       : timeFormat.format(validStart)
     : "Pick a time";
   // Formatted the way the SERVER will format it. `$${values.price}` echoed the
@@ -2884,9 +3279,16 @@ export function ReviewSection() {
         <h1 className="font-display mt-2 text-3xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)]">
           Looks good?
         </h1>
+        {/* Branch, do not assert. This line used to say "Submissions go to admin
+            for approval before going live" unconditionally - directly above a
+            badge and a submit button that both correctly say the opposite for a
+            trusted host. The same host was told two contradictory things about
+            what their next tap does, in the same viewport. */}
         <p className="mt-2 text-sm leading-6 text-[color:var(--slate)]">
-          This is how your event card will look on Click. Submissions go to admin
-          for approval before going live.
+          This is how your event card will look on Click.{" "}
+          {publishesImmediately
+            ? "Submitting puts it straight on Discover - you can edit it afterwards."
+            : "Submitting sends it to admin for approval, and we'll email you the outcome."}
         </p>
       </header>
 
@@ -2916,7 +3318,13 @@ export function ReviewSection() {
               </div>
             )}
             <span className="absolute left-3 top-3">
-              <Badge tone="amber">Pending review</Badge>
+              {/* Sage = live, Amber = waiting. Status colour on a badge only,
+                  never on a CTA. */}
+              {publishesImmediately ? (
+                <Badge tone="sage">Goes live</Badge>
+              ) : (
+                <Badge tone="amber">Pending review</Badge>
+              )}
             </span>
           </div>
 
@@ -3003,11 +3411,17 @@ export function ReviewSection() {
             <dt className="text-[12.5px] font-semibold text-[color:var(--slate)]">
               {row.label}
             </dt>
+            {/* Still a Link (middle-click, open-in-new-tab, the whole set of
+                things a host expects of an underlined word), and the onClick
+                just tells the shell that mounts on the destination that this is
+                a detour - so it can offer one tap back here instead of four
+                Nexts. */}
             <Link
               href={STEP_PATHS[row.step]}
+              onClick={() => setFromReview(true)}
               className="text-[12px] font-semibold text-[color:var(--purple)] underline underline-offset-2"
             >
-              Edit
+              Edit <span className="sr-only">{row.label}</span>
             </Link>
             <dd className="w-full text-[13.5px] leading-relaxed text-[color:var(--ink)]">
               {row.value || "Not set"}

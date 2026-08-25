@@ -178,10 +178,16 @@ export function AdminMerchantsTable({
   const [rows, setRows] = useState(merchants);
   const [status, setStatus] = useState<StatusFilter>(initialStatus);
   const [query, setQuery] = useState("");
-  // Merchant id currently mid-request (drives the reject dialog's busy state).
+  // Merchant id currently mid-request (drives both dialogs' busy state).
   const [busyId, setBusyId] = useState<string | null>(null);
   // Merchant queued for the branded reject confirmation (null = dialog closed).
   const [pendingReject, setPendingReject] = useState<AdminMerchantRow | null>(null);
+  // Same, for suspend. Suspending used to fire the instant the menu item was
+  // tapped: one mis-aimed tap in the narrow row dropdown pulled a host's live
+  // events off Discover, blocked new bookings on their direct links and sent
+  // them a suspension email, with no reason for the email or the audit log to
+  // carry. It now goes through the same confirm/prompt dialog rejection uses.
+  const [pendingSuspend, setPendingSuspend] = useState<AdminMerchantRow | null>(null);
 
   const filtered = useMemo(() => {
     const search = query.trim().toLowerCase();
@@ -204,19 +210,23 @@ export function AdminMerchantsTable({
     { value: "suspended", label: "Suspended", count: rows.filter((m) => m.verificationStatus === "suspended").length },
   ];
 
-  // Entry point from the row menu. Rejection carries a free-text "why", so it
-  // routes through the branded confirm/prompt dialog; the rest run immediately.
+  // Entry point from the row menu. The two destructive decisions - reject and
+  // suspend - each carry a free-text "why", so they route through the branded
+  // confirm/prompt dialog. Approving (including reinstating a suspended
+  // merchant) is the recoverable direction, so it still runs immediately.
   function updateVerification(merchantId: string, nextStatus: VerificationStatus) {
-    if (nextStatus === "rejected") {
+    if (nextStatus === "rejected" || nextStatus === "suspended") {
       const merchant = rows.find((m) => m.id === merchantId) ?? null;
-      setPendingReject(merchant);
+      if (nextStatus === "rejected") setPendingReject(merchant);
+      else setPendingSuspend(merchant);
       return;
     }
     void performVerification(merchantId, nextStatus);
   }
 
-  // Reason rides through to the merchant's notification + email so they know
-  // what to fix and resubmit (only ever set on the rejection branch).
+  // Reason rides through to the merchant's notification, email and audit log -
+  // the rejection note says what to fix and resubmit, the suspension note says
+  // why the account was paused.
   async function performVerification(
     merchantId: string,
     nextStatus: VerificationStatus,
@@ -270,6 +280,7 @@ export function AdminMerchantsTable({
     } finally {
       setBusyId(null);
       setPendingReject(null);
+      setPendingSuspend(null);
     }
   }
 
@@ -434,6 +445,33 @@ export function AdminMerchantsTable({
           }
         }}
         onCancel={() => setPendingReject(null)}
+      />
+
+      {/* tone="rose" is the historic name for the DESTRUCTIVE tone - it paints
+          --danger, never coral. The reason is required here (unlike rejection,
+          which can fall back to a generic note) because a suspension is the one
+          action that takes a host's live events off Discover, and "why" is the
+          first thing both the merchant and the next admin will ask. */}
+      <ConfirmDialog
+        open={pendingSuspend !== null}
+        title={
+          pendingSuspend
+            ? `Suspend ${pendingSuspend.businessName}?`
+            : "Suspend this merchant?"
+        }
+        description="Their live events come off Discover and they get a suspension email. Existing RSVPs stay valid. You can reinstate them from this menu."
+        confirmLabel="Suspend merchant"
+        tone="rose"
+        busy={pendingSuspend ? busyId === pendingSuspend.id : false}
+        promptLabel="Why is this merchant being suspended? (sent to them by email)"
+        promptPlaceholder="e.g. Unresolved safety report from last week's event"
+        promptRequired
+        onConfirm={(reason) => {
+          if (pendingSuspend) {
+            void performVerification(pendingSuspend.id, "suspended", reason);
+          }
+        }}
+        onCancel={() => setPendingSuspend(null)}
       />
     </div>
   );

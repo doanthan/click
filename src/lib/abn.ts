@@ -53,16 +53,21 @@ export function validateOptionalAbn(value: string): string | null {
     return `ABN must be exactly 11 digits (you entered ${digits.length}).`;
   }
   if (!isValidAbn(digits)) {
-    // 11 digits is not enough — an ABN carries an ATO check digit, so a number
-    // with the right length can still fail. Say so explicitly; testers hit this
-    // when typing an 11-digit number that isn't a real registered ABN.
-    return "That's 11 digits but not a valid ABN — the checksum doesn't match. Enter a real ABN (e.g. 51 824 753 556 for testing).";
+    // 11 digits is not enough - an ABN carries an ATO check digit, so a number
+    // with the right length can still fail.
+    //
+    // No example number. This used to end "(e.g. 51 824 753 556 for testing)",
+    // which is a QA artifact on a live KYC form: it hands a real applicant who
+    // fat-fingered their own ABN a specific number to paste instead, and an
+    // approved application flips auto_approve_events to true. A checksum
+    // failure needs no sample value.
+    return "That's 11 digits but not a valid ABN - the checksum doesn't match. Check it against your ATO registration and try again.";
   }
   return null;
 }
 
 /**
- * Validate a required ABN — empty value is an error. Used by the merchant
+ * Validate a required ABN - empty value is an error. Used by the merchant
  * signup wizard per spec §1 (ABN is mandatory for merchants).
  */
 export function validateRequiredAbn(value: string): string | null {
@@ -85,7 +90,7 @@ export function formatAcn(value: string): string {
 
 /**
  * Validate an optional ACN. Spec §1 lists ACN as optional with 9-digit
- * format validation only — no checksum required.
+ * format validation only - no checksum required.
  */
 export function validateOptionalAcn(value: string): string | null {
   const digits = normalizeAcn(value);

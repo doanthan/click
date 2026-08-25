@@ -5,6 +5,7 @@ import {
   type LabelMember,
 } from "@/lib/event-repository";
 import { SubmitButton } from "@/components/ds-client";
+import { isProductionDeployment } from "@/lib/runtime-mode";
 import { submitLabelAction, undoLastLabelAction } from "./actions";
 import { JudgmentShortcuts } from "./judgment-shortcuts";
 
@@ -68,11 +69,21 @@ export default async function MatchingLabPage({
         <p className="mt-3 max-w-2xl text-sm font-medium leading-6 text-[color:var(--slate)]">
           Cold-start curation + the training/eval loop. Human judgments here keep matching active at
           zero behavioural data and become the training set that replaces the hand-curated cohort
-          weights. The inspector lives at{" "}
-          <a href="/algo" className="text-[color:var(--purple)] underline">
-            /algo
-          </a>
-          .
+          weights.
+          {/* /algo is an internal route: it is in INTERNAL_ROUTE_PREFIXES, the
+              proxy 404s it on a production deployment, and the page itself calls
+              notFound() there too. Offering the link on production sent an admin
+              to a dead end, so it only renders where it actually resolves. */}
+          {isProductionDeployment() ? null : (
+            <>
+              {" "}
+              The inspector lives at{" "}
+              <a href="/algo" className="text-[color:var(--purple)] underline">
+                /algo
+              </a>
+              .
+            </>
+          )}
         </p>
       </header>
 
@@ -319,7 +330,11 @@ function MemberCard({ member, tag }: { member: LabelMember; tag: string }) {
           {tag}
         </span>
         <span className="rounded-full bg-[color:var(--lavender-100)] px-2 py-0.5 text-[10px] font-semibold text-[color:var(--purple-700)]">
-          {member.cohort ?? "—"}
+          {/* Words, not a bare em-dash. The cohort drives the predicted score,
+              so "no cohort" is the single most important thing to be able to
+              read off this pill - and a lone em-dash is read out as "em dash" or
+              skipped entirely by a screen reader. */}
+          {member.cohort ?? "no cohort"}
         </span>
       </div>
       <p className="mt-1 text-lg font-semibold text-[color:var(--ink)]">{member.displayName}</p>

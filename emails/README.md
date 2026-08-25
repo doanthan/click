@@ -346,7 +346,7 @@ This also closed a real leak: the old early return never reached `issueMagicLink
 
 ### `payment-receipt-attendee.html`
 
-This one is a tax document — `taxLabel` and the `ABN` line in the footer matter for AU GST receipts. If you launch outside AU first, swap the footer text accordingly.
+A payment receipt, deliberately **not** a tax invoice. It carries no GST line: `/terms` states Click is not registered for GST and does not charge it (`src/app/terms/page.tsx:149-151`), so the previous `taxLabel` of `total/11` contradicted the published terms on every paid booking. `priceLabel` is now the whole charge. The `ABN` line in the footer must stay in sync with the operator named in `/terms` and `/privacy`. Reinstating GST needs an accountant's determination and must key off the host's real registration status, not a fixed divisor.
 
 | Variable | Notes |
 | --- | --- |
@@ -357,9 +357,8 @@ This one is a tax document — `taxLabel` and the `ABN` line in the footer matte
 | `eventVenue` |  |
 | `eventHostName` | Shown in the statement-descriptor note. |
 | `receiptDate` | e.g. `29 May 2026`. |
-| `priceLabel` | Ticket subtotal, e.g. `$25.45`. |
-| `taxLabel` | GST amount, e.g. `$2.55`. |
-| `totalLabel` | Grand total, e.g. `$28.00`. |
+| `priceLabel` | The whole ticket charge, e.g. `$28.00`. No tax split. |
+| `totalLabel` | Grand total, e.g. `$28.00`. Equal to `priceLabel`. |
 | `paymentMethodLabel` | e.g. `Visa ending in 4242`. |
 | `receiptNumber` | Stable, e.g. `CL-2026-08213`. |
 | `eventDetailsUrl` | `/events/[slug]`. |
@@ -422,4 +421,5 @@ It renders every `.html` in this directory with realistic sample data and posts 
 
 - Every template here is wired. The one remaining plain-text notice is the merchant status change to `pending` in `updateMerchantVerificationForAdmin` — a rare internal action with no `.html` and no `email_events` row. Draft `merchant-pending-merchant.html` if an admin ever uses it in anger.
 - Hook the unsubscribe link to a real preferences page — placeholder `unsubscribeUrl` won't satisfy CAN-SPAM/CASL on its own.
-- `payment-receipt-attendee.html` footer hard-codes a placeholder ABN. Fill in the real ABN once Click Pty Ltd is registered, and reconsider the GST line if you launch outside AU first.
+- `payment-receipt-attendee.html` footer now carries the operator identity from `/terms` - "Cindy Kim trading as Click, ABN 68 308 567 670". Keep it in sync with `src/app/terms/page.tsx:22` and `src/app/privacy/page.tsx:21`; if a company is ever incorporated, all three change together.
+- **Unresolved:** the receipt still renders a `GST` row fed by `Math.round(totalCents / 11)` (`src/lib/event-repository.ts:1652`), applied to every charge unconditionally - while `/terms` states Click "is not currently registered for GST and does not charge GST on its booking/service fee" (`src/app/terms/page.tsx:149-151`). One of the two is wrong on every paid booking. This needs an accountant's determination, not a code guess: whether Click is registered, and whether it invoices as agent for the host or as principal.

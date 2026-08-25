@@ -78,16 +78,25 @@ export function AdminTagManager({ tags }: { tags: AdminTagRow[] }) {
     setSubmitting(true);
 
     const wasEditing = Boolean(editingId);
-    const response = await fetch("/api/admin/tags", {
-      method: editingId ? "PATCH" : "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(
-        editingId
-          ? { id: editingId, label, categoryName, tagType }
-          : { label, categoryName, tagType },
-      ),
-    });
-    const payload = (await response.json()) as {
+    // Same rejection hazard as performDelete: unhandled, the form stayed
+    // submitting forever with no word to the admin about why.
+    let response: Response;
+    try {
+      response = await fetch("/api/admin/tags", {
+        method: editingId ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          editingId
+            ? { id: editingId, label, categoryName, tagType }
+            : { label, categoryName, tagType },
+        ),
+      });
+    } catch {
+      setSubmitting(false);
+      toast.error("Could not reach the server - nothing was saved.");
+      return;
+    }
+    const payload = (await response.json().catch(() => ({}))) as {
       error?: string;
       tag?: AdminTagRow;
     };
@@ -110,9 +119,22 @@ export function AdminTagManager({ tags }: { tags: AdminTagRow[] }) {
   async function performDelete(tag: AdminTagRow) {
     setDeletingId(tag.id);
 
-    const response = await fetch(`/api/admin/tags?id=${encodeURIComponent(tag.id)}`, {
-      method: "DELETE",
-    });
+    // fetch REJECTS on a dropped connection, it does not return a !ok response.
+    // Unhandled, deletingId and pendingDelete never cleared, so the dialog stayed
+    // busy - and busy disables Cancel and kills Escape and the scrim tap, leaving
+    // a reload as the only way out of the admin console. Same reasoning as
+    // performVerification in admin-merchants-table.tsx.
+    let response: Response;
+    try {
+      response = await fetch(`/api/admin/tags?id=${encodeURIComponent(tag.id)}`, {
+        method: "DELETE",
+      });
+    } catch {
+      setDeletingId(null);
+      setPendingDelete(null);
+      toast.error("Could not reach the server - the tag is unchanged.");
+      return;
+    }
     const payload = (await response.json().catch(() => ({}))) as { error?: string };
 
     if (!response.ok) {

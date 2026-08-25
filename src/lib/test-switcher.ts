@@ -1,17 +1,27 @@
 import { cookies } from "next/headers";
 import { timingSafeEqual } from "node:crypto";
+import { isAdminEmail } from "@/lib/admin-emails";
+import { mintQaAdminGrant, readQaAdminGrant } from "@/lib/qa-admin-grant";
 import { isLocalDevelopment } from "@/lib/runtime-mode";
 
 // The QA persona switcher used to be hard-gated to localhost. It now also runs
-// on a deployed environment, but ONLY for someone holding TEST_SWITCHER_KEY.
-// It hands out admin and merchant sessions, so an open switcher on
-// letsclick.app would be an unauthenticated admin console - the key is the
-// whole security boundary, not a convenience.
+// on a deployed environment, but ONLY for a browser that has unlocked it. It
+// hands out admin and merchant sessions, so an open switcher on letsclick.app
+// would be an unauthenticated admin console - the unlock is the whole security
+// boundary, not a convenience.
 //
-// Unlock: /qa-unlock?key=<TEST_SWITCHER_KEY> stores the key in an httpOnly
-// cookie. Every gate below re-reads both the cookie AND the env var, so
-// removing TEST_SWITCHER_KEY in Vercel locks everyone out immediately - no
-// deploy, no cookie clearing, no code change.
+// TWO WAYS IN, one cookie:
+//   * /qa-unlock?key=<TEST_SWITCHER_KEY> - for a tester who is not an admin.
+//     The cookie value IS the key.
+//   * /qa-unlock with no key, while signed in as an ADMIN_EMAILS address - the
+//     cookie value is a signed grant (src/lib/qa-admin-grant.ts). Admins run
+//     UAT and already hold every power the switcher hands out, so making them
+//     wait on a shared secret being pasted into Vercel bought nothing.
+//
+// Both are re-verified against the environment on EVERY gated request, so
+// revocation needs no deploy and no cookie clearing: clearing
+// TEST_SWITCHER_KEY kills the key path, and removing someone from
+// ADMIN_EMAILS kills their grant.
 export const TEST_SWITCHER_COOKIE = "click_qa_persona";
 
 // Long enough that guessing is not a strategy. A short key counts as "not
@@ -40,15 +50,61 @@ export function testSwitcherKeyMatches(candidate: string) {
 }
 
 /**
+ * May this address unlock the switcher by being an admin?
+ *
+ * ADMIN_EMAILS, MINUS the QA namespace - and that second half is the whole
+ * point. Once `admin@click.local` is listed there (which it must be for the
+ * Admin persona to reach the console), a tester who unlocked with
+ * TEST_SWITCHER_KEY can switch to that persona and mint an admin grant from
+ * it. That grant is revoked through ADMIN_EMAILS, not through the key, so
+ * clearing TEST_SWITCHER_KEY would no longer lock them out - a key-scoped
+ * tester would have quietly upgraded to an unlock you cannot take back
+ * without also breaking the Admin persona.
+ *
+ * Refusing the namespace costs nothing: reaching a QA persona ALREADY required
+ * an unlock, so a persona has never needed to mint one.
+ */
+function adminMayUnlock(email: string) {
+  if (email.trim().toLowerCase().endsWith("@click.local")) return false;
+  return isAdminEmail(email);
+}
+
+/**
+ * The cookie value that unlocks the switcher for an admin, or "" if this
+ * address may not have one or it cannot be signed.
+ */
+export function mintAdminUnlockCookie(email: string) {
+  if (!adminMayUnlock(email)) return "";
+  return mintQaAdminGrant(email, process.env.AUTH_SECRET);
+}
+
+/**
+ * Does this cookie carry a signed grant for an address that is an admin RIGHT
+ * NOW? Deliberately not "was an admin when the grant was issued" - ADMIN_EMAILS
+ * is re-read here on every gated request, so removing an address revokes the
+ * unlock it was granted without touching the browser holding it.
+ */
+function adminGrantHolds(cookieValue: string) {
+  const email = readQaAdminGrant(cookieValue, process.env.AUTH_SECRET);
+  // adminMayUnlock, not isAdminEmail - the namespace rule is enforced HERE as
+  // well as at the mint, so a grant issued before that rule existed is inert
+  // rather than grandfathered in.
+  return !!email && adminMayUnlock(email);
+}
+
+/**
  * True when the QA persona switcher may be used by THIS request. Local dev
  * keeps working with no key set, exactly as before.
  */
 export async function isTestSwitcherUnlocked() {
   if (isLocalDevelopment()) return true;
-  if (!isTestSwitcherConfigured()) return false;
   try {
     const jar = await cookies();
-    return testSwitcherKeyMatches(jar.get(TEST_SWITCHER_COOKIE)?.value ?? "");
+    const cookie = jar.get(TEST_SWITCHER_COOKIE)?.value ?? "";
+    // Both comparisons reject an empty cookie, and testSwitcherKeyMatches also
+    // rejects everything when no key is configured - so a deployment with
+    // neither TEST_SWITCHER_KEY nor ADMIN_EMAILS set is closed to everyone.
+    return adminGrantHolds(cookie) || testSwitcherKeyMatches(cookie);
   } catch {
     // Called outside a request scope, so there is no cookie to read. Fail
     // closed: an unreadable gate is a shut gate.

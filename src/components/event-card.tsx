@@ -33,10 +33,15 @@ export function EventCard({
   registered = false,
   bookingStatus,
   priority = false,
+  distanceOrigin,
 }: {
   event: EventItem;
   bookmarked?: boolean;
   registered?: boolean;
+  // Where the distance on this card is measured FROM. Printed next to the
+  // number, because the default is Sydney CBD and not the reader's location -
+  // "Bondi · 8km" read as 8 km from them.
+  distanceOrigin?: string;
   // Set on the card most likely to be the page's LCP element (e.g. first card
   // of the landing strip) so its cover loads eagerly.
   priority?: boolean;
@@ -112,12 +117,14 @@ export function EventCard({
           <p className="mt-1 flex min-w-0 items-center gap-1.5 truncate text-[13.5px] font-medium text-[color:var(--slate)]">
             <Icon name="pin" size={13} stroke={2.1} />
             {venueRevealed ? (
-              <span className="truncate">{event.location}</span>
+              <span className="truncate">{event.location || event.suburb}</span>
             ) : (
               <>
                 <span className="truncate">
                   {event.suburb}
-                  {event.distanceKm ? ` · ${event.distanceKm}km` : ""}
+                  {event.distanceKm != null
+                    ? ` · ${event.distanceKm}km${distanceOrigin ? ` from ${distanceOrigin}` : ""}`
+                    : ""}
                 </span>
                 <Icon
                   name="lock"
@@ -152,7 +159,9 @@ export function EventCard({
         <div className="mt-4 flex items-center justify-between gap-2.5 border-t border-[color:var(--mist)] pt-3">
           <span
             className={`font-display text-base font-semibold ${
-              isFreeEvent(event) ? "text-[color:var(--sage)]" : "text-[color:var(--ink)]"
+              // --sage-ink, not --sage: the bright status sage is 3.87:1 on the card
+              // and fails AA for body-size text. The ink variant exists for this.
+              isFreeEvent(event) ? "text-[color:var(--sage-ink)]" : "text-[color:var(--ink)]"
             }`}
           >
             {isFreeEvent(event) ? "Free" : event.price}

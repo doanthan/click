@@ -8,17 +8,27 @@ import {
  * Route-level loading shell for the merchant portal.
  *
  * The portal chrome (sidebar + mobile nav) lives inside `page.tsx`, not a
- * layout, so this fallback reproduces a lightweight version of that shell — a
+ * layout, so this fallback reproduces a lightweight version of that shell - a
  * sticky sidebar card with a logo/title block and a stack of nav pills, beside
  * a content column carrying a header skeleton, the dashboard metric grid, and a
- * table — so the shape is in place the instant the route starts resolving. The
+ * table - so the shape is in place the instant the route starts resolving. The
  * shimmer auto-freezes under `prefers-reduced-motion` via globals.css.
  */
 export default function MerchantLoading() {
   return (
-    <main className="min-h-screen bg-[color:var(--champagne)] px-4 py-8 text-[color:var(--ink)] sm:px-6 lg:py-10">
-      <div className="mx-auto flex max-w-7xl flex-col gap-6 lg:flex-row lg:items-start lg:gap-8">
-        {/* Sidebar shell — mirrors <MerchantSidebar>'s desktop aside. */}
+    <main className="min-h-screen bg-[color:var(--champagne)] py-8 text-[color:var(--ink)] lg:py-10">
+      {/* The SAME container as /merchant's real page: .ck-page, and lg:gap-7.
+          This used to be `px-4 sm:px-6 mx-auto max-w-7xl ... lg:gap-8`, a
+          different left edge and a different column gap, so the whole portal
+          slid sideways the instant the route resolved. */}
+      <div className="ck-page flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-7">
+        {/* Below lg the real sidebar renders a sticky <PortalMobileNav> band
+            ABOVE the content. Omitting it here dropped the content up by the
+            band's height, then pushed it back down on paint. */}
+        <div className="-mx-5 mb-2 border-b border-[color:var(--line)] bg-[color:var(--champagne)]/95 px-4 py-2 sm:-mx-8 sm:px-6 lg:hidden">
+          <Skeleton className="h-[46px] w-full rounded-xl" />
+        </div>
+        {/* Sidebar shell - mirrors <MerchantSidebar>'s desktop aside. */}
         <aside className="hidden lg:sticky lg:top-6 lg:block lg:w-56 lg:shrink-0">
           <nav className="flex flex-col rounded-2xl bg-[color:var(--paper)] p-3 pb-4 shadow-[var(--shadow-sm)]">
             <div className="flex items-center gap-3 px-2 pb-4 pt-2">
@@ -39,7 +49,7 @@ export default function MerchantLoading() {
           </nav>
         </aside>
 
-        {/* Content column — header + dashboard metric grid + a table. */}
+        {/* Content column - header + dashboard metric grid + a table. */}
         <div className="min-w-0 flex-1 space-y-8 py-10">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">

@@ -106,7 +106,7 @@ function socialUrl(platform: string | null, handle: string): string | null {
 
 // ABR (Australian Business Register) public lookup. There is also a free SOAP/JSON
 // ABR Web Services API (requires a registered GUID via abr.business.gov.au/Tools/
-// WebServices) for automated verification — for now we deep-link the admin to the
+// WebServices) for automated verification - for now we deep-link the admin to the
 // official record so they can eyeball the entity name, status and GST registration.
 function abrSearchUrl(abn: string): string {
   const digits = abn.replace(/\s+/g, "");
@@ -214,14 +214,12 @@ export default async function AdminMerchantDetailPage({
             value={
               merchant.submittedAt
                 ? dateFormatter.format(new Date(merchant.submittedAt))
-                : "—"
+                : "Not submitted yet"
             }
           />
-          {/* `?? "—"` alone misses empty strings - the wizard can submit "" for
-              the optional fields, which then rendered as a blank cell. */}
           <Stat
             label="ABN"
-            value={merchant.abn?.trim() || "—"}
+            value={merchant.abn}
             action={
               merchant.abn?.trim() ? (
                 <a
@@ -235,13 +233,13 @@ export default async function AdminMerchantDetailPage({
               ) : null
             }
           />
-          <Stat label="ACN" value={merchant.acn?.trim() || "—"} />
+          <Stat label="ACN" value={merchant.acn} />
           <Stat
             label="Socials"
-            value={socials.length ? socials.map((s) => s.label).join(" · ") : "—"}
+            value={socials.length ? socials.map((s) => s.label).join(" · ") : "None linked"}
           />
-          <Stat label="Phone" value={merchant.phone?.trim() || "—"} />
-          <Stat label="Address" value={address ?? "—"} />
+          <Stat label="Phone" value={merchant.phone} />
+          <Stat label="Address" value={address} />
           <Stat
             label="Stripe Connect"
             value={merchant.stripeConnectAccountId ?? "Not connected"}
@@ -329,7 +327,7 @@ export default async function AdminMerchantDetailPage({
               value={
                 merchant.eventCategories.length > 0
                   ? `${merchant.eventCategories.length} cat.`
-                  : "—"
+                  : "None yet"
               }
               hint={merchant.eventCategories.join(" · ") || undefined}
             />
@@ -414,11 +412,11 @@ export default async function AdminMerchantDetailPage({
                           {txn.eventTitle}
                         </Link>
                       ) : (
-                        txn.eventTitle ?? "—"
+                        txn.eventTitle ?? "Not recorded"
                       )}
                     </td>
                     <td className="py-3 pr-4 text-[color:var(--ink)]">
-                      {txn.attendeeName ?? "—"}
+                      {txn.attendeeName ?? "Not recorded"}
                       {txn.attendeeEmail ? (
                         <span className="block text-[11px] text-[color:var(--slate)]">
                           {txn.attendeeEmail}
@@ -432,7 +430,7 @@ export default async function AdminMerchantDetailPage({
                       <Badge tone={transactionTone(txn.status)}>{txn.status}</Badge>
                     </td>
                     <td className="py-3 text-[11px] text-[color:var(--slate)]">
-                      {txn.stripePaymentIntentId ?? "—"}
+                      {txn.stripePaymentIntentId ?? "Not recorded"}
                     </td>
                   </tr>
                 ))}
@@ -512,13 +510,28 @@ function EventRow({ event }: { event: AdminMerchantDetailEvent }) {
   );
 }
 
+/**
+ * The empty-value fallback lives HERE rather than at each call site, because a
+ * call site is where the em-dash kept coming back. Every cell above now hands
+ * over the raw value and lets this decide, so the next `<Stat>` somebody adds
+ * cannot reintroduce the glyph by forgetting an em-dash fallback.
+ *
+ * Why a word and not a dash at all: the DS bans em-dashes outright, and a
+ * screen reader reads a lone one as "em dash" or skips it entirely, so an
+ * operator could not tell "the merchant never gave us an ABN" from "this cell
+ * failed to render". A call site with a sharper word (Submitted, Stripe
+ * Connect) still passes its own string.
+ *
+ * `|| ` not `?? `: the signup wizard can submit "" for the optional fields, and
+ * an empty string is just as blank as a null.
+ */
 function Stat({
   label,
   value,
   action,
 }: {
   label: string;
-  value: string;
+  value: string | null | undefined;
   action?: React.ReactNode;
 }) {
   return (
@@ -527,7 +540,7 @@ function Stat({
         {label}
       </dt>
       <dd className="mt-1 break-words font-semibold text-[color:var(--ink)]">
-        {value}
+        {value?.trim() || "Not provided"}
         {action ? <span className="ml-2 font-normal">{action}</span> : null}
       </dd>
     </div>

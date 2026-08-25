@@ -393,6 +393,13 @@ export function AdminEventQueue({
   const pageStart = sorted.length === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1;
   const pageEnd = Math.min(safePage * PAGE_SIZE, sorted.length);
 
+  // Every action below is try/catch/finally, not try/finally. `fetch` REJECTS on
+  // a dropped connection (offline, 502, suspended tab) rather than returning a
+  // !ok response, and a 502 that answers with an HTML error page makes
+  // response.json() throw too. Without the catch the row snapped back to normal
+  // with no toast and no change: the tap looked like it had worked while the
+  // event sat there still pending. Same shape as performVerification in
+  // admin-merchants-table.tsx.
   async function approve(eventId: string) {
     setBusyId(eventId);
 
@@ -401,7 +408,10 @@ export function AdminEventQueue({
         `/api/admin/events/${encodeURIComponent(eventId)}/approve`,
         { method: "POST" },
       );
-      const payload = (await response.json()) as { event?: { title?: string }; error?: string };
+      const payload = (await response.json().catch(() => ({}))) as {
+        event?: { title?: string };
+        error?: string;
+      };
 
       if (!response.ok) {
         toast.error(payload.error ?? "Approval failed.");
@@ -414,6 +424,8 @@ export function AdminEventQueue({
         ),
       );
       toast.success(`${payload.event?.title ?? "Event"} is now live.`);
+    } catch {
+      toast.error("Could not reach the server - the event is unchanged.");
     } finally {
       setBusyId(null);
     }
@@ -433,7 +445,7 @@ export function AdminEventQueue({
           body: JSON.stringify({ decision }),
         },
       );
-      const payload = (await response.json()) as {
+      const payload = (await response.json().catch(() => ({}))) as {
         error?: string;
         title?: string;
         address?: string | null;
@@ -461,6 +473,8 @@ export function AdminEventQueue({
           ? `Address updated for ${payload.title ?? "the event"}.`
           : `Address change declined for ${payload.title ?? "the event"}.`,
       );
+    } catch {
+      toast.error("Could not reach the server - the address change is still waiting for review.");
     } finally {
       setBusyId(null);
     }
@@ -477,7 +491,7 @@ export function AdminEventQueue({
           body: JSON.stringify({ slugs }),
         },
       );
-      const payload = (await response.json()) as {
+      const payload = (await response.json().catch(() => ({}))) as {
         tags?: { slug: string; label: string }[];
         error?: string;
       };
@@ -492,6 +506,11 @@ export function AdminEventQueue({
       );
       toast.success("Interest tags updated.");
       return true;
+    } catch {
+      // false keeps the editor's unsaved selection on screen, so the admin can
+      // press Save tags again rather than retyping the whole set.
+      toast.error("Could not reach the server - the tags are unchanged.");
+      return false;
     } finally {
       setBusyId(null);
     }
@@ -512,7 +531,10 @@ export function AdminEventQueue({
           body: JSON.stringify({ reason }),
         },
       );
-      const payload = (await response.json()) as { event?: { title?: string }; error?: string };
+      const payload = (await response.json().catch(() => ({}))) as {
+        event?: { title?: string };
+        error?: string;
+      };
 
       if (!response.ok) {
         toast.error(payload.error ?? "Rejection failed.");
@@ -525,6 +547,8 @@ export function AdminEventQueue({
         ),
       );
       toast.success(`${payload.event?.title ?? "Event"} was declined.`);
+    } catch {
+      toast.error("Could not reach the server - the event is still pending.");
     } finally {
       setBusyId(null);
       setRejectTarget(null);
@@ -543,7 +567,7 @@ export function AdminEventQueue({
           body: JSON.stringify({ reason }),
         },
       );
-      const payload = (await response.json()) as {
+      const payload = (await response.json().catch(() => ({}))) as {
         eventTitle?: string;
         notified?: number;
         refunded?: number;
@@ -566,6 +590,12 @@ export function AdminEventQueue({
           ? `${payload.eventTitle ?? "Event"} was already cancelled.`
           : `${payload.eventTitle ?? "Event"} cancelled · ${payload.notified ?? 0} notified · ${payload.refunded ?? 0} refunded.`,
       );
+    } catch {
+      // Deliberately vaguer than the other four. A cancel refunds every paid
+      // booking, and a connection that drops mid-request may still have been
+      // served, so promising "nothing changed" here could be a lie about money.
+      // Send them to a reload instead of a guess.
+      toast.error("Could not reach the server - reload to check whether the cancellation went through.");
     } finally {
       setBusyId(null);
       setCancelTarget(null);

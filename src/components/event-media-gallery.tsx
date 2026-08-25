@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { MediaItem } from "@/lib/event-media";
 import { EventImage } from "./event-image";
+import { ModalShell } from "./modal-shell";
 
 type EventMediaGalleryProps = {
   items: MediaItem[];
@@ -39,21 +40,6 @@ export function EventMediaGallery({ items, statusLabel, categoryLabel }: EventMe
     );
   }, [items.length]);
 
-  useEffect(() => {
-    if (lightboxIndex === null) return;
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") close();
-      else if (event.key === "ArrowRight") next();
-      else if (event.key === "ArrowLeft") prev();
-    }
-    document.body.style.overflow = "hidden";
-    window.addEventListener("keydown", onKey);
-    return () => {
-      document.body.style.overflow = "";
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [lightboxIndex, close, next, prev]);
-
   if (items.length === 0) return null;
 
   const count = items.length;
@@ -68,7 +54,7 @@ export function EventMediaGallery({ items, statusLabel, categoryLabel }: EventMe
     statusLabel || categoryLabel ? (
       <div className="pointer-events-none absolute left-3 right-3 top-3 z-10 flex items-start justify-between gap-3">
         {statusLabel ? (
-          <span className="ck-badge pointer-events-auto bg-[rgba(28,24,48,0.62)] text-white">{statusLabel}</span>
+          <span className="ck-badge pointer-events-auto bg-[color-mix(in_srgb,var(--ink)_62%,transparent)] text-[color:var(--on-deep)]">{statusLabel}</span>
         ) : (
           <span />
         )}
@@ -296,15 +282,41 @@ function Lightbox({
   onNext: () => void;
   onPrev: () => void;
 }) {
+  /* Only the arrow keys are ours. Escape, the Tab trap, the body-scroll lock and
+     the focus restore all belong to ModalShell below, and that is the whole
+     point of the change: the hand-rolled version of this effect lived in the
+     parent keyed on the lightbox index, so its cleanup ran on every photo
+     change and handed focus back to the thumbnail sitting behind the scrim.
+     One tap of Next and a keyboard user was tabbing the page underneath the
+     viewer. onNext/onPrev are stable callbacks, so this listener is wired once
+     per opening and never re-run mid-browse. */
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "ArrowRight") onNext();
+      else if (event.key === "ArrowLeft") onPrev();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onNext, onPrev]);
+
   const item = items[index];
   if (!item) return null;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex flex-col bg-[color:var(--ink)]/95"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Event media viewer"
+    <ModalShell
+      onClose={onClose}
+      label="Event media viewer"
+      /* Matches the pre-migration z-50: this is page chrome, and the booking
+         dialog (z-100) still has to open cleanly above it. */
+      zIndex={50}
+      /* The card IS the viewport here, so no scrim is ever exposed to tap -
+         Close and Escape are the only ways out, exactly as before. */
+      closeOnScrim={false}
+      /* Zeroes the shell's own p-4 so the viewer stays full-bleed. px/py beat
+         the p-4 shorthand in Tailwind's order, the same way login-modal does it. */
+      className="px-0 py-0"
+      scrimClassName="bg-[color:var(--ink)]/95"
+      cardClassName="rise-soft flex h-full w-full flex-col"
     >
       <div className="flex items-center justify-between px-4 py-3 text-[color:var(--on-deep)] sm:px-6">
         <span className="text-xs font-semibold tabular-nums">
@@ -338,6 +350,12 @@ function Lightbox({
               controls
               autoPlay
               playsInline
+              /* ModalShell's focusable selector does not know about <video>, and
+                 the trap only lets Tab move between the nodes it can see. On a
+                 single-video event that left Close as both first and last stop,
+                 so the player's own controls were unreachable by keyboard. An
+                 explicit tabIndex puts it back in the cycle. */
+              tabIndex={0}
               poster={item.posterUrl}
               className="h-full w-full rounded-2xl bg-black object-contain"
             >
@@ -372,7 +390,7 @@ function Lightbox({
       <p className="px-4 pb-6 text-center text-sm font-medium text-[color:var(--on-deep-soft)] sm:px-12">
         {item.alt}
       </p>
-    </div>
+    </ModalShell>
   );
 }
 

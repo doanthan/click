@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { MerchantSignupProvider } from "@/components/merchant-signup-wizard";
 import {
+  assertProfileStatusUsable,
   getMerchantCategoryOptions,
   getMerchantSignupPrefill,
   getProfileStatus,
@@ -36,6 +37,7 @@ export default async function MerchantSignupLayout({
   let isRejectedResubmit = false;
   if (session?.user) {
     const status = await getProfileStatus(session);
+    assertProfileStatusUsable(status);
     // Approved/pending merchants belong in their portal - but a REJECTED merchant
     // must be let back into the wizard to edit + resubmit, otherwise the "Resubmit
     // application" CTA bounces straight back to /merchant (bug board #203/#204).

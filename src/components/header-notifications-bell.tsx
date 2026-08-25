@@ -18,7 +18,7 @@ export function HeaderNotificationsBell({ unreadCount }: { unreadCount: number }
         aria-label={`Notifications (${countLabel} unread)`}
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
-        className="relative flex size-9 items-center justify-center rounded-full text-[color:var(--ink-soft)] transition-colors hover:bg-[color:var(--lavender-100)]"
+        className="relative flex size-11 items-center justify-center rounded-full text-[color:var(--ink-soft)] transition-colors hover:bg-[color:var(--lavender-100)] lg:size-9"
       >
         <Icon name="bell" size={20} />
         {/* Unread dot is Deep Purple - the brand's one accent, never a status hue. */}

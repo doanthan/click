@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import {
   getApprovedMerchantForSession,
@@ -19,7 +20,7 @@ const cardClass =
   "rounded-[18px] bg-[color:var(--paper)] p-6 shadow-[var(--shadow-sm)] sm:p-8";
 
 type PageProps = {
-  searchParams?: Promise<{ stripe?: string }>;
+  searchParams?: Promise<{ stripe?: string; returnTo?: string }>;
 };
 
 export default async function OnboardingPayoutsPage({ searchParams }: PageProps) {
@@ -28,9 +29,24 @@ export default async function OnboardingPayoutsPage({ searchParams }: PageProps)
   // first, so that one stays sequential - there's no honest way to overlap it.
   const [session, params] = await Promise.all([
     auth(),
-    searchParams ?? Promise.resolve<{ stripe?: string }>({}),
+    searchParams ?? Promise.resolve<{ stripe?: string; returnTo?: string }>({}),
   ]);
   const merchant = await getApprovedMerchantForSession(session);
+
+  // Carried through the Stripe round trip so an established host connecting
+  // from Finances / Settings / the dashboard / the create wizard is returned to
+  // where they started. Only a /merchant path rides. The connect route
+  // re-validates whatever we hand it, but this value now also drives a real
+  // redirect() below - a Location header - so it gets the same character rule as
+  // safeMerchantReturnTo rather than leaning on the route: no backslashes (some
+  // parsers fold "\" into "/"), no whitespace, no control characters.
+  const returnTo =
+    params.returnTo &&
+    params.returnTo.startsWith("/merchant") &&
+    !params.returnTo.startsWith("//") &&
+    !/[\\\s\u0000-\u001f]/.test(params.returnTo)
+      ? params.returnTo
+      : undefined;
 
   const stripeConfigured = isStripeConnectConfigured();
   const accountId = merchant.stripe_connect_account_id;
@@ -53,6 +69,20 @@ export default async function OnboardingPayoutsPage({ searchParams }: PageProps)
   }
 
   const connected = Boolean(accountId);
+
+  // Stripe hands EVERY host back here, whichever surface they started from - the
+  // connect route pins its return_url to this step precisely because the refresh
+  // above is the only place that re-reads the account rather than trusting
+  // columns the account.updated webhook has not written yet. Now that the read
+  // has landed, send them back where they were: they get a Finances / Settings /
+  // dashboard banner that finally agrees with Stripe.
+  //
+  // Only once their part is genuinely done, though. A host who backed out of
+  // Stripe half-way needs the "Continue on Stripe" button on this page, not a
+  // bounce straight back to the setup prompt they left thirty seconds ago.
+  if (params.stripe === "return" && returnTo && (payoutsEnabled || detailsSubmitted)) {
+    redirect(returnTo);
+  }
 
   return (
     <div className="grid gap-6">
@@ -112,22 +142,31 @@ export default async function OnboardingPayoutsPage({ searchParams }: PageProps)
               their part - showing the button made it look like more action was
               required while Stripe verified asynchronously (bug board #206).
             */}
-            {!detailsSubmitted ? <ConnectPayoutsButton label="Continue on Stripe →" /> : null}
+            {!detailsSubmitted ? <ConnectPayoutsButton label="Continue on Stripe →" returnTo={returnTo} /> : null}
           </div>
         ) : (
           <div className="mt-6 grid gap-4">
             <ul className="grid gap-2 text-sm font-medium leading-6 text-[color:var(--slate)]">
               <li>• Business + bank details, collected securely by Stripe</li>
-              <li>• Automatic payouts after each event wraps</li>
+              <li>• Stripe pays out to your bank on its own schedule</li>
               <li>• Takes about 5 minutes - you can skip and do it later</li>
             </ul>
-            <ConnectPayoutsButton />
+            <ConnectPayoutsButton returnTo={returnTo} />
           </div>
         )}
       </div>
 
       <div className="rise-soft rise-d1">
-        {payoutsEnabled || detailsSubmitted || !stripeConfigured ? (
+        {returnTo ? (
+          // This host did not walk in through the walkthrough - they came from
+          // Finances, Settings, the dashboard setup bar or the middle of the
+          // create wizard, and the welcome/done chain is the first run they
+          // finished months ago. "Skip for now" ended it on "Create your first
+          // event" for someone with forty of them, and "Back" sent them to a
+          // welcome page nobody asked to re-read. One link back to whatever they
+          // left is the entire nav this visit needs.
+          <OnboardingNav backHref={returnTo} />
+        ) : payoutsEnabled || detailsSubmitted || !stripeConfigured ? (
           // Two states earn the primary Continue. Details submitted counts as
           // "done" - the merchant has finished their part and payouts activate
           // asynchronously (#206). And when Stripe isn't configured on this

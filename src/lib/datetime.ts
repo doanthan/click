@@ -3,7 +3,7 @@
 // The merchant create/edit wizard uses <input type="datetime-local">, which
 // emits a bare wall-clock string like "2026-06-08T09:00" with NO timezone
 // designator. `new Date("2026-06-08T09:00")` parses that in the *server's* local
-// zone — which is UTC on Vercel — so a 9:00 AM Sydney event gets stored as
+// zone - which is UTC on Vercel - so a 9:00 AM Sydney event gets stored as
 // 09:00 UTC (= 7:00/8:00 PM Sydney). That's the "I made it an AM event but it
 // shows as PM" bug, and it also shifts events onto the wrong calendar day.
 //
@@ -61,7 +61,7 @@ export function parseEventStart(value: string, timeZone: string = APP_TIME_ZONE)
     /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/,
   );
   if (!match) {
-    // Not the shape we expect — fall back to native parsing rather than crash.
+    // Not the shape we expect - fall back to native parsing rather than crash.
     return new Date(trimmed);
   }
 
@@ -84,4 +84,39 @@ export function parseEventStart(value: string, timeZone: string = APP_TIME_ZONE)
     utc = wallAsUtc - offset2;
   }
   return new Date(utc);
+}
+
+/**
+ * The inverse of parseEventStart: a stored UTC instant back into the bare
+ * "YYYY-MM-DDTHH:mm" wall-clock string an <input type="datetime-local"> shows.
+ *
+ * Needed by the merchant event EDIT form, which pre-fills a start time that
+ * parseEventStart will read back. Doing it with toISOString().slice(0, 16)
+ * would hand the input UTC, so a 7pm Sydney event would open the editor
+ * reading 9am (or 8am, across the DST boundary) - and simply saving the form
+ * without touching the field would MOVE the event ten hours.
+ */
+export function formatEventStartLocal(
+  value: Date | string,
+  timeZone: string = APP_TIME_ZONE,
+): string {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    hour12: false,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).formatToParts(date);
+  const map: Record<string, string> = {};
+  for (const part of parts) {
+    if (part.type !== "literal") map[part.type] = part.value;
+  }
+  // Same midnight quirk timeZoneOffsetMs guards against: some engines render
+  // hour 24 rather than 00, which datetime-local rejects outright.
+  const hour = map.hour === "24" ? "00" : map.hour;
+  return `${map.year}-${map.month}-${map.day}T${hour}:${map.minute}`;
 }

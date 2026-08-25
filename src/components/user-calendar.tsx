@@ -37,6 +37,10 @@ type UserCalendarProps = {
   // (not an RSVP) and are chipped as "Saved" rather than "Confirmed". Omitted on
   // the dashboard/upcoming calendars, whose events are all confirmed RSVPs.
   registeredEventIds?: Set<string>;
+  // The viewer's OWN waitlisted seats (getProfileStatus.waitlistedEventIds).
+  // getConfirmedEvents returns confirmed and waitlisted seats in one bucket, so
+  // this set is the only thing on the page that can tell them apart.
+  waitlistedEventIds?: Set<string>;
 };
 
 function isoDateInSydney(date: Date) {
@@ -163,8 +167,8 @@ function buildCells(monthAnchor: Date, events: EventItem[], todayIso: string): C
 function chipMeta(
   event: EventItem,
   registeredEventIds?: Set<string>,
+  waitlistedEventIds?: Set<string>,
 ): { label: string; className: string } {
-  const isFull = event.attendees >= event.capacity;
   const end = new Date(event.endsAt ?? event.startsAt);
   const isPast = end.getTime() < Date.now();
   // Saved-but-not-RSVP'd: in the "Saved" view we pass the viewer's registered
@@ -189,7 +193,15 @@ function chipMeta(
       label: "Saved",
       className: "bg-[color:var(--lavender-100)] text-[color:var(--purple-700)]",
     };
-  if (event.status === "Waitlist" || isFull)
+  // "Waitlist" is the VIEWER's seat state, never the room's. Inferring it from
+  // fullness meant the chip flipped to "You're going" the moment somebody else
+  // cancelled - the viewer was still in line, and had just been told they had a
+  // seat. The waitlisted set comes off the seat row itself, so it stays right
+  // whoever cancels. With no set passed we fall back to the host's own waitlist
+  // mode, which at least never contradicts a seat count.
+  const isWaitlisted =
+    waitlistedEventIds?.has(event.id) ?? event.status === "Waitlist";
+  if (isWaitlisted)
     return {
       label: "Waitlist",
       className:
@@ -208,6 +220,7 @@ export function UserCalendar({
   bookedSlug,
   basePath = "/dashboard/calendar",
   registeredEventIds,
+  waitlistedEventIds,
 }: UserCalendarProps) {
   // Default to the current month so the calendar opens on "today" rather than
   // the earliest RSVP's month (which, with past events included, could be far in
@@ -308,6 +321,7 @@ export function UserCalendar({
             key={cell.isoDate}
             cell={cell}
             registeredEventIds={registeredEventIds}
+            waitlistedEventIds={waitlistedEventIds}
           />
         ))}
       </div>
@@ -350,9 +364,11 @@ function MonthNav({
 function CalendarDayCell({
   cell,
   registeredEventIds,
+  waitlistedEventIds,
 }: {
   cell: CalendarCell;
   registeredEventIds?: Set<string>;
+  waitlistedEventIds?: Set<string>;
 }) {
   const dayNumber = DAY_LABEL_FORMATTER.format(cell.date);
   return (
@@ -388,18 +404,15 @@ function CalendarDayCell({
       </div>
 
       <div className="mt-1 grid gap-1">
-        {cell.events.slice(0, 3).map((event) => (
+        {cell.events.map((event) => (
           <CalendarEventChip
             key={event.id}
             event={event}
+            cellDate={cell.date}
             registeredEventIds={registeredEventIds}
+            waitlistedEventIds={waitlistedEventIds}
           />
         ))}
-        {cell.events.length > 3 ? (
-          <p className="px-0.5 text-[11px] font-medium text-[color:var(--ink-faint)]">
-            + {cell.events.length - 3} more
-          </p>
-        ) : null}
       </div>
     </div>
   );
@@ -407,16 +420,22 @@ function CalendarDayCell({
 
 function CalendarEventChip({
   event,
+  cellDate,
   registeredEventIds,
+  waitlistedEventIds,
 }: {
   event: EventItem;
+  cellDate?: Date;
   registeredEventIds?: Set<string>;
+  waitlistedEventIds?: Set<string>;
 }) {
-  const { label, className } = chipMeta(event, registeredEventIds);
+  const { label, className } = chipMeta(event, registeredEventIds, waitlistedEventIds);
+  const dayLabel = cellDate ? FULL_DATE_FORMATTER.format(cellDate) : null;
 
   return (
     <Link
       href={`/events/${event.id}`}
+      aria-label={[dayLabel, event.title, event.time, label].filter(Boolean).join(" · ")}
       title={`${event.title} · ${event.time} · ${label}`}
       className={`block rounded-[7px] px-1.5 py-1 transition-opacity hover:opacity-80 ${className}`}
     >

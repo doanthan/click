@@ -25,7 +25,15 @@ import {
   validateOptionalAbn,
   validateOptionalAcn,
 } from "@/lib/abn";
+import {
+  auPhoneHint,
+  formatAuPhone,
+  isValidAuPhone,
+  normalizeAuPhone,
+  validateAuPhone,
+} from "@/lib/au-phone";
 import { isWithinSydneyPilot } from "@/lib/geo";
+import { validateWebsiteUrl } from "@/lib/website-url";
 import { useFormDraft } from "@/lib/use-form-draft";
 import { MapboxAutocomplete, type MapboxPlace } from "./mapbox-autocomplete";
 import { Badge, Button, EndowedProgress, FormField } from "./ds";
@@ -33,7 +41,7 @@ import { SubmitButton } from "./ds-client";
 import { InfoNote, WizardStepper } from "./merchant-ds";
 import { useDisclosure } from "./use-disclosure";
 
-// Merchant signup — multi-step wizard covering spec §1. Each step has its own
+// Merchant signup - multi-step wizard covering spec §1. Each step has its own
 // URL so users can bookmark, link to, and browser-back through them:
 //   /merchant/signup           · auth gate (rendered for logged-out visitors)
 //   /merchant/signup/business  · step 1 · business details
@@ -131,7 +139,7 @@ type ExistingDoc = { documentType: DocumentType; fileName: string };
 
 // Saved merchant-signup answers used to pre-fill the wizard when a rejected
 // merchant re-opens it to edit + resubmit (bug board #203). Structural match for
-// the repository's MerchantSignupPrefill — kept loose so the component doesn't
+// the repository's MerchantSignupPrefill - kept loose so the component doesn't
 // import server code.
 export type MerchantSignupPrefill = {
   businessName: string;
@@ -155,7 +163,7 @@ export type MerchantSignupProviderProps = {
   sessionName: string;
   categories: CategoryOption[];
   existingDocs: ExistingDoc[];
-  // Present only for a rejected merchant resubmitting — pre-fills every field.
+  // Present only for a rejected merchant resubmitting - pre-fills every field.
   existingProfile?: MerchantSignupPrefill | null;
   children: React.ReactNode;
 };
@@ -202,12 +210,32 @@ type ErrorField =
   | "eventCategoryIds"
   | "contactEmail"
   | "phone"
+  | "websiteUrl"
   | "addressStreet"
   | "addressSuburb"
   | "addressState"
   | "addressPostcode";
 
 type FieldErrors = Partial<Record<ErrorField, string>>;
+
+/* Which step owns each field. Submit re-validates every step and routes to the
+   first that fails, and a server rejection can only name the FIELD - both need
+   to know which page to send the host to. Doubles as the runtime guard on a
+   server-supplied field name (a union has no members at runtime). */
+const FIELD_STEP: Record<ErrorField, StepIndex> = {
+  businessName: 0,
+  businessType: 0,
+  abn: 0,
+  acn: 0,
+  eventCategoryIds: 0,
+  contactEmail: 1,
+  phone: 1,
+  websiteUrl: 1,
+  addressStreet: 1,
+  addressSuburb: 1,
+  addressState: 1,
+  addressPostcode: 1,
+};
 
 // The four the merchant_profiles check constraint allows
 // (database/009_merchant_full_signup.sql). Order is the order they're offered.
@@ -253,7 +281,7 @@ type State = {
   contactEmail: string;
   phone: string;
   websiteUrl: string;
-  // One handle per network — empty string means "not on it".
+  // One handle per network - empty string means "not on it".
   socials: Record<SocialPlatform, string>;
   addressStreet: string;
   addressSuburb: string;
@@ -319,6 +347,10 @@ type Action =
   | { type: "validation"; errors: FieldErrors; message: string }
   | { type: "submitStart" }
   | { type: "submitError"; message: string }
+  /** A server rejection that named the field it is about, so the offending input
+      gets marked the same way a client-side failure would - the caller routes to
+      the step that owns it. */
+  | { type: "submitFieldError"; field: ErrorField; message: string }
   | { type: "submitSuccess" };
 
 function reducer(state: State, action: Action): State {
@@ -364,6 +396,13 @@ function reducer(state: State, action: Action): State {
       return { ...state, submitState: "submitting", fieldErrors: {}, submitMessage: "" };
     case "submitError":
       return { ...state, submitState: "error", submitMessage: action.message };
+    case "submitFieldError":
+      return {
+        ...state,
+        submitState: "error",
+        fieldErrors: { [action.field]: action.message },
+        submitMessage: action.message,
+      };
     case "submitSuccess":
       return { ...state, submitState: "success", submitMessage: "" };
   }
@@ -436,6 +475,11 @@ type WizardContextValue = {
       note says "pre-filled", so it must follow whether answers ACTUALLY came
       back, not whether we went looking for them. */
   resubmitting: boolean;
+  /** Set by Next / Back so the shell that mounts on the new step knows it got
+      there by navigating. Lives on the PROVIDER, which is mounted in the signup
+      layout and survives the step routes - a ref inside the shell would be
+      remounted along with it and always read false. */
+  navigatedRef: { current: boolean };
 };
 
 const WizardContext = createContext<WizardContextValue | null>(null);
@@ -504,6 +548,7 @@ export function MerchantSignupProvider({
 
   const resubmitting = Boolean(existingProfile);
 
+  const navigatedRef = useRef(false);
   const value = useMemo<WizardContextValue>(
     () => ({
       state,
@@ -512,6 +557,7 @@ export function MerchantSignupProvider({
       draftRestored: restored,
       clearDraft: clear,
       resubmitting,
+      navigatedRef,
     }),
     [state, categories, restored, clear, resubmitting],
   );
@@ -521,83 +567,10 @@ export function MerchantSignupProvider({
 
 // ---------- step validation ----------
 
-// Accepts AU mobiles, landlines AND business numbers, in the formats people
-// actually type:
-//   0412 345 678 · 412 345 678 · 02 9646 8888 · (02) 9646 8888 ·
-//   +61 2 9646 8888 · 9646 8888 · 1300 123 456 · 1800 123 456 · 13 12 34
-// Strips spaces/brackets/dashes, normalises a +61 / 61 country code and a
-// 9-digit mobile (missing leading 0) to a leading 0, then accepts national
-// numbers, bare local landlines, and 13/1300/1800 business lines. Kept
-// deliberately permissive — a false rejection on a real number is worse than
-// letting an oddly-formatted one through (admins see it during verification).
-function normalizeAuPhone(raw: string): string {
-  let digits = raw.replace(/[^\d]/g, "");
-  // +61 / 0061 country code → national trunk 0. Many people write the standard
-  // "+61 (0)4.." / "+61 0412.." print convention and keep their own trunk 0, so
-  // strip any leftover leading 0(s) before re-adding ours — otherwise we'd get a
-  // double zero ("00412345678") that fails every pattern (bug board #202).
-  if (digits.startsWith("0061")) digits = "0" + digits.slice(4).replace(/^0+/, "");
-  else if (digits.startsWith("61") && digits.length >= 10) digits = "0" + digits.slice(2).replace(/^0+/, "");
-  // Mobile typed without the leading 0 ("412 345 678") → add it back.
-  if (/^4\d{8}$/.test(digits)) digits = "0" + digits;
-  return digits;
-}
-
-// Display-grouping formatter, mirroring formatAbn/formatAcn's "tidy on blur"
-// pattern (bug board #201). Cosmetic only — submit re-normalises via
-// normalizeAuPhone, so grouping can't corrupt the stored value. Unknown shapes
-// fall back to the trimmed input rather than mangling it.
-function formatAuPhone(raw: string): string {
-  const digits = normalizeAuPhone(raw);
-  // Mobile: 04XX XXX XXX
-  if (/^04\d{8}$/.test(digits)) {
-    return `${digits.slice(0, 4)} ${digits.slice(4, 7)} ${digits.slice(7)}`;
-  }
-  // Landline with area code: 0X XXXX XXXX
-  if (/^0[2-9]\d{8}$/.test(digits)) {
-    return `${digits.slice(0, 2)} ${digits.slice(2, 6)} ${digits.slice(6)}`;
-  }
-  // 1300 / 1800: 1300 XXX XXX
-  if (/^1[38]00\d{6}$/.test(digits)) {
-    return `${digits.slice(0, 4)} ${digits.slice(4, 7)} ${digits.slice(7)}`;
-  }
-  // 13 xx xx short business line: 13 XX XX
-  if (/^13\d{4}$/.test(digits)) {
-    return `${digits.slice(0, 2)} ${digits.slice(2, 4)} ${digits.slice(4)}`;
-  }
-  // Bare 8-digit local landline: XXXX XXXX
-  if (/^\d{8}$/.test(digits)) {
-    return `${digits.slice(0, 4)} ${digits.slice(4)}`;
-  }
-  return raw.trim();
-}
-
-// Pinpoints WHY a number fails so the inline error is actionable (bug board
-// #144: a tester typed a 9-digit landline and only saw a generic "doesn't look
-// like an AU number", which read as a bug rather than a typo).
-function auPhoneHint(raw: string): string {
-  const digits = normalizeAuPhone(raw);
-  if (/^0[2378]/.test(digits) && digits.length !== 10) {
-    return `Landlines need 10 digits including the area code - you've entered ${digits.length}. e.g. 02 9646 8888.`;
-  }
-  if (/^04/.test(digits) && digits.length !== 10) {
-    return `Mobiles need 10 digits - you've entered ${digits.length}. e.g. 0412 345 678.`;
-  }
-  if (/^1[38]00/.test(digits) && digits.length !== 10) {
-    return `1300/1800 numbers need 10 digits - you've entered ${digits.length}. e.g. 1300 123 456.`;
-  }
-  return "That doesn’t look like an AU number yet - try 0412 345 678, 02 9646 8888 or 1300 123 456.";
-}
-
-function isValidAuPhone(raw: string): boolean {
-  const digits = normalizeAuPhone(raw);
-  return (
-    /^0[2-9]\d{8}$/.test(digits) || // 10-digit mobile or area-code landline
-    /^\d{8}$/.test(digits) || // bare 8-digit local landline (no area code)
-    /^1[38]00\d{6}$/.test(digits) || // 1300 / 1800 business line
-    /^13\d{4}$/.test(digits) // 13 xx xx short business line
-  );
-}
+// normalizeAuPhone / formatAuPhone / auPhoneHint / isValidAuPhone now live in
+// src/lib/au-phone.ts - the server validates the submitted number with the same
+// module, so what the wizard calls valid can no longer be rejected two steps
+// later.
 
 /* Every failure on the step, not just the first. Insertion order below is DOM
    order within the step, and Object.keys preserves it for string keys - that is
@@ -633,13 +606,13 @@ function validateStep(step: StepIndex, state: State): FieldErrors {
     if (!state.contactEmail.includes("@")) {
       errors.contactEmail = "Enter a valid contact email.";
     }
-    if (!isValidAuPhone(state.phone)) {
-      // auPhoneHint pinpoints WHY a typed number failed; it has nothing useful
-      // to say about an empty field, so that case gets its own line.
-      errors.phone = state.phone.trim()
-        ? auPhoneHint(state.phone)
-        : "Add a phone number - mobile, landline or business line.";
-    }
+    const phoneError = validateAuPhone(state.phone);
+    if (phoneError) errors.phone = phoneError;
+    // Optional, but when it IS typed the server normalises it to an https URL
+    // and refuses anything that isn't a domain. Checking it here is what keeps
+    // that refusal on the field instead of on the Documents step.
+    const websiteError = validateWebsiteUrl(state.websiteUrl);
+    if (websiteError) errors.websiteUrl = websiteError;
     if (!state.addressStreet.trim()) errors.addressStreet = "Add the street address.";
     if (!state.addressSuburb.trim()) errors.addressSuburb = "Add the suburb.";
     if (!state.addressState) errors.addressState = "Pick a state.";
@@ -683,10 +656,27 @@ export function WizardShell({
   step: StepIndex;
   children: React.ReactNode;
 }) {
-  const { state, dispatch, draftRestored, clearDraft, resubmitting } = useWizard();
+  const { state, dispatch, draftRestored, clearDraft, resubmitting, navigatedRef } =
+    useWizard();
+  // tabIndex={-1} target for the post-navigation focus move below.
+  const stepBodyRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const isLast = step === STEP_COUNT - 1;
   const submitting = state.submitState === "submitting";
+
+  // Which steps genuinely hold valid input, so the stepper's green ticks mean
+  // something. Every step page has its own URL, and a rejected host resubmitting
+  // lands wherever they left off - so "done" inferred from POSITION painted
+  // ticks over steps nobody had filled in. Same validateStep the Next button and
+  // the final submit run, so a tick and a pass are the same fact; same shape and
+  // the same reason as event-create-wizard.tsx's completedSteps.
+  const completedSteps = useMemo(
+    () =>
+      STEP_TITLES.map(
+        (_, i) => Object.keys(validateStep(i as StepIndex, state)).length === 0,
+      ),
+    [state],
+  );
 
   /**
    * Shared by goNext and submit: mark every offending field and say how many in
@@ -720,6 +710,7 @@ export function WizardShell({
       return;
     }
     dispatch({ type: "validation", errors: {}, message: "" });
+    navigatedRef.current = true;
     router.push(STEP_PATHS[step + 1]);
   }
 
@@ -730,13 +721,14 @@ export function WizardShell({
     // has to live here.
     if (submitting) return;
     if (step > 0) {
+      navigatedRef.current = true;
       router.push(STEP_PATHS[step - 1]);
     }
   }
 
   async function submit() {
     if (submitting) return;
-    // Re-run every step's validation on final submit — guards against a user
+    // Re-run every step's validation on final submit - guards against a user
     // editing an earlier step after passing it, or deep-linking past one.
     for (let s = 0; s < STEP_COUNT; s++) {
       const errors = validateStep(s as StepIndex, state);
@@ -787,9 +779,23 @@ export function WizardShell({
         return;
       }
 
-      const body = (await response.json().catch(() => ({}))) as { error?: string };
+      const body = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        field?: string;
+      };
       if (!response.ok) {
-        dispatch({ type: "submitError", message: body.error ?? "Submission failed." });
+        const message = body.error ?? "Submission failed.";
+        // A rejection has to land ON the field it is about. Without this the
+        // host stood on a page of file pickers reading "Enter a valid Australian
+        // phone number." with nothing marked and no way back to the input.
+        const field =
+          body.field && body.field in FIELD_STEP ? (body.field as ErrorField) : null;
+        if (field) {
+          dispatch({ type: "submitFieldError", field, message });
+          router.push(STEP_PATHS[FIELD_STEP[field]]);
+          return;
+        }
+        dispatch({ type: "submitError", message });
         return;
       }
 
@@ -810,6 +816,21 @@ export function WizardShell({
     }
   }
 
+  // Each step is its own route, so this shell REMOUNTS on Next / Back and focus
+  // falls back to <body> - a keyboard or screen-reader user landed at the top of
+  // the document with no idea the step had changed, and had to tab back in. The
+  // event-create wizard already does this; the signup wizard did not.
+  // Only on an actual navigation: stealing focus on the first load of a page
+  // someone just opened is worse than not moving it.
+  useEffect(() => {
+    if (!navigatedRef.current) return;
+    navigatedRef.current = false;
+    // preventScroll then scroll ourselves - focus()'s own scrolling ignores
+    // scroll-margin-top, which parks the heading behind the sticky header.
+    stepBodyRef.current?.focus({ preventScroll: true });
+    stepBodyRef.current?.scrollIntoView({ block: "start" });
+  }, [navigatedRef]);
+
   return (
     <div className="grid gap-6">
       {/* ONE progress cluster, at the top. The dots say WHERE you are and let you
@@ -818,7 +839,7 @@ export function WizardShell({
           used to sit down beside the Next button said the same thing 700px away
           from this one, so it's gone. */}
       <div className="rise-soft grid gap-3">
-        <StepIndicator current={step} />
+        <StepIndicator current={step} completed={completedSteps} />
         <EndowedProgress
           step={step}
           total={STEP_COUNT}
@@ -848,7 +869,14 @@ export function WizardShell({
         </div>
       ) : null}
 
-      <SectionCard>{children}</SectionCard>
+      {/* The focus target: sits immediately before the step's own <h1>, so a
+          screen reader continues from the new step's heading rather than the
+          top of the document. tabIndex={-1} makes it programmatically
+          focusable without adding a tab stop. outline-none because the move is
+          a context change, not a control the user reached by tabbing. */}
+      <div ref={stepBodyRef} tabIndex={-1} className="outline-none">
+        <SectionCard>{children}</SectionCard>
+      </div>
 
       {state.submitMessage ? (
         <p
@@ -889,18 +917,64 @@ export function WizardShell({
           </Button>
         )}
       </div>
+      {/* Nothing in the host flow named, linked, or asked acceptance of the
+          agreement a host is bound by - yet /terms makes Click a "limited
+          payment-collection agent", puts the attendance contract between
+          attendee and host, and makes GST the host's responsibility, and the
+          create wizard later attaches a refund ladder and a commission. The
+          only route to any of it was the global footer, several scroll-lengths
+          below a wizard someone is working top-down.
+
+          NOTE: this discloses, it does not RECORD. Storing which version a host
+          accepted needs a timestamp column on merchant_profiles written by
+          registerMerchantWizardSubmit - a migration, so it is deliberately not
+          done here. */}
+      {isLast ? (
+        <p className="mt-3 text-xs leading-5 text-[color:var(--slate)]">
+          By submitting you agree to the{" "}
+          <Link
+            href="/terms"
+            className="font-semibold text-[color:var(--purple)] underline underline-offset-2"
+          >
+            Click Host Terms
+          </Link>{" "}
+          and the{" "}
+          <Link
+            href="/refund-policy"
+            className="font-semibold text-[color:var(--purple)] underline underline-offset-2"
+          >
+            Refund &amp; Cancellation Policy
+          </Link>
+          .
+        </p>
+      ) : null}
     </div>
   );
 }
 
-function StepIndicator({ current }: { current: StepIndex }) {
-  // Completed steps (i < current) render as <Link>s so users can jump back to
-  // an earlier stage without using the Back button — matches the goBack()
-  // behaviour above (backward nav skips per-step validation; forward nav is
-  // still gated by the Next button). Active and not-yet-reached steps stay
-  // as plain spans so users can't skip ahead past unvalidated input.
+function StepIndicator({
+  current,
+  completed,
+}: {
+  current: StepIndex;
+  completed: readonly boolean[];
+}) {
+  // Completed steps render as <Link>s so users can jump back to an earlier stage
+  // without using the Back button - matches the goBack() behaviour above.
+  // `completed` is what makes a tick honest: WizardStepper falls back to
+  // POSITION when it isn't passed, which ticked every step behind the current
+  // one whether or not it held valid input. It also unlocks a forward jump, but
+  // only over steps that already validate, so nobody skips past unvalidated
+  // input - the Next button's gate is the same validateStep.
   // Rendering is delegated to the shared merchant-ds WizardStepper.
-  return <WizardStepper steps={STEP_TITLES} current={current} paths={STEP_PATHS} />;
+  return (
+    <WizardStepper
+      steps={STEP_TITLES}
+      current={current}
+      paths={STEP_PATHS}
+      completed={completed}
+    />
+  );
 }
 
 function SectionCard({ children }: { children: React.ReactNode }) {
@@ -1079,7 +1153,7 @@ export function BusinessSection() {
       <div className="grid gap-5 sm:grid-cols-2">
         <FormField
           label="ABN"
-          hint="Optional - your real registered ABN, e.g. 51 824 753 556."
+          hint="Optional - the 11-digit ABN on your ATO registration. Spaces are fine."
           error={fieldErrors.abn}
           id={fieldAnchorId("abn")}
           value={state.abn}
@@ -1250,10 +1324,25 @@ function CategoryPicker({
 
       {categories.length === 0 ? (
         <p className="text-sm font-medium text-[color:var(--slate)]">
-          No categories available - check your database connection.
+          We can&apos;t load event categories right now, and you need one to carry on. Refresh
+          the page, or email{" "}
+          <a
+            href="mailto:hello@letsclick.app?subject=Event%20categories%20won%27t%20load"
+            className="font-semibold text-[color:var(--purple)] underline underline-offset-4 hover:text-[color:var(--purple-hover)]"
+          >
+            hello@letsclick.app
+          </a>{" "}
+          and we&apos;ll finish this with you.
         </p>
       ) : (
         <>
+          {/* ck-tag--tap, not the bare 24px ck-tag, on BOTH grids. This picker is
+              the one required control on step 1 and it is a thumb target: a host
+              filling the form on a phone was aiming at a 24px-tall chip, and a
+              near-miss on the selected row REMOVES a category rather than doing
+              nothing. The DS already ships the 44px variant and the create
+              wizard's category and tag pickers already use it - same control,
+              same class, no second way to do it. */}
           {selected.length > 0 ? (
             <div className="flex flex-wrap gap-2">
               {selected.map((cat) => (
@@ -1261,7 +1350,7 @@ function CategoryPicker({
                   key={cat.id}
                   type="button"
                   onClick={() => onToggle(cat.id)}
-                  className="ck-tag ck-tag--select ck-tag--selected"
+                  className="ck-tag ck-tag--select ck-tag--selected ck-tag--tap touch-manipulation"
                   aria-label={`Remove ${cat.name}`}
                 >
                   {cat.name} ×
@@ -1296,7 +1385,7 @@ function CategoryPicker({
                   key={cat.id}
                   type="button"
                   onClick={() => onToggle(cat.id)}
-                  className="ck-tag ck-tag--select"
+                  className="ck-tag ck-tag--select ck-tag--tap touch-manipulation"
                 >
                   {cat.name}
                 </button>
@@ -1426,8 +1515,10 @@ export function ContactSection() {
 
       <FormField
         label="Website"
-        hint="Optional."
+        hint="Optional - we'll save it as https://."
         type="url"
+        error={fieldErrors.websiteUrl}
+        id={fieldAnchorId("websiteUrl")}
         value={state.websiteUrl}
         onChange={(e) => dispatch({ type: "field", key: "websiteUrl", value: e.target.value })}
         placeholder="https://www.yourbusiness.com.au"
@@ -1564,7 +1655,7 @@ export function ContactSection() {
   );
 }
 
-// Custom State picker — replaces the native <select> so the dropdown surface
+// Custom State picker - replaces the native <select> so the dropdown surface
 // can actually be styled on-brand (the OS-rendered popup ignores CSS). Mirrors
 // the chip-button vocabulary used by Business type above, but as a popover so
 // it stays compact inside the narrow Suburb / State / Postcode row.
@@ -1699,11 +1790,29 @@ export function DocumentsSection() {
           replaced said "private Supabase Storage bucket" and "signed URLs", which
           is leaked plumbing on the one step where trust is being asked for. It
           also never said the thing that actually settles nerves - none of this is
-          required to send the application. */}
+          required to send the application.
+
+          The old last clause promised "add documents later", and there is no
+          later: the moment the application is submitted a merchant_profile
+          exists, and /merchant/signup/layout.tsx redirects any host holding one
+          to /merchant unless they were rejected - so this uploader is the ONLY
+          screen that takes a document, and only until Submit. The repository
+          says the same thing from the other side when a host tries anyway
+          ("already approved - email hello@letsclick.app to change a document on
+          file", event-repository.ts deleteMerchantDocument). So: name the
+          window, and name the address for anything after it. */}
       <InfoNote icon="lock">
         These let the review team confirm your business is yours. They stay private to you and
         the Click review team - nothing here appears on your public host page. Every one is
-        optional, so you can send your application now and add documents later.
+        optional, so you can send your application without them - this screen is the only place
+        that takes them, so anything you want to add afterwards goes to{" "}
+        <a
+          href="mailto:hello@letsclick.app?subject=Document%20for%20my%20host%20application"
+          className="font-semibold text-[color:var(--purple-700)] underline underline-offset-2"
+        >
+          hello@letsclick.app
+        </a>
+        .
       </InfoNote>
 
       <DocumentUploadRow
@@ -1791,11 +1900,32 @@ function ApplicationRecap() {
     },
   ];
 
+  /* The uploads come back from the server on every load; the typed answers only
+     survive in the session draft, which a closed tab discards. So this step can
+     legitimately show "Uploaded" beside a recap full of blanks, and the host is
+     owed the reason rather than left to read it as the form half-forgetting
+     them. */
+  const missingRequired = groups.reduce(
+    (count, group) => count + group.rows.filter((row) => row.always && !row.value).length,
+    0,
+  );
+  const hasUploads = Object.values(state.uploads).some(Boolean);
+
   return (
     <section
       aria-label="What you're sending"
       className="grid gap-4 rounded-2xl border border-[color:var(--line)] bg-[color:var(--champagne)] p-4"
     >
+      {missingRequired > 0 ? (
+        <p className="text-[12.5px] font-medium leading-[1.5] text-[color:var(--slate)]">
+          {missingRequired === 1 ? "1 required answer is" : `${missingRequired} required answers are`}{" "}
+          still to fill in.{" "}
+          {hasUploads
+            ? "Your uploaded documents are kept on our side, the typed answers only live in this browser - so closing the tab keeps the files and not the typing. "
+            : ""}
+          Use Edit below and they&apos;ll be waiting when you come back to this step.
+        </p>
+      ) : null}
       {groups.map((group) => (
         <div key={group.title} className="grid gap-2">
           <div className="flex items-baseline justify-between gap-3">
@@ -1899,8 +2029,35 @@ function DocumentUploadRow({
   const [phase, setPhase] = useState<UploadPhase>("idle");
   const [sentFraction, setSentFraction] = useState(0);
   const [error, setError] = useState("");
+  const [removing, setRemoving] = useState(false);
   const existing = state.uploads[documentType];
-  const busy = phase !== "idle";
+  const busy = phase !== "idle" || removing;
+
+  /* A wrong file used to be permanent: picking another one over the top was the
+     only control on the page, which still left a document on file the host never
+     meant to send, and no way back to none. All three are optional, so none is a
+     state the form has to be able to reach. */
+  async function onRemove() {
+    if (busy) return;
+    setError("");
+    setRemoving(true);
+    try {
+      const response = await fetch(
+        `/api/merchant/documents?document_type=${encodeURIComponent(documentType)}`,
+        { method: "DELETE" },
+      );
+      if (!response.ok) {
+        const body = (await response.json().catch(() => ({}))) as UploadResponse;
+        setError(body.error ?? "We couldn't remove that just now - try again.");
+        return;
+      }
+      dispatch({ type: "upload", docType: documentType, info: null });
+    } catch {
+      setError("We couldn't reach Click just then - check your connection and try again.");
+    } finally {
+      setRemoving(false);
+    }
+  }
 
   async function onChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -1914,7 +2071,11 @@ function DocumentUploadRow({
     // where a second pick gets caught. Silence here would look like a dead
     // control.
     if (busy) {
-      setError("One at a time - this row is still uploading.");
+      setError(
+        removing
+          ? "Hang on - we're still removing the last one."
+          : "One at a time - this row is still uploading.",
+      );
       return;
     }
 
@@ -1967,7 +2128,9 @@ function DocumentUploadRow({
   // One phase-level announcement, not a percentage ticker - a live region firing
   // on every percent is noise, and the progressbar already carries the number.
   // The error line announces itself through role="alert".
-  const liveStatus = busy
+  const liveStatus = removing
+    ? "Removing your document."
+    : busy
     ? phase === "finishing"
       ? "Almost done, finishing your upload."
       : "Uploading your document."
@@ -1992,8 +2155,20 @@ function DocumentUploadRow({
           // 14% tint is the contrast regression BADGE_TONE warns about, and Badge
           // carries the AA-safe --sage-ink instead. pop-in gives the settled
           // moment its weight without particles.
-          <span className="pop-in inline-flex">
-            <Badge tone="sage">Uploaded</Badge>
+          <span className="flex items-center gap-3">
+            <span className="pop-in inline-flex">
+              <Badge tone="sage">Uploaded</Badge>
+            </span>
+            <button
+              type="button"
+              onClick={onRemove}
+              // aria-disabled, not disabled, for the same reason as the file
+              // input below - onRemove's own guard is what blocks the second press.
+              aria-disabled={busy || undefined}
+              className="text-[12.5px] font-semibold text-[color:var(--danger)] underline underline-offset-4"
+            >
+              {removing ? "Removing…" : "Remove"}
+            </button>
           </span>
         ) : null}
       </div>
@@ -2018,7 +2193,7 @@ function DocumentUploadRow({
       <p className="text-xs font-medium text-[color:var(--slate)]">
         PDF, JPG or PNG · up to {MAX_UPLOAD_MB} MB
       </p>
-      {busy ? (
+      {phase !== "idle" ? (
         <EndowedProgress
           step={shownPct - 1}
           total={100}

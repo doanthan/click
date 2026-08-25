@@ -503,6 +503,22 @@ body {
   padding-inline: 20px;
 }
 @media (min-width: 640px) { .ck-page { padding-inline: 32px; } }
+
+/* The sticky site header's real height, published once so anything that has to
+   sit UNDER it can stop guessing. It was guessed, twice, in
+   portal-mobile-nav.tsx as `top-[49px] sm:top-[69px]` with a comment deriving
+   it from the logo - but the header's tallest child is the 44px notifications
+   bell, not the logo, so the true height is 44 + py + the 1px border:
+
+     < 640px : 44 + (12 * 2) + 1 = 69
+     >= 640  : 44 + (14 * 2) + 1 = 73
+     >= 1024 : the bell drops to 36px, so 36 + 28 + 1 = 65
+
+   The old 49px left the top 20px of the portal's sticky section switcher
+   smeared behind the header's own backdrop-blur band. */
+:root { --header-h: 69px; }
+@media (min-width: 640px) { :root { --header-h: 73px; } }
+@media (min-width: 1024px) { :root { --header-h: 65px; } }
 }
 
 /* ---------- Highlight & marker ----------
@@ -879,9 +895,15 @@ body:has([data-home-hero]) .site-header--marketing .ck-btn {
   gap: 2.5rem;
   flex-shrink: 0;
   min-width: 100%;
-  animation: marquee-scroll 38s linear infinite;
+  /* Finite, not infinite (WCAG 2.2.2). `:hover` pause is a mouse-only escape
+     hatch - on a phone there was no way at all to stop it, and it ran forever.
+     The track is duplicated and min-width:100%, so translateX(-100%) lands on
+     exactly the frame translateX(0) started from: after the last pass it simply
+     settles, with no visible jump. */
+  animation: marquee-scroll 38s linear 4 both;
 }
-.marquee:hover .marquee__track { animation-play-state: paused; }
+.marquee:hover .marquee__track,
+.marquee:focus-within .marquee__track { animation-play-state: paused; }
 @keyframes marquee-scroll {
   from { transform: translateX(0); }
   to { transform: translateX(-100%); }
@@ -1242,6 +1264,13 @@ button:focus-visible, a:focus-visible, select:focus-visible, textarea:focus-visi
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
+    /* Collapsing duration alone is not enough. .rise-soft and .pop-in are
+       fill-mode `both`, so a surviving delay holds the element at the keyframe's
+       0% - opacity 0 - for the whole delay and then snaps it in. That is exactly
+       the flash reduced motion is meant to prevent, and it was reaching the
+       .rise-d* ladder (up to 580ms) and MutualToast's inline 560ms. */
+    animation-delay: 0.01ms !important;
+    transition-delay: 0.01ms !important;
   }
   .marquee__track { animation: none !important; }
   /* Freeze the loading shimmer to a calm flat surface rather than a stuck mid-sweep frame. */

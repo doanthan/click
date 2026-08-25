@@ -38,7 +38,7 @@ export function EventsTab({
 
       <MerchantEventsPanel events={events} filterable />
 
-      <section className="space-y-3">
+      <section className="space-y-3 rise-soft rise-d1">
         <SectionLabel>Venues</SectionLabel>
         <p className="text-[13.5px] leading-relaxed text-[color:var(--slate)]">
           Distinct venues across your events - capacity and floor plans land with venue management.

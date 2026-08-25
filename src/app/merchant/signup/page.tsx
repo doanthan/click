@@ -2,10 +2,11 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { StepAuthCard } from "@/components/merchant-signup-wizard";
 import { authErrorMessage } from "@/lib/auth-error-copy";
+import { getPlatformFeeBps } from "@/lib/stripe-connect";
 
 // Entry point for /merchant/signup. Logged-in users are forwarded to the
 // first wizard step; logged-out visitors get the OAuth/email auth gate.
-// The "already a merchant" redirect (→ /merchant) lives in the layout, so it
+// The "already a merchant" redirect (to /merchant) lives in the layout, so it
 // fires uniformly for every step page too.
 export default async function MerchantSignupPage({
   searchParams,
@@ -42,9 +43,15 @@ export default async function MerchantSignupPage({
 }
 
 // Host value props + transparent fees. This used to live on the home page, but
-// the home page is now attendee-focused — host economics belong here, where
+// the home page is now attendee-focused - host economics belong here, where
 // someone is actually deciding whether to list.
 function HostPitch() {
+  // Read the fee we ACTUALLY charge rather than printing a literal. This tile
+  // is a commercial claim on the page where a business decides to sign up, so
+  // it must not drift from calculateApplicationFee the day someone changes the
+  // env var. Trailing zeroes are trimmed so 290bps reads "2.9%", not "2.90%".
+  const feePercentLabel = `${Number((getPlatformFeeBps() / 100).toFixed(2))}%`;
+
   return (
     <section className="mt-12 grid gap-10 border-t border-[color:var(--line)] pt-12 lg:grid-cols-[1.05fr_0.95fr] lg:items-start">
       <div>
@@ -64,7 +71,7 @@ function HostPitch() {
             "Vetted attendee profiles",
             "Capacity + waitlist on autopilot",
             "Free events stay free",
-            "ABN verification once, list forever",
+            "One application, then list any time",
           ].map((item) => (
             <li key={item} className="flex items-start gap-2">
               <span className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-[color:var(--lavender-100)] text-[10px] font-semibold text-[color:var(--purple-700)]">
@@ -86,17 +93,18 @@ function HostPitch() {
             day it goes live, and the promise the first cohort of hosts would
             measure us against.
 
-            The fee was wrong too: PLATFORM_FEE_BPS is 290 and
-            calculateApplicationFee is purely percentage-based - there is no 30c
-            fixed component anywhere in the charge path, and booking_fee_bps is
-            0. Put real numbers back here once events/event_attendees can
-            actually produce them. */}
+            The fee tile is now DERIVED from getPlatformFeeBps rather than
+            typed in, so it cannot drift from what calculateApplicationFee
+            actually charges. Note the fee is purely percentage-based - there is
+            no fixed per-ticket component anywhere in the charge path, and
+            booking_fee_bps is 0. Put real performance numbers back in the other
+            tiles once events/event_attendees can actually produce them. */}
         <dl className="mt-5 grid gap-4 sm:grid-cols-2">
           {[
             ["$0", "Listing fee for free events"],
-            ["2.9%", "Click fee per paid ticket"],
+            [feePercentLabel, "Click fee per paid ticket"],
             ["Sydney", "Where the pilot runs today"],
-            ["Once", "ABN check, then list any time"],
+            ["Once", "Apply once, then list any time"],
           ].map(([num, label]) => (
             <div
               key={label}

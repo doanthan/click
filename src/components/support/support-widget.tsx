@@ -4,10 +4,10 @@
  * Report-a-Bug widget: a floating button (bottom-right) that opens a right-side
  * off-canvas panel with two tabs:
  *
- *   • Report  — auto-captures a viewport screenshot + the recent console logs and
+ *   • Report - auto-captures a viewport screenshot + the recent console logs and
  *               failed network requests, lets you describe and highlight the bug,
  *               and submits everything to /api/support/ticket.
- *   • Bugs (N) — the open bugs filed against THIS page; tick one off to mark it
+ *   • Bugs (N) - the open bugs filed against THIS page; tick one off to mark it
  *               fixed (which also turns its Google Sheet row green).
  *
  * Importing this module also starts the always-on capture (side-effect import of
@@ -21,15 +21,28 @@ import "@/lib/support-capture";
 import { getConsoleLogs, getCounts, getNetworkErrors } from "@/lib/support-capture";
 import { captureViewport } from "@/lib/support-screenshot";
 
-const ACCENT = "#7c6df2"; // lavender — bug brand
-const ANNOTATION = "#B03824"; // brand red stroke
+// ACCENT used to be an off-palette #7c6df2, on the theory that a bug reporter
+// should not look like Click chrome. But this widget mounts for EVERY visitor
+// pre-launch (see layout.tsx), so the theory put the product's one hardcoded
+// hex on top of every page, checkout included - and a floating periwinkle pill
+// pulls more eye than the Deep Purple CTA beside it, not less. Deep Purple is
+// the accent role in the DS; the bug glyph and the label are what say this is
+// not a product action.
+const ACCENT = "var(--purple)";
+// The one colour that CANNOT be var(--token), and why. ANNOTATION is consumed
+// by <canvas> (ctx.fillStyle / ctx.strokeStyle resolve a colour, not a custom
+// property) and by SVG attributes built with hex-alpha concatenation
+// (`${ANNOTATION}1a`), so a literal is genuinely required here. It is --danger
+// verbatim (#B5362F) so the baked screenshot matches the red the drawer paints
+// - anything on a plain DOM element uses the token instead.
+const ANNOTATION = "#B5362F";
 
 type Rect = { x: number; y: number; w: number; h: number };
 type Annotation = { id: string; x: number; y: number; w: number; h: number; label: string };
 type BugStatus = "open" | "ai_fixed" | "fixed" | "not_issue";
 const BUG_STATUS_OPTIONS: { value: BugStatus; label: string }[] = [
-  { value: "open", label: "Open — needs fixing" },
-  { value: "ai_fixed", label: "AI fixed — verify" },
+  { value: "open", label: "Open - needs fixing" },
+  { value: "ai_fixed", label: "AI fixed - verify" },
   { value: "fixed", label: "Fixed" },
   { value: "not_issue", label: "Not an issue" },
 ];
@@ -120,7 +133,7 @@ async function bakeAnnotations(shot: Shot, annotations: Annotation[]): Promise<B
       const pillY = Math.max(0, a.y - fontH - 6);
       ctx.fillStyle = ANNOTATION;
       ctx.fillRect(a.x, pillY, textW + padX * 2, fontH + 4);
-      ctx.fillStyle = "#ffffff";
+      ctx.fillStyle = "#ffffff"; // canvas literal: label text on the ANNOTATION pill
       ctx.fillText(a.label, a.x + padX, pillY + fontH - 2);
     }
   }
@@ -154,8 +167,9 @@ export default function SupportWidget({ canTriage = false }: { canTriage?: boole
   // be moved (drag the body) or resized (drag a corner handle).
   const [annotation, setAnnotation] = useState<Annotation | null>(null);
   const [draft, setDraft] = useState<Rect | null>(null);
-  const [editing, setEditing] = useState(false); // label input focused — suppresses draw + Escape-close
-  // Displayed-vs-natural scale for the screenshot — measured from the <img>, kept
+  const panelRef = useRef<HTMLElement>(null);
+  const [editing, setEditing] = useState(false); // label input focused - suppresses draw + Escape-close
+  // Displayed-vs-natural scale for the screenshot - measured from the <img>, kept
   // in state (never read ref.current during render).
   const [dispScale, setDispScale] = useState(1);
   const imgRef = useRef<HTMLImageElement | null>(null);
@@ -177,7 +191,7 @@ export default function SupportWidget({ canTriage = false }: { canTriage?: boole
 
   // Keep the displayed-vs-natural scale fresh. Measuring only on the <img>
   // onLoad left dispScale stale when the drawer was still animating open, or
-  // when the viewport/orientation changed afterwards — the annotation box then
+  // when the viewport/orientation changed afterwards - the annotation box then
   // rendered offset from the cursor and the dragger looked broken. A
   // ResizeObserver on the image plus a window resize listener re-measure on any
   // layout change so the drawn box always tracks the pointer.
@@ -233,7 +247,7 @@ export default function SupportWidget({ canTriage = false }: { canTriage?: boole
       setCounts(getCounts());
     } catch (err) {
       console.warn("screenshot failed", err);
-      toast.error("Couldn't capture a screenshot — you can still describe the bug.");
+      toast.error("Couldn't capture a screenshot - you can still describe the bug.");
     } finally {
       setCapturing(false);
     }
@@ -254,14 +268,51 @@ export default function SupportWidget({ canTriage = false }: { canTriage?: boole
     return () => window.removeEventListener("resize", measure);
   }, [open, measure]);
 
-  // Escape closes.
+  // Escape closes - plus the rest of what `aria-modal="true"` promises. The
+  // panel claimed to be modal while doing none of it: Tab walked straight out
+  // onto the page behind the scrim, nothing was focused on open, and closing
+  // dumped you at the top of the document instead of back on the pill. This is
+  // ModalShell's job everywhere else; the drawer geometry here is why it is
+  // open-coded rather than a fourth hand-rolled copy of the whole primitive.
   useEffect(() => {
     if (!open) return;
+    const previouslyFocused = document.activeElement;
+    const raf = window.requestAnimationFrame(() => panelRef.current?.focus());
+
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !editing) setOpen(false);
+      if (e.key === "Escape" && !editing) {
+        setOpen(false);
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const panel = panelRef.current;
+      if (!panel) return;
+      const focusables = Array.from(
+        panel.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((el) => el.offsetParent !== null || el === document.activeElement);
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const active = document.activeElement;
+      if (!panel.contains(active)) {
+        e.preventDefault();
+        first.focus();
+      } else if (e.shiftKey && active === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => {
+      window.cancelAnimationFrame(raf);
+      window.removeEventListener("keydown", onKey);
+      if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus();
+    };
   }, [open, editing]);
 
   // Clean up the last object URL on unmount.
@@ -313,7 +364,7 @@ export default function SupportWidget({ canTriage = false }: { canTriage?: boole
     if (d?.kind !== "draw") return;
     const r = draft;
     setDraft(null);
-    if (!r || r.w < 8 || r.h < 8) return; // ignore tiny boxes — keep any existing one
+    if (!r || r.w < 8 || r.h < 8) return; // ignore tiny boxes - keep any existing one
     setAnnotation({ id: "box", ...r, label: "" });
     setEditing(true);
   }
@@ -388,14 +439,14 @@ export default function SupportWidget({ canTriage = false }: { canTriage?: boole
         if (!res.ok) throw new Error(data.error || "Submit failed");
         await loadBugs();
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Couldn't submit the bug — please try again.");
+        toast.error(err instanceof Error ? err.message : "Couldn't submit the bug - please try again.");
       }
     })();
   }
 
   function markFixed(ticketRef: string) {
     // Optimistic: drop the bug from the list the instant it's ticked, so there's
-    // zero lag. The PATCH runs in the background — only if it fails do we slot the
+    // zero lag. The PATCH runs in the background - only if it fails do we slot the
     // bug back exactly where it was and surface an error.
     const index = bugs.findIndex((b) => b.ticketRef === ticketRef);
     if (index === -1) return;
@@ -433,7 +484,7 @@ export default function SupportWidget({ canTriage = false }: { canTriage?: boole
     setEditingBug((cur) => (cur === bug.ticketRef ? null : bug.ticketRef));
     setEditMessage(bug.message);
     setEditExpected(bug.expected ?? "");
-    // Listed bugs are always open; aiFixed just means "AI says fixed — verify".
+    // Listed bugs are always open; aiFixed just means "AI says fixed - verify".
     setEditStatus(bug.aiFixed ? "ai_fixed" : "open");
   }
 
@@ -484,13 +535,15 @@ export default function SupportWidget({ canTriage = false }: { canTriage?: boole
     <div data-support-widget>
       {/* Floating trigger. bottom-20 alone sat ON the mobile bottom nav once a
           notched phone added its safe-area inset (56px tabs + ~34px inset >
-          80px), so the offset carries the inset too. Above lg the nav is gone. */}
+          80px), so the offset carries the inset too. Above lg the nav is gone.
+          rounded-xl is radius-12: in this DS a pill is a tag or an avatar, and
+          this is a button, so it wears the one button footprint. */}
       {!open && (
         <button
           type="button"
           onClick={() => setOpen(true)}
           aria-label="Report a bug"
-          className="fixed right-5 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-[80] flex items-center gap-2 rounded-full px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:scale-105 lg:bottom-5"
+          className="fixed right-5 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-[80] flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-[color:var(--champagne)] shadow-lg transition hover:scale-105 lg:bottom-5"
           style={{ backgroundColor: ACCENT }}
         >
           <BugIcon />
@@ -504,30 +557,32 @@ export default function SupportWidget({ canTriage = false }: { canTriage?: boole
             type="button"
             aria-label="Close"
             onClick={() => setOpen(false)}
-            className="absolute inset-0 bg-black/30 backdrop-blur-[1px]"
+            className="absolute inset-0 bg-[color:var(--ink)]/30 backdrop-blur-[1px]"
           />
           <aside
+            ref={panelRef}
+            tabIndex={-1}
             role="dialog"
             aria-modal="true"
             aria-label="Report a bug"
-            className="absolute right-0 top-0 flex h-full w-full max-w-md flex-col overflow-hidden border-l border-black/10 bg-white shadow-2xl"
+            className="absolute right-0 top-0 flex h-full w-full max-w-md flex-col overflow-hidden border-l border-[color:var(--line)] bg-[color:var(--paper)] shadow-2xl outline-none"
           >
             {/* Header */}
             <header
-              className="flex items-center justify-between px-4 py-3 text-white"
+              className="flex items-center justify-between px-4 py-3 text-[color:var(--champagne)]"
               style={{ backgroundColor: ACCENT }}
             >
               <div className="flex items-center gap-2 font-semibold">
                 <BugIcon />
                 <span>Report a bug</span>
               </div>
-              <button type="button" onClick={() => setOpen(false)} aria-label="Close" className="rounded p-1 hover:bg-white/20">
+              <button type="button" onClick={() => setOpen(false)} aria-label="Close" className="rounded p-1 hover:bg-[color-mix(in_srgb,var(--paper)_20%,transparent)]">
                 <CloseIcon />
               </button>
             </header>
 
             {/* Tabs */}
-            <nav className="flex border-b border-black/10 text-sm">
+            <nav className="flex border-b border-[color:var(--line)] text-sm">
               <TabButton active={tab === "report"} onClick={() => setTab("report")}>Report</TabButton>
               {canTriage ? (
                 <TabButton active={tab === "list"} onClick={() => setTab("list")}>
@@ -540,51 +595,51 @@ export default function SupportWidget({ canTriage = false }: { canTriage?: boole
               {tab === "report" ? (
                 <div className="space-y-4">
                   <div>
-                    <label className="mb-1 block text-sm font-medium text-gray-700">What is wrong?</label>
+                    <label className="mb-1 block text-sm font-medium text-[color:var(--ink-soft)]">What is wrong?</label>
                     <textarea
                       value={message}
                       onChange={(e) => setMessage(e.target.value)}
                       maxLength={5000}
                       rows={3}
                       placeholder="What you did · what actually happened."
-                      className="w-full resize-y rounded-md border border-gray-300 p-2 text-sm outline-none focus:border-gray-500"
+                      className="w-full resize-y rounded-md border border-[color:var(--line)] p-2 text-sm outline-none focus:border-[color:var(--slate)]"
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block text-sm font-medium text-gray-700">
-                      What should it do instead? <span className="font-normal text-gray-400">(optional)</span>
+                    <label className="mb-1 block text-sm font-medium text-[color:var(--ink-soft)]">
+                      What should it do instead? <span className="font-normal text-[color:var(--ink-faint)]">(optional)</span>
                     </label>
                     <textarea
                       value={expected}
                       onChange={(e) => setExpected(e.target.value)}
                       maxLength={5000}
                       rows={2}
-                      placeholder="The expected behaviour — helps the AI fixer know the target."
-                      className="w-full resize-y rounded-md border border-gray-300 p-2 text-sm outline-none focus:border-gray-500"
+                      placeholder="What you expected to happen instead."
+                      className="w-full resize-y rounded-md border border-[color:var(--line)] p-2 text-sm outline-none focus:border-[color:var(--slate)]"
                     />
                   </div>
 
                   {/* Screenshot + annotation */}
                   <div>
                     <div className="mb-1 flex items-center justify-between">
-                      <span className="text-sm font-medium text-gray-700">Screenshot</span>
+                      <span className="text-sm font-medium text-[color:var(--ink-soft)]">Screenshot</span>
                       <button
                         type="button"
                         onClick={() => void capture()}
-                        className="text-xs text-gray-500 underline hover:text-gray-800"
+                        className="text-xs text-[color:var(--slate)] underline hover:text-[color:var(--ink)]"
                       >
                         Recapture
                       </button>
                     </div>
-                    <p className="mb-2 text-xs text-gray-500">
+                    <p className="mb-2 text-xs text-[color:var(--slate)]">
                       {annotation
                         ? "Drag a corner to resize, or drag the box to move it. Draw again to start over."
                         : "Click and drag on the screenshot to highlight one area."}
                     </p>
 
-                    <div className="relative select-none overflow-hidden rounded-md border border-gray-200 bg-gray-50">
+                    <div className="relative select-none overflow-hidden rounded-md border border-[color:var(--line-soft)] bg-[color:var(--champagne)]">
                       {capturing && (
-                        <div className="flex h-40 items-center justify-center text-sm text-gray-400">Capturing…</div>
+                        <div className="flex h-40 items-center justify-center text-sm text-[color:var(--ink-faint)]">Capturing…</div>
                       )}
                       {!capturing && shot && (
                         <div className="relative" style={{ touchAction: "none" }}>
@@ -629,7 +684,7 @@ export default function SupportWidget({ canTriage = false }: { canTriage?: boole
                                     {annotation.label}
                                   </text>
                                 )}
-                                {/* Corner resize handles — anchor is the opposite corner */}
+                                {/* Corner resize handles - anchor is the opposite corner */}
                                 {(
                                   [
                                     ["nw", annotation.x, annotation.y, annotation.x + annotation.w, annotation.y + annotation.h, "nwse-resize"],
@@ -644,7 +699,7 @@ export default function SupportWidget({ canTriage = false }: { canTriage?: boole
                                     y={hy * dispScale - 5}
                                     width={10}
                                     height={10}
-                                    fill="#ffffff"
+                                    fill="var(--paper)"
                                     stroke={ANNOTATION}
                                     strokeWidth={2}
                                     style={{ cursor }}
@@ -669,7 +724,7 @@ export default function SupportWidget({ canTriage = false }: { canTriage?: boole
                         </div>
                       )}
                       {!capturing && !shot && (
-                        <div className="flex h-40 items-center justify-center text-sm text-gray-400">No screenshot</div>
+                        <div className="flex h-40 items-center justify-center text-sm text-[color:var(--ink-faint)]">No screenshot</div>
                       )}
                     </div>
 
@@ -686,7 +741,7 @@ export default function SupportWidget({ canTriage = false }: { canTriage?: boole
                   </div>
 
                   {/* Diagnostics toggles */}
-                  <div className="space-y-2 rounded-md bg-gray-50 p-3">
+                  <div className="space-y-2 rounded-md bg-[color:var(--champagne)] p-3">
                     <Checkbox checked={includeConsole} onChange={setIncludeConsole} label={`Console logs (${counts.console})`} />
                     <Checkbox checked={includeNetwork} onChange={setIncludeNetwork} label={`Failed network requests (${counts.network})`} />
                   </div>
@@ -695,7 +750,7 @@ export default function SupportWidget({ canTriage = false }: { canTriage?: boole
                     type="button"
                     disabled={!message.trim() || submitting}
                     onClick={() => void submit()}
-                    className="w-full rounded-md py-2.5 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-50"
+                    className="w-full rounded-md py-2.5 text-sm font-semibold text-[color:var(--champagne)] transition disabled:cursor-not-allowed disabled:opacity-50"
                     style={{ backgroundColor: ACCENT }}
                   >
                     {submitting ? "Submitting…" : "Submit ticket"}
@@ -703,36 +758,36 @@ export default function SupportWidget({ canTriage = false }: { canTriage?: boole
                 </div>
               ) : (
                 <div className="space-y-3">
-                  <p className="text-xs text-gray-500">Open bugs reported on <code className="rounded bg-gray-100 px-1">{pageUrl()}</code>. Tick one off when it&apos;s fixed, <span className="font-medium">Edit</span> to refine it, or hit <span className="font-medium">Not fixed</span> to send it back to the AI.</p>
-                  {loadingBugs && <p className="text-sm text-gray-400">Loading…</p>}
+                  <p className="text-xs text-[color:var(--slate)]">Open bugs reported on <code className="rounded bg-[color:var(--champagne-deep)] px-1">{pageUrl()}</code>. Tick one off when it&apos;s fixed, <span className="font-medium">Edit</span> to refine it, or hit <span className="font-medium">Not fixed</span> to send it back to the AI.</p>
+                  {loadingBugs && <p className="text-sm text-[color:var(--ink-faint)]">Loading…</p>}
                   {!loadingBugs && bugs.length === 0 && (
-                    <p className="rounded-md bg-green-50 p-3 text-sm text-green-700">No open bugs on this page. 🎉</p>
+                    <p className="rounded-md bg-[color-mix(in_srgb,var(--sage)_10%,var(--paper))] p-3 text-sm text-[color:var(--sage-ink)]">No open bugs on this page. 🎉</p>
                   )}
                   {bugs.map((b) => (
-                    <div key={b.ticketRef} className="flex gap-3 rounded-md border border-red-200 bg-red-50 p-3">
+                    <div key={b.ticketRef} className="flex gap-3 rounded-md border border-[color-mix(in_srgb,var(--danger)_28%,transparent)] bg-[color-mix(in_srgb,var(--danger)_8%,var(--paper))] p-3">
                       <button
                         type="button"
                         onClick={() => markFixed(b.ticketRef)}
                         title="Mark fixed"
-                        className="mt-0.5 h-5 w-5 shrink-0 rounded border-2 border-red-400 bg-white transition hover:bg-green-100"
+                        className="mt-0.5 h-5 w-5 shrink-0 rounded border-2 border-[color-mix(in_srgb,var(--danger)_55%,transparent)] bg-[color:var(--paper)] transition hover:bg-[color-mix(in_srgb,var(--sage)_16%,var(--paper))]"
                       />
                       <div className="min-w-0 flex-1">
                         {b.aiFixed && (
-                          <span className="mb-1 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
-                            AI says fixed — verify
+                          <span className="mb-1 inline-flex items-center gap-1 rounded-full bg-[color-mix(in_srgb,var(--amber)_16%,var(--paper))] px-2 py-0.5 text-[11px] font-semibold text-[color:var(--amber-ink)]">
+                            AI says fixed - verify
                           </span>
                         )}
                         {editingBug !== b.ticketRef && (
                           <>
-                            <p className="whitespace-pre-wrap break-words text-sm font-medium text-gray-800">{b.message}</p>
+                            <p className="whitespace-pre-wrap break-words text-sm font-medium text-[color:var(--ink)]">{b.message}</p>
                             {b.expected && (
-                              <p className="mt-0.5 break-words text-xs text-gray-600">
+                              <p className="mt-0.5 break-words text-xs text-[color:var(--slate)]">
                                 <span className="font-medium">Should:</span> {b.expected}
                               </p>
                             )}
                           </>
                         )}
-                        <p className="mt-1 text-xs text-gray-500">
+                        <p className="mt-1 text-xs text-[color:var(--slate)]">
                           {b.ticketRef}{b.reporterName ? ` · ${b.reporterName}` : ""}
                         </p>
                         <div className="mt-1 flex items-center gap-3">
@@ -762,43 +817,43 @@ export default function SupportWidget({ canTriage = false }: { canTriage?: boole
                           <button
                             type="button"
                             onClick={() => openReopen(b.ticketRef)}
-                            className="text-xs font-medium text-red-600 underline hover:text-red-800"
+                            className="text-xs font-medium text-[color:var(--danger)] underline hover:text-[color:var(--danger)]"
                           >
                             {reopening === b.ticketRef ? "Cancel" : "Not fixed →"}
                           </button>
                         </div>
 
                         {editingBug === b.ticketRef && (
-                          <div className="mt-2 space-y-2 rounded-md border border-gray-200 bg-white p-2">
+                          <div className="mt-2 space-y-2 rounded-md border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-2">
                             <div>
-                              <label className="mb-1 block text-xs font-medium text-gray-700">What is wrong?</label>
+                              <label className="mb-1 block text-xs font-medium text-[color:var(--ink-soft)]">What is wrong?</label>
                               <textarea
                                 autoFocus
                                 value={editMessage}
                                 onChange={(e) => setEditMessage(e.target.value)}
                                 maxLength={5000}
                                 rows={3}
-                                className="w-full resize-y rounded-md border border-gray-300 p-2 text-sm outline-none focus:border-gray-500"
+                                className="w-full resize-y rounded-md border border-[color:var(--line)] p-2 text-sm outline-none focus:border-[color:var(--slate)]"
                               />
                             </div>
                             <div>
-                              <label className="mb-1 block text-xs font-medium text-gray-700">
-                                What should it do instead? <span className="font-normal text-gray-400">(optional)</span>
+                              <label className="mb-1 block text-xs font-medium text-[color:var(--ink-soft)]">
+                                What should it do instead? <span className="font-normal text-[color:var(--ink-faint)]">(optional)</span>
                               </label>
                               <textarea
                                 value={editExpected}
                                 onChange={(e) => setEditExpected(e.target.value)}
                                 maxLength={5000}
                                 rows={2}
-                                className="w-full resize-y rounded-md border border-gray-300 p-2 text-sm outline-none focus:border-gray-500"
+                                className="w-full resize-y rounded-md border border-[color:var(--line)] p-2 text-sm outline-none focus:border-[color:var(--slate)]"
                               />
                             </div>
                             <div>
-                              <label className="mb-1 block text-xs font-medium text-gray-700">Status</label>
+                              <label className="mb-1 block text-xs font-medium text-[color:var(--ink-soft)]">Status</label>
                               <select
                                 value={editStatus}
                                 onChange={(e) => setEditStatus(e.target.value as BugStatus)}
-                                className="w-full rounded-md border border-gray-300 bg-white p-2 text-sm outline-none focus:border-gray-500"
+                                className="w-full rounded-md border border-[color:var(--line)] bg-[color:var(--paper)] p-2 text-sm outline-none focus:border-[color:var(--slate)]"
                               >
                                 {BUG_STATUS_OPTIONS.map((o) => (
                                   <option key={o.value} value={o.value}>{o.label}</option>
@@ -809,7 +864,7 @@ export default function SupportWidget({ canTriage = false }: { canTriage?: boole
                               <button
                                 type="button"
                                 onClick={() => setEditingBug(null)}
-                                className="rounded px-2 py-1 text-xs font-medium text-gray-500 hover:text-gray-800"
+                                className="rounded px-2 py-1 text-xs font-medium text-[color:var(--slate)] hover:text-[color:var(--ink)]"
                               >
                                 Cancel
                               </button>
@@ -817,7 +872,7 @@ export default function SupportWidget({ canTriage = false }: { canTriage?: boole
                                 type="button"
                                 disabled={!editMessage.trim() || editSubmitting}
                                 onClick={() => void submitEdit(b.ticketRef)}
-                                className="rounded px-3 py-1 text-xs font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-50"
+                                className="rounded px-3 py-1 text-xs font-semibold text-[color:var(--champagne)] transition disabled:cursor-not-allowed disabled:opacity-50"
                                 style={{ backgroundColor: ACCENT }}
                               >
                                 {editSubmitting ? "Saving…" : "Save changes"}
@@ -827,9 +882,9 @@ export default function SupportWidget({ canTriage = false }: { canTriage?: boole
                         )}
 
                         {reopening === b.ticketRef && (
-                          <div className="mt-2 rounded-md border border-red-200 bg-white p-2">
-                            <label className="mb-1 block text-xs font-medium text-gray-700">
-                              What&apos;s still wrong? <span className="font-normal text-gray-400">— the AI will pick it up again</span>
+                          <div className="mt-2 rounded-md border border-[color-mix(in_srgb,var(--danger)_28%,transparent)] bg-[color:var(--paper)] p-2">
+                            <label className="mb-1 block text-xs font-medium text-[color:var(--ink-soft)]">
+                              What&apos;s still wrong? <span className="font-normal text-[color:var(--ink-faint)]"> - the AI will pick it up again</span>
                             </label>
                             <textarea
                               autoFocus
@@ -838,13 +893,13 @@ export default function SupportWidget({ canTriage = false }: { canTriage?: boole
                               maxLength={5000}
                               rows={3}
                               placeholder="Describe what still doesn't work, so the AI fixer knows what to retry."
-                              className="w-full resize-y rounded-md border border-gray-300 p-2 text-sm outline-none focus:border-gray-500"
+                              className="w-full resize-y rounded-md border border-[color:var(--line)] p-2 text-sm outline-none focus:border-[color:var(--slate)]"
                             />
                             <div className="mt-2 flex items-center justify-end gap-2">
                               <button
                                 type="button"
                                 onClick={() => openReopen(b.ticketRef)}
-                                className="rounded px-2 py-1 text-xs font-medium text-gray-500 hover:text-gray-800"
+                                className="rounded px-2 py-1 text-xs font-medium text-[color:var(--slate)] hover:text-[color:var(--ink)]"
                               >
                                 Cancel
                               </button>
@@ -852,8 +907,8 @@ export default function SupportWidget({ canTriage = false }: { canTriage?: boole
                                 type="button"
                                 disabled={!reopenNote.trim() || reopenSubmitting}
                                 onClick={() => void submitNotFixed(b.ticketRef)}
-                                className="rounded px-3 py-1 text-xs font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-50"
-                                style={{ backgroundColor: "#B03824" }}
+                                className="rounded px-3 py-1 text-xs font-semibold text-[color:var(--champagne)] transition disabled:cursor-not-allowed disabled:opacity-50"
+                                style={{ backgroundColor: "var(--danger)" }}
                               >
                                 {reopenSubmitting ? "Sending…" : "Send back to AI"}
                               </button>
@@ -878,7 +933,7 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
     <button
       type="button"
       onClick={onClick}
-      className={`flex-1 px-3 py-2 font-medium transition ${active ? "border-b-2 text-gray-900" : "text-gray-500 hover:text-gray-700"}`}
+      className={`flex-1 px-3 py-2 font-medium transition ${active ? "border-b-2 text-[color:var(--ink)]" : "text-[color:var(--slate)] hover:text-[color:var(--ink-soft)]"}`}
       style={active ? { borderColor: ACCENT } : undefined}
     >
       {children}
@@ -888,8 +943,9 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
 
 function Checkbox({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
-    <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-700">
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="h-4 w-4 accent-[#7c6df2]" />
+    <label className="flex cursor-pointer items-center gap-2 text-sm text-[color:var(--ink-soft)]">
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} style={{ accentColor: ACCENT }}
+        className="h-4 w-4" />
       {label}
     </label>
   );
@@ -909,7 +965,7 @@ function AnnotationEditor({
   onBlur: () => void;
 }) {
   return (
-    <div className="mt-2 flex items-center gap-2 rounded-md border border-gray-200 bg-white p-2">
+    <div className="mt-2 flex items-center gap-2 rounded-md border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-2">
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -917,9 +973,9 @@ function AnnotationEditor({
         onBlur={onBlur}
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur(); }}
         placeholder="Label this box (optional)"
-        className="flex-1 rounded border border-gray-300 px-2 py-1 text-sm outline-none focus:border-gray-500"
+        className="flex-1 rounded border border-[color:var(--line)] px-2 py-1 text-sm outline-none focus:border-[color:var(--slate)]"
       />
-      <button type="button" onClick={onDelete} aria-label="Delete box" className="rounded px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50">
+      <button type="button" onClick={onDelete} aria-label="Delete box" className="rounded px-2 py-1 text-xs font-semibold text-[color:var(--danger)] hover:bg-[color-mix(in_srgb,var(--danger)_8%,var(--paper))]">
         Delete
       </button>
     </div>

@@ -21,7 +21,7 @@ export default function robots(): MetadataRoute.Robots {
         "/dashboard",
         "/merchant",
         "/notifications",
-        "/profile/edit",
+        "/profile",
         "/proposals",
         "/quiz",
         "/scale",

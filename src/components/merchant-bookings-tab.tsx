@@ -3,7 +3,10 @@ import type { Session } from "next-auth";
 import { Badge } from "@/components/ds";
 import { MerchantEmpty, SectionLabel, StatusPill, mCard } from "@/components/merchant-ds";
 import { MerchantAttendeesPanel } from "@/components/merchant-attendees-panel";
-import { getMerchantAllAttendees } from "@/lib/event-repository";
+import {
+  MERCHANT_DOOR_LIST_CAP,
+  getMerchantAllAttendees,
+} from "@/lib/event-repository";
 import { CreateEventButton, TabHeader } from "./merchant-portal-shared";
 
 export async function BookingsTabAsync({
@@ -43,7 +46,7 @@ export async function BookingsTabAsync({
       ) : null}
 
       {grouped.size > 0 ? (
-        <section className="space-y-3">
+        <section className="space-y-3 rise-soft rise-d1">
           <SectionLabel>By event</SectionLabel>
           <ul className="grid gap-2.5 lg:grid-cols-2">
             {Array.from(grouped.entries()).map(([slug, list]) => {
@@ -90,11 +93,25 @@ export async function BookingsTabAsync({
       ) : null}
 
       {attendees.length > 0 ? (
-        <section className="space-y-3">
+        <section className="space-y-3 rise-soft rise-d2">
           <SectionLabel>All attendees</SectionLabel>
           <p className="text-[13.5px] leading-relaxed text-[color:var(--slate)]">
-            Check people in on the day, or export the door list to CSV.
+            Ticket-holders and their +1s, together. Check people in on the day, or
+            export the door list to CSV.
           </p>
+          {/* A truncated door list that says nothing is worse than a slow one:
+              it exports to CSV and goes to a door short of the people at the
+              end of it. Say so, and say which end got cut. */}
+          {attendees.length >= MERCHANT_DOOR_LIST_CAP ? (
+            <p
+              role="status"
+              className="rounded-xl border border-[color-mix(in_srgb,var(--amber)_38%,transparent)] bg-[color-mix(in_srgb,var(--amber)_9%,var(--paper))] px-4 py-3 text-[13px] leading-relaxed text-[color:var(--ink-soft)]"
+            >
+              Showing your most recent {MERCHANT_DOOR_LIST_CAP} seats. Older events
+              are not in this list or its CSV - open an event from the Events tab
+              for its own full door list.
+            </p>
+          ) : null}
           <MerchantAttendeesPanel rows={attendees} />
         </section>
       ) : null}

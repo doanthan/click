@@ -6,11 +6,12 @@ import {
   signInWithGoogle,
   signInWithMeta,
 } from "@/app/login/actions";
-import { SsoButton } from "@/components/auth-ui";
+import { AuthNote, SsoButton } from "@/components/auth-ui";
+import { SubmitButton } from "@/components/ds-client";
 import { authErrorMessage } from "@/lib/auth-error-copy";
 
 // Merchant-branded sign-in surface. Hits the exact same NextAuth backend as
-// the customer /login — only the copy, default callback, and signup CTA
+// the customer /login - only the copy, default callback, and signup CTA
 // differ. Per spec context/02_MERCHANT_JOURNEY.md §1 the merchant entry point
 // stays distinct from the customer one even though identities are shared
 // (one user can be both attendee and merchant via profiles.role).
@@ -25,16 +26,17 @@ type LoginPageProps = {
   searchParams?: Promise<{
     callbackUrl?: string;
     error?: string;
+    emailSent?: string;
   }>;
 };
 
 
 function safeMerchantCallbackUrl(value: string | undefined) {
-  // Restrict callbacks to /merchant* — a merchant logging in via this surface
+  // Restrict callbacks to /merchant* - a merchant logging in via this surface
   // should always land back in the merchant area, never on a customer page.
   // Deep links (e.g. /merchant/events/create) ride through as ?next=; the bare
   // portal root rides as ?portal=merchant because /post-login deliberately
-  // ignores portal roots in ?next= (it owns the role dispatch) — without the
+  // ignores portal roots in ?next= (it owns the role dispatch) - without the
   // portal hint, a merchant-surface login landed on the attendee side.
   if (
     value?.startsWith("/merchant") &&
@@ -58,6 +60,11 @@ export default async function MerchantLoginPage({ searchParams }: LoginPageProps
   }
 
   const errorMessage = authErrorMessage(params?.error);
+  // signInWithEmail redirects back to `${formPath}?emailSent=1`. This page
+  // posts formPath=/merchant/login (below) but never read the answer, so the
+  // send looked like a no-op and hosts re-tapped until the 5/hour limit locked
+  // them out of the only email door into the portal.
+  const emailSent = params?.emailSent === "1";
   const googleConfigured = !!(process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET);
   const metaConfigured = !!(process.env.AUTH_FACEBOOK_ID && process.env.AUTH_FACEBOOK_SECRET);
 
@@ -80,7 +87,7 @@ export default async function MerchantLoginPage({ searchParams }: LoginPageProps
 
           <p className="mt-6 max-w-xl text-base font-medium leading-7 text-[color:var(--slate)] sm:text-lg">
             One sign-in for your Click host portal. Manage events, attendees,
-            payouts, and discounts - all in one place.
+            and payouts - all in one place.
           </p>
 
           <ul className="mt-8 grid gap-3 text-sm font-medium text-[color:var(--slate)]">
@@ -160,6 +167,20 @@ export default async function MerchantLoginPage({ searchParams }: LoginPageProps
             <form action={signInWithEmail} className="grid gap-4">
               <input type="hidden" name="callbackUrl" value={callbackUrl} />
               <input type="hidden" name="mode" value="login" />
+              {/* Without this, signInWithEmail's safeFormPath falls back to
+                  /login and answered a host on the HOST sign-in page with the
+                  attendee one - different chrome, different copy, and the host
+                  reasonably wonders whether their link went to the right place.
+                  The mechanism already existed for exactly this reason (see the
+                  comment above safeFormPath); this form just never opted in. */}
+              <input type="hidden" name="formPath" value="/merchant/login" />
+
+              {emailSent ? (
+                <AuthNote icon="mail">
+                  Check your inbox for a secure, one-time sign-in link. It works
+                  once and expires in 15 minutes.
+                </AuthNote>
+              ) : null}
 
               <label className="grid gap-2">
                 <span className="text-[12.5px] font-semibold text-[color:var(--slate)]">
@@ -184,15 +205,18 @@ export default async function MerchantLoginPage({ searchParams }: LoginPageProps
                 </p>
               ) : null}
 
-              <button type="submit" className="ck-btn ck-btn--primary ck-btn--lg">
+              <SubmitButton size="lg" full pendingLabel="Sending your link...">
                 Continue with Email
-                <span aria-hidden>→</span>
-              </button>
+              </SubmitButton>
               <Link
                 href="/forgot-password"
                 className="text-sm font-semibold text-[color:var(--purple)] underline underline-offset-4 hover:text-[color:var(--purple-hover)]"
               >
-                Forgot password or need a fresh access email?
+                {/* Click has no passwords - sign-in is a one-time emailed link,
+                    and /forgot-password now just delegates to the same
+                    signInWithEmail this form calls. Offering to recover a
+                    password a host never set sent them looking for one. */}
+                Didn&apos;t get your link? Send another.
               </Link>
             </form>
           </div>
@@ -208,13 +232,26 @@ export default async function MerchantLoginPage({ searchParams }: LoginPageProps
               </Link>
               .
             </p>
+            {/* "Browse Click as a guest" used to point at /login - the attendee
+                sign-in wall, which is the one thing a guest cannot browse from.
+                The label was the honest half, so the destination moved to meet
+                it: /discover renders for a logged-out session. The attendee
+                sign-in door stays on the line as its own link, because that was
+                the other thing this sentence was carrying. */}
             <p className="mt-2 text-sm font-medium text-[color:var(--slate)]">
-              Looking for the attendee login?{" "}
+              Not a host?{" "}
+              <Link
+                href="/discover"
+                className="font-semibold text-[color:var(--purple)] underline underline-offset-4 hover:text-[color:var(--purple-hover)]"
+              >
+                Browse Click as a guest
+              </Link>
+              , or{" "}
               <Link
                 href="/login"
                 className="font-semibold text-[color:var(--purple)] underline underline-offset-4 hover:text-[color:var(--purple-hover)]"
               >
-                Browse Click as a guest
+                sign in as an attendee
               </Link>
               .
             </p>

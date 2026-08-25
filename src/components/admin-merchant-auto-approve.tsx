@@ -47,7 +47,7 @@ export function AdminMerchantAutoApprove({
       setSaving(false);
       toast.success(
         applied
-          ? "Trusted - their events now publish live."
+          ? "Trusted - their free events now publish live."
           : "Back to manual review - new events wait in the queue.",
       );
       // The surrounding server page renders the trust state too; without this it
@@ -66,8 +66,13 @@ export function AdminMerchantAutoApprove({
         <div className="min-w-0">
           <p className="eyebrow">Event review</p>
           <p className="mt-2 text-sm font-semibold text-[color:var(--ink)]">
+            {/* Free and paid diverge here: createEventForMerchant only requires
+                Stripe Connect for an event that takes money (needsStripe =
+                priceCents > 0), so a trusted host with no payouts still publishes
+                free events live. Saying "new events publish live" flat promised
+                the admin something paid events do not do. */}
             {enabled
-              ? "Trusted - new events publish live without review."
+              ? "Trusted - free events publish live; paid events wait until payouts are connected."
               : "Manual review - every new event waits in the pending queue."}
           </p>
           <p className="mt-1 text-xs text-[color:var(--slate)]">

@@ -39,13 +39,19 @@ export function PortalMobileNav({
   const activeItem = items.find((i) => i.active);
 
   return (
-    // Sticky just below the global SiteHeader (sticky top-0). The header is
-    // ~49px tall on phones and ~69px from `sm` up (py + logo height); these
-    // offsets keep the bar pinned right under it. Hidden from `lg` up where the
-    // desktop sidebar takes over.
+    // Sticky just below the global SiteHeader (sticky top-0). The offset is
+    // --header-h, published in globals.css from the header's REAL height - it
+    // used to be two hardcoded numbers derived from the logo, but the header's
+    // tallest child is the 44px notifications bell, so `top-[49px]` left the
+    // top 20px of this bar smeared behind the header's backdrop-blur band.
+    //
+    // The negative margins cancel .ck-page's padding-inline (20px / 32px) so
+    // the band is genuinely full-bleed; -mx-4 sm:-mx-6 left a 4px (8px at sm)
+    // cream gutter down both sides of a bar that is clearly meant to touch the
+    // edges. Hidden from `lg` up where the desktop sidebar takes over.
     <div
       ref={ref}
-      className="sticky top-[49px] z-40 -mx-4 mb-2 sm:top-[69px] sm:-mx-6 lg:hidden"
+      className="sticky top-[var(--header-h)] z-40 -mx-5 mb-2 sm:-mx-8 lg:hidden"
     >
       <div className="border-b border-[color:var(--line)] bg-[color:var(--champagne)]/95 px-4 py-2 backdrop-blur-xl sm:px-6">
         <button

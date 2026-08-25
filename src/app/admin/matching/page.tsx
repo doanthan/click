@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getEventsForExplore, getSystemSettings } from "@/lib/event-repository";
 import type { UserMatchContext } from "@/lib/personalized-matching";
 import { updateMatchingWeightsAction } from "./actions";
@@ -53,6 +54,32 @@ export default async function AdminMatchingPage() {
           readiness threshold see the editorial fallback feed (popular events) instead.
         </p>
       </header>
+
+      {/* These sliders drive the v1 scorer. getPersonalizedDiscovery returns the
+          v2 ordering before scorePersonalizedEvent is ever called, so while v2
+          is on the form below saves correctly, previews correctly, and changes
+          nothing a member sees. Saying so is the whole point of this block -
+          the alternative is a control that quietly does nothing. */}
+      {!settings.matchingWeightsInEffect ? (
+        <div className="rounded-2xl border border-[color:var(--mist)] bg-[color:color-mix(in_srgb,var(--amber)_12%,var(--paper))] p-5">
+          <p className="eyebrow">Not currently in effect</p>
+          <h2 className="font-display mt-2 text-xl font-semibold leading-tight text-[color:var(--ink)]">
+            Matching v2 is doing the ranking.
+          </h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-[color:var(--slate)]">
+            Discovery hands back the v2 model&apos;s order whenever it has candidates, before
+            these weights are applied. You can still tune and save them - they are what
+            members get the moment v2 is switched off, and the preview below is accurate
+            for that case - but nothing on the live feed will move until then.
+          </p>
+          <Link
+            href="/admin/system"
+            className="ck-btn ck-btn--secondary ck-btn--sm mt-4"
+          >
+            Switch the engine on System
+          </Link>
+        </div>
+      ) : null}
 
       <MatchingWeightPreview events={events} ctx={sampleCtx} savedWeights={weights}>
         <form

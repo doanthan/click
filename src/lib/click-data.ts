@@ -22,7 +22,9 @@ export type EventItem = {
   endsAt?: string | null;
   location: string;
   suburb: string;
-  distanceKm: number;
+  /** null when the event has no pinned coordinates - not 0, which read as
+   *  "at the CBD" and won the Nearest sort. */
+  distanceKm: number | null;
   lat: number;
   lng: number;
   price: string;
@@ -37,7 +39,8 @@ export type EventItem = {
   description: string;
   tags: string[];
   lifeSignals: string[];
-  fomo: string;
+  /** null when the host wrote none - never a stand-in claim about attendance. */
+  fomo: string | null;
   status: EventStatus;
   booking: "Click-managed" | "External";
   relationshipGoal: string;

@@ -10,6 +10,7 @@ The app has no public users yet, but **the production stack is armed**. Treat pr
 - **Do not `TRUNCATE`, wipe, or reseed production.** Query counts first; if a table looks like demo data, say so and ask. Destructive migrations need explicit sign-off.
 - `profiles` is tied to real Google/Facebook OAuth logins and `email_events` is the audit/dev-inbox trail. Neither is disposable.
 - **`.env.local` currently points at the production database** (same `aws-1-ap-southeast-1.pooler.supabase.com` host as `.env.production.local`) and has no `RESEND_API_KEY`. So `npm run dev` writes into production and logs mail as `delivery_status='skipped'` — every such row in production so far came from localhost, not the deployment. Point local dev at its own database before assuming otherwise.
+- **`npm run dev` binds to `127.0.0.1`, deliberately.** Because `.env.local` points at production, the default `next dev` bind of `0.0.0.0` put a production-database console on the LAN: `/tables`, `/md`, `/algo`, `/test` and the `api/tables` reader are all 404 only on a *production deployment*, so in dev they answer to anyone on the same wifi with no login. If you need a phone on the network to reach it, run `next dev -H 0.0.0.0` explicitly **and** point `.env.local` at a scratch database first.
 - Local seeding against a **separate** database is fine and encouraged.
 
 ## Stack

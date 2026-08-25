@@ -17,10 +17,12 @@ const longDate = new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "nume
 type Tone = "sage" | "amber" | "neutral";
 
 // A row's accent + one-word state, derived purely from the entry (mirrors the drawer's
-// projection). Never the §11-banned "expired" - a lapsed plan is softly "Wound down".
+// projection). Never the §11-banned "expired" OR "wound down" - both are the
+// verdict/loss register CLICK_LANGUAGE.md §5a bans by name. A lapsed plan is
+// simply "Still out there".
 function rowState(e: ProposalEntry): { label: string; tone: Tone; sub: string } {
   const first = e.otherName.split(/\s+/)[0];
-  if (e.isExpired) return { label: "Wound down", tone: "neutral", sub: "Cross paths again and you can pick it up." };
+  if (e.isExpired) return { label: "Still out there", tone: "neutral", sub: "Cross paths again and you can pick it up." };
   // A seat you're holding outranks everything: it stays "both going" through the
   // night itself. Only a genuinely dead event (cancelled) is "fell through".
   if (e.status === "confirmed") {
@@ -104,6 +106,7 @@ export function ClicksList({
   // drawer is fed the LIVE entry, so a mutation's revalidate advances it in place.
   const [openId, setOpenId] = useState<string | null>(initialOpenId ?? null);
   const openEntry = openId ? entries.find((e) => e.mutualId === openId) ?? null : null;
+  const openMissing = Boolean(openId) && !openEntry;
 
   const live = entries.filter((e) => !e.isExpired);
   const past = entries.filter((e) => e.isExpired);
@@ -117,6 +120,12 @@ export function ClicksList({
           catalogue={catalogue}
           onClose={() => setOpenId(null)}
         />
+      ) : null}
+
+      {openMissing ? (
+        <p className="mt-7 rounded-[var(--radius-md)] bg-[color:var(--lav-bg)] px-4 py-3 text-sm font-medium text-[color:var(--ink-soft)]">
+          That one isn&apos;t here any more. Everything still going is below.
+        </p>
       ) : null}
 
       {live.length > 0 ? (

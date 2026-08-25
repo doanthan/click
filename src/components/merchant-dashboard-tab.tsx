@@ -9,8 +9,10 @@ import {
   StatusPill,
   mCard,
   mTint,
+  merchantEventDisplayStatus,
 } from "@/components/merchant-ds";
 import { MerchantCalendar } from "@/components/merchant-calendar";
+import { getPlatformFeeBps } from "@/lib/stripe-connect";
 import {
   CreateEventButton,
   TabHeader,
@@ -24,11 +26,6 @@ const whenFormatter = new Intl.DateTimeFormat("en-AU", {
   month: "short",
   hour: "numeric",
   minute: "2-digit",
-  timeZone: "Australia/Sydney",
-});
-
-const monthFormatter = new Intl.DateTimeFormat("en-AU", {
-  month: "long",
   timeZone: "Australia/Sydney",
 });
 
@@ -60,7 +57,12 @@ export function DashboardTab({
   const upcomingCount = upcoming.length;
 
   const totalConfirmed = merchantEvents.reduce((sum, e) => sum + e.confirmed, 0);
-  const totalRevenueCents = merchantEvents.reduce(
+  // List price x confirmed seats. This is BOOKED VALUE, not money received: it
+  // knows nothing about refunds, Click's fee, or whether a checkout ever
+  // completed. It used to be labelled "Revenue", which put a second, larger
+  // number against the same word the Finances tab uses - so the tile says what
+  // it is now, and Finances stays the one place that reports actual money.
+  const bookedValueCents = merchantEvents.reduce(
     (sum, e) => sum + e.priceCents * e.confirmed,
     0,
   );
@@ -81,7 +83,6 @@ export function DashboardTab({
     .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime())[0];
 
   const showWelcome = merchantEvents.length === 0;
-  const monthLabel = monthFormatter.format(new Date(now));
 
   // ONE "Create event" CTA in the content column. A brand-new host gets it in
   // the welcome card (the thing they're actually reading); everyone else gets it
@@ -90,12 +91,18 @@ export function DashboardTab({
 
   return (
     <div className="space-y-7 py-8">
-      <SetupProgress
-        chargesEnabled={chargesEnabled}
-        payoutsEnabled={payoutsEnabled}
-        hasEvents={merchantEvents.length > 0}
-      />
-      {showWelcome ? <WelcomeToClick businessName={businessName} /> : null}
+      <div className="rise-soft">
+        <SetupProgress
+          chargesEnabled={chargesEnabled}
+          payoutsEnabled={payoutsEnabled}
+          hasEvents={merchantEvents.length > 0}
+        />
+      </div>
+      {showWelcome ? (
+        <div className="rise-soft rise-d1">
+          <WelcomeToClick businessName={businessName} />
+        </div>
+      ) : null}
 
       <TabHeader
         eyebrow="Overview"
@@ -104,13 +111,19 @@ export function DashboardTab({
             ? `${upcomingCount} upcoming event${upcomingCount === 1 ? "" : "s"}.`
             : "Your hosting dashboard."
         }
-        body="Bookings and revenue across all your events, plus the month's calendar below."
+        body="Bookings and booked value across all your events, plus the month's calendar below."
         action={headerAction}
       />
 
       {!showWelcome ? (
-        <section className="space-y-2.5">
-          <SectionLabel>{monthLabel} at a glance</SectionLabel>
+        <section className="space-y-2.5 rise-soft rise-d2">
+          {/* Deliberately NOT the current month. None of the four tiles are
+              month-scoped - Upcoming runs to the end of time, Confirmed RSVPs
+              and Booked value are all-time, Fill rate is all upcoming events -
+              so heading them "August" made a host read them as this month's
+              numbers and compare against last month. Their own notes say the
+              real scope; the heading no longer contradicts them. */}
+          <SectionLabel>At a glance</SectionLabel>
           <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-4">
             {/* Exactly ONE hero (Deep Purple) tile in the row. */}
             <StatCard
@@ -135,11 +148,11 @@ export function DashboardTab({
             />
             {/* Money is never "Free": $0 with the scope spelled out. */}
             <StatCard
-              label="Revenue"
-              value={formatMoney(totalRevenueCents)}
+              label="Booked value"
+              value={formatMoney(bookedValueCents)}
               note={
-                totalRevenueCents > 0
-                  ? "paid events to date"
+                bookedValueCents > 0
+                  ? "at list price - see Finances for payouts"
                   : hasPaidEvent
                     ? "no paid bookings yet"
                     : "free events so far"
@@ -170,8 +183,20 @@ export function DashboardTab({
                 : "Set up your attendee profile in a couple of minutes to start booking events as a guest."}
             </p>
           </div>
+          {/* ?next= back to the portal. /onboarding has supported it since it
+              was written (it reads searchParams.next through safeNext), this
+              link just never passed one - so a host who set up their attendee
+              profile from here was left on the attendee side with no route
+              back to the console they came from.
+              "?tab=dashboard", not a bare "/merchant": safeNext deliberately
+              drops exact portal roots so /post-login keeps owning role
+              dispatch, and the tab param lands on the same screen anyway. */}
           <ButtonLink
-            href={attendeeOnboarded ? "/discover" : "/onboarding"}
+            href={
+              attendeeOnboarded
+                ? "/discover"
+                : `/onboarding?next=${encodeURIComponent("/merchant?tab=dashboard")}`
+            }
             variant="secondary"
             size="sm"
           >
@@ -183,7 +208,7 @@ export function DashboardTab({
 
       {/* Your events - the primary working surface, so it sits above the calendar. */}
       {merchantEvents.length > 0 ? (
-        <section className="space-y-3">
+        <section className="space-y-3 rise-soft rise-d3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <SectionLabel>Your events</SectionLabel>
             <ButtonLink href="/merchant?tab=events" variant="ghost" size="sm">
@@ -202,7 +227,12 @@ export function DashboardTab({
                     <span className="font-display min-w-0 text-[15.5px] font-semibold leading-[1.25] text-[color:var(--ink)]">
                       {event.title}
                     </span>
-                    <StatusPill status={event.status} />
+                    {/* Derived, not raw: a sold-out or finished event used to
+                        read "Live" on the first screen a host opens, because
+                        "Full" and "Ended" are the capacity and the clock, not
+                        stored statuses. Same helper the events list and the
+                        calendar use. */}
+                    <StatusPill status={merchantEventDisplayStatus(event)} />
                   </div>
                   <span className="truncate text-[12.5px] text-[color:var(--slate)]">
                     {whenFormatter.format(new Date(event.startsAt))} · {event.locationName},{" "}
@@ -225,7 +255,7 @@ export function DashboardTab({
         </section>
       ) : null}
 
-      <section className="space-y-3">
+      <section className="space-y-3 rise-soft rise-d4">
         <SectionLabel>Calendar</SectionLabel>
         <MerchantCalendar events={merchantEvents} monthParam={monthParam} />
       </section>
@@ -243,7 +273,7 @@ export function DashboardTab({
 
 // Trend + pattern visualisations folded into the dashboard: monthly revenue &
 // bookings over time (so a merchant can see whether they're growing) and a
-// category mix breakdown. Computed from the already-loaded merchantEvents — no
+// category mix breakdown. Computed from the already-loaded merchantEvents - no
 // extra query. Months are bucketed in Sydney time to line up with the calendar.
 function MerchantTrends({
   merchantEvents,
@@ -261,7 +291,12 @@ function MerchantTrends({
     year: "2-digit",
   });
 
-  // Bucket events by Sydney month.
+  // Bucket events by Sydney month, ELAPSED MONTHS ONLY. A host who schedules a
+  // weekly event out to Christmas has most of their events in the future, and
+  // a future month is near-empty by definition - nobody has booked an event
+  // four months out yet. Charting those alongside real months drew a row of
+  // near-zero bars and read as a business in collapse.
+  const currentMonthKey = monthKeyFormatter.format(new Date());
   const byMonth = new Map<
     string,
     { label: string; revenueCents: number; confirmed: number; events: number; sort: number }
@@ -269,6 +304,7 @@ function MerchantTrends({
   for (const e of merchantEvents) {
     const d = new Date(e.startsAt);
     const key = monthKeyFormatter.format(d); // e.g. "2026-06"
+    if (key > currentMonthKey) continue; // zero-padded ISO keys sort lexically
     const entry =
       byMonth.get(key) ??
       {
@@ -289,7 +325,15 @@ function MerchantTrends({
     .slice(-6);
   const maxRevenue = Math.max(...months.map((m) => m.revenueCents), 1);
   const maxConfirmed = Math.max(...months.map((m) => m.confirmed), 1);
-  const latestKey = months.length ? months[months.length - 1].label : "";
+  // The Deep Purple bar means "this is now", so it has to be the CURRENT month
+  // - not simply the last column. With future months charted, the highlight
+  // landed on the furthest-future one; now that they are filtered out the last
+  // column is usually this month anyway, but a host with no events this month
+  // should get no highlight rather than a stale one.
+  const currentMonthLabel = monthLabelFormatter.format(new Date());
+  const latestKey = months.some((m) => m.label === currentMonthLabel)
+    ? currentMonthLabel
+    : "";
 
   // Category mix.
   const byCategory = new Map<string, number>();
@@ -309,55 +353,70 @@ function MerchantTrends({
         <span className="text-[11.5px] font-bold uppercase tracking-[0.09em] text-[color:var(--ink-faint)]">
           Revenue & bookings by month
         </span>
-        {/* Columns must STRETCH to the row height (no items-end here): the bar
-            wrapper is flex-1 of the column, and the bars' % heights resolve
-            against it. With items-end the columns collapsed to label height and
-            every bar rendered 0px tall (bug board #158). */}
-        <div className="mt-5 flex items-stretch justify-between gap-2" style={{ height: "150px" }}>
-          {months.map((m) => (
-            <div
-              key={m.label}
-              className="group relative flex min-w-0 flex-1 flex-col items-center justify-end gap-1 focus:outline-none"
-              tabIndex={0}
-              role="img"
-              aria-label={`${m.label}: ${formatMoney(m.revenueCents)} revenue, ${m.confirmed} booking${m.confirmed === 1 ? "" : "s"}`}
-            >
-              <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1 -translate-x-1/2 whitespace-nowrap rounded-xl bg-[color:var(--paper)] px-2.5 py-1.5 text-center opacity-0 shadow-[var(--shadow-md)] transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
-                <span className="block text-[11px] font-semibold text-[color:var(--slate)]">
-                  {m.label}
-                </span>
-                <span className="font-display block text-[13px] font-semibold tabular-nums text-[color:var(--purple)]">
-                  {formatMoney(m.revenueCents)}
-                </span>
-                <span className="block text-[12px] tabular-nums text-[color:var(--ink)]">
-                  {m.confirmed} booking{m.confirmed === 1 ? "" : "s"}
-                </span>
-              </div>
-              <span className="text-[11px] font-semibold tabular-nums text-[color:var(--slate)]">
-                {formatMoney(m.revenueCents)}
-              </span>
-              <div className="flex w-full flex-1 items-end justify-center gap-1">
+        {/* `months` holds ELAPSED months only (see the bucketing above), so a
+            host whose events are all still ahead of them has none at all - and
+            this card painted an empty 150px box with a legend under it, which
+            reads as a chart that failed to load rather than one with nothing to
+            plot yet. Same one-line treatment the Finances tab's revenue chart
+            uses for its own zero case (merchant-finances-analytics.tsx). */}
+        {months.length === 0 ? (
+          <p className="mt-4 text-sm leading-6 text-[color:var(--slate)]">
+            No months have run yet. Revenue and bookings appear here once your first event date
+            has passed.
+          </p>
+        ) : (
+          <>
+            {/* Columns must STRETCH to the row height (no items-end here): the bar
+                wrapper is flex-1 of the column, and the bars' % heights resolve
+                against it. With items-end the columns collapsed to label height and
+                every bar rendered 0px tall (bug board #158). */}
+            <div className="mt-5 flex items-stretch justify-between gap-2" style={{ height: "150px" }}>
+              {months.map((m) => (
                 <div
-                  className={`w-1/2 rounded-t ${m.label === latestKey ? "bg-[color:var(--purple-600)]" : "bg-[color:var(--lavender-300)]"}`}
-                  style={{ height: `${Math.max((m.revenueCents / maxRevenue) * 100, 3)}%` }}
-                />
-                <div
-                  className="w-1/2 rounded-t bg-[color:var(--purple-200)]"
-                  style={{ height: `${Math.max((m.confirmed / maxConfirmed) * 100, 3)}%` }}
-                />
-              </div>
-              <span className="text-[11px] text-[color:var(--ink-faint)]">{m.label}</span>
+                  key={m.label}
+                  className="group relative flex min-w-0 flex-1 flex-col items-center justify-end gap-1 focus:outline-none"
+                  tabIndex={0}
+                  role="img"
+                  aria-label={`${m.label}: ${formatMoney(m.revenueCents)} revenue, ${m.confirmed} booking${m.confirmed === 1 ? "" : "s"}`}
+                >
+                  <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1 -translate-x-1/2 whitespace-nowrap rounded-xl bg-[color:var(--paper)] px-2.5 py-1.5 text-center opacity-0 shadow-[var(--shadow-md)] transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
+                    <span className="block text-[11px] font-semibold text-[color:var(--slate)]">
+                      {m.label}
+                    </span>
+                    <span className="font-display block text-[13px] font-semibold tabular-nums text-[color:var(--purple)]">
+                      {formatMoney(m.revenueCents)}
+                    </span>
+                    <span className="block text-[12px] tabular-nums text-[color:var(--ink)]">
+                      {m.confirmed} booking{m.confirmed === 1 ? "" : "s"}
+                    </span>
+                  </div>
+                  <span className="text-[11px] font-semibold tabular-nums text-[color:var(--slate)]">
+                    {formatMoney(m.revenueCents)}
+                  </span>
+                  <div className="flex w-full flex-1 items-end justify-center gap-1">
+                    <div
+                      className={`w-1/2 rounded-t ${m.label === latestKey ? "bg-[color:var(--purple-600)]" : "bg-[color:var(--lavender-300)]"}`}
+                      style={{ height: `${Math.max((m.revenueCents / maxRevenue) * 100, 3)}%` }}
+                    />
+                    <div
+                      className="w-1/2 rounded-t bg-[color:var(--purple-200)]"
+                      style={{ height: `${Math.max((m.confirmed / maxConfirmed) * 100, 3)}%` }}
+                    />
+                  </div>
+                  <span className="text-[11px] text-[color:var(--ink-faint)]">{m.label}</span>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-        <div className="mt-4 flex items-center gap-4 text-[11.5px] text-[color:var(--slate)]">
-          <span className="flex items-center gap-1.5">
-            <span className="inline-block size-2.5 rounded-sm bg-[color:var(--lavender-300)]" /> Revenue
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="inline-block size-2.5 rounded-sm bg-[color:var(--purple-200)]" /> Bookings
-          </span>
-        </div>
+            <div className="mt-4 flex items-center gap-4 text-[11.5px] text-[color:var(--slate)]">
+              <span className="flex items-center gap-1.5">
+                <span className="inline-block size-2.5 rounded-sm bg-[color:var(--lavender-300)]" /> Revenue
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="inline-block size-2.5 rounded-sm bg-[color:var(--purple-200)]" /> Bookings
+              </span>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Category mix */}
@@ -396,13 +455,30 @@ function ConfirmedRsvpChart({
 }: {
   merchantEvents: MerchantEvent[];
 }) {
+  // getMerchantEvents returns starts_at ASC, so a plain slice(0, 10) was the
+  // host's ten OLDEST events - frozen from event eleven onward, and never once
+  // showing the night they ran yesterday or the one running tomorrow. Sort by
+  // distance from today instead, so the panel tracks what a host can still act
+  // on, then put the ten back in date order to read.
+  // eslint-disable-next-line react-hooks/purity -- async server component, evaluated once per request
+  const now = Date.now();
+  const nearest = merchantEvents
+    .slice()
+    .sort(
+      (a, b) =>
+        Math.abs(new Date(a.startsAt).getTime() - now) -
+        Math.abs(new Date(b.startsAt).getTime() - now),
+    )
+    .slice(0, 10)
+    .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
+
   return (
     <section className={`${mCard} p-5`}>
       <span className="text-[11.5px] font-bold uppercase tracking-[0.09em] text-[color:var(--ink-faint)]">
         Confirmed RSVPs per event
       </span>
       <ul className="mt-5 space-y-3.5">
-        {merchantEvents.slice(0, 10).map((e) => (
+        {nearest.map((e) => (
           <li key={e.slug} className="flex items-center justify-between gap-4">
             <span className="min-w-0 flex-1 truncate text-sm font-semibold text-[color:var(--ink)]">
               {e.title}
@@ -421,7 +497,7 @@ function ConfirmedRsvpChart({
 
 // Setup-completion bar shown on the dashboard until the merchant has finished
 // onboarding: approved → payments connected → first event created. It disappears
-// once all three are done. Its action is ONLY ever "Connect payments" — the
+// once all three are done. Its action is ONLY ever the payout hand-off - the
 // "create your first event" CTA belongs to the welcome card / page header, and
 // stacking a third copy here is exactly the duplication the DS bans.
 function SetupProgress({
@@ -433,6 +509,11 @@ function SetupProgress({
   payoutsEnabled: boolean;
   hasEvents: boolean;
 }) {
+  // "Charges on, payouts off" is a real Stripe state and it is NOT done: money
+  // would come in and never reach the host's bank. Marking it done on
+  // chargesEnabled alone ticked the step green while its own label still read
+  // "Finish payout setup", and hid the button that would finish it.
+  const paymentsDone = chargesEnabled && payoutsEnabled;
   const steps = [
     { label: "Business approved", done: true },
     {
@@ -441,7 +522,7 @@ function SetupProgress({
         : chargesEnabled
           ? "Finish payout setup"
           : "Connect payments",
-      done: chargesEnabled,
+      done: paymentsDone,
     },
     { label: "Create your first event", done: hasEvents },
   ];
@@ -458,15 +539,21 @@ function SetupProgress({
           <p className="text-[12px] font-bold uppercase tracking-[0.1em] text-[color:var(--purple-700)]">
             Finish setting up · {completed}/{steps.length}
           </p>
+          {/* Free events publish without Stripe (createEventForMerchant only
+              requires Connect when price_cents > 0), so this must not tell a
+              host that payments gate publishing - they can host tonight. */}
           <p className="mt-1 text-sm font-semibold text-[color:var(--ink)]">
-            {chargesEnabled
+            {paymentsDone
               ? "You're nearly there - create your first event."
-              : "Connect payments to start publishing events."}
+              : "Connect payments to sell tickets. Free events can go up now."}
           </p>
         </div>
-        {!chargesEnabled ? (
-          <ButtonLink href="/merchant/onboarding/payouts" size="sm">
-            Connect payments
+        {!paymentsDone ? (
+          <ButtonLink
+            href={`/merchant/onboarding/payouts?returnTo=${encodeURIComponent("/merchant")}`}
+            size="sm"
+          >
+            {chargesEnabled ? "Finish payout setup" : "Connect payments"}
           </ButtonLink>
         ) : null}
       </div>
@@ -510,11 +597,15 @@ function SetupProgress({
 // First-run welcome, shown only while the merchant has zero events. This card
 // owns the screen's single "Create event" CTA while it's up.
 function WelcomeToClick({ businessName }: { businessName: string }) {
+  // Read, never typed. PLATFORM_FEE_BPS is a server env var and this is a server
+  // component, so the rate on the first screen a host reads about money is the
+  // same one calculateApplicationFee actually charges.
+  const feePercentLabel = `${Number((getPlatformFeeBps() / 100).toFixed(2))}%`;
   const steps = [
     {
       n: "01",
       title: "Create your first event.",
-      body: "Pick a date, capacity, and price in the 5-step wizard. Submissions go live the moment they pass review.",
+      body: "Pick a date, capacity, and price in the 5-step wizard. Publishing puts a free event on Discover straight away; a paid one needs your Stripe payouts live first.",
     },
     {
       n: "02",
@@ -524,7 +615,7 @@ function WelcomeToClick({ businessName }: { businessName: string }) {
     {
       n: "03",
       title: "Run the door.",
-      body: "Open Bookings on the day to check people in or export a CSV. Payouts land in Finances after the event wraps.",
+      body: "Open Bookings on the day to check people in or export a CSV. Paid bookings show in Finances as they clear, and Stripe pays out on its own schedule.",
     },
   ];
 
@@ -558,10 +649,22 @@ function WelcomeToClick({ businessName }: { businessName: string }) {
       </ol>
 
       <div className="mt-5">
+        {/* This card only renders while the host has zero events, so this is the
+            first sentence a newly-approved host reads about money - and it used
+            to say hosting was "free during the Sydney pilot" and paid out
+            "monthly". Neither was true: PLATFORM_FEE_BPS is 290 in production
+            and calculateApplicationFee deducts it from every paid ticket, and
+            nothing in this codebase sets payout_schedule, so the cadence is
+            whatever Stripe defaults to. A host who repeated either of those to
+            their own customers was made to lie on Click's behalf.
+            The rate is read, never typed - same source as the Schedule step. */}
         <InfoNote icon="info">
-          Hosting on Click is <b className="font-semibold text-[color:var(--purple-700)]">free</b>{" "}
-          during the Sydney pilot. Free events skip Stripe entirely; paid events route through it
-          and pay out monthly.
+          Listing on Click is{" "}
+          <b className="font-semibold text-[color:var(--purple-700)]">free</b>, and free
+          events skip Stripe entirely. On a paid ticket Click keeps{" "}
+          <b className="font-semibold text-[color:var(--purple-700)]">{feePercentLabel}</b>{" "}
+          and the rest routes to your Stripe account, which pays out to your bank on
+          Stripe&apos;s own schedule.
         </InfoNote>
       </div>
 

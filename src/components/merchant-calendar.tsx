@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { MerchantEventSummary } from "@/lib/event-repository";
 import { MerchantCalendarJump } from "./merchant-calendar-jump";
+import { merchantEventDisplayStatus, merchantStatusLabel } from "./merchant-ds";
 
 const SYDNEY_TZ = "Australia/Sydney";
 const WEEK_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -17,6 +18,15 @@ const FULL_DATE_FORMATTER = new Intl.DateTimeFormat("en-AU", {
   weekday: "long",
   month: "short",
   day: "numeric",
+  timeZone: SYDNEY_TZ,
+});
+const WEEKDAY_FORMATTER = new Intl.DateTimeFormat("en-AU", {
+  weekday: "short",
+  timeZone: SYDNEY_TZ,
+});
+const TIME_FORMATTER = new Intl.DateTimeFormat("en-AU", {
+  hour: "numeric",
+  minute: "2-digit",
   timeZone: SYDNEY_TZ,
 });
 
@@ -36,7 +46,7 @@ type MerchantCalendarProps = {
 function isoDateInSydney(date: Date) {
   // day MUST be "2-digit": "numeric" comes back unpadded ("1"), so the key
   // "2026-07-1" never matches the grid cell's "2026-07-01" and events on the
-  // 1st–9th of a month vanish from the grid (same bug as user-calendar, #88).
+  // 1st-9th of a month vanish from the grid (same bug as user-calendar, #88).
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: SYDNEY_TZ,
     year: "numeric",
@@ -97,6 +107,15 @@ function buildCells(monthAnchor: Date, events: MerchantEventSummary[], todayIso:
     existing.push(event);
     eventsByDate.set(key, existing);
   }
+  // Chronological within the day. The source list is ordered for the events
+  // tab, not for a day cell, so two events on the same date could otherwise
+  // read 8pm above 6pm - which matters most on the agenda, where the time is
+  // the first thing on the row.
+  for (const dayEvents of eventsByDate.values()) {
+    dayEvents.sort(
+      (a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime(),
+    );
+  }
 
   for (let dayIndex = 0; dayIndex < totalCells; dayIndex++) {
     const cellDate = new Date(gridStart);
@@ -132,12 +151,18 @@ function statusBadgeClass(event: MerchantEventSummary) {
     return "bg-[color-mix(in_srgb,var(--amber)_16%,var(--paper))] text-[color:var(--amber-ink)]";
   if (event.status === "Locked")
     return "bg-[color:var(--lavender-100)] text-[color:var(--purple-700)]";
+  // Rejected had no branch, so it fell through to the sage "live" tint and a
+  // host scanning their month saw a rejected event wearing the same green as a
+  // published one. Coral is the DS's cancelled/rejected role, and it stays on
+  // the chip - which is a badge, never a CTA.
+  if (event.status === "Rejected")
+    return "bg-[color-mix(in_srgb,var(--coral)_16%,var(--paper))] text-[color:var(--coral-ink)]";
   return "bg-[color-mix(in_srgb,var(--sage)_14%,var(--paper))] text-[color:var(--sage-ink)]";
 }
 
 export function MerchantCalendar({ events, monthParam }: MerchantCalendarProps) {
   // Default to the CURRENT month (not the earliest event) so the calendar always
-  // opens on "today" — otherwise a merchant with old past events lands months in
+  // opens on "today" - otherwise a merchant with old past events lands months in
   // the past and thinks an upcoming event "isn't on the calendar". Month arrows
   // page from there.
   const monthAnchor = parseMonthParam(monthParam, new Date());
@@ -156,11 +181,17 @@ export function MerchantCalendar({ events, monthParam }: MerchantCalendarProps) 
     );
   });
 
+  // Reuses `cells` rather than re-bucketing the events, so the agenda and the
+  // grid can never disagree about which Sydney day an event falls on.
+  const agendaDays = cells.filter(
+    (cell) => cell.isCurrentMonth && cell.events.length > 0,
+  );
+
   const monthConfirmed = monthEvents.reduce((sum, event) => sum + event.confirmed, 0);
   const monthCapacity = monthEvents.reduce((sum, event) => sum + event.capacity, 0);
 
   // When the viewed month is empty but the merchant DOES have events elsewhere,
-  // surface a one-click jump to the month nearest to today — otherwise a host
+  // surface a one-click jump to the month nearest to today - otherwise a host
   // whose events all sit in another month thinks the calendar is "missing" them.
   const anchorMs = monthAnchor.getTime();
   const nearestEvent =
@@ -240,7 +271,48 @@ export function MerchantCalendar({ events, monthParam }: MerchantCalendarProps) 
         </div>
       ) : null}
 
-      <div className="grid grid-cols-7 border-b border-[color:var(--line)] bg-[color:var(--champagne)]">
+      {/* Below md the seven-column grid is not a calendar, it is seven 45px
+          columns of clipped text: a 375px phone leaves each cell ~50px wide, so
+          a title at 0.7rem line-clamps to a couple of characters and the
+          "12/20 · Live" line under it does not fit at all. A host checking
+          their month on the way to a venue gets an agenda instead - the same
+          events, the same chips, in a column that has room for them. */}
+      <ol className="md:hidden">
+        {agendaDays.length === 0 ? (
+          <li className="px-5 py-7 text-sm font-medium text-[color:var(--slate)]">
+            Nothing on in {heading}.
+          </li>
+        ) : (
+          agendaDays.map((day) => (
+            <li
+              key={day.isoDate}
+              className="flex gap-3.5 border-b border-[color:var(--line-soft)] px-4 py-3.5 last:border-b-0"
+            >
+              <div className="w-11 shrink-0 text-center">
+                <span
+                  className={`grid size-9 place-items-center rounded-xl text-[15px] font-semibold tabular-nums ${
+                    day.isToday
+                      ? "bg-[color:var(--purple)] text-[color:var(--champagne)]"
+                      : "bg-[color:var(--lavender-100)] text-[color:var(--purple-700)]"
+                  }`}
+                >
+                  {DAY_LABEL_FORMATTER.format(day.date)}
+                </span>
+                <span className="mt-1 block text-[10.5px] font-semibold uppercase tracking-[0.06em] text-[color:var(--slate)]">
+                  {WEEKDAY_FORMATTER.format(day.date)}
+                </span>
+              </div>
+              <div className="grid min-w-0 flex-1 gap-1.5">
+                {day.events.map((event) => (
+                  <AgendaEventRow key={event.slug} event={event} />
+                ))}
+              </div>
+            </li>
+          ))
+        )}
+      </ol>
+
+      <div className="hidden grid-cols-7 border-b border-[color:var(--line)] bg-[color:var(--champagne)] md:grid">
         {WEEK_LABELS.map((label) => (
           <div
             key={label}
@@ -251,12 +323,35 @@ export function MerchantCalendar({ events, monthParam }: MerchantCalendarProps) 
         ))}
       </div>
 
-      <div className="grid grid-cols-7">
+      <div className="hidden grid-cols-7 md:grid">
         {cells.map((cell) => (
           <CalendarDayCell key={cell.isoDate} cell={cell} />
         ))}
       </div>
     </article>
+  );
+}
+
+// One agenda row per event, phone-sized: the chip's own status tint, the time,
+// the title on a line of its own, and the booked count. Same destination and
+// the same tint vocabulary as the desktop chip, so the two views cannot say
+// different things about the same event.
+function AgendaEventRow({ event }: { event: MerchantEventSummary }) {
+  const display = merchantStatusLabel(merchantEventDisplayStatus(event));
+
+  return (
+    <Link
+      href={`/merchant/events/${event.slug}`}
+      className={`block rounded-xl px-3 py-2 transition active:translate-y-[1px] ${statusBadgeClass(event)}`}
+    >
+      <p className="line-clamp-2 text-[13.5px] font-semibold leading-snug">
+        {event.title}
+      </p>
+      <p className="mt-0.5 text-[11.5px] font-medium">
+        {TIME_FORMATTER.format(new Date(event.startsAt))} · {event.confirmed}/
+        {event.capacity} booked · {display}
+      </p>
+    </Link>
   );
 }
 
@@ -308,15 +403,10 @@ function CalendarDayCell({ cell }: { cell: CalendarCell }) {
 }
 
 function CalendarEventChip({ event }: { event: MerchantEventSummary }) {
-  const isFull = event.confirmed >= event.capacity;
-  const display =
-    event.status === "Cancelled"
-      ? "Cancelled"
-      : isPastEvent(event)
-        ? "Ended"
-        : isFull && event.status === "Live"
-          ? "Full"
-          : event.status;
+  // One derivation for the whole portal - see merchantEventDisplayStatus. This
+  // used to be a fourth private copy, and the Rejected case was missing from
+  // every one of them here (statusBadgeClass fell through to the live tint).
+  const display = merchantStatusLabel(merchantEventDisplayStatus(event));
 
   return (
     <Link

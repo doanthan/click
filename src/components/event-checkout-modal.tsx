@@ -92,7 +92,7 @@ export function EventCheckoutModal({
           type="button"
           onClick={onClose}
           aria-label="Close"
-          className="grid size-9 shrink-0 place-items-center rounded-lg text-[color:var(--slate)] hover:bg-[color:var(--lavender-100)] hover:text-[color:var(--ink)]"
+          className="grid size-11 shrink-0 place-items-center rounded-xl text-[color:var(--slate)] hover:bg-[color:var(--lavender-100)] hover:text-[color:var(--ink)]"
         >
           ✕
         </button>
@@ -120,8 +120,14 @@ export function EventCheckoutModal({
           Payments aren&apos;t configured in this environment.
         </p>
       )}
+      {/* Points at the ✕, not at Escape. ModalShell listens for Escape on
+          `document`, and the moment the buyer is typing in a card field they are
+          inside Stripe's cross-origin iframe, which never forwards the key - so
+          the one place this line is read is the one place Escape cannot fire.
+          Escape still closes the modal when focus is outside the frame; it just
+          isn't the instruction to print here. */}
       <p className="mt-3 text-center text-xs font-medium text-[color:var(--slate)]">
-        Powered by Stripe · Press Esc to cancel
+        Powered by Stripe · Close with the ✕ above - your seat stays held either way
       </p>
     </ModalShell>
   );

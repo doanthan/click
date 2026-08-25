@@ -1,10 +1,12 @@
 import "server-only";
 
 import { createHash, randomBytes } from "node:crypto";
+import { TOKEN_TTL_MINUTES } from "@/lib/magic-link-ttl";
 import { getPostgresPool } from "@/lib/postgres";
 
-// Exported so the sign-in email copy quotes the TTL it actually enforces.
-export const TOKEN_TTL_MINUTES = 15;
+// Re-exported so existing importers keep working; the value itself lives in a
+// client-safe module because the "check your inbox" note has to quote it too.
+export { TOKEN_TTL_MINUTES } from "@/lib/magic-link-ttl";
 const EMAIL_LIMIT_PER_HOUR = 5;
 const IP_LIMIT_PER_HOUR = 30;
 

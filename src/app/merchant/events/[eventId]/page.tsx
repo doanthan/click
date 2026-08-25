@@ -6,9 +6,14 @@ import { MerchantEventCancelButton } from "@/components/merchant-event-cancel-bu
 import { MerchantEventDuplicateButton } from "@/components/merchant-event-duplicate-button";
 import { EDIT_SECTION_ID, MerchantEventEditForm } from "@/components/merchant-event-edit-form";
 import { MerchantEventResubmitButton } from "@/components/merchant-event-resubmit-button";
-import { GuestCheckInToggle } from "@/components/guest-check-in-toggle";
-import { formatPriceLabel } from "@/lib/amounts";
 import {
+  AttendeeCheckInToggle,
+  GuestCheckInToggle,
+} from "@/components/check-in-toggle";
+import { formatPriceLabel } from "@/lib/amounts";
+import { formatEventStartLocal } from "@/lib/datetime";
+import {
+  getMerchantCategoryOptions,
   getMerchantEventDetail,
   getProfileStatus,
   getProfileTagOptions,
@@ -49,7 +54,7 @@ function formatWhen(startsAt: string, endsAt: string | null) {
   if (!endsAt) return start;
   const end = new Date(endsAt);
   if (Number.isNaN(end.getTime())) return start;
-  return `${start} – ${timeFormatter.format(end)}`;
+  return `${start} - ${timeFormatter.format(end)}`;
 }
 
 // DS merchant status vocabulary: confirmed lavender, pending/waitlist amber.
@@ -91,9 +96,10 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
     redirect("/merchant/signup");
   }
 
-  const [event, tagOptions] = await Promise.all([
+  const [event, tagOptions, categoryRows] = await Promise.all([
     getMerchantEventDetail(eventId, session),
     getProfileTagOptions(),
+    getMerchantCategoryOptions(),
   ]);
   if (!event) {
     notFound();
@@ -114,6 +120,13 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
   const confirmedAttendees = event.attendees.filter(
     (attendee) => attendee.status === "confirmed",
   );
+  // Door progress across BOTH kinds of body in the room - ticket-holders and
+  // named +1s - because that is the number a host wants at the door, not two
+  // separate tallies they have to add up while a queue waits.
+  const checkedInCount =
+    confirmedAttendees.filter((attendee) => attendee.checkedInAt !== null).length +
+    event.guests.filter((guest) => guest.attended).length;
+  const doorTotal = confirmedAttendees.length + event.guests.length;
   // Live (unexpired) payment holds. They occupy a seat and so are already
   // counted in `event.confirmed`, but they're not yet paid - surfacing them as
   // their own group is what makes the "Confirmed X / capacity" metric reconcile
@@ -124,6 +137,38 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
   const waitlistedAttendees = event.attendees.filter(
     (attendee) => attendee.status === "waitlisted",
   );
+  // Same rule as merchant-events-panel.tsx isPast, so the two host surfaces
+  // agree about what "over" means. This page used to read an ended event as
+  // "Live" and keep offering Cancel - which refunds every paid booking in
+  // full, for a night that already happened.
+  // eslint-disable-next-line react-hooks/purity -- async server component, evaluated once per request
+  const hasEnded = new Date(event.endsAt ?? event.startsAt).getTime() < Date.now();
+
+  // Whether the TERMS of this event can still change: what it is, when it runs,
+  // how many seats, what a seat costs. Only while it is neither publicly listed
+  // nor holding a seat of any kind - which is exactly what a rejected or pending
+  // event is, and is the whole point of the resubmit loop. Deliberately at least
+  // as strict as updateMerchantEventDetails, which is the real gate; this only
+  // decides whether to render the fields.
+  //
+  // Cancelled is excluded even though a cancelled event releases its seats and
+  // so would otherwise qualify. There is no un-cancel: no control on this page,
+  // in the events list or in the API turns a cancelled event back on, and
+  // resubmit is the REJECTED loop, not this one. So the date/seats/price editor
+  // was asking a host to re-date a night that can never run - work that goes
+  // nowhere. Duplicate is the real path, and it is already in the header above.
+  const isCancelled = event.status === "Cancelled";
+  const termsEditable =
+    !isCancelled &&
+    !["Live", "Featured", "Locked", "Waitlist"].includes(event.status) &&
+    confirmedSeats === 0 &&
+    event.waitlisted === 0 &&
+    awaitingPaymentAttendees.length === 0;
+  const eventDurationMinutes = event.endsAt
+    ? Math.round(
+        (new Date(event.endsAt).getTime() - new Date(event.startsAt).getTime()) / 60000,
+      )
+    : 120;
 
   return (
     <main className="min-h-screen bg-[color:var(--champagne)] px-4 py-10 text-[color:var(--ink)] sm:px-6">
@@ -137,7 +182,14 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
 
         <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <Badge tone={eventStatusTone(event.status)}>{event.status}</Badge>
+            {/* Ended is not a stored status - it is the clock. Cancelled and
+                Rejected still win over it, because "not live" is the thing the
+                host needs to read first (same precedence as the events list). */}
+            {hasEnded && event.status !== "Cancelled" && event.status !== "Rejected" ? (
+              <Badge tone="neutral">Ended</Badge>
+            ) : (
+              <Badge tone={eventStatusTone(event.status)}>{event.status}</Badge>
+            )}
             <h1 className="font-display mt-4 text-4xl font-semibold leading-[1.05] tracking-[-0.02em] text-[color:var(--ink)] sm:text-5xl">
               {event.title}
             </h1>
@@ -154,16 +206,41 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
             <ButtonLink href={`#${EDIT_SECTION_ID}`} variant="secondary">
               Edit details
             </ButtonLink>
-            <MerchantEventDuplicateButton eventId={event.slug} />
-            <ButtonLink href="/merchant" variant="secondary">
-              Back to portal
+            {/* Nowhere in the whole portal - not the events list, the calendar,
+                the dashboard cards, or the create wizard's success toast - did
+                a host have a way to see their own listing, so checking their
+                photos or sending a customer the link meant guessing the URL
+                from a slug they were never shown. getEventBySlug already lets
+                an owner preview their own not-yet-approved event (that is what
+                merchantProfileId is for), so this works while pending too. */}
+            <ButtonLink href={`/events/${event.slug}`} variant="secondary">
+              View public page
             </ButtonLink>
-            <MerchantEventCancelButton
-              eventId={event.slug}
-              status={event.status}
-              confirmedSeats={confirmedSeats}
-              waitlistedCount={waitlistedAttendees.length}
-            />
+            <MerchantEventDuplicateButton eventId={event.slug} />
+            {/* "Back to portal" is gone: the "← All my events" breadcrumb 25
+                lines above goes to the same place, and five 44px buttons at ~150
+                px each wrapped into THREE rows on a phone - so a host opening an
+                event saw a badge, a title, a meta line and 150px of chrome
+                before the first piece of data. Two duplicate affordances is one
+                too many when the second one costs a row. */}
+            {/* Nothing to cancel once the night has run, and cancelling would
+                refund every paid booking. cancelEvent enforces the same rule
+                server-side, so this is the affordance, not the guard.
+
+                It sits in its own wrapper with a basis-full below sm so the
+                destructive action can never share a wrapped line with a
+                constructive one - "Duplicate event" and "Cancel event" landing
+                side by side on a phone is a mis-tap waiting to happen. */}
+            {hasEnded ? null : (
+              <div className="basis-full sm:basis-auto">
+                <MerchantEventCancelButton
+                  eventId={event.slug}
+                  status={event.status}
+                  confirmedSeats={confirmedSeats}
+                  waitlistedCount={waitlistedAttendees.length}
+                />
+              </div>
+            )}
           </div>
         </div>
 
@@ -266,15 +343,26 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
                   : `${confirmedAttendees.length} ${confirmedAttendees.length === 1 ? "person" : "people"} confirmed.`}
               </h2>
             </div>
-            <Badge tone="lavender">{confirmedAttendees.length}</Badge>
+            {/* Neutral, not sage: this is a running count, not a success state,
+                and sage on a half-empty door reads as "all good" when it is
+                not. It becomes sage only once the room is fully in. */}
+            <Badge tone={doorTotal > 0 && checkedInCount === doorTotal ? "sage" : "lavender"}>
+              {doorTotal > 0 && checkedInCount > 0
+                ? `${checkedInCount}/${doorTotal} in`
+                : confirmedAttendees.length}
+            </Badge>
           </div>
 
           {confirmedAttendees.length > 0 ? (
-            <AttendeeTable rows={confirmedAttendees} />
+            <AttendeeTable
+              rows={confirmedAttendees}
+              eventSlug={event.slug}
+              checkInnable={event.status !== "Cancelled"}
+            />
           ) : (
             <p className="mt-4 rounded-2xl border border-dashed border-[color:var(--mist-strong)] bg-[color:var(--paper)] p-5 text-sm font-medium text-[color:var(--slate)]">
-              When attendees RSVP they appear here with name and contact email
-              so you can prep the room.
+              When attendees RSVP they appear here with name and contact email,
+              and you can tick each of them in from this page on the night.
             </p>
           )}
         </section>
@@ -363,6 +451,14 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
 
         <MerchantEventEditForm
           eventSlug={event.slug}
+          termsEditable={termsEditable}
+          eventCancelled={isCancelled}
+          categoryOptions={categoryRows.map((c) => c.name)}
+          initialCategory={event.category}
+          initialStartsAt={formatEventStartLocal(event.startsAt)}
+          initialDurationMinutes={eventDurationMinutes}
+          initialCapacity={event.capacity}
+          initialPriceCents={event.priceCents}
           initialTitle={event.title}
           initialDescription={event.description}
           initialAddress={event.address ?? ""}
@@ -391,19 +487,92 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function AttendeeTable({ rows }: { rows: MerchantAttendeeRow[] }) {
+// The ticket-holder half of the door list. It carries the SAME check-in control
+// as the +1 list beneath it: a host standing at a venue reads one screen and
+// ticks off everyone in the room. Before this, only the +1s could be checked in
+// here and the people who actually bought the seats had to be ticked off from
+// /merchant?tab=bookings - a different screen, on venue wifi, mid-queue.
+//
+// `checkInnable` is passed rather than derived: a past event is still worth
+// showing, but a door list for an event that has not started is the useful one,
+// and toggling attendance on an event that already ended is a data-entry action
+// we do not want to invite by accident. Both keep the control; only a cancelled
+// event drops it, because there is no door.
+function AttendeeTable({
+  rows,
+  eventSlug,
+  checkInnable = false,
+}: {
+  rows: MerchantAttendeeRow[];
+  eventSlug?: string;
+  checkInnable?: boolean;
+}) {
+  // Off by default, and the awaiting-payment and waitlist tables leave it off:
+  // neither holds a confirmed seat, so a check-in there would record attendance
+  // for someone who has not actually got a ticket.
+  const showCheckIn = checkInnable && !!eventSlug;
+  const cols = showCheckIn
+    ? "md:grid-cols-[1.3fr_1.3fr_0.6fr_0.6fr_0.8fr]"
+    : "md:grid-cols-[1.4fr_1.4fr_0.7fr_0.7fr]";
   return (
     <div className="mt-4 overflow-hidden rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)]">
-      <div className="grid grid-cols-[1.4fr_1.4fr_0.7fr_0.7fr] gap-3 border-b border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-3 text-xs font-semibold text-[color:var(--slate)] max-md:hidden">
+      {/* Phone. The column headings are hidden below md, so the desktop grid
+          collapsed to four or five unlabelled stacked lines per person - a
+          name, a raw email, a bare date, a badge - on the exact screen a host
+          is holding at a venue door. Same shape as the bookings tab's stacked
+          list: identity on the left, the action on the right, the rest as one
+          quiet meta line. */}
+      <ul className="md:hidden">
+        {rows.map((attendee, i) => (
+          <li
+            key={attendee.attendeeId}
+            className={`flex items-center gap-3 px-4 py-3.5 ${
+              i > 0 ? "border-t border-[color:var(--line-soft)]" : ""
+            }`}
+          >
+            <AttendeeAvatar
+              displayName={attendee.displayName}
+              photoUrl={attendee.photoUrl}
+            />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold text-[color:var(--ink)]">
+                {attendee.displayName}
+              </p>
+              <p className="truncate text-xs text-[color:var(--slate)]">
+                {attendee.email}
+              </p>
+              <p className="mt-1 flex items-center gap-1.5 text-[11.5px] text-[color:var(--slate)]">
+                <Badge tone={attendeeRowTone(attendee.status)}>{attendee.status}</Badge>
+                <span>
+                  RSVP&apos;d {rsvpDateFormatter.format(new Date(attendee.rsvpAt))}
+                </span>
+              </p>
+            </div>
+            {showCheckIn ? (
+              <AttendeeCheckInToggle
+                attendeeId={attendee.attendeeId}
+                eventSlug={eventSlug as string}
+                name={attendee.displayName}
+                checkedIn={attendee.checkedInAt !== null}
+              />
+            ) : null}
+          </li>
+        ))}
+      </ul>
+
+      <div
+        className={`hidden gap-3 border-b border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-3 text-xs font-semibold text-[color:var(--slate)] md:grid ${cols}`}
+      >
         <span>Name</span>
         <span>Email</span>
         <span>RSVP&apos;d</span>
         <span>Status</span>
+        {showCheckIn ? <span>Check-in</span> : null}
       </div>
       {rows.map((attendee) => (
         <div
           key={attendee.attendeeId}
-          className="grid gap-3 border-t border-[color:var(--line-soft)] px-5 py-4 md:grid-cols-[1.4fr_1.4fr_0.7fr_0.7fr] md:items-center"
+          className={`hidden gap-3 border-t border-[color:var(--line-soft)] px-5 py-4 md:grid md:items-center ${cols}`}
         >
           <div className="flex items-center gap-3">
             <AttendeeAvatar
@@ -421,6 +590,14 @@ function AttendeeTable({ rows }: { rows: MerchantAttendeeRow[] }) {
           <div>
             <Badge tone={attendeeRowTone(attendee.status)}>{attendee.status}</Badge>
           </div>
+          {showCheckIn ? (
+            <AttendeeCheckInToggle
+              attendeeId={attendee.attendeeId}
+              eventSlug={eventSlug as string}
+              name={attendee.displayName}
+              checkedIn={attendee.checkedInAt !== null}
+            />
+          ) : null}
         </div>
       ))}
     </div>
@@ -433,7 +610,36 @@ function AttendeeTable({ rows }: { rows: MerchantAttendeeRow[] }) {
 function GuestList({ rows, eventSlug }: { rows: MerchantGuestRow[]; eventSlug: string }) {
   return (
     <div className="mt-4 overflow-hidden rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)]">
-      <div className="grid grid-cols-[1.3fr_1.3fr_0.8fr_0.8fr] gap-3 border-b border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-3 text-xs font-semibold text-[color:var(--slate)] max-md:hidden">
+      {/* Phone, same reasoning as AttendeeTable above - this is half of the same
+          door list and it cannot collapse differently from the other half. */}
+      <ul className="md:hidden">
+        {rows.map((guest, i) => (
+          <li
+            key={guest.guestId}
+            className={`flex items-center gap-3 px-4 py-3.5 ${
+              i > 0 ? "border-t border-[color:var(--line-soft)]" : ""
+            }`}
+          >
+            <AttendeeAvatar displayName={guest.firstName ?? "Guest"} photoUrl={null} />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold text-[color:var(--ink)]">
+                {guest.firstName ?? "Guest"}
+              </p>
+              <p className="truncate text-xs text-[color:var(--slate)]">
+                +1 of {guest.purchasedBy}
+              </p>
+            </div>
+            <GuestCheckInToggle
+              guestId={guest.guestId}
+              eventSlug={eventSlug}
+              name={guest.firstName ?? "guest"}
+              attended={guest.attended}
+            />
+          </li>
+        ))}
+      </ul>
+
+      <div className="hidden grid-cols-[1.3fr_1.3fr_0.8fr_0.8fr] gap-3 border-b border-[color:var(--line)] bg-[color:var(--champagne)] px-5 py-3 text-xs font-semibold text-[color:var(--slate)] md:grid">
         <span>Guest</span>
         <span>Invited by</span>
         <span>Status</span>
@@ -442,7 +648,7 @@ function GuestList({ rows, eventSlug }: { rows: MerchantGuestRow[]; eventSlug: s
       {rows.map((guest) => (
         <div
           key={guest.guestId}
-          className="grid gap-3 border-t border-[color:var(--line-soft)] px-5 py-4 md:grid-cols-[1.3fr_1.3fr_0.8fr_0.8fr] md:items-center"
+          className="hidden gap-3 border-t border-[color:var(--line-soft)] px-5 py-4 md:grid md:grid-cols-[1.3fr_1.3fr_0.8fr_0.8fr] md:items-center"
         >
           <div className="flex items-center gap-3">
             <AttendeeAvatar displayName={guest.firstName ?? "Guest"} photoUrl={null} />

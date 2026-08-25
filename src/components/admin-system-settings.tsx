@@ -49,11 +49,18 @@ function UnsavedMark({ show }: { show: boolean }) {
 
 export function AdminSystemSettings({ initial }: { initial: SystemSettings }) {
   const [maintenance, setMaintenance] = useState(initial.maintenanceMode);
+  const [matchingV2, setMatchingV2] = useState(initial.matchingV2Enabled);
   const [commission, setCommission] = useState(String(initial.commissionRateBps));
   const [bookingFeePercent, setBookingFeePercent] = useState(String(initial.bookingFeeBps / 100));
   const [banner, setBanner] = useState(initial.marketingBanner);
   const [isPending, startTransition] = useTransition();
   const [confirming, setConfirming] = useState(false);
+
+  // PLATFORM_FEE_BPS wins over the stored rate, and release-check.mjs requires
+  // that variable for a production release - so on a real deployment this box
+  // is always read-only. It used to accept edits, save them, and change nothing
+  // about what Stripe charged.
+  const commissionLocked = initial.commissionRateSource === "env";
 
   const commissionField = bounded(commission, 0, 5000, initial.commissionRateBps);
   const bookingField = bounded(bookingFeePercent, 0, 50, initial.bookingFeeBps / 100);
@@ -63,12 +70,16 @@ export function AdminSystemSettings({ initial }: { initial: SystemSettings }) {
   // Per-section dirty flags. An unusable field counts as dirty so the guard
   // still fires - the operator has changed something, it just cannot be saved.
   const maintenanceDirty = maintenance !== initial.maintenanceMode;
-  const commissionDirty = commissionField.error !== null || commissionBps !== initial.commissionRateBps;
+  const matchingV2Dirty = matchingV2 !== initial.matchingV2Enabled;
+  const commissionDirty =
+    !commissionLocked &&
+    (commissionField.error !== null || commissionBps !== initial.commissionRateBps);
   const bookingDirty = bookingField.error !== null || bookingBps !== initial.bookingFeeBps;
   const bannerDirty = banner !== initial.marketingBanner;
 
-  const hasError = commissionField.error !== null || bookingField.error !== null;
-  const dirty = maintenanceDirty || commissionDirty || bookingDirty || bannerDirty;
+  const hasError = (!commissionLocked && commissionField.error !== null) || bookingField.error !== null;
+  const dirty =
+    maintenanceDirty || matchingV2Dirty || commissionDirty || bookingDirty || bannerDirty;
 
   // Link interception only - never gates the save itself. After a successful
   // save the server action revalidates /admin/system, `initial` comes back with
@@ -78,7 +89,10 @@ export function AdminSystemSettings({ initial }: { initial: SystemSettings }) {
   function save() {
     const form = new FormData();
     if (maintenance) form.set("maintenance_mode", "on");
-    form.set("commission_rate_bps", String(commissionBps));
+    if (matchingV2) form.set("matching_v2_enabled", "on");
+    // Deliberately absent when the environment owns the rate: sending it would
+    // make the server throw on a value the operator never chose to change.
+    if (!commissionLocked) form.set("commission_rate_bps", String(commissionBps));
     form.set("booking_fee_bps", String(bookingBps));
     form.set("marketing_banner", banner);
 
@@ -119,9 +133,15 @@ export function AdminSystemSettings({ initial }: { initial: SystemSettings }) {
               Take Click offline.
               <UnsavedMark show={maintenanceDirty} />
             </h3>
-            <p className="mt-2 text-sm leading-6 text-[color:var(--slate)]">
-              When on, public + protected routes can render a maintenance
-              banner. Admin remains accessible.
+            <p className="mt-2 max-w-xl text-sm leading-6 text-[color:var(--slate)]">
+              When on, every visitor gets a full-screen &ldquo;back shortly&rdquo; screen
+              instead of the app. Admin, sign-in and sign-out stay reachable, and you
+              keep seeing the real site with a strip at the top reminding you it is on.
+            </p>
+            <p className="mt-2 max-w-xl text-sm leading-6 text-[color:var(--slate)]">
+              It is a notice, not a lock: pages still render behind it and the API is
+              untouched, so a checkout already in flight will still complete. Use it to
+              stop people starting things, not to make writes impossible.
             </p>
           </div>
           <label className="inline-flex cursor-pointer items-center gap-3 rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] px-4 py-2">
@@ -145,29 +165,87 @@ export function AdminSystemSettings({ initial }: { initial: SystemSettings }) {
           <UnsavedMark show={commissionDirty} />
         </h3>
         <p className="mt-2 text-sm leading-6 text-[color:var(--slate)]">
-          Stored in basis points. 290 bps = 2.9%. Applied at checkout for Click-managed paid events.
+          Stored in basis points. 290 bps = 2.9%. Taken off each merchant-hosted paid
+          booking as the Stripe application fee.
         </p>
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          {/* The visible heading names the setting; the label below is what
-              carries that name to assistive tech, which previously announced
-              this live-pricing box as an unlabelled spin button. */}
-          <label className="grid gap-1.5">
-            <span className="sr-only">Commission rate in basis points</span>
+
+        {commissionLocked ? (
+          <div className="mt-4 space-y-3">
+            <div className="flex flex-wrap items-baseline gap-3">
+              <p className="font-display text-3xl font-semibold tabular-nums leading-none text-[color:var(--ink)]">
+                {(initial.commissionRateBps / 100).toFixed(2)}%
+              </p>
+              <span className="text-[12.5px] font-semibold text-[color:var(--slate)]">
+                {initial.commissionRateBps} bps
+              </span>
+            </div>
+            <p className="max-w-xl text-sm leading-6 text-[color:var(--slate)]">
+              Set by the{" "}
+              <span className="font-mono text-[12.5px] text-[color:var(--ink)]">
+                PLATFORM_FEE_BPS
+              </span>{" "}
+              environment variable, which takes precedence over anything stored here. Change
+              it where the deployment&rsquo;s environment is configured and redeploy - an edit on
+              this page would save and have no effect on what Stripe charges, so the box is
+              not offered.
+            </p>
+          </div>
+        ) : (
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            {/* The visible heading names the setting; the label below is what
+                carries that name to assistive tech, which previously announced
+                this live-pricing box as an unlabelled spin button. */}
+            <label className="grid gap-1.5">
+              <span className="sr-only">Commission rate in basis points</span>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={0}
+                max={5000}
+                value={commission}
+                onChange={(e) => setCommission(e.target.value)}
+                aria-invalid={commissionField.error ? true : undefined}
+                className={`ck-input w-28 ${commissionField.error ? "ck-input--invalid" : ""}`}
+              />
+            </label>
+            <span className="text-[12.5px] font-semibold text-[color:var(--slate)]">
+              bps · {(commissionBps / 100).toFixed(2)}%
+            </span>
+            <FieldError message={commissionField.error} />
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-2xl bg-[color:var(--paper)] p-5 shadow-[var(--shadow-sm)]">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="eyebrow">Matching engine</p>
+            <h3 className="font-display mt-2 flex flex-wrap items-center gap-2 text-2xl font-semibold leading-tight text-[color:var(--ink)]">
+              Rank with v2
+              <UnsavedMark show={matchingV2Dirty} />
+            </h3>
+            <p className="mt-2 max-w-xl text-sm leading-6 text-[color:var(--slate)]">
+              {matchingV2
+                ? "On. Discovery and the people surfaces rank with the cohort-aware v2 model, and the v1 sliders on Matching Formula have no effect while this is on."
+                : "Off. Discovery falls back to the v1 scorer, which is what the weights on Matching Formula tune."}
+            </p>
+            <p className="mt-2 max-w-xl text-sm leading-6 text-[color:var(--slate)]">
+              This switch used to live only on the internal inspector at /algo, which returns
+              404 on a production deployment - so on the live site there was no way to turn v2
+              off at all.
+            </p>
+          </div>
+          <label className="inline-flex cursor-pointer items-center gap-3 rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] px-4 py-2">
             <input
-              type="number"
-              inputMode="numeric"
-              min={0}
-              max={5000}
-              value={commission}
-              onChange={(e) => setCommission(e.target.value)}
-              aria-invalid={commissionField.error ? true : undefined}
-              className={`ck-input w-28 ${commissionField.error ? "ck-input--invalid" : ""}`}
+              type="checkbox"
+              checked={matchingV2}
+              onChange={(e) => setMatchingV2(e.target.checked)}
+              className="size-5 accent-[color:var(--purple)]"
             />
+            <span className="text-[12.5px] font-semibold text-[color:var(--ink)]">
+              {matchingV2 ? "On" : "Off"}
+            </span>
           </label>
-          <span className="text-[12.5px] font-semibold text-[color:var(--slate)]">
-            bps · {(commissionBps / 100).toFixed(2)}%
-          </span>
-          <FieldError message={commissionField.error} />
         </div>
       </section>
 
@@ -209,8 +287,10 @@ export function AdminSystemSettings({ initial }: { initial: SystemSettings }) {
           Site-wide message
           <UnsavedMark show={bannerDirty} />
         </h3>
-        <p className="mt-2 text-sm leading-6 text-[color:var(--slate)]">
-          Shown on home + protected pages when non-empty. 200 chars max.
+        <p className="mt-2 max-w-xl text-sm leading-6 text-[color:var(--slate)]">
+          Shown as a strip above the header on every page while it is non-empty, signed
+          in or not. Each visitor can dismiss it, and editing the text brings it back for
+          everyone who did. 200 characters max; clear the box to remove it.
         </p>
         <label className="mt-4 grid gap-1.5">
           <span className="sr-only">Site-wide marketing banner message</span>

@@ -3,6 +3,10 @@ import type { Provider } from "next-auth/providers";
 import Credentials from "next-auth/providers/credentials";
 import Facebook from "next-auth/providers/facebook";
 import Google from "next-auth/providers/google";
+// Machine-made until the member picks one - src/lib/display-name.ts explains why
+// the surfaces that publish a name have to tell the two apart.
+import { hasConfiguredAdmins } from "@/lib/admin-emails";
+import { nameFromEmail } from "@/lib/display-name";
 import { isLocalDevelopment } from "@/lib/runtime-mode";
 import { isTestSwitcherConfigured } from "@/lib/test-switcher";
 
@@ -10,27 +14,11 @@ function getStringCredential(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function nameFromEmail(email: string) {
-  const [name] = email.split("@");
-  return name
-    .split(/[._-]+/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
-function configuredAdminEmails() {
-  return new Set(
-    (process.env.ADMIN_EMAILS ?? (isLocalDevelopment() ? "admin@click.local" : ""))
-      .split(",")
-      .map((email) => email.trim().toLowerCase())
-      .filter(Boolean),
-  );
-}
-
-export function isAdminEmail(email: string | null | undefined) {
-  return !!email && configuredAdminEmails().has(email.toLowerCase());
-}
+// Re-exported, not defined here: src/lib/admin-emails.ts is the one place that
+// decides who is an admin, so the repository layer can ask the same question
+// without importing NextAuth. See the comment in that file for why there were
+// two answers and why they disagreed.
+export { isAdminEmail } from "@/lib/admin-emails";
 
 const providers: Provider[] = [];
 
@@ -73,13 +61,14 @@ providers.push(
 // single-use token provider above; knowing an email address alone can never
 // create a session.
 //
-// Registered in local dev, and on a deployed environment only when
-// TEST_SWITCHER_KEY is set. Registration is not the security boundary though -
-// `authorize` re-checks the unlock cookie on every attempt, because a provider
-// that merely exists can be driven by POSTing straight at
+// Registered in local dev, and on a deployed environment when anyone could
+// hold an unlock: TEST_SWITCHER_KEY is set, or ADMIN_EMAILS names someone who
+// can unlock it with their own session. Registration is not the security
+// boundary though - `authorize` re-checks the unlock cookie on every attempt,
+// because a provider that merely exists can be driven by POSTing straight at
 // /api/auth/callback/test-login. Without that check, "email=admin@click.local"
 // would be an admin session for anyone who guessed the provider id.
-if (isLocalDevelopment() || isTestSwitcherConfigured()) {
+if (isLocalDevelopment() || isTestSwitcherConfigured() || hasConfiguredAdmins()) {
   providers.push(
     Credentials({
       id: "test-login",

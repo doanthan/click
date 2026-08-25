@@ -114,7 +114,7 @@ function ReportCard({ report }: { report: AdminReportRow }) {
           <Badge tone="coral">{REASON_LABELS[report.reason] ?? report.reason}</Badge>
           <h3 className="font-display mt-2 text-2xl font-semibold leading-tight text-[color:var(--ink)]">
             <Link
-              href={`/profile/${report.reportedId}`}
+              href={`/admin/members/${report.reportedId}`}
               className="hover:text-[color:var(--purple)]"
             >
               {report.reportedName}
@@ -122,7 +122,7 @@ function ReportCard({ report }: { report: AdminReportRow }) {
           </h3>
           <p className="mt-1 text-xs text-[color:var(--slate)]">
             Reported by{" "}
-            <Link href={`/profile/${report.reporterId}`} className="font-semibold underline">
+            <Link href={`/admin/members/${report.reporterId}`} className="font-semibold underline">
               {report.reporterName}
             </Link>
             {report.sourceEventTitle ? ` · at ${report.sourceEventTitle}` : ""} ·{" "}

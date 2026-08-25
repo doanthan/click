@@ -49,7 +49,11 @@ export function buildEventCancelledEmail(d: EventCancelledData) {
     </tr>
     ${renderCallout(
       "Refund window -",
-      "if you paid for this event, refunds for cancelled events are automatic and usually land in 5–10 business days. We'll email when yours processes.",
+      // 3 to 5, like every other surface. This template was the lone outlier at
+      // "5 - 10", and it is the message someone reads at the exact moment they
+      // are anxious about their money - so it was the worst place to disagree
+      // with the refund policy, the event page and the receipt.
+      "if you paid for this event, refunds for cancelled events are automatic and usually land in 3 to 5 business days. We'll email when yours processes.",
     )}
   `;
 

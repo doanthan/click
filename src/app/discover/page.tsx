@@ -46,13 +46,20 @@ export default async function DiscoverPage() {
             ) : null}
           </div>
           <div className="ckRail mt-4 flex snap-x snap-mandatory gap-5 overflow-x-auto pb-2">
-            {personalized.events.map((event) => (
+            {personalized.events.map((event, index) => (
               <div key={event.id} className="w-[19rem] shrink-0 snap-start sm:w-[21rem]">
                 <EventCard
                   event={event}
                   bookmarked={bookmarkedSet.has(event.id)}
                   registered={registeredSet.has(event.id)}
                   bookingStatus={bookingStatusFor(event.id)}
+                  // This rail sits ABOVE the grid, so its first cover is the LCP
+                  // on a signed-in load.
+                  priority={index === 0}
+                  // Server-rendered, so there is never a shared location here -
+                  // the distance is always from the CBD and has to say so, the
+                  // same way the grid's cards do.
+                  distanceOrigin="CBD"
                 />
               </div>
             ))}
@@ -63,6 +70,7 @@ export default async function DiscoverPage() {
       <section className="ck-page pt-6">
         <EventExplorer
           events={events}
+          degraded={Boolean(events.degraded)}
           bookmarkedEventIds={profileStatus?.bookmarkedEventIds ?? []}
           registeredEventIds={profileStatus?.registeredEventIds ?? []}
           waitlistedEventIds={profileStatus?.waitlistedEventIds ?? []}

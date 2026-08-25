@@ -14,6 +14,7 @@ import {
 import {
   getMutualClicksForSession,
   getPersonalizedDiscovery,
+  getProfileCompletion,
   getProfileStatus,
   getSuggestedPeople,
 } from "@/lib/event-repository";
@@ -30,12 +31,20 @@ export default async function PeoplePage() {
     redirect("/login?callbackUrl=/people");
   }
 
-  const [suggested, mutuals, personalized, profileStatus] = await Promise.all([
+  const [suggested, mutuals, personalized, profileStatus, completion] = await Promise.all([
     getSuggestedPeople(session),
     getMutualClicksForSession(session),
     getPersonalizedDiscovery(session),
     getProfileStatus(session),
+    getProfileCompletion(session),
   ]);
+
+  // Same bar the matcher cares about, same test the dashboard already makes
+  // (dashboard/page.tsx:119). getSuggestedPeople filters on the CANDIDATES'
+  // tags, never on the viewer's, so an empty set says nothing about whether the
+  // viewer has interests - and telling someone who just picked five of them to
+  // go and pick some is the first thing this page said to a new member.
+  const hasInterests = completion.items.find((i) => i.key === "tags")?.done ?? false;
 
   // The daily set is a small, curated pool - a drip, not an endless feed. People
   // you've already clicked drop OUT of it (same rule the dashboard uses): the set
@@ -43,7 +52,22 @@ export default async function PeoplePage() {
   // same three muted "clicked" cards forever with nothing left to do and no word
   // on what happens next.
   const clickable = suggested.filter((p) => !p.alreadyClicked);
-  const dailySet = clickable.slice(0, 3);
+  // Rotated by the Sydney date, so "3 people for you today" is true tomorrow as
+  // well. It used to be a flat slice(0, 3): sit on your hands and the same three
+  // faces greeted you every morning under a heading promising new ones, which
+  // teaches people the page is not worth reopening. Rotating the window costs no
+  // extra query and suits a drip - the people you skipped come back around.
+  const dayKey = Number(
+    new Intl.DateTimeFormat("en-CA", { timeZone: "Australia/Sydney" })
+      .format(new Date())
+      .replace(/-/g, ""),
+  );
+  const start = clickable.length > 0 ? dayKey % clickable.length : 0;
+  const dailySet = clickable.length > 0
+    ? Array.from({ length: Math.min(3, clickable.length) }, (_unused, i) =>
+        clickable[(start + i) % clickable.length],
+      )
+    : [];
   // You've worked through everyone we had, rather than never having had anyone.
   const setExhausted = dailySet.length === 0 && suggested.length > 0;
 
@@ -52,6 +76,12 @@ export default async function PeoplePage() {
   // (there is no dormant / "no match" state - the user can always propose).
   const plans = mutuals.filter((m) => m.bothGoingEventSlug);
   const liveMutuals = mutuals.filter((m) => !m.bothGoingEventSlug);
+  // Same test the dashboard uses (dashboard/page.tsx), so the two surfaces stop
+  // telling the same member two different things about the same plan.
+  const registeredSet = new Set(profileStatus.registeredEventIds);
+  const waitlistedSet = new Set(profileStatus.waitlistedEventIds);
+  const viewerHasSeat = (slug: string | null) =>
+    slug != null && registeredSet.has(slug) && !waitlistedSet.has(slug);
 
   return (
     <main className="min-h-screen bg-[color:var(--champagne)] pb-24 text-[color:var(--ink)]">
@@ -87,9 +117,12 @@ export default async function PeoplePage() {
               there is no messaging anywhere in Click.
             </li>
             <li>
-              <strong className="font-semibold text-[color:var(--ink)]">Clicks expire.</strong> A
-              click waits {DISCOVERY_CLICK_WINDOW_DAYS} days for them to click back, then quietly
-              lapses. A mutual has {MUTUAL_CLOCK_DAYS} days to turn into a plan.
+              <strong className="font-semibold text-[color:var(--ink)]">
+                Clicks don&apos;t hang around.
+              </strong>{" "}
+              A click stays open {DISCOVERY_CLICK_WINDOW_DAYS} days for them to click back. After
+              that it&apos;s still out there - cross paths again and you can pick it back up. A
+              mutual has {MUTUAL_CLOCK_DAYS} days to turn into a plan.
             </li>
             <li>
               <strong className="font-semibold text-[color:var(--ink)]">
@@ -152,13 +185,28 @@ export default async function PeoplePage() {
             </div>
           ) : (
             <div className="rounded-[var(--radius-xl)] bg-[color:var(--lav-bg)] px-6 py-8 text-center">
-              <p className="mx-auto max-w-[380px] text-sm leading-relaxed text-[color:var(--ink-soft)]">
-                Add a few interests to{" "}
-                <Link href="/profile/edit" className="font-semibold text-[color:var(--purple)]">
-                  your profile
-                </Link>{" "}
-                and we&apos;ll start surfacing people you actually overlap with.
-              </p>
+              {hasInterests ? (
+                <>
+                  <p className="font-display text-[15px] font-semibold text-[color:var(--ink)]">
+                    No one to show you just yet.
+                  </p>
+                  <p className="mx-auto mt-1.5 max-w-[420px] text-sm leading-relaxed text-[color:var(--ink-soft)]">
+                    We only suggest people with real overlap, so this fills up as more members
+                    join near you. Going to an event is the fastest way to meet them.
+                  </p>
+                  <Link href="/discover" className={`${ckBtn("primary", "sm")} mt-4`}>
+                    <span className="ck-btn__label">Find an event →</span>
+                  </Link>
+                </>
+              ) : (
+                <p className="mx-auto max-w-[380px] text-sm leading-relaxed text-[color:var(--ink-soft)]">
+                  Add a few interests to{" "}
+                  <Link href="/profile/edit" className="font-semibold text-[color:var(--purple)]">
+                    your profile
+                  </Link>{" "}
+                  and we&apos;ll start surfacing people you actually overlap with.
+                </p>
+              )}
             </div>
           )}
         </section>
@@ -201,24 +249,39 @@ export default async function PeoplePage() {
                       line={
                         !m.suggestedEventSlug
                           ? "Pick something you'd both enjoy"
-                          : !m.suggestedEventJoinable
-                            ? `${m.suggestedEventTitle ?? "That plan"} is off the table`
-                            : m.planAccepted
-                              ? "You both said yes - grab your seat"
-                              : m.suggestedByOther
-                                ? `${m.otherDisplayName.split(" ")[0]} suggested a plan`
-                                : "Waiting to hear back on your plan"
+                          : // Every row here is a live mutual, i.e. one with NO shared
+                            // upcoming event (that's what splits liveMutuals from plans
+                            // above). So on a row where the viewer holds a seat, the
+                            // other person by construction does not - and the branch
+                            // that used to sit here said "You're both in" on precisely
+                            // the rows where they weren't. Agreeing on a plan is not
+                            // the same as taking a seat on it.
+                            viewerHasSeat(m.suggestedEventSlug)
+                            ? "You've got your seat - waiting on them"
+                            : !m.suggestedEventJoinable
+                              ? `${m.suggestedEventTitle ?? "That plan"} is off the table`
+                              : m.planAccepted
+                                ? "You both said yes - grab your seat"
+                                : m.suggestedByOther
+                                  ? `${m.otherDisplayName.split(" ")[0]} suggested a plan`
+                                  : m.suggestedBySomeone
+                                    ? "Waiting to hear back on your plan"
+                                    : "Here's a plan for you two"
                       }
                       actionLabel={
                         !m.suggestedEventSlug
                           ? "Suggest a plan →"
-                          : !m.suggestedEventJoinable
-                            ? "Pick another plan →"
-                            : m.planAccepted
-                              ? "See your plan →"
-                              : m.suggestedByOther
-                                ? "See their plan →"
-                                : "See your plan →"
+                          : viewerHasSeat(m.suggestedEventSlug)
+                            ? "See your plan →"
+                            : !m.suggestedEventJoinable
+                              ? "Pick another plan →"
+                              : m.planAccepted
+                                ? "See your plan →"
+                                : m.suggestedByOther
+                                  ? "See their plan →"
+                                  : m.suggestedBySomeone
+                                    ? "See your plan →"
+                                    : "See the plan →"
                       }
                     />
                   ))}

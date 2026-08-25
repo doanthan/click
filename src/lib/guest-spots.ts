@@ -70,7 +70,7 @@ export function validateGuestDetails(
     const label = `Guest ${i + 1}`;
     const firstName = (g.firstName ?? "").trim();
     if (firstName.length < 2 || firstName.length > 50) {
-      validationError(`${label}: first name must be 2–50 characters.`);
+      validationError(`${label}: first name must be 2 - 50 characters.`);
     }
     const email = (g.email ?? "").trim().toLowerCase();
     if (!EMAIL_RE.test(email)) validationError(`${label}: enter a valid email address.`);
@@ -152,11 +152,12 @@ export async function reserveUnnamedGuestSeats(
 
 // Cancel every still-held guest seat on a booking (whole-booking cancel / hold
 // expiry / event cancel). Frees capacity. Idempotent.
+/** Returns how many seats this actually freed, so the caller can re-offer them all. */
 export async function cancelGuestSeatsForTransaction(
   db: Queryable,
   paymentTransactionId: string,
-): Promise<void> {
-  await db.query(
+): Promise<number> {
+  const result = await db.query(
     `
       update guest_spots
       set status = 'cancelled', updated_at = now()
@@ -164,6 +165,7 @@ export async function cancelGuestSeatsForTransaction(
     `,
     [paymentTransactionId],
   );
+  return result.rowCount ?? 0;
 }
 
 export type NamedGuestOutcome =

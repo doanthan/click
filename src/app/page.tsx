@@ -264,6 +264,11 @@ export default async function Home() {
             <p className="mx-auto mt-2 max-w-[440px] text-sm leading-6 text-[color:var(--slate)]">
               Take the vibe quiz now and we&apos;ll point you toward the right rooms as events go live.
             </p>
+            <div className="mt-5 flex justify-center">
+              <Link href="/quiz/personality" className="ck-btn ck-btn--md ck-btn--primary">
+                <span className="ck-btn__label">Pick your vibe</span>
+              </Link>
+            </div>
           </div>
         </section>
       )}

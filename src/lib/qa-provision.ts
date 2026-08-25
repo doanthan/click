@@ -34,14 +34,32 @@ async function upsertPersona(
     `
     insert into profiles (
       auth_subject, role, email, display_name, suburb, city, bio,
+      birth_date, age, photo_url,
       connection_intents, email_verified_at
     )
     values ($1, $2::user_role, $3::citext, $4, $5, 'Sydney', $6,
+            $7::date, extract(year from age($7::date))::int, $8,
             '{friendship,exploring}'::connection_intent[], now())
     on conflict (email) do update set
       role = excluded.role,
       display_name = excluded.display_name,
       suburb = excluded.suburb,
+      birth_date = excluded.birth_date,
+      -- Derived, never carried over: profiles.age is a plain column, so a
+      -- persona seeded before a birthday would sit a year stale forever, and
+      -- the click layer's independent 18+ gate reads age, not birth_date.
+      age = excluded.age,
+      -- The ONE field a re-provision does not stamp back. Uploading an avatar
+      -- is itself something you test, and this runs on every persona switch -
+      -- overwriting it would silently undo the thing you just did. The seeded
+      -- face is only there because the discovery pool refuses a photoless
+      -- profile; once a real one exists the seed has no more work to do.
+      -- "Reset all test data" still restores the seeded face, by deleting the row.
+      photo_url = case
+        when profiles.photo_url is null or profiles.photo_url = ''
+        then excluded.photo_url
+        else profiles.photo_url
+      end,
       updated_at = now()
     `,
     [
@@ -51,6 +69,8 @@ async function upsertPersona(
       persona.displayName,
       persona.suburb,
       `QA persona - ${persona.exercises}`,
+      persona.birthDate,
+      persona.photoUrl,
     ],
   );
 
@@ -123,10 +143,18 @@ export async function provisionQaPersona(email: string): Promise<void> {
       await upsertPersona(client, target);
     }
 
-    // The hosts always exist, whoever you signed in as - otherwise the customer
-    // personas open Discover to an empty catalogue.
-    for (const host of QA_PERSONAS) {
-      if (host.merchant && host.email !== target.email) await upsertPersona(client, host);
+    // Every OTHER persona exists too, whoever you signed in as. The hosts are
+    // the obvious case - without them the customer personas open Discover to an
+    // empty catalogue - but the customers matter just as much, and for a
+    // sharper reason: it takes two people to click, and the discovery pool is
+    // built from other profiles. Provision only the persona you picked and the
+    // click surface greets the very first tester with an empty state, because
+    // there is genuinely nobody else in the database yet. The one exclusion is
+    // any persona that is meant to start blank - creating it here would defeat
+    // the deletion above.
+    for (const other of QA_PERSONAS) {
+      if (other.email === target.email || other.suburb === null) continue;
+      await upsertPersona(client, other);
     }
 
     for (const event of QA_EVENTS) {
@@ -195,6 +223,26 @@ export async function provisionQaPersona(email: string): Promise<void> {
               event.priceCents,
               event.capacity,
             ],
+          );
+        }
+
+        if (event.attendeeEmails.length > 0) {
+          // Seats on the already-finished event. The post-event click roster
+          // (Process 2) is gated on event_participants_v, and no amount of
+          // clicking around produces a row there: you cannot RSVP to a room
+          // that has already happened. Seeding the attendance is the only way
+          // that surface is reachable at all. Idempotent, and the
+          // ensure_event_capacity trigger caps it like any other seat.
+          await client.query(
+            `
+            insert into event_attendees (event_id, profile_id, status)
+            select e.id, p.id, 'confirmed'::rsvp_status
+            from events e
+            join profiles p on p.email = any($2::citext[])
+            where e.slug = $1
+            on conflict (event_id, profile_id) do nothing
+            `,
+            [event.slug, event.attendeeEmails],
           );
         }
         await client.query("release savepoint qa_seed_event");

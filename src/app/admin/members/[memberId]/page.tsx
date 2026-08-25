@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Badge, Tag, type BadgeTone } from "@/components/ds";
+import { AdminMemberDangerZone } from "@/components/admin-member-danger-zone";
 import { getAdminMemberDetail } from "@/lib/event-repository";
 import { requireAdminPage } from "@/lib/admin-guard";
 
@@ -129,11 +130,11 @@ export default async function AdminMemberDetailPage({
 
         <dl className="mt-6 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
           <Stat label="Joined" value={dateFormatter.format(new Date(member.joinedAt))} />
-          <Stat label="Suburb" value={member.suburb ?? "—"} />
-          <Stat label="Age" value={member.age?.toString() ?? "—"} />
+          <Stat label="Suburb" value={member.suburb} />
+          <Stat label="Age" value={member.age?.toString()} />
           <Stat
             label="Verification"
-            value={`${member.emailVerified ? "Email ✓" : "Email —"} · ${member.photoVerified ? "Photo ✓" : "Photo —"}`}
+            value={`${member.emailVerified ? "Email ✓" : "Email not verified"} · ${member.photoVerified ? "Photo ✓" : "Photo not verified"}`}
           />
         </dl>
       </header>
@@ -345,7 +346,7 @@ export default async function AdminMemberDetailPage({
                           {txn.eventTitle}
                         </Link>
                       ) : (
-                        txn.eventTitle ?? "—"
+                        txn.eventTitle ?? "Not recorded"
                       )}
                     </td>
                     <td className="py-3 pr-4 font-semibold text-[color:var(--ink)] whitespace-nowrap">
@@ -355,7 +356,7 @@ export default async function AdminMemberDetailPage({
                       <Badge tone={transactionTone(txn.status)}>{txn.status}</Badge>
                     </td>
                     <td className="py-3 text-[11px] text-[color:var(--slate)]">
-                      {txn.stripePaymentIntentId ?? "—"}
+                      {txn.stripePaymentIntentId ?? "Not recorded"}
                     </td>
                   </tr>
                 ))}
@@ -364,17 +365,39 @@ export default async function AdminMemberDetailPage({
           </div>
         )}
       </Card>
+
+      {/* Last thing on the page, on its own: an operator scrolling to read
+          someone's history should never land on the delete control on the way. */}
+      <AdminMemberDangerZone
+        profileId={member.id}
+        email={member.email}
+        displayName={member.displayName}
+        deletedAt={member.deletedAt}
+        upcomingBookings={member.upcomingConfirmedBookings}
+      />
     </div>
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+/**
+ * The empty-value fallback lives HERE rather than at each call site, because a
+ * call site is where the em-dash kept coming back. Every cell above hands over
+ * the raw value now, so the next `<Stat>` somebody adds cannot reintroduce the
+ * glyph by forgetting an em-dash fallback.
+ *
+ * Why a word and not a dash at all: the DS bans em-dashes outright, and a
+ * screen reader reads a lone one as "em dash" or skips it, so an operator could
+ * not tell "this member never set a suburb" from "this cell failed to render".
+ */
+function Stat({ label, value }: { label: string; value: string | null | undefined }) {
   return (
     <div>
       <dt className="text-[12.5px] font-semibold text-[color:var(--slate)]">
         {label}
       </dt>
-      <dd className="mt-1 font-semibold text-[color:var(--ink)]">{value}</dd>
+      <dd className="mt-1 font-semibold text-[color:var(--ink)]">
+        {value?.trim() || "Not provided"}
+      </dd>
     </div>
   );
 }

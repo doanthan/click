@@ -6,7 +6,7 @@ import { Spark } from "./ds";
 
 // Icon keys kept as a closed union so the server-built tab list can name an
 // icon without shipping a component across the server/client boundary.
-export type BottomNavIcon = "find" | "calendar" | "host" | "you" | "info" | "spark" | "people";
+export type BottomNavIcon = "find" | "calendar" | "host" | "you" | "home" | "info" | "spark" | "people";
 
 export type BottomNavTab = {
   label: string;
@@ -18,6 +18,14 @@ export type BottomNavTab = {
 // links, which are `hidden lg:flex` in the header. Hidden from `lg` up, where
 // the header nav takes over. Tabs are computed server-side (role-aware) in
 // SiteHeader and passed in; active state is resolved here against the pathname.
+// An event detail page belongs to the Discover lane: nothing else prefixes
+// /events/…, so the whole nav used to read as "you are nowhere".
+function isTabActive(pathname: string, href: string) {
+  if (href === "/") return pathname === "/";
+  if (href === "/discover" && pathname.startsWith("/events/")) return true;
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
 export function MobileBottomNav({ tabs }: { tabs: BottomNavTab[] }) {
   const pathname = usePathname();
 
@@ -30,10 +38,7 @@ export function MobileBottomNav({ tabs }: { tabs: BottomNavTab[] }) {
         {tabs.map((tab) => {
           // `/discover` shouldn't light up on `/`; match exact for the root-ish
           // tabs and prefix-match for section tabs so nested pages stay active.
-          const active =
-            tab.href === "/"
-              ? pathname === "/"
-              : pathname === tab.href || pathname.startsWith(`${tab.href}/`);
+          const active = isTabActive(pathname, tab.href);
           return (
             <li key={tab.href} className="flex-1">
               <Link
@@ -103,6 +108,13 @@ function BottomNavGlyph({ icon, active }: { icon: BottomNavIcon; active: boolean
         <svg {...common}>
           <circle cx="12" cy="12" r="9" />
           <path d="M12 8v8M8 12h8" />
+        </svg>
+      );
+    case "home":
+      return (
+        <svg {...common}>
+          <path d="M3 11l9-8 9 8" />
+          <path d="M5 9.5V21h14V9.5" />
         </svg>
       );
     case "you":

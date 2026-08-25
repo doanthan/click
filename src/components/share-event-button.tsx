@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Icon } from "./ds";
+import { useDisclosure } from "./use-disclosure";
 
 // Share an event via the device's native share sheet (text / email / WhatsApp /
 // Messenger / Instagram etc. on mobile) with a desktop fallback menu of direct
@@ -14,19 +15,10 @@ export function ShareEventButton({
   title: string;
   slug: string;
 }) {
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, ref } = useDisclosure<HTMLDivElement>();
   const [copied, setCopied] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
   const siteUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://www.letsclick.app";
   const shareUrl = `${siteUrl.replace(/\/$/, "")}/events/${slug}`;
-
-  useEffect(() => {
-    function onDocClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, []);
 
   const shareText = `Check out ${title} on Click`;
 
@@ -56,12 +48,12 @@ export function ShareEventButton({
 
   const encodedUrl = encodeURIComponent(shareUrl);
   const encodedText = encodeURIComponent(shareText);
+  // No Messenger row: its send dialog needs a registered Facebook app id, and we
+  // have none - the row shipped `app_id=0`, so every tap landed on a Facebook
+  // error page. The native sheet above already offers Messenger on a phone,
+  // which is where anyone shares to it from anyway.
   const links: { label: string; href: string }[] = [
     { label: "WhatsApp", href: `https://wa.me/?text=${encodedText}%20${encodedUrl}` },
-    {
-      label: "Facebook Messenger",
-      href: `https://www.facebook.com/dialog/send?link=${encodedUrl}&app_id=0&redirect_uri=${encodedUrl}`,
-    },
     { label: "Email", href: `mailto:?subject=${encodeURIComponent(title)}&body=${encodedText}%20${encodedUrl}` },
     { label: "SMS", href: `sms:?&body=${encodedText}%20${encodedUrl}` },
     {
@@ -75,7 +67,7 @@ export function ShareEventButton({
       <button
         type="button"
         onClick={handleClick}
-        aria-haspopup="menu"
+        aria-haspopup="true"
         aria-expanded={open}
         className="ck-btn ck-btn--secondary ck-btn--sm"
       >
@@ -85,7 +77,6 @@ export function ShareEventButton({
 
       {open ? (
         <div
-          role="menu"
           className="absolute left-0 top-full z-50 mt-2 w-56 overflow-hidden rounded-xl border border-[color:var(--line)] bg-[color:var(--paper)] shadow-[var(--shadow-md)]"
         >
           <button

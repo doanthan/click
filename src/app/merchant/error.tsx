@@ -6,7 +6,7 @@ import { useEffect } from "react";
 /**
  * Route-level error boundary for the merchant portal. Branded like the global
  * not-found page (confetti field, champagne card, sticker eyebrow, display
- * headline) but with a `reset()` retry as the primary action — most portal
+ * headline) but with a `reset()` retry as the primary action - most portal
  * errors are a transient DB/Stripe read that succeeds on a second attempt.
  */
 export default function MerchantError({

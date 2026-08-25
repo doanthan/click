@@ -23,6 +23,7 @@ import sharp from "sharp";
 
 import { getSupabaseAdmin, StorageNotConfiguredError } from "@/utils/supabase/admin";
 import {
+  deletePublicMediaObject,
   isR2PublicMediaConfigured,
   uploadPublicMediaObject,
 } from "@/lib/public-media-storage";
@@ -154,4 +155,34 @@ export async function uploadAvatarFromBuffer(
 ): Promise<string> {
   const jpeg = await normaliseToJpeg(source);
   return putAvatar(profileId, jpeg);
+}
+
+/**
+ * Remove a profile's avatar object from wherever it lives.
+ *
+ * Needed by the account de-identification path: clearing `profiles.photo_url`
+ * hides the face from the app, but the object itself sits in a PUBLIC bucket
+ * under a key derived from the profile id, so anyone who kept the URL - or who
+ * can guess an id - still has the photo. Deleting the row without deleting the
+ * object is a deletion that did not delete anything.
+ *
+ * Best-effort by design: it is called after the database work has committed,
+ * and a storage hiccup must not undo an honoured deletion request. Returns
+ * whether the object was actually removed so the caller can record it.
+ */
+export async function deleteAvatarObject(profileId: string): Promise<boolean> {
+  const key = `${profileId}.jpg`;
+
+  try {
+    if (isR2PublicMediaConfigured()) {
+      await deletePublicMediaObject(key);
+      return true;
+    }
+    if (!readPublicBase()) return false;
+    const supabase = getSupabaseAdmin();
+    const { error } = await supabase.storage.from(AVATAR_BUCKET).remove([key]);
+    return !error;
+  } catch {
+    return false;
+  }
 }

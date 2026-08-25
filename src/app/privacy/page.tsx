@@ -33,7 +33,7 @@ export default function PrivacyPage() {
               <p>We collect the following categories of personal information:</p>
               <ul className="ml-5 list-disc space-y-1.5">
                 <li><strong>Account &amp; profile:</strong> name, email, date of birth (to confirm you are 18+), suburb/postcode, profile photo and gallery photos, profile prompts, social handles, and (via Google/Facebook sign-in) the basic profile details those providers share.</li>
-                <li><strong>Preferences &amp; matching:</strong> your connection intent, interest tags, quiz responses (life stage, availability, event style, energy, personality), and derived matching features used to suggest people and events.</li>
+                <li><strong>Preferences &amp; suggestions:</strong> your connection intent, interest tags, quiz responses (life stage, availability, event style, energy, personality), and derived features used to suggest people and events to you.</li>
                 <li><strong>Activity &amp; connection signals:</strong> the events you view, save, and book; your private &quot;clicks&quot; (interest signals) and mutual clicks; proposals; and notifications.</li>
                 <li><strong>Bookings &amp; payments:</strong> your bookings, guest seats, waitlist offers, and payment metadata returned by Stripe. Click never receives or stores your full card number - card details are entered directly with Stripe.</li>
                 <li><strong>Location &amp; technical data:</strong> location and place data used for proximity and discovery (via Mapbox and Google Maps), plus device, browser, IP, and usage information collected automatically as you use the Platform.</li>
@@ -59,10 +59,10 @@ export default function PrivacyPage() {
           heading: "How we use your information",
           body: (
             <p>
-              We use your information to: create and manage your account; match you to relevant
-              events and people; process bookings, payments, refunds, and merchant payouts; surface
+              We use your information to: create and manage your account; suggest relevant
+              events and people to you; process bookings, payments, refunds, and merchant payouts; surface
               mutual connections; send transactional messages and (where you consent) marketing; keep
-              the Platform safe and investigate reports; improve our matching and product; and meet
+              the Platform safe and investigate reports; improve our suggestions and product; and meet
               our legal obligations. We do not sell your personal information.
             </p>
           ),

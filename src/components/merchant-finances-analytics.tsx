@@ -33,7 +33,7 @@ function lastSixMonthKeys(): string[] {
   return keys;
 }
 
-// Revenue-by-month bar chart for the Finances tab. Pure server component — a
+// Revenue-by-month bar chart for the Finances tab. Pure server component - a
 // CSS-height bar per month, no chart library. Renders the last 6 months so the
 // axis stays readable even for merchants with a long history.
 export function MerchantFinancesAnalytics({
@@ -70,8 +70,14 @@ export function MerchantFinancesAnalytics({
           {months.map((m) => {
             const heightPct = Math.round((m.paidCents / peak) * 100);
             return (
-              <div key={m.key} className="flex flex-1 flex-col items-center gap-2">
-                <span className="text-[11px] font-semibold tabular-nums text-[color:var(--ink)]">
+              <div key={m.key} className="flex min-w-0 flex-1 flex-col items-center gap-2">
+                {/* min-w-0 above, and the label is hidden below sm. Without the
+                    first, each column cannot shrink past its min-content width -
+                    which is this un-wrappable money token - so at 375px six
+                    columns of "$12,450" scrolled the whole page sideways. The
+                    figure is still on the bar's title tooltip and in the totals
+                    above the chart. */}
+                <span className="hidden text-[11px] font-semibold tabular-nums text-[color:var(--ink)] sm:block">
                   {m.paidCents > 0 ? dollars(m.paidCents) : ""}
                 </span>
                 <div

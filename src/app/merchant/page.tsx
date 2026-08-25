@@ -11,11 +11,15 @@ import { EventsTab } from "@/components/merchant-events-tab";
 import { BookingsTabAsync } from "@/components/merchant-bookings-tab";
 import { FinancesTabAsync } from "@/components/merchant-finances-tab";
 import { SettingsTab } from "@/components/merchant-settings-tab";
-import { getMerchantEvents, getProfileStatus } from "@/lib/event-repository";
+import {
+  assertProfileStatusUsable,
+  getMerchantEvents,
+  getProfileStatus,
+} from "@/lib/event-repository";
 
 export const metadata = {
   title: "Merchant Portal",
-  description: "Click merchant portal for event hosts, booking models, payments, and analytics.",
+  description: "Click host portal: create events, run the door, and track payouts.",
 };
 
 // Consolidated from ten tabs down to five. Venues now live under Events,
@@ -41,6 +45,7 @@ export default async function MerchantPage({ searchParams }: MerchantPageProps) 
   }
 
   const status = await getProfileStatus(session);
+  assertProfileStatusUsable(status);
   if (!status.merchantProfile) {
     redirect("/merchant/signup");
   }
@@ -50,7 +55,7 @@ export default async function MerchantPage({ searchParams }: MerchantPageProps) 
     redirect("/merchant-pending");
   }
   // First visit after approval: send the merchant through the one-time
-  // onboarding walkthrough (how-to + Stripe payout setup). It's skippable —
+  // onboarding walkthrough (how-to + Stripe payout setup). It's skippable -
   // reaching the final step stamps onboarding_completed_at so we don't loop.
   if (!status.merchantProfile.onboarding_completed_at) {
     redirect("/merchant/onboarding");

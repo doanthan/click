@@ -93,7 +93,15 @@ export function TabHeader({
   action?: ReactNode;
 }) {
   return (
-    <div className="flex flex-wrap items-end justify-between gap-4">
+    // rise-soft on the head of every tab. The whole portal shipped with no
+    // entrance motion at all, which reads as flat and unfinished directly after
+    // the signup and onboarding wizards - both of which use this same cascade
+    // heavily. It is motivated by HIERARCHY: the head settles first and the
+    // tab's sections follow on rise-d1/d2/d3, so a host's eye is walked down
+    // the screen once per navigation. Pure CSS, so it plays before hydration;
+    // it never loops; and the global prefers-reduced-motion block near the end
+    // of globals.css collapses it to nothing.
+    <div className="flex flex-wrap items-end justify-between gap-4 rise-soft">
       <div className="min-w-0 max-w-[560px]">
         <p className="eyebrow">{eyebrow}</p>
         <h1 className="font-display mt-2 text-[24px] font-semibold leading-[1.15] tracking-[-0.01em] text-[color:var(--ink)] sm:text-[30px]">

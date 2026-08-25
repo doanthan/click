@@ -113,7 +113,7 @@ type StepDef = {
 const STEPS: StepDef[] = [
   {
     key: "basics",
-    eyebrow: "Step one",
+    eyebrow: "The basics",
     title: () => "First, the basics",
     sub: "Just enough to show you what's on near you.",
     icon: "user",
@@ -121,7 +121,7 @@ const STEPS: StepDef[] = [
   },
   {
     key: "intent",
-    eyebrow: "Step two",
+    eyebrow: "What brings you here",
     title: (name) => (name ? `What brings you here, ${name}?` : "What brings you to Click?"),
     sub: "Pick any that fit. It tunes what we show you, and you can change it whenever.",
     icon: "users",
@@ -137,7 +137,7 @@ const STEPS: StepDef[] = [
   },
   {
     key: "interests",
-    eyebrow: "Step three",
+    eyebrow: "What you're into",
     title: () => "What do you like doing?",
     sub: "Tap what sounds like a good night out. Three or more and your suggestions get sharp.",
     cat: "arts",
@@ -145,7 +145,7 @@ const STEPS: StepDef[] = [
   },
   {
     key: "photo",
-    eyebrow: "Last one",
+    eyebrow: "Your photo",
     title: (name) => (name ? `Nice to meet you, ${name}` : "Nice to meet you"),
     sub: "A photo is what unlocks clicking with people - ten seconds now, or add it later from your profile.",
     icon: "camera",
@@ -189,11 +189,15 @@ type OnboardingFormProps = {
   next?: string | null;
 };
 
-// 18 years ago today, ISO yyyy-mm-dd - the max value the <input type="date"> accepts.
+// 18 years ago today, ISO yyyy-mm-dd - the max value the <input type="date">
+// accepts. Calendar years, and the LOCAL date: an average-year subtraction plus
+// a UTC read refused people on their own 18th birthday.
 function getMaxBirthDate() {
-  return new Date(Date.now() - 18 * 365.25 * 24 * 60 * 60 * 1000)
-    .toISOString()
-    .slice(0, 10);
+  const now = new Date();
+  const cutoff = new Date(now.getFullYear() - 18, now.getMonth(), now.getDate());
+  const month = String(cutoff.getMonth() + 1).padStart(2, "0");
+  const day = String(cutoff.getDate()).padStart(2, "0");
+  return `${cutoff.getFullYear()}-${month}-${day}`;
 }
 
 function ageFromBirthDate(iso: string): number | null {
@@ -234,6 +238,14 @@ export function OnboardingForm({
   const [displayName, setDisplayName] = useState(initialName);
   const [postcode, setPostcode] = useState(initialPostcode);
   const [birthDate, setBirthDate] = useState("");
+  // Why the last typed birth date was refused, if it was. The picker reverts a
+  // rejected entry to blank rather than leaving the field in a half-valid
+  // state, which means birthDate afterwards is indistinguishable from "never
+  // filled in" - and validateAll then answered a 17-year-old with "Pick your
+  // birth date", over the field it had just emptied, so the actual reason never
+  // reached them. Holding the picker's own sentence here keeps the real answer
+  // on screen when they tap Continue. Cleared the moment a date commits.
+  const [birthDateRejection, setBirthDateRejection] = useState("");
   const [intents, setIntents] = useState<Set<Intent>>(new Set(["friendship"]));
   // Dating visibility default OFF - opt-in is the safer default on a
   // dating-adjacent product. Flexible discovery stays opt-out (true).
@@ -245,6 +257,7 @@ export function OnboardingForm({
 
   const [state, setState] = useState<SubmitState>("idle");
   const [message, setMessage] = useState("");
+  const errorRef = useRef<HTMLDivElement | null>(null);
 
   const firstName = firstNameOf(displayName);
 
@@ -426,7 +439,12 @@ export function OnboardingForm({
     if (!displayName.trim()) return "Add a name people will see.";
     if (!postcode.trim()) return "Add your postcode.";
     if (!POSTCODE_RE.test(postcode.trim())) return "Enter a valid 4-digit Australian postcode.";
-    if (!birthDate) return "Pick your birth date so we can confirm you're 18+.";
+    // "Never entered" and "entered and refused" both leave this empty, so the
+    // picker's reason wins where there is one - being told to pick a date you
+    // just picked is the fastest way to make someone type it again, unchanged.
+    if (!birthDate) {
+      return birthDateRejection || "Pick your birth date so we can confirm you're 18+.";
+    }
     const age = ageFromBirthDate(birthDate);
     if (age === null) return "That birth date doesn't look right.";
     if (age < 18) return "You need to be 18 or older to use Click.";
@@ -454,6 +472,12 @@ export function OnboardingForm({
     if (err) {
       setState("error");
       setMessage(err);
+      // Bring the explanation into view and announce it. Without this the only
+      // feedback on a phone was off-screen.
+      requestAnimationFrame(() => {
+        errorRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+        errorRef.current?.focus();
+      });
       return;
     }
     setState("idle");
@@ -628,7 +652,7 @@ export function OnboardingForm({
                       ("real events, already on") would be writing a cheque the
                       screen can't cash. */}
                   {current.key === "preview" && !previewPicks.length
-                    ? "Three steps, start to finish. Tell us what you're into and we'll line the first ones up."
+                    ? "Two more screens and you're done. Tell us what you're into and we'll line the first ones up."
                     : current.sub}
                 </p>
               </div>
@@ -658,9 +682,23 @@ export function OnboardingForm({
                     <BirthDatePicker
                       labelledBy="birth-date-label"
                       value={birthDate}
-                      onChange={setBirthDate}
+                      onChange={(iso) => {
+                        setBirthDate(iso);
+                        setBirthDateRejection("");
+                        setMessage("");
+                      }}
                       max={maxBirthDate}
                       describedBy="birth-date-hint"
+                      onInvalid={(reason) => {
+                        const why =
+                          reason === "range"
+                            ? "Click is 18+ - you'll be able to join once you turn 18."
+                            : "That date didn't scan. Try dd/mm/yyyy, or pick it from the calendar.";
+                        // Both: one shows it now, the other keeps it standing
+                        // when Continue re-runs validateAll over a blank field.
+                        setBirthDateRejection(why);
+                        setMessage(why);
+                      }}
                     />
                     <span
                       id="birth-date-hint"
@@ -840,7 +878,13 @@ export function OnboardingForm({
                               type="button"
                               onClick={() => toggleTag(tag)}
                               aria-pressed={selected}
-                              className={`ck-tag ck-tag--select h-9 px-3.5 text-[13.5px] ${
+                              // ck-tag--tap, not a hand-rolled h-9: this cloud is
+                              // the whole point of the step, so each tag is the
+                              // PRIMARY control here, not a label - which is
+                              // exactly the case the DS modifier was added for.
+                              // At 36px it asked for more precision than the
+                              // 44px Continue button sitting right below it.
+                              className={`ck-tag ck-tag--select ck-tag--tap ${
                                 selected ? "ck-tag--selected" : ""
                               }`}
                             >
@@ -878,7 +922,11 @@ export function OnboardingForm({
                 </div>
               ) : null}
 
-              {message ? <AuthError>{message}</AuthError> : null}
+              {message ? (
+                <div ref={errorRef} tabIndex={-1} className="outline-none">
+                  <AuthError>{message}</AuthError>
+                </div>
+              ) : null}
             </div>
           </div>
         </form>

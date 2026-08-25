@@ -8,6 +8,8 @@ import { Button, CategoryCircle, Icon, categoryGlyphKey } from "./ds";
 import { EmptyState } from "./empty-state";
 import { EventCard } from "./event-card";
 import { MapboxAutocomplete } from "./mapbox-autocomplete";
+import { ModalShell } from "./modal-shell";
+import { Reveal } from "./reveal";
 
 // Top of the radius control. At the max we treat it as "any distance" so people
 // far from the events (or who just want everything) aren't filtered to nothing.
@@ -29,6 +31,12 @@ const DATE_OPTIONS: Array<[DateWindow, string]> = [
   ["weekend", "This weekend"],
   ["7", "Next 7 days"],
   ["30", "Next 30 days"],
+];
+
+const TIME_OPTIONS: Array<[TimeOfDay, string]> = [
+  ["all", "Any time"],
+  ["day", "Daytime"],
+  ["night", "Night time"],
 ];
 
 const SORT_OPTIONS: Array<[SortMode, string]> = [
@@ -68,15 +76,33 @@ function matchesDateWindow(startsAt: string, dateWindow: DateWindow, todayIndex:
     // Epoch day 0 was a Thursday, so +4 maps the index onto 0 Sun … 6 Sat.
     const day = (sydneyDayIndex(startsAt) + 4) % 7;
     const isWeekendDay = day === 6 || day === 0;
-    // Within the next 7 days and lands on Sat/Sun.
-    return isWeekendDay && eventDays <= 7;
+    // Bounded by the Sunday that CLOSES the coming weekend, not by a flat 7
+    // days. The flat window contradicted the label every Fri/Sat/Sun: asked on
+    // a Saturday it also returned next Saturday (exactly 7 days out), so "This
+    // weekend" listed two weekends.
+    const todayDay = (todayIndex + 4) % 7;
+    const daysToSunday = todayDay === 0 ? 0 : 7 - todayDay;
+    return isWeekendDay && eventDays <= daysToSunday;
   }
   return true;
 }
 
-// Day vs night by local start hour. Evening (5pm+) reads as "night time".
+// Day vs night by the SYDNEY start hour. Evening (5pm+) reads as "night time".
+// getHours() would bucket in the viewer's own zone while the card beside it
+// prints Sydney time, so a 6pm Sydney event read as "Daytime" to anyone west of
+// here - the filter disagreeing with the label it was filtering on.
+const SYDNEY_HOUR = new Intl.DateTimeFormat("en-AU", {
+  timeZone: "Australia/Sydney",
+  hour: "numeric",
+  hour12: false,
+});
 function isNightEvent(startsAt: string) {
-  return new Date(startsAt).getHours() >= 17;
+  return Number(SYDNEY_HOUR.format(new Date(startsAt))) >= 17;
+}
+
+// "Low Pressure" and "low-pressure" are the same filter.
+function slugifyTag(value: string) {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
 
 function isFreeEvent(event: EventItem) {
@@ -98,7 +124,9 @@ function FilterPill({
       type="button"
       aria-pressed={active}
       onClick={onClick}
-      className={`font-display inline-flex min-h-9 items-center gap-1.5 rounded-full border-[1.5px] px-3.5 text-[13.5px] whitespace-nowrap transition-colors ${
+      // 44px on touch (these are the most-tapped controls on the page), back to
+      // the compact 36px in the desktop sidebar where the pointer is precise.
+      className={`font-display inline-flex min-h-11 items-center gap-1.5 rounded-full border-[1.5px] px-3.5 text-[13.5px] whitespace-nowrap transition-colors lg:min-h-9 ${
         active
           ? "border-[color:var(--purple)] bg-[color:var(--purple)] font-semibold text-[color:var(--champagne)]"
           : "border-[color:var(--line)] bg-[color:var(--paper)] font-medium text-[color:var(--ink-soft)] hover:border-[color:var(--slate)] hover:bg-[color:var(--lavender-100)]"
@@ -121,11 +149,14 @@ function FilterGroup({ label, children }: { label: string; children: React.React
 
 export function EventExplorer({
   events,
+  degraded = false,
   bookmarkedEventIds = [],
   registeredEventIds = [],
   waitlistedEventIds = [],
 }: {
   events: EventItem[];
+  /** We could not read the catalogue - distinct from "the catalogue is empty". */
+  degraded?: boolean;
   bookmarkedEventIds?: string[];
   registeredEventIds?: string[];
   waitlistedEventIds?: string[];
@@ -151,6 +182,25 @@ export function EventExplorer({
   const initialDate = DATE_OPTIONS.some(([value]) => value === requestedDate)
     ? (requestedDate as DateWindow)
     : "all";
+  // Every filter round-trips through the URL, not just these four. Browsing is
+  // the most repeated thing anyone does here, and Back used to drop free /
+  // time-of-day / distance / suburb / sort on the floor: you tapped one event,
+  // came back, and re-narrowed the list by hand every time.
+  const requestedTime = urlParams?.get("time") ?? "all";
+  const initialTime = TIME_OPTIONS.some(([value]) => value === requestedTime)
+    ? (requestedTime as TimeOfDay)
+    : "all";
+  const requestedSort = urlParams?.get("sort") ?? "soonest";
+  const initialSort = SORT_OPTIONS.some(([value]) => value === requestedSort)
+    ? (requestedSort as SortMode)
+    : "soonest";
+  const initialFree = urlParams?.get("free") === "1";
+  const initialSuburb = urlParams?.get("suburb") ?? "All Sydney";
+  const requestedDistance = Number(urlParams?.get("km"));
+  const initialDistance =
+    Number.isFinite(requestedDistance) && requestedDistance > 0 && requestedDistance <= MAX_DISTANCE_KM
+      ? requestedDistance
+      : MAX_DISTANCE_KM;
 
   const [locationStatus, setLocationStatus] = useState<LocationStatus>("idle");
   // The user's real coordinates once they share location. When set, every
@@ -158,20 +208,23 @@ export function EventExplorer({
   const [userCoords, setUserCoords] = useState<LatLng | null>(null);
   const [locationQuery, setLocationQuery] = useState("Sydney CBD");
   const [searchQuery, setSearchQuery] = useState(initialSearch);
-  const [selectedSuburb, setSelectedSuburb] = useState("All Sydney");
+  const [selectedSuburb, setSelectedSuburb] = useState(initialSuburb);
   const [dateWindow, setDateWindow] = useState<DateWindow>(initialDate);
-  const [timeOfDay, setTimeOfDay] = useState<TimeOfDay>("all");
-  const [freeOnly, setFreeOnly] = useState(false);
-  const [distanceKm, setDistanceKm] = useState<number>(MAX_DISTANCE_KM);
+  const [timeOfDay, setTimeOfDay] = useState<TimeOfDay>(initialTime);
+  const [freeOnly, setFreeOnly] = useState(initialFree);
+  const [distanceKm, setDistanceKm] = useState<number>(initialDistance);
   // Default to "soonest", not "nearest": until someone shares a location we
   // measure from Sydney CBD, so "Nearest" would silently rank an event on a
   // guess about where they are. Sharing a location switches it (see below) -
   // that's the point of tapping it.
-  const [sortMode, setSortMode] = useState<SortMode>("soonest");
+  const [sortMode, setSortMode] = useState<SortMode>(initialSort);
   const [tagFilter, setTagFilter] = useState(initialTag);
   const [categoryFilter, setCategoryFilter] = useState(initialCategory);
   const [sheetOpen, setSheetOpen] = useState(false);
   const skipFirstSync = useRef(true);
+  // What we last wrote to the URL ourselves. A change that does NOT match this
+  // came from outside (a tag link, Back/Forward) and must be adopted.
+  const lastWritten = useRef<string | null>(null);
 
   const todayIndex = useMemo(() => sydneyDayIndex(new Date()), []);
 
@@ -186,12 +239,17 @@ export function EventExplorer({
     if (!userCoords) return events;
     return events.map((event) => ({
       ...event,
-      distanceKm: roundKm(haversineKm(userCoords, { lat: event.lat, lng: event.lng })),
+      // An event with no pinned coordinates has no distance from anywhere -
+      // recomputing it from the CBD fallback would just move the wrong number.
+      distanceKm:
+        event.distanceKm == null
+          ? null
+          : roundKm(haversineKm(userCoords, { lat: event.lat, lng: event.lng })),
     }));
   }, [events, userCoords]);
 
   const filteredEvents = useMemo(() => {
-    const normalizedTag = tagFilter.trim().toLowerCase();
+    const normalizedTag = slugifyTag(tagFilter);
     const normalizedSearch = searchQuery.trim().toLowerCase();
 
     return locatedEvents
@@ -202,12 +260,24 @@ export function EventExplorer({
           (timeOfDay === "night" ? isNightEvent(event.startsAt) : !isNightEvent(event.startsAt));
         const matchesFree = !freeOnly || isFreeEvent(event);
         const matchesSuburb = selectedSuburb === "All Sydney" || event.suburb === selectedSuburb;
-        const matchesDistance = distanceKm >= MAX_DISTANCE_KM || event.distanceKm <= distanceKm;
-        const matchesTag = !normalizedTag || event.tags.some((tag) => tag.toLowerCase() === normalizedTag);
+        // An unpinned event cannot satisfy "within 2 km". It used to pass every
+        // distance filter by reading as 0 km.
+        const matchesDistance =
+          distanceKm >= MAX_DISTANCE_KM ||
+          (event.distanceKm != null && event.distanceKm <= distanceKm);
+        // Compared as slugs on BOTH sides. Tags render as labels now, but every
+        // link already in the wild - and every tag chip that writes ?tag= -
+        // carries whichever form the page had at the time, so normalising both
+        // is what keeps "low-pressure" and "Low Pressure" the same filter.
+        const matchesTag =
+          !normalizedTag || event.tags.some((tag) => slugifyTag(tag) === normalizedTag);
         const matchesCategory = !categoryFilter || event.category === categoryFilter;
         const matchesSearch =
           !normalizedSearch ||
-          [event.title, event.host, event.category, event.suburb, event.location, ...event.tags]
+          // event.location is deliberately empty on this surface - the venue
+          // name no longer ships to the client (see getEventsForExplore), and a
+          // searchable hidden venue would be a probing oracle anyway.
+          [event.title, event.host, event.category, event.suburb, ...event.tags]
             .join(" ")
             .toLowerCase()
             .includes(normalizedSearch);
@@ -228,13 +298,17 @@ export function EventExplorer({
           if (right.attendees !== left.attendees) return right.attendees - left.attendees;
           return new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime();
         }
+        // Events with no distance sort LAST rather than first - as 0 km they
+        // used to win "Nearest" outright.
+        const leftKm = left.distanceKm ?? Number.POSITIVE_INFINITY;
+        const rightKm = right.distanceKm ?? Number.POSITIVE_INFINITY;
         if (sortMode === "soonest") {
           const timeDelta = new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime();
           if (timeDelta !== 0) return timeDelta;
-          return left.distanceKm - right.distanceKm;
+          return leftKm - rightKm;
         }
         // "nearest" (default): closest first, breaking ties by soonest.
-        const distanceDelta = left.distanceKm - right.distanceKm;
+        const distanceDelta = leftKm - rightKm;
         if (distanceDelta !== 0) return distanceDelta;
         return new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime();
       });
@@ -281,11 +355,65 @@ export function EventExplorer({
       if (categoryFilter) next.set("category", categoryFilter);
       if (searchQuery.trim()) next.set("q", searchQuery.trim());
       if (dateWindow !== "all") next.set("date", dateWindow);
+      if (timeOfDay !== "all") next.set("time", timeOfDay);
+      if (freeOnly) next.set("free", "1");
+      if (selectedSuburb !== "All Sydney") next.set("suburb", selectedSuburb);
+      if (distanceKm !== MAX_DISTANCE_KM) next.set("km", String(distanceKm));
+      if (sortMode !== "soonest") next.set("sort", sortMode);
       const queryString = next.toString();
+      lastWritten.current = queryString;
       router.replace(queryString ? `${pathname}?${queryString}` : pathname, { scroll: false });
     }, 350);
     return () => clearTimeout(timer);
-  }, [tagFilter, categoryFilter, searchQuery, dateWindow, router, pathname]);
+  }, [
+    tagFilter,
+    categoryFilter,
+    searchQuery,
+    dateWindow,
+    timeOfDay,
+    freeOnly,
+    selectedSuburb,
+    distanceKm,
+    sortMode,
+    router,
+    pathname,
+  ]);
+
+  // The other direction. Without this, tapping "#dumplings" inside a card's
+  // quick view on /discover pushed ?tag=dumplings and the grid behind it never
+  // moved - and the next filter change silently wiped the tag back out.
+  const incomingTag = urlParams?.get("tag") ?? "";
+  const incomingCategory = urlParams?.get("category") ?? "";
+  const incomingSearch = urlParams?.get("q") ?? "";
+  const incomingDate = urlParams?.get("date") ?? "all";
+  useEffect(() => {
+    const current = urlParams?.toString() ?? "";
+    // Ignore the echo of our own debounced write.
+    if (current === lastWritten.current) return;
+    setTagFilter(incomingTag);
+    setCategoryFilter(incomingCategory);
+    setSearchQuery(incomingSearch);
+    setDateWindow(
+      DATE_OPTIONS.some(([value]) => value === incomingDate) ? (incomingDate as DateWindow) : "all",
+    );
+    const incomingTime = urlParams?.get("time") ?? "all";
+    setTimeOfDay(
+      TIME_OPTIONS.some(([value]) => value === incomingTime) ? (incomingTime as TimeOfDay) : "all",
+    );
+    const incomingSort = urlParams?.get("sort") ?? "soonest";
+    setSortMode(
+      SORT_OPTIONS.some(([value]) => value === incomingSort) ? (incomingSort as SortMode) : "soonest",
+    );
+    setFreeOnly(urlParams?.get("free") === "1");
+    setSelectedSuburb(urlParams?.get("suburb") ?? "All Sydney");
+    const incomingKm = Number(urlParams?.get("km"));
+    setDistanceKm(
+      Number.isFinite(incomingKm) && incomingKm > 0 && incomingKm <= MAX_DISTANCE_KM
+        ? incomingKm
+        : MAX_DISTANCE_KM,
+    );
+    lastWritten.current = current;
+  }, [urlParams, incomingTag, incomingCategory, incomingSearch, incomingDate]);
 
   function requestLocation() {
     if (!("geolocation" in navigator)) {
@@ -361,6 +489,19 @@ export function EventExplorer({
   if (tagFilter.trim()) {
     chips.push({ key: "tag", label: tagFilter.trim(), clear: () => setTagFilter("") });
   }
+  // Category and search narrow the list as hard as anything above, and neither
+  // used to leave a mark: on a phone the category row scrolls away, so the grid
+  // was filtered with nothing on screen saying so and no way to undo it.
+  if (categoryFilter) {
+    chips.push({ key: "category", label: categoryFilter, clear: () => setCategoryFilter("") });
+  }
+  if (searchQuery.trim()) {
+    chips.push({
+      key: "q",
+      label: `"${searchQuery.trim()}"`,
+      clear: () => setSearchQuery(""),
+    });
+  }
 
   // The filter body is authored ONCE and rendered in both homes - the desktop
   // sidebar (>=1024) and the mobile bottom sheet - so the two can never drift.
@@ -408,7 +549,7 @@ export function EventExplorer({
           value={locationQuery}
           onValueChange={setLocationQuery}
           onSelect={(place) => {
-            // Picking a place mirrors GPS sharing — we centre the radius on the
+            // Picking a place mirrors GPS sharing - we centre the radius on the
             // selected address so every distance is relative to it.
             setUserCoords({ lat: place.lat, lng: place.lng });
             setLocationStatus("shared");
@@ -428,6 +569,17 @@ export function EventExplorer({
             {locationStatus === "requesting" ? "Locating…" : userCoords ? "Update location" : "Use my location"}
           </button>
         </div>
+        {/* Both of these states were computed and never rendered, so tapping
+            "Use my location" and declining the browser prompt left a button
+            that simply did nothing, with no way to tell a refusal from a
+            failure. The typed suburb above is the real fallback - say so. */}
+        {locationStatus === "denied" || locationStatus === "unsupported" ? (
+          <p role="status" className="mt-2 text-[12.5px] leading-[1.5] text-[color:var(--slate)]">
+            {locationStatus === "denied"
+              ? "We don't have location permission, so distances are measured from Sydney CBD. Type a suburb above to measure from there instead."
+              : "This browser can't share a location, so distances are measured from Sydney CBD. Type a suburb above to measure from there instead."}
+          </p>
+        ) : null}
         <select
           aria-label="Filter by suburb"
           value={selectedSuburb}
@@ -452,15 +604,49 @@ export function EventExplorer({
   const results =
     totalCount > 0 ? (
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
-        {filteredEvents.map((event) => (
-          <EventCard
-            key={event.id}
-            event={event}
-            bookmarked={bookmarkedSet.has(event.id)}
-            registered={registeredSet.has(event.id)}
-            bookingStatus={bookingStatusFor(event.id)}
-          />
+        {filteredEvents.map((event, index) => (
+          /* Keyed on the event, not the index, so a filter change re-keys the
+             row: cards that survive keep their .is-in and stay put, cards that
+             are new to the result set mount hidden and fade up as the observer
+             catches them. That IS the filter transition - there is no separate
+             one. min-w-0 has to move up here with the wrapper: the Reveal div is
+             now the grid item, and a grid item defaults to min-width:auto, which
+             is what blows a column out when a title cannot shrink.
+             The stagger is per ROW (index % 3), not per card - a flat index*n
+             over a 60-card result set would park the last card behind three
+             seconds of delay. */
+          <Reveal key={event.id} delay={(index % 3) * 60} className="min-w-0">
+            <EventCard
+              event={event}
+              bookmarked={bookmarkedSet.has(event.id)}
+              registered={registeredSet.has(event.id)}
+              bookingStatus={bookingStatusFor(event.id)}
+              distanceOrigin={userCoords ? undefined : "CBD"}
+              // The first row is above the fold at every breakpoint and holds the
+              // LCP image. EventCard already took the prop; nothing ever passed it,
+              // so the largest thing on the page was lazy-loaded.
+              priority={index < 3}
+            />
+          </Reveal>
         ))}
+      </div>
+    ) : degraded ? (
+      // A Supabase blip used to render as "Click has no events", which is the
+      // single most trust-destroying thing this page can say to a first-time
+      // visitor. Search and the filters stay mounted so a retry is one tap.
+      <div className="rounded-[var(--radius-xl)] bg-[color:var(--lav-bg)] px-6 py-12 text-center">
+        <Icon name="compass" size={32} stroke={1.7} className="mx-auto text-[color:var(--purple-400)]" />
+        <h3 className="font-display mt-3.5 text-[17px] font-semibold text-[color:var(--ink)]">
+          We couldn&apos;t load events just now.
+        </h3>
+        <p className="mx-auto mt-2 max-w-[380px] text-sm leading-relaxed text-[color:var(--slate)]">
+          This is on us, not on you - the catalogue is still there. Give it a moment and try again.
+        </p>
+        <div className="mt-4 flex justify-center">
+          <Button variant="secondary" size="sm" onClick={() => router.refresh()}>
+            Try again
+          </Button>
+        </div>
       </div>
     ) : nothingToShow ? (
       <EmptyState
@@ -468,7 +654,7 @@ export function EventExplorer({
         icon={<Icon name="compass" size={26} stroke={1.7} />}
         title="The first events are on their way."
         body="New things to do land here every week. Check back soon, or host the first one yourself."
-        actionHref="/merchant"
+        actionHref="/merchant/signup"
         actionLabel="Host an event"
       />
     ) : (
@@ -494,9 +680,11 @@ export function EventExplorer({
         What&apos;s on near you
       </h1>
       <p className="mt-1 text-sm font-medium text-[color:var(--slate)]">
-        {nothingToShow
+        {degraded
+          ? "Hang tight - we're having trouble reaching the catalogue."
+          : nothingToShow
           ? "Fresh events land here every week."
-          : `${events.length} ${events.length === 1 ? "event" : "events"} on this week.`}
+          : `${events.length} ${events.length === 1 ? "event" : "events"} on Click right now.`}
       </p>
 
       {/* Search */}
@@ -566,14 +754,19 @@ export function EventExplorer({
 
         <div className="min-w-0 flex-1">
           <div className={`mb-4 flex items-center justify-between gap-3 ${nothingToShow ? "hidden" : ""}`}>
-            <span className="text-sm font-semibold text-[color:var(--ink)]">
+            <span
+              role="status"
+              aria-live="polite"
+              className="text-sm font-semibold text-[color:var(--ink)]"
+            >
               {totalCount} {totalCount === 1 ? "event" : "events"}
             </span>
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => setSheetOpen(true)}
-                className={`font-display inline-flex min-h-9 items-center gap-1.5 rounded-full border-[1.5px] px-3.5 text-[13.5px] font-semibold lg:hidden ${
+                aria-expanded={sheetOpen}
+                className={`font-display inline-flex min-h-11 items-center gap-1.5 rounded-xl border-[1.5px] px-3.5 text-[13.5px] font-semibold lg:hidden ${
                   filterCount
                     ? "border-[color:var(--purple)] bg-[color:var(--purple)] text-[color:var(--champagne)]"
                     : "border-[color:var(--line)] bg-[color:var(--paper)] text-[color:var(--ink-soft)]"
@@ -587,7 +780,7 @@ export function EventExplorer({
                   aria-label="Sort events"
                   value={sortMode}
                   onChange={(e) => setSortMode(e.target.value as SortMode)}
-                  className="font-display h-9 appearance-none rounded-full border border-[color:var(--line)] bg-[color:var(--paper)] pr-8 pl-3.5 text-[13px] font-semibold text-[color:var(--ink)]"
+                  className="font-display h-11 appearance-none rounded-xl border border-[color:var(--line)] bg-[color:var(--paper)] pr-8 pl-3.5 text-[13px] font-semibold text-[color:var(--ink)] lg:h-9"
                 >
                   {SORT_OPTIONS.map(([value, label]) => (
                     <option key={value} value={value}>
@@ -612,19 +805,27 @@ export function EventExplorer({
                   className="font-display inline-flex items-center gap-1.5 rounded-full bg-[color:var(--lavender-100)] py-1.5 pr-1.5 pl-3 text-[13px] font-semibold text-[color:var(--purple-700)]"
                 >
                   {chip.label}
+                  {/* -m-[13px] p-[13px] grows the target to 44px without moving
+                      the disc or growing the chip: the negative margin cancels
+                      the padding, so the button still occupies 18px of the
+                      chip's layout and only its hit area spills over. The disc
+                      itself was the whole target before - 18px, on the control
+                      that undoes a filter, next to 44px buttons everywhere else. */}
                   <button
                     type="button"
                     onClick={chip.clear}
                     aria-label={`Remove ${chip.label} filter`}
-                    className="flex size-[18px] items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--purple)_14%,transparent)]"
+                    className="-m-[13px] flex p-[13px]"
                   >
-                    <Icon name="x" size={11} stroke={2.6} />
+                    <span className="flex size-[18px] items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--purple)_14%,transparent)]">
+                      <Icon name="x" size={11} stroke={2.6} />
+                    </span>
                   </button>
                 </span>
               ))}
               <button
                 type="button"
-                onClick={resetFilters}
+                onClick={resetAll}
                 className="font-display px-1 text-[13px] font-semibold text-[color:var(--slate)] hover:underline"
               >
                 Clear all
@@ -638,18 +839,23 @@ export function EventExplorer({
 
       {/* Mobile filters — a bottom sheet with a grab handle, Reset / ✕ / scrim
           close, and a sticky "Show N events" apply. */}
+      {/* ModalShell owns Escape, the Tab trap, the scroll lock and focus
+          restore. The hand-rolled version here claimed aria-modal while doing
+          none of them, so a keyboard user opening Filters on a phone was
+          stranded and the results scrolled away underneath. */}
       {sheetOpen ? (
-        <div
-          className="fixed inset-0 z-[70] flex items-end justify-center bg-[rgba(28,24,48,0.5)] lg:hidden"
-          onClick={() => setSheetOpen(false)}
-          role="presentation"
+        <ModalShell
+          onClose={() => setSheetOpen(false)}
+          label="Filters"
+          align="end"
+          zIndex={70}
+          className="lg:hidden"
+          /* ModalShell ships no entrance by design (see its header); rise-soft
+             is additive here, never the thing that makes the sheet visible. */
+          cardClassName="w-full rise-soft"
         >
           <div
-            className="flex max-h-[86%] w-full flex-col overflow-hidden rounded-t-[var(--radius-2xl)] bg-[color:var(--paper)] shadow-[var(--shadow-lg)]"
-            onClick={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-label="Filters"
+            className="flex max-h-[86vh] w-full flex-col overflow-hidden rounded-t-[var(--radius-2xl)] bg-[color:var(--paper)] shadow-[var(--shadow-lg)]"
           >
             <div className="flex justify-center pt-2">
               <span className="h-[5px] w-10 rounded-full bg-[color:var(--mist-strong)]" />
@@ -679,7 +885,7 @@ export function EventExplorer({
               </Button>
             </div>
           </div>
-        </div>
+        </ModalShell>
       ) : null}
     </div>
   );

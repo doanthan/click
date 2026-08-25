@@ -189,8 +189,21 @@ test("merchants can create free events without finishing Stripe Connect", () => 
     /Connect Stripe payouts before creating events/,
     "createEventForMerchant must not reject free events for missing payouts",
   );
-  // The downstream gates that make the above safe must still be in place.
-  assert.match(repository, /const eventStatus = autoApprove && stripeReady \? "live" : "pending"/);
+  // The downstream gates that make the above safe must still be in place - but
+  // scoped to events that TAKE MONEY. The gate used to apply to every event, so
+  // an approved host who skipped payout setup (the "theo" persona: "Approved,
+  // skipped payout setup. Can publish free events") had every FREE event parked
+  // in the admin queue while onboarding told them they were ready to go.
+  assert.match(
+    repository,
+    /const needsStripe = priceCents > 0/,
+    "the Stripe publish gate must apply only to events that charge",
+  );
+  assert.match(
+    repository,
+    /const eventStatus = autoApprove && \(!needsStripe \|\| stripeReady\) \? "live" : "pending"/,
+    "a free event from an approved, auto-approved host must publish without Connect",
+  );
   assert.match(repository, /This is a paid event, but the host hasn't finished Stripe Connect/);
 });
 
@@ -432,6 +445,73 @@ test("the QA persona switcher cannot be reached without the unlock key", () => {
 
   // 4. The layout mounts it behind the unlock check, not the local-dev flag.
   assert.match(layout, /qaSwitcherUnlocked \? \(?\s*<TestAccountSwitcher/);
+});
+
+test("an admin unlocks the QA switcher with their session, not a bare flag", () => {
+  // Admins run the UAT, so being in ADMIN_EMAILS is the second way into the
+  // switcher - they already hold every power it hands out. That makes the grant
+  // cookie exactly as dangerous as the key cookie, so it carries the same two
+  // properties: it cannot be forged, and it can be revoked from the environment
+  // without touching the browser holding it.
+  const gate = readFileSync(path.join(root, "src/lib/test-switcher.ts"), "utf8");
+  const unlock = readFileSync(path.join(root, "src/app/qa-unlock/route.ts"), "utf8");
+  const grant = readFileSync(path.join(root, "src/lib/qa-admin-grant.ts"), "utf8");
+
+  // Signed, and compared in constant time - a cookie a browser can simply set
+  // would be an unauthenticated admin console on a public domain.
+  assert.match(grant, /createHmac\(/, "the admin grant must be signed");
+  assert.match(grant, /timingSafeEqual/, "grant comparison must be timing-safe");
+
+  // Revocation. The gate re-asks ADMIN_EMAILS on every request rather than
+  // trusting that the holder was an admin when the cookie was issued, so
+  // dropping an address locks them out on their next request.
+  const holds = gate.slice(gate.indexOf("function adminGrantHolds"));
+  assert.match(
+    holds.slice(0, 500),
+    /readQaAdminGrant[\s\S]*adminMayUnlock\(/,
+    "a valid signature is not enough - the address must still be allowed to unlock",
+  );
+
+  // A QA PERSONA MAY NEVER MINT AN UNLOCK, even though admin@click.local has
+  // to be in ADMIN_EMAILS for the Admin persona to reach the console. Without
+  // this, a tester holding TEST_SWITCHER_KEY switches to that persona, mints
+  // an admin grant from it, and now holds an unlock that clearing the key does
+  // not revoke - grants are revoked through ADMIN_EMAILS instead. Enforced at
+  // BOTH ends so a grant issued before the rule is inert, not grandfathered.
+  const mayUnlock = gate.slice(gate.indexOf("function adminMayUnlock"));
+  assert.match(
+    mayUnlock.slice(0, 300),
+    /@click\.local[\s\S]*return false/,
+    "the QA namespace must be refused an admin grant",
+  );
+  assert.match(
+    gate,
+    /function mintAdminUnlockCookie[\s\S]{0,200}adminMayUnlock\(/,
+    "minting must apply the same rule the gate applies",
+  );
+
+  // The switcher survives its own use: picking a persona replaces the admin
+  // session, so a gate that read the CURRENT session would vanish after one
+  // switch. Nothing in the gate may call auth().
+  assert.doesNotMatch(
+    gate,
+    /\bauth\(\)/,
+    "the unlock must outlive the admin session that granted it",
+  );
+
+  // Issuing one requires a live admin session, and every other shape still
+  // 404s rather than confirming QA mode exists here.
+  const noKeyBranch = unlock.slice(unlock.indexOf("const session = await auth()"));
+  assert.match(
+    noKeyBranch.slice(0, 600),
+    /mintAdminUnlockCookie\(email\)[\s\S]*if \(!grant\) return notFound\(\)/,
+    "the keyless branch must 404 for anyone who may not be granted an unlock",
+  );
+
+  // Where they find it: an admin who has never unlocked it has nothing on
+  // screen saying the switcher exists, so /admin/system carries the switch.
+  const systemPage = readFileSync(path.join(root, "src/app/admin/system/page.tsx"), "utf8");
+  assert.match(systemPage, /<AdminQaAccess/, "admins need a signposted way in");
 });
 
 test("QA provisioning can only ever touch the @click.local namespace", () => {
@@ -979,5 +1059,109 @@ test("a suspended host cannot take money through the direct event URL", () => {
     hold,
     /event\.merchant_verification_status === "suspended"/,
     "a suspended host's paid event must refuse the hold",
+  );
+});
+
+test("a host cannot cancel - and refund - an event that already happened", () => {
+  // The events list has always refused to offer Cancel on a past event, but
+  // the event detail page read an ended event as "Live" and kept the button
+  // live beside it. Cancelling refunds every paid booking in full, so a host
+  // tidying up last week's sold-out night could hand back the takings with no
+  // undo. The rule now sits in cancelEvent, where both surfaces route.
+  const repo = readFileSync(path.join(root, "src/lib/event-repository.ts"), "utf8");
+  const start = repo.indexOf("async function cancelEvent(");
+  assert.ok(start > -1, "cancelEvent not found");
+  const cancel = repo.slice(start, start + 9000);
+
+  assert.match(
+    cancel,
+    /actor\.kind === "merchant" && !alreadyCancelled/,
+    "the ended-event guard must apply to merchants and exempt the refund-retry path",
+  );
+  assert.match(
+    cancel,
+    /endedAt\.getTime\(\) < Date\.now\(\)/,
+    "the guard must compare the event's end against now",
+  );
+
+  // A UI-only guard is not a guard, but the affordance still has to go: an
+  // enabled button that always 403s is its own bug.
+  const page = readFileSync(
+    path.join(root, "src/app/merchant/events/[eventId]/page.tsx"),
+    "utf8",
+  );
+  assert.match(
+    page,
+    /const hasEnded = new Date\(event\.endsAt \?\? event\.startsAt\)/,
+    "the detail page must derive hasEnded the same way the events list does",
+  );
+  // Allows a wrapper element between the guard and the button - the row puts
+  // the destructive action in its own basis-full box below sm so it cannot
+  // share a wrapped line with a constructive one. What is pinned is that the
+  // cancel button is INSIDE the hasEnded branch, not the exact markup around it.
+  assert.match(
+    page,
+    /hasEnded \? null : \((?:(?!\?)[\s\S]){0,400}?<MerchantEventCancelButton/,
+    "an ended event must not render the cancel button",
+  );
+});
+
+test("the Finances tiles report settled money, not gross charges", () => {
+  // Two separate lies in one row: "Total - all time" summed EVERY
+  // payment_transactions row, so abandoned checkouts ('failed') and refunds
+  // inflated it permanently; and "Paid out - to your bank" sat on the gross
+  // buyer charge, which is never what Stripe deposits - the commission and the
+  // booking fee come off as the application fee first.
+  const repo = readFileSync(path.join(root, "src/lib/event-repository.ts"), "utf8");
+  const start = repo.indexOf("export async function getMerchantFinancesSummary");
+  assert.ok(start > -1, "getMerchantFinancesSummary not found");
+  const summary = repo.slice(start, start + 6000);
+
+  assert.match(
+    summary,
+    /status in \('paid', 'partially_refunded'\)/,
+    "revenue must count settled rows only - never 'pending' or 'failed'",
+  );
+  assert.doesNotMatch(
+    summary,
+    /coalesce\(sum\(amount_cents\), 0\)::text as total/,
+    "the unfiltered all-status sum must not come back",
+  );
+  // A refund reverses the transfer and the fee proportionally, but the
+  // charge-time columns are never rewritten - so both have to be pro-rated by
+  // the share of the charge that survived.
+  assert.match(
+    summary,
+    /kept_share/,
+    "fee and net must be pro-rated by the unrefunded share of each charge",
+  );
+
+  const tab = readFileSync(path.join(root, "src/components/merchant-finances-tab.tsx"), "utf8");
+  assert.doesNotMatch(
+    tab,
+    /note="to your bank"/,
+    "a gross charge must never be labelled as reaching the host's bank",
+  );
+  // The row has to reconcile: collected - Click's fee = what lands.
+  for (const label of ["Collected", "Click fee", "Your net"]) {
+    assert.match(tab, new RegExp(`label="${label}"`), `missing the ${label} tile`);
+  }
+});
+
+test("portal headcounts include paid +1 guest seats", () => {
+  // getMerchantEvents counted event_attendees rows only. A paid +1 holds a seat
+  // but has no attendee row, so the dashboard, the events list, the calendar
+  // and the fill rate all under-reported - while the event DETAIL page counted
+  // seats properly and disagreed with all four.
+  const repo = readFileSync(path.join(root, "src/lib/event-repository.ts"), "utf8");
+  const start = repo.indexOf("export async function getMerchantEvents");
+  assert.ok(start > -1, "getMerchantEvents not found");
+  const events = repo.slice(start, start + 4000);
+
+  assert.match(events, /from guest_spots gs/, "the query must count guest seats");
+  assert.match(
+    events,
+    /confirmed: Number\(row\.confirmed\) \+ Number\(row\.guest_seats\)/,
+    "confirmed must be SEATS, so no portal surface can forget to add the +1s",
   );
 });

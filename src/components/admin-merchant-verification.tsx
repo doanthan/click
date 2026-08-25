@@ -82,20 +82,19 @@ export function AdminMerchantVerification({
                 ? "Declined - this merchant cannot publish events."
                 : "Review the details, documents and ABN above, then approve or decline."}
           </p>
-          {/* This used to promise events "publish straight to live (no
-              per-event review)" full stop, which is not what the code does:
-              createEventForMerchant only writes 'live' when auto-approve AND
-              Stripe Connect (charges + payouts) are both on, and that gate
-              ignores price - so a trusted host with no payouts still has every
-              event, free ones included, land in the pending queue. See the
-              "Stripe Connect" stat above for where this merchant stands. */}
+          {/* Say what createEventForMerchant actually does, which has changed
+              twice under this paragraph. The gate is `needsStripe = priceCents > 0`:
+              a trusted host publishes FREE events live whether or not payouts are
+              connected, and only PAID events wait. The previous wording ("every
+              event, free ones included, still waits") described the bug that gate
+              was written to fix, and would have had an admin chasing a queue that
+              free events never enter. See the "Stripe Connect" stat above. */}
           <p className="mt-1 text-xs text-[color:var(--slate)]">
             Approving auto-trusts this merchant and sends an approval email.
-            Their events then skip per-event review - but only once their Stripe
-            payouts are connected; until then every event, free ones included,
-            still waits in the pending queue. Need manual review instead? Flip
-            the trust toggle below. Declining notifies them with your reason.
-            You can change this later.
+            Their free events then publish live without review; paid events wait
+            in the pending queue until their Stripe payouts are connected. Need
+            manual review instead? Flip the trust toggle below. Declining
+            notifies them with your reason. You can change this later.
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
@@ -121,7 +120,7 @@ export function AdminMerchantVerification({
       <ConfirmDialog
         open={pending === "approved"}
         title="Approve this merchant?"
-        description="They'll be approved AND auto-trusted, and they'll get an approval email. Trusted events skip per-event review once their Stripe payouts are connected - until then every event still lands in the pending queue. You can switch them back to manual review with the trust toggle later."
+        description="They'll be approved AND auto-trusted, and they'll get an approval email. Their free events then publish live without review; paid events wait in the pending queue until their Stripe payouts are connected. You can switch them back to manual review with the trust toggle later."
         confirmLabel="Approve merchant"
         tone="peach"
         busy={saving === "approved"}

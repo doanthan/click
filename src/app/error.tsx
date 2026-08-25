@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { SUPPORT_EMAIL_DEFAULT } from "@/lib/email-templates/tokens";
 import { useEffect } from "react";
 
 /**
@@ -34,8 +35,20 @@ export default function GlobalError({
           keeps happening, head back home and give it a moment.
         </p>
         {error.digest ? (
-          <p className="mt-3 text-[12.5px] font-semibold text-[color:var(--slate)]">
-            Ref {error.digest}
+          <p className="mt-3 text-[12.5px] font-medium text-[color:var(--slate)]">
+            {/* A reference is only worth printing if it can be sent somewhere.
+                It used to sit here alone, so the one person who bothered to
+                copy it had nowhere to put it. */}
+            Ref <span className="font-semibold">{error.digest}</span> - send it to{" "}
+            <a
+              href={`mailto:${SUPPORT_EMAIL_DEFAULT}?subject=${encodeURIComponent(
+                `Error ref ${error.digest}`,
+              )}`}
+              className="font-semibold text-[color:var(--purple)] underline underline-offset-2"
+            >
+              {SUPPORT_EMAIL_DEFAULT}
+            </a>{" "}
+            and we will take a look.
           </p>
         ) : null}
         <div className="mt-8 flex flex-wrap justify-center gap-3">

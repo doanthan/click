@@ -14,17 +14,25 @@ export async function toggleAttendeeCheckInAction(formData: FormData) {
   }
 
   const id = formData.get("attendee_id");
+  const slug = formData.get("event_slug");
   const next = formData.get("next") === "true";
 
   if (typeof id !== "string" || !UUID_RE.test(id)) return;
 
   await toggleAttendeeCheckIn(session, id, next);
   revalidatePath("/merchant");
+  // The event page is now a door list too, so a tick there has to invalidate
+  // that route as well - without this the button flipped, the toast fired, and
+  // the cached page re-rendered the OLD state on the next navigation. Plain
+  // slug, used only for the path; never as a query identifier.
+  if (typeof slug === "string" && slug) {
+    revalidatePath(`/merchant/events/${slug}`);
+  }
 }
 
 // Day-of check-in for a named +1 guest from the door list (spec 19 §11). Revalidates
 // the specific event page so the toggle reflects immediately. event_slug is a plain
-// slug, not a UUID — used only for the revalidate path, never as a query identifier.
+// slug, not a UUID - used only for the revalidate path, never as a query identifier.
 export async function toggleGuestCheckInAction(formData: FormData) {
   const session = await auth();
   if (!session?.user) {

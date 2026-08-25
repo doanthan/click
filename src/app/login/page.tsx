@@ -7,10 +7,11 @@ import {
   AuthError,
   Field,
   AuthNote,
+  MagicLinkSentNote,
   AuthShell,
   SsoButton,
 } from "@/components/auth-ui";
-import { ckBtn } from "@/components/ds";
+import { SubmitButton } from "@/components/ds-client";
 import { isLocalDevelopment } from "@/lib/runtime-mode";
 import {
   signInWithEmail,
@@ -28,13 +29,17 @@ type LoginPageProps = {
     callbackUrl?: string;
     error?: string;
     emailSent?: string;
+    sentTo?: string;
   }>;
 };
 
 const errorCopy: Record<string, string> = {
   CredentialsSignin: "Enter a valid email address to continue.",
   InvalidEmail: "Enter a valid email address to continue.",
-  EmailNotFound: "No account found for that email. Check the spelling, or sign up.",
+  // No EmailNotFound. Nothing produces it any more, and the sentence it used to
+  // carry ("No account found for that email") is precisely the user-enumeration
+  // oracle that requestEmailSignIn was changed to stop handing out. If a code
+  // path ever wants it back, the answer is no.
   InvalidMagicLink: "That sign-in link is invalid or expired. Request a new one.",
   RateLimited: "Too many sign-in emails were requested. Try again in an hour.",
   EmailUnavailable: "We could not send a sign-in email right now. Try Google or try again later.",
@@ -105,7 +110,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
       <AuthedRedirect />
 
       {params?.emailSent === "1" ? (
-        <AuthNote icon="mail">Check your inbox for a secure, one-time sign-in link.</AuthNote>
+        <MagicLinkSentNote email={params.sentTo} />
       ) : null}
 
       {/* SSO - one footprint, the provider carried by the mark */}
@@ -152,15 +157,15 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           placeholder="you@example.com"
         />
 
-        <button type="submit" className={ckBtn("primary", "lg", { full: true })}>
-          <span className="ck-btn__label">Continue with email</span>
-        </button>
+        <SubmitButton size="lg" full pendingLabel="Sending your link…">
+          Continue with email
+        </SubmitButton>
 
         <Link
           href="/forgot-password"
           className="text-center text-[13px] font-semibold text-[color:var(--slate)] hover:text-[color:var(--purple)]"
         >
-          Forgot password, or need a fresh access email?
+          Send me a fresh sign-in link
         </Link>
       </form>
 

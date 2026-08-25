@@ -48,8 +48,10 @@ const KICKER: React.CSSProperties = {
   margin: "0 0 12px",
 };
 
+const DISPLAY = "var(--font-click-display), system-ui, -apple-system, sans-serif";
+
 const TITLE: React.CSSProperties = {
-  fontFamily: SANS,
+  fontFamily: DISPLAY,
   fontSize: 28,
   fontWeight: 700,
   letterSpacing: "-0.02em",
@@ -172,7 +174,7 @@ export default async function ClaimPage({ params, searchParams }: PageProps) {
               fontSize: 16,
               fontWeight: 600,
               padding: "14px 28px",
-              borderRadius: 8,
+              borderRadius: 12,
               textDecoration: "none",
             }}
           >

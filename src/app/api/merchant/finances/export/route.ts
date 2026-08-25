@@ -40,11 +40,32 @@ export async function GET(request: Request) {
 
   const rows = await getMerchantTransactionsForExport(session, { year, month });
 
-  const header = ["Event", "Date", "Status", "Amount (AUD)"].join(",");
+  // Sydney, not UTC. getMerchantTransactionsForExport filters the year/month
+  // with `at time zone 'Australia/Sydney'`, so printing .toISOString() put rows
+  // in the file under a DIFFERENT date than the one they were selected by: a
+  // 9am-Sydney charge on 1 August exported as 2026-07-31T23:00:00Z, and an
+  // "August" CSV opened on rows dated July. The whole portal is Sydney; the
+  // export has to agree with it.
+  const sydneyStamp = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Australia/Sydney",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+  // en-CA gives YYYY-MM-DD, so "2026-08-01, 09:00:00" -> "2026-08-01 09:00:00":
+  // sortable as text, and unambiguous in a spreadsheet.
+  const formatSydney = (iso: string) =>
+    sydneyStamp.format(new Date(iso)).replace(", ", " ");
+
+  const header = ["Event", "Date (Australia/Sydney)", "Status", "Amount (AUD)"].join(",");
   const lines = rows.map((r) =>
     [
       csvEscape(r.eventTitle),
-      csvEscape(new Date(r.createdAt).toISOString()),
+      csvEscape(formatSydney(r.createdAt)),
       csvEscape(r.status),
       csvEscape((r.amountCents / 100).toFixed(2)),
     ].join(","),

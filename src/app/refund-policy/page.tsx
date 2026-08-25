@@ -22,9 +22,14 @@ export default function RefundPolicyPage() {
                 shown at checkout, our standard timeframes for paid events are:
               </p>
               <ul className="ml-5 list-disc space-y-1.5">
-                <li><strong>More than 48 hours before the event start:</strong> full refund of the ticket price.</li>
-                <li><strong>Within 48 hours of the event start:</strong> the ticket price is generally non-refundable, because the host has committed resources - though we and the host may still offer a refund or credit at our discretion.</li>
+                <li><strong>48 hours or more before the event starts:</strong> full refund of everything you paid, booking fee included.</li>
+                <li><strong>Between 24 and 48 hours before the start:</strong> 50% of everything you paid, booking fee included.</li>
+                <li><strong>Less than 24 hours before the start:</strong> no refund, because the host has committed resources - though we and the host may still offer a refund or credit at our discretion.</li>
               </ul>
+              <p>
+                The exact amount is shown to you before you confirm a cancellation, and it is the same
+                figure we send to Stripe.
+              </p>
               <p>
                 Free events can be cancelled at any time at no cost - please do cancel so your spot can
                 be offered to someone on the waitlist.
@@ -67,10 +72,10 @@ export default function RefundPolicyPage() {
           heading: "Booking fees",
           body: (
             <p>
-              The Click booking/service fee, where it applies, is disclosed at checkout. It covers the
-              cost of running the platform and is non-refundable on a standard attendee-initiated
-              cancellation. It is refunded in full if the host cancels or materially changes the event,
-              or where a refund of the fee is required by law.
+              The Click booking/service fee, where it applies, is disclosed at checkout. It is included
+              in the refund tiers above: a full refund returns the fee as well as the ticket, and a 50%
+              refund returns half of both. It is refunded in full if the host cancels or materially
+              changes the event, or where a refund of the fee is required by law.
             </p>
           ),
         },
@@ -79,7 +84,7 @@ export default function RefundPolicyPage() {
           body: (
             <p>
               Approved refunds are issued via Stripe to your original payment method. Processing times
-              depend on your bank but typically take 5–10 business days. You will receive an email
+              depend on your bank but typically take 3 to 5 business days. You will receive an email
               confirmation when a refund is issued.
             </p>
           ),

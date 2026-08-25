@@ -43,6 +43,13 @@ export const POST_EVENT_PROMPT_DELAY_HOURS = 2;
 // ── Probing-attack defence (§6.1 / 21A) ──────────────────────────────────────────────
 /** Constant response-time floor for send-click so the mutual path isn't timing-extractable. */
 export const SEND_CLICK_FLOOR_MS = 350;
+/**
+ * Hard ceiling on send-click attempts per account per hour, enforced in
+ * createUserClickForSession so it binds the two server actions as well as
+ * /api/clicks. Well above any human's use of a 3-per-event / 20-live budget, and
+ * low enough that walking the profile table one refusal at a time is not viable.
+ */
+export const SEND_CLICK_HOURLY_LIMIT = 40;
 
 // ── Age gate (§6.7b) ─────────────────────────────────────────────────────────────────
 /** The platform minimum; the click layer asserts this independently of the signup gate. */

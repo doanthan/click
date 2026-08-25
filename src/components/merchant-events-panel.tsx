@@ -4,7 +4,12 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { MerchantEventSummary } from "@/lib/event-repository";
 import { Icon, Tag } from "./ds";
-import { CapacityMeter, StatusPill, mCard } from "./merchant-ds";
+import {
+  CapacityMeter,
+  StatusPill,
+  mCard,
+  merchantEventDisplayStatus,
+} from "./merchant-ds";
 import { formatPriceLabel } from "@/lib/amounts";
 
 const dateFormatter = new Intl.DateTimeFormat("en-AU", {
@@ -39,16 +44,9 @@ function isPast(event: MerchantEventSummary) {
 // The status the merchant actually needs to read, in precedence order:
 // Rejected beats Ended (being "not live" matters more than being over, #193),
 // Cancelled beats everything, and a full live event reads "Full".
-function displayStatus(event: MerchantEventSummary): string {
-  if (event.status === "Cancelled") return "cancelled";
-  if (event.status === "Rejected") return "rejected";
-  if (isPast(event)) return "ended";
-  if (event.confirmed >= event.capacity && event.status === "Live") return "full";
-  return event.status;
-}
 
 // "YYYY-MM" for the event start, computed in the same Australia/Sydney timezone
-// the calendar grid uses — otherwise a late-night event slips into the wrong
+// the calendar grid uses - otherwise a late-night event slips into the wrong
 // month relative to what the merchant sees on the calendar.
 function monthKeyInSydney(startsAt: string) {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -74,11 +72,20 @@ function monthKeyLabel(monthKey: string) {
   return monthLabelFormatter.format(new Date(Date.UTC(year, month - 1, 15, 12)));
 }
 
-type StatusFilter = "all" | "live" | "pending" | "cancelled" | "past";
+type StatusFilter =
+  | "upcoming"
+  | "all"
+  | "live"
+  | "pending"
+  | "rejected"
+  | "cancelled"
+  | "past";
 type SortKey = "date-asc" | "date-desc";
 
+// h-11 (44px), matching .ck-input and the DS's stated minimum touch target -
+// these were 36px, hand-rolled around the primitive that already gets it right.
 const selectClass =
-  "h-9 rounded-xl border border-[color:var(--mist-strong)] bg-[color:var(--paper)] px-3 text-[13px] font-medium text-[color:var(--ink)] outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--purple)]";
+  "h-11 rounded-xl border border-[color:var(--mist-strong)] bg-[color:var(--paper)] px-3 text-[13px] font-medium text-[color:var(--ink)] outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--purple)]";
 
 // Written out in full (not interpolated) so Tailwind's source scanner sees them.
 const HEAD_GRID = "grid grid-cols-[2.2fr_1.6fr_1fr_0.8fr_0.9fr]";
@@ -92,7 +99,12 @@ export function MerchantEventsPanel({
   filterable?: boolean;
 }) {
   const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  // Defaults to UPCOMING, not All. The tab is the host's working surface, and
+  // "All / date-asc" opened it on their oldest events - past, cancelled and
+  // rejected included - with tonight's event somewhere down the page. There was
+  // no upcoming view at all, so the single most useful one had to be assembled
+  // by hand on every visit. "All" is still one tap away.
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("upcoming");
   const [sort, setSort] = useState<SortKey>("date-asc");
   const [monthFilter, setMonthFilter] = useState<string>("all");
 
@@ -107,9 +119,16 @@ export function MerchantEventsPanel({
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     let list = events.filter((event) => {
+      if (
+        statusFilter === "upcoming" &&
+        (isPast(event) || event.status === "Cancelled" || event.status === "Rejected")
+      ) {
+        return false;
+      }
       if (statusFilter === "past" && !isPast(event)) return false;
       if (statusFilter === "live" && (event.status !== "Live" || isPast(event))) return false;
       if (statusFilter === "pending" && event.status !== "Pending") return false;
+      if (statusFilter === "rejected" && event.status !== "Rejected") return false;
       if (statusFilter === "cancelled" && event.status !== "Cancelled") return false;
       if (monthFilter !== "all" && monthKeyInSydney(event.startsAt) !== monthFilter) return false;
       if (!q) return true;
@@ -141,10 +160,17 @@ export function MerchantEventsPanel({
     );
   }
 
+  // Rejected earns a tab of its own because it is the only status with WORK
+  // attached: the event page carries the admin's reason and a one-tap resubmit.
+  // Without it a declined event was unreachable from this list - Upcoming hides
+  // it by design (see the filter above), and finding it under "All" meant
+  // knowing to look there and then reading a badge on every row.
   const STATUS_TABS: { key: StatusFilter; label: string }[] = [
+    { key: "upcoming", label: "Upcoming" },
     { key: "all", label: "All" },
     { key: "live", label: "Live" },
     { key: "pending", label: "Pending" },
+    { key: "rejected", label: "Rejected" },
     { key: "cancelled", label: "Cancelled" },
     { key: "past", label: "Past" },
   ];
@@ -172,7 +198,10 @@ export function MerchantEventsPanel({
                 type="button"
                 onClick={() => setStatusFilter(t.key)}
                 aria-pressed={statusFilter === t.key}
-                className="flex-none"
+                // The pill stays the DS's 30px tag; the BUTTON around it is
+                // 44px tall, so the thumb target meets the floor without
+                // redrawing a primitive. -my-1.5 keeps the rail's height.
+                className="-my-[7px] flex h-11 flex-none items-center py-[7px]"
               >
                 <Tag selected={statusFilter === t.key} className="ck-tag--select h-[30px] px-3.5">
                   {t.label}
@@ -250,18 +279,29 @@ export function MerchantEventsPanel({
               {/* CapacityMeter is the ONE way capacity renders. */}
               <CapacityMeter confirmed={event.confirmed} cap={event.capacity} />
 
-              <p
-                className={`text-[13.5px] ${
-                  event.waitlisted > 0
-                    ? "font-semibold text-[color:var(--ink)]"
-                    : "text-[color:var(--ink-faint)]"
-                }`}
-              >
-                {event.waitlisted > 0 ? event.waitlisted : "-"}
-              </p>
+              {/* Below md the five cells stack and the header strip that names
+                  them is hidden, so this rendered as a naked digit between a
+                  capacity meter and a status badge - a "3" with no referent -
+                  and the empty state rendered a bare "-", which reads as a
+                  rendering fault rather than "nobody is waiting". So: label it
+                  inline on phones, and say nothing at all when it is zero. The
+                  "-" placeholder only earns its place inside a real column. */}
+              {event.waitlisted > 0 ? (
+                <p className="text-[13.5px] font-semibold text-[color:var(--ink)]">
+                  {event.waitlisted}
+                  <span className="font-medium text-[color:var(--slate)] md:hidden">
+                    {" "}
+                    on the waitlist
+                  </span>
+                </p>
+              ) : (
+                <p className="hidden text-[13.5px] text-[color:var(--ink-faint)] md:block">
+                  -
+                </p>
+              )}
 
               <span>
-                <StatusPill status={displayStatus(event)} />
+                <StatusPill status={merchantEventDisplayStatus(event)} />
               </span>
             </Link>
           ))

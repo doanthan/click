@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { AccountSettingToggle } from "@/components/account-setting-toggle";
-import { Button, ButtonLink, Icon, type IconName } from "@/components/ds";
+import { ButtonLink, Icon, type IconName } from "@/components/ds";
 import { EmptyState } from "@/components/empty-state";
 import { signOutOfClick } from "@/app/login/actions";
 import { getOwnProfile, type AccountSettings } from "@/lib/event-repository";
@@ -18,6 +18,7 @@ const DEFAULT_SETTINGS: AccountSettings = {
   },
   showSuburb: true,
   showAttendanceCount: true,
+  showOnAttendeeLists: true,
   allowMerchantMessages: false,
 };
 
@@ -62,6 +63,7 @@ export default async function AccountSettingsPage({ searchParams }: AccountSetti
         displayName={profile?.displayName ?? "-"}
         email={profile?.email ?? session.user.email ?? "-"}
         suburb={profile?.suburb ?? "-"}
+        profileId={profile?.id ?? null}
       />
     ),
     notifications: <NotificationsTab settings={settings} />,
@@ -87,10 +89,13 @@ function AccountTab({
   displayName,
   email,
   suburb,
+  profileId,
 }: {
   displayName: string;
   email: string;
   suburb: string;
+  /** For the public-profile preview link. Null while the profile read failed. */
+  profileId: string | null;
 }) {
   return (
     <>
@@ -110,6 +115,11 @@ function AccountTab({
           <ButtonLink href="/profile" size="sm" variant="secondary">
             View your profile
           </ButtonLink>
+          {profileId ? (
+            <ButtonLink href={`/profile/${profileId}`} size="sm" variant="secondary">
+              See your public profile
+            </ButtonLink>
+          ) : null}
         </div>
       </Group>
 
@@ -143,22 +153,18 @@ function NotificationsTab({ settings }: { settings: AccountSettings }) {
         />
         <AccountSettingToggle
           settingKey="notify.waitlistOffers"
-          label="Waitlist offers"
-          description="When a spot opens on something you're waiting for."
+          label="Waitlist offer emails"
+          description="Email me when a spot opens on something I'm waiting for. Either way it shows in Notifications, so the 30-minute offer is never missed silently."
           initialOn={n.waitlistOffers}
         />
-        <AccountSettingToggle
-          settingKey="notify.weeklyRecap"
-          label="Weekly digest"
-          description="What's on near you, once a week."
-          initialOn={n.weeklyRecap}
-        />
-        <AccountSettingToggle
-          settingKey="notify.productUpdates"
-          label="Product news"
-          description="Occasional updates from Click."
-          initialOn={n.productUpdates}
-        />
+        {/* "Weekly digest" and "Product news" are not rendered: nothing sends
+            either one. There is no weekly-recap job and no product-news
+            template, and notification_prefs.weeklyRecap / .productUpdates have
+            zero read sites in the codebase - so both switches were a promise
+            the product could not keep, and switching them OFF was the only
+            honest-looking state. The persisted keys are deliberately left
+            alone: when a sender ships, restore these two blocks and every
+            member's existing preference is still there, waiting. */}
       </div>
       <p className="mt-5 text-[13px] leading-6 text-[color:var(--slate)]">
         Your in-app inbox lives at{" "}
@@ -194,11 +200,18 @@ function PrivacyTab({ settings }: { settings: AccountSettings }) {
           initialOn={settings.showAttendanceCount}
         />
         <AccountSettingToggle
-          settingKey="allowMerchantMessages"
-          label="Let hosts message me"
-          description="Only hosts of events you've RSVP'd to, and only about those events."
-          initialOn={settings.allowMerchantMessages}
+          settingKey="showOnAttendeeLists"
+          label="Show me on attendee lists"
+          description="Your face on the who's going preview, and on the who-was-there list after. Off also means nobody can click with you from that event."
+          initialOn={settings.showOnAttendeeLists}
         />
+        {/* "Let hosts message me" is not rendered: hosts cannot message anyone.
+            There is no messaging surface, no route and no template, and
+            profiles.allow_merchant_messages is read by nothing except this
+            settings round-trip. A privacy control that governs a capability
+            nobody has reads as a reassurance about a risk that does not exist,
+            which is its own kind of untrue. Column and key are untouched;
+            restore this block when host messaging ships. */}
       </div>
       <p className="mt-5 text-[13px] leading-6 text-[color:var(--slate)]">
         Dating mode lives with the Open-to-dating intent in{" "}
@@ -242,7 +255,7 @@ function SecurityTab({ email }: { email: string }) {
           device was safe. It also promised a two-step confirm on a delete that
           does not exist yet. When delete lands, build it on ConfirmDialog with
           promptRequired so the user types their email. */}
-      <SectionHead sub="Sign out of this browser. Account deletion is coming soon.">
+      <SectionHead sub="Sign out of this browser, or ask us to delete your account.">
         Sessions and access
       </SectionHead>
       <dl className="grid gap-4 sm:grid-cols-2">
@@ -250,10 +263,23 @@ function SecurityTab({ email }: { email: string }) {
       </dl>
       <div className="mt-5 grid gap-1">
         <SignOutRow />
-        <div>
-          <Button type="button" variant="ghost" size="sm" disabled>
-            Delete account · coming soon
-          </Button>
+        <div className="mt-3 border-t border-[color:var(--mist)] pt-4">
+          <p className="text-[13.5px] font-semibold text-[color:var(--ink)]">Delete your account</p>
+          <p className="mt-1 max-w-[520px] text-[12.5px] leading-[1.55] text-[color:var(--slate)]">
+            Email us and we&apos;ll remove your profile, your photos and your click history. Any
+            upcoming seats are released so someone on the waitlist can take them, and paid tickets
+            follow the{" "}
+            <Link href="/refund-policy" className="font-semibold text-[color:var(--purple)] underline">
+              Refund &amp; Cancellation Policy
+            </Link>
+            . Tell us before you go if you have a booking you want refunded first.
+          </p>
+          <a
+            href={`mailto:privacy@letsclick.app?subject=${encodeURIComponent("Delete my Click account")}`}
+            className="ck-btn ck-btn--sm ck-btn--secondary mt-3 inline-flex"
+          >
+            <span className="ck-btn__label">Request account deletion</span>
+          </a>
         </div>
       </div>
     </Group>

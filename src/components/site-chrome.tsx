@@ -18,9 +18,15 @@ const HEADER_ROW = "mx-auto flex max-w-[1200px] items-center justify-between gap
  * profile queries. Mirrors the chrome (same sticky bar, same wordmark size) so
  * the live header swaps in with no layout shift.
  */
-export function SiteHeaderShell() {
+export function SiteHeaderShell({ marketing = true }: { marketing?: boolean }) {
   return (
-    <header className={`${HEADER_SHELL} site-header--marketing`}>
+    // The variant is NOT assumed. `site-header--marketing` is what the home
+    // hero's overlay rules key on, and the overlay makes the bar
+    // `position: absolute` - out of flow. Hardcoding it here meant a signed-in
+    // visitor to "/" got a floating placeholder that swapped for a sticky,
+    // in-flow cream bar, shoving the whole page down by the header height.
+    // Which is precisely the layout shift this shell exists to prevent.
+    <header className={`${HEADER_SHELL}${marketing ? " site-header--marketing" : ""}`}>
       <div className={HEADER_ROW}>
         <Logo size={26} />
         <div className="h-9" aria-hidden />
@@ -93,7 +99,7 @@ export async function SiteHeader() {
   // Mobile: a sticky bottom action bar (a web pattern, not a native tab bar) -
   // the thumb-reachable stand-in for the desktop nav, which is hidden below lg.
   const bottomTabs: BottomNavTab[] = [
-    { label: "Home", href: "/dashboard", icon: "you" },
+    { label: "Dashboard", href: "/dashboard", icon: "home" },
     { label: "Discover", href: "/discover", icon: "find" },
     { label: "click", href: "/people", icon: "spark" },
     { label: "Events", href: "/confirmed-events", icon: "calendar" },
@@ -138,6 +144,12 @@ export async function SiteHeader() {
 export async function SiteFooter() {
   const links: Array<[string, string]> = [
     ["Discover", "/discover"],
+    // /categories was reachable only by typing the URL - nothing in the app
+    // linked it, so a live, on-DS browse surface that reads real event and tag
+    // counts sat orphaned. The footer is where a secondary browse entry belongs;
+    // its cards route into /discover?category=, so it feeds the main surface
+    // rather than competing with it.
+    ["Categories", "/categories"],
     ["How it works", "/how-it-works"],
     // /merchant/signup, not /merchant: for a logged-OUT visitor /merchant is
     // gated by the proxy and bounces to /merchant/login, so the footer's supply

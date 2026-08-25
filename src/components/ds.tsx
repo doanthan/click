@@ -357,16 +357,41 @@ function stripFormFieldChrome<P extends FormFieldProps>(props: P) {
   return control as Omit<P, (typeof FORM_FIELD_CHROME)[number]>;
 }
 
-function formFieldControl(props: FormFieldProps, className: string) {
+function formFieldControl(props: FormFieldProps, className: string, messageId?: string) {
   const invalid = props.error ? true : undefined;
+  // The hint / error text describes the control, it is not part of its NAME -
+  // so it hangs off aria-describedby and lives outside the <label> below. A
+  // caller's own aria-describedby wins nothing here, but must not be dropped.
+  const describedBy = messageId ?? props["aria-describedby"];
 
   if (props.as === "textarea") {
-    return <textarea {...stripFormFieldChrome(props)} aria-invalid={invalid} className={className} />;
+    return (
+      <textarea
+        {...stripFormFieldChrome(props)}
+        aria-invalid={invalid}
+        aria-describedby={describedBy}
+        className={className}
+      />
+    );
   }
   if (props.as === "select") {
-    return <select {...stripFormFieldChrome(props)} aria-invalid={invalid} className={className} />;
+    return (
+      <select
+        {...stripFormFieldChrome(props)}
+        aria-invalid={invalid}
+        aria-describedby={describedBy}
+        className={className}
+      />
+    );
   }
-  return <input {...stripFormFieldChrome(props)} aria-invalid={invalid} className={className} />;
+  return (
+    <input
+      {...stripFormFieldChrome(props)}
+      aria-invalid={invalid}
+      aria-describedby={describedBy}
+      className={className}
+    />
+  );
 }
 
 /**
@@ -423,34 +448,62 @@ export function FormField(props: FormFieldProps) {
       <span className={labelClass}>{label}</span>
     );
 
+  const labelRow = (
+    <span className="flex items-baseline justify-between gap-3">
+      <span className="flex items-baseline gap-2">
+        {labelText}
+        {required ? (
+          // aria-hidden: the native `required` attribute below is what actually
+          // reaches assistive tech, so this marker is purely visual.
+          <span aria-hidden className="text-[11.5px] font-medium text-[color:var(--slate)]">
+            Required
+          </span>
+        ) : null}
+      </span>
+      {action}
+    </span>
+  );
+
+  /* Only one message shows at a time, so one id does for both. It needs the
+     control's own id to hang off - without one there is nothing to point
+     aria-describedby at, and the message stays outside the label either way
+     (it is a description, never part of the field's name). */
+  const messageId = props.id ? `${props.id}-${error ? "error" : "hint"}` : undefined;
+  const message = error ? (
+    <span id={messageId} role="alert" className="text-[12.5px] font-medium text-[color:var(--danger)]">
+      {error}
+    </span>
+  ) : hint ? (
+    <span id={messageId} className="text-[12.5px] leading-[1.5] text-[color:var(--slate)]">
+      {hint}
+    </span>
+  ) : null;
+
+  // Only the escape-hatch path renders this now - the native one assembles its
+  // own so the message can sit outside the <label>.
   const chrome = (
     <>
-      <span className="flex items-baseline justify-between gap-3">
-        <span className="flex items-baseline gap-2">
-          {labelText}
-          {required ? (
-            // aria-hidden: the native `required` attribute below is what actually
-            // reaches assistive tech, so this marker is purely visual.
-            <span aria-hidden className="text-[11.5px] font-medium text-[color:var(--slate)]">
-              Required
-            </span>
-          ) : null}
-        </span>
-        {action}
-      </span>
-      {custom ? props.children : formFieldControl(props, controlClass)}
-      {error ? (
-        <span role="alert" className="text-[12.5px] font-medium text-[color:var(--danger)]">
-          {error}
-        </span>
-      ) : hint ? (
-        <span className="text-[12.5px] leading-[1.5] text-[color:var(--slate)]">{hint}</span>
-      ) : null}
+      {labelRow}
+      {props.children}
+      {message}
     </>
   );
 
   if (!custom) {
-    return <label className="grid content-start gap-1.5">{chrome}</label>;
+    /* The <label> wraps the label text and the control, and NOTHING else. It
+       used to wrap the message too, which folded the whole hint paragraph into
+       the field's accessible name: "Phone (AU) Mobile, landline or business line
+       - e.g. ..." announced as the NAME on focus, and an error announced twice
+       (once as part of the name, once by its own role="alert"). */
+    return (
+      <div className="grid content-start gap-1.5">
+        <label className="grid gap-1.5">
+          {labelRow}
+          {formFieldControl(props, controlClass, messageId)}
+        </label>
+        {message}
+      </div>
+    );
   }
 
   // A group only earns its accessible name from a string label; a ReactNode
@@ -682,9 +735,9 @@ export function StatusBadge({ status, spotsLeft }: { status: EventStatus; spotsL
 
 const AVATAR_TINTS: Array<[string, string]> = [
   ["var(--lavender-200)", "var(--purple-500)"],
-  ["#E7DEFA", "var(--purple-600)"],
+  ["color-mix(in srgb, var(--lavender-200) 65%, var(--lavender-100))", "var(--purple-600)"],
   ["var(--lavender-100)", "var(--purple-400)"],
-  ["#EDE6FB", "var(--purple-500)"],
+  ["color-mix(in srgb, var(--lavender-200) 35%, var(--lavender-100))", "var(--purple-500)"],
 ];
 
 export function Avatar({

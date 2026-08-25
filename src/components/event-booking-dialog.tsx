@@ -64,7 +64,7 @@ export function EventBookingDialog({
              outgrows its container has its TOP cut off unreachably, which would
              swap one unreachable end for another on a short landscape screen.
              dvh so mobile browser chrome is accounted for. */
-          cardClassName="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-[var(--radius-xl)] bg-[color:var(--paper)] p-6 shadow-[var(--shadow-lg)]"
+          cardClassName="rise-soft max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-[var(--radius-xl)] bg-[color:var(--paper)] p-6 shadow-[var(--shadow-lg)]"
         >
           <div className="flex items-start justify-between gap-3">
             <h2
@@ -77,7 +77,10 @@ export function EventBookingDialog({
               type="button"
               aria-label="Close"
               onClick={() => setOpen(false)}
-              className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[color:var(--lavender-100)] text-[color:var(--slate)] transition-colors hover:text-[color:var(--ink)]"
+              // 44px and radius-12: the close on a dialog you commit money in
+              // was a 36px pill - under the touch minimum, and pills belong to
+              // tags and avatars, not buttons.
+              className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-[color:var(--lavender-100)] text-[color:var(--slate)] transition-colors hover:text-[color:var(--ink)]"
             >
               ✕
             </button>

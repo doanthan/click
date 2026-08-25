@@ -47,6 +47,11 @@ export async function PUT(request: Request, context: RouteContext) {
       tagSlugs?: unknown;
       address?: unknown;
       images?: unknown;
+      category?: unknown;
+      startsAt?: unknown;
+      durationMinutes?: unknown;
+      capacity?: unknown;
+      priceCents?: unknown;
     } | null;
 
     const title = typeof body?.title === "string" ? body.title : "";
@@ -61,9 +66,33 @@ export async function PUT(request: Request, context: RouteContext) {
       ? body!.images.filter((u): u is string => typeof u === "string")
       : undefined;
 
+    // The terms fields. Passed through as-is; updateMerchantEventDetails is the
+    // gate that decides whether they apply (only while the event is neither
+    // published nor holding a seat), so a hand-rolled request cannot reprice or
+    // move an event somebody has booked.
+    const category = typeof body?.category === "string" ? body.category : undefined;
+    const startsAt = typeof body?.startsAt === "string" ? body.startsAt : undefined;
+    const numberOrUndefined = (v: unknown) =>
+      typeof v === "number" && Number.isFinite(v) ? v : undefined;
+    const durationMinutes = numberOrUndefined(body?.durationMinutes);
+    const capacity = numberOrUndefined(body?.capacity);
+    const priceCents = numberOrUndefined(body?.priceCents);
+
     const event = await updateMerchantEventDetails(
       eventId,
-      { title, description, relationshipGoal, tagSlugs, address, images },
+      {
+        title,
+        description,
+        relationshipGoal,
+        tagSlugs,
+        address,
+        images,
+        category,
+        startsAt,
+        durationMinutes,
+        capacity,
+        priceCents,
+      },
       session,
     );
     return NextResponse.json({ ok: true, event });

@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "./ds";
 import { openLoginModal } from "./login-modal-host";
 import {
@@ -27,16 +27,36 @@ export function EventRegistrationButton({
   // ISO timestamp of a live waitlist promotion offer. When set (and the viewer
   // is waitlisted), a "Confirm your spot" CTA + countdown appears.
   offerExpiresAt = null,
+  offerNeedsPayment = false,
+  children,
   // Pre-rendered refund label (e.g. "Full refund - $35.00"). When present, the
   // cancel button first shows a confirmation with the exact amount.
   cancelRefundLabel = null,
+  cancelRefundIsPositive = false,
+  // Releasing a live checkout hold rather than cancelling a seat. No refund is
+  // involved (the transaction is still pending); the point is to free the seats
+  // so the buyer can re-book a different party size instead of waiting 31 minutes.
+  isHold = false,
+  heldSeatCount = null,
   successDetails,
 }: {
   eventId: string;
   initiallyRegistered?: boolean;
   isWaitlist?: boolean;
   offerExpiresAt?: string | null;
+  /** The freed seat costs money, so paying IS confirming - there is no separate
+   *  confirm step, and offering one would hand out a paid seat for free. */
+  offerNeedsPayment?: boolean;
+  /** The pay control, supplied by the page, so it sits between the offer panel
+   *  and "Leave waitlist" instead of duplicating the panel above it. */
+  children?: ReactNode;
   cancelRefundLabel?: string | null;
+  // Whether the quote above actually returns money. Under the <24h tier it does
+  // not, and the timing line used to render anyway - "No refund … / Refunds take
+  // 3-5 business days" in one breath.
+  cancelRefundIsPositive?: boolean;
+  isHold?: boolean;
+  heldSeatCount?: number | null;
   // When present, a confirmed (non-waitlist) RSVP pops the confetti overlay.
   successDetails?: EventSuccessDetails;
 }) {
@@ -58,11 +78,22 @@ export function EventRegistrationButton({
 
   useEffect(() => {
     if (!offerExpiresAt) return;
+    const expiresAtMs = new Date(offerExpiresAt).getTime();
+    let refreshed = false;
     // First tick lands after ~1s; until then the banner shows the static
     // hold time (holdLabel), so there's no synchronous setState in the effect.
-    const id = setInterval(() => setNowMs(Date.now()), 1000);
+    const id = setInterval(() => {
+      const now = Date.now();
+      setNowMs(now);
+      // Pull the real queue position once the clock runs out, instead of asking
+      // the user to refresh the page by hand at the exact moment it matters.
+      if (!refreshed && now >= expiresAtMs) {
+        refreshed = true;
+        router.refresh();
+      }
+    }, 1000);
     return () => clearInterval(id);
-  }, [offerExpiresAt]);
+  }, [offerExpiresAt, router]);
 
   // Pinned locale + timezone make this deterministic across SSR and the client.
   const holdLabel = offerExpiresAt
@@ -229,12 +260,18 @@ export function EventRegistrationButton({
       return;
     }
 
-    const payload = (await response.json().catch(() => ({}))) as { error?: string };
+    const payload = (await response.json().catch(() => ({}))) as {
+      error?: string;
+      promotedWaitlist?: boolean;
+      refund?: { refundCents?: number } | null;
+    };
     if (!response.ok) {
       setState("error");
       fail(payload.error ?? "Cancel failed.");
       return;
     }
+    const promoted = payload.promotedWaitlist === true;
+    const refunded = (payload.refund?.refundCents ?? 0) > 0;
 
     setState("cancelled");
     // After cancelling, the page re-renders into the locked/pre-RSVP state and
@@ -251,33 +288,75 @@ export function EventRegistrationButton({
       // removed before the server renders again. This also guarantees that the
       // attendee list, capacity and private venue gate all come from the newly
       // cancelled database state instead of lingering client props.
+      const params = new URLSearchParams({ cancelled: "1" });
+      if (promoted) params.set("promoted", "1");
+      if (refunded) params.set("refunded", "1");
       window.location.replace(
-        `${pathname ?? `/events/${encodeURIComponent(eventId)}`}?cancelled=1`,
+        `${pathname ?? `/events/${encodeURIComponent(eventId)}`}?${params.toString()}`,
       );
     }
   }
 
-  // Cancel click: paid bookings show the refund amount first; everything else
-  // (free RSVP, waitlist) cancels straight away.
+  // Cancel click: every confirmed seat confirms first. A free RSVP used to
+  // cancel on a single unconfirmed tap of a full-width button, and the seat was
+  // offered to the next person on the waitlist inside the same request - there
+  // is no undo. Only a waitlist drop (nothing to lose) still goes straight through.
+  //
+  // Gated on the LIVE state, not on `initiallyRegistered`: that prop describes
+  // what the server rendered, so a seat booked in this same session - the button
+  // swapped itself to "Cancel RSVP" without a reload - fell past the gate and
+  // cancelled on one unconfirmed tap. `registered` is exactly the confirmed
+  // seat, however it got there: the server prop, an RSVP just made here, or an
+  // accepted waitlist offer.
   function onCancelClick() {
-    if (cancelRefundLabel) {
+    if (isHold) {
+      setState("confirm-cancel");
+    } else if (state === "registered") {
+      setState("confirm-cancel");
+    } else if (offerExpiresAt && !offerExpired) {
+      // A LIVE offer is not "nothing to lose". A seat is being held for you on
+      // a 30-minute clock; leaving rolls it to the next person immediately and
+      // there is no way back to the front of the queue.
       setState("confirm-cancel");
     } else {
       void cancel();
     }
   }
 
+  // Which of the three things the confirm panel is actually about.
+  const confirmKind = isHold ? "hold" : offerExpiresAt && !offerExpired ? "offer" : "booking";
+
   // ----- Refund-aware cancel confirmation (paid bookings) -----
   if (state === "confirm-cancel") {
     return (
       <div className="grid gap-2 rounded-[var(--radius-md)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-3">
         <p className="text-sm font-semibold text-[color:var(--ink)]">
-          Cancel your booking?
+          {confirmKind === "hold"
+            ? "Release your hold?"
+            : confirmKind === "offer"
+              ? "Give up this seat?"
+              : "Cancel your booking?"}
         </p>
         <p className="text-xs font-medium text-[color:var(--slate)]">
-          {cancelRefundLabel}
-          <br />
-          Refunds take 3-5 business days to process.
+          {isHold ? (
+            `Nothing has been charged yet, so there's nothing to refund. ${
+              heldSeatCount && heldSeatCount > 1 ? `All ${heldSeatCount} seats go` : "The seat goes"
+            } back to the pool and you can book again with any party size.`
+          ) : cancelRefundLabel ? (
+            <>
+              {cancelRefundLabel}
+              {cancelRefundIsPositive ? (
+                <>
+                  <br />
+                  Refunds take 3-5 business days to process.
+                </>
+              ) : null}
+            </>
+          ) : confirmKind === "offer" ? (
+            "This seat was held for you. Leaving now passes it to the next person, and you lose your place in the queue."
+          ) : (
+            "Your seat goes to the next person on the waitlist, and you cannot take it back."
+          )}
         </p>
         <div className="grid grid-cols-2 gap-2">
           <button
@@ -288,14 +367,18 @@ export function EventRegistrationButton({
             }}
             className="ck-btn ck-btn--md ck-btn--full ck-btn--secondary"
           >
-            Keep my spot
+            {confirmKind === "hold" ? "Keep the hold" : "Keep my spot"}
           </button>
           <button
             type="button"
             onClick={() => void cancel()}
             className="ck-btn ck-btn--md ck-btn--full ck-btn--danger"
           >
-            Cancel booking
+            {confirmKind === "hold"
+              ? "Release"
+              : confirmKind === "offer"
+                ? "Leave waitlist"
+                : "Cancel booking"}
           </button>
         </div>
       </div>
@@ -311,10 +394,10 @@ export function EventRegistrationButton({
       <div className="grid gap-2">
         <div className="rounded-[var(--radius-md)] bg-[color:var(--lav-bg)] p-3 text-[13px] text-[color:var(--ink-soft)]">
           {offerExpired ? (
-            <>Your offer just expired - refresh to see your place in the queue.</>
+            <>That offer has expired - the seat went to the next person, and you&apos;re still on the waitlist.</>
           ) : (
             <>
-              A seat opened up! Confirm your spot
+              A seat opened up! {offerNeedsPayment ? "Reserve and pay to claim it" : "Confirm your spot"}
               {countdown ? (
                 <>
                   {" "}- <span className="tabular-nums font-semibold">{countdown}</span> left
@@ -326,19 +409,26 @@ export function EventRegistrationButton({
             </>
           )}
         </div>
-        <Button
-          type="button"
-          onClick={() => void confirmSpot()}
-          disabled={offerExpired}
-          loading={state === "confirming"}
-          full
-        >
-          Confirm your spot
-        </Button>
+        {/* On a paid event the page hands us the Stripe control instead: paying
+            IS confirming, and a free "Confirm your spot" beside "Reserve & pay"
+            was both a second primary and the wrong action. */}
+        {offerNeedsPayment ? (
+          children
+        ) : (
+          <Button
+            type="button"
+            onClick={() => void confirmSpot()}
+            disabled={offerExpired}
+            loading={state === "confirming"}
+            full
+          >
+            Confirm your spot
+          </Button>
+        )}
         <Button
           type="button"
           variant="secondary"
-          onClick={() => void cancel()}
+          onClick={onCancelClick}
           disabled={state === "confirming"}
           full
         >
@@ -395,15 +485,23 @@ export function EventRegistrationButton({
         />
       ) : null}
       {isLocked ? (
-        <Button
+        /* A quiet text control, not a full-width secondary button. The DS
+           specifies a text link here: after a successful booking the biggest
+           thing left in the panel should not be "Cancel RSVP". */
+        <button
           type="button"
-          variant="secondary"
           onClick={onCancelClick}
-          loading={state === "cancelling" || state === "confirming"}
-          full
+          disabled={state === "cancelling" || state === "confirming"}
+          className="font-display mx-auto inline-flex min-h-11 items-center justify-center text-[13.5px] font-semibold text-[color:var(--slate)] underline decoration-[color:var(--mist-strong)] underline-offset-4 hover:text-[color:var(--ink)] disabled:opacity-60"
         >
-          {state === "waitlisted" ? "Leave waitlist" : "Cancel RSVP"}
-        </Button>
+          {state === "cancelling" || state === "confirming"
+            ? "Working…"
+            : isHold
+              ? "Release my hold"
+              : state === "waitlisted"
+                ? "Leave waitlist"
+                : "Cancel RSVP"}
+        </button>
       ) : (
         <Button
           type="button"

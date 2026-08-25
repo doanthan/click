@@ -103,7 +103,15 @@ function transferFromCharge(charge: Stripe.Charge): Stripe.Transfer | null {
 // our tables. Idempotent — safe to invoke from a webhook retry.
 export async function syncTransactionFromStripe(
   paymentIntentId: string,
-): Promise<{ updated: boolean; refundsUpserted: number }> {
+): Promise<{
+  updated: boolean;
+  refundsUpserted: number;
+  /** The local row this PI matched, so a caller can settle the booking. */
+  paymentTransactionId: string | null;
+  /** The status this sync derived - null when nothing was written. */
+  status: "paid" | "partially_refunded" | "refunded" | null;
+  refundedAmountCents: number;
+}> {
   const stripe = getStripeClient();
   if (!stripe) stripeNotConfigured();
   const pool = getPostgresPool();
@@ -116,7 +124,13 @@ export async function syncTransactionFromStripe(
   const charge = chargeFromPi(pi);
   if (!charge) {
     // No charge attached yet (still pending / cancelled before capture).
-    return { updated: false, refundsUpserted: 0 };
+    return {
+      updated: false,
+      refundsUpserted: 0,
+      paymentTransactionId: null,
+      status: null,
+      refundedAmountCents: 0,
+    };
   }
 
   const refunds = refundsFromCharge(charge);
@@ -171,7 +185,13 @@ export async function syncTransactionFromStripe(
       // No local row — likely a Stripe-side test charge we don't track. Roll
       // back so the partial commit doesn't leave inconsistent refunds rows.
       await client.query("rollback");
-      return { updated: false, refundsUpserted: 0 };
+      return {
+        updated: false,
+        refundsUpserted: 0,
+        paymentTransactionId: null,
+        status: null,
+        refundedAmountCents: 0,
+      };
     }
 
     let refundsUpserted = 0;
@@ -239,7 +259,13 @@ export async function syncTransactionFromStripe(
       }
     }
 
-    return { updated: true, refundsUpserted };
+    return {
+      updated: true,
+      refundsUpserted,
+      paymentTransactionId: txnId,
+      status: derivedStatus,
+      refundedAmountCents: totalRefundedCents,
+    };
   } catch (error) {
     await client.query("rollback");
     throw error;
@@ -941,9 +967,24 @@ export async function issueRefund(
 }
 
 // ---------------------------------------------------------------------------
-// Dispute audit (no first-class table yet — we just log)
+// Disputes
 // ---------------------------------------------------------------------------
 
+/**
+ * Mirror a `charge.dispute.*` webhook into `payment_disputes`, and keep writing
+ * the audit_logs row.
+ *
+ * The two are not redundant. audit_logs is append-only history - one row per
+ * webhook, showing how the dispute moved. payment_disputes is current state -
+ * one row per dispute, which is the only shape you can ask "what is open, and
+ * what is due first" of. Before this table existed the console had the history
+ * and not the state, so a dispute could sit unanswered past its deadline with
+ * its own creation faithfully recorded.
+ *
+ * Evidence is still submitted in the Stripe Dashboard - we deliberately do not
+ * accept it here. What the console owes an operator is that a dispute exists,
+ * how long they have, and a link straight to it.
+ */
 export async function recordDisputeAudit(
   dispute: Stripe.Dispute,
   eventType: string,
@@ -960,6 +1001,58 @@ export async function recordDisputeAudit(
   );
   const entityId = row.rows[0]?.id ?? null;
 
+  // Stripe sends due_by as Unix seconds, and drops it once the dispute closes.
+  const dueBySeconds = dispute.evidence_details?.due_by ?? null;
+  const dueBy = dueBySeconds ? new Date(dueBySeconds * 1000).toISOString() : null;
+
+  // Never blocks the webhook: a mirroring failure must not make Stripe retry an
+  // event we have already recorded in audit_logs.
+  try {
+    await pool.query(
+      `
+        insert into payment_disputes (
+          stripe_dispute_id,
+          payment_transaction_id,
+          stripe_charge_id,
+          amount_cents,
+          currency,
+          reason,
+          status,
+          evidence_due_by,
+          updated_at,
+          raw
+        )
+        values ($1, $2::uuid, $3, $4, $5, $6, $7, $8::timestamptz, now(), $9::jsonb)
+        on conflict (stripe_dispute_id) do update set
+          payment_transaction_id = coalesce(
+            excluded.payment_transaction_id, payment_disputes.payment_transaction_id
+          ),
+          amount_cents = excluded.amount_cents,
+          currency = excluded.currency,
+          reason = excluded.reason,
+          status = excluded.status,
+          evidence_due_by = excluded.evidence_due_by,
+          updated_at = now(),
+          raw = excluded.raw
+      `,
+      [
+        dispute.id,
+        entityId,
+        charge,
+        dispute.amount ?? 0,
+        (dispute.currency ?? "aud").toUpperCase(),
+        dispute.reason ?? null,
+        dispute.status,
+        dueBy,
+        JSON.stringify(dispute),
+      ],
+    );
+  } catch (error) {
+    if (process.env.CLICK_DB_DEBUG === "true") {
+      console.warn("payment_disputes mirror failed", error);
+    }
+  }
+
   await writeAuditLog({
     actorProfileId: null,
     action: `stripe.${eventType}`,
@@ -971,6 +1064,7 @@ export async function recordDisputeAudit(
       status: dispute.status,
       amount: dispute.amount,
       charge_id: charge,
+      evidence_due_by: dueBy,
     },
   });
 }

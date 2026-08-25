@@ -20,6 +20,7 @@ import {
 import type { AdminMemberRow } from "@/lib/event-repository";
 import { formatIntent } from "@/lib/click-data";
 import { EmptyState } from "@/components/empty-state";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Badge, type BadgeTone } from "@/components/ds";
 
 type RoleFilter = "all" | "attendee" | "merchant" | "admin";
@@ -123,23 +124,24 @@ function MemberActions({
   const [confirming, setConfirming] = useState(false);
   const [banConfirming, setBanConfirming] = useState(false);
   const [reason, setReason] = useState("");
-  const [banReason, setBanReason] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // Only the menu's own state is reset here. The ban dialog is deliberately NOT:
+  // it lives outside the menu (which is closed the moment it opens), so a stray
+  // outside-click or Escape must never reach in and cancel it - ConfirmDialog
+  // owns its own dismissal, and refuses it while the ban is in flight.
   useEffect(() => {
     if (!open) return;
     function handlePointer(event: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
         setOpen(false);
         setConfirming(false);
-        setBanConfirming(false);
       }
     }
     function handleKey(event: KeyboardEvent) {
       if (event.key === "Escape") {
         setOpen(false);
         setConfirming(false);
-        setBanConfirming(false);
       }
     }
     document.addEventListener("mousedown", handlePointer);
@@ -234,7 +236,16 @@ function MemberActions({
               Suspend member
             </button>
           )}
-          {/* SAFE-06 — permanent ban: tears down every click/mutual/proposal. */}
+          {/* SAFE-06 - permanent ban. This is not a heavier suspend: banMemberAsAdmin
+              runs severAllCoordinationForUser, which invalidates every pending click
+              the person sent or received, withdraws every live shared plan, and
+              suppresses every active mutual click they are in. unbanMemberAsAdmin
+              flips is_banned back and touches nothing else, so Lift ban restores
+              none of that. A one-line input inside a dropdown was nowhere near the
+              weight of that, and it never named what it was tearing down - so this
+              goes through the same ConfirmDialog the account-delete control uses,
+              with the reason required because the audit log is the only durable
+              record of why a permanent action was taken. */}
           {banned ? (
             <button
               type="button"
@@ -248,32 +259,14 @@ function MemberActions({
             >
               Lift ban
             </button>
-          ) : banConfirming ? (
-            <div className="grid gap-2 p-1">
-              <input
-                value={banReason}
-                onChange={(event) => setBanReason(event.target.value)}
-                placeholder="Ban reason (shown in audit log)"
-                className="rounded-lg border border-[color:var(--mist)] bg-white px-2 py-1.5 text-xs text-[color:var(--ink)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)]"
-              />
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() => {
-                  onBan(banReason);
-                  setOpen(false);
-                  setBanConfirming(false);
-                }}
-                className="ck-btn ck-btn--danger ck-btn--sm"
-              >
-                Confirm ban - permanent
-              </button>
-            </div>
           ) : (
             <button
               type="button"
               role="menuitem"
-              onClick={() => setBanConfirming(true)}
+              onClick={() => {
+                setBanConfirming(true);
+                setOpen(false);
+              }}
               className="block w-full rounded-lg px-3 py-2 text-left text-[13px] font-medium text-[color:var(--danger)] transition-colors hover:bg-[color:var(--danger)]/10"
             >
               Ban (permanent)
@@ -281,6 +274,22 @@ function MemberActions({
           )}
         </div>
       ) : null}
+      <ConfirmDialog
+        open={banConfirming}
+        title={`Ban ${member.displayName} permanently?`}
+        description={`Every connection ${member.displayName} holds is torn down: each pending click invalidated, each mutual click suppressed, each live shared plan withdrawn. Lift ban only puts them back on the social surfaces - it brings none of that back.`}
+        promptLabel="Why (saved to the audit log)"
+        promptPlaceholder="e.g. three safety reports from attendees, escalated 25 Aug"
+        promptRequired
+        confirmLabel="Ban permanently"
+        tone="rose"
+        busy={isPending}
+        onConfirm={(value) => {
+          setBanConfirming(false);
+          onBan(value);
+        }}
+        onCancel={() => setBanConfirming(false)}
+      />
     </div>
   );
 }
@@ -423,18 +432,22 @@ function MemberRow({
         <span className="text-[11px] font-semibold text-[color:var(--slate)] md:hidden">
           Suburb:{" "}
         </span>
-        {member.suburb ?? "—"}
+        {/* Words, not a bare em-dash - the same call admin-event-queue.tsx made.
+            The DS bans the glyph outright, and a screen reader either says "em
+            dash" or skips it, so an admin could not tell an unset suburb from a
+            cell that failed to render. */}
+        {member.suburb ?? "Not set"}
       </span>
       <span className="font-semibold text-[color:var(--ink)]">
         {member.registrations} RSVP · {member.bookmarks} saved
       </span>
       <span className="text-xs">
         <span className={member.emailVerified ? "font-semibold text-[color:var(--ink)]" : "text-[color:var(--slate)]"}>
-          Email{member.emailVerified ? " ✓" : " —"}
+          Email{member.emailVerified ? " ✓" : " not verified"}
         </span>
         <span className="mx-1 opacity-30">·</span>
         <span className={member.photoVerified ? "font-semibold text-[color:var(--ink)]" : "text-[color:var(--slate)]"}>
-          Photo{member.photoVerified ? " ✓" : " —"}
+          Photo{member.photoVerified ? " ✓" : " not verified"}
         </span>
       </span>
       <span>
@@ -667,7 +680,7 @@ export function AdminMembersTable({
         <p className="text-xs font-semibold text-[color:var(--slate)]">
           {filtered.length === 0
             ? "0 members"
-            : `${countFormatter.format(startRow)}–${countFormatter.format(endIndex)} of ${countFormatter.format(filtered.length)}`}
+            : `${countFormatter.format(startRow)}-${countFormatter.format(endIndex)} of ${countFormatter.format(filtered.length)}`}
         </p>
         <div className="flex items-center gap-2">
           <label className="text-xs font-semibold text-[color:var(--slate)]">

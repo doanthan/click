@@ -18,7 +18,7 @@ import {
 
 // Payout-status row at the top of the Finances tab. Drives a five-state badge
 // from the cached Connect capability columns and surfaces the right CTA for
-// each state — same source of truth as the dashboard banner so the two views
+// each state - same source of truth as the dashboard banner so the two views
 // never disagree. Colour roles: Sage = money-good (connected), Amber = waiting,
 // neutral = not started. Never a status colour on the CTA itself.
 function PayoutStatusCard({
@@ -53,7 +53,11 @@ function PayoutStatusCard({
           : {
               tone: "sage" as const,
               label: "Connected",
-              body: "Payments route to your connected account and pay out on the monthly schedule.",
+              // Nothing in this codebase sets payout_schedule on the connected
+              // account, so the cadence is whatever Stripe defaults to for the
+              // host's country - naming a schedule we do not set was a promise
+              // we could not keep. Stripe owns it, so point at Stripe.
+              body: "Payments route to your connected account. Stripe pays out to your bank on its own schedule - you can see and change it in your Stripe dashboard.",
             };
 
   const ready = connect.hasAccount && connect.chargesEnabled;
@@ -80,7 +84,10 @@ function PayoutStatusCard({
         {ready ? (
           <StripeDashboardButton />
         ) : (
-          <ButtonLink href="/merchant/onboarding/payouts" size="sm">
+          <ButtonLink
+            href={`/merchant/onboarding/payouts?returnTo=${encodeURIComponent("/merchant?tab=finances")}`}
+            size="sm"
+          >
             {connect.hasAccount ? "Continue setup" : "Connect Stripe"}
           </ButtonLink>
         )}
@@ -104,7 +111,7 @@ function RecentPayoutsCard({
       </span>
       {payouts.length === 0 ? (
         <p className="text-[13.5px] leading-relaxed text-[color:var(--slate)]">
-          No payouts yet - Stripe pays out monthly once you have a connected balance.
+          No payouts yet - Stripe pays out once you have a connected balance.
         </p>
       ) : (
         <ul className="flex flex-col gap-2.5">
@@ -142,7 +149,7 @@ export async function FinancesTabAsync({
   session: Session | null;
 }) {
   // Self-heal any pending rows whose Stripe session is actually paid/expired.
-  // Deferred with after() so the Stripe round-trip never blocks first paint —
+  // Deferred with after() so the Stripe round-trip never blocks first paint -
   // we render the DB summary immediately and the reconcile runs after the
   // response is flushed (and, unlike a bare fire-and-forget, after() keeps it
   // anchored to the request on serverless so it's guaranteed to run). The
@@ -150,7 +157,7 @@ export async function FinancesTabAsync({
   after(() => reconcilePendingTransactionsForMerchant(session).catch(() => {}));
   const finances = await getMerchantFinancesSummary(session);
 
-  const hasRevenue = finances.totalRevenueCents > 0;
+  const hasRevenue = finances.collectedCents > 0;
 
   return (
     <div className="space-y-6 py-8">
@@ -161,34 +168,40 @@ export async function FinancesTabAsync({
         action={<MerchantFinancesExport />}
       />
 
-      <PayoutStatusCard connect={finances.connect} />
+      <div className="rise-soft rise-d1">
+        <PayoutStatusCard connect={finances.connect} />
+      </div>
 
-      {/* Money is never "Free" - a $0 tile is "$0" with the scope in its note. */}
-      <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-4">
+      {/* Money is never "Free" - a $0 tile is "$0" with the scope in its note.
+          The first three tiles reconcile left to right: what buyers paid, minus
+          Click's cut, is what reaches the host's bank. That is the whole point
+          of the row - "Paid out - to your bank" used to sit on the GROSS buyer
+          charge, so a host budgeted on a number Stripe never deposited. */}
+      <div className="grid gap-3 rise-soft rise-d2 sm:grid-cols-2 md:grid-cols-4">
         <StatCard
           hero
-          label="Total"
-          value={formatMoney(finances.totalRevenueCents)}
-          note={hasRevenue ? "all time" : "free events so far"}
+          label="Collected"
+          value={formatMoney(finances.collectedCents)}
+          note={hasRevenue ? "buyers paid, after refunds" : "free events so far"}
         />
         <StatCard
-          label="Paid out"
-          value={formatMoney(finances.paidRevenueCents)}
-          note="to your bank"
+          label="Click fee"
+          value={formatMoney(finances.platformFeeCents)}
+          note="commission + booking fee"
         />
         <StatCard
-          label="Pending"
-          value={formatMoney(finances.pendingRevenueCents)}
-          note="not yet paid out"
+          label="Your net"
+          value={formatMoney(finances.netCents)}
+          note="reaches your Stripe balance"
         />
         <StatCard
           label="Refunded"
-          value={formatMoney(finances.refundedRevenueCents)}
+          value={formatMoney(finances.refundedCents)}
           note="all time"
         />
       </div>
 
-      <div className="grid gap-3 lg:grid-cols-[1.4fr_1fr] lg:items-start">
+      <div className="grid gap-3 rise-soft rise-d3 lg:grid-cols-[1.4fr_1fr] lg:items-start">
         <MerchantFinancesAnalytics monthlyRevenue={finances.monthlyRevenue} />
         <RecentPayoutsCard payouts={finances.recentPayouts} />
       </div>

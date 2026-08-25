@@ -13,6 +13,7 @@
  * Hook-free and presentational, so the same code renders on the server (the
  * /login page) and inside client components (register-form, login-modal).
  */
+import { TOKEN_TTL_MINUTES } from "@/lib/magic-link-ttl";
 import Link from "next/link";
 import type { ComponentProps, ReactNode } from "react";
 import { Icon, Logo, ckBtn, type IconName } from "@/components/ds";
@@ -236,6 +237,45 @@ export function AuthNote({ icon = "lock", children }: { icon?: IconName; childre
         {children}
       </div>
     </div>
+  );
+}
+
+/**
+ * "Check your inbox", said properly - on all three sign-in surfaces at once.
+ *
+ * The old copy named neither the inbox nor the clock, which left the single
+ * most common failure of this flow (one character wrong in the address) with
+ * nothing on screen to check against: you sit waiting for mail that went to
+ * someone else. So it names the address it actually sent to, quotes the TTL the
+ * server enforces, and points at the field below - re-submitting the form IS
+ * the resend, so there is no second control to build.
+ */
+export function MagicLinkSentNote({
+  email,
+  mode = "signin",
+}: {
+  email?: string | null;
+  mode?: "signin" | "signup";
+}) {
+  return (
+    <AuthNote icon="mail">
+      {email ? (
+        <>
+          We sent a one-time{" "}
+          {mode === "signup" ? "link that finishes creating your account" : "sign-in link"} to{" "}
+          <strong className="font-semibold">{email}</strong>. It works once and expires in{" "}
+          {TOKEN_TTL_MINUTES} minutes.
+          <br />
+          Wrong address, or nothing arrived? Check your spam, or retype it below and send again.
+        </>
+      ) : (
+        <>
+          Check your inbox for a one-time{" "}
+          {mode === "signup" ? "link that finishes creating your account" : "sign-in link"}. It
+          works once and expires in {TOKEN_TTL_MINUTES} minutes.
+        </>
+      )}
+    </AuthNote>
   );
 }
 

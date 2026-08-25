@@ -5,6 +5,7 @@ import {
   markPaymentFailed,
   markPaymentSucceeded,
   processGuestSpotsForSession,
+  settleRefundedBooking,
   updateMerchantConnectStatus,
 } from "@/lib/event-repository";
 import { getConnectedAccountStatus } from "@/lib/stripe-connect";
@@ -225,7 +226,33 @@ export async function POST(request: Request) {
           typeof charge.payment_intent === "string"
             ? charge.payment_intent
             : charge.payment_intent?.id ?? null;
-        if (pi) await syncTransactionFromStripe(pi);
+        if (pi) {
+          const synced = await syncTransactionFromStripe(pi);
+          // The sync only enriches the LEDGER. A refund taken in the Stripe
+          // dashboard - the natural move on a support ticket, and the only
+          // route while /admin/transactions is unreachable - reaches us
+          // nowhere else, so the money went back while the attendee kept a
+          // confirmed seat on the merchant's roster, held capacity against
+          // the waitlist, stayed on the reminder list, and was told nothing.
+          //
+          // Full refunds only, matching issueRefund: a partial refund is a
+          // policy tier or a goodwill adjustment and they are still going.
+          //
+          // Safe on every other refund path even though they all fire this
+          // event too. settleRefundedBooking cancels the seat only when it is
+          // still live, promotes the queue only when THIS call freed it, and
+          // `notify: "if-released"` puts the email under the same test - so
+          // the admin console, an attendee cancellation, a bulk event cancel
+          // and the settled-after-cancellation branch each stay single-send.
+          if (synced.status === "refunded" && synced.paymentTransactionId) {
+            await settleRefundedBooking({
+              paymentTransactionId: synced.paymentTransactionId,
+              refundedAmountCents: synced.refundedAmountCents,
+              releaseSeat: true,
+              notify: "if-released",
+            });
+          }
+        }
         break;
       }
       case "charge.dispute.created":

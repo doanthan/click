@@ -14,6 +14,11 @@ import {
 
 export const metadata = {
   title: "Profile",
+  // robots.ts disallows /profile, but a Disallow only asks a crawler not to
+  // FETCH - a page linked from elsewhere can still be indexed URL-only. These
+  // pages carry a real person's name, face, suburb and dating intent, so the
+  // page-level noindex is the half that actually binds.
+  robots: { index: false, follow: false },
 };
 
 type PublicProfilePageProps = {
@@ -69,10 +74,19 @@ export default async function PublicProfilePage({ params }: PublicProfilePagePro
                   <p className="mt-1.5 flex items-center gap-1.5 truncate text-[13.5px] font-medium text-[color:var(--slate)]">
                     <Icon name="pin" size={14} />
                     {profile.suburb ?? profile.city}
-                    {" · "}
-                    <span className="font-semibold text-[color:var(--purple)]">
-                      been to {profile.attendedCount} event{profile.attendedCount === 1 ? "" : "s"}
-                    </span>
+                    {/* Hidden (null) or zero shows the location alone. Rendering
+                        it unconditionally published "been to 0 events" for anyone
+                        who turned the privacy toggle off, and for every genuine
+                        newcomer - untrue, and deficit framing either way. */}
+                    {profile.attendedCount ? (
+                      <>
+                        {" · "}
+                        <span className="font-semibold text-[color:var(--purple)]">
+                          been to {profile.attendedCount} event
+                          {profile.attendedCount === 1 ? "" : "s"}
+                        </span>
+                      </>
+                    ) : null}
                   </p>
                 </div>
               </div>

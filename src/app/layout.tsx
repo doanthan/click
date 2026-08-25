@@ -9,7 +9,9 @@ import { SessionFreshness } from "@/components/session-freshness";
 import { LoginModalHost } from "@/components/login-modal-host";
 import { ChromeGate } from "@/components/chrome-gate";
 import { SiteFooter, SiteHeader, SiteHeaderShell } from "@/components/site-chrome";
-import { auth } from "@/auth";
+import { SiteNotices } from "@/components/site-notices";
+import { auth, isAdminEmail } from "@/auth";
+import { getSystemSettings } from "@/lib/event-repository";
 import { AccountScopeProvider } from "@/lib/account-scope";
 import { isLocalDevelopment } from "@/lib/runtime-mode";
 import { isTestSwitcherUnlocked } from "@/lib/test-switcher";
@@ -80,6 +82,17 @@ export default async function RootLayout({
   const qaSwitcherUnlocked = await isTestSwitcherUnlocked();
   // Anyone may report a bug; only an operator may read the queue back.
   const canTriageBugs = await canTriageSupportTickets();
+  // Only to pick the header PLACEHOLDER's variant, so the streamed bar reserves
+  // the same space the real one will take. Cheap: the session is a signed
+  // cookie, and this layout already resolves it above.
+  const headerSession = await auth();
+  // The two platform-wide switches on /admin/system. Read here because this is
+  // the only layout every route passes through; both had no consumer at all
+  // before, so saving either changed nothing anyone could see. getSystemSettings
+  // swallows its own database errors and returns defaults, so an outage renders
+  // the site normally rather than curtaining it by accident.
+  const { maintenanceMode, marketingBanner } = await getSystemSettings();
+  const viewerIsAdmin = isAdminEmail(session?.user?.email);
 
   return (
     <html
@@ -101,6 +114,14 @@ export default async function RootLayout({
         <a href="#main-content" className="skip-link">
           Skip to content
         </a>
+        {/* Above the header on purpose: an announcement or a "we're offline"
+            notice that sits below the nav is one someone has to scroll to find.
+            Renders nothing at all when both switches are off. */}
+        <SiteNotices
+          maintenance={maintenanceMode}
+          banner={marketingBanner}
+          viewerIsAdmin={viewerIsAdmin}
+        />
         {/* The live header awaits the session profile + notification queries;
             stream it so those round-trips never block first paint of the page
             body. The shell keeps the bar's height so nothing shifts.
@@ -110,7 +131,7 @@ export default async function RootLayout({
             is a trap, and the real gate on an unfinished profile is server-side
             (assertBookingEligible), not the missing header. */}
         <ChromeGate>
-          <Suspense fallback={<SiteHeaderShell />}>
+          <Suspense fallback={<SiteHeaderShell marketing={!headerSession?.user} />}>
             <SiteHeader />
           </Suspense>
         </ChromeGate>
@@ -140,6 +161,10 @@ export default async function RootLayout({
           position="top-right"
           closeButton
           gap={10}
+          // On phones sonner ignores the corner and spans the full width 16px
+          // from the top - directly over the sticky header's logo, bell and
+          // avatar. Clear the header instead of covering it.
+          mobileOffset={{ top: "76px", left: "12px", right: "12px" }}
           toastOptions={{
             // Re-skin sonner into the DS surface: white card, hairline
             // border, soft elevation, brand type - destructive red for

@@ -27,6 +27,7 @@ const dateFormatter = new Intl.DateTimeFormat("en-AU", {
   month: "short",
   hour: "numeric",
   minute: "2-digit",
+  timeZone: "Australia/Sydney",
 });
 
 type PageProps = {
@@ -84,16 +85,7 @@ export default async function NotificationEmailPage({ params }: PageProps) {
             <dd className="font-semibold text-[color:var(--ink)]">
               {dateFormatter.format(sentAt)}
             </dd>
-            {email ? (
-              <>
-                <dt className="text-[12.5px] font-semibold text-[color:var(--slate)]">
-                  Template
-                </dt>
-                <dd className="text-[0.85rem] text-[color:var(--ink)]">
-                  {email.template}
-                </dd>
-              </>
-            ) : null}
+
           </dl>
 
           {notification.actionUrl ? (
@@ -136,9 +128,8 @@ export default async function NotificationEmailPage({ params }: PageProps) {
                 {notification.body}
               </p>
               <p className="rounded-xl border border-dashed border-[color:var(--line)] bg-[color:var(--champagne)] p-4 text-sm font-medium leading-6 text-[color:var(--mauve)]">
-                No rendered email is on file for this notification - the
-                trigger that created it hasn&rsquo;t been wired to{" "}
-                <code>logEmailEvent</code> yet.
+                We didn&rsquo;t email you about this one - everything it says is
+                above.
               </p>
             </div>
           )}

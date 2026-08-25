@@ -78,8 +78,12 @@ async function requestEmailSignIn(input: {
   // works the same either way. What makes one tap create the account is
   // consumeMagicLink returning the address and ensureProfileForSession
   // inserting the profile downstream.
-  const noAccount =
-    purpose === "login" && !(await profileExistsByEmail(input.email));
+  // Looked up on BOTH paths, deliberately: it is what lets the signup form send
+  // the right mail to someone who already has an account, and running the same
+  // query either way keeps the timing of the two paths alike rather than
+  // splitting them into a slow branch and a fast one.
+  const hasAccount = await profileExistsByEmail(input.email);
+  const noAccount = purpose === "login" && !hasAccount;
   const tokenPurpose = noAccount ? "signup" : purpose;
 
   let token: string;
@@ -109,11 +113,15 @@ async function requestEmailSignIn(input: {
   // Falls back to the plain-text auto-HTML if the template can't be read, so a
   // missing /emails file degrades the look of the mail instead of locking
   // everyone out of sign-in.
+  // Keyed off whether the account exists, not off which form was used. Someone
+  // who taps "Sign up" on an address they already registered with is signing
+  // in, and telling them to "finish creating" an account they finished months
+  // ago reads as though we lost it.
   const template = noAccount
     ? "signin-no-account"
-    : tokenPurpose === "signup"
-      ? "signup-link"
-      : "signin-link";
+    : hasAccount
+      ? "signin-link"
+      : "signup-link";
 
   const rendered = await renderTemplate(template, {
     verifyUrl,
@@ -194,8 +202,12 @@ export async function signInWithEmail(formData: FormData) {
       `${formPath}?${new URLSearchParams({ error: result.error, callbackUrl: rawCallback }).toString()}`,
     );
   }
+  // The address rides along so "check your inbox" can name the inbox. Typing
+  // one character wrong is the most common way this flow fails, and a note that
+  // does not say where it went gives you nothing to check it against. It is the
+  // visitor's own address, it passed EMAIL_RE above, and JSX escapes it.
   redirect(
-    `${formPath}?${new URLSearchParams({ emailSent: "1", callbackUrl: rawCallback }).toString()}`,
+    `${formPath}?${new URLSearchParams({ emailSent: "1", sentTo: email, callbackUrl: rawCallback }).toString()}`,
   );
 }
 

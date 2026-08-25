@@ -18,9 +18,16 @@ const ROW_DATE_FORMATTER = new Intl.DateTimeFormat("en-AU", {
 export function EventAgendaList({
   upcoming,
   past,
+  waitlistedEventIds,
 }: {
   upcoming: EventItem[];
   past: EventItem[];
+  // The viewer's OWN waitlisted seats, keyed by event slug (straight from
+  // getProfileStatus.waitlistedEventIds). getConfirmedEvents deliberately
+  // returns confirmed and waitlisted seats in one bucket, so without this set
+  // a queued spot was listed as "You're going" - people turned up to a night
+  // they were still in line for.
+  waitlistedEventIds?: Set<string>;
 }) {
   if (upcoming.length === 0 && past.length === 0) return null;
 
@@ -31,12 +38,14 @@ export function EventAgendaList({
         emptyLabel="No upcoming plans."
         events={upcoming}
         ended={false}
+        waitlistedEventIds={waitlistedEventIds}
       />
       <AgendaSection
         title="Past"
         emptyLabel="No past plans yet."
         events={past}
         ended
+        waitlistedEventIds={waitlistedEventIds}
       />
     </div>
   );
@@ -47,11 +56,13 @@ function AgendaSection({
   emptyLabel,
   events,
   ended,
+  waitlistedEventIds,
 }: {
   title: string;
   emptyLabel: string;
   events: EventItem[];
   ended: boolean;
+  waitlistedEventIds?: Set<string>;
 }) {
   return (
     <section>
@@ -65,7 +76,11 @@ function AgendaSection({
         <ul className="mt-3 grid gap-2">
           {events.map((event) => (
             <li key={`${event.id}-${event.startsAt}`}>
-              <AgendaRow event={event} ended={ended} />
+              <AgendaRow
+                event={event}
+                ended={ended}
+                waitlisted={waitlistedEventIds?.has(event.id) ?? false}
+              />
             </li>
           ))}
         </ul>
@@ -74,9 +89,27 @@ function AgendaSection({
   );
 }
 
-function AgendaRow({ event, ended }: { event: EventItem; ended: boolean }) {
+function AgendaRow({
+  event,
+  ended,
+  waitlisted,
+}: {
+  event: EventItem;
+  ended: boolean;
+  waitlisted: boolean;
+}) {
   const isCancelled = event.status === "Cancelled";
-  const label = isCancelled ? "Cancelled" : ended ? "Ended" : event.status;
+  // A waitlist spot is a plan in the making and belongs in this list - but it
+  // isn't a seat yet, so it gets its own amber label instead of borrowing the
+  // sage "You're going". "Ended" and "Cancelled" still win the label: the Past
+  // section only ever carries confirmed seats.
+  const label = isCancelled
+    ? "Cancelled"
+    : ended
+      ? "Ended"
+      : waitlisted
+        ? "Waitlist"
+        : "You're going";
   return (
     <Link
       href={`/events/${event.id}`}
@@ -99,7 +132,9 @@ function AgendaRow({ event, ended }: { event: EventItem; ended: boolean }) {
           ? "bg-[color-mix(in_srgb,var(--coral)_12%,var(--paper))] text-[color:var(--coral-ink)]"
           : ended
             ? "bg-[color:var(--mist)] text-[color:var(--slate)]"
-            : "bg-[color-mix(in_srgb,var(--sage)_14%,var(--paper))] text-[color:var(--sage)]"
+            : waitlisted
+              ? "bg-[color-mix(in_srgb,var(--amber)_14%,var(--paper))] text-[color:var(--amber-ink)]"
+              : "bg-[color-mix(in_srgb,var(--sage)_14%,var(--paper))] text-[color:var(--sage)]"
       }`}>
         {label}
       </span>

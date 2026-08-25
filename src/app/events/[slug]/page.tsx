@@ -8,6 +8,7 @@ import { EventBookingDialog } from "@/components/event-booking-dialog";
 import { EventMediaGallery } from "@/components/event-media-gallery";
 import { EventVenueMap } from "@/components/event-venue-map";
 import { EventPaymentButton } from "@/components/event-payment-button";
+import { PaymentHoldCountdown } from "@/components/payment-hold-countdown";
 import { EventRegistrationButton } from "@/components/event-registration-button";
 import { EventBookedCelebration } from "@/components/event-rsvp-success-overlay";
 import { EventBookmarkButton } from "@/components/event-bookmark-button";
@@ -22,6 +23,7 @@ import {
   getPostEventClickPromptForEvent,
   getProfileStatus,
   getSystemSettings,
+  getCancelledBookingNotice,
   getUnfulfilledPaymentNotice,
   isEventOperator,
 } from "@/lib/event-repository";
@@ -37,6 +39,10 @@ type PageProps = {
     booked?: string;
     session_id?: string;
     cancelled?: string;
+    /** The freed seat was offered to the next person in the queue. */
+    promoted?: string;
+    /** A non-zero refund was actually initiated (the <24h tier returns none). */
+    refunded?: string;
   }>;
 };
 
@@ -159,6 +165,45 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
     const notice = search?.session_id
       ? await getUnfulfilledPaymentNotice(slug, session)
       : null;
+
+    // ...and unless they simply hold a seat on an event that has since been
+    // called off. This page is where the in-app "Event cancelled" notification
+    // points, and where a bookmark, a calendar chip and the confirmation email
+    // all land - every one of them used to 404, so the only record of the
+    // booking vanished. Free RSVPs get this too; they have no payment row.
+    if (!notice && session?.user) {
+      const cancelled = await getCancelledBookingNotice(slug, session);
+      if (cancelled) {
+        return (
+          <main className="mx-auto w-full max-w-2xl px-4 py-16 sm:px-6">
+            <p className="eyebrow">Event cancelled</p>
+            <h1 className="font-display mt-3 text-3xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)] sm:text-4xl">
+              {cancelled.eventTitle} was called off.
+            </h1>
+            <p className="mt-5 text-base leading-7 font-medium text-[color:var(--slate)]">
+              The host cancelled this one, so your spot no longer stands. You don&apos;t
+              need to do anything - there&apos;s nothing to cancel.
+            </p>
+            {cancelled.wasPaid ? (
+              <p className="mt-4 text-base leading-7 font-medium text-[color:var(--slate)]">
+                {cancelled.refunded
+                  ? `We've refunded your ${cancelled.amountLabel} in full - it goes back to the card you paid with, usually within 3 to 5 business days.`
+                  : `A full refund of ${cancelled.amountLabel} is on its way back to the card you paid with, usually within 3 to 5 business days.`}
+              </p>
+            ) : null}
+            <div className="mt-8 flex flex-wrap gap-3">
+              <Link href="/discover" className="ck-btn ck-btn--primary">
+                <span className="ck-btn__label">Find something else</span>
+              </Link>
+              <a href={`mailto:${SUPPORT_EMAIL_DEFAULT}`} className="ck-btn ck-btn--secondary">
+                <span className="ck-btn__label">Contact support</span>
+              </a>
+            </div>
+          </main>
+        );
+      }
+    }
+
     if (!notice) notFound();
     return (
       <main className="mx-auto w-full max-w-2xl px-4 py-16 sm:px-6">
@@ -172,6 +217,8 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
           {notice.refunded
             ? "We've already refunded you in full - it goes back to the card you paid with, usually within 3 to 5 business days."
             : "A full refund is on its way back to the card you paid with. If it hasn't landed within 5 business days, reply to your receipt and we'll chase it."}
+          {/* One processing window across the app: /refund-policy, this page and
+              the cancel dialog all say 3 to 5 business days. */}
         </p>
         <p className="mt-4 text-base leading-7 font-medium text-[color:var(--slate)]">
           You don&apos;t need to do anything. Nothing was booked and there&apos;s
@@ -228,10 +275,26 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
   const hasBookingFee = bookingFeeCents > 0;
   // Exact refund the viewer would get if they cancel their paid booking now -
   // shown in the cancel confirmation so the number matches what we refund.
-  const cancelRefundLabel =
-    isPaid && isRegistered
-      ? refundQuoteLabel(quoteCancellationRefund(totalCents, event.startsAt), "AUD")
+  // Seats this booking actually paid for: the viewer's own, plus every guest
+  // seat still live on the same transaction. Quoting one seat told a four-seat
+  // purchaser they would get $35 back when the server refunds the whole $140.
+  // Returned from Stripe with a session id but no seat: the charge settled after
+  // the hold lapsed, so the seat was released and the money sent back. Without
+  // this the page just showed "RSVP" again, on a real charge on the live key.
+  const settledAfterLapse =
+    search?.session_id && !isRegistered && !isWaitlisted && !isPendingPayment
+      ? await getUnfulfilledPaymentNotice(slug, session)
       : null;
+
+  const paidSeatCount = 1 + myGuestSeats.length;
+  const cancelRefundQuote =
+    isPaid && isRegistered
+      ? quoteCancellationRefund(totalCents * paidSeatCount, event.startsAt)
+      : null;
+  const cancelRefundLabel = cancelRefundQuote ? refundQuoteLabel(cancelRefundQuote, "AUD") : null;
+  // Whether any money is actually coming back - the "refunds take 3-5 business
+  // days" line used to render even under the no-refund tier.
+  const cancelRefundIsPositive = (cancelRefundQuote?.refundCents ?? 0) > 0;
   // The venue map unlocks for people who've confirmed their seat (or who manage
   // the event) - the "paid & confirmed" unlocked state the venue/map live in.
   const venueUnlocked = isRegistered || isAdmin || isOwner;
@@ -239,7 +302,10 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
     [event.location, event.address, event.suburb, event.city].filter(Boolean).join(", "),
   )}`;
   const bookmarked = profileStatus?.bookmarkedEventIds.includes(event.id) ?? false;
-  const showStripeUnavailableHint = isPaid && !process.env.STRIPE_SECRET_KEY;
+  // Dev-only. Without the NODE_ENV guard a key rotation in production printed
+  // "set STRIPE_SECRET_KEY in .env.local" to real attendees at three render sites.
+  const showStripeUnavailableHint =
+    isPaid && !process.env.STRIPE_SECRET_KEY && process.env.NODE_ENV !== "production";
   const isAuthenticated = Boolean(session?.user);
 
   const successDetails = {
@@ -269,12 +335,50 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
   // banner, venue fetched fresh under a now-confirmed session.
   const successDetailsForViewer = venueUnlocked ? successDetails : undefined;
 
-  const seatsTaken = attendeePreview.totalConfirmed;
+  // The SAME number isFull and the register endpoint gate on - it includes live
+  // payment holds, guest seats and live waitlist offers. Using the confirmed-only
+  // count here printed "9 of 10 going" beside a button that waitlisted you, and
+  // "Fully booked" beside a bar drawn at 40%.
+  const seatsTaken = Math.min(event.attendees, event.capacity);
   const capacityPct = event.capacity > 0 ? Math.min(100, Math.round((seatsTaken / event.capacity) * 100)) : 0;
+  const seatsLeft = Math.max(0, event.capacity - seatsTaken);
+  // The badge stamped on the hero photo used to be the DATABASE publishing
+  // status, so a visitor read "Live" or "Locked" over the picture - host
+  // vocabulary on a reader's screen, and "Locked" reads like the night is
+  // barred rather than like the venue being revealed on RSVP. This is the same
+  // ladder the quick-view already speaks (event-detail-modal.tsx, modalBadge),
+  // so a card, its quick-view and this page all say one thing. Two exceptions
+  // that are not the modal's job: an event that has finished says so rather
+  // than advertising spots, and an operator previewing their own not-yet-public
+  // listing keeps the publishing status - on this page it is the only thing
+  // telling them the event isn't out yet.
+  const heroBadge = !PUBLIC_EVENT_STATUSES.has(event.status)
+    ? event.status
+    : hasEnded
+      ? "Ended"
+      : isRegistered
+        ? "You're going"
+        : isWaitlisted
+          ? "Waitlisted"
+          : isFull
+            ? "Waitlist"
+            : seatsLeft <= 3
+              ? `${seatsLeft} ${seatsLeft === 1 ? "spot" : "spots"} left`
+              : event.status === "Featured"
+                ? "Trending"
+                : !isPaid
+                  ? "Free"
+                  : undefined;
   const notice = search?.canceled
     ? "Checkout was cancelled. Your seat hold was released - you can try again any time."
     : search?.cancelled
-      ? `Your RSVP was cancelled.${isPaid ? " Any refund will appear in 3 to 5 business days." : ""} The venue details lock again, but you can RSVP any time before the event.`
+      ? `Your RSVP was cancelled.${
+          search?.refunded ? " Your refund will appear in 3 to 5 business days." : ""
+        }${
+          search?.promoted
+            ? " Your seat has gone to the next person on the waitlist."
+            : " The venue details lock again, but you can RSVP any time before the event."
+        }`
       : null;
 
   return (
@@ -299,6 +403,22 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
             venueUnlocked - and a viewer who is `isRegistered` has it unlocked by
             definition. Strictly downstream of reconcileCheckoutSession above:
             it reads reconciled registration state and nothing else. */}
+        {settledAfterLapse ? (
+          <div className="mt-4 grid gap-2 rounded-[var(--radius-lg)] border border-[color:var(--lavender)] bg-[color:var(--lav-bg)] p-4 text-sm text-[color:var(--purple-800)]">
+            <p>
+              <b className="font-semibold">Your payment arrived too late.</b> The seat hold had
+              already run out, so the seat went back to the pool and we refunded you{" "}
+              {settledAfterLapse.amountLabel} in full.
+            </p>
+            <p className="text-[color:var(--ink-soft)]">
+              {settledAfterLapse.refunded
+                ? "It goes back to the card you paid with, usually within 3 to 5 business days."
+                : "The refund is on its way back to the card you paid with, usually within 3 to 5 business days."}{" "}
+              You can book again below if the event still has room.
+            </p>
+          </div>
+        ) : null}
+
         {search?.booked && isRegistered && successDetailsForViewer ? (
           <EventBookedCelebration
             details={successDetailsForViewer}
@@ -329,19 +449,35 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
           </div>
         ) : null}
 
+        {/* Phones only: the title runs ABOVE the grid so the booking panel -
+            which is `order-first` below lg - lands directly under it. Before
+            this, price and the RSVP control were below the gallery, the
+            description, "why this event" and the whole attendee grid, i.e. the
+            conversion surface was the last thing on the page. Desktop is
+            unchanged: this block is lg:hidden and the in-column copy below is
+            hidden lg:block, so the two-column layout renders exactly as before. */}
+        <div className="mt-5 lg:hidden">
+          <h1 className="font-display text-[length:var(--text-h1)] leading-[1.2] font-semibold tracking-[-0.02em] text-[color:var(--ink)]">
+            {event.title}
+          </h1>
+          <p className="mt-2 text-sm font-medium text-[color:var(--slate)]">
+            Hosted by {event.host} · {event.group}
+          </p>
+        </div>
+
         <div className="mt-5 grid items-start gap-9 lg:grid-cols-[minmax(0,1fr)_372px]">
           {/* ---- Content column ---- */}
           <div className="min-w-0">
             <div className="overflow-hidden rounded-[var(--radius-xl)]">
-              <EventMediaGallery items={event.media} statusLabel={event.status} categoryLabel={event.category} />
+              <EventMediaGallery items={event.media} statusLabel={heroBadge} categoryLabel={event.category} />
             </div>
 
             {/* Title is the focal point; the panel owns date/time/location, so
                 the title goes straight to the category + all interest tags. */}
-            <h1 className="font-display mt-6 text-[length:var(--text-h1)] leading-[1.2] font-semibold tracking-[-0.02em] text-[color:var(--ink)]">
+            <h1 className="font-display mt-6 hidden text-[length:var(--text-h1)] leading-[1.2] font-semibold tracking-[-0.02em] text-[color:var(--ink)] lg:block">
               {event.title}
             </h1>
-            <p className="mt-2 text-sm font-medium text-[color:var(--slate)]">
+            <p className="mt-2 hidden text-sm font-medium text-[color:var(--slate)] lg:block">
               Hosted by {event.host} · {event.group}
             </p>
 
@@ -382,6 +518,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                 isAuthenticated={isAuthenticated}
                 viewerIsAttendee={isRegistered || isAdmin || isOwner}
                 eventSlug={event.id}
+                viewerOpenToDating={Boolean(profileStatus?.datingVisible)}
               />
             </div>
 
@@ -406,7 +543,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
           </div>
 
           {/* ---- Booking panel - the single home for date/time/location/price/capacity ---- */}
-          <aside className="lg:sticky lg:top-20 lg:self-start">
+          <aside className="order-first lg:order-none lg:sticky lg:top-20 lg:self-start">
             <div className="rounded-[var(--radius-xl)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-5 shadow-[var(--shadow-md)]">
               {/* Price - Ink anchor; "$X per person" or Free, never price-in-button. */}
               <div className="flex items-baseline gap-2">
@@ -489,7 +626,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                 </div>
                 <div className="h-2 overflow-hidden rounded-full bg-[color:var(--lavender-100)]">
                   <div
-                    className={`h-full rounded-full ${capacityPct >= 85 ? "bg-[color:var(--coral)]" : "bg-[color:var(--purple)]"}`}
+                    className={`h-full rounded-full ${capacityPct >= 85 ? "bg-[color:var(--ink)]" : "bg-[color:var(--purple)]"}`}
                     style={{ width: `${Math.max(4, capacityPct)}%` }}
                   />
                 </div>
@@ -516,17 +653,38 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
 
                     {isWaitlisted && !waitlistOfferExpiresAt && event.waitlistPosition ? (
                       <p className="rounded-[var(--radius-md)] bg-[color:var(--lav-bg)] p-3 text-[13px] text-[color:var(--ink-soft)]">
-                        You&apos;re #{event.waitlistPosition} on the waitlist. We&apos;ll let you know the moment a spot
-                        opens.
+                        You&apos;re #{event.waitlistPosition} on the waitlist. When a seat opens we&apos;ll email you
+                        and hold it for 30 minutes.
                       </p>
                     ) : null}
 
-                    {isPendingPayment && isPaid ? (
+                    {/* A lapsed hold: the seat row still reads pending_payment
+                        (the sweep is a cron) but heldSeatExpiresAt is null,
+                        because getEventBySlug only reports a hold that is still
+                        live. The panel used to keep saying "your seat is held"
+                        with the countdown silently gone, beside a "Release my
+                        hold" link for a hold that no longer exists. Say what
+                        actually happened and fall through to the normal booking
+                        CTAs below - createPaymentHold opens a fresh 31-minute
+                        hold on the next tap, and the seat count already excludes
+                        the lapsed one, so "Join waitlist" only appears if the
+                        seat really did go to someone else. */}
+                    {isPendingPayment && isPaid && !event.heldSeatExpiresAt ? (
+                      <p className="rounded-[var(--radius-md)] bg-[color:var(--lav-bg)] p-3 text-[13px] text-[color:var(--ink-soft)]">
+                        Your checkout hold ran out, so the seats went back to the pool. You can book
+                        again below.
+                      </p>
+                    ) : null}
+
+                    {isPendingPayment && isPaid && event.heldSeatExpiresAt ? (
                       <div className="grid gap-2">
                         <div className="rounded-[var(--radius-md)] bg-[color:var(--lav-bg)] p-3 text-[13px] text-[color:var(--ink-soft)]">
                           {heldSeats > 1
                             ? `Your ${heldSeats} seats are held while your previous checkout finishes. Complete payment to lock them in.`
                             : "Your seat is held while your previous checkout finishes. Complete payment to lock it in."}
+                          {/* The hold is 31 minutes and nothing ever said so -
+                              a buyer could not tell 4 minutes left from 28. */}{" "}
+                          <PaymentHoldCountdown expiresAt={event.heldSeatExpiresAt} />
                         </div>
                         {showStripeUnavailableHint ? (
                           <p className="rounded-[var(--radius-md)] bg-[color:var(--lav-bg)] p-3 text-[13px] text-[color:var(--ink-soft)]">
@@ -540,13 +698,25 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                             resumeSeatCount={event.heldSeatCount}
                           />
                         )}
+                        <EventRegistrationButton
+                          eventId={event.id}
+                          initiallyRegistered
+                          isHold
+                          heldSeatCount={event.heldSeatCount}
+                        />
                       </div>
                     ) : isRegistered || isWaitlisted ? (
                       waitlistOfferExpiresAt && isPaid ? (
-                        <div className="grid gap-2">
-                          <div className="rounded-[var(--radius-md)] bg-[color-mix(in_srgb,var(--sage)_14%,var(--paper))] p-3 text-[13px] font-medium text-[color:var(--sage)]">
-                            A seat opened up. Reserve &amp; pay to claim it before your hold expires.
-                          </div>
+                        // One panel, one clock, one primary. This used to render
+                        // its own "a seat opened up" panel AND the button's, and
+                        // a free "Confirm your spot" beside "Reserve & pay".
+                        <EventRegistrationButton
+                          eventId={event.id}
+                          initiallyRegistered
+                          isWaitlist
+                          offerExpiresAt={waitlistOfferExpiresAt}
+                          offerNeedsPayment
+                        >
                           {showStripeUnavailableHint ? (
                             <p className="rounded-[var(--radius-md)] bg-[color:var(--lav-bg)] p-3 text-[13px] text-[color:var(--ink-soft)]">
                               Stripe isn&apos;t configured on this server - set STRIPE_SECRET_KEY in .env.local to enable
@@ -555,8 +725,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                           ) : (
                             <EventPaymentButton eventId={event.id} priceLabel={formatPriceLabel(totalCents, "AUD")} />
                           )}
-                          <EventRegistrationButton eventId={event.id} initiallyRegistered isWaitlist />
-                        </div>
+                        </EventRegistrationButton>
                       ) : (
                         <EventRegistrationButton
                           eventId={event.id}
@@ -564,6 +733,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                           isWaitlist={isWaitlisted}
                           offerExpiresAt={waitlistOfferExpiresAt}
                           cancelRefundLabel={cancelRefundLabel}
+                          cancelRefundIsPositive={cancelRefundIsPositive}
                           successDetails={successDetailsForViewer}
                         />
                       )
@@ -575,7 +745,8 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                         body={
                           <>
                             This event is currently full. Joining the waitlist holds your spot in queue. If someone
-                            cancels, the host will reach out via email and you can confirm before the seat is reopened.
+                            cancels we&apos;ll email you and hold the seat for 30 minutes. Confirm inside that window or
+                            it goes to the next person in the queue.
                           </>
                         }
                       >
@@ -606,7 +777,12 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                                 </>
                               ) : null}
                               We&apos;ll hold your seat through Stripe checkout. If you don&apos;t complete payment, the
-                              hold is released and the seat returns to the pool. Cancel anytime before the event.
+                              hold is released and the seat returns to the pool. Full refund up to 48h before, 50%
+                              within 48h, none within 24h -{" "}
+                              <Link href="/refund-policy" className="underline">
+                                refund policy
+                              </Link>
+                              .
                             </>
                           }
                         >

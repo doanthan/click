@@ -76,8 +76,13 @@ export function AdminLocationWaitlistTable({
               <li key={e.id} className="space-y-2 p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
+                    {/* Words, not a bare em-dash, at all four blank cells below.
+                        The DS bans the glyph, and a screen reader says "em dash"
+                        or nothing at all - so an operator reading demand for the
+                        next launch city could not tell a merchant who skipped the
+                        field from a row that failed to render. */}
                     <p className="truncate font-semibold text-[color:var(--ink)]">
-                      {e.businessName ?? "—"}
+                      {e.businessName ?? "Not provided"}
                     </p>
                     {e.contactEmail ? (
                       <a
@@ -91,7 +96,7 @@ export function AdminLocationWaitlistTable({
                   <Badge tone={regionTone(e.region)}>{e.region ?? "Other"}</Badge>
                 </div>
                 <p className="text-sm font-semibold text-[color:var(--ink)]">
-                  {e.suburb ?? "—"}
+                  {e.suburb ?? "Not provided"}
                   {e.address ? (
                     <span className="ml-1 text-xs font-normal text-[color:var(--slate)]">
                       · {e.address}
@@ -125,7 +130,7 @@ export function AdminLocationWaitlistTable({
                   <tr key={e.id} className="align-top">
                     <td className="px-4 py-3">
                       <p className="font-semibold text-[color:var(--ink)]">
-                        {e.businessName ?? "—"}
+                        {e.businessName ?? "Not provided"}
                       </p>
                       {e.contactEmail ? (
                         <a
@@ -137,7 +142,7 @@ export function AdminLocationWaitlistTable({
                       ) : null}
                     </td>
                     <td className="px-4 py-3 text-[color:var(--ink)]">
-                      <p className="font-semibold">{e.suburb ?? "—"}</p>
+                      <p className="font-semibold">{e.suburb ?? "Not provided"}</p>
                       {e.address ? (
                         <p className="text-xs text-[color:var(--slate)]">{e.address}</p>
                       ) : null}
@@ -146,7 +151,7 @@ export function AdminLocationWaitlistTable({
                       <Badge tone={regionTone(e.region)}>{e.region ?? "Other"}</Badge>
                     </td>
                     <td className="px-4 py-3 text-xs text-[color:var(--slate)]">
-                      {e.note ?? "—"}
+                      {e.note ?? "No note"}
                     </td>
                     <td className="px-4 py-3 text-xs text-[color:var(--slate)]">
                       {dateFormatter.format(new Date(e.createdAt))}

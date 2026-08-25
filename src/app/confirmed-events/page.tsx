@@ -220,6 +220,11 @@ export default async function ConfirmedEventsPage({ searchParams }: ConfirmedEve
               // to - pass the registered set so non-RSVP'd ones chip as "Saved",
               // not "Confirmed" (bug board #173).
               registeredEventIds={tab === "saved" ? registeredSet : undefined}
+              // The waitlisted set goes in on EVERY tab, not just Saved: the
+              // grid draws confirmed.upcoming whichever tab you're on, and that
+              // bucket carries waitlisted seats too, so leaving it off told
+              // someone still in line that they were going.
+              waitlistedEventIds={waitlistedSet}
             />
           </div>
         )}

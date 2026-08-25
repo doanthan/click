@@ -32,7 +32,7 @@ export function buildRsvpConfirmationEmail(d: RsvpConfirmationData) {
 
   const text = [
     `Hi ${d.firstName},`,
-    `You're confirmed for ${d.eventTitle} on ${d.eventLongDate}, ${d.eventStartTime}–${d.eventEndTime}.`,
+    `You're confirmed for ${d.eventTitle} on ${d.eventLongDate}, ${d.eventStartTime} - ${d.eventEndTime}.`,
     `${d.eventVenue} - ${d.eventAddress}, ${d.eventCity}.`,
     `Hosted by ${d.eventHostName}. ${d.eventPriceLabel}. ${d.eventSpotsFilledLabel}.`,
     `Event details: ${d.eventDetailsUrl}`,
@@ -52,7 +52,7 @@ export function buildRsvpConfirmationEmail(d: RsvpConfirmationData) {
       title: d.eventTitle,
       category: d.eventCategory,
       hostName: d.eventHostName,
-      when: `${d.eventLongDate} · ${d.eventStartTime}–${d.eventEndTime}`,
+      when: `${d.eventLongDate} · ${d.eventStartTime} - ${d.eventEndTime}`,
       where: `${d.eventVenue}, ${d.eventCity}`,
       priceLabel: d.eventPriceLabel,
       capacityLabel: d.eventSpotsFilledLabel,

@@ -122,7 +122,7 @@ export default function TermsPage() {
                 Click a worldwide, non-exclusive, royalty-free licence to host, store, reproduce,
                 adapt, and display Your Content for the purpose of operating, improving, and
                 promoting the Platform, including showing your profile and event listings to other
-                users and (for matching) processing your data.
+                users and (to suggest events and people to you) processing your data.
               </p>
               <p>
                 You are responsible for Your Content and confirm you have the rights to share it. We

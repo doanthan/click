@@ -167,8 +167,6 @@ export function ProfileEditForm({
   const [suburbOptions, setSuburbOptions] = useState<string[]>(base.suburb ? [base.suburb] : []);
   const [pcStatus, setPcStatus] = useState<"idle" | "loading" | "error">("idle");
   const [pcMessage, setPcMessage] = useState<string | null>(null);
-  const [suburbError, setSuburbError] = useState<string | null>(null);
-  const postcodeRef = useRef<HTMLInputElement>(null);
 
   // The legacy lookup below swaps a stored postcode for a real suburb name. That
   // is the page tidying up after itself, not the user editing, so the baseline
@@ -186,10 +184,16 @@ export function ProfileEditForm({
       const res = await fetch(`/api/geo/postcode?code=${code}`);
       if (requested.current !== code) return; // superseded
       if (!res.ok) {
+        // Whatever is still in `suburbOptions` belongs to the PREVIOUS postcode,
+        // so a failed lookup used to leave the select showing someone else's
+        // suburbs - or nothing at all - under a message telling the person to
+        // "pick the closest suburb below". Drop the stale list and say the one
+        // thing they can actually act on.
+        setSuburbOptions([]);
         setPcStatus("error");
         setPcMessage(
           res.status === 404
-            ? "We don't recognise that postcode - pick the closest suburb below."
+            ? "We don't recognise that postcode - check it, or try a nearby one."
             : "Couldn't look that up. Try again.",
         );
         return;
@@ -206,6 +210,9 @@ export function ProfileEditForm({
       if (rebaseline) setBaselineSuburb(data.suburbs[0] ?? "");
     } catch {
       if (requested.current !== code) return;
+      // Same staleness as the !res.ok branch above: the options on screen are
+      // the last postcode's, not this one's.
+      setSuburbOptions([]);
       setPcStatus("error");
       setPcMessage("Couldn't look that up. Check your connection.");
     }
@@ -227,7 +234,6 @@ export function ProfileEditForm({
   function handlePostcodeChange(raw: string) {
     const code = raw.replace(/\D/g, "").slice(0, 4);
     setPostcode(code);
-    setSuburbError(null);
     if (timer.current) clearTimeout(timer.current);
 
     if (!isValidPostcode(code)) {
@@ -314,30 +320,19 @@ export function ProfileEditForm({
   const percent = items.length > 0 ? Math.round((doneCount / items.length) * 100) : 0;
   const allDone = doneCount === items.length && items.length > 0;
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-    if (suburb.trim()) {
-      if (suburbError) setSuburbError(null);
-      return;
-    }
-    // The suburb <select> can only be filled from the postcode field above it, so
-    // a native `required` on the select would anchor the browser's bubble to the
-    // one control the user cannot act on (and would lock a no-JS visitor out of
-    // the form entirely - see the <noscript> beside the pair). Validate the pair
-    // here and point at the postcode instead. preventDefault stops the server
-    // action: React only runs a form `action` when the submit event was not
-    // default-prevented. saveProfileEditAction carries the matching server-side
-    // belt, so a blank suburb that gets past this can no longer write NULL.
-    event.preventDefault();
-    setSuburbError(
-      isValidPostcode(postcode)
-        ? "Give the suburb lookup a moment, then pick your suburb."
-        : "Enter your postcode so we can set your suburb.",
-    );
-    postcodeRef.current?.focus();
-  }
+  /* There is deliberately no submit-time block on a blank suburb any more. The
+     suburb <select> can only be filled from the postcode field above it, so one
+     postcode the lookup can't place - or a lookup that hadn't landed yet - used
+     to preventDefault the whole form, and preventDefault stops the server action
+     outright (React only runs a form `action` when the submit event wasn't
+     default-prevented). Bio, prompts, intents, interests and music all became
+     unsavable, with no way out of the page but abandoning the edits.
+     saveProfileEditAction reads a blank suburb as "leave the stored one alone"
+     rather than writing NULL, so nothing is lost by letting the save through -
+     the hint on the Suburb field below says so where it is relevant. */
 
   return (
-    <form action={saveProfileEditAction} onSubmit={handleSubmit} className="mt-2">
+    <form action={saveProfileEditAction} className="mt-2">
       {/* Only worth saying when the restored draft actually differs from what is
           stored - otherwise it announces a rescue that rescued nothing. */}
       {restored && dirty ? (
@@ -403,8 +398,7 @@ export function ProfileEditForm({
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <FormField
             label="Postcode"
-            ref={postcodeRef}
-            error={suburbError ?? (pcStatus === "error" ? pcMessage ?? undefined : undefined)}
+            error={pcStatus === "error" ? pcMessage ?? undefined : undefined}
             hint={pcStatus === "loading" ? "Looking up…" : pcStatus === "idle" ? pcMessage : null}
             inputMode="numeric"
             pattern="\d{4}"
@@ -418,11 +412,15 @@ export function ProfileEditForm({
             label="Suburb"
             as="select"
             name="suburb"
+            /* A warning, not an error: the save goes through either way, so
+               painting this --danger red would claim a problem that isn't one. */
+            hint={
+              suburb.trim()
+                ? null
+                : "Your suburb is set from your postcode above - everything else here still saves."
+            }
             value={suburb}
-            onChange={(e) => {
-              setSuburb(e.target.value);
-              setSuburbError(null);
-            }}
+            onChange={(e) => setSuburb(e.target.value)}
           >
             {suburbOptions.length === 0 ? (
               <option value="" disabled>
@@ -443,8 +441,8 @@ export function ProfileEditForm({
 
         {/* No-JS honesty. The suburb options are fetched by handlePostcodeChange,
             so with scripting off this select is stuck on whatever the server
-            rendered and the pair check in handleSubmit below never runs. Say
-            that out loud rather than leaving a control that looks broken.
+            rendered. Say that out loud rather than leaving a control that looks
+            broken.
 
             Deliberately NOT a native `required` on the select: server-side its
             only options are the already-saved suburb (if any), so `required`
@@ -716,7 +714,7 @@ export function ProfileEditForm({
           to the very bottom of this long form (bug board #219). It also carries
           the two things this page used to leave unsaid: how far the profile has
           come, and whether anything is currently unsaved. */}
-      <div className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-x-5 gap-y-3 border-t border-[color:var(--mist)] bg-[color:var(--champagne)] py-4">
+      <div className="sticky bottom-[calc(56px+env(safe-area-inset-bottom))] z-10 flex flex-wrap lg:bottom-0 items-center justify-between gap-x-5 gap-y-3 border-t border-[color:var(--mist)] bg-[color:var(--champagne)] py-4">
         <div className="min-w-[180px] flex-1">
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
             {allDone ? (

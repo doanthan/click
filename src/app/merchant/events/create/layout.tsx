@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { EventCreateProvider } from "@/components/event-create-wizard";
 import {
+  assertProfileStatusUsable,
   getMerchantCategoryOptions,
   getMerchantEventCreateOptions,
   getMerchantTagOptions,
@@ -15,7 +16,7 @@ export const metadata = {
 
 // Shared chrome + state provider for the whole /merchant/events/create flow.
 // The provider is mounted here (not in each step page) so wizard state survives
-// client-side navigation between sibling step pages — App Router keeps layouts
+// client-side navigation between sibling step pages - App Router keeps layouts
 // mounted across child page transitions, so the form state inside the provider
 // doesn't reset when you go Basics → Schedule → … → Review.
 //
@@ -32,25 +33,22 @@ export default async function CreateEventLayout({
   }
 
   const status = await getProfileStatus(session);
+  assertProfileStatusUsable(status);
   if (!status.merchantProfile) {
     redirect("/merchant/signup");
   }
 
+  // Not approved yet. This used to render its own dead-end panel that printed
+  // the raw DB enum at the host ("Your merchant profile is suspended.") and
+  // then told all three states the same untrue thing - "an admin needs to
+  // approve your business" - with no link anywhere.
+  //
+  // /merchant-pending already does this properly: it branches on
+  // pending/rejected/suspended, explains each one, and gives each its own way
+  // out (resubmit the wizard, or contact support). Send them there instead of
+  // keeping a second, worse copy of the same screen in sync.
   if (status.merchantProfile.verification_status !== "approved") {
-    return (
-      <main className="min-h-screen bg-[color:var(--champagne)] px-4 py-12 text-[color:var(--ink)] sm:px-6">
-        <section className="mx-auto max-w-3xl">
-          <p className="eyebrow">Approval required</p>
-          <h1 className="mt-6 font-display text-3xl font-semibold leading-tight tracking-[-0.02em] text-[color:var(--ink)] sm:text-4xl">
-            Your merchant profile is{" "}
-            <span className="text-[color:var(--rose)]">{status.merchantProfile.verification_status}</span>.
-          </h1>
-          <p className="mt-4 text-base leading-7 text-[color:var(--slate)]">
-            An admin needs to approve your business before you can publish events.
-          </p>
-        </section>
-      </main>
-    );
+    redirect("/merchant-pending");
   }
 
   // The one-time post-approval walkthrough runs BEFORE the first event, the
@@ -99,6 +97,8 @@ export default async function CreateEventLayout({
               hostNameOptions={createOptions.hostNames}
               venueOptions={createOptions.venues}
               chargesEnabled={status.merchantProfile.charges_enabled === true}
+              payoutsEnabled={status.merchantProfile.payouts_enabled === true}
+              autoApproveEvents={status.merchantProfile.auto_approve_events === true}
               platformFeeBps={platformFeeBps}
             >
               {children}

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { AuthedRedirect } from "@/components/authed-redirect";
-import { AuthNote, AuthShell } from "@/components/auth-ui";
+import { AuthShell, MagicLinkSentNote } from "@/components/auth-ui";
 import { RegisterForm } from "@/components/register-form";
 
 export const metadata = {
@@ -15,6 +15,7 @@ type RegisterPageProps = {
     callbackUrl?: string;
     error?: string;
     emailSent?: string;
+    sentTo?: string;
   }>;
 };
 
@@ -74,9 +75,7 @@ export default async function RegisterPage({ searchParams }: RegisterPageProps) 
           you to /login, which greets you with "Welcome back". */}
       {emailSent ? (
         <div className="mb-5">
-          <AuthNote icon="mail">
-            Check your inbox - we&apos;ve sent a one-time link that finishes creating your account.
-          </AuthNote>
+          <MagicLinkSentNote email={params?.sentTo} mode="signup" />
         </div>
       ) : null}
 
