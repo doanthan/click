@@ -132,7 +132,7 @@ export default async function RootLayout({
             (assertBookingEligible), not the missing header. */}
         <ChromeGate>
           <Suspense fallback={<SiteHeaderShell marketing={!headerSession?.user} />}>
-            <SiteHeader />
+            <SiteHeader qaSwitcherUnlocked={qaSwitcherUnlocked} />
           </Suspense>
         </ChromeGate>
         {/* Every page renders its own <main>; this wrapper is the one stable
@@ -192,7 +192,10 @@ export default async function RootLayout({
             Reporting only - the "Bugs on this page" tab reads other people's
             tickets (reporter name + free text), so it needs canTriageBugs. */}
         <SupportWidget canTriage={canTriageBugs} />
-        {qaSwitcherUnlocked ? (
+        {/* Once signed in, the same picker lives under Avatar -> Switch
+            account. Keep this fallback only for the signed-out test state,
+            which has no avatar menu and would otherwise strand the tester. */}
+        {qaSwitcherUnlocked && !session?.user ? (
           <TestAccountSwitcher currentEmail={session?.user?.email ?? null} />
         ) : null}
         </AccountScopeProvider>

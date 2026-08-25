@@ -290,7 +290,7 @@ test("booking an event requires a finished profile on every path", () => {
   const gate = readFileSync(path.join(root, "src/components/chrome-gate.tsx"), "utf8");
   assert.match(gate, /"\/onboarding"/);
   const layout = readFileSync(path.join(root, "src/app/layout.tsx"), "utf8");
-  assert.match(layout, /<ChromeGate>[\s\S]{0,400}<SiteHeader \/>/);
+  assert.match(layout, /<ChromeGate>[\s\S]{0,400}<SiteHeader(?:\s+[^>]*)?\s*\/>/);
 });
 
 test("email logged while the provider was unconfigured is retryable", () => {
@@ -402,6 +402,11 @@ test("the QA persona switcher cannot be reached without the unlock key", () => {
   const auth = readFileSync(path.join(root, "src/auth.ts"), "utf8");
   const actions = readFileSync(path.join(root, "src/app/login/actions.ts"), "utf8");
   const layout = readFileSync(path.join(root, "src/app/layout.tsx"), "utf8");
+  const chrome = readFileSync(path.join(root, "src/components/site-chrome.tsx"), "utf8");
+  const accountMenu = readFileSync(
+    path.join(root, "src/components/header-role-switcher.tsx"),
+    "utf8",
+  );
   const gate = readFileSync(path.join(root, "src/lib/test-switcher.ts"), "utf8");
 
   // 1. Registering the provider is NOT the gate: authorize() must re-check the
@@ -443,8 +448,33 @@ test("the QA persona switcher cannot be reached without the unlock key", () => {
     "an unreadable cookie jar must fail closed",
   );
 
-  // 4. The layout mounts it behind the unlock check, not the local-dev flag.
-  assert.match(layout, /qaSwitcherUnlocked \? \(?\s*<TestAccountSwitcher/);
+  // 4. Signed-in sessions receive the gated switcher inside the account menu.
+  // The floating control remains only for the signed-out test state, otherwise
+  // choosing "Not signed in" would leave the tester with no way back in.
+  assert.match(layout, /<SiteHeader qaSwitcherUnlocked=\{qaSwitcherUnlocked\}/);
+  assert.match(chrome, /canSwitchAccounts=\{qaSwitcherUnlocked\}/);
+  assert.match(accountMenu, /canSwitchAccounts[\s\S]*Switch account[\s\S]*TestAccountRows/);
+  assert.match(layout, /qaSwitcherUnlocked && !session\?\.user \? \(/);
+});
+
+test("the release gate permits only the seeded QA admin beside a real operator", () => {
+  const releaseGate = readFileSync(path.join(root, "scripts/release-check.mjs"), "utf8");
+
+  assert.match(
+    releaseGate,
+    /email !== "admin@click\.local"/,
+    "the seeded admin persona must not make an otherwise valid production config fail",
+  );
+  assert.match(
+    releaseGate,
+    /ADMIN_EMAILS must include at least one real monitored inbox/,
+    "the QA persona must never be the only configured production admin",
+  );
+  assert.match(
+    releaseGate,
+    /SAFETY_INBOX_EMAIL must use a real monitored inbox/,
+    "the safety inbox has no QA exception",
+  );
 });
 
 test("an admin unlocks the QA switcher with their session, not a bare flag", () => {

@@ -7,9 +7,11 @@ import {
   signOutOfTestAccount,
 } from "@/app/login/actions";
 import { QA_PERSONAS } from "@/lib/qa-personas";
+import { Icon } from "./ds";
 
-// QA persona switcher. A pill in the top-right that signs you in as one of the
-// personas without logging out first - or drops you to the signed-out state.
+// QA persona switcher. Signed-in people reach these rows from "Switch account"
+// in the avatar menu. The floating variant remains for the signed-out state,
+// where there is no avatar menu but a tester still needs a route back in.
 //
 // Nothing to set up: picking a persona provisions its rows first (see
 // src/lib/qa-provision.ts), so there is no seed script and no order to follow.
@@ -141,6 +143,26 @@ function PersonaRows({
   );
 }
 
+/**
+ * The account rows shared by the avatar-menu popover, the signed-out floating
+ * fallback and the always-open /test panel. Keeping the forms here means every
+ * entry point uses the same gated server actions and active-account treatment.
+ */
+export function TestAccountRows({
+  currentEmail = null,
+  redirectTo = "/",
+}: {
+  currentEmail?: string | null;
+  redirectTo?: string;
+}) {
+  return (
+    <PersonaRows
+      normalizedCurrent={currentEmail?.toLowerCase() ?? null}
+      redirectTo={redirectTo}
+    />
+  );
+}
+
 // `currentEmail` is the email of the actually signed-in session, passed from the
 // root layout / page (which calls `auth()` server-side). The "Now" badge marks
 // the row whose email matches it; when null, the "Not signed in" row is current,
@@ -195,7 +217,7 @@ export function TestAccountSwitcher({
     return (
       <div className="overflow-hidden rounded-2xl border border-[color:var(--mist)] bg-[color:var(--paper)] shadow-[0_2px_8px_rgba(28,24,48,.06)]">
         {panelHeader}
-        <PersonaRows normalizedCurrent={normalizedCurrent} redirectTo={redirectTo} />
+        <TestAccountRows currentEmail={normalizedCurrent} redirectTo={redirectTo} />
       </div>
     );
   }
@@ -209,7 +231,7 @@ export function TestAccountSwitcher({
         aria-expanded={open}
         className="font-display flex items-center gap-2 rounded-xl bg-[color:var(--purple)] px-3 py-2 text-[12.5px] font-semibold text-[color:var(--paper)] shadow-[0_4px_14px_rgba(59,47,129,.28)] transition-colors hover:bg-[color:var(--purple-hover)]"
       >
-        <span aria-hidden>🧪</span>
+        <Icon name="users" size={15} stroke={2} />
         {currentLabel}
         <span aria-hidden className="text-[10px] opacity-80">
           ▾
@@ -222,7 +244,7 @@ export function TestAccountSwitcher({
           className="absolute right-0 mt-2 w-[290px] overflow-hidden rounded-2xl border border-[color:var(--mist)] bg-[color:var(--paper)] shadow-[0_12px_32px_rgba(28,24,48,.16),0_2px_6px_rgba(28,24,48,.08)]"
         >
           {panelHeader}
-          <PersonaRows normalizedCurrent={normalizedCurrent} redirectTo={redirectTo} />
+          <TestAccountRows currentEmail={normalizedCurrent} redirectTo={redirectTo} />
         </div>
       ) : null}
     </div>

@@ -2,8 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useId, useState } from "react";
 import { signOutOfClick } from "@/app/login/actions";
 import { Avatar, Icon } from "./ds";
+import { TestAccountRows } from "./test-account-switcher";
 import { useDisclosure } from "./use-disclosure";
 
 export type PortalRole = "user" | "merchant" | "admin";
@@ -37,6 +39,8 @@ export function HeaderRoleSwitcher({
   userLabel,
   avatarUrl,
   showHostCta = false,
+  canSwitchAccounts = false,
+  currentEmail = null,
 }: {
   roles: PortalRole[];
   userLabel: string;
@@ -46,8 +50,14 @@ export function HeaderRoleSwitcher({
    *  would re-pitch hosting to someone whose application is sitting in the
    *  admin queue. */
   showHostCta?: boolean;
+  /** The production QA gate has already been verified server-side. The forms
+   *  inside the picker independently re-check it before changing sessions. */
+  canSwitchAccounts?: boolean;
+  currentEmail?: string | null;
 }) {
   const { open, setOpen, ref } = useDisclosure<HTMLDivElement>();
+  const [accountPickerOpen, setAccountPickerOpen] = useState(false);
+  const accountPickerId = useId();
   const pathname = usePathname();
 
   const currentRole: PortalRole = pathname?.startsWith("/admin")
@@ -71,7 +81,14 @@ export function HeaderRoleSwitcher({
           Tab walks it naturally and we owe no arrow-key contract. */}
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          // An outside click may have closed the whole disclosure while its
+          // nested picker state was still true. Always reopen at the account
+          // menu's first level instead of surprising the user with a stale
+          // side panel.
+          if (!open) setAccountPickerOpen(false);
+          setOpen(!open);
+        }}
         aria-label="Account menu"
         aria-expanded={open}
         className="flex min-h-11 items-center gap-1.5 rounded-full p-0.5 lg:min-h-0"
@@ -155,6 +172,32 @@ export function HeaderRoleSwitcher({
             </>
           ) : null}
 
+          {canSwitchAccounts ? (
+            <>
+              <div className="my-1 h-px bg-[color:var(--line-soft)]" />
+              <button
+                type="button"
+                onClick={() => setAccountPickerOpen((value) => !value)}
+                aria-controls={accountPickerId}
+                aria-expanded={accountPickerOpen}
+                aria-haspopup="dialog"
+                className={`flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left text-[14.5px] font-medium transition-colors hover:bg-[color:var(--lavender-100)] ${
+                  accountPickerOpen
+                    ? "bg-[color:var(--lavender-100)] text-[color:var(--purple-800)]"
+                    : "text-[color:var(--ink)]"
+                }`}
+              >
+                <span>
+                  <span className="block">Switch account</span>
+                  <span className="mt-0.5 block text-[11.5px] font-normal text-[color:var(--slate)]">
+                    Test customers, hosts and admin
+                  </span>
+                </span>
+                <Icon name="chevR" size={15} stroke={2} className="text-[color:var(--slate)]" />
+              </button>
+            </>
+          ) : null}
+
           <div className="my-1 h-px bg-[color:var(--line-soft)]" />
           {/* Sign out is a quiet row - never error red, since signing out is not destructive. */}
           <form action={signOutOfClick}>
@@ -165,6 +208,35 @@ export function HeaderRoleSwitcher({
               Sign out
             </button>
           </form>
+
+          {canSwitchAccounts && accountPickerOpen ? (
+            <section
+              id={accountPickerId}
+              role="dialog"
+              aria-label="Switch test account"
+              className="menu-pop absolute right-0 top-0 z-[1] w-full overflow-hidden rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] shadow-[0_18px_44px_rgba(76,55,140,0.18)] lg:right-[calc(100%+0.5rem)] lg:w-[340px]"
+            >
+              <div className="flex items-center gap-3 border-b border-[color:var(--line-soft)] px-3 py-2.5">
+                <button
+                  type="button"
+                  onClick={() => setAccountPickerOpen(false)}
+                  className="inline-flex min-h-9 items-center gap-1 rounded-xl px-2 text-[12.5px] font-semibold text-[color:var(--purple-800)] transition-colors hover:bg-[color:var(--lavender-100)]"
+                >
+                  <Icon name="chevL" size={15} stroke={2} />
+                  Back
+                </button>
+                <div className="min-w-0">
+                  <h2 className="font-display truncate text-[14px] font-semibold text-[color:var(--ink)]">
+                    Switch account
+                  </h2>
+                  <p className="truncate text-[11.5px] text-[color:var(--slate)]">
+                    Seeded test accounts only
+                  </p>
+                </div>
+              </div>
+              <TestAccountRows currentEmail={currentEmail} />
+            </section>
+          ) : null}
         </div>
       ) : null}
     </div>

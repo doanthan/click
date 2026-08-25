@@ -35,7 +35,11 @@ export function SiteHeaderShell({ marketing = true }: { marketing?: boolean }) {
   );
 }
 
-export async function SiteHeader() {
+export async function SiteHeader({
+  qaSwitcherUnlocked = false,
+}: {
+  qaSwitcherUnlocked?: boolean;
+}) {
   const session = await auth();
   const userLabel = session?.user?.name ?? session?.user?.email ?? "Account";
   const isAdmin = !!session?.user && isAdminEmail(session.user.email);
@@ -127,6 +131,8 @@ export async function SiteHeader() {
               userLabel={userLabel}
               avatarUrl={avatarUrl}
               showHostCta={!hasHostApplication}
+              canSwitchAccounts={qaSwitcherUnlocked}
+              currentEmail={session.user.email}
             />
           </div>
         </div>

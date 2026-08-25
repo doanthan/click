@@ -5,11 +5,9 @@ import { QA_PERSONAS } from "@/lib/qa-personas";
 /**
  * The admin's way into the QA persona switcher.
  *
- * The switcher itself is a floating pill in the root layout, shown only to a
- * browser that has unlocked it - which means an admin who has never unlocked it
- * has nothing on screen to tell them it exists. This section is that signpost,
- * and it lives on /admin/system next to the other platform switches because
- * turning it on is a per-browser setting, not a page.
+ * The switcher lives in the signed-in avatar menu and is shown only to a
+ * browser that has unlocked it. This section is the signpost and control for
+ * that per-browser setting.
  *
  * Both buttons are plain links to /qa-unlock, which is a route handler: the
  * unlock is a cookie on the redirect response, and a Server Component cannot
@@ -38,8 +36,8 @@ export function AdminQaAccess({
           </h3>
           <p className="mt-2 max-w-xl text-sm leading-6 text-[color:var(--slate)]">
             {unlocked
-              ? `Look for the flask pill in the top-right corner of any page. It switches you between ${QA_PERSONAS.length} seeded accounts - hosts, customers, an admin - so you can walk a booking, a payout or a click from both sides without signing out.${alwaysOn ? "" : " It stays on for 12 hours."}`
-              : `Turns on a switcher that signs you in as any of ${QA_PERSONAS.length} seeded accounts - hosts, customers, an admin - so you can walk a booking, a payout or a click from both sides without signing out. It appears as a pill in the top-right corner and only on this browser.`}
+              ? `Open your avatar menu and choose Switch account. You can move between ${QA_PERSONAS.length} seeded accounts - hosts, customers and an admin - to walk a booking, payout or click from both sides.${alwaysOn ? "" : " Access stays on for 12 hours."}`
+              : `Adds Switch account to your avatar menu on this browser. It signs you in as any of ${QA_PERSONAS.length} seeded accounts - hosts, customers and an admin - so you can test each side without signing out first.`}
           </p>
           <p className="mt-2 max-w-xl text-sm leading-6 text-[color:var(--slate)]">
             The accounts and everything they create live in the{" "}

@@ -201,12 +201,28 @@ if (
     "RESEND_FROM_EMAIL must send from the verified send.letsclick.app subdomain.",
   );
 }
-if (
-  value("ADMIN_EMAILS") &&
-  value("SAFETY_INBOX_EMAIL") &&
-  /example\.com|click\.local/i.test(`${value("ADMIN_EMAILS")},${value("SAFETY_INBOX_EMAIL")}`)
-) {
-  errors.push("ADMIN_EMAILS and SAFETY_INBOX_EMAIL must use real monitored inboxes.");
+const adminEmails = value("ADMIN_EMAILS")
+  .split(",")
+  .map((email) => email.trim().toLowerCase())
+  .filter(Boolean);
+const placeholderInbox = /@(example\.com|click\.local)$/i;
+const invalidAdminPlaceholders = adminEmails.filter(
+  (email) => placeholderInbox.test(email) && email !== "admin@click.local",
+);
+
+// Production needs at least one real operator, but admin@click.local is also
+// intentional: it is the seeded Admin persona in the gated QA account switcher.
+// Permit only that exact QA address, never the whole namespace and never as the
+// sole admin. The QA persona still cannot mint its own long-lived unlock grant
+// (src/lib/test-switcher.ts), so this does not widen the switcher's boundary.
+if (invalidAdminPlaceholders.length > 0) {
+  errors.push("ADMIN_EMAILS contains an unmonitored placeholder address.");
+}
+if (adminEmails.length > 0 && !adminEmails.some((email) => !placeholderInbox.test(email))) {
+  errors.push("ADMIN_EMAILS must include at least one real monitored inbox.");
+}
+if (value("SAFETY_INBOX_EMAIL") && placeholderInbox.test(value("SAFETY_INBOX_EMAIL"))) {
+  errors.push("SAFETY_INBOX_EMAIL must use a real monitored inbox.");
 }
 if (value("NEXT_PUBLIC_MODE").toUpperCase() === "DEVELOPMENT") {
   errors.push("NEXT_PUBLIC_MODE must be unset in production.");
