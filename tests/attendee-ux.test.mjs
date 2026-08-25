@@ -328,6 +328,23 @@ test("the marquee stops on its own and the support drawer traps focus", () => {
   assert.match(widget, /if \(e\.key !== "Tab"\) return;/);
 });
 
+test("fixed support chrome gets out of the way of modal controls", () => {
+  const shell = read("src/components/modal-shell.tsx");
+  const css = read("src/app/globals.css");
+  assert.match(shell, /classList\.add\("modal-shell-open"\)/);
+  assert.match(shell, /openShells\.length === 0[\s\S]*classList\.remove\("modal-shell-open"\)/);
+  assert.match(
+    css,
+    /\.modal-shell-open \[data-support-widget\] > button\[aria-label="Report a bug"\]/,
+  );
+});
+
+test("the homepage activity pulse uses singular person copy", () => {
+  const home = read("src/app/page.tsx");
+  assert.match(home, /peopleGoing === 1 \? "person" : "people"/);
+  assert.doesNotMatch(home, /\$\{peopleGoing\} people already going/);
+});
+
 test("the daily set is actually daily", () => {
   const people = read("src/app/people/page.tsx");
   assert.match(people, /Australia\/Sydney/);
@@ -647,4 +664,24 @@ test("the merchant monthly report does not round a host's revenue", () => {
   const fn = repo.slice(start, start + 4000);
   assert.doesNotMatch(fn, /maximumFractionDigits: 0/);
   assert.doesNotMatch(fn, /const formatAud =/, "the rounding shadow is back");
+});
+
+test("booking confirmation shows the event facts and exact checkout total", () => {
+  const dialog = readFileSync(
+    path.join(root, "src/components/event-booking-dialog.tsx"),
+    "utf8",
+  );
+  const payment = readFileSync(
+    path.join(root, "src/components/event-payment-button.tsx"),
+    "utf8",
+  );
+  const page = readFileSync(path.join(root, "src/app/events/[slug]/page.tsx"), "utf8");
+
+  assert.match(dialog, /export function EventBookingSummary/);
+  assert.match(dialog, />When</);
+  assert.match(dialog, />Price</);
+  assert.match(payment, /Checkout total/);
+  assert.match(payment, /bookingFeePerSeatCents/);
+  assert.match(page, /priceLabel="No charge"/);
+  assert.match(page, /refundLabel=\{bookingRefundLabel\}/);
 });

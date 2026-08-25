@@ -106,6 +106,7 @@ type StepDef = {
   sub: string;
   cat?: string;
   icon?: IconName;
+  optional?: boolean;
   /** Endowed progress: the bar is already moving on step 1 and never starts at 0. */
   pct: number;
 };
@@ -125,6 +126,7 @@ const STEPS: StepDef[] = [
     title: (name) => (name ? `What brings you here, ${name}?` : "What brings you to Click?"),
     sub: "Pick any that fit. It tunes what we show you, and you can change it whenever.",
     icon: "users",
+    optional: true,
     pct: 42,
   },
   {
@@ -141,14 +143,16 @@ const STEPS: StepDef[] = [
     title: () => "What do you like doing?",
     sub: "Tap what sounds like a good night out. Three or more and your suggestions get sharp.",
     cat: "arts",
+    optional: true,
     pct: 78,
   },
   {
     key: "photo",
     eyebrow: "Your photo",
     title: (name) => (name ? `Nice to meet you, ${name}` : "Nice to meet you"),
-    sub: "A photo is what unlocks clicking with people - ten seconds now, or add it later from your profile.",
+    sub: "Add a photo and short intro now, or leave both for later. A photo unlocks clicking with people.",
     icon: "camera",
+    optional: true,
     pct: 93,
   },
 ];
@@ -601,6 +605,13 @@ export function OnboardingForm({
               {step + 1} of {STEPS.length}
             </span>
           </div>
+          <p className="mt-2 text-[12.5px] font-medium text-[color:var(--slate)]">
+            {step === 0
+              ? "This is the only required step."
+              : current.optional
+                ? "Optional personalisation. Skip anything you do not want to add."
+                : "No details needed here. Take a quick look, then keep going."}
+          </p>
         </div>
       </header>
 
@@ -639,7 +650,14 @@ export function OnboardingForm({
                     <Icon name={current.icon ?? "compass"} size={24} stroke={1.8} />
                   )}
                 </Disc>
-                <p className="eyebrow mt-4">{current.eyebrow}</p>
+                <div className="mt-4 flex items-baseline gap-2.5">
+                  <p className="eyebrow">{current.eyebrow}</p>
+                  {current.optional ? (
+                    <span className="text-[12px] font-medium text-[color:var(--slate)]">
+                      Optional
+                    </span>
+                  ) : null}
+                </div>
                 <h1
                   ref={headingRef}
                   tabIndex={-1}
@@ -904,6 +922,7 @@ export function OnboardingForm({
                     initialUrl={initialPhotoUrl}
                     displayName={displayName}
                     onUploaded={setPhotoUrl}
+                    optional
                   />
                   <label className="grid gap-1.5">
                     <span className="text-[13.5px] font-semibold text-[color:var(--ink)]">
@@ -1011,7 +1030,7 @@ function Disc({ children, size = 40 }: { children: ReactNode; size?: number }) {
 
 function Optional() {
   return (
-    <span className="font-normal text-[color:var(--slate)]">· optional</span>
+    <span className="font-normal text-[color:var(--slate)]">(optional)</span>
   );
 }
 

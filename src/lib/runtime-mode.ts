@@ -8,9 +8,15 @@ const INTERNAL_ROUTE_PREFIXES = [
   "/tables",
   "/test",
   "/test-click",
+  "/test-stage",
 ] as const;
 
-const INTERNAL_API_PREFIXES = ["/api/generate", "/api/tables", "/api/test"] as const;
+const INTERNAL_API_PREFIXES = [
+  "/api/generate",
+  "/api/generate-stage",
+  "/api/tables",
+  "/api/test",
+] as const;
 
 export function isLocalDevelopment() {
   return process.env.NODE_ENV === "development";

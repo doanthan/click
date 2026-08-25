@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { auth } from "@/auth";
 import { Badge } from "@/components/ds";
+import { requireAdminPage } from "@/lib/admin-guard";
 import { getAdminReports, type AdminReportRow } from "@/lib/event-repository";
 import { ReportCardActions } from "./report-card-actions";
 
@@ -30,7 +30,7 @@ function hoursSince(iso: string): number {
 }
 
 export default async function AdminReportsPage() {
-  const session = await auth();
+  const session = await requireAdminPage();
   const reports = await getAdminReports(session);
   const open = reports.filter((r) => r.status === "open");
   const resolved = reports.filter((r) => r.status !== "open");

@@ -186,7 +186,7 @@ const DRAFT_VERSION = 1;
 // 0 = Business, 1 = Contact, 2 = Documents.
 export type StepIndex = 0 | 1 | 2;
 const STEP_COUNT = 3;
-const STEP_TITLES = ["Business", "Contact", "Documents"] as const;
+const STEP_TITLES = ["Business", "Contact", "Review"] as const;
 export const STEP_PATHS = [
   "/merchant/signup/business",
   "/merchant/signup/contact",
@@ -917,18 +917,9 @@ export function WizardShell({
           </Button>
         )}
       </div>
-      {/* Nothing in the host flow named, linked, or asked acceptance of the
-          agreement a host is bound by - yet /terms makes Click a "limited
-          payment-collection agent", puts the attendance contract between
-          attendee and host, and makes GST the host's responsibility, and the
-          create wizard later attaches a refund ladder and a commission. The
-          only route to any of it was the global footer, several scroll-lengths
-          below a wizard someone is working top-down.
-
-          NOTE: this discloses, it does not RECORD. Storing which version a host
-          accepted needs a timestamp column on merchant_profiles written by
-          registerMerchantWizardSubmit - a migration, so it is deliberately not
-          done here. */}
+      {/* The submit action is the acceptance action. The repository stores its
+          timestamp plus both legal versions, so the disclosure here and the
+          audit record describe the same moment. */}
       {isLast ? (
         <p className="mt-3 text-xs leading-5 text-[color:var(--slate)]">
           By submitting you agree to the{" "}
@@ -1699,6 +1690,7 @@ function StateSelect({
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-label={value ? `State: ${value}` : "Select state"}
         // No aria-invalid: role="button" does not support it, and asserting it
         // anyway is a lie to a screen reader rather than a hint. The wrapping
         // FormField's message already carries role="alert", which is what
@@ -1712,7 +1704,7 @@ function StateSelect({
         }`}
       >
         <span className={value ? "" : "text-[color:var(--slate)]"}>
-          {value || "-"}
+          {value || "Select"}
         </span>
         <svg
           viewBox="0 0 12 8"
@@ -1782,7 +1774,14 @@ export function DocumentsSection() {
   const { state, dispatch } = useWizard();
   return (
     <div className="grid gap-5">
-      <h2 className="font-display text-3xl font-semibold leading-tight">Documents</h2>
+      <div>
+        <h2 className="font-display text-3xl font-semibold leading-tight">Review &amp; documents</h2>
+        <p className="mt-2 text-sm leading-6 text-[color:var(--slate)]">
+          Check your details, add any helpful evidence, then send your application. We aim to
+          review applications in the Sydney pilot within 1 business day and will email you if
+          anything else is needed.
+        </p>
+      </div>
 
       <ApplicationRecap />
 
@@ -1802,10 +1801,10 @@ export function DocumentsSection() {
           file", event-repository.ts deleteMerchantDocument). So: name the
           window, and name the address for anything after it. */}
       <InfoNote icon="lock">
-        These let the review team confirm your business is yours. They stay private to you and
-        the Click review team - nothing here appears on your public host page. Every one is
-        optional, so you can send your application without them - this screen is the only place
-        that takes them, so anything you want to add afterwards goes to{" "}
+        Documents can help if your business details cannot be verified from public records. Every
+        upload is optional, and skipping them does not stop you submitting. They stay private to
+        you and the Click review team. This screen is the only upload step, so anything you want
+        to add afterwards goes to{" "}
         <a
           href="mailto:hello@letsclick.app?subject=Document%20for%20my%20host%20application"
           className="font-semibold text-[color:var(--purple-700)] underline underline-offset-2"

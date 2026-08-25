@@ -155,6 +155,12 @@ function ModalShellBody({
     // typed +1 row with it. The checkout modal even tells you to press it.
     const shellId = Symbol("modal-shell");
     openShells.push(shellId);
+    // The support trigger is fixed above ordinary page content. While a modal
+    // is open it otherwise sits on top of bottom-sheet controls (the mobile
+    // Discover suburb selector was the first visible collision). Mark the
+    // body once for the whole shared stack so global, non-modal chrome can get
+    // out of the way without every caller coordinating with the widget.
+    document.body.classList.add("modal-shell-open");
     const isTopmost = () => openShells[openShells.length - 1] === shellId;
 
     const previouslyFocused = document.activeElement;
@@ -214,6 +220,7 @@ function ModalShellBody({
     return () => {
       const at = openShells.lastIndexOf(shellId);
       if (at !== -1) openShells.splice(at, 1);
+      if (openShells.length === 0) document.body.classList.remove("modal-shell-open");
       window.cancelAnimationFrame(raf);
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = previousOverflow;

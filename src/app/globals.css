@@ -1281,6 +1281,14 @@ button:focus-visible, a:focus-visible, select:focus-visible, textarea:focus-visi
 .step-enter-fwd  { animation: step-slide-in-fwd  220ms ease-out both; }
 .step-enter-back { animation: step-slide-in-back 220ms ease-out both; }
 
+/* Fixed support chrome must not cover controls in a modal or bottom sheet.
+   ModalShell owns the stack marker so this also stays correct when dialogs are
+   layered (booking -> Stripe checkout) and only returns after the last closes. */
+.modal-shell-open [data-support-widget] > button[aria-label="Report a bug"] {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     scroll-behavior: auto !important;

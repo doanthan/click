@@ -157,9 +157,6 @@ function validateStep(step: StepIndex, v: WizardValues): FieldErrors {
     // so every event nobody touched published as "Career". It starts empty now,
     // which makes this the check that stops a wrong one going out.
     if (!v.category.trim()) errors.category = "Pick the category it belongs in.";
-    if (!v.relationshipGoal.trim()) {
-      errors.relationshipGoal = "Say why people should come - one line is plenty.";
-    }
     if (!v.description.trim()) errors.description = "Add a short description.";
   }
 
@@ -435,12 +432,14 @@ function useRetryArm() {
 
 // ---------- context ----------
 
+type EventTagOption = { label: string; category: string | null };
+
 type WizardContextValue = {
   values: WizardValues;
   setValues: Dispatch<SetStateAction<WizardValues>>;
   set: <K extends keyof WizardValues>(key: K, value: WizardValues[K]) => void;
   categoryOptions: string[];
-  tagOptions: string[];
+  tagOptions: EventTagOption[];
   // Suggestions for the Basics step's group/host-name combobox and the Location
   // step's venue combobox - derived server-side from the merchant's profile and
   // past events. Both fields stay freetext; these just save retyping.
@@ -537,7 +536,7 @@ export function EventCreateProvider({
   children,
 }: {
   categoryOptions: string[];
-  tagOptions?: string[];
+  tagOptions?: EventTagOption[];
   hostNameOptions?: string[];
   venueOptions?: string[];
   chargesEnabled?: boolean;
@@ -1192,7 +1191,7 @@ export function WizardShell({
               aria-disabled={uploading || undefined}
               className="text-sm font-semibold text-[color:var(--slate)] underline underline-offset-2 hover:text-[color:var(--purple)] aria-disabled:opacity-60"
             >
-              Exit - kept in this browser
+              Exit (draft stays here)
             </Link>
           </div>
           {!isLast && cameFromReview ? (
@@ -1301,11 +1300,13 @@ function parseTags(value: string): string[] {
 function TagPicker({
   value,
   options,
+  category,
   onChange,
   id,
 }: {
   value: string;
-  options: string[];
+  options: EventTagOption[];
+  category?: string;
   onChange: (next: string) => void;
   /** id of the search input, so the wrapping FormField's label can point at it. */
   id?: string;
@@ -1321,7 +1322,7 @@ function TagPicker({
   // reject non-list input and normalise spelling/casing to the curated label.
   const optionByKey = useMemo(() => {
     const map = new Map<string, string>();
-    for (const opt of options) map.set(opt.toLowerCase(), opt);
+    for (const opt of options) map.set(opt.label.toLowerCase(), opt.label);
     return map;
   }, [options]);
   const atLimit = selected.length >= MAX_TAGS;
@@ -1331,10 +1332,19 @@ function TagPicker({
   // without having to guess search terms.
   const browsable = useMemo(() => {
     const q = query.trim().toLowerCase();
+    const categoryKey = category?.trim().toLowerCase();
     return options
-      .filter((opt) => !selectedKeys.has(opt.toLowerCase()))
-      .filter((opt) => (q ? opt.toLowerCase().includes(q) : true));
-  }, [options, selectedKeys, query]);
+      .filter((opt) => !selectedKeys.has(opt.label.toLowerCase()))
+      .filter((opt) => (q ? opt.label.toLowerCase().includes(q) : true))
+      .map((opt, index) => ({ opt, index }))
+      .sort((a, b) => {
+        if (q || !categoryKey) return a.index - b.index;
+        const aMatches = a.opt.category?.toLowerCase() === categoryKey;
+        const bMatches = b.opt.category?.toLowerCase() === categoryKey;
+        return Number(bMatches) - Number(aMatches) || a.index - b.index;
+      })
+      .map(({ opt }) => opt);
+  }, [options, selectedKeys, query, category]);
 
   const suggestions = browsable;
 
@@ -1361,7 +1371,7 @@ function TagPicker({
     if (e.key === "Enter") {
       // Enter commits the top suggestion (a curated tag), never the raw text.
       e.preventDefault();
-      if (suggestions.length > 0) addTag(suggestions[0]);
+      if (suggestions.length > 0) addTag(suggestions[0].label);
     } else if (e.key === "Backspace" && !query && selected.length > 0) {
       removeTag(selected[selected.length - 1]);
     }
@@ -1418,26 +1428,30 @@ function TagPicker({
           rest. `touch-manipulation` also drops the mobile tap delay. */}
       {!atLimit && browsable.length > 0 ? (
         (() => {
-          const BROWSE_CAP = 14;
+          const BROWSE_CAP = 8;
           const visibleTags = query.trim() ? browsable : browsable.slice(0, BROWSE_CAP);
           const hiddenCount = browsable.length - visibleTags.length;
           return (
             <div className="mt-1">
               <p className="mb-2 text-[12.5px] font-semibold text-[color:var(--slate)]">
-                {query.trim() ? `Matching tags (${browsable.length})` : `Tap to add · ${browsable.length}`}
+                {query.trim()
+                  ? `Matching tags (${browsable.length})`
+                  : category
+                    ? `Suggested tags, ${category} first`
+                    : "Popular tags"}
               </p>
               <ul className="flex flex-wrap gap-2 rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] p-2">
                 {visibleTags.map((opt) => (
-                  <li key={opt}>
+                  <li key={opt.label}>
                     <button
                       type="button"
-                      onClick={() => addTag(opt)}
+                      onClick={() => addTag(opt.label)}
                       // --tap, not the bare 24px tag: here the tag IS the
                       // control, and a 24px target next to 44px buttons asks
                       // for three times the precision for no reason.
                       className="ck-tag ck-tag--select ck-tag--tap touch-manipulation"
                     >
-                      <span aria-hidden className="text-[color:var(--slate)]">+</span> {opt}
+                      <span aria-hidden className="text-[color:var(--slate)]">+</span> {opt.label}
                     </button>
                   </li>
                 ))}
@@ -1706,8 +1720,8 @@ export function BasicsSection() {
             over the right fields and finding out afterwards. */}
         <p className="mt-2 text-sm leading-6 text-[color:var(--slate)]">
           You can edit the title and description later from your event page.
-          Category and who it&apos;s for are fixed once you submit, so take a
-          moment on those.
+          Category is fixed once you submit. Matching details are optional and
+          can use Click&apos;s defaults.
         </p>
       </header>
       <div className="grid gap-4 rise-soft rise-d2 md:grid-cols-2">
@@ -1766,73 +1780,89 @@ export function BasicsSection() {
             </>
           )}
         </FormField>
-        <FormField
-          label="Tags"
-          hint={`Search and pick from Click's tag list - up to ${MAX_TAGS}. They're how we put your event in front of the right members, so pick the ones that really describe the night.`}
-          htmlFor={TAG_SEARCH_ID}
-        >
-          <TagPicker
-            id={TAG_SEARCH_ID}
-            value={values.tags}
-            options={tagOptions}
-            onChange={(next) => set("tags", next)}
+        <div className="md:col-span-2">
+          <FormField
+            as="textarea"
+            label="Short description"
+            required
+            error={fieldErrors.description}
+            id={fieldAnchorId("description")}
+            value={values.description}
+            onChange={(e) => set("description", e.target.value)}
+            rows={4}
+            placeholder="A hosted restaurant table for people who want dinner plans without the awkward group-chat setup…"
           />
-        </FormField>
+        </div>
       </div>
-      <div className="space-y-5 rise-soft rise-d3">
-        {/* No htmlFor: these chips are a GROUP, not one control, so FormField
-            renders role="group" and a click on the label correctly does nothing.
-            It used to toggle the first chip and rewrite the goal sentence. */}
-        <FormField
-          label="Who's this event for?"
-          hint="Pick one or more - we'll draft the goal line below, which you can edit."
-        >
-          <div className="flex flex-wrap gap-2">
-            {EVENT_INTENTS.map((intent) => {
-              const active = selectedIntents.includes(intent.label);
-              return (
-                <button
-                  key={intent.label}
-                  type="button"
-                  aria-pressed={active}
-                  onClick={() => toggleIntent(intent.label)}
-                  // background-color LONGHAND on the selected state, never a
-                  // transitioned `background` shorthand - the shorthand leaves
-                  // the selected chip unpainted mid-transition.
-                  className={`min-h-11 rounded-xl border px-4 text-sm font-medium transition-[background-color,border-color] ${
-                    active
-                      ? "border-transparent bg-[color:var(--purple)] text-[color:var(--champagne)]"
-                      : "border-[color:var(--mist)] bg-[color:var(--paper)] text-[color:var(--ink)] hover:bg-[color:var(--lavender-100)]"
-                  }`}
-                >
-                  {intent.label}
-                </button>
-              );
-            })}
-          </div>
-        </FormField>
-        <FormField
-          label="Why should people come?"
-          hint="One line. It's the &ldquo;Why this event&rdquo; panel on your event page."
-          required
-          error={fieldErrors.relationshipGoal}
-          id={fieldAnchorId("relationshipGoal")}
-          value={values.relationshipGoal}
-          onChange={(e) => set("relationshipGoal", e.target.value)}
-          placeholder="Make dinner feel like the easiest first plan with new people."
-        />
-        <FormField
-          as="textarea"
-          label="Short description"
-          required
-          error={fieldErrors.description}
-          id={fieldAnchorId("description")}
-          value={values.description}
-          onChange={(e) => set("description", e.target.value)}
-          rows={4}
-          placeholder="A hosted restaurant table for people who want dinner plans without the awkward group-chat setup…"
-        />
-      </div>
+      <details className="group rounded-2xl border border-[color:var(--mist)] bg-[color:var(--champagne)] rise-soft rise-d3">
+        <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--purple)] [&::-webkit-details-marker]:hidden">
+          <span>
+            <span className="block text-sm font-semibold text-[color:var(--ink)]">
+              Help Click match this event <span className="font-normal text-[color:var(--slate)]">(optional)</span>
+            </span>
+            <span className="mt-0.5 block text-[12.5px] leading-5 text-[color:var(--slate)]">
+              Suggested tags and audience details help the right people find it.
+            </span>
+          </span>
+          <span aria-hidden className="text-lg text-[color:var(--purple)] transition-transform group-open:rotate-45">
+            +
+          </span>
+        </summary>
+        <div className="space-y-5 border-t border-[color:var(--mist)] px-4 py-4">
+          <FormField
+            label="Tags (optional)"
+            hint={`Pick only the tags that describe the event - up to ${MAX_TAGS}. Category suggestions appear first.`}
+            htmlFor={TAG_SEARCH_ID}
+          >
+            <TagPicker
+              id={TAG_SEARCH_ID}
+              value={values.tags}
+              options={tagOptions}
+              category={values.category}
+              onChange={(next) => set("tags", next)}
+            />
+          </FormField>
+          {/* No htmlFor: these chips are a GROUP, not one control, so FormField
+              renders role="group" and a click on the label correctly does nothing.
+              It used to toggle the first chip and rewrite the goal sentence. */}
+          <FormField
+            label="Who's this event for? (optional)"
+            hint="Pick one or more - we'll draft the goal line below, which you can edit."
+          >
+            <div className="flex flex-wrap gap-2">
+              {EVENT_INTENTS.map((intent) => {
+                const active = selectedIntents.includes(intent.label);
+                return (
+                  <button
+                    key={intent.label}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => toggleIntent(intent.label)}
+                    // background-color LONGHAND on the selected state, never a
+                    // transitioned `background` shorthand - the shorthand leaves
+                    // the selected chip unpainted mid-transition.
+                    className={`min-h-11 rounded-xl border px-4 text-sm font-medium transition-[background-color,border-color] ${
+                      active
+                        ? "border-transparent bg-[color:var(--purple)] text-[color:var(--champagne)]"
+                        : "border-[color:var(--mist)] bg-[color:var(--paper)] text-[color:var(--ink)] hover:bg-[color:var(--lavender-100)]"
+                    }`}
+                  >
+                    {intent.label}
+                  </button>
+                );
+              })}
+            </div>
+          </FormField>
+          <FormField
+            label="Why should people come? (optional)"
+            hint="Add one line for the &ldquo;Why this event&rdquo; panel, or Click will use a simple default."
+            id={fieldAnchorId("relationshipGoal")}
+            value={values.relationshipGoal}
+            onChange={(e) => set("relationshipGoal", e.target.value)}
+            placeholder="Make dinner feel like the easiest first plan with new people."
+          />
+        </div>
+      </details>
     </div>
   );
 }
@@ -3396,7 +3426,11 @@ export function ReviewSection() {
           { label: "Venue", value: values.locationName, step: 2 },
           { label: "Street address", value: values.address, step: 2 },
           { label: "Description", value: values.description, step: 0 },
-          { label: "Why people should come", value: values.relationshipGoal, step: 0 },
+          {
+            label: "Why people should come",
+            value: values.relationshipGoal || "Help people meet through a shared plan.",
+            step: 0,
+          },
           { label: "Runs for", value: durationLabel, step: 1 },
           { label: "Capacity", value: seatsLabel, step: 1 },
           { label: "Price per person", value: payoutLabel, step: 1 },

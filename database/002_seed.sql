@@ -418,16 +418,13 @@ insert into merchant_profiles (
   verification_status,
   stripe_connect_account_id
 )
--- stripe_connect_account_id is seeded NULL: a fake `acct_*` id 404s when the
--- payout-onboarding flow calls accountLinks.create. NULL lets the flow mint a
--- real Connect account on first use.
-select profile.id, merchant.business_name, merchant.abn, merchant.website_url, profile.email, 'approved', merchant.stripe_account::text
+select profile.id, merchant.business_name, merchant.abn, merchant.website_url, profile.email, 'approved', merchant.stripe_account
 from (
   values
-    ('theo@click.local', 'Inner West Fitness Mates', '11 111 111 111', 'https://example.com/fitness', null),
-    ('amelia@click.local', 'Real Conversations Sydney', '22 222 222 222', 'https://example.com/conversations', null),
-    ('noah@click.local', 'Ordinary People Making Things', '33 333 333 333', 'https://example.com/creative', null),
-    ('priya@click.local', 'Sydney Career Switchers', '44 444 444 444', 'https://example.com/career', null)
+    ('theo@click.local', 'Inner West Fitness Mates', '11 111 111 111', 'https://example.com/fitness', 'acct_seed_theo'),
+    ('amelia@click.local', 'Real Conversations Sydney', '22 222 222 222', 'https://example.com/conversations', 'acct_seed_amelia'),
+    ('noah@click.local', 'Ordinary People Making Things', '33 333 333 333', 'https://example.com/creative', 'acct_seed_noah'),
+    ('priya@click.local', 'Sydney Career Switchers', '44 444 444 444', 'https://example.com/career', 'acct_seed_priya')
 ) as merchant(email, business_name, abn, website_url, stripe_account)
 join profiles profile on profile.email = merchant.email
 on conflict (profile_id) do nothing;

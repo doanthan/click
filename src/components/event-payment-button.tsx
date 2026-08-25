@@ -85,6 +85,7 @@ export function EventPaymentButton({
   allowGuests = false,
   availableSeats,
   perSeatCents,
+  bookingFeePerSeatCents = 0,
   eventDateISO,
   // Seats already reserved on a live hold this buyer is coming back to finish.
   // When set, the party size is FIXED to it: createPaymentHold refuses a
@@ -98,6 +99,7 @@ export function EventPaymentButton({
   allowGuests?: boolean;
   availableSeats?: number;
   perSeatCents?: number;
+  bookingFeePerSeatCents?: number;
   eventDateISO?: string;
   resumeSeatCount?: number | null;
 }) {
@@ -142,6 +144,8 @@ export function EventPaymentButton({
   const hasRowError = rowErrors.some(Boolean);
   const needsConsent = namedRows.length > 0 && !consent;
   const totalCents = (perSeatCents ?? 0) * tickets;
+  const bookingFeeTotalCents = bookingFeePerSeatCents * tickets;
+  const ticketSubtotalCents = Math.max(0, totalCents - bookingFeeTotalCents);
 
   function setTicketCount(n: number) {
     const next = Math.max(1, Math.min(maxTickets, n));
@@ -406,6 +410,33 @@ export function EventPaymentButton({
             </div>
           ) : null}
         </div>
+      ) : null}
+
+      {perSeatCents !== undefined ? (
+        <dl className="grid gap-1.5 rounded-[var(--radius-md)] border border-[color:var(--mist)] bg-[color:var(--paper)] p-3 text-[12.5px] leading-5">
+          <div className="flex items-center justify-between gap-4">
+            <dt className="text-[color:var(--slate)]">
+              {tickets} {tickets === 1 ? "ticket" : "tickets"}
+            </dt>
+            <dd className="font-semibold text-[color:var(--ink-soft)]">
+              {formatMoney(ticketSubtotalCents)}
+            </dd>
+          </div>
+          {bookingFeeTotalCents > 0 ? (
+            <div className="flex items-center justify-between gap-4">
+              <dt className="text-[color:var(--slate)]">Booking fee</dt>
+              <dd className="font-semibold text-[color:var(--ink-soft)]">
+                {formatMoney(bookingFeeTotalCents)}
+              </dd>
+            </div>
+          ) : null}
+          <div className="mt-1 flex items-center justify-between gap-4 border-t border-[color:var(--mist)] pt-2">
+            <dt className="font-semibold text-[color:var(--ink)]">Checkout total</dt>
+            <dd className="font-display text-base font-semibold text-[color:var(--ink)]">
+              {formatMoney(totalCents)}
+            </dd>
+          </div>
+        </dl>
       ) : null}
 
       <Button type="button" onClick={() => void startCheckout()} full loading={busy}>

@@ -231,10 +231,10 @@ export default async function TestPage() {
       account: { email: "theo@click.local", label: "Theo (Merchant)" },
       stories: [
         {
-          title: "Registration wizard (4 steps)",
+          title: "Host application (3 steps)",
           spec: "§1",
           description:
-            "Inline Step 0 sign-in/up → business details + ABN (checksum validated server-side) → contact & address → document uploads (ABN cert, insurance, liquor if alcohol) → review & submit. Single merchants INSERT on final submit — no partial rows.",
+            "After account creation: business details → contact & address → review with optional documents. The application is written only on final submit, together with the accepted legal versions.",
           steps: [
             { href: "/merchant/signup", label: "Start signup" },
             { href: "/merchant", label: "Portal (gated until approved)" },
@@ -263,7 +263,7 @@ export default async function TestPage() {
           title: "First-event onboarding checklist",
           spec: "§4",
           description:
-            "On first approved login, show the 5-step checklist (profile → Stripe → first event → preview → submit) instead of an empty dashboard. Persists in merchant_onboarding_checklist until complete.",
+            "On first approved login, hosts can create a free event immediately or connect Stripe first for paid tickets. The explicit choice completes onboarding before opening event creation.",
           steps: [
             { href: "/merchant?tab=dashboard", label: "Dashboard", gap: true },
             { href: "/merchant/events/create", label: "Create first event" },
@@ -283,7 +283,7 @@ export default async function TestPage() {
           title: "Event creation wizard (5 steps)",
           spec: "§5",
           description:
-            "Basics + tags + booking type → when & where (schedule conflict check) → capacity & price (Stripe Connect gate for paid) → media → review. Trusted merchants auto-publish via DB trigger; new merchants go to pending_review.",
+            "Basics with optional matching details → schedule and price → location → optional media → review. Approved hosts auto-publish; paid events also require Stripe payouts.",
           steps: [
             { href: "/merchant/events/create", label: "Create event" },
             { href: "/merchant?tab=events", label: "Status badge" },

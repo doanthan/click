@@ -98,8 +98,8 @@ export function RegisterForm({
 
       {isHost ? (
         <AuthNote icon="info">
-          Next up is the host application: business details, address, documents, review. Free events
-          cost nothing to host.
+          Next is a 3-step host application. Business and contact details are required;
+          verification documents are optional. Free events cost nothing to host.
         </AuthNote>
       ) : (
         <AuthNote>

@@ -79,6 +79,12 @@ test("every provisioned persona carries the three fields the gates read", () => 
   }
 });
 
+test("an approved QA host has the same auto-publish state as a real approval", () => {
+  const provision = readFileSync(path.join(root, "src/lib/qa-provision.ts"), "utf8");
+  assert.match(provision, /auto_approve_events/);
+  assert.match(provision, /merchant\.verificationStatus === "approved"/);
+});
+
 test("a re-provision never stamps over a photo the tester uploaded", () => {
   // provisionQaPersona runs on EVERY persona switch. Uploading an avatar is
   // itself part of UAT, so overwriting photo_url unconditionally would silently

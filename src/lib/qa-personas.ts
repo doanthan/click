@@ -88,7 +88,7 @@ export const QA_PERSONAS: QaPersona[] = [
   {
     email: "sam@click.local",
     label: "Customer becoming a host",
-    exercises: "Onboarded, no host application yet - walks the 4-step merchant signup",
+    exercises: "Onboarded, no host application yet - walks the 3-step host application",
     group: "Start of the journey",
     role: "attendee",
     displayName: "Sam Whitfield",

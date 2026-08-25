@@ -7,6 +7,10 @@ import { Pool } from "pg";
 const root = process.cwd();
 const requestedEnv = process.argv.find((arg) => arg.startsWith("--env="))?.slice(6);
 const envFile = requestedEnv || ".env.production.local";
+// UAT deliberately runs on the production domain with Stripe test mode and QA
+// personas. Keep `release:check` useful there, but make the final launch gate
+// refuse every piece of UAT-only state via `npm run launch:check`.
+const launchMode = process.argv.includes("--launch");
 
 const duplicateKeys = [];
 
@@ -149,6 +153,11 @@ if (
 if (!allowStripeTestMode) {
   errors.push(...stripeKeyIssues);
 } else {
+  if (launchMode) {
+    errors.push(
+      "STRIPE_ALLOW_TEST_MODE must be unset for launch; restore a matching live Stripe key pair.",
+    );
+  }
   if (stripeKeyIssues.length > 0) {
     warnings.push(
       `STRIPE_ALLOW_TEST_MODE=true: this deploy runs against a Stripe sandbox, so no real money moves (${stripeKeyIssues.length} live-key check(s) waived). Unset it and restore live keys before launch.`,
@@ -221,8 +230,14 @@ if (invalidAdminPlaceholders.length > 0) {
 if (adminEmails.length > 0 && !adminEmails.some((email) => !placeholderInbox.test(email))) {
   errors.push("ADMIN_EMAILS must include at least one real monitored inbox.");
 }
+if (launchMode && adminEmails.includes("admin@click.local")) {
+  errors.push("ADMIN_EMAILS must not include admin@click.local for launch.");
+}
 if (value("SAFETY_INBOX_EMAIL") && placeholderInbox.test(value("SAFETY_INBOX_EMAIL"))) {
   errors.push("SAFETY_INBOX_EMAIL must use a real monitored inbox.");
+}
+if (launchMode && value("TEST_SWITCHER_KEY")) {
+  errors.push("TEST_SWITCHER_KEY must be unset for launch.");
 }
 if (value("NEXT_PUBLIC_MODE").toUpperCase() === "DEVELOPMENT") {
   errors.push("NEXT_PUBLIC_MODE must be unset in production.");
@@ -265,7 +280,8 @@ if (value("DATABASE_URL")) {
       const sql = readFileSync(path.join(root, "database", filename), "utf8");
       const checksum = createHash("sha256").update(sql).digest("hex");
       if (applied.get(filename) !== checksum) {
-        warnings.push(`Migration file changed after apply: ${filename}`);
+        const message = `Migration file changed after apply: ${filename}`;
+        (launchMode ? errors : warnings).push(message);
       }
     }
     const objects = await pool.query(
@@ -277,6 +293,42 @@ if (value("DATABASE_URL")) {
     for (const [name, present] of Object.entries(objects.rows[0] ?? {})) {
       if (!present) errors.push(`Required database object is missing: ${name}`);
     }
+
+    if (launchMode) {
+      const launchData = await pool.query(
+        `select
+           (select count(*)::integer
+              from profiles
+             where email::text like '%@click.local') as qa_profiles,
+           (select count(*)::integer
+              from events
+             where slug like 'qa-%') as qa_events,
+           (select count(*)::integer
+              from events
+             where slug not like 'qa-%'
+               and status in ('live', 'featured', 'locked', 'waitlist')
+               and coalesce(ends_at, starts_at) > now()) as public_events,
+           (select count(*)::integer
+              from merchant_profiles merchant
+              join profiles profile on profile.id = merchant.profile_id
+             where profile.email::text not like '%@click.local'
+               and profile.deleted_at is null
+               and merchant.verification_status = 'approved') as approved_merchants`,
+      );
+      const state = launchData.rows[0] ?? {};
+      if (Number(state.qa_profiles) > 0) {
+        errors.push(`Production still contains ${state.qa_profiles} QA profile(s).`);
+      }
+      if (Number(state.qa_events) > 0) {
+        errors.push(`Production still contains ${state.qa_events} QA event(s).`);
+      }
+      if (Number(state.public_events) === 0) {
+        errors.push("Production has no upcoming non-QA public events.");
+      }
+      if (Number(state.approved_merchants) === 0) {
+        warnings.push("Production has no approved non-QA merchants.");
+      }
+    }
   } catch {
     errors.push("Could not verify the production database migration ledger.");
   } finally {
@@ -285,6 +337,7 @@ if (value("DATABASE_URL")) {
 }
 
 console.log(`Release environment: ${loaded ? envFile : "process environment"}`);
+console.log(`Release mode: ${launchMode ? "public launch" : "deployment / UAT"}`);
 for (const warning of warnings) console.warn(`WARN  ${warning}`);
 for (const error of errors) console.error(`FAIL  ${error}`);
 
@@ -293,4 +346,8 @@ if (errors.length > 0) {
   process.exit(1);
 }
 
-console.log("PASS  Production configuration is ready for deployment.");
+console.log(
+  launchMode
+    ? "PASS  Production configuration and data are ready for public launch."
+    : "PASS  Production configuration is ready for deployment / UAT.",
+);

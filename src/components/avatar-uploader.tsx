@@ -29,9 +29,15 @@ type AvatarUploaderProps = {
   /** Fired after a successful upload. Onboarding uses it to know whether to
    *  nudge for a photo on the completion screen. */
   onUploaded?: (url: string) => void;
+  optional?: boolean;
 };
 
-export function AvatarUploader({ initialUrl, displayName, onUploaded }: AvatarUploaderProps) {
+export function AvatarUploader({
+  initialUrl,
+  displayName,
+  onUploaded,
+  optional = false,
+}: AvatarUploaderProps) {
   const inputId = useId();
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -108,6 +114,9 @@ export function AvatarUploader({ initialUrl, displayName, onUploaded }: AvatarUp
     <div className="grid gap-3">
       <span className="flex items-center gap-2.5">
         <span className="eyebrow">Profile photo</span>
+        {optional ? (
+          <span className="text-[12px] font-medium text-[color:var(--slate)]">Optional</span>
+        ) : null}
         {saved ? (
           <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-[color:var(--sage)]">
             <Icon name="check" size={13} stroke={2.6} />

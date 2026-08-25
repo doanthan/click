@@ -28,8 +28,14 @@ test("production metadata endpoints exist", () => {
 
 test("internal routes are blocked centrally", () => {
   const proxy = readFileSync(path.join(root, "src/proxy.ts"), "utf8");
+  const runtimeMode = readFileSync(path.join(root, "src/lib/runtime-mode.ts"), "utf8");
+  const smoke = readFileSync(path.join(root, "scripts/smoke-production.mjs"), "utf8");
   assert.match(proxy, /isInternalRoute/);
   assert.match(proxy, /status: 404/);
+  for (const route of ["/test-stage", "/api/generate-stage"]) {
+    assert.ok(runtimeMode.includes(`"${route}"`), `${route} must be blocked by the proxy`);
+    assert.ok(smoke.includes(`"${route}"`), `${route} must be checked after deployment`);
+  }
 });
 
 test("the stripe webhook handles both payload styles on one route", () => {
@@ -475,6 +481,20 @@ test("the release gate permits only the seeded QA admin beside a real operator",
     /SAFETY_INBOX_EMAIL must use a real monitored inbox/,
     "the safety inbox has no QA exception",
   );
+});
+
+test("the strict launch gate refuses UAT-only production state", () => {
+  const releaseGate = readFileSync(path.join(root, "scripts/release-check.mjs"), "utf8");
+  const pkg = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
+
+  assert.match(pkg.scripts["launch:check"], /release-check\.mjs --launch/);
+  assert.match(releaseGate, /STRIPE_ALLOW_TEST_MODE must be unset for launch/);
+  assert.match(releaseGate, /ADMIN_EMAILS must not include admin@click\.local for launch/);
+  assert.match(releaseGate, /TEST_SWITCHER_KEY must be unset for launch/);
+  assert.match(releaseGate, /Production still contains \$\{state\.qa_profiles\} QA profile/);
+  assert.match(releaseGate, /Production still contains \$\{state\.qa_events\} QA event/);
+  assert.match(releaseGate, /Production has no upcoming non-QA public events/);
+  assert.match(releaseGate, /launchMode \? errors : warnings/);
 });
 
 test("an admin unlocks the QA switcher with their session, not a bare flag", () => {
@@ -999,7 +1019,7 @@ test("retiring a checkout session cannot cancel the seat the buyer is paying for
   );
 });
 
-test("every admin page enforces admin access on its own segment", () => {
+test("every admin page enforces admin access with the page-level guard", () => {
   // src/app/admin/layout.tsx is not a boundary: a layout renders once per
   // segment entry, and an RSC request carrying a crafted Next-Router-State-Tree
   // resumes at the first mismatched segment, so a nested admin page can execute
@@ -1023,10 +1043,22 @@ test("every admin page enforces admin access on its own segment", () => {
     const src = readFileSync(page, "utf8");
     assert.match(
       src,
-      /requireAdminPage\(\)|await auth\(\)/,
+      /requireAdminPage\(\)/,
       `${path.relative(root, page)} relies on the layout for authorization`,
     );
   }
+
+  // Matching Lab catches failures from its pair query so it can render a
+  // useful degraded state. Its aggregate stats query therefore needs its own
+  // repository guard too; otherwise a crafted RSC request can still receive
+  // label, click, impression and cohort counts after the pair gate rejects.
+  const repository = readFileSync(path.join(root, "src/lib/event-repository.ts"), "utf8");
+  const matchingStats = repository.slice(
+    repository.indexOf("export async function getMatchingLabStats"),
+    repository.indexOf("export type EventAttendeePreviewRow"),
+  );
+  assert.match(matchingStats, /session: Session \| null/);
+  assert.match(matchingStats, /await requireAdminProfile\(session\)/);
 });
 
 test("a banned or suspended account cannot book, pay, or join a waitlist", () => {

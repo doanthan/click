@@ -1,4 +1,5 @@
-import { OnboardingNav } from "@/components/merchant-onboarding-wizard";
+import Link from "next/link";
+import { FinishOnboardingButton } from "@/components/merchant-onboarding-wizard";
 
 // Step 1, and the only place the approval news is delivered. The "You're
 // approved" sticker and the h1 used to live in the onboarding layout, so they
@@ -16,7 +17,7 @@ const HIGHLIGHTS = [
   },
   {
     title: "Free or paid - your call",
-    body: "Run free meetups or sell tickets. For paid events, Click handles checkout; you connect your bank in the next step so funds land in your account.",
+    body: "Run free meetups or sell tickets. For paid events, Click handles checkout; connect your bank whenever you are ready to charge.",
   },
   {
     title: "RSVPs + the door, handled",
@@ -60,9 +61,8 @@ export default function OnboardingWelcomePage() {
           Welcome to the host portal.
         </h2>
         <p className="mt-3 text-sm leading-6 text-[color:var(--slate)]">
-          Here&apos;s what hosting looks like from your side. Next up is payouts,
-          so you can take payments - skip it if you&apos;re starting with free
-          events and set it up whenever you&apos;re ready.
+          Here&apos;s what hosting looks like from your side. Start a free event now,
+          or connect payouts first if you want to sell tickets.
         </p>
 
         <ol className="mt-6 grid gap-3">
@@ -85,7 +85,18 @@ export default function OnboardingWelcomePage() {
         </ol>
       </div>
 
-      <OnboardingNav nextHref="/merchant/onboarding/payouts" nextLabel="Set up payouts →" />
+      <div className="flex flex-wrap items-start gap-3">
+        <FinishOnboardingButton
+          href="/merchant/events/create"
+          label="Create a free event →"
+        />
+        <Link
+          href="/merchant/onboarding/payouts"
+          className="ck-btn ck-btn--secondary ck-btn--md"
+        >
+          Set up payouts
+        </Link>
+      </div>
     </div>
   );
 }

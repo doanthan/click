@@ -13,6 +13,7 @@ import {
 } from "./abn";
 import { normalizeAuPhone, validateAuPhone } from "./au-phone";
 import { normalizeWebsiteUrl } from "./website-url";
+import { HOST_TERMS_VERSION, REFUND_POLICY_VERSION } from "./legal-versions";
 import {
   clickEvents,
   interestTagCategories,
@@ -7684,18 +7685,21 @@ export async function getMerchantCategoryOptions(): Promise<MerchantCategoryOpti
  * exist here; anything else is dropped. Falls back to an empty list if the DB
  * is down. New tags are created by admins via /api/admin/tags.
  */
-export async function getMerchantTagOptions(): Promise<string[]> {
+export type MerchantEventTagOption = { label: string; category: string | null };
+
+export async function getMerchantTagOptions(): Promise<MerchantEventTagOption[]> {
   const pool = getPostgresPool();
   if (!pool) return [];
-  const result = await pool.query<{ label: string }>(
-    `select tag.label, count(event_tag.tag_id) as usage
+  const result = await pool.query<MerchantEventTagOption & { usage: string }>(
+    `select tag.label, category.name as category, count(event_tag.tag_id) as usage
        from tags tag
+       left join tag_categories category on category.id = tag.category_id
        left join event_tags event_tag on event_tag.tag_id = tag.id
       where tag.tag_type in ('interest', 'vibe')
-      group by tag.id, tag.label
+      group by tag.id, tag.label, category.name
       order by usage desc, tag.label asc`,
   );
-  return result.rows.map((r) => r.label);
+  return result.rows.map(({ label, category }) => ({ label, category }));
 }
 
 export type MerchantEventCreateOptions = {
@@ -8226,13 +8230,14 @@ export async function registerMerchantWizardSubmit(
           profile_id, business_name, trading_name, abn, acn, business_type,
           phone, contact_email, website_url, socials,
           address_street, address_suburb, address_state, address_postcode,
-          submitted_at
+          submitted_at, host_agreement_accepted_at,
+          host_terms_version, refund_policy_version
         )
         values (
           $1::uuid, $2, nullif($3, ''), $4, nullif($5, ''), $6,
           $7, $8, nullif($9, ''), $10::jsonb,
           $11, $12, $13, $14,
-          now()
+          now(), now(), $15, $16
         )
         on conflict (profile_id) do update set
           business_name = excluded.business_name,
@@ -8265,6 +8270,12 @@ export async function registerMerchantWizardSubmit(
             when merchant_profiles.verification_status = 'rejected' then now()
             else coalesce(merchant_profiles.submitted_at, now())
           end,
+          -- Submitting is the affirmative action named by the disclosure directly
+          -- under the button. Record the exact legal versions attached to this
+          -- submission so support can later answer what the host agreed to.
+          host_agreement_accepted_at = now(),
+          host_terms_version = excluded.host_terms_version,
+          refund_policy_version = excluded.refund_policy_version,
           updated_at = now()
         returning id::text, business_name, contact_email::text, verification_status,
           business_type, stripe_connect_account_id, charges_enabled, payouts_enabled,
@@ -8286,6 +8297,8 @@ export async function registerMerchantWizardSubmit(
         suburb,
         input.addressState,
         postcode,
+        HOST_TERMS_VERSION,
+        REFUND_POLICY_VERSION,
       ],
     );
 
@@ -16730,11 +16743,15 @@ export type MatchingLabStats = {
   mutualThreshold: number;
 };
 
-// Eval snapshot (spec §7.1) + training readiness (spec §4.3). Read-only; the
-// /admin layout already gates admin access.
-export async function getMatchingLabStats(): Promise<MatchingLabStats | null> {
+// Eval snapshot (spec §7.1) + training readiness (spec §4.3). This stays
+// independently admin-gated because an App Router layout is not a security
+// boundary for a crafted RSC request.
+export async function getMatchingLabStats(
+  session: Session | null,
+): Promise<MatchingLabStats | null> {
   const pool = getPostgresPool();
   if (!pool) return null;
+  await requireAdminProfile(session);
 
   const row = (
     await pool.query<{

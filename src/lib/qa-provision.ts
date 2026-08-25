@@ -82,10 +82,10 @@ async function upsertPersona(
     insert into merchant_profiles (
       profile_id, business_name, contact_email, verification_status,
       stripe_connect_account_id, charges_enabled, payouts_enabled,
-      details_submitted, onboarding_completed_at
+      details_submitted, onboarding_completed_at, auto_approve_events
     )
     select p.id, $2, p.email, $3, $4, $5::boolean, $6::boolean, $5::boolean,
-           case when $5::boolean then now() else null end
+           case when $5::boolean then now() else null end, $7::boolean
     from profiles p where p.email = $1::citext
     on conflict (profile_id) do update set
       business_name = excluded.business_name,
@@ -95,6 +95,7 @@ async function upsertPersona(
       payouts_enabled = excluded.payouts_enabled,
       details_submitted = excluded.details_submitted,
       onboarding_completed_at = excluded.onboarding_completed_at,
+      auto_approve_events = excluded.auto_approve_events,
       updated_at = now()
     `,
     [
@@ -104,6 +105,7 @@ async function upsertPersona(
       merchant.stripeAccountId,
       merchant.chargesEnabled,
       merchant.payoutsEnabled,
+      merchant.verificationStatus === "approved",
     ],
   );
 }

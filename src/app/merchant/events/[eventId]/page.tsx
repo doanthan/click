@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/auth";
-import { Badge, ButtonLink, Tag, type BadgeTone } from "@/components/ds";
+import { Badge, ButtonLink, Tag, ckBtn, type BadgeTone } from "@/components/ds";
 import { MerchantEventCancelButton } from "@/components/merchant-event-cancel-button";
 import { MerchantEventDuplicateButton } from "@/components/merchant-event-duplicate-button";
-import { EDIT_SECTION_ID, MerchantEventEditForm } from "@/components/merchant-event-edit-form";
+import { MerchantEventEditForm } from "@/components/merchant-event-edit-form";
 import { MerchantEventResubmitButton } from "@/components/merchant-event-resubmit-button";
 import {
   AttendeeCheckInToggle,
@@ -12,6 +12,7 @@ import {
 } from "@/components/check-in-toggle";
 import { formatPriceLabel } from "@/lib/amounts";
 import { formatEventStartLocal } from "@/lib/datetime";
+import { MERCHANT_EVENT_EDIT_SECTION_ID } from "@/lib/merchant-event-edit";
 import {
   getMerchantCategoryOptions,
   getMerchantEventDetail,
@@ -203,9 +204,15 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
               way to fix a typo on a busy event is to scroll past the whole door
               list - while "Cancel event" was one of the first things in reach. */}
           <div className="flex flex-wrap gap-2">
-            <ButtonLink href={`#${EDIT_SECTION_ID}`} variant="secondary">
-              Edit details
-            </ButtonLink>
+            {/* This must stay a native anchor, not Next's <Link>. Next updates
+                hash-only destinations through history.pushState(), which does
+                not fire the hashchange listener that opens the client editor. */}
+            <a
+              href={`#${MERCHANT_EVENT_EDIT_SECTION_ID}`}
+              className={ckBtn("secondary", "md")}
+            >
+              <span className="ck-btn__label">Edit details</span>
+            </a>
             {/* Nowhere in the whole portal - not the events list, the calendar,
                 the dashboard cards, or the create wizard's success toast - did
                 a host have a way to see their own listing, so checking their

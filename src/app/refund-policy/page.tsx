@@ -1,4 +1,5 @@
 import { LegalPage } from "@/components/legal-page";
+import { LEGAL_LAST_UPDATED_LABEL } from "@/lib/legal-versions";
 
 export const metadata = {
   title: "Refund & Cancellation Policy",
@@ -10,7 +11,7 @@ export default function RefundPolicyPage() {
     <LegalPage
       eyebrow="Legal"
       title="Refund & Cancellation Policy"
-      lastUpdated="18 June 2026"
+      lastUpdated={LEGAL_LAST_UPDATED_LABEL}
       intro="This policy explains when you can cancel a booking, when you are entitled to a refund, and how refunds are processed. It operates alongside your rights under the Australian Consumer Law, which cannot be excluded. Events are run by independent hosts, who may set their own cancellation terms - these are shown on the event before you book."
       sections={[
         {

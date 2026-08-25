@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { LegalPage } from "@/components/legal-page";
+import { LEGAL_LAST_UPDATED_LABEL } from "@/lib/legal-versions";
 
 export const metadata = {
   title: "Terms of Service",
@@ -11,7 +12,7 @@ export default function TermsPage() {
     <LegalPage
       eyebrow="Legal"
       title="Terms of Service"
-      lastUpdated="18 June 2026"
+      lastUpdated={LEGAL_LAST_UPDATED_LABEL}
       intro="These Terms of Service ('Terms') govern your access to and use of Click - an event-first social connection platform operated in Sydney, Australia (the 'Platform'). By creating an account, booking an event, or otherwise using Click, you agree to these Terms. If you do not agree, do not use the Platform."
       sections={[
         {

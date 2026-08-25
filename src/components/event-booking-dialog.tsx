@@ -8,6 +8,7 @@ type EventBookingDialogProps = {
   triggerLabel: string;
   triggerTone?: "rose" | "ink";
   title: string;
+  summary?: ReactNode;
   body: ReactNode;
   children: ReactNode;
 };
@@ -16,6 +17,7 @@ export function EventBookingDialog({
   triggerLabel,
   triggerTone = "rose",
   title,
+  summary,
   body,
   children,
 }: EventBookingDialogProps) {
@@ -85,10 +87,49 @@ export function EventBookingDialog({
               ✕
             </button>
           </div>
+          {summary ? <div className="mt-4">{summary}</div> : null}
           <div className="mt-3 text-sm leading-6 text-[color:var(--ink-soft)]">{body}</div>
           <div className="mt-6">{children}</div>
         </ModalShell>
       ) : null}
     </>
+  );
+}
+
+export function EventBookingSummary({
+  eventTitle,
+  dateLabel,
+  timeLabel,
+  priceLabel,
+  refundLabel,
+}: {
+  eventTitle: string;
+  dateLabel: string;
+  timeLabel: string;
+  priceLabel: string;
+  refundLabel?: string;
+}) {
+  return (
+    <div className="rounded-[var(--radius-md)] bg-[color:var(--lav-bg)] p-3.5">
+      <p className="text-sm font-semibold leading-5 text-[color:var(--ink)]">{eventTitle}</p>
+      <dl className="mt-2 grid gap-1.5 text-[12.5px] leading-5">
+        <div className="grid grid-cols-[4.25rem_1fr] gap-2">
+          <dt className="font-medium text-[color:var(--slate)]">When</dt>
+          <dd className="font-semibold text-[color:var(--ink-soft)]">
+            {dateLabel}, {timeLabel}
+          </dd>
+        </div>
+        <div className="grid grid-cols-[4.25rem_1fr] gap-2">
+          <dt className="font-medium text-[color:var(--slate)]">Price</dt>
+          <dd className="font-semibold text-[color:var(--ink-soft)]">{priceLabel}</dd>
+        </div>
+        {refundLabel ? (
+          <div className="grid grid-cols-[4.25rem_1fr] gap-2">
+            <dt className="font-medium text-[color:var(--slate)]">Refund</dt>
+            <dd className="font-semibold text-[color:var(--ink-soft)]">{refundLabel}</dd>
+          </div>
+        ) : null}
+      </dl>
+    </div>
   );
 }

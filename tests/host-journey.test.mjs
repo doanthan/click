@@ -128,6 +128,29 @@ test("the details route hands the terms straight to the repository gate", () => 
   }
 });
 
+test("the host event header links to the client editor with a server-safe anchor", () => {
+  const page = read("src/app/merchant/events/[eventId]/page.tsx");
+  const editor = read("src/components/merchant-event-edit-form.tsx");
+  const shared = read("src/lib/merchant-event-edit.ts");
+
+  assert.doesNotMatch(
+    page,
+    /import \{[^}]*MERCHANT_EVENT_EDIT_SECTION_ID[^}]*\} from "@\/components\/merchant-event-edit-form"/,
+    "a server component must not import the anchor value from a client module",
+  );
+  assert.match(
+    page,
+    /import \{ MERCHANT_EVENT_EDIT_SECTION_ID \} from "@\/lib\/merchant-event-edit"/,
+  );
+  assert.match(
+    page,
+    /<a\s+href=\{`#\$\{MERCHANT_EVENT_EDIT_SECTION_ID\}`\}\s+className=\{ckBtn\("secondary", "md"\)\}/,
+    "hash-only navigation must use a native anchor so hashchange opens the editor",
+  );
+  assert.match(editor, /id=\{MERCHANT_EVENT_EDIT_SECTION_ID\}/);
+  assert.match(shared, /MERCHANT_EVENT_EDIT_SECTION_ID = "edit-event"/);
+});
+
 /* ---------------- merchant self-service must not touch verified identity ---------------- */
 
 test("merchant self-service cannot rewrite what an admin verified", () => {
@@ -256,6 +279,17 @@ test("check-in routes to the table that matches the seat kind", () => {
   assert.match(panel, /toggleAttendeeCheckInAction/, "tickets write event_attendees.checked_in_at");
 });
 
+test("the attendee CSV keeps its blob alive until the browser accepts it", () => {
+  const panel = read("src/components/merchant-attendees-panel.tsx");
+  assert.match(panel, /document\.body\.appendChild\(a\)/, "the link must enter the document");
+  assert.match(panel, /a\.remove\(\)/, "the temporary link must be removed after the click");
+  assert.match(
+    panel,
+    /window\.setTimeout\(\(\) => URL\.revokeObjectURL\(url\), 1_000\)/,
+    "the blob URL must not be revoked in the same task as the click",
+  );
+});
+
 /* ---------------- one status derivation for the whole portal ---------------- */
 
 test("every host surface derives event status from one helper", () => {
@@ -363,4 +397,44 @@ test("no host surface names a payout schedule the code does not set", () => {
       `${file} promises a payout cadence nothing sets`,
     );
   }
+});
+
+test("host application acceptance records the legal versions in effect", () => {
+  const migration = read("database/060_host_agreement_acceptance.sql");
+  const repo = read("src/lib/event-repository.ts");
+  const versions = read("src/lib/legal-versions.ts");
+
+  for (const column of [
+    "host_agreement_accepted_at",
+    "host_terms_version",
+    "refund_policy_version",
+  ]) {
+    assert.match(migration, new RegExp(column));
+    assert.match(repo, new RegExp(column));
+  }
+  assert.match(repo, /HOST_TERMS_VERSION/);
+  assert.match(repo, /REFUND_POLICY_VERSION/);
+  assert.match(versions, /2026-06-18/);
+});
+
+test("a newly approved host can start a free event without visiting payouts", () => {
+  const welcome = read("src/app/merchant/onboarding/welcome/page.tsx");
+  assert.match(welcome, /FinishOnboardingButton/);
+  assert.match(welcome, /href="\/merchant\/events\/create"/);
+  assert.match(welcome, /label="Create a free event →"/);
+  assert.match(welcome, /href="\/merchant\/onboarding\/payouts"/);
+});
+
+test("event matching details are optional and keep a server fallback", () => {
+  const wizard = read("src/components/event-create-wizard.tsx");
+  const basicsValidation = wizard.slice(
+    wizard.indexOf("if (step === 0)"),
+    wizard.indexOf("if (step === 1)"),
+  );
+  assert.doesNotMatch(basicsValidation, /relationshipGoal/);
+  assert.match(wizard, /Help Click match this event/);
+  assert.match(wizard, /Category suggestions appear first/);
+
+  const repo = read("src/lib/event-repository.ts");
+  assert.match(repo, /input\.relationshipGoal\.trim\(\) \|\| "Help people meet through a shared plan\."/);
 });

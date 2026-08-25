@@ -52,7 +52,9 @@ function deriveCityPulse(events: EventItem[]) {
       : events.length > 0
         ? `${events.length} upcoming ${events.length === 1 ? "event" : "events"}`
         : null,
-    peopleGoing > 0 ? `${peopleGoing} people already going` : null,
+    peopleGoing > 0
+      ? `${peopleGoing} ${peopleGoing === 1 ? "person" : "people"} already going`
+      : null,
     nextEvent ? `Next up: ${nextEvent.title} in ${nextEvent.suburb}` : null,
     hosts.size > 0 ? `${hosts.size} local ${hosts.size === 1 ? "host" : "hosts"}` : null,
     suburbs.size > 1 ? `Plans across ${suburbs.size} Sydney suburbs` : null,

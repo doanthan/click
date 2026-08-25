@@ -1,10 +1,10 @@
-import { auth } from "@/auth";
 import {
   getCuratedPairToLabel,
   getMatchingLabStats,
   type LabelMember,
 } from "@/lib/event-repository";
 import { SubmitButton } from "@/components/ds-client";
+import { requireAdminPage } from "@/lib/admin-guard";
 import { isProductionDeployment } from "@/lib/runtime-mode";
 import { submitLabelAction, undoLastLabelAction } from "./actions";
 import { JudgmentShortcuts } from "./judgment-shortcuts";
@@ -33,7 +33,7 @@ export default async function MatchingLabPage({
 }: {
   searchParams?: Promise<{ save?: string; undo?: string }>;
 }) {
-  const session = await auth();
+  const session = await requireAdminPage();
   const params = await searchParams;
   // A failed judgment redirects here with ?save=failed - see actions.ts. The
   // action used to swallow the error and revalidate, which made a dropped label
@@ -55,7 +55,7 @@ export default async function MatchingLabPage({
         return { pair: null, failed: true };
       },
     ),
-    getMatchingLabStats(),
+    getMatchingLabStats(session),
   ]);
   const pair = pairResult.pair;
 

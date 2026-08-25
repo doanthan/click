@@ -8,6 +8,7 @@ import { SUPPORT_EMAIL_DEFAULT } from "@/lib/email-templates/tokens";
 import { useFormDraft } from "@/lib/use-form-draft";
 import { DURATION_OPTIONS, nearestDurationValue } from "@/lib/event-duration";
 import { CAPACITY_PATTERN, PRICE_PATTERN, sanitizeAmount } from "@/lib/amounts";
+import { MERCHANT_EVENT_EDIT_SECTION_ID } from "@/lib/merchant-event-edit";
 import { useUnsavedGuard } from "@/lib/use-unsaved-guard";
 
 type Tag = { slug: string; label: string };
@@ -39,11 +40,6 @@ type Draft = {
 const DRAFT_VERSION = 2;
 
 type Message = { kind: "ok" | "error" | "note"; text: string; id: number };
-
-// The in-page anchor the header's "Edit details" link targets. The panel opens
-// itself when it is the target, so the link lands on a form and not on a
-// collapsed card the merchant then has to find and tap again.
-export const EDIT_SECTION_ID = "edit-event";
 
 // Merchant self-service editor for an event's SAFE fields (title, description,
 // street address, interest tags). Price / time / capacity are intentionally NOT
@@ -251,7 +247,7 @@ export function MerchantEventEditForm({
 
   useEffect(() => {
     function openFromHash() {
-      if (window.location.hash === `#${EDIT_SECTION_ID}`) setOpen(true);
+      if (window.location.hash === `#${MERCHANT_EVENT_EDIT_SECTION_ID}`) setOpen(true);
     }
     // Read in an effect, not during render: window.location does not exist on
     // the server and the two renders have to agree.
@@ -460,7 +456,7 @@ export function MerchantEventEditForm({
 
   return (
     <section
-      id={EDIT_SECTION_ID}
+      id={MERCHANT_EVENT_EDIT_SECTION_ID}
       className="mt-10 scroll-mt-8 rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)] p-6"
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -476,7 +472,7 @@ export function MerchantEventEditForm({
           type="button"
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
-          aria-controls={`${EDIT_SECTION_ID}-panel`}
+          aria-controls={`${MERCHANT_EVENT_EDIT_SECTION_ID}-panel`}
           className="ck-btn ck-btn--secondary ck-btn--sm"
         >
           {open ? "Close" : "Edit details"}
@@ -484,7 +480,10 @@ export function MerchantEventEditForm({
       </div>
 
       {open ? (
-        <div id={`${EDIT_SECTION_ID}-panel`} className="rise-soft mt-5 space-y-5">
+        <div
+          id={`${MERCHANT_EVENT_EDIT_SECTION_ID}-panel`}
+          className="rise-soft mt-5 space-y-5"
+        >
           {restoredDraft ? (
             <p
               role="status"

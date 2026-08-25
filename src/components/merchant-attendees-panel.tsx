@@ -90,8 +90,13 @@ export function MerchantAttendeesPanel({ rows }: { rows: MerchantAllAttendeesRow
     const a = document.createElement("a");
     a.href = url;
     a.download = `click-attendees-${new Date().toISOString().slice(0, 10)}.csv`;
+    // Safari and embedded browsers are more reliable when the synthetic link
+    // participates in the document and the blob URL survives beyond the click
+    // task. Immediate revocation can race the browser's download hand-off.
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
+    a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
     toast.success(`Exported ${filtered.length} attendee${filtered.length === 1 ? "" : "s"}.`);
   }
 

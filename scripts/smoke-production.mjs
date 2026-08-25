@@ -15,6 +15,8 @@ const checks = [
   ["/scale", [404]],
   ["/api/tables/profiles/rows", [404]],
   ["/api/generate", [404]],
+  ["/test-stage", [404]],
+  ["/api/generate-stage", [404]],
   ["/api/test/supabase-log", [404]],
 ];
 

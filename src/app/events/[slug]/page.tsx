@@ -4,7 +4,10 @@ import { notFound } from "next/navigation";
 import { auth } from "@/auth";
 import { Icon, Tag } from "@/components/ds";
 import { EventAttendeePreview } from "@/components/event-attendee-preview";
-import { EventBookingDialog } from "@/components/event-booking-dialog";
+import {
+  EventBookingDialog,
+  EventBookingSummary,
+} from "@/components/event-booking-dialog";
 import { EventMediaGallery } from "@/components/event-media-gallery";
 import { EventVenueMap } from "@/components/event-venue-map";
 import { EventPaymentButton } from "@/components/event-payment-button";
@@ -273,6 +276,18 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
     : 0;
   const totalCents = event.priceCents + bookingFeeCents;
   const hasBookingFee = bookingFeeCents > 0;
+  const fullRefundCutoffMs = startsAtMs - 48 * 3_600_000;
+  const halfRefundCutoffMs = startsAtMs - 24 * 3_600_000;
+  const formatCutoff = (timestamp: number) => {
+    const iso = new Date(timestamp).toISOString();
+    return `${formatLongDate(iso)} at ${formatTimeRange(iso, null)}`;
+  };
+  const bookingRefundLabel =
+    nowMs <= fullRefundCutoffMs
+      ? `Full refund until ${formatCutoff(fullRefundCutoffMs)}`
+      : nowMs <= halfRefundCutoffMs
+        ? `50% refund until ${formatCutoff(halfRefundCutoffMs)}`
+        : "No standard refund within 24 hours of the event";
   // Exact refund the viewer would get if they cancel their paid booking now -
   // shown in the cancel confirmation so the number matches what we refund.
   // Seats this booking actually paid for: the viewer's own, plus every guest
@@ -762,6 +777,15 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                         <EventBookingDialog
                           triggerLabel="RSVP"
                           title={`Reserve a seat for ${formatPriceLabel(totalCents, "AUD")}?`}
+                          summary={
+                            <EventBookingSummary
+                              eventTitle={event.title}
+                              dateLabel={formatLongDate(event.startsAt)}
+                              timeLabel={formatTimeRange(event.startsAt, event.endsAt)}
+                              priceLabel={`${formatPriceLabel(totalCents, "AUD")} per person`}
+                              refundLabel={bookingRefundLabel}
+                            />
+                          }
                           body={
                             <>
                               {event.viewerClashEventTitle ? (
@@ -792,6 +816,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                             allowGuests
                             availableSeats={Math.max(0, event.capacity - event.attendees)}
                             perSeatCents={totalCents}
+                            bookingFeePerSeatCents={bookingFeeCents}
                             eventDateISO={event.startsAt}
                           />
                         </EventBookingDialog>
@@ -800,6 +825,14 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                       <EventBookingDialog
                         triggerLabel="RSVP"
                         title="RSVP to this event?"
+                        summary={
+                          <EventBookingSummary
+                            eventTitle={event.title}
+                            dateLabel={formatLongDate(event.startsAt)}
+                            timeLabel={formatTimeRange(event.startsAt, event.endsAt)}
+                            priceLabel="No charge"
+                          />
+                        }
                         body={
                           <>
                             {event.viewerClashEventTitle ? (
