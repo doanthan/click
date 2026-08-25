@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 import { finding } from './findings.mjs';
@@ -7,6 +8,11 @@ import { parseAnyColor, resolveLengthPx } from './rules/checks.mjs';
 
 const DESIGN_NAMES = ['DESIGN.md', 'Design.md', 'design.md'];
 const FALLBACK_DIRS = ['.agents/context', 'docs'];
+// Files/dirs whose presence marks a directory as a project root. Mirrors the
+// walk-up semantics of skill/scripts/context.mjs (`resolveProject`), which the
+// CLI can't import (separate tree). `.git` and `package.json` are the common
+// boundaries; `.impeccable` is our own project marker.
+const PROJECT_ROOT_MARKERS = ['.git', 'package.json', '.impeccable'];
 const COLOR_CHANNEL_TOLERANCE = 6;
 const RADIUS_TOLERANCE_PX = 0.5;
 const FONT_SIZE_TOLERANCE_PX = 0.5;
@@ -136,10 +142,73 @@ function stripInlineYamlComment(s) {
   return s;
 }
 
+// YAML double-quoted scalars process backslash escapes. Stripping the outer
+// quotes without unescaping leaves them in place, so a nested font family like
+//   fontFamily: "\"IBM Plex Sans\", system-ui, sans-serif"
+// reaches allowedFonts as '\"ibm plex sans' and never matches the same family
+// declared in CSS. Scanner instead of a regex: the escape set is small and the
+// backslash handling stays readable.
+// The full YAML 1.2 double-quote escape set (spec section 5.7).
+const YAML_SIMPLE_ESCAPES = {
+  '0': '\0',
+  a: '\x07',
+  b: '\b',
+  t: '\t',
+  n: '\n',
+  v: '\v',
+  f: '\f',
+  r: '\r',
+  e: '\x1b',
+  ' ': ' ',
+  '"': '"',
+  '/': '/',
+  '\\': '\\',
+  N: '\u0085',
+  _: '\u00a0',
+  L: '\u2028',
+  P: '\u2029',
+};
+const YAML_HEX_ESCAPE_LENGTHS = { x: 2, u: 4, U: 8 };
+
+function unescapeYamlDoubleQuoted(body) {
+  let out = '';
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i];
+    if (ch !== '\\' || i === body.length - 1) {
+      out += ch;
+      continue;
+    }
+    const next = body[i + 1];
+    if (Object.prototype.hasOwnProperty.call(YAML_SIMPLE_ESCAPES, next)) {
+      out += YAML_SIMPLE_ESCAPES[next];
+      i++;
+      continue;
+    }
+    // \xNN, \uNNNN, \UNNNNNNNN. Malformed or out-of-range sequences stay
+    // literal rather than corrupting the rest of the scalar.
+    const hexLen = YAML_HEX_ESCAPE_LENGTHS[next];
+    if (hexLen) {
+      const hex = body.slice(i + 2, i + 2 + hexLen);
+      const codePoint = hex.length === hexLen && /^[0-9a-fA-F]+$/.test(hex) ? parseInt(hex, 16) : -1;
+      if (codePoint >= 0 && codePoint <= 0x10ffff) {
+        out += String.fromCodePoint(codePoint);
+        i += 1 + hexLen;
+        continue;
+      }
+    }
+    out += ch;
+  }
+  return out;
+}
+
 function parseScalar(raw) {
   const s = raw.trim();
-  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
-    return s.slice(1, -1);
+  if (s.length >= 2 && s.startsWith('"') && s.endsWith('"')) {
+    return unescapeYamlDoubleQuoted(s.slice(1, -1));
+  }
+  // Single-quoted YAML escapes only the quote itself, by doubling it.
+  if (s.length >= 2 && s.startsWith("'") && s.endsWith("'")) {
+    return s.slice(1, -1).split("''").join("'");
   }
   if (s === 'true') return true;
   if (s === 'false') return false;
@@ -467,6 +536,62 @@ function loadDesignSystemForCwd(cwd = process.cwd()) {
     sidecarPath,
     mdNewerThanJson: !!(mdStat && sidecarStat && mdStat.mtimeMs > sidecarStat.mtimeMs + 1000),
   });
+}
+
+// Directory to begin the project-root walk from, given a scan target that may
+// be a file or a directory (and may not exist yet).
+function designSystemStartDir(targetPath, cwd = process.cwd()) {
+  const abs = path.isAbsolute(targetPath) ? targetPath : path.resolve(cwd, targetPath);
+  try {
+    return fs.statSync(abs).isDirectory() ? abs : path.dirname(abs);
+  } catch {
+    // Nonexistent path: treat an extension-bearing leaf as a file.
+    return path.extname(abs) ? path.dirname(abs) : abs;
+  }
+}
+
+// Walk up from `startDir` to the directory that governs the target's design
+// system, mirroring skill/scripts/context.mjs's project-boundary semantics:
+//
+//   - A directory carrying a DESIGN.md (directly or in a fallback dir) IS the
+//     design root — that's where the rules live.
+//   - A directory carrying a project marker (.git / package.json / .impeccable)
+//     but no DESIGN.md is a project BOUNDARY: the walk stops with no design
+//     system, so a sibling project never inherits a parent's or cwd's rules.
+//   - Reaching the home directory / filesystem root with neither means no
+//     design system at all — never process.cwd()'s.
+//
+// Returns { dir, hasDesign } for the stopping directory, or null when the walk
+// runs out. This is the fix for cross-project contamination.
+export function findDesignRoot(startDir) {
+  let dir = path.resolve(startDir);
+  const homeDir = path.resolve(os.homedir());
+  while (true) {
+    if (resolveDesignMdPath(dir)) return { dir, hasDesign: true };
+    if (PROJECT_ROOT_MARKERS.some((marker) => fs.existsSync(path.join(dir, marker)))) {
+      return { dir, hasDesign: false };
+    }
+    if (dir === homeDir) return null;
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+// Resolve the design system that governs a specific scan target, by walking up
+// from the target's own location — never process.cwd(). Scanning project B's
+// files from inside project A applies B's DESIGN.md (or none), not A's.
+//
+// Pass a `cache` Map to memoize by resolved design root across a multi-file
+// scan; a target with no design root above it resolves to null.
+export function loadDesignSystemForTarget(targetPath, { cache, cwd = process.cwd() } = {}) {
+  const startDir = designSystemStartDir(targetPath, cwd);
+  const found = findDesignRoot(startDir);
+  const key = found ? `root:${found.dir}` : '\0none';
+  if (cache && cache.has(key)) return cache.get(key);
+  const loaded = found?.hasDesign ? loadDesignSystemForCwd(found.dir) : null;
+  if (cache) cache.set(key, loaded);
+  return loaded;
 }
 
 function isAllowedFont(font, designSystem) {
