@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AdminQaAccessControl } from "@/components/admin-qa-access-control";
 import { Badge } from "@/components/ds";
 import { QA_PERSONAS } from "@/lib/qa-personas";
 
@@ -9,9 +10,10 @@ import { QA_PERSONAS } from "@/lib/qa-personas";
  * browser that has unlocked it. This section is the signpost and control for
  * that per-browser setting.
  *
- * Both buttons are plain links to /qa-unlock, which is a route handler: the
- * unlock is a cookie on the redirect response, and a Server Component cannot
- * set one.
+ * The control posts to a server action that changes the HttpOnly unlock cookie
+ * in place. It deliberately does not navigate: this page also owns editable
+ * system settings, and enabling an independent testing tool must not trip their
+ * leave-without-saving warning or discard their draft.
  */
 export function AdminQaAccess({
   unlocked,
@@ -36,8 +38,8 @@ export function AdminQaAccess({
           </h3>
           <p className="mt-2 max-w-xl text-sm leading-6 text-[color:var(--slate)]">
             {unlocked
-              ? `Open your avatar menu and choose Switch account. You can move between ${QA_PERSONAS.length} seeded accounts - hosts, customers and an admin - to walk a booking, payout or click from both sides.${alwaysOn ? "" : " Access stays on for 12 hours."}`
-              : `Adds Switch account to your avatar menu on this browser. It signs you in as any of ${QA_PERSONAS.length} seeded accounts - hosts, customers and an admin - so you can test each side without signing out first.`}
+              ? `Open the testing workspace to start a scenario fresh, or use Test as another person in your avatar menu to keep existing progress. There are ${QA_PERSONAS.length} seeded customers, hosts, and an admin.${alwaysOn ? "" : " Access stays on for 12 hours."}`
+              : `Adds the testing workspace and Test as another person to this browser. You can use ${QA_PERSONAS.length} seeded customers, hosts, and an admin without changing a real account.`}
           </p>
           <p className="mt-2 max-w-xl text-sm leading-6 text-[color:var(--slate)]">
             The accounts and everything they create live in the{" "}
@@ -46,14 +48,12 @@ export function AdminQaAccess({
           </p>
         </div>
 
-        {alwaysOn ? null : unlocked ? (
-          <Link href="/qa-unlock?lock=1&back=admin" className="ck-btn ck-btn--secondary ck-btn--md">
-            Turn off
+        {alwaysOn ? (
+          <Link href="/test" className="ck-btn ck-btn--primary ck-btn--md whitespace-nowrap">
+            Open testing workspace
           </Link>
         ) : (
-          <Link href="/qa-unlock?back=admin" className="ck-btn ck-btn--primary ck-btn--md">
-            Turn on
-          </Link>
+          <AdminQaAccessControl unlocked={unlocked} />
         )}
       </div>
     </section>

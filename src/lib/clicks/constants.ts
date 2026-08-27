@@ -39,6 +39,30 @@ export const SUGGESTION_WINDOW_DAYS = 30;
 /** Joint counter-propose budget per coordination attempt (§B4 / legacy proposal cap). */
 export const PROPOSAL_ALTERNATIVES_CAP = 3;
 
+// ── No-show suppression (§B7.3) ──────────────────────────────────────────────────────
+// "count(*) free-event no-shows in last 90d >= 2 → post_event_click_suppressed_until
+// = now()+30d". Payment is the commitment, so this only ever looks at FREE events -
+// a paid no-show already cost the person something.
+//
+// The spec's own caveat, kept here because it is easy to mistake for a bug: the signal
+// is event_attendees.checked_in_at, which is only ever written when the merchant runs
+// the optional door list. On an event nobody was checked into, no attendee can be
+// distinguished from a no-show, so the guard deliberately does not fire at all rather
+// than invent one. 21 §6.4 accepts that for MVP - making it stricter would make
+// check-in load-bearing, which is banned.
+/** Free-event no-shows inside the lookback that trip the suppression. */
+export const NO_SHOW_SUPPRESSION_THRESHOLD = 2;
+/** How far back the no-show count reaches. */
+export const NO_SHOW_LOOKBACK_DAYS = 90;
+/** How long the post-event click surface is withheld once tripped. */
+export const NO_SHOW_SUPPRESSION_DAYS = 30;
+
+// ── Re-engagement / liveness (§B7.4b) ────────────────────────────────────────────────
+/** No app open for this long and the profile is down-ranked in discovery (never removed). */
+export const INACTIVE_DOWNRANK_DAYS = 30;
+/** Still gone this long after the click-triggered re-engagement mail -> fully hidden. */
+export const REENGAGEMENT_GRACE_DAYS = 14;
+
 // ── Post-event prompt (§6.8) ─────────────────────────────────────────────────────────
 /** "Did you click with someone?" fires at event_end + this many hours (supersedes 12h). */
 export const POST_EVENT_PROMPT_DELAY_HOURS = 2;

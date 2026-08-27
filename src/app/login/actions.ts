@@ -2,11 +2,12 @@
 
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { signIn, signOut } from "@/auth";
+import { auth, signIn, signOut } from "@/auth";
 import { authErrorMessage } from "@/lib/auth-error-copy";
 import { profileExistsByEmail } from "@/lib/event-repository";
 import { assertTestSwitcherUnlocked } from "@/lib/test-switcher";
 import { provisionQaPersona, resetQaData } from "@/lib/qa-provision";
+import { findQaPersona } from "@/lib/qa-personas";
 import {
   TOKEN_TTL_MINUTES,
   issueMagicLink,
@@ -166,6 +167,27 @@ function safeCallbackUrl(value: string) {
   return `/post-login?next=${encodeURIComponent(value)}`;
 }
 
+function freshScenarioDestination(path: string) {
+  return `${path}${path.includes("?") ? "&" : "?"}qaFresh=1`;
+}
+
+// Auth.js resolves a relative `redirectTo` against AUTH_URL. That is normally
+// exactly what we want, but it breaks the local QA switcher when the developer
+// opens 127.0.0.1 while AUTH_URL names localhost (or the reverse): the session
+// cookie is written for the page's hostname and the Auth redirect immediately
+// moves to the other hostname, where that cookie does not exist. Mint the
+// session without letting Auth navigate, then use Next's relative redirect so
+// the browser stays on the same origin it used to submit the server action.
+async function signInQaPersonaOnCurrentOrigin(email: string, destination: string) {
+  await signIn("test-login", { email, redirect: false });
+  redirect(destination);
+}
+
+async function signOutOnCurrentOrigin(destination: string) {
+  await signOut({ redirect: false });
+  redirect(destination);
+}
+
 export async function signInWithGoogle(formData: FormData) {
   await signIn("google", {
     redirectTo: safeCallbackUrl(getFormValue(formData, "callbackUrl")),
@@ -212,7 +234,7 @@ export async function signInWithEmail(formData: FormData) {
 }
 
 export async function signOutOfClick() {
-  await signOut({ redirectTo: "/" });
+  await signOutOnCurrentOrigin("/");
 }
 
 // Clear the session from the persona switcher so you can exercise the
@@ -226,7 +248,7 @@ export async function signOutOfTestAccount(formData: FormData) {
   const next = getFormValue(formData, "redirectTo");
   const dest = next.startsWith("/") && !next.startsWith("//") ? next : "/";
 
-  await signOut({ redirectTo: dest });
+  await signOutOnCurrentOrigin(dest);
 }
 
 // Instant sign-in as one of the seeded QA personas so you can hop between
@@ -248,7 +270,7 @@ export async function signInAsTestAccount(formData: FormData) {
   // put you in a state you'd then report as a bug.
   await provisionQaPersona(email);
 
-  await signIn("test-login", { email, redirectTo: "/post-login" });
+  await signInQaPersonaOnCurrentOrigin(email, "/post-login");
 }
 
 // Delete every QA persona and their events so the sign-up journeys start from
@@ -258,25 +280,39 @@ export async function signInAsTestAccount(formData: FormData) {
 export async function resetTestAccounts() {
   await assertTestSwitcherUnlocked("QA data reset");
   await resetQaData();
-  await signOut({ redirectTo: "/" });
+  await signOutOnCurrentOrigin("/");
 }
 
-// Kick off a /test journey as the persona's seeded account. Unlike
-// signInAsTestAccount, this lands directly on the journey's first step (`next`)
-// instead of funneling through /post-login, so you walk the journey from where
-// it actually begins rather than being re-routed by the role gates. `next` is
-// constrained to a local path.
+// Start one exact scenario from /test. Unlike the quick account switcher, this
+// resets only the selected persona before signing in, then opens the first page
+// declared by that persona. Other QA accounts keep their work, which is what
+// allows two-person Click tests and the Sam -> Admin -> Sam approval journey.
 //
 // SECURITY: same unlock and @click.local restrictions as the switcher.
-export async function startTestJourney(formData: FormData) {
-  await assertTestSwitcherUnlocked("Test journeys");
+export async function startTestScenario(formData: FormData) {
+  await assertTestSwitcherUnlocked("Test scenarios");
   const email = getFormValue(formData, "email").toLowerCase();
-  if (!email.endsWith("@click.local")) return;
+  const persona = findQaPersona(email);
+  if (!persona) return;
 
-  const next = getFormValue(formData, "next");
-  const dest = next.startsWith("/") && !next.startsWith("//") ? next : "/post-login";
+  await provisionQaPersona(persona.email, { resetTarget: true });
+  await signInQaPersonaOnCurrentOrigin(
+    persona.email,
+    freshScenarioDestination(persona.startPath),
+  );
+}
 
-  await signIn("test-login", { email, redirectTo: dest });
+// Reset the active QA persona from the persistent testing banner. The current
+// session determines the target, so the form cannot reset a different account
+// by changing a hidden field.
+export async function resetCurrentTestScenario() {
+  await assertTestSwitcherUnlocked("Test scenario reset");
+  const session = await auth();
+  const persona = findQaPersona(session?.user?.email ?? "");
+  if (!persona) redirect("/");
+
+  await provisionQaPersona(persona.email, { resetTarget: true });
+  redirect(freshScenarioDestination(persona.startPath));
 }
 
 export type EmailLoginFormState = { error: string | null; sent: boolean };

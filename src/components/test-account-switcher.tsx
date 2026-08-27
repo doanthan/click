@@ -1,20 +1,22 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useFormStatus } from "react-dom";
 import {
-  resetTestAccounts,
   signInAsTestAccount,
   signOutOfTestAccount,
 } from "@/app/login/actions";
-import { QA_PERSONAS } from "@/lib/qa-personas";
+import { QA_PERSONAS, QA_SCENARIO_GROUPS } from "@/lib/qa-personas";
 import { Icon } from "./ds";
 
-// QA persona switcher. Signed-in people reach these rows from "Switch account"
+// QA persona switcher. Signed-in people reach these rows from "Test as another person"
 // in the avatar menu. The floating variant remains for the signed-out state,
 // where there is no avatar menu but a tester still needs a route back in.
 //
-// Nothing to set up: picking a persona provisions its rows first (see
-// src/lib/qa-provision.ts), so there is no seed script and no order to follow.
+// Picking a persona here CONTINUES its current state. Starting over belongs in
+// /test, where the selected scenario is reset explicitly before sign-in. This
+// distinction is what lets a tester switch between two people without erasing
+// the interaction they are testing.
 //
 // Mounted in local dev, and on a deployed environment only for a browser
 // holding the TEST_SWITCHER_KEY unlock cookie. Every server action behind it
@@ -27,34 +29,61 @@ import { Icon } from "./ds";
 //    (used on /test). `redirectTo` controls where sign-out lands so the inline
 //    panel can keep you on /test instead of bouncing home.
 
-const GROUPS = [
-  "Start of the journey",
-  "Clicking with each other",
-  "Skip ahead",
-] as const;
-
 function PersonaButton({
   label,
   exercises,
   active,
+  pendingLabel = "Switching...",
 }: {
   label: string;
   exercises: string;
   active: boolean;
+  /** Replaces `exercises` while this row's form is in flight. */
+  pendingLabel?: string;
 }) {
+  // signInAsTestAccount provisions the persona's whole data set BEFORE minting
+  // the session, then redirects - seconds, not milliseconds. With no busy state
+  // the press read as ignored and testers clicked a second persona on top of it.
+  const { pending } = useFormStatus();
+
   return (
     <button
       type="submit"
       aria-current={active || undefined}
+      aria-busy={pending || undefined}
+      /* aria-disabled, not `disabled`: the browser blurs a disabled element, so
+         disabling the row the user just pressed would dump keyboard and screen
+         reader users at the top of the document mid-switch. Same trade the DS
+         Button makes - and like it, the click guard below is what actually stops
+         a second provision run, since aria-disabled is advisory only. */
+      aria-disabled={pending || undefined}
+      onClick={
+        pending
+          ? (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }
+          : undefined
+      }
       className={`w-full rounded-xl px-3 py-2.5 text-left transition-colors ${
         active
           ? "bg-[color:var(--purple)] text-[color:var(--paper)]"
           : "text-[color:var(--ink)] hover:bg-[color:var(--lavender-100)]"
-      }`}
+      } ${pending ? "cursor-progress" : ""}`}
     >
       <span className="flex items-baseline justify-between gap-2">
         <span className="text-[13.5px] font-semibold">{label}</span>
-        {active ? (
+        {pending ? (
+          /* Reuses the DS ck-spin keyframes; .ck-btn__spinner itself is
+             position:absolute and only works inside a .ck-btn. Under
+             prefers-reduced-motion the global block freezes it - the label is
+             what carries the meaning. */
+          <span
+            aria-hidden
+            style={{ animation: "ck-spin .7s linear infinite" }}
+            className="h-3.5 w-3.5 shrink-0 self-center rounded-full border-2 border-current border-t-transparent opacity-70"
+          />
+        ) : active ? (
           <span className="rounded-md bg-[rgba(255,255,255,0.18)] px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none tracking-[0.08em]">
             Now
           </span>
@@ -65,7 +94,7 @@ function PersonaButton({
           active ? "text-[rgba(255,255,255,0.78)]" : "text-[color:var(--slate)]"
         }`}
       >
-        {exercises}
+        {pending ? pendingLabel : exercises}
       </span>
     </button>
   );
@@ -81,13 +110,13 @@ function PersonaRows({
   const signedOut = !normalizedCurrent;
   return (
     <div className="max-h-[70vh] overflow-y-auto">
-      {GROUPS.map((group) => (
-        <section key={group}>
+      {QA_SCENARIO_GROUPS.map((group) => (
+        <section key={group.id}>
           <h3 className="px-3.5 pb-1 pt-3 text-[10.5px] font-semibold uppercase tracking-[0.1em] text-[color:var(--ink-faint)]">
-            {group}
+            {group.label}
           </h3>
           <ul className="grid gap-1 px-2 pb-1">
-            {QA_PERSONAS.filter((persona) => persona.group === group).map((persona) => (
+            {QA_PERSONAS.filter((persona) => persona.group === group.id).map((persona) => (
               <li key={persona.email}>
                 <form action={signInAsTestAccount}>
                   <input type="hidden" name="email" value={persona.email} />
@@ -115,6 +144,7 @@ function PersonaRows({
                 <PersonaButton
                   label="Not signed in"
                   exercises="Public surfaces, sign-up and the login gate"
+                  pendingLabel="Signing out..."
                   active={signedOut}
                 />
               </fieldset>
@@ -124,20 +154,17 @@ function PersonaRows({
       </section>
 
       <div className="border-t border-[color:var(--mist)] p-2">
-        <form action={resetTestAccounts}>
-          <button
-            type="submit"
-            className="w-full rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-[color:var(--lavender-100)]"
-          >
-            <span className="block text-[13.5px] font-semibold text-[color:var(--danger)]">
-              Reset all test data
-            </span>
-            <span className="mt-0.5 block text-[11.5px] leading-[1.4] text-[color:var(--slate)]">
-              Wipes the personas and their events so the sign-up journeys start
-              from zero. Real accounts are untouched.
-            </span>
-          </button>
-        </form>
+        <a
+          href="/test"
+          className="block rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-[color:var(--lavender-100)]"
+        >
+          <span className="block text-[13.5px] font-semibold text-[color:var(--purple-800)]">
+            Open testing workspace
+          </span>
+          <span className="mt-0.5 block text-[11.5px] leading-[1.4] text-[color:var(--slate)]">
+            Start a scenario fresh or use the advanced reset.
+          </span>
+        </a>
       </div>
     </div>
   );

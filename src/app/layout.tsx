@@ -10,6 +10,8 @@ import { LoginModalHost } from "@/components/login-modal-host";
 import { ChromeGate } from "@/components/chrome-gate";
 import { SiteFooter, SiteHeader, SiteHeaderShell } from "@/components/site-chrome";
 import { SiteNotices } from "@/components/site-notices";
+import { QaSessionBanner } from "@/components/qa-session-banner";
+import { QaFreshStateClearer } from "@/components/qa-fresh-state-clearer";
 import { auth, isAdminEmail } from "@/auth";
 import { getSystemSettings } from "@/lib/event-repository";
 import { AccountScopeProvider } from "@/lib/account-scope";
@@ -80,6 +82,8 @@ export default async function RootLayout({
   // it with TEST_SWITCHER_KEY. The Supabase drawer and demo credentials stay
   // local-only.
   const qaSwitcherUnlocked = await isTestSwitcherUnlocked();
+  const qaSessionEmail = session?.user?.email?.trim().toLowerCase() ?? "";
+  const isQaSession = qaSessionEmail.endsWith("@click.local");
   // Anyone may report a bug; only an operator may read the queue back.
   const canTriageBugs = await canTriageSupportTickets();
   // Only to pick the header PLACEHOLDER's variant, so the streamed bar reserves
@@ -109,6 +113,7 @@ export default async function RootLayout({
             signing in as several people (the QA switcher, a shared laptop)
             never hands the next person the last one's half-filled form. */}
         <AccountScopeProvider scope={session?.user?.email}>
+        <QaFreshStateClearer />
         {/* First tab stop everywhere: jump past the sticky header straight to
             the page content. */}
         <a href="#main-content" className="skip-link">
@@ -122,6 +127,13 @@ export default async function RootLayout({
           banner={marketingBanner}
           viewerIsAdmin={viewerIsAdmin}
         />
+        {/* A QA identity is a real session, not a visual preview. Keep that
+            fact visible on every surface, including chromeless onboarding
+            pages. The exit remains available after the 12-hour unlock expires
+            so a tester is never stranded inside a seeded account. */}
+        {isQaSession ? (
+          <QaSessionBanner currentEmail={qaSessionEmail} unlocked={qaSwitcherUnlocked} />
+        ) : null}
         {/* The live header awaits the session profile + notification queries;
             stream it so those round-trips never block first paint of the page
             body. The shell keeps the bar's height so nothing shifts.
@@ -192,8 +204,8 @@ export default async function RootLayout({
             Reporting only - the "Bugs on this page" tab reads other people's
             tickets (reporter name + free text), so it needs canTriageBugs. */}
         <SupportWidget canTriage={canTriageBugs} />
-        {/* Once signed in, the same picker lives under Avatar -> Switch
-            account. Keep this fallback only for the signed-out test state,
+        {/* Once signed in, the same picker lives under Avatar -> Test as.
+            Keep this fallback only for the signed-out test state,
             which has no avatar menu and would otherwise strand the tester. */}
         {qaSwitcherUnlocked && !session?.user ? (
           <TestAccountSwitcher currentEmail={session?.user?.email ?? null} />

@@ -67,6 +67,15 @@ import {
   DISCOVERY_CLICK_CAP,
   MUTUAL_CLOCK_DAYS,
   MIN_CLICK_AGE,
+  SUGGESTION_LEADTIME_FLOOR_HOURS,
+  SUGGESTION_WINDOW_DAYS,
+  ACTIVE_MUTUAL_SOFT_CAP,
+  REDISCOVERY_COOLDOWN_DAYS,
+  NO_SHOW_SUPPRESSION_THRESHOLD,
+  NO_SHOW_LOOKBACK_DAYS,
+  NO_SHOW_SUPPRESSION_DAYS,
+  INACTIVE_DOWNRANK_DAYS,
+  REENGAGEMENT_GRACE_DAYS,
   SEND_CLICK_FLOOR_MS,
   SEND_CLICK_HOURLY_LIMIT,
   type SendClickOutcome,
@@ -76,7 +85,11 @@ import {
   severAllCoordinationForUser,
   pairCoordinationAllowed,
 } from "./clicks/teardown";
-import { calculateApplicationFee, getPlatformFeeBps } from "./stripe-connect";
+import {
+  calculateApplicationFee,
+  getPlatformFeeBps,
+  isRealConnectAccountId,
+} from "./stripe-connect";
 import { isClickMechanicEnabled, isProductionDeployment } from "./runtime-mode";
 import { isAdminEmail } from "./admin-emails";
 import { logBookingEvent, refundBandFromTier } from "./booking-events";
@@ -2034,6 +2047,13 @@ async function ensureProfileForSessionUncached(session: Session | null) {
           when excluded.role = 'admin' then excluded.role
           else profiles.role
         end,
+        -- B7.4b liveness. Nothing wrote this column: it defaults to now() from
+        -- migration 049, so every profile was frozen at whenever that ran, and any
+        -- rule reading it ("inactive 30 days") would have been true of everyone at
+        -- once, thirty days later. This upsert already runs on every authenticated
+        -- request (ensureProfileForSession is cache()'d once per request), so the
+        -- signal costs nothing but the column.
+        last_active_at = now(),
         updated_at = now()
       returning id::text, role::text as role, email::text, display_name, photo_url,
         (xmax = 0) as is_new
@@ -8510,6 +8530,16 @@ async function sendClickInner(
   input: {
     clickedProfileId: string;
     sourceEventId?: string;
+    /**
+     * §6.9 post-event swap: the receiver of a still-pending post-event click at this
+     * same event that the sender wants to release, freeing its budget slot for the
+     * person they are clicking now. Runs INSIDE this transaction on purpose - the
+     * per-event cap count already excludes 'invalidated' rows, so releasing before
+     * the cap check frees exactly one slot with no special-casing, and the whole
+     * thing is atomic: a failure anywhere cannot spend the one swap and lose the
+     * click. Only meaningful on the post-event surface.
+     */
+    releaseReceiverId?: string;
   },
   session: Session | null,
 ) {
@@ -8558,6 +8588,7 @@ async function sendClickInner(
       [input.clickedProfileId],
     );
 
+
     const clickedProfile = clickedResult.rows[0];
     if (!clickedProfile) {
       // NOT a 404. "That profile id doesn't exist" and "that person isn't
@@ -8581,9 +8612,11 @@ async function sendClickInner(
       is_banned: boolean;
       suspended_at: string | null;
       connection_intents: string[] | null;
+      post_event_click_suppressed_until: string | null;
     }>(
       `select age, photo_url, is_banned, suspended_at::text,
-              connection_intents::text[] as connection_intents
+              connection_intents::text[] as connection_intents,
+              post_event_click_suppressed_until::text
          from profiles where id = $1::uuid limit 1`,
       [profile.id],
     );
@@ -8604,10 +8637,27 @@ async function sendClickInner(
     // Age gate (§6.7b - non-negotiable, defence-in-depth on the highest-risk surface).
     // Asserted in the click layer independently of the signup gate: a sub-18 account
     // (data error / region defining minor >18) cannot send or receive a click, full stop.
-    if (
-      (sender?.age ?? 0) < MIN_CLICK_AGE ||
-      (clickedProfile.age ?? 0) < MIN_CLICK_AGE
-    ) {
+    //
+    // The two arms answer DIFFERENTLY on purpose, and the split is the whole point.
+    // The receiver's age is receiver state, so it collapses into R_NOT_ELIGIBLE with
+    // every other receiver refusal. The sender's age is the sender's OWN state - which
+    // the ban/suspend gate a few lines up already treats as safe to name - and folding
+    // it into the neutral string was actively harmful: `age` is nullable and
+    // ensureProfileForSession never writes it, so every magic-link account that skipped
+    // /onboarding (both admin logins included) coalesced to 0, failed this gate on every
+    // send, and was told "This person isn't available to click with right now." That
+    // blames the person they clicked, and reads to a tester as "clicking is broken".
+    // Naming the sender's own missing field costs nothing in the §6.1 byte-identical
+    // contract - it discloses nothing about the receiver - and the SEND_CLICK_FLOOR_MS
+    // floor in createUserClickForSession already equalises the latency.
+    if ((sender?.age ?? 0) < MIN_CLICK_AGE) {
+      const error = new Error(
+        "Add your date of birth in your profile before you can click with anyone.",
+      );
+      error.name = "ValidationError";
+      throw error;
+    }
+    if ((clickedProfile.age ?? 0) < MIN_CLICK_AGE) {
       throw notEligibleError();
     }
 
@@ -8665,6 +8715,19 @@ async function sendClickInner(
 
     if (input.sourceEventId) {
       surface = "who_was_there";
+      // §B7.3: repeated free-event no-shows cost you the post-event surface for 30
+      // days. Payment is the commitment, so this is the only lever a free booking
+      // has. The sender's OWN state, like the ban and age gates above - naming it
+      // discloses nothing about the receiver, and a person who cannot act on a
+      // silent refusal just reads the button as broken.
+      if (
+        sender?.post_event_click_suppressed_until &&
+        new Date(sender.post_event_click_suppressed_until) > new Date()
+      ) {
+        throw validationError(
+          "You can't click people from events right now - a couple of free spots you booked went unused. This lifts on its own.",
+        );
+      }
       // TWO queries on purpose, and the split is the whole point. The event's own
       // clock is public - anyone can read its end time off the event page - so
       // "the window has closed" is safe to say plainly, and saying it is the only
@@ -8747,6 +8810,51 @@ async function sendClickInner(
     );
     const isDuplicate = existing.rows.length > 0;
 
+    // §6.9 the post-event swap. "Within the 48h window the user may release one of
+    // their own still-pending post-event clicks for this event and re-spend it" -
+    // clicked the wrong person, or met someone better later in the window. Hard
+    // rules, in order:
+    //   (a) only a PENDING post-event click is releasable; a mutual never is
+    //   (b) exactly one swap per sender per event (click_swaps' primary key)
+    //   (c) the released receiver is never notified - nothing below writes to them
+    //   (d) R_OK either way, at the same timing floor (the wrapper owns that)
+    let releasedClickId: string | null = null;
+    if (input.releaseReceiverId) {
+      if (surface !== "who_was_there") {
+        // Discovery has a rolling cap, not an event budget - nothing to swap.
+        throw validationError("Swapping only applies to clicks from an event.");
+      }
+      if (input.releaseReceiverId === clickedProfile.id) {
+        throw validationError("Pick a different person to swap out.");
+      }
+      if (isDuplicate) {
+        // Nothing to swap INTO - they already hold a click at this person here.
+        throw validationError("You've already clicked with them at this event.");
+      }
+      const priorSwap = await client.query(
+        `select 1 from click_swaps where sender_id = $1::uuid and event_id = $2::uuid limit 1`,
+        [profile.id, eventId],
+      );
+      if (priorSwap.rows.length > 0) {
+        throw validationError("You've already swapped a click for this event.");
+      }
+      // Naming this refusal is safe. A click that is no longer 'pending' has either
+      // gone mutual - which both sides were already told about, and which the roster
+      // itself renders as "you two clicked" - or lapsed with the window. So the
+      // sender learns nothing here they do not already hold.
+      const released = await client.query<{ id: string }>(
+        `update clicks set status = 'invalidated', updated_at = now()
+          where sender_id = $1::uuid and receiver_id = $2::uuid
+            and event_id = $3::uuid and status = 'pending'
+          returning id::text`,
+        [profile.id, input.releaseReceiverId, eventId],
+      );
+      releasedClickId = released.rows[0]?.id ?? null;
+      if (!releasedClickId) {
+        throw validationError("That click can't be swapped any more.");
+      }
+    }
+
     if (!isDuplicate) {
       // Cap check inside the transaction, by process (§2 rule 5). Invalidated rows
       // refund budget (they're excluded from the post-event count).
@@ -8776,14 +8884,31 @@ async function sendClickInner(
       }
     }
 
-    await client.query(
+    const inserted = await client.query<{ id: string }>(
       `
         insert into clicks (sender_id, receiver_id, event_id, intent_mode, surface, status, expires_at)
         values ($1::uuid, $2::uuid, $3::uuid, $4, $5, 'pending', $6::timestamptz)
         on conflict do nothing
+        returning id::text
       `,
       [profile.id, clickedProfile.id, eventId, senderIntent, surface, expiresAt.toISOString()],
     );
+
+    // §6.9(b): one swap per sender per event, which is click_swaps' primary key -
+    // recorded only once the replacement click actually exists, so a swap can never
+    // be spent on a send that did not land. The duplicate guard above means the
+    // insert cannot have conflicted on this path.
+    if (releasedClickId) {
+      const newClickId = inserted.rows[0]?.id;
+      if (!newClickId) {
+        throw validationError("That click can't be swapped any more.");
+      }
+      await client.query(
+        `insert into click_swaps (sender_id, event_id, released_click_id, new_click_id)
+         values ($1::uuid, $2::uuid, $3::uuid, $4::uuid)`,
+        [profile.id, eventId, releasedClickId, newClickId],
+      );
+    }
 
     // §4 mutual detection - lock the reciprocal pending row FOR UPDATE, matching WITHIN
     // the same process (discovery↔discovery, or post-event on the SAME event). Two
@@ -8876,7 +9001,20 @@ async function sendClickInner(
               on user_tag.tag_id = tag.id
              and user_tag.profile_id in ($1::uuid, $2::uuid)
             where event.status in ('live', 'featured')
-              and event.starts_at > now()
+              -- §B3.2 lead-time floor. A bare starts_at > now() handed a pair who
+              -- had just clicked a plan for an event starting in forty minutes -
+              -- two seats they would have to agree on, book and travel to before
+              -- the doors shut. The floor only binds what the SYSTEM offers
+              -- unprompted; either of them can still propose tonight's thing by
+              -- hand through the catalogue picker.
+              and event.starts_at > now() + interval '${SUGGESTION_LEADTIME_FLOOR_HOURS} hours'
+              -- ...and the §B3.2 ceiling that closes the same window. Not inert
+              -- despite the starts_at-asc tiebreak: the sort puts BOTH-members'-tags
+              -- above soonest, so an event six months out that matches them both
+              -- outranked a fortnight-away one that matched only one. B7.2 leans on
+              -- this window ("8 plans over 30 days is a full but human social
+              -- calendar") - a suggestion outside it isn't a plan, it's a someday.
+              and event.starts_at < now() + interval '${SUGGESTION_WINDOW_DAYS} days'
               -- §B3.4 / CAP-1/2/4: two free seats for the pair (guest +1s + live holds
               -- netted via event_capacity_v); full/waitlist excluded by status.
               and exists (
@@ -9119,6 +9257,63 @@ async function sendClickInner(
       });
     }
 
+    // B7.4b - the click as a liveness test. Someone who has not opened the app in 30
+    // days is quietly slipping out of discovery; a click toward them is the one honest
+    // reason to email them, and it says "someone clicked with you" and NEVER who. That
+    // anonymity is the whole §6.1 contract, so the template carries no sender variable
+    // at all rather than relying on a copy review to keep one out.
+    //
+    // Skipped when this send formed a mutual: that pair already gets the mutual mail,
+    // which is a better nudge and names more, and two emails off one click is noise.
+    //
+    // In afterResponse for the same reason the mutual mail is - it is a DB write plus a
+    // provider call that only ONE outcome pays for, and paying for it inside the
+    // response would answer "is the person I just clicked dormant?" by latency alone.
+    //
+    // The stamp and the eligibility test are one conditional UPDATE, so two concurrent
+    // clicks toward the same dormant person cannot both claim the send. Re-armed only
+    // by them actually returning (last_active_at overtaking the stamp), which makes it
+    // exactly one mail per dormancy spell, however many people click them.
+    if (!freshMutualId) {
+      const receiverId = clickedProfile.id;
+      const origin = emailOrigin();
+      afterResponse(async () => {
+        try {
+          const claimed = await pool.query<{ email: string; display_name: string }>(
+            `update profiles
+                set reengagement_clicked_at = now()
+              where id = $1::uuid
+                and email is not null
+                and social_visible = true
+                and is_banned = false
+                and suspended_at is null
+                and (paused_until is null or paused_until <= now())
+                and coalesce(last_active_at, created_at)
+                    <= now() - interval '${INACTIVE_DOWNRANK_DAYS} days'
+                and (reengagement_clicked_at is null
+                  or reengagement_clicked_at < coalesce(last_active_at, created_at))
+              returning email::text, display_name`,
+            [receiverId],
+          );
+          const target = claimed.rows[0];
+          if (!target) return;
+          await logEmailEvent({
+            template: "reengagement-click-attendee",
+            toEmail: target.email,
+            toProfileId: receiverId,
+            vars: {
+              firstName: (target.display_name || "").split(/\s+/)[0] || "there",
+              peopleUrl: `${origin}/people`,
+              supportEmail: SUPPORT_EMAIL,
+              unsubscribeUrl: `${origin}/account-settings`,
+            },
+          });
+        } catch {
+          // A liveness nudge is never worth surfacing into a click that already landed.
+        }
+      });
+    }
+
     // §6.1: the synchronous response is identical whether or not a mutual formed - the
     // mutual is revealed only via the async notification + email logged above, never in
     // this response shape. (The constant-time floor that closes the timing side-channel
@@ -9145,6 +9340,8 @@ export async function createUserClickForSession(
   input: {
     clickedProfileId: string;
     sourceEventId?: string;
+    /** §6.9 swap: release this pending post-event click's budget slot first. */
+    releaseReceiverId?: string;
   },
   session: Session | null,
 ) {
@@ -9242,6 +9439,45 @@ export async function expireClickLifecycles() {
       `update clicks set status = 'expired', updated_at = now()
        where status = 'pending' and expires_at <= now()`,
     );
+
+    // A pair who are both holding a seat on the same UPCOMING event have not run
+    // out of time - they have a night in the diary. confirmProposal already
+    // extends the mutual's clock exactly this way, but only for a plan agreed
+    // inside the drawer; a pair who simply both RSVP'd to the same event never
+    // touch that path. Their 7-day discovery clock therefore expired them while
+    // the shared night was still weeks out: the "You're both going to X" card
+    // vanished from /people and /proposals, and the sweep below told both of them
+    // that nothing came of it. Same greatest() + POST_EVENT_CLICK_WINDOW_HOURS
+    // tail confirmProposal uses, so this only ever extends, and the tail keeps the
+    // pair's who-was-there click window inside the mutual's life.
+    //
+    // event_participants_v, not event_attendees (migration 056): a claimed guest
+    // +1 is a real seat with no attendee row of its own, and getMutualClicksForSession's
+    // "both going" celebration already counts it - the two must agree or the card
+    // says they're going while the sweep says they're done.
+    const sharedSeat = (arm: "a" | "b") =>
+      `exists (select 1 from event_participants_v pv
+                 where pv.event_id = e.id and pv.profile_id = m.user_${arm}_id)`;
+    await client.query(
+      `update mutual_clicks m
+          set expires_at = greatest(
+                m.expires_at,
+                (
+                  select max(coalesce(e.ends_at, e.starts_at))
+                  from events e
+                  where e.starts_at > now() and e.status <> 'cancelled'
+                    and ${sharedSeat("a")} and ${sharedSeat("b")}
+                ) + interval '${POST_EVENT_CLICK_WINDOW_HOURS} hours'
+              ),
+              updated_at = now()
+        where m.status = 'active' and m.expires_at <= now()
+          and exists (
+            select 1 from events e
+            where e.starts_at > now() and e.status <> 'cancelled'
+              and ${sharedSeat("a")} and ${sharedSeat("b")}
+          )`,
+    );
+
     // Snapshot the lapsing plans BEFORE flipping them, so we still know who they
     // belonged to and what they were for. A plan that runs out of clock is an
     // ENDING, and until now it was a deletion: the card simply reverted to
@@ -9282,12 +9518,67 @@ export async function expireClickLifecycles() {
            where p.mutual_click_id = m.id and p.status in ('pending', 'accepted')
          )`,
     );
-    // Same again for the mutual itself - and this is the one that mattered. An
-    // expiring mutual took the person, the plan and the whole card off /proposals
-    // with no word at all, so there was no way to tell "they changed their mind"
-    // from "the clock ran out". A pair who locked a plan in is excluded: their
-    // mutual ending is a night that already happened, not a wind-down.
-    const woundDown = await client.query<{
+    // Before the wind-down: a mutual whose clock has run out but who ALREADY WENT
+    // to something together ends as a success, not a lapse. mutual_status has had
+    // 'connected' (+ connected_reason / connected_event_id) since migration 049 and
+    // nothing has ever written it, so every one of these pairs was landing on
+    // 'expired' and being told "nothing came of it before the clock ran out" -
+    // about a night they had both been at. Runs first so the wound-down snapshot
+    // below, which selects on status = 'active', can never pick them up too.
+    const connected = await client.query<{
+      user_a_id: string;
+      user_b_id: string;
+      event_title: string | null;
+    }>(
+      `with due as (
+         select m.id, shared.id as event_id, shared.title as event_title
+         from mutual_clicks m
+         cross join lateral (
+           select e.id, e.title
+           from events e
+           where coalesce(e.ends_at, e.starts_at) <= now() and e.status <> 'cancelled'
+             -- Only a night they went to DURING this mutual counts. A post-event
+             -- mutual is formed FROM a shared night that is already over, so
+             -- without this every one of those would end as 'connected' on the
+             -- strength of the event that introduced them - while what actually
+             -- happened is that nothing came of it, which is what the wind-down
+             -- below says.
+             and coalesce(e.ends_at, e.starts_at) >= m.mutual_at
+             and exists (select 1 from event_participants_v pv
+                          where pv.event_id = e.id and pv.profile_id = m.user_a_id)
+             and exists (select 1 from event_participants_v pv
+                          where pv.event_id = e.id and pv.profile_id = m.user_b_id)
+           order by coalesce(e.ends_at, e.starts_at) desc
+           limit 1
+         ) shared
+         where m.status = 'active' and m.expires_at <= now()
+       )
+       update mutual_clicks m
+          set status = 'connected',
+              connected_reason = 'co_attended',
+              connected_event_id = due.event_id,
+              coord_state = 'dormant',
+              ended_at = now(),
+              updated_at = now()
+         from due
+        where m.id = due.id
+       returning m.user_a_id, m.user_b_id, due.event_title`,
+    );
+    if (connected.rowCount) {
+      await notifyPairs(
+        client,
+        connected.rows,
+        `'You and ' || them.display_name || ' made it out'`,
+        `coalesce(payload.event_title, 'That night') || ' has been and gone, so this click is wrapped up. Cross paths again and you can pick it back up.'`,
+        "'/proposals'",
+      );
+    }
+
+    // Same again for the mutual itself - and this is the one that mattered. A
+    // releasing mutual took the person, the plan and the whole card off /proposals
+    // with no word at all. A pair who locked a plan in is excluded: their mutual
+    // ending is a night that already happened, not a release.
+    const softReleased = await client.query<{
       user_a_id: string;
       user_b_id: string;
       event_title: string | null;
@@ -9298,20 +9589,67 @@ export async function expireClickLifecycles() {
           and coord_state <> 'confirmed_together'
         for update`,
     );
+    // B7.6 "Day 7, silent release": seven days of silence is a SOFT release, and the
+    // status it lands on is 'released' - re-clickable after the B7.9 30-day cooldown.
+    // This wrote 'expired', which B7.9 defines as the one permanent door ("blocked /
+    // deleted ... NEVER resurfaces"). Nothing read the difference until the cooldown
+    // and the past-clicks shelf did, at which point every fizzled pair would have been
+    // walled off from each other for good on the strength of a clock.
     const mutuals = await client.query(
       `update mutual_clicks
-       set status = 'expired', coord_state = 'dormant', ended_at = now(), updated_at = now()
+       set status = 'released', coord_state = 'dormant', ended_at = now(), updated_at = now()
        where status = 'active' and expires_at <= now()`,
     );
-    if (woundDown.rowCount) {
+    if (softReleased.rowCount) {
+      // B7.6 bans the loss frame by name - "winding down", "about to expire" - and
+      // CLICK_LANGUAGE §5's shelf line is the neutral replacement. The old copy broke
+      // both: "wound down" is the banned phrase verbatim, and "nothing came of it
+      // before the clock ran out" is a verdict on a pair who were told nothing was
+      // running out. No loss, no verdict, no funeral - it just rests where they can
+      // find it. (B7.6 asks for full silence here plus a day-5 opportunity nudge;
+      // neither is built, so this stays as the one word they get.)
       await notifyPairs(
         client,
-        woundDown.rows,
-        `'Your click with ' || them.display_name || ' wound down'`,
-        `'Nothing came of it before the clock ran out, so it has quietly closed. Cross paths again and you can pick it back up.'`,
+        softReleased.rows,
+        `'You and ' || them.display_name || ' - still out there'`,
+        `'This one is resting on your past clicks now. Cross paths again and you can pick it back up.'`,
         "'/proposals'",
       );
     }
+    // §B7.3 no-show handling. Two or more FREE spots booked and not turned up to in
+    // the last 90 days costs the post-event click surface for 30 days. Paid no-shows
+    // are excluded on purpose - payment was the commitment, and it was already made.
+    //
+    // The door-list guard is the load-bearing part: checked_in_at is only ever written
+    // when a merchant runs the optional door list, so on an event where nobody was
+    // checked in, an attendee and a no-show are indistinguishable. Requiring at least
+    // one check-in on the event means we never invent a no-show out of a merchant's
+    // paperwork. 21 §6.4 accepts that this makes the guard silently absent wherever
+    // check-in is skipped, rather than make check-in load-bearing.
+    //
+    // Only sets on someone not already suppressed, so a standing suppression is never
+    // rolled forward hour after hour by the same two rows.
+    await client.query(
+      `update profiles p
+          set post_event_click_suppressed_until = now() + interval '${NO_SHOW_SUPPRESSION_DAYS} days',
+              updated_at = now()
+        where (p.post_event_click_suppressed_until is null
+            or p.post_event_click_suppressed_until <= now())
+          and (
+            select count(*) from event_attendees a
+            join events e on e.id = a.event_id
+            where a.profile_id = p.id
+              and a.status = 'confirmed'
+              and a.checked_in_at is null
+              and e.price_cents = 0
+              and coalesce(e.ends_at, e.starts_at)
+                  between now() - interval '${NO_SHOW_LOOKBACK_DAYS} days' and now()
+              and exists (
+                select 1 from event_attendees door
+                where door.event_id = e.id and door.checked_in_at is not null
+              )
+          ) >= ${NO_SHOW_SUPPRESSION_THRESHOLD}`,
+    );
     const suppressions = await client.query(
       `delete from pair_suppressions where expires_at <= now()`,
     );
@@ -11162,7 +11500,20 @@ export async function createPaymentHold(
         error.name = "ValidationError";
         throw error;
       }
-      if (!event.merchant_stripe_account_id || !event.merchant_charges_enabled) {
+      // isRealConnectAccountId, not a truthiness check. merchant_profiles can
+      // legitimately hold a PLACEHOLDER id - `acct_seed_*` from
+      // database/002_seed.sql, or the QA persona's FAKE_CONNECT_ACCOUNT - and a
+      // placeholder is truthy. Paired with a seeded charges_enabled=true it
+      // sailed through this gate, and checkout then sent the placeholder to
+      // Stripe as transfer_data.destination, which 403s ("does not have access
+      // to account ..."). The buyer got a raw Stripe message in a 500 instead of
+      // the "host is finishing payout setup" 409 this branch exists to give
+      // them. Same predicate the onboarding route uses to decide whether to mint
+      // a real account, so the two can't disagree about what counts as set up.
+      if (
+        !isRealConnectAccountId(event.merchant_stripe_account_id) ||
+        !event.merchant_charges_enabled
+      ) {
         const error = new Error(
           "This event isn't accepting payments yet - the host is finishing payout setup.",
         );
@@ -11170,6 +11521,18 @@ export async function createPaymentHold(
         throw error;
       }
     }
+
+    // The one value that leaves this module and becomes a Stripe API argument
+    // (transfer_data.destination / on_behalf_of in the checkout route). The gate
+    // above already refused a placeholder on a merchant-hosted event, so this is
+    // belt-and-braces - but it puts the "real account id or nothing" guarantee
+    // at the point of use rather than 200 lines away, and it covers the
+    // platform-owned path (merchant_profile_id NULL) that skips the gate.
+    const merchantStripeAccountId = isRealConnectAccountId(
+      event.merchant_stripe_account_id,
+    )
+      ? event.merchant_stripe_account_id
+      : null;
 
     const confirmedCount = Number(event.confirmed_attendees);
     const available = event.capacity - confirmedCount;
@@ -11281,7 +11644,7 @@ export async function createPaymentHold(
         guests: normalizedGuests,
         currency: event.currency,
         profileEmail: profile.email,
-        merchantStripeAccountId: event.merchant_stripe_account_id,
+        merchantStripeAccountId,
         holdExpiresAt: activeHold.hold_expires_at,
         stripeCheckoutSessionId: activeHold.stripe_checkout_session_id,
         reused: true,
@@ -11446,7 +11809,7 @@ export async function createPaymentHold(
       guests: normalizedGuests,
       currency: event.currency,
       profileEmail: profile.email,
-      merchantStripeAccountId: event.merchant_stripe_account_id,
+      merchantStripeAccountId,
       holdExpiresAt: attendeeRow.rows[0].hold_expires_at,
       stripeCheckoutSessionId: null,
       reused: false,
@@ -13188,6 +13551,8 @@ export async function getSuggestedPeople(session: Session | null): Promise<Sugge
       nearby: boolean;
       intents: string[];
       already_clicked: boolean;
+      actionable_mutuals: number;
+      inactive: boolean;
     }>(
       `
         select p.id::text, p.display_name, p.suburb, p.photo_url, p.age,
@@ -13227,7 +13592,28 @@ export async function getSuggestedPeople(session: Session | null): Promise<Sugge
                    -- 30-day expiry), so without this guard the card kept showing
                    -- "pending their Click" after a match (bug board #214/#215).
                    and uc.status = 'pending'
-               ) as already_clicked
+                   -- ...and only a DISCOVERY one. Rule 3: the two processes never
+                   -- cross-match, so a post-event click at this person is not a
+                   -- click waiting on them HERE. Unscoped, it dropped them out of
+                   -- the daily set for the whole 48h post-event window, and the
+                   -- discovery click that would have paired with theirs could not
+                   -- be sent. Same correction the post-event roster already carries
+                   -- in the other direction (it scopes to THIS event on purpose).
+                   and uc.event_id is null
+               ) as already_clicked,
+               -- B7.2 coordination load. Counts ACTIONABLE mutuals only - active and
+               -- open/proposed. 'dormant' is resting and auto-revived, so it demands
+               -- nothing; 'confirmed_together' is a plan already locked; every other
+               -- status is history. So this is precisely "how many people are waiting
+               -- on this person to plan something right now".
+               (
+                 select count(*)::int from mutual_clicks am
+                 where am.status = 'active'
+                   and am.coord_state in ('open', 'proposed')
+                   and (am.user_a_id = p.id or am.user_b_id = p.id)
+               ) as actionable_mutuals,
+               (coalesce(p.last_active_at, p.created_at) < now() - interval '${INACTIVE_DOWNRANK_DAYS} days')
+                 as inactive
         from profiles p
         left join user_tags shared_user_tag on shared_user_tag.profile_id = p.id
         left join tags shared_tag on shared_tag.id = shared_user_tag.tag_id
@@ -13278,13 +13664,62 @@ export async function getSuggestedPeople(session: Session | null): Promise<Sugge
               and ((ps.user_a_id = $1::uuid and ps.user_b_id = p.id)
                 or (ps.user_a_id = p.id and ps.user_b_id = $1::uuid))
           )
+          -- B7.9 rediscovery cooldown. A mutual that softly released after seven
+          -- days of silence is NOT gone - the pair re-enters each other's pool and
+          -- can click again. But not tomorrow: "a just-released pair re-appearing
+          -- next day feels broken". Thirty days of distance, then they are simply a
+          -- candidate again, and neither is ever told it is a re-match.
+          --
+          -- Only 'released' is on a clock here. 'suppressed' ("not feeling it") is
+          -- held for 90 days by pair_suppressions above - a deliberate soft-no earns
+          -- more distance than a passive fizzle. 'expired' (block / deletion) never
+          -- resurfaces and is already carried by the user_blocks and is_banned gates.
+          -- B7.4b row 24: mailed "someone clicked with you" as a liveness test, and
+          -- still gone 14 days later - fully hidden from discovery until they return.
+          -- "Return" is last_active_at overtaking the nudge, so this un-hides itself
+          -- the moment they open the app; nothing has to remember to clear it.
+          and not (
+            p.reengagement_clicked_at is not null
+            and p.reengagement_clicked_at <= now() - interval '${REENGAGEMENT_GRACE_DAYS} days'
+            and coalesce(p.last_active_at, p.created_at) < p.reengagement_clicked_at
+          )
+          and not exists (
+            select 1 from mutual_clicks rc
+            where rc.status = 'released'
+              and rc.ended_at > now() - interval '${REDISCOVERY_COOLDOWN_DAYS} days'
+              and ((rc.user_a_id = $1::uuid and rc.user_b_id = p.id)
+                or (rc.user_a_id = p.id and rc.user_b_id = $1::uuid))
+          )
         group by p.id
-        order by array_length(
-          coalesce(
-            array_agg(distinct shared_tag.label) filter (where shared_tag.label is not null),
-            '{}'
-          ), 1
-        ) desc nulls last
+        order by
+          -- B7.4b row 23: quiet for 30 days is a DOWN-RANK, never a removal - events
+          -- are episodic, and someone who has not opened the app in a month may well
+          -- be back next weekend. First key, because a dormant account is a worse
+          -- thing to spend one of three daily slots on than a busy one.
+          (coalesce(p.last_active_at, p.created_at) < now() - interval '${INACTIVE_DOWNRANK_DAYS} days') asc,
+          -- B7.2: at or over the soft cap, DOWN-RANK - never hard-block. Someone
+          -- already over their actionable ceiling does not need more discovery, they
+          -- need to act on what they have; surfacing them to new people just
+          -- manufactures more stranded partners. They still appear, just last, so
+          -- they are never invisible and the keen person clicking them is never
+          -- punished for their overload.
+          (
+            (select count(*) from mutual_clicks am
+              where am.status = 'active' and am.coord_state in ('open', 'proposed')
+                and (am.user_a_id = p.id or am.user_b_id = p.id))
+            >= ${ACTIVE_MUTUAL_SOFT_CAP}
+          ) asc,
+          array_length(
+            coalesce(
+              array_agg(distinct shared_tag.label) filter (where shared_tag.label is not null),
+              '{}'
+            ), 1
+          ) desc nulls last,
+          -- "The further over 8, the harder the down-rank" - as a tiebreak only, so it
+          -- orders within the over-cap block without reranking everyone by popularity.
+          (select count(*) from mutual_clicks am
+            where am.status = 'active' and am.coord_state in ('open', 'proposed')
+              and (am.user_a_id = p.id or am.user_b_id = p.id)) asc
         limit 24
       `,
       [profile.id],
@@ -13316,6 +13751,15 @@ export async function getSuggestedPeople(session: Session | null): Promise<Sugge
           .map((s) => s.row);
       }
     }
+
+    // B7.2 down-rank, re-applied AFTER the v2 re-rank rather than only in the SQL
+    // ORDER BY - v2 re-sorts the whole list by pair score, which threw the SQL
+    // ordering away entirely, so the cap would have held only while the flag was off.
+    // A stable partition: filter preserves order, so within each half whatever ranked
+    // them (v2 score or shared tags) still decides. Down-rank, never remove.
+    const downRanked = (row: { actionable_mutuals: number; inactive: boolean }) =>
+      Number(row.actionable_mutuals ?? 0) >= ACTIVE_MUTUAL_SOFT_CAP || Boolean(row.inactive);
+    rows = [...rows.filter((r) => !downRanked(r)), ...rows.filter(downRanked)];
 
     return rows.map((row) => ({
       id: row.id,
@@ -13697,6 +14141,14 @@ export async function getViewerClickState(
             select 1 from clicks c
             where c.sender_id = $1::uuid and c.receiver_id = $2::uuid
               and c.status = 'pending' and c.expires_at > now()
+              -- Discovery only. This button sends a Process-1 click, and rule 3 is
+              -- that the two processes NEVER cross-match: a post-event click at this
+              -- person cannot pair with their discovery click at you. Counting it
+              -- here greyed the button out to "clicked" for the 48h post-event
+              -- window, which hid the only control that could form the discovery
+              -- mutual - and this page is deliberately the one surface that always
+              -- offers the send.
+              and c.event_id is null
           ) as clicked,
           exists (
             select 1 from mutual_clicks m
@@ -13854,6 +14306,8 @@ export type PostEventCoAttendee = {
   photoUrl: string | null;
   suburb: string | null;
   alreadyClicked: boolean;
+  /** §6.9(a): this click is still pending, so its budget slot can be swapped away. */
+  swappable: boolean;
 };
 
 export type PostEventClickPrompt = {
@@ -13861,6 +14315,11 @@ export type PostEventClickPrompt = {
   eventTitle: string;
   endedAt: string;
   coAttendees: PostEventCoAttendee[];
+  /** Post-event clicks spent here (invalidated ones refunded), so the card can show
+   *  the remaining budget up front rather than only refusing the fourth tap (§6.9.1). */
+  clicksUsed: number;
+  /** §6.9(b): the one swap for this event is already spent. */
+  swapUsed: boolean;
 };
 
 // Events the viewer attended that ended between 12 hours and 14 days ago, with
@@ -13883,6 +14342,9 @@ export async function getPostEventClickPrompts(
       other_photo_url: string | null;
       other_suburb: string | null;
       already_clicked: boolean;
+      swappable: boolean;
+      clicks_used: number;
+      swap_used: boolean;
     }>(
       `
         select
@@ -13909,7 +14371,30 @@ export async function getPostEventClickPrompts(
             where c.sender_id = $1::uuid
               and c.receiver_id = other.id
               and c.event_id = e.id
-          ) as already_clicked
+          ) as already_clicked,
+          -- §6.9(a): only a still-PENDING post-event click is releasable. One that
+          -- went mutual never is, and one that lapsed with the window has no budget
+          -- left to give back.
+          exists (
+            select 1 from clicks c
+            where c.sender_id = $1::uuid
+              and c.receiver_id = other.id
+              and c.event_id = e.id
+              and c.status = 'pending'
+          ) as swappable,
+          -- The budget, so the surface can say what is left BEFORE the viewer spends
+          -- attention on it (§6.9.1) instead of only refusing the fourth tap.
+          -- Invalidated rows are excluded, matching the cap count in the send path -
+          -- which is exactly what makes a swap give a slot back.
+          (
+            select count(*)::int from clicks c
+            where c.sender_id = $1::uuid and c.event_id = e.id and c.status <> 'invalidated'
+          ) as clicks_used,
+          -- §6.9(b): one swap per sender per event, ever.
+          exists (
+            select 1 from click_swaps sw
+            where sw.sender_id = $1::uuid and sw.event_id = e.id
+          ) as swap_used
         from events e
         -- Roster = event_participants_v (confirmed attendees + claimed guest
         -- +1s), so someone who came on a friend's booking both sees this prompt
@@ -13937,6 +14422,13 @@ export async function getPostEventClickPrompts(
             where (b.blocker_profile_id = $1::uuid and b.blocked_profile_id = other.id)
                or (b.blocker_profile_id = other.id and b.blocked_profile_id = $1::uuid)
           )
+          -- §B7.3: a suppressed viewer loses the post-event surface itself, not just
+          -- the send. Leaving the roster up and refusing at the button would be a
+          -- picker that cannot pick.
+          and not exists (
+            select 1 from profiles me
+            where me.id = $1::uuid and me.post_event_click_suppressed_until > now()
+          )
         order by coalesce(e.ends_at, e.starts_at) desc, other.display_name asc
       `,
       [profile.id],
@@ -13951,6 +14443,8 @@ export async function getPostEventClickPrompts(
           eventTitle: row.event_title,
           endedAt: row.ended_at.toISOString(),
           coAttendees: [],
+          clicksUsed: row.clicks_used,
+          swapUsed: row.swap_used,
         };
         byEvent.set(row.event_slug, entry);
       }
@@ -13960,6 +14454,7 @@ export async function getPostEventClickPrompts(
         photoUrl: row.other_photo_url,
         suburb: row.other_suburb,
         alreadyClicked: row.already_clicked,
+        swappable: row.swappable,
       });
     }
     return Array.from(byEvent.values());
@@ -13991,6 +14486,9 @@ export async function getPostEventClickPromptForEvent(
       other_photo_url: string | null;
       other_suburb: string | null;
       already_clicked: boolean;
+      swappable: boolean;
+      clicks_used: number;
+      swap_used: boolean;
     }>(
       `
         select
@@ -14017,7 +14515,30 @@ export async function getPostEventClickPromptForEvent(
             where c.sender_id = $1::uuid
               and c.receiver_id = other.id
               and c.event_id = e.id
-          ) as already_clicked
+          ) as already_clicked,
+          -- §6.9(a): only a still-PENDING post-event click is releasable. One that
+          -- went mutual never is, and one that lapsed with the window has no budget
+          -- left to give back.
+          exists (
+            select 1 from clicks c
+            where c.sender_id = $1::uuid
+              and c.receiver_id = other.id
+              and c.event_id = e.id
+              and c.status = 'pending'
+          ) as swappable,
+          -- The budget, so the surface can say what is left BEFORE the viewer spends
+          -- attention on it (§6.9.1) instead of only refusing the fourth tap.
+          -- Invalidated rows are excluded, matching the cap count in the send path -
+          -- which is exactly what makes a swap give a slot back.
+          (
+            select count(*)::int from clicks c
+            where c.sender_id = $1::uuid and c.event_id = e.id and c.status <> 'invalidated'
+          ) as clicks_used,
+          -- §6.9(b): one swap per sender per event, ever.
+          exists (
+            select 1 from click_swaps sw
+            where sw.sender_id = $1::uuid and sw.event_id = e.id
+          ) as swap_used
         from events e
         -- Roster = event_participants_v (confirmed attendees + claimed guest
         -- +1s), so someone who came on a friend's booking both sees this prompt
@@ -14046,6 +14567,13 @@ export async function getPostEventClickPromptForEvent(
             where (b.blocker_profile_id = $1::uuid and b.blocked_profile_id = other.id)
                or (b.blocker_profile_id = other.id and b.blocked_profile_id = $1::uuid)
           )
+          -- §B7.3: a suppressed viewer loses the post-event surface itself, not just
+          -- the send. Leaving the roster up and refusing at the button would be a
+          -- picker that cannot pick.
+          and not exists (
+            select 1 from profiles me
+            where me.id = $1::uuid and me.post_event_click_suppressed_until > now()
+          )
         order by other.display_name asc
       `,
       [profile.id, slug],
@@ -14058,12 +14586,15 @@ export async function getPostEventClickPromptForEvent(
       eventSlug: first.event_slug,
       eventTitle: first.event_title,
       endedAt: first.ended_at.toISOString(),
+      clicksUsed: first.clicks_used,
+      swapUsed: first.swap_used,
       coAttendees: result.rows.map((row) => ({
         id: row.other_id,
         displayName: row.other_name,
         photoUrl: row.other_photo_url,
         suburb: row.other_suburb,
         alreadyClicked: row.already_clicked,
+        swappable: row.swappable,
       })),
     };
   } catch {
@@ -14096,6 +14627,11 @@ export async function notifyPostEventClickPrompts(): Promise<number> {
       -- Same roster as the two pull-based queries (migration 056), so a claimed
       -- guest gets the push prompt too rather than silently never being asked.
       join event_participants_v mine on mine.event_id = e.id
+      -- §B7.3: never push "did you click with anyone?" at someone whose post-event
+      -- surface is withheld - the prompt would open onto nothing.
+      join profiles me on me.id = mine.profile_id
+        and (me.post_event_click_suppressed_until is null
+          or me.post_event_click_suppressed_until <= now())
       where coalesce(e.ends_at, e.starts_at) + interval '${POST_EVENT_PROMPT_DELAY_HOURS} hours' <= now()
         and coalesce(e.ends_at, e.starts_at) + interval '${POST_EVENT_CLICK_WINDOW_HOURS} hours' > now()
         and extract(hour from now() at time zone e.timezone) >= 9
@@ -14331,11 +14867,18 @@ export async function getProposalsForSession(session: Session | null): Promise<P
         where (m.user_a_id = $1::uuid or m.user_b_id = $1::uuid)
           and (
             (m.status = 'active' and m.expires_at > now())
-            -- Endings stay readable for a month so the "your click wound down"
-            -- notification opens something, and so the Past-clicks shelf below
-            -- has rows to show. They project as isExpired, which renders the
-            -- read-only step - no controls, nothing to act on.
-            or (m.status in ('expired', 'released') and m.ended_at > now() - interval '30 days')
+            -- The "past clicks" shelf (B7.6 / B7.9), readable for a month so the
+            -- ending's notification opens something. They project as isExpired,
+            -- which renders the read-only step - no controls, nothing to act on.
+            --
+            -- Exactly the two endings that rest there: 'released' (seven days of
+            -- silence - "Still out there, if you cross paths again you can pick it
+            -- back up") and 'connected' (the success terminal). NOT 'suppressed':
+            -- "not feeling it" is a deliberate dismissal, and parking it on a shelf
+            -- the dismisser keeps seeing is the drama B7.1 promises it won't be.
+            -- NOT 'expired' either: that is block / account deletion, which must
+            -- leave nothing behind at all.
+            or (m.status in ('released', 'connected') and m.ended_at > now() - interval '30 days')
           )
           -- SAFE-05: hide a blocked pair (belt-and-suspenders to the teardown).
           and not exists (
@@ -14463,12 +15006,18 @@ async function assertProposalParticipant(
   proposalId: string,
   profileId: string,
 ) {
-  const result = await client.query<{ other_id: string; status: string; expires_at: Date }>(
+  const result = await client.query<{
+    other_id: string;
+    status: string;
+    expires_at: Date;
+    proposed_by: string | null;
+  }>(
     `
       select
         case when m.user_a_id = $2::uuid then m.user_b_id::text else m.user_a_id::text end as other_id,
         p.status::text,
-        p.expires_at
+        p.expires_at,
+        p.proposed_by::text
       from click_proposals p
       join mutual_clicks m on m.id = p.mutual_click_id
       where p.id = $1::uuid
@@ -14801,6 +15350,23 @@ export async function declineProposalForSession(session: Session | null, proposa
       await client.query("rollback");
       throw validationError("This plan is already settled.");
     }
+    // Declining is the RECIPIENT's move, which is the rule the drawer has always
+    // followed - it renders "Not this one" only on a plan the viewer did not propose.
+    // The server did not, and a server action is every bit as callable as an API
+    // route. That gap was a loop: propose (which notifies the other person), decline
+    // your own proposal, propose again. Decline returns the mutual to `open` and
+    // hands the pair a fresh alternatives budget - which is the deliberate escape
+    // hatch the cap copy promises the RECIPIENT ("pass and you two can start fresh"),
+    // and in the proposer's hands was instead an unbounded ping into someone else's
+    // notification tray for the mutual's whole seven days.
+    //
+    // proposed_by is NULL on a system suggestion (nobody picked it, the catalogue
+    // did), so that case stays declinable by both - which is right, it is no one's
+    // plan to withdraw.
+    if (row.proposed_by && row.proposed_by === profile.id) {
+      await client.query("rollback");
+      throw validationError("This is your suggestion - suggest a different one instead.");
+    }
     await client.query(
       `update click_proposals set status = 'declined', updated_at = now() where id = $1::uuid and status = 'pending'`,
       [proposalId],
@@ -14822,9 +15388,15 @@ export async function declineProposalForSession(session: Session | null, proposa
   }
 }
 
-// Soft-release a mutual without notifying the other person. The pair is kept
-// out of discovery for 90 days, after which the lifecycle cron removes the
-// suppression and they may naturally encounter one another again.
+// "Not feeling it" (B7.1) - the graceful no, silent, no drama. The pair is kept out
+// of discovery for 90 days, after which the lifecycle cron removes the suppression
+// and they may naturally encounter one another again (B7.5).
+//
+// The status is 'suppressed', per the B2 enum's own comment: "'Not feeling it'
+// (B7.5): hidden from each other 90d, then lapses." It wrote 'released', which is the
+// 7-day-silence terminal on a 30-day cooldown - so a deliberate soft-no was recorded
+// as a passive fizzle, and the pair sat on the past-clicks shelf the user had just
+// dismissed. B7.9: "a deliberate soft-no gets more distance than a passive fizzle."
 export async function releaseMutualForSession(session: Session | null, mutualId: string) {
   const pool = getPostgresPool();
   if (!getSessionEmail(session)) throw authError();
@@ -14859,7 +15431,7 @@ export async function releaseMutualForSession(session: Session | null, mutualId:
     );
     await client.query(
       `update mutual_clicks
-       set status = 'released', coord_state = 'dormant', ended_at = now(), updated_at = now()
+       set status = 'suppressed', coord_state = 'dormant', ended_at = now(), updated_at = now()
        where id = $1::uuid`,
       [mutualId],
     );

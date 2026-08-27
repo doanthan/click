@@ -1,0 +1,131 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="x-apple-disable-message-reformatting">
+    <title>Someone clicked with you</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700&display=swap" rel="stylesheet">
+    <style>
+      body { margin: 0; padding: 0; width: 100% !important; background: #F9F6F0; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+      table { border-collapse: collapse; mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+      img { border: 0; outline: none; text-decoration: none; -ms-interpolation-mode: bicubic; }
+      a { color: #3B2F81; }
+      .serif { font-family: 'Poppins',-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; }
+      .sans { font-family: -apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; }
+      @media only screen and (max-width: 600px) {
+        .container { width: 100% !important; }
+        .px-gutter { padding-left: 24px !important; padding-right: 24px !important; }
+        .hero-title { font-size: 28px !important; line-height: 1.15 !important; }
+      }
+    </style>
+  </head>
+  <!--
+    B7.4b - the click as a liveness test. This is the ONE email that goes to someone
+    who has been quiet for 30 days, and it exists to find out whether they are still
+    there. It says someone, and it never says who: a click is anonymous until it is
+    mutual (§6.1), and a re-engagement mail that leaked the sender would hand an
+    attacker a way to reveal themselves to a dormant account at will.
+
+    So there is deliberately NO sender variable in this template. Not a name, not an
+    initial, not a photo, not an event they were both at. Nothing added here should
+    ever be able to narrow it down - keeping the sender out is a property of the
+    variable contract, not of whoever reviews the copy next.
+
+    Vars: firstName, peopleUrl, supportEmail, unsubscribeUrl.
+  -->
+  <body style="margin:0;padding:0;background:#F9F6F0;">
+    <div style="display:none;font-size:1px;color:#F9F6F0;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden;">
+      Someone on Click clicked with you. Open Click to see if it's mutual.
+    </div>
+
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#F9F6F0;">
+      <tr>
+        <td align="center" style="padding:32px 16px;">
+
+          <table role="presentation" class="container" width="600" cellspacing="0" cellpadding="0" border="0" style="width:600px;max-width:600px;background:#FFFFFF;border:1px solid #ECEAF0;">
+
+            <!-- header -->
+            <tr>
+              <td class="px-gutter" style="padding:28px 40px 20px 40px;border-bottom:1px solid #ECEAF0;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                  <tr>
+                    <td class="serif" style="font-family:'Poppins',-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:22px;font-weight:600;color:#3B2F81;letter-spacing:-0.01em;">
+                      Click
+                    </td>
+                    <td align="right" class="sans" style="font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:#6B6580;">
+                      Someone clicked
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <!-- hero -->
+            <tr>
+              <td class="px-gutter" style="padding:40px 40px 8px 40px;">
+                <p class="sans" style="margin:0 0 12px 0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:11px;font-weight:600;letter-spacing:0.18em;text-transform:uppercase;color:#6B6580;">
+                  While you were away
+                </p>
+                <h1 class="serif hero-title" style="margin:0 0 16px 0;font-family:'Poppins',-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-weight:700;font-size:34px;line-height:1.1;color:#3B2F81;letter-spacing:-0.015em;">
+                  Someone clicked with you, {{firstName}}.
+                </h1>
+                <p class="sans" style="margin:0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.55;color:#1C1830;">
+                  We can't tell you who - clicks stay private until they're mutual. If you click them back, you'll both find out at the same moment.
+                </p>
+              </td>
+            </tr>
+
+            <!-- CTA -->
+            <tr>
+              <td class="px-gutter" style="padding:28px 40px 8px 40px;">
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                  <tr>
+                    <td bgcolor="#3B2F81" style="background:#3B2F81;">
+                      <a href="{{peopleUrl}}" class="sans" style="display:inline-block;padding:14px 28px;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:13px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:#FFFFFF;text-decoration:none;">See who's around</a>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <!-- good to know -->
+            <tr>
+              <td class="px-gutter" style="padding:32px 40px 0 40px;">
+                <p class="sans" style="margin:0 0 14px 0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:11px;font-weight:600;letter-spacing:0.18em;text-transform:uppercase;color:#6B6580;">
+                  How it works
+                </p>
+                <p class="sans" style="margin:0 0 10px 0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;color:#1C1830;line-height:1.6;">
+                  &middot; Clicking is private and one-way. Nobody is told, and nothing shows on their side unless you click each other.
+                </p>
+                <p class="sans" style="margin:0 0 10px 0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;color:#1C1830;line-height:1.6;">
+                  &middot; There's no messaging anywhere in Click. When it's mutual, what opens is a plan - an actual thing to go and do.
+                </p>
+                <p class="sans" style="margin:0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;color:#1C1830;line-height:1.6;">
+                  &middot; Nothing to do here if you'd rather not. Clicks pass on their own, and this one will too.
+                </p>
+              </td>
+            </tr>
+
+            <!-- footer -->
+            <tr>
+              <td class="px-gutter" style="padding:36px 40px 28px 40px;border-top:1px solid #ECEAF0;margin-top:32px;">
+                <p class="sans" style="margin:0 0 6px 0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;color:#6B6580;line-height:1.6;">
+                  You're getting this because someone clicked with you on Click while you were away.
+                </p>
+                <p class="sans" style="margin:0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;color:#6B6580;line-height:1.6;">
+                  <a href="{{unsubscribeUrl}}" style="color:#6B6580;text-decoration:underline;">Email preferences</a> &middot; <a href="mailto:{{supportEmail}}" style="color:#6B6580;text-decoration:underline;">{{supportEmail}}</a>
+                </p>
+              </td>
+            </tr>
+
+          </table>
+
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

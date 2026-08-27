@@ -4,6 +4,7 @@ import {
   TEST_SWITCHER_COOKIE,
   isTestSwitcherConfigured,
   mintAdminUnlockCookie,
+  testSwitcherCookieOptions,
   testSwitcherKeyMatches,
 } from "@/lib/test-switcher";
 
@@ -30,21 +31,29 @@ function destination(request: Request, back: string | null) {
 }
 
 function notFound() {
-  return new NextResponse(null, {
-    status: 404,
-    headers: { "Cache-Control": "private, no-store" },
-  });
+  // Status and logic unchanged - still a flat 404 for a wrong key, an
+  // unconfigured deployment and a caller who may not be granted an unlock
+  // alike, so the route still never confirms QA mode exists here.
+  //
+  // The BODY is new, and only because this route is now a redirect target:
+  // assertTestSwitcherUnlocked sends a lapsed QA session here, and a 404 with a
+  // null body renders as the browser's own network-error screen, which reads as
+  // "the site is broken" rather than "that link is dead". The copy is generic
+  // on purpose - it adds no information a 404 did not already carry.
+  return new NextResponse(
+    "<!doctype html><meta charset=utf-8><title>Not found</title>" +
+      "<p style=\"font:16px system-ui;margin:3rem auto;max-width:34rem;text-align:center\">" +
+      "Not found. <a href=\"/\">Go back to Click</a>.</p>",
+    {
+      status: 404,
+      headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "private, no-store" },
+    },
+  );
 }
 
 function unlockedResponse(request: Request, back: string | null, cookieValue: string) {
   const response = NextResponse.redirect(destination(request, back));
-  response.cookies.set(TEST_SWITCHER_COOKIE, cookieValue, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: 60 * 60 * 12,
-  });
+  response.cookies.set(TEST_SWITCHER_COOKIE, cookieValue, testSwitcherCookieOptions());
   return response;
 }
 

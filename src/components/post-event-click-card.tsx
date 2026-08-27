@@ -9,9 +9,20 @@ import { Avatar, Button, ckBtn } from "./ds";
 
 const shortDate = new Intl.DateTimeFormat("en-AU", { day: "numeric", month: "short" });
 
+const firstNameOf = (name: string) => name.split(" ")[0];
+
 export function PostEventClickCard({ prompt }: { prompt: PostEventClickPrompt }) {
   const clickable = prompt.coAttendees.filter((p) => !p.alreadyClicked);
-  if (clickable.length === 0) return null;
+  // §6.9(a): a pending click of your own is the only thing with a slot to give back.
+  const swappable = prompt.coAttendees.filter((p) => p.swappable);
+  const remaining = Math.max(0, POST_EVENT_CLICK_CAP - prompt.clicksUsed);
+  // §6.9.1: at zero the surface is a SPENT STATE, not a picker. It used to return null
+  // here, so the moment the budget ran out the card just stopped existing - no account
+  // of where the three went, and no sign the swap courtesy was ever on offer.
+  const spent = remaining === 0;
+  // Nothing left to say only when there is nobody to click AND nothing was spent here.
+  if (clickable.length === 0 && !spent) return null;
+  const canSwap = spent && !prompt.swapUsed && swappable.length > 0 && clickable.length > 0;
 
   return (
     <div className="rounded-[var(--radius-xl)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-5 shadow-[var(--shadow-sm)]">
@@ -23,11 +34,20 @@ export function PostEventClickCard({ prompt }: { prompt: PostEventClickPrompt })
           {prompt.eventTitle}
         </Link>
       </h3>
-      <p className="mt-1.5 text-sm leading-relaxed text-[color:var(--slate)]">
-        Tap up to {POST_EVENT_CLICK_CAP}{" "}
-        people you&apos;d like to see again. It&apos;s completely private - they only ever hear about it if they click
-        you back.
-      </p>
+
+      {spent ? (
+        <p className="mt-1.5 text-sm leading-relaxed text-[color:var(--slate)]">
+          You used your {POST_EVENT_CLICK_CAP} clicks for this event already. They&apos;re with the
+          people you picked earlier.
+        </p>
+      ) : (
+        <p className="mt-1.5 text-sm leading-relaxed text-[color:var(--slate)]">
+          Tap up to {remaining} more {remaining === 1 ? "person" : "people"} you&apos;d like to see
+          again. It&apos;s completely private - they only ever hear about it if they click you
+          back.
+        </p>
+      )}
+
       {/* Both numbers come from src/lib/clicks/constants.ts, the same source the
           server guards read - the cap used to surface only as a thrown error on
           the fourth tap, and the window not at all until the refusal you get
@@ -36,12 +56,79 @@ export function PostEventClickCard({ prompt }: { prompt: PostEventClickPrompt })
         Open for {POST_EVENT_CLICK_WINDOW_HOURS} hours after the event
       </p>
 
-      <ul className="mt-4 grid gap-2.5 sm:grid-cols-2">
-        {clickable.map((person) => (
-          <CoAttendeeRow key={person.id} person={person} eventSlug={prompt.eventSlug} />
-        ))}
-      </ul>
+      {spent ? (
+        canSwap ? (
+          <>
+            {/* §6.9(2) the swap courtesy: one per event, for the wrong person picked
+                early or the better one met late. Two native selects and a submit -
+                no client state, and the whole exchange is one transaction on the
+                server, so it can never spend the swap without landing the click.
+                The person swapped out is never told (§6.9(c)). */}
+            <p className="mt-4 text-[13px] leading-relaxed text-[color:var(--ink-soft)]">
+              You can swap one click, once, while the window is open. Nobody is told.
+            </p>
+            <SwapForm prompt={prompt} />
+          </>
+        ) : (
+          <p className="mt-4 text-[13px] leading-relaxed text-[color:var(--slate)]">
+            {prompt.swapUsed
+              ? "You've used your swap for this event."
+              : "Your clicks are all out there. If any are mutual you'll both hear about it."}
+          </p>
+        )
+      ) : (
+        <ul className="mt-4 grid gap-2.5 sm:grid-cols-2">
+          {clickable.map((person) => (
+            <CoAttendeeRow key={person.id} person={person} eventSlug={prompt.eventSlug} />
+          ))}
+        </ul>
+      )}
     </div>
+  );
+}
+
+// The swap picker. One form: who to let go of, who to spend it on.
+function SwapForm({ prompt }: { prompt: PostEventClickPrompt }) {
+  const [state, formAction, submitting] = useActionState(clickCoAttendeeAction, null);
+  const swappable = prompt.coAttendees.filter((p) => p.swappable);
+  const clickable = prompt.coAttendees.filter((p) => !p.alreadyClicked);
+  const selectClass =
+    "w-full rounded-[var(--radius-md)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] px-3 py-2 text-sm text-[color:var(--ink)]";
+
+  return (
+    <form action={formAction} className="mt-3 grid gap-3">
+      <input type="hidden" name="source_event" value={prompt.eventSlug} />
+      <label className="grid gap-1">
+        <span className="text-xs font-semibold text-[color:var(--slate)]">Swap out</span>
+        <select name="release_profile_id" className={selectClass} defaultValue={swappable[0]?.id}>
+          {swappable.map((person) => (
+            <option key={person.id} value={person.id}>
+              {firstNameOf(person.displayName)}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="grid gap-1">
+        <span className="text-xs font-semibold text-[color:var(--slate)]">Click with</span>
+        <select name="profile_id" className={selectClass} defaultValue={clickable[0]?.id}>
+          {clickable.map((person) => (
+            <option key={person.id} value={person.id}>
+              {firstNameOf(person.displayName)}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div>
+        <Button type="submit" variant="secondary" size="sm" loading={submitting}>
+          Swap this click
+        </Button>
+      </div>
+      {state?.message ? (
+        <p role="status" className="text-xs leading-5 text-[color:var(--slate)]">
+          {state.message}
+        </p>
+      ) : null}
+    </form>
   );
 }
 
@@ -55,7 +142,7 @@ function CoAttendeeRow({
   eventSlug: string;
 }) {
   const [state, formAction, submitting] = useActionState(clickCoAttendeeAction, null);
-  const firstName = person.displayName.split(" ")[0];
+  const firstName = firstNameOf(person.displayName);
   const sent = state?.ok === true || person.alreadyClicked;
 
   return (

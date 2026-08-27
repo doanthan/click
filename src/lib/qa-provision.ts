@@ -1,3 +1,4 @@
+import type { PoolClient } from "pg";
 import { isAdminEmail } from "@/auth";
 import { getPostgresPool } from "@/lib/postgres";
 import { QA_EVENTS, QA_PERSONAS, findQaPersona, type QaPersona } from "@/lib/qa-personas";
@@ -15,10 +16,7 @@ import { QA_EVENTS, QA_PERSONAS, findQaPersona, type QaPersona } from "@/lib/qa-
 // Callers are gated by src/lib/test-switcher.ts. Nothing in this file checks
 // permissions; it assumes the caller already did.
 
-async function upsertPersona(
-  client: { query: (text: string, values?: unknown[]) => Promise<unknown> },
-  persona: QaPersona,
-) {
+async function writePersona(client: PoolClient, persona: QaPersona, reset: boolean) {
   // This app has TWO admin checks, and they read different sources: the /admin
   // pages gate on isAdminEmail (the ADMIN_EMAILS env var), while the admin
   // repository actions gate on requireAdminProfile (profiles.role). Writing
@@ -30,6 +28,22 @@ async function upsertPersona(
   const role =
     persona.role === "admin" && !isAdminEmail(persona.email) ? "attendee" : persona.role;
 
+  const profileConflict = reset
+    ? `on conflict (email) do update set
+        role = excluded.role,
+        display_name = excluded.display_name,
+        suburb = excluded.suburb,
+        birth_date = excluded.birth_date,
+        age = excluded.age,
+        photo_url = case
+          when profiles.photo_url is null or profiles.photo_url = ''
+          then excluded.photo_url
+          else profiles.photo_url
+        end,
+        updated_at = now()`
+    : `on conflict (email) do update set
+        role = excluded.role`;
+
   await client.query(
     `
     insert into profiles (
@@ -40,27 +54,7 @@ async function upsertPersona(
     values ($1, $2::user_role, $3::citext, $4, $5, 'Sydney', $6,
             $7::date, extract(year from age($7::date))::int, $8,
             '{friendship,exploring}'::connection_intent[], now())
-    on conflict (email) do update set
-      role = excluded.role,
-      display_name = excluded.display_name,
-      suburb = excluded.suburb,
-      birth_date = excluded.birth_date,
-      -- Derived, never carried over: profiles.age is a plain column, so a
-      -- persona seeded before a birthday would sit a year stale forever, and
-      -- the click layer's independent 18+ gate reads age, not birth_date.
-      age = excluded.age,
-      -- The ONE field a re-provision does not stamp back. Uploading an avatar
-      -- is itself something you test, and this runs on every persona switch -
-      -- overwriting it would silently undo the thing you just did. The seeded
-      -- face is only there because the discovery pool refuses a photoless
-      -- profile; once a real one exists the seed has no more work to do.
-      -- "Reset all test data" still restores the seeded face, by deleting the row.
-      photo_url = case
-        when profiles.photo_url is null or profiles.photo_url = ''
-        then excluded.photo_url
-        else profiles.photo_url
-      end,
-      updated_at = now()
+    ${profileConflict}
     `,
     [
       `qa:${persona.email.split("@")[0]}`,
@@ -77,6 +71,19 @@ async function upsertPersona(
   const merchant = persona.merchant;
   if (!merchant) return;
 
+  const merchantConflict = reset
+    ? `on conflict (profile_id) do update set
+        business_name = excluded.business_name,
+        verification_status = excluded.verification_status,
+        stripe_connect_account_id = excluded.stripe_connect_account_id,
+        charges_enabled = excluded.charges_enabled,
+        payouts_enabled = excluded.payouts_enabled,
+        details_submitted = excluded.details_submitted,
+        onboarding_completed_at = excluded.onboarding_completed_at,
+        auto_approve_events = excluded.auto_approve_events,
+        updated_at = now()`
+    : "on conflict (profile_id) do nothing";
+
   await client.query(
     `
     insert into merchant_profiles (
@@ -84,19 +91,10 @@ async function upsertPersona(
       stripe_connect_account_id, charges_enabled, payouts_enabled,
       details_submitted, onboarding_completed_at, auto_approve_events
     )
-    select p.id, $2, p.email, $3, $4, $5::boolean, $6::boolean, $5::boolean,
-           case when $5::boolean then now() else null end, $7::boolean
+    select p.id, $2, p.email, $3, $4, $5::boolean, $6::boolean, $7::boolean,
+           case when $8::boolean then now() else null end, $9::boolean
     from profiles p where p.email = $1::citext
-    on conflict (profile_id) do update set
-      business_name = excluded.business_name,
-      verification_status = excluded.verification_status,
-      stripe_connect_account_id = excluded.stripe_connect_account_id,
-      charges_enabled = excluded.charges_enabled,
-      payouts_enabled = excluded.payouts_enabled,
-      details_submitted = excluded.details_submitted,
-      onboarding_completed_at = excluded.onboarding_completed_at,
-      auto_approve_events = excluded.auto_approve_events,
-      updated_at = now()
+    ${merchantConflict}
     `,
     [
       persona.email,
@@ -105,8 +103,45 @@ async function upsertPersona(
       merchant.stripeAccountId,
       merchant.chargesEnabled,
       merchant.payoutsEnabled,
+      merchant.detailsSubmitted,
+      merchant.onboardingComplete,
       merchant.verificationStatus === "approved",
     ],
+  );
+}
+
+async function deletePersonaData(client: PoolClient, email: string) {
+  // Remove owned rooms before the profile. events.host_profile_id uses SET
+  // NULL, which would otherwise leave a test event on Discover with no owner.
+  //
+  // The three rooms declared in QA_EVENTS are exempt, and the reason is not
+  // tidiness. They are the SHARED catalogue - every persona is re-seeded onto
+  // them on every switch - and both event_attendees.event_id and clicks.event_id
+  // are ON DELETE CASCADE. So "start fresh" on whichever host happens to own a
+  // seed room silently took every other tester's seats and clicks with it, real
+  // signups included. A persona reset should only drop the rooms that host made
+  // by hand during testing; the seed catalogue is re-dated below, not deleted.
+  await client.query(
+    `
+      delete from events
+      where slug <> all($2::text[])
+      and (
+        host_profile_id in (
+          select id from profiles where email = $1::citext and email like '%@click.local'
+        )
+        or merchant_profile_id in (
+          select merchant.id
+          from merchant_profiles merchant
+          join profiles profile on profile.id = merchant.profile_id
+          where profile.email = $1::citext and profile.email like '%@click.local'
+        )
+      )
+    `,
+    [email, QA_EVENTS.map((event) => event.slug)],
+  );
+  await client.query(
+    `delete from profiles where email = $1::citext and email like '%@click.local'`,
+    [email],
   );
 }
 
@@ -117,7 +152,10 @@ async function upsertPersona(
  * errors. The two seed events are best-effort by comparison: each is wrapped in
  * its own savepoint and a failure there is warn-logged, not raised.
  */
-export async function provisionQaPersona(email: string): Promise<void> {
+export async function provisionQaPersona(
+  email: string,
+  options: { resetTarget?: boolean } = {},
+): Promise<void> {
   const target = findQaPersona(email);
   if (!target) return;
 
@@ -129,20 +167,18 @@ export async function provisionQaPersona(email: string): Promise<void> {
   try {
     await client.query("begin");
 
+    if (options.resetTarget) {
+      await deletePersonaData(client, target.email);
+    }
+
     if (target.suburb === null) {
-      // A "start from nothing" persona. Deleting the row is what makes the
-      // sign-up journey re-runnable: ensureProfileForSession recreates it bare
-      // on the next page load, so /post-login sends you to /onboarding with an
-      // empty form every single time.
-      // The `like` is redundant given findQaPersona already vetted the address,
-      // and it stays anyway: the blast radius should be enforced by the
-      // statement, not by remembering to call the right lookup first.
-      await client.query(
-        `delete from profiles where email = $1::citext and email like '%@click.local'`,
-        [target.email],
-      );
+      // A "start from nothing" persona is deleted by the resetTarget branch
+      // above. A quick switch deliberately does nothing here: if the tester has
+      // since completed onboarding, switching away and back must preserve it.
+      // When no profile exists yet, ensureProfileForSession creates the blank
+      // row after sign-in and /post-login routes it to onboarding.
     } else {
-      await upsertPersona(client, target);
+      await writePersona(client, target, Boolean(options.resetTarget));
     }
 
     // Every OTHER persona exists too, whoever you signed in as. The hosts are
@@ -156,7 +192,10 @@ export async function provisionQaPersona(email: string): Promise<void> {
     // the deletion above.
     for (const other of QA_PERSONAS) {
       if (other.email === target.email || other.suburb === null) continue;
-      await upsertPersona(client, other);
+      // A quick switch must not rewrite work belonging to another persona.
+      // Insert dependencies only when missing; a fresh scenario resets only
+      // its own target above.
+      await writePersona(client, other, false);
     }
 
     for (const event of QA_EVENTS) {
@@ -167,7 +206,11 @@ export async function provisionQaPersona(email: string): Promise<void> {
       // persona switch down with it.
       await client.query("savepoint qa_seed_event");
       try {
-        // Re-date first, and INSERT only when nothing owns the slug. This can
+        // A fresh scenario re-dates the shared catalogue. A quick account
+        // switch only checks that each seed room exists, so it does not undo a
+        // host's edits or another tester's work.
+        //
+        // UPDATE first, and INSERT only when nothing owns the slug. This can
         // NOT be an INSERT that upserts on the slug conflict, because the
         // prevent_merchant_event_overlap trigger is BEFORE INSERT, so it runs
         // before the conflict is resolved, and `new.id` is a freshly defaulted
@@ -177,22 +220,66 @@ export async function provisionQaPersona(email: string): Promise<void> {
         // switch after a reset work and every switch after it fail. The UPDATE
         // fires the same trigger with the row's real id, which the guard's
         // `existing.id <> new.id` correctly excludes.
-        const redated = await client.query(
-          `
-          update events set
-            title = $2,
-            status = 'live'::event_status,
-            starts_at = now() + ($3::text || ' days')::interval,
-            ends_at = now() + ($3::text || ' days')::interval + interval '2 hours',
-            price_cents = $4::integer,
-            capacity = $5::integer,
-            updated_at = now()
-          where slug = $1
-          `,
-          [event.slug, event.title, String(event.daysFromNow), event.priceCents, event.capacity],
-        );
+        // A past-dated room is the exception, and it is the reason the post-event
+        // surface kept going dark. qa-past-pottery-night is the ONLY way Process 2
+        // ("who was there") is reachable at all - you cannot RSVP to a room that has
+        // already happened - and it is only reachable while it sits inside
+        // event_end + POST_EVENT_CLICK_WINDOW_HOURS. Gated on resetTarget alone, it
+        // aged out roughly two days after whoever last reset its owner, and every
+        // tester after that opened the surface to an empty roster and reported the
+        // click mechanic as broken. A negative daysFromNow means the room's whole
+        // purpose is to be recently finished, so re-date it on every switch: there is
+        // no host edit worth preserving on a room that is useless once it is stale.
+        const refreshOwnedSeed =
+          event.daysFromNow < 0 ||
+          Boolean(options.resetTarget && event.ownerEmail === target.email);
+        const existing = refreshOwnedSeed
+          ? await client.query(
+              `
+                with owner as (
+                  select p.id as profile_id, m.id as merchant_id,
+                         m.business_name, p.display_name
+                  from profiles p
+                  join merchant_profiles m on m.profile_id = p.id
+                  where p.email = $6::citext
+                )
+                update events set
+                  title = $2,
+                  status = 'live'::event_status,
+                  starts_at = now() + ($3::text || ' days')::interval,
+                  ends_at = now() + ($3::text || ' days')::interval + interval '2 hours',
+                  price_cents = $4::integer,
+                  capacity = $5::integer,
+                  -- Converge on the DECLARED owner. The insert below only fires when
+                  -- the slug is missing, so a room that changed hands in QA_EVENTS
+                  -- kept its old host forever: the declared owner's /merchant console
+                  -- showed nothing, and refreshOwnedSeed's ownerEmail test could never
+                  -- match whoever actually held the row. coalesce keeps the current
+                  -- owner when the declared one has no merchant profile yet, so the
+                  -- row count still means "the slug exists" and can never fall through
+                  -- to an insert that would collide on it.
+                  host_profile_id = coalesce(
+                    (select profile_id from owner), host_profile_id),
+                  merchant_profile_id = coalesce(
+                    (select merchant_id from owner), merchant_profile_id),
+                  group_name = coalesce((select business_name from owner), group_name),
+                  host_name = coalesce((select display_name from owner), host_name),
+                  updated_at = now()
+                where slug = $1
+              `,
+              [
+                event.slug,
+                event.title,
+                String(event.daysFromNow),
+                event.priceCents,
+                event.capacity,
+                event.ownerEmail,
+              ],
+            )
+          : await client.query(`select 1 from events where slug = $1`, [event.slug]);
 
-        if (redated.rowCount === 0) {
+        const created = existing.rowCount === 0;
+        if (created) {
           await client.query(
             `
             insert into events (
@@ -228,7 +315,13 @@ export async function provisionQaPersona(email: string): Promise<void> {
           );
         }
 
-        if (event.attendeeEmails.length > 0) {
+        const attendeeEmails = created
+          ? event.attendeeEmails
+          : options.resetTarget && event.attendeeEmails.includes(target.email)
+            ? [target.email]
+            : [];
+
+        if (attendeeEmails.length > 0) {
           // Seats on the already-finished event. The post-event click roster
           // (Process 2) is gated on event_participants_v, and no amount of
           // clicking around produces a row there: you cannot RSVP to a room
@@ -244,7 +337,7 @@ export async function provisionQaPersona(email: string): Promise<void> {
             where e.slug = $1
             on conflict (event_id, profile_id) do nothing
             `,
-            [event.slug, event.attendeeEmails],
+            [event.slug, attendeeEmails],
           );
         }
         await client.query("release savepoint qa_seed_event");

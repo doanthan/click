@@ -12,8 +12,10 @@ export type QaPersona = {
   label: string;
   /** What this persona is for - the reason to pick it over the one above. */
   exercises: string;
-  /** Grouping in the switcher panel. */
-  group: "Start of the journey" | "Skip ahead" | "Clicking with each other";
+  /** Grouping shared by the quick switcher and the testing workspace. */
+  group: "onboarding" | "ready" | "connections" | "admin";
+  /** Where a fresh run of this scenario begins. */
+  startPath: string;
   role: "attendee" | "merchant" | "admin";
   displayName: string;
   /**
@@ -47,8 +49,35 @@ export type QaPersona = {
     stripeAccountId: string | null;
     chargesEnabled: boolean;
     payoutsEnabled: boolean;
+    /** Stripe's account-details flag, independent of Click's own walkthrough. */
+    detailsSubmitted: boolean;
+    /** Click's post-approval host walkthrough, independent of payout readiness. */
+    onboardingComplete: boolean;
   } | null;
 };
+
+export const QA_SCENARIO_GROUPS = [
+  {
+    id: "onboarding",
+    label: "Onboarding flows",
+    description: "Start before a profile, host application, or approved-host setup is complete.",
+  },
+  {
+    id: "ready",
+    label: "Ready states",
+    description: "Open a stable customer or host account and test everyday product work.",
+  },
+  {
+    id: "connections",
+    label: "Two-person Click tests",
+    description: "Switch between people without resetting so their shared journey can continue.",
+  },
+  {
+    id: "admin",
+    label: "Operations",
+    description: "Review applications, approvals, reports, and platform settings.",
+  },
+] as const;
 
 // A merchant may only sell when the app sees BOTH a connected account id and
 // charges_enabled (the PayoutsNotReadyError gate in event-repository.ts). The
@@ -63,7 +92,8 @@ export const QA_PERSONAS: QaPersona[] = [
     email: "jamie@click.local",
     label: "New customer",
     exercises: "Signs up from scratch - lands on onboarding with nothing filled in",
-    group: "Start of the journey",
+    group: "onboarding",
+    startPath: "/onboarding",
     role: "attendee",
     displayName: "Jamie",
     // Blank on purpose: this persona is DELETED on every provision, so anything
@@ -75,9 +105,10 @@ export const QA_PERSONAS: QaPersona[] = [
   },
   {
     email: "maya@click.local",
-    label: "Customer",
+    label: "Customer ready to use Click",
     exercises: "Onboarded. Browse, RSVP, pay, the click mechanic",
-    group: "Start of the journey",
+    group: "ready",
+    startPath: "/dashboard",
     role: "attendee",
     displayName: "Maya Chen",
     suburb: "Barangaroo",
@@ -87,9 +118,10 @@ export const QA_PERSONAS: QaPersona[] = [
   },
   {
     email: "sam@click.local",
-    label: "Customer becoming a host",
-    exercises: "Onboarded, no host application yet - walks the 3-step host application",
-    group: "Start of the journey",
+    label: "New host application",
+    exercises: "Onboarded customer with no application - starts the 3-step host form",
+    group: "onboarding",
+    startPath: "/merchant/signup/business",
     role: "attendee",
     displayName: "Sam Whitfield",
     suburb: "Redfern",
@@ -106,7 +138,8 @@ export const QA_PERSONAS: QaPersona[] = [
     email: "ruby@click.local",
     label: "Customer who clicks back",
     exercises: "Click with Maya from both sides to form a mutual and coordinate",
-    group: "Clicking with each other",
+    group: "connections",
+    startPath: "/people",
     role: "attendee",
     displayName: "Ruby Alvarez",
     suburb: "Barangaroo",
@@ -118,7 +151,8 @@ export const QA_PERSONAS: QaPersona[] = [
     email: "ollie@click.local",
     label: "Customer who does not",
     exercises: "The third person - one-way clicks, declines, 'not feeling it'",
-    group: "Clicking with each other",
+    group: "connections",
+    startPath: "/people",
     role: "attendee",
     displayName: "Ollie Brandt",
     suburb: "Surry Hills",
@@ -130,7 +164,8 @@ export const QA_PERSONAS: QaPersona[] = [
     email: "otis@click.local",
     label: "Host - awaiting review",
     exercises: "Application submitted. The holding page before an admin approves",
-    group: "Skip ahead",
+    group: "ready",
+    startPath: "/merchant-pending",
     role: "merchant",
     displayName: "Otis Reed",
     suburb: "Newtown",
@@ -142,13 +177,16 @@ export const QA_PERSONAS: QaPersona[] = [
       stripeAccountId: null,
       chargesEnabled: false,
       payoutsEnabled: false,
+      detailsSubmitted: false,
+      onboardingComplete: false,
     },
   },
   {
     email: "theo@click.local",
-    label: "Host - free events only",
-    exercises: "Approved, skipped payout setup. Can publish free events",
-    group: "Skip ahead",
+    label: "Approved host onboarding",
+    exercises: "Approved, first login - chooses a free event or connects payouts",
+    group: "onboarding",
+    startPath: "/merchant/onboarding/welcome",
     role: "merchant",
     displayName: "Theo Morgan",
     suburb: "Marrickville",
@@ -160,13 +198,37 @@ export const QA_PERSONAS: QaPersona[] = [
       stripeAccountId: null,
       chargesEnabled: false,
       payoutsEnabled: false,
+      detailsSubmitted: false,
+      onboardingComplete: false,
+    },
+  },
+  {
+    email: "leila@click.local",
+    label: "Host - free events ready",
+    exercises: "Approved and through setup, with no Stripe account. Free events publish",
+    group: "ready",
+    startPath: "/merchant",
+    role: "merchant",
+    displayName: "Leila Haddad",
+    suburb: "Pyrmont",
+    birthDate: "1989-08-14",
+    photoUrl: "/home/avatars/av-12.jpg",
+    merchant: {
+      businessName: "Harbour Book Club",
+      verificationStatus: "approved",
+      stripeAccountId: null,
+      chargesEnabled: false,
+      payoutsEnabled: false,
+      detailsSubmitted: false,
+      onboardingComplete: true,
     },
   },
   {
     email: "nadia@click.local",
-    label: "Host - selling tickets",
-    exercises: "Approved with payouts on. Paid ticketing and checkout",
-    group: "Skip ahead",
+    label: "Host - paid-flow UI",
+    exercises: "Payout gate is open. Live Stripe charges intentionally stop before payment",
+    group: "ready",
+    startPath: "/merchant",
     role: "merchant",
     displayName: "Nadia Barros",
     suburb: "Surry Hills",
@@ -178,13 +240,16 @@ export const QA_PERSONAS: QaPersona[] = [
       stripeAccountId: FAKE_CONNECT_ACCOUNT,
       chargesEnabled: true,
       payoutsEnabled: true,
+      detailsSubmitted: true,
+      onboardingComplete: true,
     },
   },
   {
     email: "admin@click.local",
     label: "Admin",
     exercises: "Approvals, merchant verification, reports",
-    group: "Skip ahead",
+    group: "admin",
+    startPath: "/admin",
     role: "admin",
     // Admins are routed to /admin by ADMIN_EMAILS, but a null suburb would
     // bounce them into /onboarding first.
@@ -199,12 +264,12 @@ export const QA_PERSONAS: QaPersona[] = [
 // One free and one paid event so the customer personas always have something to
 // book on both paths, plus one that has already finished so the post-event side
 // of the click mechanic has a room to look back at. Owned by the two approved
-// host personas and dated forward (or back) on every provision, so they never
-// go stale.
+// ready host personas and dated forward (or back) on a fresh scenario, so they
+// never go stale.
 export const QA_EVENTS = [
   {
     slug: "qa-free-morning-walk",
-    ownerEmail: "theo@click.local",
+    ownerEmail: "leila@click.local",
     title: "QA - Marrickville Morning Walk",
     description:
       "Seeded QA event. A free, click-managed event for testing RSVP, capacity and the click mechanic.",
@@ -240,7 +305,7 @@ export const QA_EVENTS = [
     // attendees are seeded, which is the only way the post-event surface is
     // reachable at all. Negative daysFromNow is deliberate.
     slug: "qa-past-pottery-night",
-    ownerEmail: "theo@click.local",
+    ownerEmail: "leila@click.local",
     title: "QA - Last Night's Pottery Social",
     description:
       "Seeded QA event that has already finished, so the post-event 'who was there' click roster has a room to offer.",

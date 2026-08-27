@@ -85,6 +85,63 @@ test("an approved QA host has the same auto-publish state as a real approval", (
   assert.match(provision, /merchant\.verificationStatus === "approved"/);
 });
 
+test("host onboarding and Stripe readiness are modeled as separate states", () => {
+  const personas = readFileSync(path.join(root, "src/lib/qa-personas.ts"), "utf8");
+  const provision = readFileSync(path.join(root, "src/lib/qa-provision.ts"), "utf8");
+
+  assert.match(personas, /detailsSubmitted: boolean;/);
+  assert.match(personas, /onboardingComplete: boolean;/);
+  assert.match(
+    personas,
+    /email: "theo@click\.local"[\s\S]{0,900}chargesEnabled: false,[\s\S]{0,200}onboardingComplete: false/,
+    "the approved-host onboarding persona must still need the Click walkthrough",
+  );
+  assert.match(
+    personas,
+    /email: "leila@click\.local"[\s\S]{0,900}chargesEnabled: false,[\s\S]{0,200}onboardingComplete: true/,
+    "a host must be able to finish Click onboarding without enabling Stripe",
+  );
+  assert.match(provision, /merchant\.detailsSubmitted/);
+  assert.match(provision, /merchant\.onboardingComplete/);
+});
+
+test("quick switching preserves progress while fresh start resets one persona", () => {
+  const provision = readFileSync(path.join(root, "src/lib/qa-provision.ts"), "utf8");
+  const actions = readFileSync(path.join(root, "src/app/login/actions.ts"), "utf8");
+
+  assert.match(actions, /signInAsTestAccount[\s\S]{0,700}provisionQaPersona\(email\)/);
+  assert.match(
+    actions,
+    /startTestScenario[\s\S]{0,500}provisionQaPersona\(persona\.email, \{ resetTarget: true \}\)/,
+  );
+  assert.match(
+    provision,
+    /if \(options\.resetTarget\) \{\s*await deletePersonaData\(client, target\.email\)/,
+  );
+  assert.doesNotMatch(
+    provision,
+    /if \(!options\.resetTarget\) await deletePersonaData/,
+    "a quick switch to the blank-start persona must not erase completed onboarding",
+  );
+  assert.match(
+    provision,
+    /options\.resetTarget && event\.attendeeEmails\.includes\(target\.email\)[\s\S]{0,80}\? \[target\.email\]/,
+    "fresh start may restore only the selected person's shared attendance",
+  );
+});
+
+test("a per-persona reset keeps its delete scope inside click.local", () => {
+  const provision = readFileSync(path.join(root, "src/lib/qa-provision.ts"), "utf8");
+  const deletion = provision.slice(
+    provision.indexOf("async function deletePersonaData"),
+    provision.indexOf("export async function provisionQaPersona"),
+  );
+
+  assert.match(deletion, /delete from events/);
+  assert.match(deletion, /delete from profiles/);
+  assert.match(deletion, /email = \$1::citext and email like '%@click\.local'/);
+});
+
 test("a re-provision never stamps over a photo the tester uploaded", () => {
   // provisionQaPersona runs on EVERY persona switch. Uploading an avatar is
   // itself part of UAT, so overwriting photo_url unconditionally would silently
@@ -129,4 +186,40 @@ test("every persona photo points at a file that exists", () => {
       `${url} is referenced by a persona but does not exist in public/`,
     );
   }
+});
+
+test("a past-dated seed room is re-dated on every switch, not only on a reset", () => {
+  // The post-event roster only opens between event_end + 2h and event_end + 48h.
+  // Gated on resetTarget alone, the one room that surface has aged out ~48h after
+  // the last reset and stayed dead until someone happened to reset its owner - which
+  // is exactly how "the clicking mechanic doesn't work" gets reported.
+  const provision = readFileSync(path.join(root, "src/lib/qa-provision.ts"), "utf8");
+  assert.match(
+    provision,
+    /const refreshOwnedSeed =\s*\n\s*event\.daysFromNow < 0 \|\|/,
+    "a room dated in the past must refresh regardless of resetTarget",
+  );
+});
+
+test("a per-persona reset never deletes the shared seed catalogue", () => {
+  // event_attendees.event_id and clicks.event_id are both ON DELETE CASCADE, so
+  // deleting a QA_EVENTS room takes every other tester's seats and clicks with it -
+  // including real signups who booked one during UAT.
+  const provision = readFileSync(path.join(root, "src/lib/qa-provision.ts"), "utf8");
+  const deletion = provision.slice(
+    provision.indexOf("async function deletePersonaData"),
+    provision.indexOf("export async function provisionQaPersona"),
+  );
+  assert.match(deletion, /slug <> all\(\$2::text\[\]\)/, "seed slugs must be exempt");
+  assert.match(deletion, /QA_EVENTS\.map\(\(event\) => event\.slug\)/);
+});
+
+test("a re-dated seed room converges on the owner QA_EVENTS declares", () => {
+  // The insert only fires when the slug is missing, so without this a room that
+  // changed hands in QA_EVENTS keeps its old host forever and the declared owner's
+  // console is empty. coalesce keeps the row count meaning "the slug exists".
+  const provision = readFileSync(path.join(root, "src/lib/qa-provision.ts"), "utf8");
+  assert.match(provision, /with owner as \(/);
+  assert.match(provision, /host_profile_id = coalesce\(\s*\n?\s*\(select profile_id from owner\), host_profile_id\)/);
+  assert.match(provision, /merchant_profile_id = coalesce\(\s*\n?\s*\(select merchant_id from owner\), merchant_profile_id\)/);
 });

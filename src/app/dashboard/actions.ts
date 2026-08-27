@@ -30,11 +30,20 @@ export async function clickCoAttendeeAction(
     return { ok: false, message: "That person could not be found." };
   }
 
+  // §6.9 swap: present only from the spent state, where the picker asks which of the
+  // viewer's own pending clicks to release. Absent on every ordinary send, and the
+  // repository refuses it outright on the discovery surface, so a forged field can
+  // only ever spend the sender's own one swap on their own click.
+  const release = formData.get("release_profile_id");
+  const releaseReceiverId =
+    typeof release === "string" && UUID_RE.test(release) ? release : undefined;
+
   try {
     await createUserClickForSession(
       {
         clickedProfileId: id,
         sourceEventId: typeof sourceEvent === "string" ? sourceEvent : undefined,
+        releaseReceiverId,
       },
       session,
     );

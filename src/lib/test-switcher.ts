@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { timingSafeEqual } from "node:crypto";
 import { isAdminEmail } from "@/lib/admin-emails";
 import { mintQaAdminGrant, readQaAdminGrant } from "@/lib/qa-admin-grant";
@@ -23,6 +24,26 @@ import { isLocalDevelopment } from "@/lib/runtime-mode";
 // TEST_SWITCHER_KEY kills the key path, and removing someone from
 // ADMIN_EMAILS kills their grant.
 export const TEST_SWITCHER_COOKIE = "click_qa_persona";
+export const TEST_SWITCHER_MAX_AGE_SECONDS = 60 * 60 * 12;
+
+/**
+ * One cookie contract for both ways QA access is enabled:
+ *
+ * - the /qa-unlock route used by a tester holding TEST_SWITCHER_KEY
+ * - the inline admin control on /admin/system
+ *
+ * Keeping these options together matters because this cookie is the security
+ * boundary around sessions for every seeded persona, including admin.
+ */
+export function testSwitcherCookieOptions() {
+  return {
+    httpOnly: true,
+    sameSite: "lax" as const,
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: TEST_SWITCHER_MAX_AGE_SECONDS,
+  };
+}
 
 // Long enough that guessing is not a strategy. A short key counts as "not
 // configured" rather than quietly protecting the admin console with four
@@ -112,8 +133,29 @@ export async function isTestSwitcherUnlocked() {
   }
 }
 
+/**
+ * The gate every QA server action runs first.
+ *
+ * REDIRECTS, IT DOES NOT THROW - and that distinction is the whole point.
+ * Each caller is a server action fired from the account menu, which the root
+ * layout renders BESIDE `children`, outside the reach of src/app/error.tsx. A
+ * raw throw here therefore escaped every boundary the app owns and surfaced as
+ * Next's built-in "This page couldn't load" screen with no message on it.
+ *
+ * And the lapse is routine, not exotic: the unlock cookie lives for
+ * TEST_SWITCHER_MAX_AGE_SECONDS, the menu keeps offering the persona rows for
+ * as long as the page that rendered them is on screen, so a tester who leaves a
+ * tab open over the 12-hour boundary presses a row that is guaranteed to fail.
+ *
+ * /qa-unlock is the right landing spot for exactly that person: for an admin it
+ * silently re-mints the grant and returns them home with the switcher working
+ * again, and for anyone else it 404s - the same answer a stranger already gets,
+ * so this leaks nothing. The route name is already in the client bundle.
+ */
 export async function assertTestSwitcherUnlocked(feature: string): Promise<void> {
-  if (!(await isTestSwitcherUnlocked())) {
-    throw new Error(`${feature} is only available to an unlocked QA session.`);
-  }
+  if (await isTestSwitcherUnlocked()) return;
+  // Named in the server log so a lapse is still diagnosable, even though the
+  // browser only sees a redirect.
+  console.warn(`[qa] ${feature} refused: no unlocked QA session on this browser.`);
+  redirect("/qa-unlock");
 }

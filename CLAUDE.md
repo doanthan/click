@@ -92,6 +92,7 @@ Public bucket = anyone with the URL can read (avatars rendered on event cards, h
 | `event-cancelled-merchant` | `cancelEvent` in `src/lib/event-repository.ts` (admin-initiated cancel), alongside the attendee fan-out |
 | `merchant-waitlisted-merchant` | `registerMerchantWizardSubmit` in `src/lib/event-repository.ts`, when the venue falls outside the launch pilot |
 | `mutual-click-attendee` | `sendClickInner` in `src/lib/event-repository.ts` - two sites, one per side of the mutual click |
+| `reengagement-click-attendee` | `sendClickInner` in `src/lib/event-repository.ts`, post-commit via `afterResponse`, when the receiver has been inactive 30+ days and the click did NOT form a mutual (B7.4b liveness test). Claimed with a conditional UPDATE on `profiles.reengagement_clicked_at`, so it fires once per dormancy spell however many people click them. Never names the sender. |
 | `guest-invite` + `guest-spot-existing-user` | `processGuestSpotsForSession` in `src/lib/event-repository.ts`, branched on whether the guest address already has a profile |
 | `guest-spot-cancelled` | `cancelGuestSeatForPurchaser` in `src/lib/event-repository.ts` |
 | `report-received-admin` | `reportUser` in `src/lib/event-repository.ts` |

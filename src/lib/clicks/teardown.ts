@@ -12,11 +12,21 @@
 // non-live, so a torn-down pair drops from every mutual/proposal surface at once):
 //   clicks.status          -> 'invalidated'  (§3 terminal; refunds the sender's
 //                                              per-process cap, which excludes it)
-//   mutual_clicks.status   -> 'suppressed'   (§B2 forced safety teardown — distinct
-//                                              from 'expired', the 7-day clock lapse,
-//                                              and 'released', the soft "not feeling
-//                                              it" exit; coord_state -> 'dormant')
+//   mutual_clicks.status   -> 'expired'      (§B2 / B7.9: block and account deletion
+//                                              are THE permanent exit - "NEVER
+//                                              resurfaces ... the one real door".
+//                                              Distinct from 'released', the 7-day
+//                                              silence lapse (30d cooldown, then the
+//                                              pair may rediscover), and 'suppressed',
+//                                              the "not feeling it" soft-no (90d).
+//                                              coord_state -> 'dormant')
 //   click_proposals.status -> 'withdrawn'    (the live shared plan is pulled)
+//
+// These three mutual terminals were rotated one place for a while - a block wrote
+// 'suppressed', "not feeling it" wrote 'released', and the 7-day lapse wrote 'expired'.
+// Nothing gated on the difference at the time, so it was invisible; it stopped being
+// invisible the moment a rediscovery cooldown and a "past clicks" shelf started reading
+// the status to decide whether a pair may ever meet again.
 //
 // We mark terminal status rather than DELETE so the rows stay as an auditable
 // tombstone and the partial-unique indexes (active mutual / pending proposal /
@@ -26,7 +36,7 @@ import type { PoolClient } from "pg";
 
 // ---------------------------------------------------------------------------
 // Pair-scoped sever (block). Order matters: clicks first, then the proposal
-// (its join needs the still-active mutual), then suppress the mutual.
+// (its join needs the still-active mutual), then end the mutual.
 // ---------------------------------------------------------------------------
 export async function severPairCoordination(
   client: PoolClient,
@@ -44,7 +54,7 @@ export async function severPairCoordination(
   );
 
   // 2. Withdraw any live proposal (pending or accepted) under the pair's active
-  //    mutual — done before the mutual is suppressed so the subselect still finds it.
+  //    mutual — done before the mutual is ended so the subselect still finds it.
   await client.query(
     `update click_proposals set status = 'withdrawn', updated_at = now()
        where status in ('pending', 'accepted')
@@ -57,10 +67,11 @@ export async function severPairCoordination(
     [profileAId, profileBId],
   );
 
-  // 3. Suppress the pair's active mutual (permanent safety teardown).
+  // 3. End the pair's active mutual on the permanent terminal (B7.9: block never
+  //    resurfaces, so this is 'expired', not the re-clickable 'released'/'suppressed').
   await client.query(
     `update mutual_clicks
-        set status = 'suppressed', coord_state = 'dormant', ended_at = now(), updated_at = now()
+        set status = 'expired', coord_state = 'dormant', ended_at = now(), updated_at = now()
       where status = 'active'
         and ((user_a_id = $1::uuid and user_b_id = $2::uuid)
           or (user_a_id = $2::uuid and user_b_id = $1::uuid))`,
@@ -94,10 +105,10 @@ export async function severAllCoordinationForUser(
     [profileId],
   );
 
-  // 3. Suppress every active mutual the user is in.
+  // 3. End every active mutual the user is in, on the permanent terminal.
   await client.query(
     `update mutual_clicks
-        set status = 'suppressed', coord_state = 'dormant', ended_at = now(), updated_at = now()
+        set status = 'expired', coord_state = 'dormant', ended_at = now(), updated_at = now()
       where status = 'active' and (user_a_id = $1::uuid or user_b_id = $1::uuid)`,
     [profileId],
   );

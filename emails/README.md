@@ -26,6 +26,7 @@ Every template listed here is wired through `logEmailEvent` and fires today, wit
 | `payment-receipt-attendee.html` | From the Stripe webhook (`checkout.session.completed`) on paid events. | `Receipt — {{eventTitle}} ({{totalLabel}})` |
 | `waitlist-joined-attendee.html` | When an RSVP lands on a full event's waitlist (`registerForEvent`). | `You're on the waitlist - {{eventTitle}}` |
 | `waitlist-promoted-attendee.html` | When a freed seat is offered to the next person in the queue. Time-sensitive - the hold is already ticking. | `A spot opened - {{eventTitle}}` |
+| `reengagement-click-attendee.html` | Someone clicked with a member who has not opened the app in 30 days (B7.4b liveness test). Sent post-commit from `sendClickInner`, once per dormancy spell, and only when the click did NOT form a mutual. **Carries no sender variable at all** - a click is anonymous until mutual, so nothing in this template may narrow down who sent it. | `Someone clicked with you on Click` |
 
 ### Auth and security
 

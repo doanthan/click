@@ -433,7 +433,8 @@ test("the QA persona switcher cannot be reached without the unlock key", () => {
   for (const action of [
     "signOutOfTestAccount",
     "signInAsTestAccount",
-    "startTestJourney",
+    "startTestScenario",
+    "resetCurrentTestScenario",
     "resetTestAccounts",
   ]) {
     const body = actions.slice(actions.indexOf(`export async function ${action}`));
@@ -454,13 +455,114 @@ test("the QA persona switcher cannot be reached without the unlock key", () => {
     "an unreadable cookie jar must fail closed",
   );
 
-  // 4. Signed-in sessions receive the gated switcher inside the account menu.
+  // 4. Signed-in sessions receive the gated test-person menu inside the account menu.
   // The floating control remains only for the signed-out test state, otherwise
   // choosing "Not signed in" would leave the tester with no way back in.
   assert.match(layout, /<SiteHeader qaSwitcherUnlocked=\{qaSwitcherUnlocked\}/);
   assert.match(chrome, /canSwitchAccounts=\{qaSwitcherUnlocked\}/);
-  assert.match(accountMenu, /canSwitchAccounts[\s\S]*Switch account[\s\S]*TestAccountRows/);
+  assert.match(accountMenu, /canSwitchAccounts[\s\S]*Test as another person[\s\S]*TestAccountRows/);
   assert.match(layout, /qaSwitcherUnlocked && !session\?\.user \? \(/);
+});
+
+test("QA account changes keep the browser on its current local origin", () => {
+  // Local Auth is usually configured as localhost, but developers also open
+  // the bound server as 127.0.0.1. Auth.js expands relative redirectTo values
+  // against AUTH_URL; switching hostnames after the response loses the new
+  // host-only session cookie and sends the tester straight back to /login.
+  const actions = readFileSync(path.join(root, "src/app/login/actions.ts"), "utf8");
+  const signInHelper = actions.slice(
+    actions.indexOf("async function signInQaPersonaOnCurrentOrigin"),
+    actions.indexOf("async function signOutOnCurrentOrigin"),
+  );
+  const signOutHelper = actions.slice(
+    actions.indexOf("async function signOutOnCurrentOrigin"),
+    actions.indexOf("export async function signInWithGoogle"),
+  );
+
+  assert.match(signInHelper, /signIn\("test-login", \{ email, redirect: false \}\)/);
+  assert.match(signInHelper, /redirect\(destination\)/);
+  assert.doesNotMatch(signInHelper, /redirectTo/);
+  assert.match(signOutHelper, /signOut\(\{ redirect: false \}\)/);
+  assert.match(signOutHelper, /redirect\(destination\)/);
+
+  for (const action of ["signInAsTestAccount", "startTestScenario"]) {
+    const body = actions.slice(actions.indexOf(`export async function ${action}`));
+    assert.match(
+      body.slice(0, 700),
+      /signInQaPersonaOnCurrentOrigin/,
+      `${action} must not hand final navigation back to AUTH_URL`,
+    );
+  }
+});
+
+test("the production testing workspace stays behind the QA unlock", () => {
+  const proxy = readFileSync(path.join(root, "src/proxy.ts"), "utf8");
+  const page = readFileSync(path.join(root, "src/app/test/page.tsx"), "utf8");
+  const actions = readFileSync(path.join(root, "src/app/login/actions.ts"), "utf8");
+
+  assert.match(
+    proxy,
+    /isInternalRoute\(pathname\) && pathname !== "\/test"/,
+    "only the exact workspace route may pass the production internal-route filter",
+  );
+  assert.match(page, /if \(!\(await isTestSwitcherUnlocked\(\)\)\) notFound\(\)/);
+  assert.match(page, /robots: \{ index: false, follow: false \}/);
+  assert.match(actions, /startTestScenario[\s\S]{0,200}assertTestSwitcherUnlocked/);
+});
+
+test("a QA session always has a visible escape hatch", () => {
+  const layout = readFileSync(path.join(root, "src/app/layout.tsx"), "utf8");
+  const banner = readFileSync(
+    path.join(root, "src/components/qa-session-banner.tsx"),
+    "utf8",
+  );
+
+  assert.match(layout, /qaSessionEmail\.endsWith\("@click\.local"\)/);
+  assert.match(layout, /isQaSession \? \([\s\S]{0,120}<QaSessionBanner/);
+  assert.match(banner, /Testing access has expired/);
+  assert.match(banner, /<form action=\{signOutOfClick\}>/);
+  assert.match(banner, />\s*Exit test account\s*</);
+});
+
+test("fresh start clears only the selected account's browser drafts", () => {
+  const clearer = readFileSync(
+    path.join(root, "src/components/qa-fresh-state-clearer.tsx"),
+    "utf8",
+  );
+  const switcher = readFileSync(
+    path.join(root, "src/components/test-account-switcher.tsx"),
+    "utf8",
+  );
+
+  assert.match(clearer, /url\.searchParams\.get\("qaFresh"\) !== "1"/);
+  assert.match(clearer, /const suffix = `::\$\{scope\}`/);
+  assert.match(clearer, /key\?\.endsWith\(suffix\)/);
+  assert.match(clearer, /url\.searchParams\.delete\("qaFresh"\)/);
+  assert.match(switcher, /signInAsTestAccount/);
+  assert.doesNotMatch(
+    switcher,
+    /resetTestAccounts/,
+    "the progress-preserving quick menu must not expose a destructive global reset",
+  );
+  assert.match(switcher, /href="\/test"/);
+});
+
+test("a persona row reports the switch it just started", () => {
+  const switcher = readFileSync(
+    path.join(root, "src/components/test-account-switcher.tsx"),
+    "utf8",
+  );
+
+  // signInAsTestAccount provisions before it redirects, so the row is the only
+  // thing standing between the tester and a press that looks ignored.
+  assert.match(switcher, /const \{ pending \} = useFormStatus\(\)/);
+  assert.match(switcher, /aria-busy=\{pending \|\| undefined\}/);
+  assert.match(switcher, /\{pending \? pendingLabel : exercises\}/);
+  assert.doesNotMatch(
+    switcher,
+    /disabled=\{pending\}/,
+    "a busy row must not go natively disabled - that blurs the control the tester just pressed",
+  );
 });
 
 test("the release gate permits only the seeded QA admin beside a real operator", () => {
@@ -562,6 +664,36 @@ test("an admin unlocks the QA switcher with their session, not a bare flag", () 
   // screen saying the switcher exists, so /admin/system carries the switch.
   const systemPage = readFileSync(path.join(root, "src/app/admin/system/page.tsx"), "utf8");
   assert.match(systemPage, /<AdminQaAccess/, "admins need a signposted way in");
+});
+
+test("the admin QA toggle does not navigate away from unsaved system settings", () => {
+  // /admin/system contains an independently editable settings draft. The old
+  // QA control was a Link to /qa-unlock, so turning test accounts on tripped
+  // the page-wide leave-without-saving guard and made the unrelated controls
+  // look coupled. Cookie writes can happen in a server action without leaving.
+  const card = readFileSync(path.join(root, "src/components/admin-qa-access.tsx"), "utf8");
+  const control = readFileSync(
+    path.join(root, "src/components/admin-qa-access-control.tsx"),
+    "utf8",
+  );
+  const action = readFileSync(
+    path.join(root, "src/app/admin/system/actions.ts"),
+    "utf8",
+  );
+
+  assert.match(card, /<AdminQaAccessControl/);
+  assert.doesNotMatch(card, /href=["{][^\n]*qa-unlock/);
+  assert.match(control, /<form action=\{action\}>/);
+  const toggleForm = control.slice(control.indexOf("<form"), control.indexOf("</form>") + 7);
+  assert.doesNotMatch(toggleForm, /\bhref=/, "the inline toggle must not become a navigation again");
+  assert.match(control, /<Link href="\/test"/, "enabled QA access should expose the workspace");
+
+  // Changing the transport must not weaken the existing admin gate: the action
+  // still mints the signed, revocable grant and writes the HttpOnly cookie.
+  assert.match(action, /mintAdminUnlockCookie\(email\)/);
+  assert.match(action, /jar\.set\(TEST_SWITCHER_COOKIE, grant, testSwitcherCookieOptions\(\)\)/);
+  assert.match(action, /jar\.delete\(TEST_SWITCHER_COOKIE\)/);
+  assert.doesNotMatch(action, /\bredirect\(/, "the inline toggle must preserve the settings draft");
 });
 
 test("QA provisioning can only ever touch the @click.local namespace", () => {

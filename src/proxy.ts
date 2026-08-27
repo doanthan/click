@@ -25,11 +25,11 @@ export const proxy = auth((request) => {
   const pathname = nextRequest.nextUrl.pathname;
   const session = request.auth;
 
-  // Test harnesses and database inspection tools are never part of the public
-  // product. Return a deliberately empty 404 before any DB work or page render.
-  // The underlying test actions also enforce local-development-only access so
-  // stale Server Action ids cannot bypass this route-level containment.
-  if (isProductionDeployment() && isInternalRoute(pathname)) {
+  // Test harnesses and database inspection tools are never public product.
+  // /test is the one production UAT exception: its page verifies the signed QA
+  // unlock cookie and every action verifies it again. All other internal pages
+  // and every /api/test endpoint stay behind this empty route-level 404.
+  if (isProductionDeployment() && isInternalRoute(pathname) && pathname !== "/test") {
     return new NextResponse(null, {
       status: 404,
       headers: { "Cache-Control": "private, no-store" },

@@ -1,627 +1,186 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getEventsForExplore } from "@/lib/event-repository";
-import { isProductionDeployment } from "@/lib/runtime-mode";
-import { startTestJourney, signOutOfTestAccount } from "@/app/login/actions";
+import { auth } from "@/auth";
+import { signOutOfTestAccount, startTestScenario } from "@/app/login/actions";
+import { QaGlobalResetForm, QaSubmitButton } from "@/components/qa-testing-controls";
+import { QA_PERSONAS, QA_SCENARIO_GROUPS, type QaPersona } from "@/lib/qa-personas";
+import { isLocalDevelopment } from "@/lib/runtime-mode";
+import { isTestSwitcherUnlocked } from "@/lib/test-switcher";
 import SupabaseLogDrawer from "./SupabaseLogDrawer";
 import TestCasesBoard from "./TestCasesBoard";
 
 export const metadata = {
-  title: "Test personas",
-  description: "Jump into the key journeys for each kind of Click user.",
+  title: "Testing workspace",
+  description: "Start Click's seeded QA scenarios from a known state.",
+  robots: { index: false, follow: false },
 };
 
-type Step = {
-  href: string;
-  label: string;
-  // True when this step exercises a route or feature described in the
-  // journey spec that isn't built in the app yet. Rendered dimmed + dashed.
-  gap?: boolean;
-};
+function roleLabel(role: QaPersona["role"]) {
+  if (role === "merchant") return "Host";
+  if (role === "admin") return "Admin";
+  return "Customer";
+}
 
-type Story = {
-  title: string;
-  description: string;
-  // Optional spec reference shown as a small caption (e.g. "spec §3.1").
-  spec?: string;
-  // When true, the journey starts SIGNED OUT — the first step clears the test
-  // session (via signOutOfTestAccount) instead of signing in as the persona's
-  // seeded account. Needed for signup / sign-in / unverified-browse journeys,
-  // which are meaningless if you're already authenticated as an existing user.
-  signedOut?: boolean;
-  steps: Step[];
-};
-
-type Persona = {
-  name: string;
-  tagline: string;
-  // Tailwind utility classes for the persona's accent header.
-  accent: string;
-  // Seeded dev account (database/002_seed.sql) whose role matches this persona.
-  // Starting a story signs in as this account so the journey runs with the
-  // right role. Dev-only — startTestJourney no-ops outside DEVELOPMENT.
-  account: { email: string; label: string };
-  stories: Story[];
-};
+function scenarioNote(email: string) {
+  if (email === "sam@click.local") {
+    return "After Sam submits, use Test as Admin to approve the application. Then Test as Sam without resetting to see first-login host onboarding.";
+  }
+  if (email === "theo@click.local") {
+    return "This is the approved-host walkthrough itself. Payout readiness is deliberately separate from onboarding completion.";
+  }
+  if (email === "nadia@click.local") {
+    return "The Click paid-flow gate is open. A live Stripe charge intentionally fails before money moves.";
+  }
+  if (email === "ruby@click.local" || email === "ollie@click.local") {
+    return "Start fresh once, then use Test as in the avatar menu so shared clicks are not reset.";
+  }
+  return null;
+}
 
 export default async function TestPage() {
-  if (isProductionDeployment()) notFound();
-  const events = await getEventsForExplore();
-  const sampleSlug = events[0]?.id ?? "sample-event";
-  const sampleTitle = events[0]?.title ?? "an event";
+  if (!(await isTestSwitcherUnlocked())) notFound();
 
-  const personas: Persona[] = [
-    {
-      name: "Customer",
-      tagline: "Browse events, book a spot, and Click with someone.",
-      accent: "bg-[color:var(--rose)] text-[color:var(--surface-deep)]",
-      account: { email: "maya@click.local", label: "Maya (Attendee)" },
-      stories: [
-        {
-          title: "Sign up process",
-          description:
-            "Create an account, finish the attendee profile, and land on the dashboard.",
-          signedOut: true,
-          steps: [
-            { href: "/auth", label: "Sign up" },
-            { href: "/onboarding", label: "Onboarding" },
-            { href: "/dashboard", label: "Dashboard" },
-          ],
-        },
-        {
-          title: "Sign in & role routing",
-          description:
-            "Existing user signs in — admin lands on /admin, merchant on /merchant, attendee on /dashboard (or /onboarding if incomplete).",
-          signedOut: true,
-          steps: [
-            { href: "/auth", label: "Sign in" },
-            { href: "/post-login", label: "Post-login routing" },
-            { href: "/dashboard", label: "Dashboard" },
-          ],
-        },
-        {
-          title: "Email verification gate",
-          description:
-            "Unverified users can browse /events in a locked state but RSVP / Click actions 403 with a verification nudge.",
-          signedOut: true,
-          steps: [
-            { href: "/events", label: "Events (locked browse)" },
-            { href: `/events/${sampleSlug}`, label: "Try to RSVP → nudge" },
-          ],
-        },
-        {
-          title: "Take the Click Life quiz",
-          description:
-            "Optional but feeds the matching algorithm — life tags, persona, and dating prefs.",
-          steps: [
-            { href: "/quiz", label: "Quiz" },
-            { href: "/quiz/life", label: "Life" },
-            { href: "/quiz/personality", label: "Personality" },
-          ],
-        },
-        {
-          title: "Edit profile & settings",
-          description:
-            "Update name, photo, tags, intent — then tune notification and privacy settings.",
-          steps: [
-            { href: "/profile/edit", label: "Edit profile" },
-            { href: "/account-settings", label: "Settings" },
-          ],
-        },
-        {
-          title: "View events",
-          description:
-            "Browse the live events grid, then open one for the full detail page.",
-          steps: [
-            { href: "/events", label: "Events grid" },
-            { href: `/events/${sampleSlug}`, label: `Detail — ${sampleTitle}` },
-          ],
-        },
-        {
-          title: "Discover near you",
-          description:
-            "Map-driven discovery with radius-from-user (Mapbox). Entry point for new attendees who don't know what they want yet.",
-          steps: [
-            { href: "/discover", label: "Discover" },
-            { href: `/events/${sampleSlug}`, label: "Open from map" },
-          ],
-        },
-        {
-          title: "Browse categories",
-          description:
-            "Category-led entry into events — the alternative to search + filters.",
-          steps: [
-            { href: "/categories", label: "Categories" },
-            { href: "/events", label: "Filtered events" },
-          ],
-        },
-        {
-          title: "Book an event",
-          description:
-            "RSVP (or Reserve & pay) on the detail page, then find it in confirmed events and the calendar.",
-          steps: [
-            { href: `/events/${sampleSlug}`, label: "RSVP / pay" },
-            { href: "/confirmed-events", label: "Confirmed" },
-            { href: "/dashboard/calendar", label: "Calendar" },
-          ],
-        },
-        {
-          title: "Cancel an RSVP",
-          description:
-            "Open a confirmed booking and cancel — capacity returns and the waitlist gets offered.",
-          steps: [
-            { href: "/confirmed-events", label: "Confirmed" },
-            { href: `/events/${sampleSlug}`, label: "Cancel RSVP" },
-          ],
-        },
-        {
-          title: "Join a waitlist",
-          description:
-            "When an event is full, join its waitlist — spot offers expire after 15 min.",
-          steps: [
-            { href: `/events/${sampleSlug}`, label: "Join waitlist" },
-            { href: "/dashboard", label: "Waitlist tab" },
-          ],
-        },
-        {
-          title: "Save events",
-          description:
-            "Tap Save on an event to bookmark it, then find it in your saved list.",
-          steps: [
-            { href: `/events/${sampleSlug}`, label: "Save event" },
-            { href: "/bookmarks", label: "Saved" },
-          ],
-        },
-        {
-          title: "Legacy /saved-events redirect",
-          description:
-            "Old links land on /saved-events; the route is a permanent redirect to /bookmarks so external bookmarks don't 404.",
-          steps: [
-            { href: "/saved-events", label: "/saved-events" },
-            { href: "/bookmarks", label: "→ /bookmarks" },
-          ],
-        },
-        {
-          title: "Click with someone",
-          description:
-            "See suggested people, Click privately, watch for a mutual match — clicks are anonymous to the target until both sides Click.",
-          steps: [{ href: "/people", label: "People" }],
-        },
-        {
-          title: "Mutual click → snapshot → proposal",
-          description:
-            "On a mutual Click, both users see a read-only profile snapshot, then the Proposal UI suggests a shared event. No chat — pick from Click's catalogue, max 3 proposals.",
-          steps: [
-            { href: "/notifications", label: "Mutual Click notif" },
-            { href: "/people", label: "Snapshot modal" },
-            { href: "/dashboard", label: "Proposal → shared event" },
-          ],
-        },
-        {
-          title: "Post-event: did you Click?",
-          description:
-            "12h after the event ends, dashboard shows 'You went to X' with attendee picker. Selections feed mutual-click detection and the activity feed.",
-          steps: [
-            { href: "/dashboard", label: "Post-event prompt" },
-            { href: "/profile", label: "Your Click Story" },
-          ],
-        },
-        {
-          title: "Switch intent mode",
-          description:
-            "Dating / Friends / Networking toggle in the dashboard header — writes profiles.active_intent and re-tones the feed.",
-          steps: [{ href: "/dashboard", label: "Intent toggle" }],
-        },
-        {
-          title: "Notifications",
-          description:
-            "Mutual Clicks, waitlist offers, and event reminders land here and on the dashboard.",
-          steps: [
-            { href: "/notifications", label: "Notifications" },
-            { href: "/dashboard", label: "Dashboard" },
-          ],
-        },
-      ],
-    },
-    {
-      name: "Merchant",
-      tagline:
-        "Register → wait for approval → list events → fill seats. Mirrors context/02_MERCHANT_JOURNEY.md.",
-      accent: "bg-[color:var(--peach)] text-[color:var(--surface-deep)]",
-      account: { email: "theo@click.local", label: "Theo (Merchant)" },
-      stories: [
-        {
-          title: "Host application (3 steps)",
-          spec: "§1",
-          description:
-            "After account creation: business details → contact & address → review with optional documents. The application is written only on final submit, together with the accepted legal versions.",
-          steps: [
-            { href: "/merchant/signup", label: "Start signup" },
-            { href: "/merchant", label: "Portal (gated until approved)" },
-          ],
-        },
-        {
-          title: "Merchant login (separate from customer)",
-          spec: "§1 entry",
-          description:
-            "Dedicated host login surface — same NextAuth backend as /login, different branding + default callback of /merchant. Footer link sends new hosts to /merchant/signup.",
-          steps: [
-            { href: "/merchant/login", label: "Host login" },
-            { href: "/merchant", label: "Portal" },
-          ],
-        },
-        {
-          title: "Pending application holding page",
-          spec: "§1 post-submit",
-          description:
-            "After submit, merchant lands on a holding page with the first-event prep checklist and ETA messaging. /merchant redirects here while verification_status !== 'approved'.",
-          steps: [
-            { href: "/merchant-pending", label: "Pending page" },
-          ],
-        },
-        {
-          title: "First-event onboarding checklist",
-          spec: "§4",
-          description:
-            "On first approved login, hosts can create a free event immediately or connect Stripe first for paid tickets. The explicit choice completes onboarding before opening event creation.",
-          steps: [
-            { href: "/merchant?tab=dashboard", label: "Dashboard", gap: true },
-            { href: "/merchant/events/create", label: "Create first event" },
-          ],
-        },
-        {
-          title: "Dashboard overview",
-          spec: "§3",
-          description:
-            "Active events, confirmed attendees, revenue + commission this month, upcoming events with capacity bars, recent bookings, under-attended alert.",
-          steps: [
-            { href: "/merchant?tab=dashboard", label: "Dashboard" },
-            { href: "/merchant?tab=events", label: "Events tab" },
-          ],
-        },
-        {
-          title: "Event creation wizard (5 steps)",
-          spec: "§5",
-          description:
-            "Basics with optional matching details → schedule and price → location → optional media → review. Approved hosts auto-publish; paid events also require Stripe payouts.",
-          steps: [
-            { href: "/merchant/events/create", label: "Create event" },
-            { href: "/merchant?tab=events", label: "Status badge" },
-          ],
-        },
-        {
-          title: "Edit a published event",
-          spec: "§6 lifecycle",
-          description:
-            "Description, banner, external URL → editable in place. Title/date/capacity/price → flips status back to pending_review for re-approval (trusted merchants: auto-approve applies to edits too).",
-          steps: [
-            { href: "/merchant?tab=events", label: "Events" },
-            { href: `/merchant/events/${sampleSlug}`, label: "Edit event" },
-          ],
-        },
-        {
-          title: "Cancel an event (refund cascade)",
-          spec: "§6 cancellation",
-          description:
-            "CancelEventDialog requires reason ≥20 chars → 100% Stripe refund to every confirmed booking, waitlists + pending offers cancelled, all parties emailed. Failures logged to payment_transactions.",
-          steps: [
-            { href: `/merchant/events/${sampleSlug}`, label: "Open event" },
-            { href: `/merchant/events/${sampleSlug}`, label: "Cancel dialog", gap: true },
-          ],
-        },
-        {
-          title: "Under-attended alert (T-72h)",
-          spec: "§3.1",
-          description:
-            "When confirmed < capacity × 0.3 and start_time < now + 72h, dashboard shows alert with three remediations: Boost visibility (admin_featured 48h), Lower price, or Set a minimum.",
-          steps: [
-            { href: "/merchant?tab=dashboard", label: "Alert card", gap: true },
-          ],
-        },
-        {
-          title: "Minimum viable attendees decision",
-          spec: "§3.2",
-          description:
-            "Hourly cron: if confirmed < minimum and start_time < now + minimum_decision_hours, merchant gets 'run anyway' vs 'cancel with full refunds' notification.",
-          steps: [
-            { href: "/merchant/events/create", label: "Set minimum (Step 1)" },
-            { href: "/merchant?tab=events", label: "Decision notif", gap: true },
-          ],
-        },
-        {
-          title: "Attendees + check-in",
-          spec: "§7",
-          description:
-            "Attendees tab: bookings JOIN profiles for this merchant's events. Filters by event/status. Check-in flips checked_in + checked_in_at (RLS-scoped to merchant's events).",
-          steps: [
-            { href: "/merchant?tab=bookings", label: "Bookings (attendees)" },
-            { href: "/merchant?tab=bookings", label: "Bookings" },
-          ],
-        },
-        {
-          title: "CSV export (attendee list)",
-          spec: "§7",
-          description:
-            "Export first_name, email, booking_date, payment_status, checked_in, checked_in_at. Excludes full address / DOB / private profile data.",
-          steps: [
-            { href: "/merchant?tab=bookings", label: "Export CSV", gap: true },
-          ],
-        },
-        {
-          title: "Venues & discount codes",
-          spec: "§3 portal",
-          description:
-            "Reusable venue records (venues table) and merchant-scoped discount codes — both feed event creation and analytics.",
-          steps: [
-            { href: "/merchant?tab=events", label: "Venues" },
-            { href: "/merchant?tab=settings", label: "Discounts" },
-          ],
-        },
-        {
-          title: "Analytics",
-          spec: "§8",
-          description:
-            "Revenue over time, bookings per event, capacity utilisation, views → bookings, top tags, source attribution. Timeframe via ?timeframe= (7 / 30 / 90 / all).",
-          steps: [
-            { href: "/merchant?tab=dashboard", label: "Analytics" },
-            { href: "/merchant?tab=dashboard&timeframe=90", label: "90-day" },
-          ],
-        },
-        {
-          title: "Finances + Stripe Connect",
-          spec: "§9",
-          description:
-            "Founding partner: 0% until founding_deal_expiry. Standard: 10% commission. Weekly merchant-payout cron transfers net to Stripe. Connect onboarding is gated at event Step 3 for paid events.",
-          steps: [
-            { href: "/merchant?tab=finances", label: "Finances" },
-            { href: "/merchant?tab=finances", label: "Connect Stripe", gap: true },
-          ],
-        },
-        {
-          title: "Support tickets",
-          spec: "§3 portal",
-          description:
-            "Merchant raises and tracks support tickets — useSupportTickets / support_tickets table.",
-          steps: [
-            { href: "/merchant?tab=settings", label: "Support" },
-          ],
-        },
-        {
-          title: "Settings (profile, 2FA, payout, danger zone)",
-          spec: "§10",
-          description:
-            "Business profile edits, notification preferences (bookings/cancellations/capacity/under-attended), security + 2FA, Stripe Connect management, account deletion request.",
-          steps: [
-            { href: "/merchant?tab=settings", label: "Settings" },
-          ],
-        },
-        {
-          title: "Click with another user",
-          description: "Hosts are people too — find and Click with someone.",
-          steps: [{ href: "/people", label: "People" }],
-        },
-      ],
-    },
-    {
-      name: "Admin",
-      tagline: "Keep the platform clean and trustworthy.",
-      accent: "bg-[color:var(--ink)] text-[color:var(--champagne)]",
-      account: { email: "admin@click.local", label: "Click Admin" },
-      stories: [
-        {
-          title: "Dashboard",
-          description:
-            "Platform totals, the pending-events queue, and the audit log.",
-          steps: [{ href: "/admin", label: "Admin console" }],
-        },
-        {
-          title: "Approve merchants",
-          description:
-            "Review pending merchants and flip verification to approved.",
-          steps: [{ href: "/admin", label: "Merchant review" }],
-        },
-      ],
-    },
-  ];
+  const session = await auth();
+  const currentEmail = session?.user?.email?.trim().toLowerCase() ?? null;
+  const showDeveloperTools = isLocalDevelopment();
 
   return (
-    <main className="min-h-screen bg-[color:var(--champagne)] px-4 py-12 text-[color:var(--ink)] sm:px-6">
-      <section className="mx-auto max-w-6xl">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-            QA personas
-          </p>
-          <nav className="flex flex-wrap items-center gap-2">
-            <Link
-              href="/scale"
-              className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-1 font-mono text-[0.7rem] font-bold uppercase tracking-[0.14em] text-[color:var(--ink)] transition-colors hover:bg-[color:var(--rose)] hover:text-[color:var(--surface-deep)]"
-            >
-              /scale
-            </Link>
-            <Link
-              href="/business"
-              className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--cream)] px-3 py-1 font-mono text-[0.7rem] font-bold uppercase tracking-[0.14em] text-[color:var(--ink)] transition-colors hover:bg-[color:var(--rose)] hover:text-[color:var(--surface-deep)]"
-            >
-              /business
-            </Link>
-          </nav>
-        </div>
-        <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
-          <h1 className="font-display text-5xl font-bold leading-[0.96] tracking-[-0.025em] sm:text-6xl">
-            Test by <span className="text-[color:var(--coral)]">who</span>.
+    <main className="min-h-[100dvh] bg-[color:var(--champagne)] px-4 py-10 text-[color:var(--ink)] sm:px-6 lg:py-12">
+      <div className="mx-auto max-w-5xl">
+        <header className="max-w-3xl">
+          <p className="eyebrow">QA workspace</p>
+          <h1 className="font-display mt-3 text-4xl font-semibold leading-tight tracking-[-0.025em] sm:text-5xl">
+            Start from a known state.
           </h1>
-          <SupabaseLogDrawer />
-        </div>
-        <p className="mt-4 max-w-2xl text-base font-medium leading-7 text-[color:var(--mauve)]">
-          Pick a persona and walk its key journeys. Clicking the ▶ first step of
-          a persona (e.g. Customer) signs you in as that persona&rsquo;s seeded
-          account — so it changes your active login — then opens the step in the
-          current tab; the rest open in new tabs. Journeys that must run logged
-          out (signup, sign-in, the verification gate) start with a ⏏ button
-          that signs you out first instead. Open the Supabase log to confirm the
-          writes landed.
-        </p>
+          <p className="mt-4 max-w-2xl text-base leading-7 text-[color:var(--slate)]">
+            Start fresh resets only the selected test person, signs in, and opens the first page of that scenario. Use Test as in the avatar menu when you want to keep existing work.
+          </p>
+        </header>
 
-        <div className="mt-10 grid gap-6 lg:grid-cols-3">
-          {personas.map((persona) => (
-            <section
-              key={persona.name}
-              className="flex flex-col rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-5 hard-shadow-sm"
-            >
-              <header
-                className={`-mx-5 -mt-5 mb-5 rounded-t-3xl border-b-2 border-[color:var(--line)] px-5 py-4 ${persona.accent}`}
-              >
-                <h2 className="font-display text-3xl font-semibold leading-tight tracking-[-0.02em]">
-                  {persona.name}
-                </h2>
-                <p className="mt-1 text-sm font-medium leading-5 opacity-90">
-                  {persona.tagline}
-                </p>
-              </header>
+        <section className="mt-7 rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)] p-5 shadow-[var(--shadow-sm)]">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="font-display text-xl font-semibold">Signed-out entry points</h2>
+              <p className="mt-1 max-w-2xl text-sm leading-6 text-[color:var(--slate)]">
+                Clear the current test session before checking public signup, login, and locked browsing.
+              </p>
+            </div>
+            <form action={signOutOfTestAccount}>
+              <input type="hidden" name="redirectTo" value="/signup" />
+              <QaSubmitButton
+                label="Start signed out"
+                pendingLabel="Signing out..."
+                variant="secondary"
+              />
+            </form>
+          </div>
+        </section>
 
-              <ul className="grid gap-4">
-                {persona.stories.map((story) => (
-                  <li
-                    key={story.title}
-                    className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--cream)] p-4"
+        <div className="mt-9 grid gap-9">
+          {QA_SCENARIO_GROUPS.map((group) => {
+            const scenarios = QA_PERSONAS.filter((persona) => persona.group === group.id);
+            return (
+              <section key={group.id} aria-labelledby={`qa-${group.id}`}>
+                <div className="max-w-2xl">
+                  <h2
+                    id={`qa-${group.id}`}
+                    className="font-display text-2xl font-semibold text-[color:var(--ink)]"
                   >
-                    <div className="flex flex-wrap items-baseline justify-between gap-2">
-                      <h3 className="font-bold text-[color:var(--ink)]">
-                        {story.title}
-                      </h3>
-                      {story.spec ? (
-                        <span className="font-mono text-[0.6rem] font-bold uppercase tracking-[0.14em] text-[color:var(--mauve)]/70">
-                          spec {story.spec}
-                        </span>
-                      ) : null}
-                    </div>
-                    <p className="mt-1 text-xs font-medium leading-5 text-[color:var(--mauve)]">
-                      {story.description}
-                    </p>
-                    <ol className="mt-3 flex flex-wrap items-center gap-1.5">
-                      {story.steps.map((step, idx) => (
-                        <li key={step.href + idx} className="flex items-center gap-1.5">
-                          {idx > 0 ? (
-                            <span aria-hidden className="text-[color:var(--mauve)]">
-                              →
+                    {group.label}
+                  </h2>
+                  <p className="mt-1 text-sm leading-6 text-[color:var(--slate)]">
+                    {group.description}
+                  </p>
+                </div>
+
+                <ul className="mt-4 overflow-hidden rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)] shadow-[var(--shadow-sm)]">
+                  {scenarios.map((persona, index) => {
+                    const active = persona.email === currentEmail;
+                    const note = scenarioNote(persona.email);
+                    return (
+                      <li
+                        key={persona.email}
+                        className={`grid gap-4 p-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center ${
+                          index > 0 ? "border-t border-[color:var(--line)]" : ""
+                        }`}
+                      >
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="font-display text-lg font-semibold text-[color:var(--ink)]">
+                              {persona.label}
+                            </h3>
+                            <span className="rounded-lg bg-[color:var(--lavender-100)] px-2 py-1 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-[color:var(--purple-800)]">
+                              {roleLabel(persona.role)}
                             </span>
+                            {active ? (
+                              <span className="rounded-lg bg-[color:var(--champagne)] px-2 py-1 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-[color:var(--sage-ink)]">
+                                Active now
+                              </span>
+                            ) : null}
+                          </div>
+                          <p className="mt-1 text-sm leading-6 text-[color:var(--slate)]">
+                            {persona.exercises}
+                          </p>
+                          <p className="mt-1 text-xs font-medium text-[color:var(--ink-faint)]">
+                            {persona.email} · starts at {persona.startPath}
+                          </p>
+                          {note ? (
+                            <p className="mt-2 max-w-3xl rounded-xl bg-[color:var(--lavender-100)] px-3 py-2 text-xs leading-5 text-[color:var(--purple-800)]">
+                              {note}
+                            </p>
                           ) : null}
-                          {idx === 0 && story.signedOut ? (
-                            // Signed-out journey starter: clear any active test
-                            // session first (signOutOfTestAccount), then land on
-                            // this step — so signup / sign-in / unverified-browse
-                            // are exercised as a logged-out visitor, not as the
-                            // persona's already-existing seeded account.
-                            <form action={signOutOfTestAccount}>
-                              <input
-                                type="hidden"
-                                name="redirectTo"
-                                value={step.href}
-                              />
-                              <button
-                                type="submit"
-                                title={`Sign out (start as a logged-out visitor)${
-                                  step.gap ? " (route not built yet)" : ""
-                                } and open this step`}
-                                className={
-                                  step.gap
-                                    ? "rounded-full border-2 border-dashed border-[color:var(--mauve)]/60 bg-[color:var(--champagne)]/50 px-3 py-1 text-[0.7rem] font-bold uppercase tracking-[0.12em] text-[color:var(--mauve)] transition hover:border-[color:var(--mauve)] hover:text-[color:var(--ink)]"
-                                    : "rounded-full border-2 border-[color:var(--rose)] bg-[color:var(--champagne)] px-3 py-1 text-[0.7rem] font-bold uppercase tracking-[0.12em] text-[color:var(--rose)] transition hover:bg-[color:var(--rose)] hover:text-[color:var(--surface-deep)]"
-                                }
-                              >
-                                ⏏ {step.label}
-                              </button>
-                            </form>
-                          ) : idx === 0 ? (
-                            // The first step doubles as the journey starter: it
-                            // signs in as the persona's seeded account (so the
-                            // journey runs with the right role) and then lands on
-                            // this step. Submits in the current tab because the
-                            // sign-in swaps the session cookie globally. The
-                            // remaining steps stay plain new-tab links.
-                            <form action={startTestJourney}>
-                              <input
-                                type="hidden"
-                                name="email"
-                                value={persona.account.email}
-                              />
-                              <input type="hidden" name="next" value={step.href} />
-                              <button
-                                type="submit"
-                                title={`Sign in as ${persona.account.label}${
-                                  step.gap ? " (route not built yet)" : ""
-                                } and open this step`}
-                                className={
-                                  step.gap
-                                    ? "rounded-full border-2 border-dashed border-[color:var(--mauve)]/60 bg-[color:var(--champagne)]/50 px-3 py-1 text-[0.7rem] font-bold uppercase tracking-[0.12em] text-[color:var(--mauve)] transition hover:border-[color:var(--mauve)] hover:text-[color:var(--ink)]"
-                                    : "rounded-full border-2 border-[color:var(--ink)] bg-[color:var(--ink)] px-3 py-1 text-[0.7rem] font-bold uppercase tracking-[0.12em] text-[color:var(--champagne)] transition hover:bg-[color:var(--rose)] hover:text-[color:var(--surface-deep)]"
-                                }
-                              >
-                                ▶ {step.label}
-                              </button>
-                            </form>
-                          ) : (
-                            <Link
-                              href={step.href}
-                              target="_blank"
-                              rel="noreferrer"
-                              title={
-                                step.gap
-                                  ? "Spec-only — route or feature not built yet"
-                                  : undefined
-                              }
-                              className={
-                                step.gap
-                                  ? "rounded-full border-2 border-dashed border-[color:var(--mauve)]/50 bg-[color:var(--champagne)]/50 px-3 py-1 text-[0.7rem] font-bold uppercase tracking-[0.12em] text-[color:var(--mauve)] transition hover:border-[color:var(--mauve)] hover:text-[color:var(--ink)]"
-                                  : "rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-1 text-[0.7rem] font-bold uppercase tracking-[0.12em] text-[color:var(--ink)] transition hover:border-[color:var(--ink)] hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)]"
-                              }
-                            >
-                              {step.label} {step.gap ? "⚠" : "↗"}
-                            </Link>
-                          )}
-                        </li>
-                      ))}
-                    </ol>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ))}
+                        </div>
+
+                        <form action={startTestScenario}>
+                          <input type="hidden" name="email" value={persona.email} />
+                          <QaSubmitButton
+                            label={active ? "Restart fresh" : "Start fresh"}
+                            pendingLabel="Preparing..."
+                          />
+                        </form>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            );
+          })}
         </div>
 
-        <TestCasesBoard />
+        <section className="mt-10 rounded-2xl border border-[color:var(--line)] bg-[color:var(--paper)] p-5">
+          <details>
+            <summary className="cursor-pointer text-sm font-semibold text-[color:var(--ink)]">
+              Advanced reset
+            </summary>
+            <div className="mt-4 flex flex-col gap-4 border-t border-[color:var(--line)] pt-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="max-w-2xl text-sm leading-6 text-[color:var(--slate)]">
+                Removes every @click.local profile, its events, and shared QA progress. Use this only when the whole test environment needs a clean slate.
+              </p>
+              <QaGlobalResetForm />
+            </div>
+          </details>
+        </section>
 
-        <div className="mt-10">
-          <p className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[color:var(--mauve)]">
-            Internal / dev pages
-          </p>
-          <p className="mb-3 mt-1 max-w-2xl text-xs font-medium leading-5 text-[color:var(--mauve)]">
-            Standalone reference pages outside the persona journeys — open in a
-            new tab.
-          </p>
-          <ul className="flex flex-wrap items-center gap-1.5">
-            {[
-              { href: "/scale", label: "Scale — architecture & capacity" },
-              { href: "/business", label: "Business" },
-            ].map((link) => (
-              <li key={link.href}>
-                <Link
-                  href={link.href}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-3 py-1 text-[0.7rem] font-bold uppercase tracking-[0.12em] text-[color:var(--ink)] transition hover:border-[color:var(--ink)] hover:bg-[color:var(--ink)] hover:text-[color:var(--champagne)]"
-                >
-                  {link.label} ↗
+        {showDeveloperTools ? (
+          <section className="mt-10 border-t border-[color:var(--line)] pt-8">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="font-display text-2xl font-semibold">Local developer tools</h2>
+                <p className="mt-1 text-sm text-[color:var(--slate)]">
+                  Database logs and the engineering test-case board stay local only.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <SupabaseLogDrawer />
+                <Link href="/test-click" className="ck-btn ck-btn--secondary ck-btn--sm">
+                  Click walkthrough
                 </Link>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        <p className="mt-10 text-center font-mono text-[0.6rem] uppercase tracking-[0.18em] text-[color:var(--mauve)]/40">
-          ✷ doan is the best ✷
-        </p>
-      </section>
+              </div>
+            </div>
+            <TestCasesBoard />
+          </section>
+        ) : null}
+      </div>
     </main>
   );
 }
