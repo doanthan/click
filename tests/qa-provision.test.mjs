@@ -223,3 +223,56 @@ test("a re-dated seed room converges on the owner QA_EVENTS declares", () => {
   assert.match(provision, /host_profile_id = coalesce\(\s*\n?\s*\(select profile_id from owner\), host_profile_id\)/);
   assert.match(provision, /merchant_profile_id = coalesce\(\s*\n?\s*\(select merchant_id from owner\), merchant_profile_id\)/);
 });
+
+test("a persona reset keeps a Stripe Connect account a human onboarded", () => {
+  // merchant_profiles.profile_id is `on delete cascade`, so the profile DELETE in
+  // deletePersonaData drops the merchant row and every ON CONFLICT trick with it.
+  // Without an explicit capture-before-delete, "start fresh" also meant "walk the
+  // paid host back through Stripe's hosted onboarding" - and until someone did,
+  // merchant-hosted paid checkout had no connected account to route the
+  // destination charge to.
+  const provision = readFileSync(path.join(root, "src/lib/qa-provision.ts"), "utf8");
+  const capture = provision.indexOf("captureRealConnect(client, target.email)");
+  const remove = provision.indexOf("deletePersonaData(client, target.email)");
+  assert.ok(capture > -1, "expected the connect-account capture to be found");
+  assert.ok(remove > -1, "expected the persona delete to be found");
+  assert.ok(capture < remove, "the connect account must be captured BEFORE the delete cascades it");
+
+  // The captured account has to reach the write, or it was only read for show.
+  assert.match(
+    provision,
+    /writePersona\(client, target, Boolean\(options\.resetTarget\), preservedConnect\)/,
+    "the preserved account must be passed into writePersona",
+  );
+  // Status booleans ride with the id. A real account next to charges_enabled=false
+  // leaves the host unable to sell until the next account webhook happens to land.
+  assert.match(
+    provision,
+    /const connect = preservedConnect \?\? \{/,
+    "preserved connect state must win over the persona declaration wholesale",
+  );
+});
+
+test("no QA persona fakes a Stripe Connect account", () => {
+  // A placeholder acct_ id is truthy, so seeding one next to charges_enabled=true
+  // cleared the app's payout gate and then handed the placeholder to Stripe as
+  // transfer_data.destination - a 403 the buyer saw as a raw 500. It also ticked
+  // the merchant portal's payments step green, hiding the very Connect CTA a
+  // tester needed to fix it. A host is either genuinely onboarded or plainly not.
+  const personas = readFileSync(path.join(root, "src/lib/qa-personas.ts"), "utf8");
+  const fakeIds = [...personas.matchAll(/stripeAccountId:\s*"([^"]*)"/g)].map((m) => m[1]);
+  assert.deepEqual(fakeIds, [], "personas must not hardcode a Stripe account id");
+
+  // And no merchant block may claim capabilities it has no account for.
+  for (const block of personas.matchAll(/merchant:\s*\{([\s\S]*?)\n {4}\},/g)) {
+    const body = block[1];
+    if (!/stripeAccountId:\s*null/.test(body)) continue;
+    for (const flag of ["chargesEnabled", "payoutsEnabled", "detailsSubmitted"]) {
+      assert.match(
+        body,
+        new RegExp(`${flag}:\\s*false`),
+        `${flag} must be false when the persona has no connected account`,
+      );
+    }
+  }
+});

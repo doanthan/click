@@ -79,13 +79,12 @@ export const QA_SCENARIO_GROUPS = [
   },
 ] as const;
 
-// A merchant may only sell when the app sees BOTH a connected account id and
-// charges_enabled (the PayoutsNotReadyError gate in event-repository.ts). The
-// paid persona therefore carries a deliberately fake acct_ id: it clears the
-// app's gate so the whole paid path is walkable, and then Stripe itself rejects
-// the destination charge. On LIVE keys that is the point - the flow is testable
-// end to end without a real card ever hitting a real connected account.
-export const FAKE_CONNECT_ACCOUNT = "acct_qa_click_local_not_a_real_account";
+// A merchant may only sell when the app sees BOTH a REAL connected account id
+// (isRealConnectAccountId) and charges_enabled - the PayoutsNotReadyError gate
+// in event-repository.ts. No persona fakes that: a placeholder acct_ id cannot
+// receive a destination charge, so seeding one only ever bought a raw Stripe
+// 403 at the moment of payment. The paid host starts un-onboarded and a human
+// connects them once; see the merchant block on nadia@click.local.
 
 export const QA_PERSONAS: QaPersona[] = [
   {
@@ -225,8 +224,9 @@ export const QA_PERSONAS: QaPersona[] = [
   },
   {
     email: "nadia@click.local",
-    label: "Host - paid-flow UI",
-    exercises: "Payout gate is open. Live Stripe charges intentionally stop before payment",
+    label: "Host - paid flow",
+    exercises:
+      "Paid checkout end to end. Connect payouts once via /merchant - it survives resets",
     group: "ready",
     startPath: "/merchant",
     role: "merchant",
@@ -237,11 +237,23 @@ export const QA_PERSONAS: QaPersona[] = [
     merchant: {
       businessName: "Surry Hills Supper Club",
       verificationStatus: "approved",
-      stripeAccountId: FAKE_CONNECT_ACCOUNT,
-      chargesEnabled: true,
-      payoutsEnabled: true,
-      detailsSubmitted: true,
-      onboardingComplete: true,
+      // Approved to host, but NOT payout-ready - and the row says so. This used
+      // to seed a placeholder `acct_...` id with charges_enabled/payouts_enabled
+      // true, which was a lie in both directions: the merchant portal ticked
+      // "payments" green and hid the Connect CTA, so nobody could start
+      // onboarding, while paid checkout sailed through the payout gate and
+      // handed the placeholder to Stripe as transfer_data.destination - a 403
+      // that surfaced to the buyer as a raw 500.
+      //
+      // Null instead, so the portal shows "Connect payments" and one pass
+      // through Stripe's test-mode hosted onboarding mints a real account.
+      // qa-provision.ts then PRESERVES that account across persona resets, so
+      // this is a once-per-environment step, not once per scenario switch.
+      stripeAccountId: null,
+      chargesEnabled: false,
+      payoutsEnabled: false,
+      detailsSubmitted: false,
+      onboardingComplete: false,
     },
   },
   {

@@ -1369,3 +1369,46 @@ test("portal headcounts include paid +1 guest seats", () => {
     "confirmed must be SEATS, so no portal surface can forget to add the +1s",
   );
 });
+
+test("a placeholder Connect account can never reach Stripe as a charge destination", () => {
+  // merchant_profiles.stripe_connect_account_id can legitimately hold a
+  // placeholder - `acct_seed_*` from database/002_seed.sql - and a placeholder is
+  // truthy. The payout gate used a bare truthiness check, so a placeholder paired
+  // with charges_enabled=true sailed through and checkout sent it to Stripe as
+  // transfer_data.destination / on_behalf_of. Stripe 403s ("does not have access
+  // to account ..."), which surfaced to the buyer as a raw 500 instead of the
+  // PayoutsNotReadyError 409 the branch exists to give them.
+  const repo = readFileSync(path.join(root, "src/lib/event-repository.ts"), "utf8");
+  assert.match(
+    repo,
+    /if \(\s*\n?\s*!isRealConnectAccountId\(event\.merchant_stripe_account_id\)\s*\|\|\s*\n?\s*!event\.merchant_charges_enabled\s*\n?\s*\)/,
+    "the payout gate must test isRealConnectAccountId, not truthiness",
+  );
+  assert.match(
+    repo,
+    /isRealConnectAccountId,?\s*\n?\s*\} from "\.\/stripe-connect"/,
+    "isRealConnectAccountId must be imported from the module that defines it",
+  );
+
+  // And the value the checkout route hands Stripe is the normalized one, so the
+  // guarantee lives at the point of use rather than 200 lines upstream.
+  assert.match(
+    repo,
+    /const merchantStripeAccountId = isRealConnectAccountId\(/,
+    "the hold must normalize the account id before returning it",
+  );
+  assert.doesNotMatch(
+    repo,
+    /merchantStripeAccountId: event\.merchant_stripe_account_id/,
+    "PaymentHold must carry the normalized id, never the raw column",
+  );
+
+  // Same predicate the onboarding route uses to decide whether to mint a real
+  // account - if these two disagree about what counts as set up, one of them is
+  // wrong about a host who can or cannot be paid.
+  const connectRoute = readFileSync(
+    path.join(root, "src/app/api/merchant/stripe/connect/route.ts"),
+    "utf8",
+  );
+  assert.match(connectRoute, /isRealConnectAccountId\(merchant\.stripe_connect_account_id\)/);
+});

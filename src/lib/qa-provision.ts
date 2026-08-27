@@ -16,7 +16,75 @@ import { QA_EVENTS, QA_PERSONAS, findQaPersona, type QaPersona } from "@/lib/qa-
 // Callers are gated by src/lib/test-switcher.ts. Nothing in this file checks
 // permissions; it assumes the caller already did.
 
-async function writePersona(client: PoolClient, persona: QaPersona, reset: boolean) {
+/**
+ * A merchant's Stripe Connect account, lifted off the row before a reset drops
+ * it. This is the one thing on merchant_profiles that a persona reset must NOT
+ * recreate from the declaration: QA_PERSONAS names no account id (there is no
+ * real one to name at seed time), so a human has to walk the paid host through
+ * Stripe's hosted onboarding once. That took a real minute, and it is the only
+ * way a merchant-hosted paid event can take a card at all - the destination
+ * charge needs a genuine `acct_1...` with transfers active.
+ *
+ * merchant_profiles.profile_id is `on delete cascade` (database/001_schema.sql),
+ * so the profile DELETE in deletePersonaData takes the merchant row with it and
+ * an ON CONFLICT clause never gets the chance to protect anything. Hence
+ * capture-before-delete rather than a clever upsert.
+ */
+type PreservedConnect = {
+  stripeAccountId: string;
+  chargesEnabled: boolean;
+  payoutsEnabled: boolean;
+  detailsSubmitted: boolean;
+  onboardingCompletedAt: Date | null;
+};
+
+// The SQL half of isRealConnectAccountId (src/lib/stripe-connect.ts). A
+// placeholder like `acct_seed_theo` has underscores after the prefix and fails
+// it; a real Stripe id doesn't. Keep the two in step.
+const REAL_CONNECT_ACCOUNT_SQL = `stripe_connect_account_id ~ '^acct_[A-Za-z0-9]+$'`;
+
+async function captureRealConnect(
+  client: PoolClient,
+  email: string,
+): Promise<PreservedConnect | null> {
+  const result = await client.query<{
+    stripe_connect_account_id: string;
+    charges_enabled: boolean;
+    payouts_enabled: boolean;
+    details_submitted: boolean;
+    onboarding_completed_at: Date | null;
+  }>(
+    `
+      select merchant.stripe_connect_account_id,
+             merchant.charges_enabled,
+             merchant.payouts_enabled,
+             merchant.details_submitted,
+             merchant.onboarding_completed_at
+      from merchant_profiles merchant
+      join profiles profile on profile.id = merchant.profile_id
+      where profile.email = $1::citext
+        and merchant.${REAL_CONNECT_ACCOUNT_SQL}
+      limit 1
+    `,
+    [email],
+  );
+  const row = result.rows[0];
+  if (!row) return null;
+  return {
+    stripeAccountId: row.stripe_connect_account_id,
+    chargesEnabled: row.charges_enabled,
+    payoutsEnabled: row.payouts_enabled,
+    detailsSubmitted: row.details_submitted,
+    onboardingCompletedAt: row.onboarding_completed_at,
+  };
+}
+
+async function writePersona(
+  client: PoolClient,
+  persona: QaPersona,
+  reset: boolean,
+  preservedConnect: PreservedConnect | null = null,
+) {
   // This app has TWO admin checks, and they read different sources: the /admin
   // pages gate on isAdminEmail (the ADMIN_EMAILS env var), while the admin
   // repository actions gate on requireAdminProfile (profiles.role). Writing
@@ -84,6 +152,20 @@ async function writePersona(client: PoolClient, persona: QaPersona, reset: boole
         updated_at = now()`
     : "on conflict (profile_id) do nothing";
 
+  // preservedConnect, when present, is a REAL connected account captured off
+  // this row moments ago (see captureRealConnect). It wins over the persona
+  // declaration for all five Stripe columns - including the status booleans,
+  // because those are Stripe's answer about THAT specific account. Restoring a
+  // real account id next to the declaration's charges_enabled=false would leave
+  // the host unable to sell until the next account webhook happened to land.
+  const connect = preservedConnect ?? {
+    stripeAccountId: merchant.stripeAccountId,
+    chargesEnabled: merchant.chargesEnabled,
+    payoutsEnabled: merchant.payoutsEnabled,
+    detailsSubmitted: merchant.detailsSubmitted,
+    onboardingCompletedAt: merchant.onboardingComplete ? new Date() : null,
+  };
+
   await client.query(
     `
     insert into merchant_profiles (
@@ -92,7 +174,7 @@ async function writePersona(client: PoolClient, persona: QaPersona, reset: boole
       details_submitted, onboarding_completed_at, auto_approve_events
     )
     select p.id, $2, p.email, $3, $4, $5::boolean, $6::boolean, $7::boolean,
-           case when $8::boolean then now() else null end, $9::boolean
+           $8::timestamptz, $9::boolean
     from profiles p where p.email = $1::citext
     ${merchantConflict}
     `,
@@ -100,11 +182,11 @@ async function writePersona(client: PoolClient, persona: QaPersona, reset: boole
       persona.email,
       merchant.businessName,
       merchant.verificationStatus,
-      merchant.stripeAccountId,
-      merchant.chargesEnabled,
-      merchant.payoutsEnabled,
-      merchant.detailsSubmitted,
-      merchant.onboardingComplete,
+      connect.stripeAccountId,
+      connect.chargesEnabled,
+      connect.payoutsEnabled,
+      connect.detailsSubmitted,
+      connect.onboardingCompletedAt,
       merchant.verificationStatus === "approved",
     ],
   );
@@ -167,6 +249,14 @@ export async function provisionQaPersona(
   try {
     await client.query("begin");
 
+    // Lift the Stripe Connect account off the row BEFORE the delete cascades it
+    // away, so "start fresh" doesn't also mean "redo Stripe's hosted onboarding".
+    // Nothing else on merchant_profiles survives a reset, and nothing else needs
+    // to - this is the only column whose value came from outside the app.
+    const preservedConnect = options.resetTarget
+      ? await captureRealConnect(client, target.email)
+      : null;
+
     if (options.resetTarget) {
       await deletePersonaData(client, target.email);
     }
@@ -178,7 +268,7 @@ export async function provisionQaPersona(
       // When no profile exists yet, ensureProfileForSession creates the blank
       // row after sign-in and /post-login routes it to onboarding.
     } else {
-      await writePersona(client, target, Boolean(options.resetTarget));
+      await writePersona(client, target, Boolean(options.resetTarget), preservedConnect);
     }
 
     // Every OTHER persona exists too, whoever you signed in as. The hosts are

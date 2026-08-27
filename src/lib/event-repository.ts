@@ -11502,8 +11502,8 @@ export async function createPaymentHold(
       }
       // isRealConnectAccountId, not a truthiness check. merchant_profiles can
       // legitimately hold a PLACEHOLDER id - `acct_seed_*` from
-      // database/002_seed.sql, or the QA persona's FAKE_CONNECT_ACCOUNT - and a
-      // placeholder is truthy. Paired with a seeded charges_enabled=true it
+      // database/002_seed.sql - and a placeholder id is still truthy. Paired
+      // with a hand-set or seeded charges_enabled=true it
       // sailed through this gate, and checkout then sent the placeholder to
       // Stripe as transfer_data.destination, which 403s ("does not have access
       // to account ..."). The buyer got a raw Stripe message in a 500 instead of
@@ -11727,7 +11727,7 @@ export async function createPaymentHold(
     // so syncing the real charge later is a no-op reconciliation. Only
     // merchant-hosted events are destination charges with an application fee;
     // platform-owned events have no connected account, so leave it NULL.
-    const applicationFeeCents = event.merchant_stripe_account_id
+    const applicationFeeCents = merchantStripeAccountId
       ? (calculateApplicationFee(event.price_cents, commissionRateBps) + bookingFeeCents) * seatCount
       : null;
 
