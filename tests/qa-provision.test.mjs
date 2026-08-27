@@ -276,3 +276,13 @@ test("no QA persona fakes a Stripe Connect account", () => {
     }
   }
 });
+
+test("the paid-flow workspace tells testers to complete sandbox checkout", () => {
+  const page = readFileSync(path.join(root, "src/app/test/page.tsx"), "utf8");
+  assert.match(page, /test-mode paid booking/);
+  assert.doesNotMatch(
+    page,
+    /live Stripe charge intentionally fails/,
+    "the workspace must not describe the placeholder-account failure the QA flow removed",
+  );
+});

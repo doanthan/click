@@ -29,7 +29,7 @@ function scenarioNote(email: string) {
     return "This is the approved-host walkthrough itself. Payout readiness is deliberately separate from onboarding completion.";
   }
   if (email === "nadia@click.local") {
-    return "The Click paid-flow gate is open. A live Stripe charge intentionally fails before money moves.";
+    return "Connect payouts once if needed, then switch to Maya to complete a test-mode paid booking. Switch back to Nadia without resetting to inspect the host result.";
   }
   if (email === "ruby@click.local" || email === "ollie@click.local") {
     return "Start fresh once, then use Test as in the avatar menu so shared clicks are not reset.";

@@ -499,11 +499,19 @@ test("the production testing workspace stays behind the QA unlock", () => {
   const proxy = readFileSync(path.join(root, "src/proxy.ts"), "utf8");
   const page = readFileSync(path.join(root, "src/app/test/page.tsx"), "utf8");
   const actions = readFileSync(path.join(root, "src/app/login/actions.ts"), "utf8");
+  const gate = readFileSync(path.join(root, "src/lib/test-switcher.ts"), "utf8");
 
   assert.match(
     proxy,
-    /isInternalRoute\(pathname\) && pathname !== "\/test"/,
-    "only the exact workspace route may pass the production internal-route filter",
+    /isProductionDeployment\(\) && isInternalRoute\(pathname\)/,
+    "all internal routes must pass the production route filter",
+  );
+  assert.match(proxy, /pathname === "\/test" && testSwitcherCookieHolds\(qaCookie\)/);
+  assert.match(proxy, /nextRequest\.cookies\.get\(TEST_SWITCHER_COOKIE\)/);
+  assert.match(
+    gate,
+    /export function testSwitcherCookieHolds\(cookieValue: string\)/,
+    "the proxy and page gate must share one live-cookie predicate",
   );
   assert.match(page, /if \(!\(await isTestSwitcherUnlocked\(\)\)\) notFound\(\)/);
   assert.match(page, /robots: \{ index: false, follow: false \}/);

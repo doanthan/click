@@ -12,6 +12,7 @@ import { SiteFooter, SiteHeader, SiteHeaderShell } from "@/components/site-chrom
 import { SiteNotices } from "@/components/site-notices";
 import { QaSessionBanner } from "@/components/qa-session-banner";
 import { QaFreshStateClearer } from "@/components/qa-fresh-state-clearer";
+import { QaTestingDrawer } from "@/components/qa-testing-drawer";
 import { auth, isAdminEmail } from "@/auth";
 import { getSystemSettings } from "@/lib/event-repository";
 import { AccountScopeProvider } from "@/lib/account-scope";
@@ -198,6 +199,13 @@ export default async function RootLayout({
           }}
         />
         <SessionFreshness />
+        {/* The recorder follows one unlocked browser through real admin,
+            customer, host and signed-out QA states. Its client timeline is
+            privacy-bounded and session-scoped; mounting remains behind the
+            same server-side gate that protects the persona switcher. */}
+        {qaSwitcherUnlocked ? (
+          <QaTestingDrawer currentEmail={session?.user?.email ?? null} />
+        ) : null}
         {showInternalTools ? <DevSupabaseDrawer /> : null}
         {/* Pre-launch: shown to everyone, signed in or not, so a bug on the
             signed-out surfaces (login, register, discover) can be reported.

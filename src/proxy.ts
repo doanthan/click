@@ -1,6 +1,7 @@
 import { auth } from "@/auth";
 import { updateSession } from "@/utils/supabase/middleware";
 import { isInternalRoute, isProductionDeployment } from "@/lib/runtime-mode";
+import { TEST_SWITCHER_COOKIE, testSwitcherCookieHolds } from "@/lib/test-switcher";
 import { NextResponse, type NextRequest } from "next/server";
 
 function redirectToLogin(request: NextRequest, target: "customer" | "merchant" = "customer") {
@@ -26,14 +27,20 @@ export const proxy = auth((request) => {
   const session = request.auth;
 
   // Test harnesses and database inspection tools are never public product.
-  // /test is the one production UAT exception: its page verifies the signed QA
-  // unlock cookie and every action verifies it again. All other internal pages
-  // and every /api/test endpoint stay behind this empty route-level 404.
-  if (isProductionDeployment() && isInternalRoute(pathname) && pathname !== "/test") {
-    return new NextResponse(null, {
-      status: 404,
-      headers: { "Cache-Control": "private, no-store" },
-    });
+  // /test is the one production UAT exception, but only for a request carrying
+  // the same live QA grant that its page and actions verify again. Do this in
+  // the proxy as well: a Server Component notFound() may stream a 404 shell
+  // under an already-committed HTTP 200, which leaks the route's existence and
+  // fails the launch smoke contract even though it hides the workspace body.
+  if (isProductionDeployment() && isInternalRoute(pathname)) {
+    const qaCookie = nextRequest.cookies.get(TEST_SWITCHER_COOKIE)?.value ?? "";
+    const isUnlockedWorkspace = pathname === "/test" && testSwitcherCookieHolds(qaCookie);
+    if (!isUnlockedWorkspace) {
+      return new NextResponse(null, {
+        status: 404,
+        headers: { "Cache-Control": "private, no-store" },
+      });
+    }
   }
 
   // /dashboard and /admin only require a signed-in session here. Admin-specific

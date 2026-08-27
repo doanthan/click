@@ -114,6 +114,17 @@ function adminGrantHolds(cookieValue: string) {
 }
 
 /**
+ * Pure request-cookie check shared by the page/actions and the production
+ * proxy. Keeping the proxy on this exact predicate matters: a Server Component
+ * `notFound()` can be streamed after the root layout has already committed an
+ * HTTP 200. The page contents stay hidden, but the anonymous `/test` request no
+ * longer has the real 404 status promised by the release smoke test.
+ */
+export function testSwitcherCookieHolds(cookieValue: string) {
+  return adminGrantHolds(cookieValue) || testSwitcherKeyMatches(cookieValue);
+}
+
+/**
  * True when the QA persona switcher may be used by THIS request. Local dev
  * keeps working with no key set, exactly as before.
  */
@@ -125,7 +136,7 @@ export async function isTestSwitcherUnlocked() {
     // Both comparisons reject an empty cookie, and testSwitcherKeyMatches also
     // rejects everything when no key is configured - so a deployment with
     // neither TEST_SWITCHER_KEY nor ADMIN_EMAILS set is closed to everyone.
-    return adminGrantHolds(cookie) || testSwitcherKeyMatches(cookie);
+    return testSwitcherCookieHolds(cookie);
   } catch {
     // Called outside a request scope, so there is no cookie to read. Fail
     // closed: an unreadable gate is a shut gate.
