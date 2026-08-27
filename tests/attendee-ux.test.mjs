@@ -7,6 +7,49 @@ const root = process.cwd();
 const repo = readFileSync(path.join(root, "src/lib/event-repository.ts"), "utf8");
 const eventPage = readFileSync(path.join(root, "src/app/events/[slug]/page.tsx"), "utf8");
 
+test("replaying an RSVP returns the seat without repeating its side effects", () => {
+  const start = repo.indexOf("export async function registerForEvent");
+  assert.ok(start > -1, "registerForEvent not found");
+  const register = repo.slice(start, start + 9500);
+
+  // The current attendee row is read after the event lock in a separate SQL
+  // statement, so a concurrent retry sees the first request's committed state.
+  assert.match(register, /const existingRsvpResult = await client\.query/);
+  assert.match(register, /const rsvpChanged = existingRsvp\?\.status !== status/);
+  assert.match(
+    register,
+    /existingRsvp\?\.status === "confirmed"[\s\S]{0,100}\? "confirmed"/,
+    "a confirmed seat must survive a retry after the event enters waitlist mode",
+  );
+
+  // Every user-visible or append-only effect must be behind the state-change
+  // guard. The RSVP API still returns the same status on a retry.
+  assert.match(register, /if \(rsvpChanged && status === "confirmed"\) \{[\s\S]*?logBookingEvent/);
+  assert.match(register, /if \(rsvpChanged\) \{[\s\S]*?insert into notifications/);
+  assert.match(register, /if \(rsvpChanged && status === "waitlisted"\) \{[\s\S]*?logWaitlistJoinedEmail/);
+  assert.match(register, /else if \(rsvpChanged\) \{[\s\S]*?logRsvpEmails/);
+});
+
+test("booking emails are not detached from the serverless request", () => {
+  // A committed RSVP used to return while these promises were still running.
+  // Vercel can freeze that invocation immediately, so no email_events row was
+  // guaranteed to exist even though the API said the booking succeeded.
+  for (const helper of [
+    "logRsvpEmails",
+    "logWaitlistJoinedEmail",
+    "logRsvpCancelledEmails",
+    "logPaymentReceiptEmail",
+  ]) {
+    assert.doesNotMatch(
+      repo,
+      new RegExp(`void ${helper}\\(`),
+      `${helper} must be awaited after the booking transaction commits`,
+    );
+  }
+  assert.match(repo, /await Promise\.all\(\[[\s\S]{0,500}logRsvpEmails/);
+  assert.match(repo, /await logRsvpCancelledEmails\(/);
+});
+
 test("the waitlist position a member is shown uses the promoter's own ordering", () => {
   // The promoter serves never-lapsed rows first. Counting the queue by
   // created_at alone told someone who missed their 30-minute window that they

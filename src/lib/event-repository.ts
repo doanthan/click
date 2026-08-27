@@ -947,8 +947,8 @@ async function logRsvpEmails(
 }
 
 // Post-commit emailer for a waitlist join. Same shape as logRsvpEmails: one
-// supplementary SELECT outside the txn, fire-and-forget, so a template problem
-// can never roll back the queue insert.
+// supplementary SELECT outside the txn. It catches its own failures, so callers
+// can await persistence without a template problem rolling back the queue insert.
 async function logWaitlistJoinedEmail(
   pool: NonNullable<ReturnType<typeof getPostgresPool>>,
   eventDbId: string,
@@ -1512,7 +1512,8 @@ async function logEventRejectedEmail(
 
 // Post-commit emailer for a cancelled RSVP. Mirrors logRsvpEmails - one
 // supplementary SELECT gathers the event, owning merchant, and the updated
-// headcount for both the attendee + merchant templates. Fire-and-forget.
+// headcount for both templates. Best-effort and awaited so serverless execution
+// cannot freeze it before persistence.
 async function logRsvpCancelledEmails(
   pool: NonNullable<ReturnType<typeof getPostgresPool>>,
   eventDbId: string,
@@ -1628,9 +1629,9 @@ async function logRsvpCancelledEmails(
   }
 }
 
-// Post-commit GST tax receipt. Joins the paid transaction → event → buyer in a
-// single SELECT. AU GST is 10% included in the total, so tax = total / 11.
-// Fire-and-forget - never rolls back the booking it's attached to.
+// Post-commit payment receipt. Joins the paid transaction → event → buyer in a
+// single SELECT. Best-effort and awaited after the booking commits, so it cannot
+// roll the booking back or be abandoned by a serverless response.
 async function logPaymentReceiptEmail(
   pool: NonNullable<ReturnType<typeof getPostgresPool>>,
   paymentTransactionId: string,
@@ -4010,11 +4011,35 @@ export async function registerForEvent(eventId: string, session: Session | null)
         throw error;
       }
 
+      // The event-row lock above serialises every RSVP for this event. Read the
+      // caller's row in a separate statement after acquiring that lock so a
+      // concurrent replay sees the first request's committed RSVP. This lets a
+      // retry return the existing result without duplicating audit events,
+      // notifications or email sends.
+      const existingRsvpResult = await client.query<{
+        id: string;
+        status: string;
+      }>(
+        `
+          select id::text, status::text
+          from event_attendees
+          where event_id = $1::uuid
+            and profile_id = $2::uuid
+          limit 1
+        `,
+        [event.id, profile.id],
+      );
+      const existingRsvp = existingRsvpResult.rows[0] ?? null;
+
       const confirmedCount = Number(event.confirmed_attendees);
       const isFull =
         event.status === "waitlist" || confirmedCount >= event.capacity;
 
-      if (event.price_cents > 0 && !isFull) {
+      if (
+        event.price_cents > 0 &&
+        !isFull &&
+        existingRsvp?.status !== "confirmed"
+      ) {
         const error = new Error(
           "This event requires payment. Open the event to reserve and pay.",
         );
@@ -4023,25 +4048,37 @@ export async function registerForEvent(eventId: string, session: Session | null)
         throw error;
       }
 
-      const status = isFull ? "waitlisted" : "confirmed";
+      // Never demote an already-confirmed attendee on a replay, including when
+      // an organiser has since switched the event to explicit waitlist mode.
+      const status =
+        existingRsvp?.status === "confirmed"
+          ? "confirmed"
+          : isFull
+            ? "waitlisted"
+            : "confirmed";
+      const rsvpChanged = existingRsvp?.status !== status;
+      let rsvpId = existingRsvp?.id ?? "";
 
-      const rsvpRow = await client.query<{ id: string }>(
-        `
-          insert into event_attendees (event_id, profile_id, status)
-          values ($1::uuid, $2::uuid, $3::rsvp_status)
-          on conflict (event_id, profile_id) do update
-          set status = excluded.status, updated_at = now()
-          returning id::text
-        `,
-        [event.id, profile.id, status],
-      );
+      if (rsvpChanged) {
+        const rsvpRow = await client.query<{ id: string }>(
+          `
+            insert into event_attendees (event_id, profile_id, status)
+            values ($1::uuid, $2::uuid, $3::rsvp_status)
+            on conflict (event_id, profile_id) do update
+            set status = excluded.status, updated_at = now()
+            returning id::text
+          `,
+          [event.id, profile.id, status],
+        );
+        rsvpId = rsvpRow.rows[0].id;
+      }
 
       // Lifecycle log (spec 22 §2): a free RSVP confirming is a 'confirmed'
       // booking event with no money attached. Waitlist joins aren't booking
       // financial events, so they're not logged. In-txn for atomicity.
-      if (status === "confirmed") {
+      if (rsvpChanged && status === "confirmed") {
         await logBookingEvent(client, {
-          bookingId: rsvpRow.rows[0].id,
+          bookingId: rsvpId,
           eventId: event.id,
           merchantId: event.merchant_profile_id,
           userId: profile.id,
@@ -4052,7 +4089,7 @@ export async function registerForEvent(eventId: string, session: Session | null)
         });
       }
 
-      if (status === "waitlisted") {
+      if (rsvpChanged && status === "waitlisted") {
         await client.query(
           `
             insert into event_waitlists (event_id, profile_id)
@@ -4064,34 +4101,42 @@ export async function registerForEvent(eventId: string, session: Session | null)
         );
       }
 
-      await client.query(
-        `
-          insert into notifications (profile_id, title, body, action_url)
-          values ($1::uuid, $2, $3, $4)
-        `,
-        [
-          profile.id,
-          status === "confirmed" ? "RSVP confirmed" : "Waitlist joined",
-          `${event.title} is now ${status} for ${profile.display_name}.`,
-          `/events/${event.slug}`,
-        ],
-      );
+      if (rsvpChanged) {
+        await client.query(
+          `
+            insert into notifications (profile_id, title, body, action_url)
+            values ($1::uuid, $2, $3, $4)
+          `,
+          [
+            profile.id,
+            status === "confirmed" ? "RSVP confirmed" : "Waitlist joined",
+            `${event.title} is now ${status} for ${profile.display_name}.`,
+            `/events/${event.slug}`,
+          ],
+        );
+      }
 
       await client.query("commit");
 
-      if (status === "waitlisted") {
+      if (rsvpChanged && status === "waitlisted") {
         // Waitlist join → log waitlist-joined-attendee to email_events.
-        // Fire-and-forget, same as the confirmed branch below.
-        void logWaitlistJoinedEmail(pool, event.id, profile.id);
-      } else {
+        // Await the best-effort helper after commit. A detached promise can be
+        // frozen as soon as a serverless response is returned, silently losing
+        // the email before it even reaches email_events.
+        await logWaitlistJoinedEmail(pool, event.id, profile.id);
+      } else if (rsvpChanged) {
         // Confirmed RSVP → log rsvp-attendee + rsvp-merchant to email_events.
         // One supplementary SELECT gathers everything both templates need so
         // we don't pollute the in-txn block above with email-shaped data.
-        // Fire-and-forget - failures never bubble into the API response.
-        void logRsvpEmails(pool, event.id, profile.id);
         // If this event is the suggested plan from a mutual-click proposal,
         // nudge the other person that their match has RSVP'd (bug board #107).
-        void notifyProposalPartnerOfRsvp(pool, event.id, profile.id);
+        // Both helpers swallow their own failures. Awaiting only keeps the
+        // serverless invocation alive long enough for those writes to finish;
+        // it cannot roll back the already-committed RSVP.
+        await Promise.all([
+          logRsvpEmails(pool, event.id, profile.id),
+          notifyProposalPartnerOfRsvp(pool, event.id, profile.id),
+        ]);
       }
 
       return {
@@ -4442,7 +4487,9 @@ export async function acceptWaitlistOffer(eventId: string, session: Session | nu
     await client.query("commit");
 
     // Confirmed off the waitlist → same emails as a fresh confirmed RSVP.
-    void logRsvpEmails(pool, event.id, profile.id);
+    // Keep the serverless invocation alive until the best-effort logger has
+    // persisted the message; it catches delivery/template failures itself.
+    await logRsvpEmails(pool, event.id, profile.id);
 
     return { eventTitle: event.title, status: "confirmed" as const };
   } catch (error) {
@@ -10127,7 +10174,7 @@ export async function cancelRegistration(eventId: string, session: Session | nul
     refundLine =
       "No refund - you cancelled within 24 hours of the event, per our cancellation policy.";
     // Lifecycle log: a paid booking cancelled inside the no-refund window.
-    void logBookingEvent(pool, {
+    await logBookingEvent(pool, {
       bookingId: cancelledBookingId,
       eventId: cancelledEventId,
       merchantId: cancelledMerchantId,
@@ -10138,9 +10185,10 @@ export async function cancelRegistration(eventId: string, session: Session | nul
     }).catch(() => {});
   }
 
-  // Log rsvp-cancelled-attendee (+ rsvp-cancelled-merchant). Post-commit +
-  // fire-and-forget so a template hiccup can't roll back the cancellation.
-  void logRsvpCancelledEmails(pool, cancelledEventId, profile.id, refundLine);
+  // Log rsvp-cancelled-attendee (+ rsvp-cancelled-merchant) after commit. The
+  // helper catches its own failures, and awaiting it prevents Vercel from
+  // freezing the detached work before email_events is written.
+  await logRsvpCancelledEmails(pool, cancelledEventId, profile.id, refundLine);
 
   for (const promoted of promotions) {
     await logWaitlistPromotedEmail(pool, promoted);
@@ -12638,18 +12686,17 @@ export async function markPaymentSucceeded(paymentTransactionId: string): Promis
       // Use the same templated rsvp-attendee / rsvp-merchant flow that free
       // RSVPs already trigger via registerForEvent, passing the receipt so the
       // price slot shows "$25 · Paid" instead of the event's listed price.
-      // Fire-and-forget - failures inside logRsvpEmails warn-log and never
-      // throw, so a template/email hiccup can't roll back the booking.
-      void logRsvpEmails(pool, payment.event_id, payment.profile_id, {
-        amountPaidCents: payment.amount_cents,
-        currency: payment.currency,
-      });
-
-      // Plus the GST tax receipt for the charged amount. Fire-and-forget.
-      void logPaymentReceiptEmail(pool, payment.id);
-
-      // Paid RSVP can also be a proposal's suggested event - nudge the mutual.
-      void notifyProposalPartnerOfRsvp(pool, payment.event_id, payment.profile_id);
+      // These best-effort helpers catch their own failures. Await them after
+      // commit so a serverless response cannot freeze the confirmation, GST
+      // receipt or proposal notification before their writes complete.
+      await Promise.all([
+        logRsvpEmails(pool, payment.event_id, payment.profile_id, {
+          amountPaidCents: payment.amount_cents,
+          currency: payment.currency,
+        }),
+        logPaymentReceiptEmail(pool, payment.id),
+        notifyProposalPartnerOfRsvp(pool, payment.event_id, payment.profile_id),
+      ]);
     }
     return attendeeFlipped || payment.attendee_status === "confirmed";
   } catch (error) {
