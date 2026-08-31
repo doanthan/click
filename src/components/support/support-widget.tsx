@@ -414,10 +414,31 @@ export default function SupportWidget({ canTriage = false }: { canTriage?: boole
     if (includeConsole) form.set("console_logs", JSON.stringify(getConsoleLogs()));
     if (includeNetwork) form.set("network_errors", JSON.stringify(getNetworkErrors()));
 
-    // Optimistic: confirm and reset right away so the user never waits on the
-    // round-trip. The POST keeps running in the background and only surfaces a
-    // toast if it actually fails. Close the drawer and reset to the default
-    // (Report) tab so the widget is back to normal for the next open.
+    // Wait for the round-trip before confirming. This used to reset the form and
+    // toast "Bug reported" optimistically, which meant a failed POST threw away
+    // what the reporter had typed *after* telling them it saved - and the only
+    // copy of the report was gone. The button already renders a "Submitting…"
+    // state, so the wait is visible rather than a freeze.
+    try {
+      const res = await fetch("/api/support/ticket", { method: "POST", body: form });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(
+          data.error ||
+            // A non-JSON body means the request never reached the handler (an
+            // edge 413/504, or the route module failing to load). Say so, rather
+            // than the bare "Submit failed" that told the reporter nothing.
+            `Couldn't reach the bug reporter (${res.status}). Your report is still here - try again.`,
+        );
+      }
+    } catch (err) {
+      setSubmitting(false);
+      toast.error(err instanceof Error ? err.message : "Couldn't submit the bug - please try again.");
+      return;
+    }
+
+    // Saved. Now reset and close, back to the default (Report) tab so the widget
+    // is ready for the next open.
     setMessage("");
     setExpected("");
     setAnnotation(null);
@@ -431,17 +452,7 @@ export default function SupportWidget({ canTriage = false }: { canTriage?: boole
       /* confetti is optional */
     }
     toast.success("Bug reported");
-
-    void (async () => {
-      try {
-        const res = await fetch("/api/support/ticket", { method: "POST", body: form });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || "Submit failed");
-        await loadBugs();
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Couldn't submit the bug - please try again.");
-      }
-    })();
+    await loadBugs();
   }
 
   function markFixed(ticketRef: string) {

@@ -9,6 +9,15 @@ const checks = [
   ["/sitemap.xml", [200]],
   ["/manifest.webmanifest", [200]],
   ["/api/health", [200]],
+  // Routes that reach the native `sharp` module. A GET here is harmless - it is
+  // either the operator gate (403) or Next's method-not-allowed (405) - but the
+  // route module still has to LOAD to answer at all. When sharp failed to load
+  // on the runtime these four served Vercel's static HTML 500 instead, and the
+  // bug reporter was down for weeks with nothing catching it. Any 500 is a fail.
+  ["/api/support/ticket", [403]],
+  ["/api/upload/avatar", [405]],
+  ["/api/upload/gallery", [405]],
+  ["/api/upload/event-image", [405]],
   ["/tables", [404]],
   ["/test", [404]],
   ["/business", [404]],

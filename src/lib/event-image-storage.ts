@@ -23,7 +23,6 @@
  */
 import { randomUUID } from "node:crypto";
 
-import sharp from "sharp";
 
 import { getSupabaseAdmin, StorageNotConfiguredError } from "@/utils/supabase/admin";
 import {
@@ -58,6 +57,10 @@ export function isEventImageStorageConfigured(): boolean {
 }
 
 async function normaliseToJpeg(input: Buffer): Promise<Buffer> {
+  // sharp is a native module - load it here, never at module scope. A failed
+  // load at module scope takes the whole route down before the handler runs
+  // (Next answers an HTML 500 the caller can't parse).
+  const sharp = (await import("sharp")).default;
   return sharp(input)
     .rotate() // honour EXIF orientation
     .resize(EVENT_IMAGE_MAX_DIMENSION, EVENT_IMAGE_MAX_DIMENSION, {

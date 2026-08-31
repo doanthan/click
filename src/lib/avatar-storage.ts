@@ -19,8 +19,6 @@
  *   Storage → New bucket → name `avatars`, Public bucket = ON.
  */
 
-import sharp from "sharp";
-
 import { getSupabaseAdmin, StorageNotConfiguredError } from "@/utils/supabase/admin";
 import {
   deletePublicMediaObject,
@@ -54,6 +52,10 @@ export function isAvatarStorageConfigured(): boolean {
 }
 
 async function normaliseToJpeg(input: Buffer): Promise<Buffer> {
+  // sharp is a native module - load it here, never at module scope. A failed
+  // load at module scope takes the whole route down before the handler runs
+  // (Next answers an HTML 500 the caller can't parse).
+  const sharp = (await import("sharp")).default;
   return sharp(input)
     .rotate() // honour EXIF orientation
     .resize(AVATAR_SIZE, AVATAR_SIZE, { fit: "cover", position: "centre" })

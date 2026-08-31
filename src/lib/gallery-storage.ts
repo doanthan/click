@@ -17,7 +17,6 @@
 
 import { randomUUID } from "node:crypto";
 
-import sharp from "sharp";
 
 import { getSupabaseAdmin } from "@/utils/supabase/admin";
 import {
@@ -48,6 +47,10 @@ export async function uploadGalleryPhotoFromBuffer(
   profileId: string,
   source: Buffer,
 ): Promise<string> {
+  // sharp is a native module - load it here, never at module scope. A failed
+  // load at module scope takes the whole route down before the handler runs
+  // (Next answers an HTML 500 the caller can't parse).
+  const sharp = (await import("sharp")).default;
   const jpeg = await sharp(source)
     .rotate() // honour EXIF orientation
     .resize(GALLERY_WIDTH, GALLERY_HEIGHT, { fit: "cover", position: "centre" })

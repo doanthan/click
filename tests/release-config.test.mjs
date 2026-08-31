@@ -1420,3 +1420,70 @@ test("a placeholder Connect account can never reach Stripe as a charge destinati
   );
   assert.match(connectRoute, /isRealConnectAccountId\(merchant\.stripe_connect_account_id\)/);
 });
+
+// A native module imported at module scope is loaded when Next evaluates the
+// route, before the handler runs - so a load failure is not the handler's 500
+// with a JSON body, it is Vercel's static HTML 500 page. The bug reporter, the
+// avatar/gallery/event-image uploads and the screenshot reader all import sharp,
+// and all four went down together in production while every other route stayed
+// up. Nothing caught it for weeks, because a caller cannot tell that response
+// apart from the network being down. Keep sharp behind a call-site import so a
+// failure costs one upload and stays catchable.
+test("sharp is never imported at module scope", () => {
+  const offenders = [];
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+      } else if (/\.tsx?$/.test(entry.name)) {
+        const source = readFileSync(full, "utf8");
+        // `import sharp from "sharp"` / `import { x } from "sharp"` - but not
+        // `await import("sharp")`, which is the form we want.
+        if (/^\s*import\s[^;]*\sfrom\s*["']sharp["']/m.test(source)) {
+          offenders.push(path.relative(root, full));
+        }
+      }
+    }
+  };
+  walk(path.join(root, "src"));
+  assert.deepEqual(
+    offenders,
+    [],
+    `sharp must be loaded with await import("sharp") at the call site, not at module scope: ${offenders.join(", ")}`,
+  );
+});
+
+// The same four routes, checked from the outside after every deploy. A GET is
+// harmless on all of them; the point is only that the module loads at all.
+test("smoke test covers the routes that load sharp", () => {
+  const smoke = readFileSync(path.join(root, "scripts/smoke-production.mjs"), "utf8");
+  for (const route of [
+    "/api/support/ticket",
+    "/api/upload/avatar",
+    "/api/upload/gallery",
+    "/api/upload/event-image",
+  ]) {
+    assert.ok(smoke.includes(`"${route}"`), `${route} must be checked after deployment`);
+  }
+});
+
+// The addon Next traces (`@img/sharp-<platform>/lib/*.node`) dlopens a shared
+// library in a DIFFERENT package that Next does not trace, because nothing
+// `require`s it from JS. Without this include the deployed function has the
+// addon but not libvips-cpp.so, and every sharp route dies on ERR_DLOPEN_FAILED
+// while the module is still being evaluated - an HTML 500, not a JSON error.
+test("the libvips shared library is traced into every route that uses sharp", () => {
+  const config = readFileSync(path.join(root, "next.config.ts"), "utf8");
+  assert.match(
+    config,
+    /node_modules\/@img\/sharp-libvips-\*\/lib\/\*\*/,
+    "next.config.ts must ship the libvips runtime that sharp's addon dlopens",
+  );
+  for (const route of ["/api/upload/**", "/api/support/ticket", "/api/support/ticket/**"]) {
+    assert.ok(
+      config.includes(`"${route}"`),
+      `${route} must be listed in outputFileTracingIncludes`,
+    );
+  }
+});

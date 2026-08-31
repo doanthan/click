@@ -26,8 +26,28 @@ const contentSecurityPolicy = [
   "upgrade-insecure-requests",
 ].join("; ");
 
+// sharp's addon (`@img/sharp-<platform>/lib/*.node`) dlopens a SEPARATE shared
+// library, `@img/sharp-libvips-<platform>/lib/libvips-cpp.so.<ver>`. Next traces
+// JS requires, so it ships the .node addon but never the .so it links against -
+// the trace for these routes contained zero .so/.dylib files. In production that
+// surfaced as:
+//
+//   Could not load the "sharp" module using the linux-x64 runtime
+//   ERR_DLOPEN_FAILED: libvips-cpp.so.8.18.3: cannot open shared object file
+//
+// which is thrown while Next EVALUATES the route module, so the handler never
+// runs and Vercel serves its static HTML 500. That took the bug reporter and all
+// three image uploads offline. Ship the libvips runtime explicitly, scoped to the
+// routes that touch sharp (~18 MB) rather than every function.
+const LIBVIPS = "./node_modules/@img/sharp-libvips-*/lib/**";
+
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  outputFileTracingIncludes: {
+    "/api/upload/**": [LIBVIPS],
+    "/api/support/ticket": [LIBVIPS],
+    "/api/support/ticket/**": [LIBVIPS],
+  },
   // Server Actions validate the request Origin against Host/X-Forwarded-Host to
   // block CSRF. Behind our proxy/CDN (letsclick.app served via www + apex) those
   // headers can disagree, so Next aborts the action POST with an opaque server
