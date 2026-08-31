@@ -286,3 +286,56 @@ test("the paid-flow workspace tells testers to complete sandbox checkout", () =>
     "the workspace must not describe the placeholder-account failure the QA flow removed",
   );
 });
+
+test("every QA persona with a profile carries interest and music tags", () => {
+  // The People Card's shared-interest row and its commonality line both read
+  // user_tags. Personas skip onboarding and the music picker, so without a
+  // provisioned set they render tagless with "you're both nearby" as the only
+  // hook - which reads as "the feature is broken", not "no data yet".
+  const personas = readFileSync(path.join(root, "src/lib/qa-personas.ts"), "utf8");
+  const provision = readFileSync(path.join(root, "src/lib/qa-provision.ts"), "utf8");
+
+  assert.match(provision, /insert into user_tags/, "qa-provision must write user_tags");
+
+  // Every declaration that has a suburb (i.e. is not provisioned blank) must
+  // name at least one interest.
+  const blocks = personas.split(/\n  \{\n/).filter((b) => b.includes("email: \""));
+  const withProfile = blocks.filter((b) => !/suburb: null/.test(b));
+  assert.ok(withProfile.length >= 8, `expected the persona list, got ${withProfile.length}`);
+  for (const b of withProfile) {
+    const email = b.match(/email: "([^"]+)"/)[1];
+    const interests = b.match(/interests: \[([^\]]*)\]/);
+    assert.ok(interests, `${email} declares no interests`);
+    assert.notEqual(interests[1].trim(), "", `${email} has an empty interest list`);
+  }
+
+  // Maya and Ruby are the pair every two-person click test runs through: they
+  // must actually overlap, or the surface under test has nothing to show.
+  const pick = (email, field) => {
+    const b = withProfile.find((x) => x.includes(`email: "${email}"`));
+    return new Set(b.match(new RegExp(`${field}: \\[([^\\]]*)\\]`))[1].match(/"[^"]+"/g) ?? []);
+  };
+  const shared = (f) => [...pick("maya@click.local", f)].filter((t) => pick("ruby@click.local", f).has(t));
+  assert.ok(shared("interests").length >= 2, "maya and ruby need shared interests");
+  assert.ok(shared("music").length >= 1, "maya and ruby need shared music taste");
+});
+
+test("discovery never leaks private life tags as shared interests", () => {
+  // Life tags come from the quiz and are private until a mutual forms. The
+  // shared-tag aggregate joins `tags` unfiltered, so without a tag_type guard
+  // they land on a pre-mutual discovery card next to the public interests.
+  const repo = readFileSync(path.join(root, "src/lib/event-repository.ts"), "utf8");
+  const query = repo.slice(repo.indexOf("export async function getSuggestedPeople"));
+  const body = query.slice(0, query.indexOf("\n}"));
+  assert.match(
+    body,
+    /array_agg\(distinct shared_tag\.label\)\s*\n?\s*filter \(where shared_tag\.tag_type = 'interest'\)/,
+    "sharedInterests must be restricted to tag_type = 'interest'",
+  );
+  assert.match(body, /shared_tag\.tag_type = 'music'/, "the music commonality axis must be selected");
+  assert.doesNotMatch(
+    body,
+    /filter \(where shared_tag\.label is not null\)/,
+    "an unfiltered shared-tag aggregate leaks life tags into discovery",
+  );
+});

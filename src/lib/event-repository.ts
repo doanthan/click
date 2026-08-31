@@ -13569,8 +13569,11 @@ export type SuggestedPerson = {
   sharedInterests: string[];
   // Inputs for the People Card's commonality line - deliberately NON-interest
   // axes, so the line can never duplicate the interest tags rendered beneath it.
-  // Both are optional: when neither resolves, the card omits the line cleanly.
+  // All optional: when none resolves, the card omits the line cleanly.
   sharedEvent: string | null;
+  // Up to two shared music genres, lowercased and joined ("house & techno").
+  // A separate tag_type from interests, so it is a genuinely different axis.
+  sharedMusic: string | null;
   nearby: boolean;
   intents: string[];
   // True when the viewer has already sent this person a (still-active) Click
@@ -13595,6 +13598,7 @@ export async function getSuggestedPeople(session: Session | null): Promise<Sugge
       age: number | null;
       shared: string[];
       shared_event: string | null;
+      shared_music: string | null;
       nearby: boolean;
       intents: string[];
       already_clicked: boolean;
@@ -13603,16 +13607,21 @@ export async function getSuggestedPeople(session: Session | null): Promise<Sugge
     }>(
       `
         select p.id::text, p.display_name, p.suburb, p.photo_url, p.age,
+               -- INTEREST tags only. Unfiltered, this aggregate also carried the
+               -- shared 'life' tags the quiz writes - which are private until a
+               -- mutual forms - straight onto a pre-mutual discovery card, plus
+               -- 'music', which belongs on the commonality line below, not here.
                coalesce(
                  array_agg(distinct shared_tag.label)
-                   filter (where shared_tag.label is not null),
+                   filter (where shared_tag.tag_type = 'interest'),
                  '{}'
                ) as shared,
                -- The People Card's commonality line needs a NON-interest axis,
                -- so it can never just restate the interest tags under it. Axis 1
-               -- is a past event you both actually attended; axis 2 (fallback) is
-               -- proximity, expressed as a range ("you're both nearby") and never
-               -- as a named suburb, so it stays city-agnostic.
+               -- is a past event you both actually attended; axis 2 is shared
+               -- music taste; axis 3 (fallback) is proximity, expressed as a
+               -- range ("you're both nearby") and never as a named suburb, so it
+               -- stays city-agnostic.
                (
                  select e.title
                  from event_attendees a_me
@@ -13627,6 +13636,14 @@ export async function getSuggestedPeople(session: Session | null): Promise<Sugge
                  order by e.starts_at desc
                  limit 1
                ) as shared_event,
+               nullif(
+                 array_to_string(
+                   (array_agg(distinct lower(shared_tag.label))
+                      filter (where shared_tag.tag_type = 'music'))[1:2],
+                   ' & '
+                 ),
+                 ''
+               ) as shared_music,
                (p.suburb is not distinct from (select suburb from profiles where id = $1::uuid)) as nearby,
                p.connection_intents::text[] as intents,
                exists (
@@ -13758,7 +13775,8 @@ export async function getSuggestedPeople(session: Session | null): Promise<Sugge
           ) asc,
           array_length(
             coalesce(
-              array_agg(distinct shared_tag.label) filter (where shared_tag.label is not null),
+              array_agg(distinct shared_tag.label)
+                filter (where shared_tag.tag_type in ('interest', 'music')),
               '{}'
             ), 1
           ) desc nulls last,
@@ -13816,6 +13834,7 @@ export async function getSuggestedPeople(session: Session | null): Promise<Sugge
       age: row.age,
       sharedInterests: row.shared ?? [],
       sharedEvent: row.shared_event ?? null,
+      sharedMusic: row.shared_music ?? null,
       nearby: Boolean(row.nearby),
       intents: row.intents ?? [],
       alreadyClicked: Boolean(row.already_clicked),

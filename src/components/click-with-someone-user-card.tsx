@@ -47,6 +47,7 @@ export function ClickWithSomeoneUserCard({
   const intent = intentLine(person.intents, viewerOpenToDating);
   const hook = commonality({
     sharedEvent: person.sharedEvent,
+    sharedMusic: person.sharedMusic,
     proximity: person.nearby ? "you're both nearby" : null,
   });
 

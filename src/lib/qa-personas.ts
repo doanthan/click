@@ -43,6 +43,16 @@ export type QaPersona = {
    * these point at the generated faces already committed to public/home/avatars.
    */
   photoUrl: string | null;
+  /**
+   * Curated `tags` slugs (tag_type 'interest' / 'music') to write into
+   * `user_tags`. Real accounts get these from onboarding and the profile-edit
+   * music picker; the personas skip both, so without them the People Card had
+   * no shared interests to list and no music axis for its commonality line -
+   * it always fell through to "you're both nearby". Slugs must exist in
+   * database/002_seed.sql / 029_seed_music_tags.sql; unknown ones are dropped.
+   */
+  interests: string[];
+  music: string[];
   merchant: {
     businessName: string;
     verificationStatus: "pending" | "approved";
@@ -100,6 +110,8 @@ export const QA_PERSONAS: QaPersona[] = [
     suburb: null,
     birthDate: null,
     photoUrl: null,
+    interests: [],
+    music: [],
     merchant: null,
   },
   {
@@ -113,6 +125,8 @@ export const QA_PERSONAS: QaPersona[] = [
     suburb: "Barangaroo",
     birthDate: "1995-06-12",
     photoUrl: "/home/avatars/av-2.jpg",
+    interests: ["pottery", "running", "live-music", "food"],
+    music: ["house-music", "electronic"],
     merchant: null,
   },
   {
@@ -126,6 +140,8 @@ export const QA_PERSONAS: QaPersona[] = [
     suburb: "Redfern",
     birthDate: "1990-11-03",
     photoUrl: "/home/avatars/av-5.jpg",
+    interests: ["fitness", "outdoors", "community"],
+    music: ["indie"],
     merchant: null,
   },
   // The click mechanic takes two people, and switching to a persona is the only
@@ -144,6 +160,8 @@ export const QA_PERSONAS: QaPersona[] = [
     suburb: "Barangaroo",
     birthDate: "1997-02-18",
     photoUrl: "/home/avatars/av-7.jpg",
+    interests: ["pottery", "running", "live-music", "books"],
+    music: ["house-music", "electronic"],
     merchant: null,
   },
   {
@@ -157,6 +175,8 @@ export const QA_PERSONAS: QaPersona[] = [
     suburb: "Surry Hills",
     birthDate: "1993-09-27",
     photoUrl: "/home/avatars/av-11.jpg",
+    interests: ["food", "games", "photography"],
+    music: ["jazz"],
     merchant: null,
   },
   {
@@ -170,6 +190,8 @@ export const QA_PERSONAS: QaPersona[] = [
     suburb: "Newtown",
     birthDate: "1988-04-05",
     photoUrl: "/home/avatars/av-9.jpg",
+    interests: ["community", "food"],
+    music: ["soul"],
     merchant: {
       businessName: "Otis Runs Things",
       verificationStatus: "pending",
@@ -191,6 +213,8 @@ export const QA_PERSONAS: QaPersona[] = [
     suburb: "Marrickville",
     birthDate: "1986-01-19",
     photoUrl: "/home/avatars/av-13.jpg",
+    interests: ["fitness", "crossfit", "running"],
+    music: ["funk"],
     merchant: {
       businessName: "Inner West Fitness Mates",
       verificationStatus: "approved",
@@ -212,6 +236,8 @@ export const QA_PERSONAS: QaPersona[] = [
     suburb: "Pyrmont",
     birthDate: "1989-08-14",
     photoUrl: "/home/avatars/av-12.jpg",
+    interests: ["books", "brunch", "volunteering"],
+    music: ["folk"],
     merchant: {
       businessName: "Harbour Book Club",
       verificationStatus: "approved",
@@ -234,6 +260,8 @@ export const QA_PERSONAS: QaPersona[] = [
     suburb: "Surry Hills",
     birthDate: "1991-07-22",
     photoUrl: "/home/avatars/av-15.jpg",
+    interests: ["food", "dinner", "restaurant"],
+    music: ["latin"],
     merchant: {
       businessName: "Surry Hills Supper Club",
       verificationStatus: "approved",
@@ -268,6 +296,8 @@ export const QA_PERSONAS: QaPersona[] = [
     suburb: "Sydney",
     birthDate: "1985-05-05",
     photoUrl: "/home/avatars/av-16.jpg",
+    interests: ["community"],
+    music: [],
     displayName: "Click Admin",
     merchant: null,
   },

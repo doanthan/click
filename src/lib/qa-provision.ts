@@ -136,6 +136,26 @@ async function writePersona(
     ],
   );
 
+  // Interests + music taste. Real accounts pick these up from onboarding and the
+  // profile-edit music picker; a persona goes straight to a finished profile and
+  // so had NO user_tags at all - which is why the People Card showed no shared
+  // interests and no commonality line beyond "you're both nearby". Matched
+  // against the curated `tags` rows by slug, exactly like syncUserTagsOfType in
+  // event-repository.ts: an unknown slug is dropped, never minted.
+  await client.query(
+    `
+    insert into user_tags (profile_id, tag_id, source)
+    select p.id, tag.id, case tag.tag_type when 'music' then 'music' else 'user' end
+    from profiles p
+    join tags tag
+      on (tag.tag_type = 'interest' and tag.slug = any($2::text[]))
+      or (tag.tag_type = 'music' and tag.slug = any($3::text[]))
+    where p.email = $1::citext
+    on conflict do nothing
+    `,
+    [persona.email, persona.interests, persona.music],
+  );
+
   const merchant = persona.merchant;
   if (!merchant) return;
 
