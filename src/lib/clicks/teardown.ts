@@ -235,7 +235,7 @@ export async function severConfirmedTogetherForCancel(
       ),
       retired as (
         update click_proposals cp
-        set status = 'partner_cancelled', responded_at = now(), updated_at = now()
+        set status = 'partner_cancelled', updated_at = now()
         from affected a
         where cp.mutual_click_id = a.id
           and cp.status in ('pending', 'accepted')
