@@ -84,3 +84,21 @@ export const MIN_CLICK_AGE = 18;
 
 /** A click send's outcome, byte-identical across receiver states by design (§6.1). */
 export type SendClickOutcome = "ok" | "not_eligible" | "cap" | "photo";
+
+// ── Anonymity copy (CLICK_LANGUAGE §5 + §5b) ────────────────────────────────────────
+//
+// §5b bans the "if they click you back" construction on sight: it plants the
+// could-be-no and frames a one-way click as a pending rejection, which is exactly
+// the fear that stops the people Click is for from clicking at all. The rule is to
+// lead with what IS true and let safety be felt, never named as a risk.
+//
+// One constant rather than an edit per surface: the same sentence had drifted across
+// five components and two server actions, so "fixing the copy" meant finding all of
+// them. Now the lock lives in one place and every click surface reads it.
+
+/** The anonymity helper shown ONCE at the top of a click surface, never per card. */
+export const CLICK_ANONYMITY_LINE =
+  "🔒 Clicking is anonymous - we'll only show you if it's mutual.";
+
+/** The confirmation after a click is sent. */
+export const CLICK_SENT_LINE = "Sent privately. We'll only show you if it's mutual.";

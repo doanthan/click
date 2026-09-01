@@ -7,6 +7,7 @@ import { ButtonLink, Icon } from "@/components/ds";
 import {
   getBookmarkedEvents,
   getConfirmedEvents,
+  getGoingWithNames,
   getProfileStatus,
 } from "@/lib/event-repository";
 
@@ -93,6 +94,13 @@ export default async function ConfirmedEventsPage({ searchParams }: ConfirmedEve
         : tab === "waitlist"
           ? upcomingWaitlisted
           : upcomingConfirmed;
+
+  // §B5.3: the persistent companion marker. Only the tabs that show plans the
+  // viewer actually holds a seat on can carry it - a bookmark is not a booking.
+  const goingWith = await getGoingWithNames(
+    session,
+    events.map((e) => e.id),
+  );
 
   // The calendar reflects the full picture of your plans (upcoming + past) so you
   // can see your history at a glance; the Saved tab charts your bookmarks instead.
@@ -203,6 +211,7 @@ export default async function ConfirmedEventsPage({ searchParams }: ConfirmedEve
                     bookmarked={tab === "saved" ? true : bookmarkSet.has(event.id)}
                     registered={tab === "saved" ? registeredSet.has(event.id) : true}
                     bookingStatus={bookingStatusFor(event.id)}
+                    goingWith={goingWith.get(event.id) ?? null}
                   />
                 ))}
               </div>

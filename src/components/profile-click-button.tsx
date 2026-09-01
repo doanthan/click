@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import { clickPersonAction } from "@/app/people/actions";
 import { Button, ckBtn } from "./ds";
+import { CLICK_SENT_LINE } from "@/lib/clicks/constants";
 
 /**
  * The click control on someone's profile.
@@ -46,7 +47,7 @@ export function ProfileClickButton({
       <p className="mt-2.5 text-[13px] leading-6 text-[color:var(--slate)]" role="status">
         {state?.message ??
           (sent
-            ? "Sent privately. If they click you back, you'll both see it."
+            ? CLICK_SENT_LINE
             : "Clicking is anonymous - we'll only show you if it's mutual.")}
       </p>
     </form>

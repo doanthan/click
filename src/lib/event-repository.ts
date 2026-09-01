@@ -81,9 +81,11 @@ import {
   type SendClickOutcome,
 } from "./clicks/constants";
 import {
+  severConfirmedTogetherForCancel,
   severPairCoordination,
   severAllCoordinationForUser,
   pairCoordinationAllowed,
+  type PartnerCancelSurvivor,
 } from "./clicks/teardown";
 import {
   calculateApplicationFee,
@@ -1285,6 +1287,8 @@ export async function settleRefundedBooking(input: {
     // Whether this call is what moved the seat out of 'confirmed' /
     // 'pending_payment' - the signal `notify: "if-released"` gates on.
     let seatWasReleased = false;
+    // §B5.6 survivors, collected inside the seat-release txn, notified after it.
+    let settledSurvivors: PartnerCancelSurvivor[] = [];
 
     if (input.releaseSeat) {
       const client = await pool.connect();
@@ -1324,6 +1328,17 @@ export async function settleRefundedBooking(input: {
               `/events/${row.event_slug}`,
             ],
           );
+          // §B5.6 again: this is the admin full-refund path and the
+          // charge.refunded backstop for a refund taken in the Stripe dashboard.
+          // It removes a confirmed seat exactly like a user cancel, so the
+          // survivor must get the same teardown and the same string - the spec
+          // is explicit that the experience cannot depend on which mechanic
+          // removed the partner.
+          settledSurvivors = await severConfirmedTogetherForCancel(
+            client,
+            row.profile_id,
+            row.event_id,
+          );
         }
         await client.query("commit");
       } catch (error) {
@@ -1335,6 +1350,7 @@ export async function settleRefundedBooking(input: {
     }
 
     if (promotion) await logWaitlistPromotedEmail(pool, promotion);
+    await notifyPartnerCancelled(pool, settledSurvivors);
 
     const shouldNotify =
       input.notify === "if-released" ? seatWasReleased : input.notify;
@@ -4169,6 +4185,8 @@ export async function registerForEvent(eventId: string, session: Session | null)
         await Promise.all([
           logRsvpEmails(pool, event.id, profile.id),
           notifyProposalPartnerOfRsvp(pool, event.id, profile.id),
+          // §B5.3: this is a booking confirm, so it is a both-going detection site.
+          detectConfirmedTogether(pool, event.id, profile.id),
         ]);
       }
 
@@ -4195,6 +4213,157 @@ export async function registerForEvent(eventId: string, session: Session | null)
 // suggested event, so they know to RSVP too ("your click RSVP'd - your turn").
 // Idempotent per (partner, event) via the action_url marker. Best-effort:
 // swallows its own errors so it can be called void-style after a commit.
+/**
+ * §B5.3 - reaching `confirmed_together`, the "you're both going" moment.
+ *
+ * The spec could not be blunter: this fires "however they both got there - through
+ * the proposal handshake (B4) OR independently (B5.4)... Detection: on any booking
+ * confirm, check for an active mutual with another confirmed attendee of that event".
+ *
+ * It was only ever wired into the proposal-accept handler, and even there it ran on
+ * the ACCEPT TAP - before either side held a seat. So the product's win condition
+ * silently never landed for the common case: two people who are mutual and each book
+ * the same night on their own stayed at coord_state='open' forever, looking at
+ * "Pick something to do with Mia" while both of them held a ticket to the same room.
+ *
+ * Idempotent by construction (`coord_state <> 'confirmed_together'` in the WHERE), so
+ * every confirm path can call it unconditionally and the second one is a no-op.
+ * Reads event_participants_v, so a claimed guest +1 counts as the seat it is (§B5.3
+ * says "confirmed booking (or claimed guest spot)").
+ *
+ * Best-effort and post-commit: a booking must never fail because a congratulation
+ * could not be written.
+ */
+async function detectConfirmedTogether(
+  pool: NonNullable<ReturnType<typeof getPostgresPool>>,
+  eventId: string,
+  bookerProfileId: string,
+): Promise<void> {
+  try {
+    const promoted = await pool.query<{ mutual_id: string }>(
+      `
+        update mutual_clicks m
+        set coord_state = 'confirmed_together',
+            -- "mutual renewed (clock extended past the event)" - the pair must not
+            -- be released by the 7-day silence clock while holding a live plan.
+            expires_at = greatest(
+              m.expires_at,
+              coalesce(e.ends_at, e.starts_at) + interval '${POST_EVENT_CLICK_WINDOW_HOURS} hours'
+            ),
+            updated_at = now()
+        from events e
+        where e.id = $1::uuid
+          and e.starts_at > now()
+          and m.status = 'active'
+          and m.coord_state <> 'confirmed_together'
+          and (m.user_a_id = $2::uuid or m.user_b_id = $2::uuid)
+          -- The booker holds a seat (they just confirmed one) AND so does the other
+          -- side. Both arms read the canonical roster, never event_attendees alone.
+          and exists (
+            select 1 from event_participants_v pv
+            where pv.event_id = e.id and pv.profile_id = $2::uuid
+          )
+          and exists (
+            select 1 from event_participants_v pv
+            where pv.event_id = e.id
+              and pv.profile_id = case when m.user_a_id = $2::uuid then m.user_b_id else m.user_a_id end
+          )
+          -- Same guard set as notifyProposalPartnerOfRsvp: never celebrate a pair
+          -- across a block, and never wake a banned or suspended account.
+          and not exists (
+            select 1 from user_blocks b
+            where (b.blocker_profile_id = m.user_a_id and b.blocked_profile_id = m.user_b_id)
+               or (b.blocker_profile_id = m.user_b_id and b.blocked_profile_id = m.user_a_id)
+          )
+          and not exists (
+            select 1 from profiles pf
+            where pf.id in (m.user_a_id, m.user_b_id)
+              and (pf.is_banned or pf.suspended_at is not null)
+          )
+        returning m.id::text as mutual_id
+      `,
+      [eventId, bookerProfileId],
+    );
+    if (promoted.rowCount === 0) return;
+
+    // "Both notified (push + in-app)" - this is a two-sided moment, so it goes to
+    // BOTH of them, not just the partner of whoever booked last. Deduped on
+    // action_url so a re-run cannot double-send.
+    await pool.query(
+      `
+        insert into notifications (profile_id, title, body, action_url)
+        select
+          side.profile_id,
+          'You''re both going',
+          'You and ' || other.display_name || ' are set for ' || e.title || '. See you there.',
+          '/proposals?open=' || m.id::text
+        from mutual_clicks m
+        join events e on e.id = $2::uuid
+        cross join lateral (
+          values (m.user_a_id, m.user_b_id), (m.user_b_id, m.user_a_id)
+        ) as side(profile_id, other_id)
+        join profiles other on other.id = side.other_id
+        where m.id = any($1::uuid[])
+          and not exists (
+            select 1 from user_mutes mu
+            where mu.muter_profile_id = side.profile_id and mu.muted_profile_id = side.other_id
+          )
+          and not exists (
+            select 1 from notifications n
+            where n.profile_id = side.profile_id
+              and n.action_url = '/proposals?open=' || m.id::text
+              and n.title = 'You''re both going'
+          )
+      `,
+      [promoted.rows.map((r) => r.mutual_id), eventId],
+    );
+  } catch (error) {
+    if (process.env.CLICK_DB_DEBUG === "true") {
+      console.warn("detectConfirmedTogether failed", error);
+    }
+  }
+}
+
+/**
+ * §B5.6 step 5 - the survivor is told ONCE, honestly, and never why.
+ *
+ * The string is locked verbatim and Cindy-signed (21 §B5.6, mirrored in
+ * CLICK_COORDINATION_SCREENS S18). It is honest on both facts - the partner is not
+ * coming, and the survivor's own booking is untouched - and it routes forward.
+ * "Plans changed" is the whole disclosure: a refund, an emergency and cold feet all
+ * read identically, by design.
+ *
+ * Best-effort and post-commit: nobody's cancellation fails because a notification
+ * could not be written.
+ */
+async function notifyPartnerCancelled(
+  pool: NonNullable<ReturnType<typeof getPostgresPool>>,
+  survivors: PartnerCancelSurvivor[],
+): Promise<void> {
+  if (survivors.length === 0) return;
+  for (const s of survivors) {
+    const firstName = s.cancellerName.split(/\s+/)[0];
+    const body =
+      `${firstName}'s plans changed - they won't make ${s.eventTitle} this time. ` +
+      `Your spot's still yours. Want to line up something else together?`;
+    try {
+      await pool.query(
+        `insert into notifications (profile_id, title, body, action_url)
+         select $1::uuid, 'Plans changed', $2, $3
+         where not exists (
+           select 1 from notifications n
+           where n.profile_id = $1::uuid and n.action_url = $3 and n.title = 'Plans changed'
+         )`,
+        [s.survivorId, body, `/proposals?open=${s.mutualId}`],
+      );
+    } catch (error) {
+      if (process.env.CLICK_DB_DEBUG === "true") {
+        console.warn("notifyPartnerCancelled failed", error);
+      }
+    }
+  }
+}
+
 async function notifyProposalPartnerOfRsvp(
   pool: NonNullable<ReturnType<typeof getPostgresPool>>,
   eventId: string,
@@ -4522,7 +4691,15 @@ export async function acceptWaitlistOffer(eventId: string, session: Session | nu
     // Confirmed off the waitlist → same emails as a fresh confirmed RSVP.
     // Keep the serverless invocation alive until the best-effort logger has
     // persisted the message; it catches delivery/template failures itself.
-    await logRsvpEmails(pool, event.id, profile.id);
+    //
+    // §B5.3 / S14w: promotion off the waitlist is a booking confirm like any other,
+    // and it is the exact path the "waitlist together" recovery ends on - "on
+    // promotion B confirms and the pair reaches confirmed_together + the B5.3
+    // congrats". Without this the pair got their seats and were never told.
+    await Promise.all([
+      logRsvpEmails(pool, event.id, profile.id),
+      detectConfirmedTogether(pool, event.id, profile.id),
+    ]);
 
     return { eventTitle: event.title, status: "confirmed" as const };
   } catch (error) {
@@ -7054,6 +7231,67 @@ const eventSelectColumns = `
         ) as life_signals
 `;
 
+/**
+ * §B5.3 - the persistent "Going with [Name]" marker.
+ *
+ * The both-going drawer fires once and is gone; the spec is explicit that the
+ * togetherness must also be "visible every time they look at their plans", on the
+ * event card and in Upcoming, until the event passes. Nothing rendered it.
+ *
+ * Keyed by SLUG because that is what EventItem.id carries. Returns at most one
+ * partner per event - if somebody is going with two mutuals, the card names the
+ * soonest-formed one rather than growing a list; the drawer is where the full
+ * picture lives.
+ *
+ * §B5.6 teardown comes free: this reads live seats through event_participants_v,
+ * so the moment a partner's booking is cancelled they stop being a participant and
+ * the badge disappears on the next render. There is no marker to forget to remove.
+ */
+export async function getGoingWithNames(
+  session: Session | null,
+  eventSlugs: string[],
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const pool = getPostgresPool();
+  if (!pool || !getSessionEmail(session) || eventSlugs.length === 0) return out;
+  try {
+    const profileId = (await ensureProfileForSession(session)).id;
+    const res = await pool.query<{ slug: string; display_name: string }>(
+      `
+        select distinct on (e.slug) e.slug, other.display_name
+        from events e
+        join mutual_clicks m
+          on m.status = 'active'
+         and (m.user_a_id = $1::uuid or m.user_b_id = $1::uuid)
+        join profiles other
+          on other.id = case when m.user_a_id = $1::uuid then m.user_b_id else m.user_a_id end
+        where e.slug = any($2::text[])
+          and exists (
+            select 1 from event_participants_v pv
+            where pv.event_id = e.id and pv.profile_id = $1::uuid
+          )
+          and exists (
+            select 1 from event_participants_v pv
+            where pv.event_id = e.id and pv.profile_id = other.id
+          )
+          and not exists (
+            select 1 from user_blocks b
+            where (b.blocker_profile_id = m.user_a_id and b.blocked_profile_id = m.user_b_id)
+               or (b.blocker_profile_id = m.user_b_id and b.blocked_profile_id = m.user_a_id)
+          )
+        order by e.slug, m.created_at asc
+      `,
+      [profileId, eventSlugs],
+    );
+    for (const row of res.rows) {
+      out.set(row.slug, row.display_name.split(/\s+/)[0] || row.display_name);
+    }
+  } catch {
+    // A missing companion badge must never take down the page it decorates.
+  }
+  return out;
+}
+
 export async function getDashboardData(session: Session | null): Promise<DashboardData> {
   const pool = getPostgresPool();
   const email = getSessionEmail(session);
@@ -9581,11 +9819,20 @@ export async function expireClickLifecycles() {
        where status = 'pending' and expires_at <= now()`,
     );
     if (lapsingPlans.rowCount) {
+      // §B4.2's no-response branch, verbatim in intent: "BOTH nudged once: 'Still
+      // keen to meet [Name]? Here's what's on.'"
+      //
+      // What was here read "[Event] lapsed / Neither of you locked it in before the
+      // window closed." That is the exact frame S15 exists to prevent: it delivers a
+      // verdict on a pair who were never shown a clock, and it discloses a response
+      // window the product deliberately never displays (COORDINATION_MODAL_SYSTEM §8
+      // - no timers, ever). CLICK_LANGUAGE §5a: opportunity, never loss. Nobody is
+      // told they were ignored, and nothing "ran out".
       await notifyPairs(
         client,
         lapsingPlans.rows,
-        `coalesce(payload.event_title, 'That plan') || ' lapsed'`,
-        `'Neither of you locked it in before the window closed. Pick something else together whenever you like.'`,
+        `'Still keen to meet ' || them.display_name || '?'`,
+        `'Here''s what''s on - pick something you''d both enjoy whenever you like.'`,
         "'/proposals'",
       );
     }
@@ -9943,6 +10190,8 @@ export async function cancelRegistration(eventId: string, session: Session | nul
   const client = await pool.connect();
 
   let promotion: WaitlistPromotion | null = null;
+  // §B5.6: survivors of this cancel, collected inside the txn, notified after it.
+  let partnerCancelSurvivors: PartnerCancelSurvivor[] = [];
   // Every seat this cancellation frees gets its own offer - see the loop below.
   const promotions: WaitlistPromotion[] = [];
   let freedGuestSeats = 0;
@@ -10132,6 +10381,15 @@ export async function cancelRegistration(eventId: string, session: Session | nul
       }
     }
 
+    // §B5.6, IN THE SAME TRANSACTION as the booking cancellation: if this cancel
+    // leaves a partner holding a plan with nobody in it, retire the plan and hand
+    // back the survivor so we can tell them once, after commit.
+    partnerCancelSurvivors = await severConfirmedTogetherForCancel(
+      client,
+      profile.id,
+      row.event_id,
+    );
+
     await client.query("commit");
   } catch (error) {
     await client.query("rollback");
@@ -10227,6 +10485,11 @@ export async function cancelRegistration(eventId: string, session: Session | nul
     await logWaitlistPromotedEmail(pool, promoted);
   }
 
+  // §B5.6 step 5: ONE honest notification to the still-going partner. Step 7 is
+  // the silence on the other side - the canceller gets nothing extra, because
+  // prompting them to re-plan in the same breath as cancelling reads as guilt.
+  await notifyPartnerCancelled(pool, partnerCancelSurvivors);
+
   return {
     eventTitle: cancelledTitle,
     promotedWaitlist: !!promotion,
@@ -10312,6 +10575,8 @@ export async function cancelGuestSeatForPurchaser(
   const client = await pool.connect();
 
   let promotion: WaitlistPromotion | null = null;
+  // §B5.6: survivors of this release, collected inside the txn, notified after.
+  let partnerCancelSurvivors: PartnerCancelSurvivor[] = [];
   let refundPlan:
     | { paymentTransactionId: string; refundCents: number; tier: RefundTier; currency: string }
     | null = null;
@@ -10449,6 +10714,20 @@ export async function cancelGuestSeatForPurchaser(
       }
     }
 
+    // §B5.6 edge case, verbatim: "the partner's seat was a claimed guest spot
+    // released by the purchaser - same teardown + same survivor string. The
+    // survivor experience must not depend on which booking mechanics removed the
+    // partner." The torn-down side is the RELEASED GUEST, not the purchaser: the
+    // guest is the one who stops attending. Unclaimed spots have nobody to tear
+    // down, so the call is skipped.
+    if (row.claimed_profile_id) {
+      partnerCancelSurvivors = await severConfirmedTogetherForCancel(
+        client,
+        row.claimed_profile_id,
+        row.event_id,
+      );
+    }
+
     await client.query("commit");
   } catch (error) {
     await client.query("rollback");
@@ -10563,6 +10842,8 @@ export async function cancelGuestSeatForPurchaser(
   if (promotion) {
     await logWaitlistPromotedEmail(pool, promotion);
   }
+
+  await notifyPartnerCancelled(pool, partnerCancelSurvivors);
 
   return {
     refund,
@@ -12226,6 +12507,7 @@ export async function claimGuestSpotForProfile(
 
   const res = await pool.query<{
     id: string;
+    event_id: string;
     event_slug: string;
     event_title: string;
     guest_first_name: string | null;
@@ -12249,7 +12531,7 @@ export async function claimGuestSpotForProfile(
             and att.profile_id = gs.purchaser_profile_id
             and att.status = 'confirmed'
         )
-      returning gs.id::text, e.slug as event_slug, e.title as event_title,
+      returning gs.id::text, e.id::text as event_id, e.slug as event_slug, e.title as event_title,
                 gs.guest_first_name, gs.purchaser_profile_id::text
     `,
     [token, profileId, differentPerson ? null : invitedEmail || null],
@@ -12276,6 +12558,11 @@ export async function claimGuestSpotForProfile(
       ],
     )
     .catch(() => {});
+
+  // §B5.3 counts a CLAIMED GUEST SPOT as a seat ("confirmed booking (or claimed
+  // guest spot)"), and event_participants_v agrees - so claiming a +1 can be the
+  // moment a pair becomes both-going, exactly like a paid or free RSVP.
+  void detectConfirmedTogether(pool, row.event_id, profileId);
 
   return { ok: true, eventSlug: row.event_slug };
 }
@@ -12729,6 +13016,8 @@ export async function markPaymentSucceeded(paymentTransactionId: string): Promis
         }),
         logPaymentReceiptEmail(pool, payment.id),
         notifyProposalPartnerOfRsvp(pool, payment.event_id, payment.profile_id),
+        // §B5.3: the paid confirm path - named explicitly by triage C10.
+        detectConfirmedTogether(pool, payment.event_id, payment.profile_id),
       ]);
     }
     return attendeeFlipped || payment.attendee_status === "confirmed";
@@ -14812,25 +15101,50 @@ export type ProposalEntry = {
   // suggestPlanForMutual; `coordState` picks the step; the reveal fields drive the
   // one-time §4 reveal; `proposedByMe` splits the `proposed` copy (waiting vs "you in?").
   mutualId: string;
+  // §B2 AXIS 1. Read BEFORE coordState, always: `connected` and `released` are two
+  // different terminals with two different locked strings, and collapsing them into
+  // the single `isExpired` boolean told a pair who had just gone out together that
+  // it "didn't turn into a night out".
+  mutualStatus: "active" | "connected" | "released" | "suppressed" | "expired";
+  // §B2 AXIS 2 - only meaningful while mutualStatus is 'active'.
   coordState: "open" | "proposed" | "confirmed_together" | "dormant" | "released";
   revealSeen: boolean;
-  sharedIntent: string;
+  // The whole locked line, not a fragment: a mixed pair is rendered as two sides
+  // (CLICK_LANGUAGE §5), so the caller can't be left to wrap it in "You're both
+  // here for ___" - that wrapper is only correct for the equal-intent case.
+  intentLine: string;
   bothDating: boolean;
   proposedByMe: boolean;
+  // §B5.6: the agreed plan ended because the OTHER side cancelled their booking.
+  // Drives S18 - the survivor must never be left on the "you're both going" peak
+  // pointing at somebody who isn't coming.
+  partnerCancelled: boolean;
 };
 
 // The reveal's intent line (§4): a desire, never a status. Shared only when both
 // named the same intent at click time (intent_a/intent_b snapshot, §8 immutable);
 // otherwise a neutral common ground. Dating gets its own opt-in line, not this one.
-function intentPhrase(a: string | null, b: string | null): string {
-  const map: Record<string, string> = {
-    dating: "meeting someone new",
-    friendship: "making new friends",
-    networking: "meeting new people",
-    exploring: "trying new things",
-    activities: "doing things together",
-  };
-  return a && b && a === b ? (map[a] ?? "meeting new people") : "meeting new people";
+// CLICK_LANGUAGE §5, "Intent line on mutual (non-optional)". Two shapes, and the
+// distinction is BINDING: equal intents collapse to one frame, a mixed pair shows
+// BOTH sides and is "never rounded into one frame" - a friends-intent user must
+// never be rendered as romantic, or vice-versa. The old version returned the same
+// bland "meeting new people" for every mixed pair, which is exactly that rounding:
+// it silently spoke for both people and told each of them the wrong thing.
+const INTENT_PHRASE: Record<string, string> = {
+  dating: "meeting someone new",
+  friendship: "making new friends",
+  networking: "meeting new people",
+  exploring: "trying new things",
+  activities: "doing things together",
+};
+
+function intentLine(viewer: string | null, other: string | null): string {
+  const mine = viewer ? INTENT_PHRASE[viewer] : null;
+  const theirs = other ? INTENT_PHRASE[other] : null;
+  // Equal (or only one side known - never invent the other's intent).
+  if (mine && theirs && viewer === other) return `You're both here for ${mine}.`;
+  if (mine && theirs) return `You're here for ${mine} - they're open to ${theirs}.`;
+  return "You're both here to meet new people.";
 }
 
 export async function getProposalsForSession(session: Session | null): Promise<ProposalEntry[]> {
@@ -14863,12 +15177,19 @@ export async function getProposalsForSession(session: Session | null): Promise<P
       viewer_has_seat: boolean;
       other_has_seat: boolean;
       mutual_id: string;
+      mutual_status: "active" | "connected" | "released" | "suppressed" | "expired";
       coord_state: "open" | "proposed" | "confirmed_together" | "dormant" | "released";
       reveal_seen: boolean;
-      intent_a: string | null;
-      intent_b: string | null;
+      viewer_intent: string | null;
+      other_intent: string | null;
       both_dating: boolean;
       proposed_by_me: boolean;
+      partner_cancelled: boolean;
+      // §B5.3 both-booked detection, independent of any proposal. Null unless the
+      // pair genuinely share a seat on an upcoming event.
+      both_going_slug: string | null;
+      both_going_title: string | null;
+      both_going_starts_at: Date | null;
     }>(
       `
         select
@@ -14935,12 +15256,29 @@ export async function getProposalsForSession(session: Session | null): Promise<P
           -- the viewer's one-time reveal flag, the intent snapshot for the reveal
           -- line, the both-opted-in dating flag, and which side owns the pending plan.
           m.id::text as mutual_id,
+          -- AXIS 1 (§B2). The drawer reads this FIRST, then coord_state only while
+          -- 'active'. Without it the two shelf terminals are indistinguishable and
+          -- 'connected' - a pair who demonstrably went out together - was told
+          -- "this one didn't turn into a night out", the release copy.
+          m.status as mutual_status,
+          -- AXIS 2 (§B2), meaningful only while status = 'active'.
           m.coord_state,
           case when m.user_a_id = $1::uuid then m.seen_at_a is not null else m.seen_at_b is not null end as reveal_seen,
-          m.intent_a,
-          m.intent_b,
-          (m.intent_a = 'dating' and m.intent_b = 'dating') as both_dating,
-          (p.proposed_by = $1::uuid) as proposed_by_me
+          -- Sided, not raw a/b: CLICK_LANGUAGE §5 binds that a MIXED intent pair
+          -- shows BOTH sides ("You're here for x - they're open to y") and is never
+          -- rounded into one frame, so the reveal has to know which side is whose.
+          case when m.user_a_id = $1::uuid then m.intent_a else m.intent_b end as viewer_intent,
+          case when m.user_a_id = $1::uuid then m.intent_b else m.intent_a end as other_intent,
+          -- "Both have dating on" is the live opt-in toggle both users control, not
+          -- the frozen intent snapshot: intent_a/intent_b hold ONE value each, so a
+          -- user whose intents are {friendship,dating} never qualified and the pill
+          -- silently never rendered for them.
+          (me.dating_visible and other.dating_visible) as both_dating,
+          (p.proposed_by = $1::uuid) as proposed_by_me,
+          (p.status = 'partner_cancelled') as partner_cancelled,
+          both_going.slug as both_going_slug,
+          both_going.title as both_going_title,
+          both_going.starts_at as both_going_starts_at
         -- Mutual-centric (2.5b-iv): every ACTIVE mutual for the viewer, its live
         -- plan LEFT-joined. An open mutual whose only proposal was declined has no
         -- plan row (p.* null) and still shows - the drawer's suggest step re-fills it.
@@ -14950,13 +15288,42 @@ export async function getProposalsForSession(session: Session | null): Promise<P
         join profiles other on other.id = (
           case when m.user_a_id = $1::uuid then m.user_b_id else m.user_a_id end
         )
+        join profiles me on me.id = $1::uuid
         left join lateral (
           select cp.*
           from click_proposals cp
-          where cp.mutual_click_id = m.id and cp.status in ('pending', 'accepted')
+          where cp.mutual_click_id = m.id
+            -- 'partner_cancelled' rides along so the drawer can render S18 off the
+            -- retired row (it still carries suggested_event_id, so the locked
+            -- survivor string gets its event name for free). It is terminal, so it
+            -- can never be mistaken for a live plan - projectStep reads the flag.
+            and cp.status in ('pending', 'accepted', 'partner_cancelled')
           order by cp.updated_at desc
           limit 1
         ) p on true
+        -- §B5.3: "both going" is a fact about SEATS, not about a proposal. The pair
+        -- reach confirmed_together "however they both got there - through the
+        -- proposal handshake OR independently", so the drawer needs the shared event
+        -- even when no proposal row exists (two people who each booked the same
+        -- night on their own). Scoped to upcoming events and read through
+        -- event_participants_v, the same canonical roster the seat flags above use,
+        -- so a claimed guest +1 counts as the seat it is.
+        left join lateral (
+          select e2.slug, e2.title, e2.starts_at
+          from events e2
+          where e2.starts_at > now()
+            and e2.status in ('live', 'featured')
+            and exists (
+              select 1 from event_participants_v pv
+              where pv.event_id = e2.id and pv.profile_id = $1::uuid
+            )
+            and exists (
+              select 1 from event_participants_v pv
+              where pv.event_id = e2.id and pv.profile_id = other.id
+            )
+          order by e2.starts_at asc
+          limit 1
+        ) both_going on true
         -- ALWAYS attach the suggested event. This join answers "what plan is this",
         -- never "can it still be joined" - the joinability filters used to live here
         -- and the plan lost its event the moment the night started, taking both seat
@@ -14995,7 +15362,16 @@ export async function getProposalsForSession(session: Session | null): Promise<P
       [profile.id],
     );
 
-    return result.rows.map((row) => ({
+    return result.rows.map((row) => {
+      // §B5.3: when the pair hold seats on a shared upcoming event that no proposal
+      // points at, THAT is the plan - fill the event facts and both seat flags from
+      // the lateral. Without this an independently-both-booked pair projected a null
+      // event and two false seat flags, so the win state had nothing to render at
+      // all. A live proposal always wins: it is the event they actually agreed on.
+      const independentPlan = !row.event_slug && Boolean(row.both_going_slug);
+      const eventStartsAt = row.event_starts_at ?? (independentPlan ? row.both_going_starts_at : null);
+
+      return {
       // "" when the mutual has no live plan (open, e.g. post-decline) - the drawer
       // keys those on mutualId (suggestPlanForMutual), never on a proposal id.
       id: row.id ?? "",
@@ -15006,13 +15382,20 @@ export async function getProposalsForSession(session: Session | null): Promise<P
       isExpired: Boolean(row.expired),
       otherId: row.other_id,
       otherName: row.other_name,
-      suggestedEventSlug: row.event_slug,
-      suggestedEventTitle: row.event_title,
-      suggestedEventStartsAt: row.event_starts_at ? row.event_starts_at.toISOString() : null,
+      suggestedEventSlug: row.event_slug ?? (independentPlan ? row.both_going_slug : null),
+      suggestedEventTitle: row.event_title ?? (independentPlan ? row.both_going_title : null),
+      suggestedEventStartsAt: eventStartsAt ? eventStartsAt.toISOString() : null,
       // A suggestion exists but can no longer be RSVP'd to - it sold out, was
       // cancelled, or has started. Only meaningful while still pending.
+      //
+      // ...and never for a viewer who already HOLDS a seat. `event_joinable` asks
+      // "is there a free seat", which is the wrong question for someone already in
+      // the room: a full event told a ticket-holding pair their plan had "filled up
+      // - pick another together", and stripped the confirm that would have let them
+      // say so. Needing zero seats is not the same as being locked out (C11/§B5.1
+      // needed=0).
       suggestionUnavailable:
-        row.had_suggestion && !row.event_joinable && row.status === "pending",
+        row.had_suggestion && !row.event_joinable && !row.viewer_has_seat && row.status === "pending",
       suggestedEventJoinable: Boolean(row.event_joinable),
       suggestedEventCancelled: Boolean(row.event_cancelled),
       suggestedEventStarted: Boolean(row.event_started),
@@ -15020,15 +15403,18 @@ export async function getProposalsForSession(session: Session | null): Promise<P
       expiresAt: row.expires_at.toISOString(),
       confirmedAt: row.confirmed_at ? row.confirmed_at.toISOString() : null,
       confirmedByMe: Boolean(row.confirmed_by_me),
-      viewerHasSeat: Boolean(row.viewer_has_seat),
-      otherHasSeat: Boolean(row.other_has_seat),
+      viewerHasSeat: independentPlan ? true : Boolean(row.viewer_has_seat),
+      otherHasSeat: independentPlan ? true : Boolean(row.other_has_seat),
       mutualId: row.mutual_id,
+      mutualStatus: row.mutual_status,
       coordState: row.coord_state,
       revealSeen: Boolean(row.reveal_seen),
-      sharedIntent: intentPhrase(row.intent_a, row.intent_b),
+      intentLine: intentLine(row.viewer_intent, row.other_intent),
       bothDating: Boolean(row.both_dating),
       proposedByMe: Boolean(row.proposed_by_me),
-    }));
+      partnerCancelled: Boolean(row.partner_cancelled),
+      };
+    });
   } catch {
     return [];
   }
@@ -15540,6 +15926,70 @@ export async function releaseMutualForSession(session: Session | null, mutualId:
        on conflict (user_a_id, user_b_id)
        do update set reason = excluded.reason, expires_at = excluded.expires_at, created_at = now()`,
       [mutual.user_a_id, mutual.user_b_id],
+    );
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * S12/S13 - "We clicked 👍", the closure ritual (§B7.1).
+ *
+ * §B7.1 says both users always have three controls on a mutual: "We clicked 👍",
+ * "Not feeling it", and Block. The first one had no implementation anywhere, so
+ * `status = 'connected'` - the SUCCESS terminal, and the one outcome the whole
+ * mechanic exists to produce - had no user-facing writer at all. Only the
+ * co-attendance sweep could ever reach it.
+ *
+ * Deliberately NOT an exit door: it is celebrated, it rests the pair in Past
+ * clicks, and it stays re-clickable (§B7.8 - a fresh event spawns a NEW active
+ * mutual, which the partial unique index on status='active' already allows).
+ *
+ * `connected_reason` is coalesced, never overwritten: §B2 binds that 'co_attended'
+ * (behavioural, the stronger signal) wins over 'we_clicked' (self-reported), so a
+ * tap on an already-co-attended pair must not downgrade it.
+ */
+export async function markMutualConnectedForSession(
+  session: Session | null,
+  mutualId: string,
+): Promise<void> {
+  const pool = getPostgresPool();
+  if (!getSessionEmail(session)) throw authError();
+  if (!pool) throw databaseUnavailableError();
+
+  const profile = await ensureProfileForSession(session);
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    const result = await client.query<{ id: string }>(
+      `select id::text
+       from mutual_clicks
+       where id = $1::uuid and status = 'active'
+         and (user_a_id = $2::uuid or user_b_id = $2::uuid)
+       for update`,
+      [mutualId, profile.id],
+    );
+    if (!result.rows[0]) throw validationError("Couldn't find that click.");
+
+    await client.query(
+      `update mutual_clicks
+       set status = 'connected',
+           connected_reason = coalesce(connected_reason, 'we_clicked'),
+           ended_at = now(),
+           updated_at = now()
+       where id = $1::uuid`,
+      [mutualId],
+    );
+    // A live plan has no meaning on a terminal row, and leaving it 'accepted' would
+    // keep the pair rendering a coordination step off a settled mutual.
+    await client.query(
+      `update click_proposals set status = 'withdrawn', updated_at = now()
+       where mutual_click_id = $1::uuid and status in ('pending', 'accepted')`,
+      [mutualId],
     );
     await client.query("commit");
   } catch (error) {

@@ -22,6 +22,17 @@ type Tone = "sage" | "amber" | "neutral";
 // simply "Still out there".
 function rowState(e: ProposalEntry): { label: string; tone: Tone; sub: string } {
   const first = e.otherName.split(/\s+/)[0];
+  // AXIS 1 first, same order the drawer reads (Part 7). `connected` is the SUCCESS
+  // terminal - it used to fall into the release line below and tell a pair who had
+  // just been out together that it never turned into a night out.
+  if (e.mutualStatus === "connected")
+    return { label: "We clicked", tone: "sage", sub: "Rests in your past clicks - pick it back up anytime." };
+  // §B5.6: never leave a marker the data no longer supports. Without this branch the
+  // survivor's row stayed sage "You're in / Your seat's locked - waiting on [Name]",
+  // which is false twice over: they are not waiting, and the partner already left.
+  // Neutral, because S18 is neither a peak nor a failure.
+  if (e.partnerCancelled)
+    return { label: "Plans changed", tone: "neutral", sub: "Pick something else together." };
   if (e.isExpired) return { label: "Still out there", tone: "neutral", sub: "Cross paths again and you can pick it up." };
   // A seat you're holding outranks everything: it stays "both going" through the
   // night itself. Only a genuinely dead event (cancelled) is "fell through".
@@ -138,8 +149,8 @@ export function ClicksList({
         <div className="mt-7 rounded-[var(--radius-xl)] bg-[color:var(--lav-bg)] px-6 py-8 text-center">
           <p className="font-display text-[1.05rem] font-semibold text-[color:var(--ink)]">No live clicks yet.</p>
           <p className="mx-auto mt-2 max-w-[380px] text-sm leading-relaxed text-[color:var(--ink-soft)]">
-            Show up to an event, then click with someone afterwards. If they click you back, your first
-            plan opens here.
+            Show up to an event, then click with someone afterwards. Clicking is anonymous - we&apos;ll
+            only show you if it&apos;s mutual, and your first plan opens here.
           </p>
           <div className="mt-4 flex justify-center">
             <Link href="/discover" className="ck-btn ck-btn--sm ck-btn--primary">

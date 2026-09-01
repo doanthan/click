@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import type { ClickResult } from "@/app/people/actions";
 import { createUserClickForSession } from "@/lib/event-repository";
+import { CLICK_SENT_LINE } from "@/lib/clicks/constants";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -61,6 +62,6 @@ export async function clickCoAttendeeAction(
   // confirmation is ever read. The optimistic `sent` state below covers it.
   return {
     ok: true,
-    message: "Sent privately. If they click you back, you'll both see it.",
+    message: CLICK_SENT_LINE,
   };
 }

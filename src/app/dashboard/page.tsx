@@ -11,6 +11,7 @@ import { ClickRadar } from "@/components/click-radar";
 import { ClickWithSomeoneUserCard } from "@/components/click-with-someone-user-card";
 import {
   getDashboardData,
+  getGoingWithNames,
   getEventAttendeePreview,
   getMutualClicksForSession,
   getPersonalizedDiscovery,
@@ -105,6 +106,12 @@ export default async function DashboardPage() {
   }
 
   const upcoming = dashboard.upcomingEvents;
+  // §B5.3: the durable half of "you're both going" - the badge that outlives the
+  // one-time drawer moment. Best-effort; an empty map just means no badges.
+  const goingWith = await getGoingWithNames(
+    session,
+    upcoming.map((e) => e.id),
+  );
   const saved = dashboard.savedEvents;
   // getDashboardData has always fetched these; the page simply never read them,
   // so a member on three waitlists saw "Nothing saved yet" under a heading that
@@ -264,6 +271,7 @@ export default async function DashboardPage() {
                   bookmarked={bookmarkSet.has(event.id)}
                   registered
                   bookingStatus={bookingStatusFor(event.id)}
+                  goingWith={goingWith.get(event.id) ?? null}
                 />
               )}
             </CardRail>

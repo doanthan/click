@@ -144,3 +144,139 @@ export async function pairCoordinationAllowed(
   const r = rows[0];
   return !(r?.blocked || r?.frozen);
 }
+
+// ---------------------------------------------------------------------------
+// §B5.6 — a partner cancels their booking during `confirmed_together`.
+//
+// Marked launch-blocking in the spec, and it existed in no form: not one cancel
+// path touched mutual_clicks or click_proposals. The survivor kept a "Going with
+// [Name]" plan pointing at somebody who had cancelled (the ghost plan §B0 exists
+// to prevent), and the canceller kept being told to "grab your seat" for the event
+// they had just left - the guilt mechanic step 7 bans by name.
+//
+// This runs INSIDE the cancel's own transaction, matching this module's convention,
+// so the booking flip and the coordination teardown cannot come apart.
+//
+// The seven steps, in order:
+//   1. Re-evaluate §B5.3 FIRST - if the pair still both hold seats on some OTHER
+//      shared future event, confirmed_together stands, re-pointed. No teardown, no
+//      notification. (A pair with two plans does not lose both.)
+//   2. coord_state -> 'open'. The mutual is UNTOUCHED - status stays 'active'; a
+//      cancelled attempt is a failed attempt like any other (§B0).
+//   3. The accepted proposal retires to 'partner_cancelled', which is what the
+//      drawer reads to render S18 instead of the peak.
+//   4. The canceller's pending clicks for that event -> 'invalidated' (§6.2).
+//   5/6/7 are the caller's: the survivor notification, priority re-suggest, and
+//      "the canceller gets nothing extra" (which falls out of retiring the
+//      proposal - it is what was driving both of their re-book prompts).
+//
+// Returns one row per survivor so the caller can notify AFTER it commits. Empty
+// when nothing was torn down, which makes the both-cancel case idempotent for
+// free: the second cancel finds coord_state already 'open' and matches nothing.
+// ---------------------------------------------------------------------------
+export type PartnerCancelSurvivor = {
+  mutualId: string;
+  survivorId: string;
+  cancellerName: string;
+  eventTitle: string;
+};
+
+export async function severConfirmedTogetherForCancel(
+  client: PoolClient,
+  cancellerProfileId: string,
+  eventId: string,
+): Promise<PartnerCancelSurvivor[]> {
+  // Step 1 + 2 + 3 in one statement. The `not exists` arm is the §B5.3 re-point
+  // guard: if another shared upcoming event still has BOTH of them in it, this
+  // mutual is skipped entirely and keeps confirmed_together.
+  const torn = await client.query<{
+    mutual_id: string;
+    survivor_id: string;
+    event_title: string;
+  }>(
+    `
+      with affected as (
+        select m.id,
+               case when m.user_a_id = $1::uuid then m.user_b_id else m.user_a_id end as survivor_id
+        from mutual_clicks m
+        where m.status = 'active'
+          and m.coord_state = 'confirmed_together'
+          and (m.user_a_id = $1::uuid or m.user_b_id = $1::uuid)
+          -- The partner is still going to THIS event: that is what makes them a
+          -- survivor rather than someone who already left too.
+          and exists (
+            select 1 from event_participants_v pv
+            where pv.event_id = $2::uuid
+              and pv.profile_id = case when m.user_a_id = $1::uuid then m.user_b_id else m.user_a_id end
+          )
+          -- Step 1: no OTHER shared future event holds them both.
+          and not exists (
+            select 1
+            from events e2
+            where e2.id <> $2::uuid
+              and e2.starts_at > now()
+              and e2.status in ('live', 'featured')
+              and exists (
+                select 1 from event_participants_v pv
+                where pv.event_id = e2.id and pv.profile_id = m.user_a_id
+              )
+              and exists (
+                select 1 from event_participants_v pv
+                where pv.event_id = e2.id and pv.profile_id = m.user_b_id
+              )
+          )
+      ),
+      reopened as (
+        update mutual_clicks m
+        set coord_state = 'open', updated_at = now()
+        from affected a
+        where m.id = a.id
+        returning m.id
+      ),
+      retired as (
+        update click_proposals cp
+        set status = 'partner_cancelled', responded_at = now(), updated_at = now()
+        from affected a
+        where cp.mutual_click_id = a.id
+          and cp.status in ('pending', 'accepted')
+          and cp.suggested_event_id = $2::uuid
+        returning cp.mutual_click_id
+      )
+      -- The two UPDATE CTEs need no reference from here: Postgres runs
+      -- data-modifying statements in WITH exactly once and always to completion,
+      -- whether or not the primary query reads their output. They also share this
+      -- statement's snapshot, so both see the same 'affected' set.
+      select a.id::text as mutual_id,
+             a.survivor_id::text as survivor_id,
+             e.title as event_title
+      from affected a
+      join events e on e.id = $2::uuid
+    `,
+    [cancellerProfileId, eventId],
+  );
+
+  if (torn.rowCount === 0) return [];
+
+  // Step 4 (§6.2): the canceller's clicks for that event are invalidated in the
+  // same transaction as the cancellation. 'pending' only - an already-formed
+  // mutual is never unmade.
+  await client.query(
+    `update clicks set status = 'invalidated', updated_at = now()
+     where event_id = $2::uuid and status = 'pending'
+       and (sender_id = $1::uuid or receiver_id = $1::uuid)`,
+    [cancellerProfileId, eventId],
+  );
+
+  const canceller = await client.query<{ display_name: string }>(
+    `select display_name from profiles where id = $1::uuid`,
+    [cancellerProfileId],
+  );
+  const cancellerName = canceller.rows[0]?.display_name ?? "They";
+
+  return torn.rows.map((r) => ({
+    mutualId: r.mutual_id,
+    survivorId: r.survivor_id,
+    cancellerName,
+    eventTitle: r.event_title,
+  }));
+}

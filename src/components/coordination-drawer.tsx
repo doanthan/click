@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useId, useRef, useState } from "react";
+import { useActionState, useCallback, useEffect, useId, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { createPortal } from "react-dom";
 import Link from "next/link";
@@ -10,6 +10,7 @@ import { PAIR_SUPPRESSION_DAYS } from "@/lib/clicks/constants";
 import {
   confirmProposalAction,
   declineProposalAction,
+  markMutualConnectedAction,
   markMutualSeenAction,
   proposeAlternativeAction,
   releaseMutualAction,
@@ -56,17 +57,47 @@ function gcalUrl(title: string, startIso: string | null): string | null {
   )}&dates=${fmt(start)}/${fmt(end)}`;
 }
 
-type Step = "reveal" | "open" | "proposed" | "confirmed" | "gone" | "expired";
+type Step =
+  | "reveal"
+  | "open"
+  | "proposed"
+  | "confirmed"
+  | "gone"
+  | "connected"
+  | "released"
+  | "partner-cancelled";
 
-// Projection from the entry (§2). `gone` = C12: a confirmed plan whose agreed event
-// genuinely died - cancelled, or the row is missing. A plan does NOT become `gone`
-// because the night started or the event sold out: this used to key off the mere
-// absence of a slug, and since the query dropped the event as soon as it was no
-// longer bookable, every successful plan flipped to "that plan fell through" at
-// the moment it was happening.
+// Projection from the entry. CLICK_COORDINATION_SCREENS Part 7 is explicit that a
+// mutual has TWO orthogonal fields and that the drawer must read `status` FIRST,
+// then `coord_state` only while active - "do not collapse them into one enum, that
+// is the exact bug this table exists to prevent".
+//
+// It had been collapsed. Everything keyed off the click_proposals row, so:
+//   - `connected` (the success terminal) and `released` (seven days of silence)
+//     both arrived as isExpired and rendered the SAME release copy, telling a pair
+//     who had just gone out together that it "didn't turn into a night out";
+//   - `confirmed_together` reached any way other than the proposal-accept tap - i.e.
+//     every pair who each booked the same night independently, which §B5.3 says
+//     must fire "however they both got there" - rendered the suggest step.
+//
+// `gone` = C12: an agreed event that genuinely died (cancelled, or the row is
+// missing). A plan does NOT become `gone` because the night started or the event
+// sold out - that used to key off the mere absence of a slug, so every successful
+// plan flipped to "that plan fell through" at the moment it was happening.
 function projectStep(entry: ProposalEntry): Exclude<Step, "reveal"> {
-  if (entry.status === "expired" || entry.isExpired) return "expired";
-  if (entry.status === "confirmed") {
+  // AXIS 1 first.
+  if (entry.mutualStatus === "connected") return "connected";
+  if (entry.mutualStatus !== "active") return "released";
+  // S18 before the clock: the mutual is deliberately still active here (§B5.6 step
+  // 2 leaves status alone), so this has to be read before isExpired or the survivor
+  // would fall through to the release shelf.
+  if (entry.partnerCancelled) return "partner-cancelled";
+  if (entry.isExpired) return "released";
+
+  // AXIS 2, within active. coord_state owns the win state - not the proposal row,
+  // which does not exist for an independently-booked pair.
+  const bothGoing = entry.coordState === "confirmed_together" || entry.status === "confirmed";
+  if (bothGoing) {
     return entry.suggestedEventSlug && !entry.suggestedEventCancelled ? "confirmed" : "gone";
   }
   return entry.coordState === "proposed" ? "proposed" : "open";
@@ -135,6 +166,7 @@ function CoordinationDrawerPanel({
   const [proposeState, proposeAction] = useActionState(proposeAlternativeAction, INITIAL);
   const [suggestState, suggestAction] = useActionState(suggestPlanAction, INITIAL);
   const [releaseState, releaseAction] = useActionState(releaseMutualAction, INITIAL);
+  const [connectedState, connectedAction] = useActionState(markMutualConnectedAction, INITIAL);
 
   const [picking, setPicking] = useState(false);
   const [revealDismissed, setRevealDismissed] = useState(() =>
@@ -159,6 +191,11 @@ function CoordinationDrawerPanel({
   const catalogueId = useId();
   const cardRef = useRef<HTMLDivElement>(null);
   const releaseFormRef = useRef<HTMLFormElement>(null);
+  // Escape has to run the SAME close as ✕ and the scrim (which stamps reveal_seen),
+  // but the handler below is deliberately mount-scoped - rebinding it on every step
+  // change would re-run the focus grab and re-capture previouslyFocused. So the
+  // handler reads the current close from a ref instead of closing over it.
+  const closeStepRef = useRef<() => void>(() => {});
 
   // When a successful action revalidates /proposals, close the picker after the
   // fresh server state renders so local UI never fights the server truth.
@@ -179,7 +216,7 @@ function CoordinationDrawerPanel({
       if (confirmOpenRef.current) return;
       if (e.key === "Escape") {
         e.preventDefault();
-        onClose();
+        closeStepRef.current();
         return;
       }
       if (e.key === "Tab") {
@@ -218,20 +255,48 @@ function CoordinationDrawerPanel({
   }, [onClose]);
 
   const base = projectStep(entry);
-  // Reveal fires once per user per mutual (§4). Skip on a dead/expired mutual.
-  const step: Step = !entry.revealSeen && !revealDismissed && base !== "expired" ? "reveal" : base;
+  // Reveal fires once per user per mutual (§4). Skip on a dead/terminal mutual.
+  const step: Step =
+    !entry.revealSeen && !revealDismissed && base !== "released" && base !== "connected"
+      ? "reveal"
+      : base;
 
-  function dismissReveal() {
+  const dismissReveal = useCallback(() => {
     revealedThisSession.add(entry.mutualId);
     setRevealDismissed(true);
     void markMutualSeenAction(entry.mutualId); // persist for reload / other devices
-  }
+  }, [entry.mutualId]);
+
+  // THE #1 behaviour bug class (COORDINATION_MODAL_SYSTEM §4): the reveal is
+  // dismissed by "Maybe later" AND by ✕ AND by the scrim AND by Escape, and every
+  // one of those has to write reveal_seen. Only the primary CTA used to, so anyone
+  // who closed the reveal instead of acting on it got it fired at them again on
+  // every entry point, on every device, forever.
+  //
+  // markMutualSeen is idempotent server-side (its WHERE matches only while the
+  // viewer's seen_at is still null), so the double call from the CTA path is a
+  // no-op. Order matters: stamp before onClose, which unmounts the panel.
+  const closeStep = useCallback(() => {
+    if (step === "reveal") dismissReveal();
+    onClose();
+  }, [step, dismissReveal, onClose]);
+  // In an effect, not during render: a ref write during render is a lint error and
+  // genuinely unsafe under concurrent rendering. The keydown listener only ever
+  // fires after paint, so an effect is early enough for it.
+  useEffect(() => {
+    closeStepRef.current = closeStep;
+  }, [closeStep]);
 
   const firstName = entry.otherName.split(/\s+/)[0];
   // An open mutual with no live plan → a FRESH suggestion keyed on the mutual
   // (suggestPlanAction). A live pending plan is re-pointed instead (proposeAlternative,
   // which owns the 3-alt cap).
-  const freshSuggest = step === "open" && !entry.id;
+  // A FRESH suggestion keyed on the mutual (suggestPlanAction) vs re-pointing a
+  // LIVE plan (proposeAlternative, which owns the 3-alt cap). S18 belongs to the
+  // first group: §B5.6 put the pair back at coord_state='open' and retired the
+  // proposal, so there is no live plan to re-point - passing its terminal id to
+  // proposeAlternative would just fail.
+  const freshSuggest = (step === "open" && !entry.id) || step === "partner-cancelled";
 
   // An empty catalogue is a normal launch-week state (nothing upcoming with two
   // free seats). Rendering the form anyway gave a select holding only its own
@@ -290,8 +355,11 @@ function CoordinationDrawerPanel({
         ))}
       </select>
       <div className="mt-3 flex gap-2">
+        {/* S5's primary. Naming the person is the point: it says plainly that
+            this goes TO them and that they get to answer, which is exactly the
+            step the old open-step "Confirm this plan" skipped past. */}
         <SubmitButton size="sm" pendingLabel="Sending…">
-          Send suggestion
+          Suggest this to {firstName}
         </SubmitButton>
         <button
           type="button"
@@ -310,9 +378,16 @@ function CoordinationDrawerPanel({
     )
   ) : null;
 
+  // z-110, not 130. The drawer is the BASE surface here, and its own safety confirm
+  // goes through ModalShell at 120 - as siblings under body, a drawer at 130 painted
+  // over the very dialog it had just opened. The confirm was there (focus was in it,
+  // Escape reached it) but invisible, and a click on anything you could see landed on
+  // the drawer's scrim and closed the whole thing - on the "Not feeling it" control,
+  // the most loaded one on the screen. Scale in use: explorer 70, booking/detail 100,
+  // drawer 110, confirm 120, checkout 140, login 200.
   return createPortal(
     <div
-      className="fixed inset-0 z-[130] flex items-end justify-center p-0 sm:items-center sm:p-4"
+      className="fixed inset-0 z-[110] flex items-end justify-center p-0 sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
@@ -321,7 +396,7 @@ function CoordinationDrawerPanel({
         type="button"
         aria-label="Close"
         tabIndex={-1}
-        onClick={onClose}
+        onClick={closeStep}
         className="absolute inset-0 cursor-default bg-[color:var(--surface-deep)]/45 backdrop-blur-[2px]"
       />
       <div
@@ -331,9 +406,9 @@ function CoordinationDrawerPanel({
       >
         <button
           type="button"
-          onClick={onClose}
+          onClick={closeStep}
           aria-label="Close"
-          className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-full text-[color:var(--slate)] transition-colors hover:bg-[color:var(--lav-bg)] hover:text-[color:var(--ink)]"
+          className="absolute right-4 top-4 grid h-11 w-11 place-items-center rounded-full text-[color:var(--slate)] transition-colors hover:bg-[color:var(--lav-bg)] hover:text-[color:var(--ink)]"
         >
           <span aria-hidden className="text-lg leading-none">
             ✕
@@ -347,7 +422,12 @@ function CoordinationDrawerPanel({
             at opacity 1, not a JS-applied class that can stick invisible. */}
         <div key={step} className="rise-soft">
           {step === "reveal" ? (
-            <RevealStep entry={entry} titleId={titleId} onSuggest={dismissReveal} />
+            <RevealStep
+              entry={entry}
+              titleId={titleId}
+              onSuggest={dismissReveal}
+              onLater={closeStep}
+            />
           ) : (
             <CoordinationBody
               entry={entry}
@@ -359,20 +439,38 @@ function CoordinationDrawerPanel({
               confirmError={confirmState.error}
               declineError={declineState.error}
               onTogglePicker={() => setPicking((v) => !v)}
+              onDone={closeStep}
               picker={picker}
             />
           )}
         </div>
 
         {/* SAFE-08: an in-flow safety exit at every step that still HAS a plan to
-            end - block always remains. Not on the expired step: there is nothing
+            end - block always remains. Not on either TERMINAL step: there is nothing
             left to release there, releaseMutualForSession matches status='active'
             only, and the confirm had already promised a 90-day suppression that
             the throw meant was never written. Report or block stays, and is the
             control that actually does something on a click that has run out. */}
         <div className="mt-6 border-t border-[color:var(--line-soft)] pt-4">
+          {/* §B7.1: the closure ritual sits beside the two exits, and it is the
+              only one of the three that is a WIN - so it leads, and it is a real
+              button rather than a quiet link. There is deliberately no "it didn't
+              work" counterpart: Click never shows a verdict. */}
+          {step !== "released" && step !== "connected" ? (
+            <form action={connectedAction} className="mb-4">
+              <input type="hidden" name="mutual_id" value={entry.mutualId} />
+              <SubmitButton variant="secondary" size="sm" pendingLabel="Saving…">
+                We clicked 👍
+              </SubmitButton>
+              {connectedState.error ? (
+                <p role="alert" className="mt-2 text-xs font-medium text-[color:var(--danger)]">
+                  {connectedState.error}
+                </p>
+              ) : null}
+            </form>
+          ) : null}
           <div className="flex flex-wrap items-center justify-between gap-3">
-            {step !== "expired" ? (
+            {step !== "released" && step !== "connected" ? (
               <form ref={releaseFormRef} action={releaseAction}>
                 <input type="hidden" name="mutual_id" value={entry.mutualId} />
                 <ReleaseControl onRequest={() => openReleaseConfirm(true)} />
@@ -397,14 +495,14 @@ function CoordinationDrawerPanel({
             trap - on the most emotionally loaded control on the screen. */}
         <ConfirmDialog
           open={confirmRelease}
-          title={`End this connection with ${firstName}?`}
+          title={`End this click with ${firstName}?`}
           description={
             `This ends the plan for both of you. ${firstName} isn't told, and no message is sent - ` +
             `the plan simply stops showing for you both. Click won't suggest either of you to the ` +
             `other for the next ${PAIR_SUPPRESSION_DAYS} days. Any seat you've already booked ` +
             `stays booked.`
           }
-          confirmLabel="End this connection"
+          confirmLabel="End this click"
           cancelLabel="Keep it"
           tone="rose"
           onConfirm={() => {
@@ -421,38 +519,66 @@ function CoordinationDrawerPanel({
   );
 }
 
-// §4 reveal - copy locked, fired once. Headline, intent line (a desire not a status),
-// the dating opt-in line only when BOTH opted in, one action, quiet explainer link.
+// S3 - the peak micro-moment, fired exactly once per user per mutual. Every string
+// here is locked (CLICK_LANGUAGE §5); none of it is paraphrasable.
+//
+// The ✨ lives on the disc, never welded into the headline - §5 allows at most ONE
+// per element and concentrates them at the peaks. The dating clause is APPENDED to
+// the sage intent pill rather than given its own line, and only when both sides have
+// the toggle on: it is never inferred and never one-sided.
 function RevealStep({
   entry,
   titleId,
   onSuggest,
+  onLater,
 }: {
   entry: ProposalEntry;
   titleId: string;
   onSuggest: () => void;
+  onLater: () => void;
 }) {
+  const firstName = entry.otherName.split(/\s+/)[0];
   return (
-    <div>
-      <span className="eyebrow">It&apos;s mutual</span>
+    // aria-live so a screen-reader user gets the moment too - it is announced, not
+    // just drawn (Part 9). Polite: it must never interrupt what they were reading.
+    <div aria-live="polite">
+      <div
+        aria-hidden
+        className="grid h-[74px] w-[74px] place-items-center rounded-full bg-[color:var(--lav-bg)] text-[28px] leading-none text-[color:var(--purple)]"
+      >
+        ✨
+      </div>
       <h2
         id={titleId}
-        className="font-display mt-3 text-3xl font-semibold leading-tight tracking-[-0.025em] text-[color:var(--ink)]"
+        className="font-display mt-4 text-3xl font-semibold leading-tight tracking-[-0.025em] text-[color:var(--ink)]"
       >
-        You clicked with {entry.otherName}.
+        You clicked with {firstName}.
       </h2>
-      <p className="mt-3 text-base font-medium leading-6 text-[color:var(--ink-soft)]">
-        You&apos;re both here for {entry.sharedIntent}.
+      {/* A desire, never a status - and a MIXED pair reads as two sides. The line
+          arrives whole from the projection because only it knows which intent is
+          whose; wrapping a fragment here could only ever produce the banned
+          rounded-into-one-frame version. */}
+      <p className="mt-3 rounded-full bg-[color-mix(in_srgb,var(--sage)_16%,var(--paper))] px-3 py-1.5 text-sm font-semibold text-[color:var(--sage-ink)] inline-block">
+        {entry.intentLine}
+        {entry.bothDating ? " · both open to dating" : null}
       </p>
-      {entry.bothDating ? (
-        <p className="mt-2 text-sm font-semibold text-[color:var(--purple)]">
-          You&apos;re both open to dating ✨
-        </p>
-      ) : null}
+      <p className="mt-4 text-base font-medium leading-6 text-[color:var(--ink-soft)]">
+        Find a thing you&apos;d both enjoy, and just show up.
+      </p>
       <button type="button" onClick={onSuggest} className="ck-btn ck-btn--md ck-btn--primary mt-6">
-        Suggest something to do
+        Suggest a plan
       </button>
-      <div className="mt-4">
+      <div className="mt-4 flex flex-wrap items-center gap-4">
+        {/* The quiet exit. It is a real exit, not decoration: dismissing the reveal
+            ANY way persists reveal_seen, so this can never become the one route
+            that leaves it firing forever. */}
+        <button
+          type="button"
+          onClick={onLater}
+          className="text-[13px] font-semibold text-[color:var(--slate)] hover:text-[color:var(--ink)]"
+        >
+          Maybe later
+        </button>
         <Link
           href="/how-it-works"
           className="text-[13px] font-semibold text-[color:var(--slate)] underline decoration-dotted underline-offset-2 hover:text-[color:var(--ink)]"
@@ -474,6 +600,7 @@ function CoordinationBody({
   confirmError,
   declineError,
   onTogglePicker,
+  onDone,
   picker,
 }: {
   entry: ProposalEntry;
@@ -485,6 +612,7 @@ function CoordinationBody({
   confirmError: string | null;
   declineError: string | null;
   onTogglePicker: () => void;
+  onDone: () => void;
   picker: React.ReactNode;
 }) {
   const eventTitle = entry.suggestedEventTitle ?? "the event";
@@ -500,15 +628,25 @@ function CoordinationBody({
 
       {step === "confirmed" ? (
         entry.viewerHasSeat ? (
-          // C11: already-booked side - never a live RSVP, partner-focused status.
+          // S11 / C11: already-booked side - never a live RSVP, partner-focused
+          // status. Copy is locked verbatim (CLICK_LANGUAGE §5 "Both-going
+          // confirmation"); the ✨ sits on the disc, never inside the headline.
           <>
+            {entry.otherHasSeat ? (
+              <div
+                aria-hidden
+                className="grid h-16 w-16 place-items-center rounded-full bg-[color:var(--lav-bg)] text-2xl leading-none text-[color:var(--purple)]"
+              >
+                ✨
+              </div>
+            ) : null}
             <h2 id={titleId} className={headingClass}>
-              {entry.otherHasSeat ? "You're both going ✨" : "You're in ✨"}
+              {entry.otherHasSeat ? "You're both going." : "You're in."}
             </h2>
             <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--ink-soft)]">
               {entry.otherHasSeat ? (
                 <>
-                  You and {firstName} both have a seat at {eventTitle}. See you there.
+                  You and {firstName} are set for {eventTitle}. See you there.
                 </>
               ) : (
                 <>
@@ -528,15 +666,22 @@ function CoordinationBody({
                   Add to calendar
                 </a>
               ) : null}
-              {entry.suggestedEventSlug ? (
+              {/* The locked second action. Closing a peak should be a real button,
+                  not a hunt for the corner ✕. */}
+              <button type="button" onClick={onDone} className="ck-btn ck-btn--md ck-btn--secondary">
+                Done
+              </button>
+            </div>
+            {entry.suggestedEventSlug ? (
+              <div className="mt-3">
                 <Link
                   href={`/events/${entry.suggestedEventSlug}`}
-                  className="ck-btn ck-btn--md ck-btn--secondary"
+                  className="text-[13px] font-semibold text-[color:var(--purple)] underline decoration-dotted underline-offset-2"
                 >
-                  View {eventTitle} →
+                  {eventTitle} →
                 </Link>
-              ) : null}
-            </div>
+              </div>
+            ) : null}
           </>
         ) : entry.suggestedEventJoinable ? (
           // Viewer still needs a seat, and can still get one - keep the live RSVP.
@@ -626,30 +771,108 @@ function CoordinationBody({
           </div>
           {picker}
         </>
-      ) : step === "expired" ? (
+      ) : step === "partner-cancelled" ? (
+        // S18 (§B5.6, Cindy-signed 2026-07-05). Neutral disc, NO ✨: this is neither
+        // a peak nor a failure. It never says WHY - a refund, an emergency and cold
+        // feet all read identically, by design - and it routes forward.
         <>
+          <div
+            aria-hidden
+            className="grid h-16 w-16 place-items-center rounded-full bg-[color:var(--cream)] text-2xl leading-none text-[color:var(--mauve)]"
+          >
+            📍
+          </div>
           <h2 id={titleId} className={headingClass}>
-            Still out there.
+            Plans changed
           </h2>
-          <p className="mt-3 rounded-2xl bg-[color:var(--lav-bg)] p-3 text-sm font-medium text-[color:var(--ink-soft)]">
-            This one didn&apos;t turn into a night out - if you cross paths again, you can pick it
-            back up.
+          <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--ink-soft)]">
+            {firstName}&apos;s plans changed - they won&apos;t make {eventTitle} this time. Your
+            spot&apos;s still yours. Want to line up something else together?
           </p>
+          <div className="mt-5 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={onTogglePicker}
+              className="ck-btn ck-btn--md ck-btn--primary"
+            >
+              Find another together
+            </button>
+            <button type="button" onClick={onDone} className="ck-btn ck-btn--md ck-btn--secondary">
+              Keep my spot - all good
+            </button>
+          </div>
+          {picker}
+        </>
+      ) : step === "connected" ? (
+        // S13 - the closure peak. This is the SUCCESS terminal: these two
+        // demonstrably went out together, or one of them said so. It used to render
+        // the release copy below, which told them it "didn't turn into a night out"
+        // - a verdict, and a false one, on the single best outcome the product has.
+        <>
+          <div
+            aria-hidden
+            className="grid h-16 w-16 place-items-center rounded-full bg-[color:var(--lav-bg)] text-2xl leading-none text-[color:var(--purple)]"
+          >
+            ✨
+          </div>
+          <h2 id={titleId} className={headingClass}>
+            Love that.
+          </h2>
+          <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--ink-soft)]">
+            That&apos;s what Click&apos;s for. This one rests in your past clicks - pick it back up
+            anytime.
+          </p>
+          <button type="button" onClick={onDone} className="ck-btn ck-btn--md ck-btn--primary mt-5">
+            Back to your clicks
+          </button>
+        </>
+      ) : step === "released" ? (
+        // S16 - soft release. NOT a peak: no ✨, no verdict, no loss frame. Copy is
+        // the CLICK_LANGUAGE §5 lock verbatim.
+        <>
+          <div
+            aria-hidden
+            className="grid h-16 w-16 place-items-center rounded-full bg-[color:var(--cream)] text-2xl leading-none text-[color:var(--mauve)]"
+          >
+            🕐
+          </div>
+          <h2 id={titleId} className={headingClass}>
+            Still out there
+          </h2>
+          <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--ink-soft)]">
+            If you cross paths again, you can pick it back up. No rush - these things have their
+            own timing.
+          </p>
+          <button type="button" onClick={onDone} className="ck-btn ck-btn--md ck-btn--secondary mt-5">
+            Back to your clicks
+          </button>
         </>
       ) : (
         // open / proposed - a plan is (or can be) on the table.
         <>
+          {/* S14 - the seat filled first. Lavender compass disc, calm copy, never
+              coral. Only for the sold-out arm: a cancelled or already-started
+              event is a different disappointment and keeps its own line. */}
+          {entry.suggestionUnavailable &&
+          !entry.suggestedEventCancelled &&
+          !entry.suggestedEventStarted ? (
+            <div
+              aria-hidden
+              className="mb-1 grid h-16 w-16 place-items-center rounded-full bg-[color:var(--lav-bg)] text-2xl leading-none text-[color:var(--purple)]"
+            >
+              ⊙
+            </div>
+          ) : null}
           <h2 id={titleId} className={headingClass}>
             {entry.suggestionUnavailable ? (
-              <>
-                {eventTitle}{" "}
-                {entry.suggestedEventCancelled
-                  ? "was called off"
-                  : entry.suggestedEventStarted
-                    ? "has already started"
-                    : "filled up"}{" "}
-                - pick another together.
-              </>
+              entry.suggestedEventCancelled ? (
+                <>{eventTitle} was called off - pick another together.</>
+              ) : entry.suggestedEventStarted ? (
+                <>{eventTitle} has already started - pick another together.</>
+              ) : (
+                // Locked (CLICK_LANGUAGE §5, "Seat-race-lost").
+                <>That one just filled up.</>
+              )
             ) : step === "proposed" && entry.proposedByMe ? (
               <>You&apos;re in - waiting on {firstName}</>
             ) : step === "proposed" ? (
@@ -662,6 +885,13 @@ function CoordinationBody({
               <>Pick something to do with {firstName}.</>
             )}
           </h2>
+          {entry.suggestionUnavailable &&
+          !entry.suggestedEventCancelled &&
+          !entry.suggestedEventStarted ? (
+            <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--ink-soft)]">
+              No drama - there&apos;s always another. Find one you&apos;ll both like.
+            </p>
+          ) : null}
           {entry.suggestedEventStartsAt ? (
             <p className="mt-2 text-xs font-semibold tracking-[0.04em] text-[color:var(--slate)]">
               {longDate.format(new Date(entry.suggestedEventStartsAt))}
@@ -680,13 +910,31 @@ function CoordinationBody({
           ) : null}
 
           <div className="mt-5 flex flex-wrap items-center gap-2">
-            {/* The proposer is waiting; only the recipient (or an open mutual) confirms. */}
-            {!(step === "proposed" && entry.proposedByMe) && entry.suggestedEventJoinable ? (
+            {/* S7 - and ONLY S7. Confirming is the recipient's move (§B4.2); the
+                proposer is waiting (S6, which the spec says carries no booking
+                control at all). This used to render on the `open` step too, for
+                both sides, which let either of them jump a system pick straight
+                from open to confirmed_together - skipping `proposed`, S6 and S7
+                entirely, and notifying the other person that their "shared plan"
+                was confirmed when they had never been asked about it.
+
+                The seat gate is `viewerHasSeat || joinable`, not `joinable` alone:
+                somebody who already holds a ticket needs zero seats (§B5.1
+                needed=0), so a sold-out event must not strip their ability to say
+                they're in.
+
+                The label branches on the viewer's OWN booking state (C11 / §B4.1
+                step 7): "Save my spot" books, "I'm in" does not re-book. */}
+            {step === "proposed" &&
+            !entry.proposedByMe &&
+            (entry.viewerHasSeat || entry.suggestedEventJoinable) ? (
               <form action={confirmAction}>
                 <input type="hidden" name="proposal_id" value={entry.id} />
                 {/* Confirming a plan is agreeing to a night out, not sending a
                     message - the old shared "Sending…" label said otherwise. */}
-                <SubmitButton pendingLabel="Confirming…">Confirm this plan</SubmitButton>
+                <SubmitButton pendingLabel="Confirming…">
+                  {entry.viewerHasSeat ? "I'm in" : "Save my spot"}
+                </SubmitButton>
               </form>
             ) : null}
             <div className="grid gap-1">
@@ -743,7 +991,11 @@ function CoordinationBody({
             ) : null}
           </div>
 
-          {confirmError ? (
+          {/* S14 / §B5.5: a seat race is explicitly not an error - "NOT an error
+              state, never red/coral". Once the plan is unavailable the recovery
+              body above IS the message, so the danger alert would be a second,
+              louder, contradicting copy of it. Genuine failures still get it. */}
+          {confirmError && !entry.suggestionUnavailable ? (
             <p
               role="alert"
               className="mt-3 rounded-[var(--radius-md)] bg-[color-mix(in_srgb,var(--danger)_10%,var(--paper))] px-3 py-2 text-xs font-medium text-[color:var(--danger)]"

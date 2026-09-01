@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { createUserClickForSession } from "@/lib/event-repository";
+import { CLICK_SENT_LINE } from "@/lib/clicks/constants";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -45,6 +46,6 @@ export async function clickPersonAction(
   // optimistic state below keeps the card mounted so that pending state shows.
   return {
     ok: true,
-    message: "Sent privately. If they click you back, you'll both see it.",
+    message: CLICK_SENT_LINE,
   };
 }

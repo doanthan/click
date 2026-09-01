@@ -43,8 +43,7 @@ export function PostEventClickCard({ prompt }: { prompt: PostEventClickPrompt })
       ) : (
         <p className="mt-1.5 text-sm leading-relaxed text-[color:var(--slate)]">
           Tap up to {remaining} more {remaining === 1 ? "person" : "people"} you&apos;d like to see
-          again. It&apos;s completely private - they only ever hear about it if they click you
-          back.
+          again. Clicking is anonymous - we&apos;ll only show you if it&apos;s mutual.
         </p>
       )}
 

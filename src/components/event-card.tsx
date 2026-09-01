@@ -34,10 +34,17 @@ export function EventCard({
   bookingStatus,
   priority = false,
   distanceOrigin,
+  goingWith,
 }: {
   event: EventItem;
   bookmarked?: boolean;
   registered?: boolean;
+  // §B5.3: the first name of a mutual who is ALSO going to this event. The
+  // "you're both going" drawer fires once; this badge is the durable half - the
+  // spec is explicit that the togetherness has to be "visible every time they
+  // look at their plans", not a notification they scroll past. Lives until the
+  // event passes, and tears down with the pair (§B5.6) if either cancels.
+  goingWith?: string | null;
   // Where the distance on this card is measured FROM. Printed next to the
   // number, because the default is Sydney CBD and not the reader's location -
   // "Bondi · 8km" read as 8 km from them.
@@ -114,6 +121,14 @@ export function EventCard({
               {event.title}
             </Link>
           </h3>
+          {/* In the body, not a second cover badge: the cover carries exactly one
+              StatusBadge and this is a companion fact, not a booking state. */}
+          {goingWith ? (
+            <p className="mt-1.5 inline-flex max-w-full items-center gap-1 truncate rounded-full bg-[color:var(--lav-bg)] px-2.5 py-1 text-[12.5px] font-semibold text-[color:var(--purple)]">
+              <Icon name="users" size={12} stroke={2.1} />
+              <span className="truncate">Going with {goingWith}</span>
+            </p>
+          ) : null}
           <p className="mt-1 flex min-w-0 items-center gap-1.5 truncate text-[13.5px] font-medium text-[color:var(--slate)]">
             <Icon name="pin" size={13} stroke={2.1} />
             {venueRevealed ? (

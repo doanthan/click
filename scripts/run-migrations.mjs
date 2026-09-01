@@ -29,7 +29,9 @@ function loadEnv(file) {
     const text = readFileSync(path.join(root, file), "utf8");
     for (const line of text.split("\n")) {
       const match = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
-      if (match && !(match[1] in process.env)) process.env[match[1]] = match[2];
+      // Values in .env.local are quoted; strip one matched pair so the URL parses.
+      if (match && !(match[1] in process.env))
+        process.env[match[1]] = match[2].replace(/^(['"])(.*)\1$/, "$2");
     }
   } catch {
     /* file is optional */

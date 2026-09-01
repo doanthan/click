@@ -8,6 +8,7 @@ import {
   declineProposalForSession,
   markMutualSeen,
   proposeAlternativeForProposal,
+  markMutualConnectedForSession,
   releaseMutualForSession,
   suggestPlanForMutual,
 } from "@/lib/event-repository";
@@ -33,12 +34,20 @@ export async function confirmProposalAction(
 
   const id = formData.get("proposal_id");
   if (typeof id !== "string" || !UUID_RE.test(id)) {
-    return { ok: false, error: "Couldn't find that proposal." };
+    return { ok: false, error: "Couldn't find that plan." };
   }
 
   try {
     await confirmProposal(session, id);
   } catch (error) {
+    // S14 / §B5.5: the commonest failure here is "that event just filled up", which
+    // the spec insists is NOT an error state - never red, never a dead end. It only
+    // read as one because we revalidated on success alone, so the drawer kept the
+    // stale entry (suggestedEventJoinable still true) and had nothing to render but
+    // the raw throw in a danger alert. Revalidating here brings back the fresh entry
+    // with suggestionUnavailable set, and the drawer re-projects into the calm
+    // "That one just filled up." recovery on its own.
+    revalidatePath("/proposals");
     return { ok: false, error: errorMessage(error) };
   }
   revalidatePath("/proposals");
@@ -69,7 +78,7 @@ export async function proposeAlternativeAction(
   const id = formData.get("proposal_id");
   const slug = formData.get("event_slug");
   if (typeof id !== "string" || !UUID_RE.test(id)) {
-    return { ok: false, error: "Couldn't find that proposal." };
+    return { ok: false, error: "Couldn't find that plan." };
   }
   if (typeof slug !== "string" || !slug) {
     return { ok: false, error: "Pick an event from the catalogue first." };
@@ -94,7 +103,7 @@ export async function declineProposalAction(
 
   const id = formData.get("proposal_id");
   if (typeof id !== "string" || !UUID_RE.test(id)) {
-    return { ok: false, error: "Couldn't find that proposal." };
+    return { ok: false, error: "Couldn't find that plan." };
   }
 
   try {
@@ -114,7 +123,7 @@ export async function releaseMutualAction(
   if (!session?.user) redirect("/login?callbackUrl=/proposals");
   const mutualId = formData.get("mutual_id");
   if (typeof mutualId !== "string" || !UUID_RE.test(mutualId)) {
-    return { ok: false, error: "Couldn't find that connection." };
+    return { ok: false, error: "Couldn't find that click." };
   }
   try {
     await releaseMutualForSession(session, mutualId);
@@ -136,7 +145,7 @@ export async function suggestPlanAction(
   const mutualId = formData.get("mutual_id");
   const slug = formData.get("event_slug");
   if (typeof mutualId !== "string" || !UUID_RE.test(mutualId)) {
-    return { ok: false, error: "Couldn't find that connection." };
+    return { ok: false, error: "Couldn't find that click." };
   }
   if (typeof slug !== "string" || !slug) {
     return { ok: false, error: "Pick an event from the catalogue first." };
@@ -144,6 +153,27 @@ export async function suggestPlanAction(
 
   try {
     await suggestPlanForMutual(session, mutualId, slug);
+  } catch (error) {
+    return { ok: false, error: errorMessage(error) };
+  }
+  revalidatePath("/proposals");
+  return { ok: true, error: null };
+}
+
+// S12 (§B7.1): the closure ritual. Celebrated, not an exit - the pair rests in
+// Past clicks and stays re-clickable at a future shared event (§B7.8).
+export async function markMutualConnectedAction(
+  _prev: ProposalActionState,
+  formData: FormData,
+): Promise<ProposalActionState> {
+  const session = await auth();
+  if (!session?.user) redirect("/login?callbackUrl=/proposals");
+  const mutualId = formData.get("mutual_id");
+  if (typeof mutualId !== "string" || !UUID_RE.test(mutualId)) {
+    return { ok: false, error: "Couldn't find that click." };
+  }
+  try {
+    await markMutualConnectedForSession(session, mutualId);
   } catch (error) {
     return { ok: false, error: errorMessage(error) };
   }
