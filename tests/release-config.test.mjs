@@ -1487,3 +1487,42 @@ test("the libvips shared library is traced into every route that uses sharp", ()
     );
   }
 });
+
+// Shipping libvips to a route is only half the invariant - the other half is that
+// nothing OUTSIDE those routes ever calls sharp. The OAuth avatar rehost broke
+// exactly that way: it hung off ensureProfileForSession, which runs on every
+// authenticated request, so the sharp call was reachable from 134 route bundles
+// and carried libvips in none of them. It failed at the dlopen on every single
+// login, invisibly, because the helper logs its own failures and returns null.
+// The rehost now has ONE trigger, on the one page every sign-in funnels through.
+test("the OAuth avatar rehost is only reachable from a route that carries libvips", () => {
+  const repo = readFileSync(path.join(root, "src/lib/event-repository.ts"), "utf8");
+  // Calls only - the lookbehind drops the `async function backfillAvatarFromRemote(` definition.
+  const callers = repo.match(/(?<!function )backfillAvatarFromRemote\(/g) ?? [];
+  // One definition, one call. A second call site means it escaped back onto a
+  // path that does not ship libvips.
+  assert.equal(
+    callers.length,
+    1,
+    "backfillAvatarFromRemote must have exactly one call site (inside backfillAvatarForSession)",
+  );
+  assert.match(
+    repo,
+    /export async function backfillAvatarForSession/,
+    "the rehost must be exported so /post-login can be its single trigger",
+  );
+
+  const postLogin = readFileSync(path.join(root, "src/app/post-login/page.tsx"), "utf8");
+  assert.match(postLogin, /backfillAvatarForSession\(session\)/, "/post-login must run the rehost");
+  // redirect() throws, so a call placed after one silently never runs.
+  assert.ok(
+    postLogin.indexOf("backfillAvatarForSession(session)") < postLogin.indexOf("redirect(explicitNext"),
+    "the rehost must run before /post-login's redirects, which throw",
+  );
+
+  const config = readFileSync(path.join(root, "next.config.ts"), "utf8");
+  assert.ok(
+    config.includes('"/post-login"'),
+    "/post-login must carry libvips - it is the only page that calls sharp",
+  );
+});

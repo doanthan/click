@@ -2064,16 +2064,13 @@ async function ensureProfileForSessionUncached(session: Session | null) {
 
   const row = result.rows[0];
 
-  // First-time Google sign-in backfill: if the user has no avatar yet but the
-  // OAuth provider gave us one, fetch it and rehost to Supabase Storage once
-  // so we get a stable URL we control. Fire-and-forget - never blocks the page
-  // render and never throws (failures are logged inside the helper).
-  if (row && !row.photo_url) {
-    const remote = getSessionImage(session);
-    if (remote) {
-      void backfillAvatarFromRemote(row.id, remote);
-    }
-  }
+  // The OAuth avatar rehost used to fire from here. It cannot: this function runs
+  // on EVERY authenticated request, so the sharp call it reaches was compiled into
+  // 134 route bundles, and libvips is only shipped to the handful that need it (see
+  // outputFileTracingIncludes in next.config.ts). Every rehost therefore died on
+  // ERR_DLOPEN_FAILED, silently, because the helper swallows its own failures.
+  // It now runs once per sign-in from /post-login - the single funnel every login
+  // passes through (src/app/login/actions.ts) - via backfillAvatarForSession below.
 
   // Log the account-welcome email for fresh signups only. Fire-and-forget so
   // a DB hiccup or missing template never blocks auth. Visible in Supabase
@@ -2103,6 +2100,42 @@ async function ensureProfileForSessionUncached(session: Session | null) {
 
   // Strip photo_url + is_new from the return so the shape stays ProfileRow for callers.
   return { id: row.id, role: row.role, email: row.email, display_name: row.display_name };
+}
+
+/**
+ * One-shot OAuth avatar rehost, called from /post-login and nowhere else.
+ *
+ * The trigger lives on a single route on purpose. Rehosting needs sharp, sharp
+ * dlopens libvips, and libvips is only traced into the routes named in
+ * next.config.ts - so a caller anywhere else fails at the dlopen. /post-login is
+ * the one page every sign-in is funnelled through, which makes it both the
+ * cheapest place to carry the ~18 MB and the natural once-per-login cadence.
+ *
+ * Never throws and never blocks the redirect: the work is handed to `after()`,
+ * so the response goes out first and the serverless instance stays alive until
+ * the upload settles rather than freezing mid-fetch.
+ */
+export async function backfillAvatarForSession(session: Session | null): Promise<void> {
+  const remote = getSessionImage(session);
+  if (!remote) return;
+
+  try {
+    // cache()'d per request - /post-login's own getProfileStatus call reuses this.
+    const profile = await ensureProfileForSession(session);
+    const pool = getPostgresPool();
+    if (!pool) return;
+
+    const { rows } = await pool.query<{ photo_url: string | null }>(
+      `select photo_url from profiles where id = $1::uuid`,
+      [profile.id],
+    );
+    // Already has a picture (rehosted earlier, or one they uploaded themselves).
+    if (!rows[0] || rows[0].photo_url) return;
+
+    afterResponse(() => backfillAvatarFromRemote(profile.id, remote));
+  } catch (error) {
+    console.warn("backfillAvatarForSession failed", { error });
+  }
 }
 
 // Coalesce concurrent backfills for the same profile so two parallel page

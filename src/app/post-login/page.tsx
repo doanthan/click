@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { auth, isAdminEmail } from "@/auth";
-import { getProfileStatus } from "@/lib/event-repository";
+import { backfillAvatarForSession, getProfileStatus } from "@/lib/event-repository";
 import { safeNext } from "@/lib/safe-next";
 
 export const metadata = {
@@ -17,6 +17,14 @@ export default async function PostLoginPage({ searchParams }: PostLoginPageProps
   if (!session?.user) {
     redirect("/login?callbackUrl=/post-login");
   }
+
+  // Rehost the OAuth provider photo, once, on the way through. This runs HERE and
+  // nowhere else because it needs sharp, and sharp needs libvips, which is only
+  // traced into this route and the upload/support APIs (next.config.ts). Awaiting
+  // is cheap - the fetch/encode/upload is handed to after() inside the helper, so
+  // it settles behind the redirect instead of delaying it. Must stay above every
+  // redirect() below, since redirect() throws and would skip it.
+  await backfillAvatarForSession(session);
 
   const params = await searchParams;
   const explicitNext = safeNext(params?.next);

@@ -47,6 +47,11 @@ const nextConfig: NextConfig = {
     "/api/upload/**": [LIBVIPS],
     "/api/support/ticket": [LIBVIPS],
     "/api/support/ticket/**": [LIBVIPS],
+    // Not an API route: /post-login is the single funnel every sign-in passes
+    // through, and it is where the OAuth avatar rehost runs. Keeping the rehost
+    // on one page rather than in ensureProfileForSession is what stops this
+    // ~18 MB from having to ship to all 134 route bundles.
+    "/post-login": [LIBVIPS],
   },
   // Server Actions validate the request Origin against Host/X-Forwarded-Host to
   // block CSRF. Behind our proxy/CDN (letsclick.app served via www + apex) those
