@@ -29,15 +29,6 @@ export default async function PostLoginPage({ searchParams }: PostLoginPageProps
   const params = await searchParams;
   const explicitNext = safeNext(params?.next);
 
-  // Admins DEFAULT to /admin, but an explicit deep link still wins. This used
-  // to redirect unconditionally, which meant an admin who tapped an event link
-  // in an email and signed in landed on the console with the event gone - and
-  // the team dogfoods as attendees constantly. A plain sign-in (no ?next=)
-  // still opens the console, which is what the rule was actually protecting.
-  if (isAdminEmail(session.user.email)) {
-    redirect(explicitNext ?? "/admin");
-  }
-
   const status = await getProfileStatus(session);
 
   // A failed profile read reports onboardingComplete: false, and this page read
@@ -51,6 +42,30 @@ export default async function PostLoginPage({ searchParams }: PostLoginPageProps
   // one navigation, because the next clean read offers the form again and
   // booking stays gated server-side by assertBookingEligible either way.
   const needsOnboarding = !status.onboardingComplete && !status.degraded;
+
+  // Admins DEFAULT to /admin, but an explicit deep link still wins. This used
+  // to redirect unconditionally, which meant an admin who tapped an event link
+  // in an email and signed in landed on the console with the event gone - and
+  // the team dogfoods as attendees constantly. A plain sign-in (no ?next=)
+  // still opens the console, which is what the rule was actually protecting.
+  //
+  // It also used to run ABOVE the profile read, which meant an ADMIN_EMAILS
+  // address never once reached the onboarding branch below - and /onboarding is
+  // the only writer of profiles.birth_date and profiles.age. So every admin sat
+  // at age NULL forever, which sendClickInner reads directly ((age ?? 0) < 18):
+  // every click they sent was refused with "add your date of birth", pointing at
+  // a field no page they could reach collects. assertBookingEligible wanted the
+  // same two columns, so they could not RSVP either. Being staff is not a reason
+  // to hold no birth date - it is the one profile field the 18+ rule is built on.
+  if (isAdminEmail(session.user.email)) {
+    if (needsOnboarding) {
+      // No ?next=/admin: safeNext rejects the portal roots by design, so it would
+      // be stripped anyway and the form falls through to /dashboard - which is
+      // the right landing for someone who just filled in an attendee profile.
+      redirect(explicitNext ? `/onboarding?next=${encodeURIComponent(explicitNext)}` : "/onboarding");
+    }
+    redirect(explicitNext ?? "/admin");
+  }
 
   // A brand-new attendee must finish onboarding before any deep link - a fresh
   // Google signup off /discover was otherwise handed straight back to /discover

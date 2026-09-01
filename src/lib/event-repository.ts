@@ -6953,9 +6953,23 @@ export async function updateEventTagsForAdmin(
   }
 }
 
-export async function getAdminAuditLog(): Promise<AdminAuditRow[]> {
+/**
+ * `scope` exists because send_click rows share this table with the privileged admin
+ * actions and massively outnumber them - unfiltered, one UAT session's clicking
+ * pushes every ban, refund and approval off the 40-row page.
+ */
+export async function getAdminAuditLog(
+  scope: "all" | "admin" | "clicks" = "all",
+): Promise<AdminAuditRow[]> {
   const pool = getPostgresPool();
   if (!pool) return fallbackAdminAudit;
+
+  const where =
+    scope === "admin"
+      ? "where log.action <> 'send_click'"
+      : scope === "clicks"
+        ? "where log.action = 'send_click'"
+        : "";
 
   try {
     const result = await pool.query<{
@@ -6975,6 +6989,7 @@ export async function getAdminAuditLog(): Promise<AdminAuditRow[]> {
         log.created_at
       from audit_logs log
       left join profiles actor on actor.id = log.actor_profile_id
+      ${where}
       order by log.created_at desc
       limit 40
     `);
@@ -8822,9 +8837,14 @@ export async function toggleBookmark(eventId: string, session: Session | null, s
 // requests can separate "they're unavailable" from "they weren't there" from "there's
 // no such person". Built here rather than inlined so a future edit can't drift one
 // call site's wording and quietly reopen the channel.
-function notEligibleError() {
+function notEligibleError(auditReason: string) {
   const error = new Error("This person isn't available to click with right now.");
   error.name = "ValidationError";
+  // The string the SENDER sees stays byte-identical across every receiver state.
+  // The state that actually refused rides along on the error object, where only
+  // the server can read it, so /admin/audit can name the gate that closed without
+  // the response ever separating them. Required, so a new refusal must name itself.
+  (error as Error & { auditReason?: string }).auditReason = auditReason;
   return error;
 }
 
@@ -8842,6 +8862,34 @@ function afterResponse(work: () => Promise<void>) {
   } catch {
     void work().catch(() => {});
   }
+}
+
+/**
+ * One audit_logs row per send-click attempt, so /admin/audit answers "why did this
+ * click land / not land". Written AFTER the response (afterResponse) and on the pool
+ * rather than the click's own client, for two reasons: a refusal rolls its
+ * transaction back and would erase its own explanation, and the §6.1 timing floor is
+ * only a floor - work done before the reply still shows up in the reply's latency.
+ * Never throws into the click path; a lost audit row is not worth a lost click.
+ */
+function recordClickAudit(
+  actorProfileId: string,
+  clickId: string | null,
+  metadata: Record<string, unknown>,
+) {
+  const pool = getPostgresPool();
+  if (!pool) return;
+  afterResponse(async () => {
+    try {
+      await pool.query(
+        `insert into audit_logs (actor_profile_id, action, entity_table, entity_id, metadata)
+         values ($1::uuid, 'send_click', 'clicks', $2::uuid, $3::jsonb)`,
+        [actorProfileId, clickId, JSON.stringify(metadata)],
+      );
+    } catch (error) {
+      console.warn("Failed to record a send-click audit entry.", error);
+    }
+  });
 }
 
 async function sendClickInner(
@@ -8869,6 +8917,18 @@ async function sendClickInner(
 
   const profile = await ensureProfileForSession(session);
   const client = await pool.connect();
+
+  // Filled in as each fact is established, then written once - on the success path
+  // AND from the catch, so a refused attempt explains itself too. Key order here is
+  // cosmetic only: jsonb re-sorts keys by length on write, so /admin/audit decides
+  // the read order itself (METADATA_ORDER in admin/audit/page.tsx).
+  const audit: {
+    receiver?: string;
+    surface?: string;
+    event?: string;
+    intent?: string;
+  } = {};
+  const receiverId = input.clickedProfileId;
 
   try {
     await client.query("begin");
@@ -8914,8 +8974,9 @@ async function sendClickInner(
       // profile-existence oracle: a 404 vs a 400 tells an attacker which of the
       // ids they're walking are real accounts. Same string, same error name, same
       // status as every other receiver-state refusal below (§6.1 R_NOT_ELIGIBLE).
-      throw notEligibleError();
+      throw notEligibleError("No profile with that id.");
     }
+    audit.receiver = clickedProfile.display_name;
     if (clickedProfile.id === profile.id) {
       const error = new Error("You cannot Click yourself.");
       error.name = "ValidationError";
@@ -8940,6 +9001,7 @@ async function sendClickInner(
     );
     const sender = senderResult.rows[0];
     const senderIntent = sender?.connection_intents?.[0] ?? "friendship";
+    audit.intent = senderIntent;
 
     // SAFE-06 hardening: a banned (or suspended) user must not be able to INITIATE new
     // clicks - the ban/suspend teardown only severs EXISTING coordination, so without
@@ -8976,7 +9038,7 @@ async function sendClickInner(
       throw error;
     }
     if ((clickedProfile.age ?? 0) < MIN_CLICK_AGE) {
-      throw notEligibleError();
+      throw notEligibleError("Receiver is under 18 (or has no date of birth on file).");
     }
 
     // Receiver eligibility (§6.7a ban, §B7.4 social opt-out / pause). A banned, opted-out,
@@ -8988,7 +9050,13 @@ async function sendClickInner(
       !clickedProfile.social_visible ||
       (clickedProfile.paused_until && new Date(clickedProfile.paused_until) > new Date())
     ) {
-      throw notEligibleError();
+      throw notEligibleError(
+        clickedProfile.is_banned
+          ? "Receiver is banned."
+          : !clickedProfile.social_visible
+            ? "Receiver has opted out of the social graph."
+            : "Receiver has clicking paused.",
+      );
     }
 
     const blockResult = await client.query<{ blocked: boolean }>(
@@ -9002,7 +9070,7 @@ async function sendClickInner(
       [profile.id, clickedProfile.id],
     );
     if (blockResult.rows[0]?.blocked) {
-      throw notEligibleError();
+      throw notEligibleError("One of the pair has blocked the other.");
     }
 
     const suppressionResult = await client.query<{ suppressed: boolean }>(
@@ -9017,7 +9085,7 @@ async function sendClickInner(
       [profile.id, clickedProfile.id],
     );
     if (suppressionResult.rows[0]?.suppressed) {
-      throw notEligibleError();
+      throw notEligibleError("Pair is inside a 'not feeling it' suppression window.");
     }
 
     // Two click processes, two surfaces (§1, §2). The surface is decided by whether a
@@ -9030,6 +9098,10 @@ async function sendClickInner(
     let surface: "discovery" | "who_was_there";
     let eventId: string | null = null;
     let expiresAt: Date;
+    // Set before the branch, not inside it: the post-event arm has its own refusals
+    // and they should still say which surface and which event they refused.
+    audit.surface = input.sourceEventId ? "who_was_there" : "discovery";
+    if (input.sourceEventId) audit.event = input.sourceEventId;
 
     if (input.sourceEventId) {
       surface = "who_was_there";
@@ -9100,7 +9172,11 @@ async function sendClickInner(
         [eligible.id, profile.id, clickedProfile.id],
       );
       if (!pairResult.rows[0]?.ok || !clickedProfile.default_attend_visibility) {
-        throw notEligibleError();
+        throw notEligibleError(
+          pairResult.rows[0]?.ok
+            ? "Receiver is hidden from this event's attendee list."
+            : "Both people were not on this event's participant list.",
+        );
       }
       eventId = eligible.id;
       expiresAt = new Date(
@@ -9636,12 +9712,38 @@ async function sendClickInner(
     // mutual is revealed only via the async notification + email logged above, never in
     // this response shape. (The constant-time floor that closes the timing side-channel
     // lands with the 21A harness in the 2.2 safety pass.)
+    recordClickAudit(profile.id, inserted.rows[0]?.id ?? null, {
+      ...audit,
+      outcome: freshMutualId ? "mutual" : isDuplicate ? "duplicate" : "sent",
+      reason:
+        (isDuplicate
+          ? "Repeat click on one still pending - no budget spent."
+          : freshMutualId
+            ? "They had already clicked - this one closed it into a mutual."
+            : surface === "who_was_there"
+              ? "Both attended the event and its 48h post-event window is open."
+              : "Discovery roster send, inside the live-click budget.") +
+        (releasedClickId ? " Swapped out an earlier pending click for this event." : ""),
+      receiverId,
+    });
+
     return {
       clickedProfileName: clickedProfile.display_name,
       outcome: "ok" as SendClickOutcome,
     };
   } catch (error) {
     await client.query("rollback");
+    // The refusal's own explanation. auditReason wins over the message because the
+    // §6.1 refusals deliberately all carry the SAME message - the reason is the only
+    // place the real cause survives.
+    recordClickAudit(profile.id, null, {
+      ...audit,
+      outcome: "refused",
+      reason:
+        (error as Error & { auditReason?: string })?.auditReason ??
+        (error instanceof Error ? error.message : "Unknown error."),
+      receiverId,
+    });
     throw error;
   } finally {
     client.release();
@@ -14007,7 +14109,16 @@ export async function getSuggestedPeople(session: Session | null): Promise<Sugge
             select tag_id from user_tags where profile_id = $1::uuid
           )
         where p.id <> $1::uuid
-          and p.role = 'attendee'
+          -- Merchant accounts are the portal side of the product and never enter
+          -- a click surface. Everyone else does, and the deny-list is deliberate:
+          -- role = attendee silently excluded every ADMIN_EMAILS account from
+          -- all four rosters while sendClickInner - which has NO role check at
+          -- all - happily accepted clicks aimed at them. An admin could send and
+          -- never be sent to, so no mutual could ever form on a staff account and
+          -- the click flow was untestable by the people who own it. The columns
+          -- below (18+, suburb, bio, photo, social_visible) are what actually
+          -- means "has set up a real profile"; role was never doing that job.
+          and p.role <> 'merchant'
           and p.suspended_at is null
           -- SAFE-07: independent ≥18 age gate (§6.7b) - never surface someone we can't
           -- confirm is an adult into the click pool. NULL age is excluded (can't verify),
@@ -14018,9 +14129,9 @@ export async function getSuggestedPeople(session: Session | null): Promise<Sugge
           and p.is_banned = false
           and p.social_visible = true
           and (p.paused_until is null or p.paused_until <= now())
-          -- Only surface people who've actually set up an attendee profile.
-          -- Merchant accounts (and half-finished signups) shouldn't appear in
-          -- "click with someone" until they've completed a real profile.
+          -- Only surface people who've actually set up an attendee profile - a
+          -- half-finished signup shouldn't appear in "click with someone". This
+          -- pair, not the role above, is the real "has a profile" test.
           and p.suburb is not null
           and p.bio is not null
           -- Only include people who have a profile photo: clicking is a
@@ -14799,7 +14910,7 @@ export async function getPostEventClickPrompts(
           -- default_attend_visibility is the attendee-list opt-out from migration
           -- 049: opting out takes you off this roster, so nobody can click you from
           -- an event you chose not to be listed at.
-          and other.role = 'attendee' and other.suspended_at is null and other.is_banned = false
+          and other.role <> 'merchant' and other.suspended_at is null and other.is_banned = false
           and other.social_visible = true
           and (other.paused_until is null or other.paused_until <= now())
           and other.default_attend_visibility
@@ -14943,7 +15054,7 @@ export async function getPostEventClickPromptForEvent(
           -- default_attend_visibility is the attendee-list opt-out from migration
           -- 049: opting out takes you off this roster, so nobody can click you from
           -- an event you chose not to be listed at.
-          and other.role = 'attendee' and other.suspended_at is null and other.is_banned = false
+          and other.role <> 'merchant' and other.suspended_at is null and other.is_banned = false
           and other.social_visible = true
           and (other.paused_until is null or other.paused_until <= now())
           and other.default_attend_visibility
@@ -15028,7 +15139,7 @@ export async function notifyPostEventClickPrompts(): Promise<number> {
           select 1
           from event_participants_v theirs
           join profiles other on other.id = theirs.profile_id
-            and other.role = 'attendee' and other.suspended_at is null and other.is_banned = false
+            and other.role <> 'merchant' and other.suspended_at is null and other.is_banned = false
             -- Same social-graph definition as the two pull-based rosters and the
             -- send path: never push "did you click with anyone?" on the strength of
             -- a co-attendee who has opted out, paused, or hidden their attendance.

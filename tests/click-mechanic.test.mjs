@@ -50,7 +50,7 @@ test("the mutual email fires only for a mutual that just formed", () => {
 });
 
 test("every receiver-state refusal is the same refusal", () => {
-  assert.match(repo, /function notEligibleError\(\)/);
+  assert.match(repo, /function notEligibleError\(auditReason: string\)/);
   // No send-path check may mint its own wording, and none may raise a NotFoundError:
   // a 404 for an unknown id turns the endpoint into a profile-existence oracle.
   assert.doesNotMatch(
@@ -63,8 +63,49 @@ test("every receiver-state refusal is the same refusal", () => {
   );
   assert.equal(inlineNeutral, null, "use notEligibleError(), never a fresh copy of the string");
   // Age, ban/opt-out/pause, block, suppression, not-at-the-event, hidden attendee.
-  const uses = sendClickInner.match(/throw notEligibleError\(\)/g) ?? [];
+  const uses = sendClickInner.match(/throw notEligibleError\(/g) ?? [];
   assert.ok(uses.length >= 5, `expected >=5 neutral refusals, found ${uses.length}`);
+});
+
+test("a refusal's real cause reaches the audit log, never the sender", () => {
+  // notEligibleError collapses eight receiver states into one string on purpose, so
+  // the audit row is the ONLY place the cause survives - it rides on the error object,
+  // which never leaves the server.
+  const helper = repo.slice(
+    repo.indexOf("function notEligibleError("),
+    repo.indexOf("function recordClickAudit("),
+  );
+  assert.match(helper, /auditReason\?: string \}\)\.auditReason = auditReason;/);
+  // The one user-facing string must still be built exactly once.
+  const neutral = helper.match(
+    /new Error\("This person isn't available to click with right now\."\)/g,
+  );
+  assert.equal(neutral.length, 1);
+  // Every neutral refusal names its own cause - a bare notEligibleError() would
+  // typecheck-fail, but the log is worthless if a call site passes a blank.
+  const reasons = sendClickInner.match(/notEligibleError\(\s*\n?\s*[\s\S]{0,200}?\)/g) ?? [];
+  assert.ok(reasons.length >= 5, `expected >=5 caused refusals, found ${reasons.length}`);
+  assert.doesNotMatch(sendClickInner, /notEligibleError\(\s*\)/, "every refusal must name its cause");
+  assert.doesNotMatch(sendClickInner, /notEligibleError\(""\)/);
+});
+
+test("every send-click attempt is audited, outside its own transaction", () => {
+  // A refused send rolls back; an audit row written on the click's own client would
+  // roll back with it and the refusal would explain nothing.
+  const helper = repo.slice(
+    repo.indexOf("function recordClickAudit("),
+    repo.indexOf("async function sendClickInner("),
+  );
+  assert.match(helper, /const pool = getPostgresPool\(\);/);
+  assert.match(helper, /afterResponse\(async \(\) => \{/);
+  assert.match(helper, /'send_click', 'clicks'/);
+  assert.doesNotMatch(helper, /client\.query/, "the audit write must not ride the click's client");
+  // Both outcomes are recorded: the success return and the catch.
+  assert.match(sendClickInner, /outcome: freshMutualId \? "mutual" : isDuplicate \? "duplicate" : "sent"/);
+  assert.match(sendClickInner, /outcome: "refused"/);
+  const catchBlock = sendClickInner.slice(sendClickInner.lastIndexOf("} catch (error) {"));
+  assert.match(catchBlock, /recordClickAudit\(/, "a refused send must still audit itself");
+  assert.match(catchBlock, /auditReason \?\?/, "the neutral message is not the real reason");
 });
 
 test("the post-event surface answers the public clock and the private roster separately", () => {
@@ -87,7 +128,7 @@ test("the post-event surface answers the public clock and the private roster sep
   // Attendance is decided separately, and refuses neutrally.
   assert.match(
     sendClickInner,
-    /if \(!pairResult\.rows\[0\]\?\.ok \|\| !clickedProfile\.default_attend_visibility\) \{\s*\n\s*throw notEligibleError\(\);/,
+    /if \(!pairResult\.rows\[0\]\?\.ok \|\| !clickedProfile\.default_attend_visibility\) \{\s*\n\s*throw notEligibleError\(/,
   );
 });
 
@@ -215,7 +256,7 @@ test("a sender who cannot click is told why, instead of being told the receiver 
   assert.match(sendClickInner, senderArm, "the sender's own age must raise its own message");
   assert.match(
     sendClickInner,
-    /if \(\(clickedProfile\.age \?\? 0\) < MIN_CLICK_AGE\) \{\s*\n\s*throw notEligibleError\(\);/,
+    /if \(\(clickedProfile\.age \?\? 0\) < MIN_CLICK_AGE\) \{\s*\n\s*throw notEligibleError\(/,
     "the receiver's age must stay inside the neutral refusal",
   );
   // The two must not be reachable as one condition again.
@@ -516,5 +557,48 @@ test("the re-engagement email never names who clicked", () => {
   assert.ok(
     reengage.indexOf("afterResponse(") < reengage.indexOf("reengagement_clicked_at = now()"),
     "the claim + send must run inside afterResponse, never in the response path",
+  );
+});
+
+test("an admin account can reach every click surface, in both directions", () => {
+  // Every ADMIN_EMAILS address sat at age NULL, birth_date NULL forever, because
+  // /post-login redirected admins to the console ABOVE the onboarding branch and
+  // /onboarding is the only writer of those two columns. sendClickInner reads age
+  // directly ((age ?? 0) < 18), so the team's own accounts were refused on every
+  // click they sent - and the four rosters gated on role = 'attendee', so nobody
+  // could click them back either. Send worked one way and never the other, which
+  // is a mutual that can never form: the click flow was untestable by its owners.
+  const postLogin = read("src/app/post-login/page.tsx");
+
+  // The admin branch must sit BELOW the profile read, and must divert an admin who
+  // has not onboarded. Ordering is the whole fix - an admin redirect above
+  // getProfileStatus can never consult onboarding state.
+  const statusRead = postLogin.indexOf("const status = await getProfileStatus(session);");
+  const adminBranch = postLogin.indexOf("if (isAdminEmail(session.user.email)) {");
+  assert.ok(statusRead > -1 && adminBranch > -1, "failed to locate the post-login branches");
+  assert.ok(
+    adminBranch > statusRead,
+    "the admin redirect must run after the profile read, or admins never see /onboarding",
+  );
+  const adminArm = postLogin.slice(adminBranch, postLogin.indexOf("redirect(explicitNext ?? \"/admin\")"));
+  assert.match(
+    adminArm,
+    /if \(needsOnboarding\) \{[\s\S]*?redirect\([\s\S]*?"\/onboarding"\)/,
+    "an admin with no birth date on file must be sent to /onboarding before the console",
+  );
+
+  // Merchant accounts are the portal side and stay out of every click surface, but
+  // the deny-list is the point: an allow-list of 'attendee' silently excluded staff.
+  assert.ok(
+    !/role = 'attendee'/.test(repo),
+    "no click roster may gate on role = 'attendee' - it locks admins out of being clicked",
+  );
+  // All four rosters (discovery, the two post-event pulls, the prompt push) plus
+  // nothing else: sendClickInner has no role check at all, so the rosters must not
+  // be stricter than the send path they feed.
+  assert.equal(
+    (repo.match(/role <> 'merchant'/g) ?? []).length,
+    4,
+    "all four click rosters must share one social-graph definition",
   );
 });
