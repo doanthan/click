@@ -1,8 +1,8 @@
 import type { EventItem } from "./click-data";
 
 // Personalised event ranking. Unlike scoreEvent() in click-matching.ts (which
-// scores a *text query*), this scores an event against a *member's profile* —
-// their interest tags, connection intents, and quiz persona — using weights an
+// scores a *text query*), this scores an event against a *member's profile* -
+// their interest tags, connection intents, and quiz persona - using weights an
 // admin can tune at /admin/matching.
 
 export type MatchingWeights = {
@@ -70,7 +70,7 @@ export function scorePersonalizedEvent(
     featured: 0,
   };
 
-  // Tag overlap — the primary signal.
+  // Tag overlap - the primary signal.
   const userTags = new Set(ctx.tagSlugs.map((t) => t.toLowerCase()));
   const shared = event.tags.filter((t) => userTags.has(t.toLowerCase()));
   if (shared.length > 0) {

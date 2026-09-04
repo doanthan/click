@@ -40,3 +40,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Scratch capture of the generated /sitemap.xml route (source: src/app/sitemap.ts)
+/sitemap.xml

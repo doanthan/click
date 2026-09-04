@@ -7,7 +7,7 @@
  * failed network requests for the current page.
  *
  * Everything is bounded (50 console / 20 network) and secrets are redacted in
- * the browser before they ever reach the API. Safe to import on the server —
+ * the browser before they ever reach the API. Safe to import on the server -
  * the install is a no-op when `window` is undefined.
  */
 

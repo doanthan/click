@@ -14,7 +14,7 @@
 --
 -- Nothing read the difference while all three were merely "not active", which is why
 -- it went unnoticed. It stops being cosmetic the moment anything decides, off the
--- status, whether a pair may meet again — which the B7.9 rediscovery cooldown and the
+-- status, whether a pair may meet again - which the B7.9 rediscovery cooldown and the
 -- "past clicks" shelf now do. Left unrotated:
 --   * every pair who simply went quiet for a week sits on 'expired', the one terminal
 --     defined as permanent, and can never be suggested to each other again;
@@ -50,7 +50,7 @@ where status in ('expired', 'released', 'suppressed');
 -- ended_at is what the 30-day rediscovery cooldown reads, and every terminal writer
 -- has always set it. Backfill any historic row that predates that so a released pair
 -- is not stuck out of discovery forever on a NULL comparison (NULL > x is NULL, which
--- the cooldown's NOT EXISTS treats as "no cooldown" — so this is belt-and-braces, and
+-- the cooldown's NOT EXISTS treats as "no cooldown" - so this is belt-and-braces, and
 -- it makes the "past clicks" ordering honest either way).
 update mutual_clicks
 set ended_at = coalesce(ended_at, expires_at, updated_at, created_at)

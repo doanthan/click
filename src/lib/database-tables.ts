@@ -23,7 +23,7 @@ export type TablesResult = {
 // One-line notes shown next to each table. Keyed by table name so they apply
 // whether the schema is read live or served from the fallback below.
 const TABLE_NOTES: Record<string, string> = {
-  profiles: "Every account — attendees, merchants, and admins.",
+  profiles: "Every account - attendees, merchants, and admins.",
   merchant_profiles: "Business details + ABN verification status for hosts.",
   tag_categories: "Groupings that organise the tag taxonomy.",
   tags: "Interest / life / music / vibe tags applied to people and events.",

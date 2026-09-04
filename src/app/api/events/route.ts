@@ -7,7 +7,7 @@ function getString(value: FormDataEntryValue | null) {
 }
 
 // Parse a lat/lng FormData entry to a finite number within range, or null when
-// missing/invalid — the wizard sends these only when the user picks a Mapbox
+// missing/invalid - the wizard sends these only when the user picks a Mapbox
 // suggestion.
 function getCoord(value: FormDataEntryValue | null, min: number, max: number) {
   const raw = getString(value);

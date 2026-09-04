@@ -1,5 +1,5 @@
 /**
- * Live-activity marquee — a slow, honest ticker that sits directly under the
+ * Live-activity marquee - a slow, honest ticker that sits directly under the
  * hero and makes the city feel awake. Every item is derived server-side from
  * the real events array (events this week, people going, the next event, host
  * and suburb counts), so there is nothing invented and nothing about private

@@ -1,15 +1,15 @@
 /**
- * Avatar storage — Cloudflare R2 with a Supabase Storage fallback.
+ * Avatar storage - Cloudflare R2 with a Supabase Storage fallback.
  *
  * Production prefers the configured public R2 bucket. Existing environments
  * can continue using the Supabase `avatars` bucket through the service-role
  * admin client, so already-stored URLs and incremental rollout keep working.
  *
  * Two entrypoints (mirroring the old R2 surface so callers didn't change much):
- *  - `uploadAvatarFromUrl(profileId, sourceUrl)` — one-shot rehost of a Google
+ *  - `uploadAvatarFromUrl(profileId, sourceUrl)` - one-shot rehost of a Google
  *    profile photo. Best-effort: returns null on any failure so a flaky Google
  *    CDN never blocks login.
- *  - `uploadAvatarFromBuffer(profileId, buffer)` — user upload path from
+ *  - `uploadAvatarFromBuffer(profileId, buffer)` - user upload path from
  *    `POST /api/upload/avatar`. Throws on failure so the route returns 500.
  *
  * Both paths normalise to a 512×512 JPG with `sharp` before upload so the
@@ -96,7 +96,7 @@ async function putAvatar(profileId: string, body: Buffer): Promise<string> {
     // Same key on every write (one avatar per profile) → upsert so the second
     // upload doesn't 409 on "resource already exists".
     upsert: true,
-    // 1 year — we cache-bust with `?v=<ts>` in the URL so this is safe.
+    // 1 year - we cache-bust with `?v=<ts>` in the URL so this is safe.
     cacheControl: "31536000",
   });
 
@@ -111,7 +111,7 @@ async function putAvatar(profileId: string, body: Buffer): Promise<string> {
  * Fetches a remote image (typically the Google `picture` URL handed to us by
  * NextAuth), resizes to 512×512 JPG, and writes it to the public `avatars`
  * bucket at `<profileId>.jpg`. Returns the public URL, or `null` if anything
- * along the way failed — callers should treat null as "couldn't backfill,
+ * along the way failed - callers should treat null as "couldn't backfill,
  * leave photo_url null and try again later".
  */
 export async function uploadAvatarFromUrl(
@@ -122,7 +122,7 @@ export async function uploadAvatarFromUrl(
 
   try {
     const res = await fetch(sourceUrl, {
-      // Google avatars sometimes 403 without a UA — give them a generic one.
+      // Google avatars sometimes 403 without a UA - give them a generic one.
       headers: { "User-Agent": "Mozilla/5.0 (compatible; ClickAvatarRehost/1.0)" },
       // Don't let a slow CDN hang an auth roundtrip.
       signal: AbortSignal.timeout(8000),
@@ -149,7 +149,7 @@ export async function uploadAvatarFromUrl(
 /**
  * User-initiated upload from /api/upload/avatar. Takes the already-validated
  * buffer (size/MIME), pipes through sharp, and writes to Supabase Storage.
- * Throws on failure — the route handler converts that to a 500.
+ * Throws on failure - the route handler converts that to a 500.
  */
 export async function uploadAvatarFromBuffer(
   profileId: string,

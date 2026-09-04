@@ -8,7 +8,7 @@
 //     -> same as above for the single row, AND writes the comment to the
 //        "AI Comment" column (K) + support_tickets.ai_comment.
 //
-// The human tester confirms a fix by setting Status="fixed" (green) — never do
+// The human tester confirms a fix by setting Status="fixed" (green) - never do
 // that here.
 import { readFileSync } from "node:fs";
 import { google } from "googleapis";

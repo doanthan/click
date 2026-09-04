@@ -1,7 +1,7 @@
 /**
  * Australian postcode → suburb lookup.
  *
- * Backed by `au-postcodes.json` (compact, server-only — never import this
+ * Backed by `au-postcodes.json` (compact, server-only - never import this
  * module into a client component or the 300 KB table ships to the browser).
  * The data is a trimmed slice of the open `matthewproctor/australianpostcodes`
  * set: postal-only / delivery-centre localities removed, suburb names

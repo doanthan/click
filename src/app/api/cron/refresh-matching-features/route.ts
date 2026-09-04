@@ -6,7 +6,7 @@ import {
 } from "@/lib/matching/feature-store";
 
 export const runtime = "nodejs";
-// Never cache — this rewrites the matching feature store every run.
+// Never cache - this rewrites the matching feature store every run.
 export const dynamic = "force-dynamic";
 
 /**
@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
  * Recomputes events.sub_tags from event text, then rebuilds the user_features
  * store (declared + behavioural features + cohort assignment) for every profile.
  * Cheap at current data volume; intended as a nightly cron. The spec splits
- * declared (trigger, real-time) from behavioural (nightly) — this single batch
+ * declared (trigger, real-time) from behavioural (nightly) - this single batch
  * is the Phase-0 shortcut; declared-feature triggers land in a later stage.
  *
  * Wire to a scheduler sending `Authorization: Bearer ${CRON_SECRET}`, e.g.:

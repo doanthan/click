@@ -6,9 +6,9 @@
 -- tell an Instagram handle from a TikTok or Facebook one during verification.
 --
 -- Constrained to the three networks offered by the wizard's platform picker.
--- Nullable — the handle (and therefore the platform) stays optional.
+-- Nullable - the handle (and therefore the platform) stays optional.
 --
--- Idempotent — safe to re-run.
+-- Idempotent - safe to re-run.
 
 begin;
 

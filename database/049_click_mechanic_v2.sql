@@ -1,6 +1,6 @@
 -- 049_click_mechanic_v2.sql
 -- Spec: TECH/21_CLICK_MECHANIC.md v9 (canonical owner of the click mechanic).
--- START_HERE Step 2.1 — the schema spine for the two-process click rewrite.
+-- START_HERE Step 2.1 - the schema spine for the two-process click rewrite.
 --
 -- Replaces the pre-June-2026 model:
 --   * user_clicks  (one undifferentiated row per pair)        -> clicks (two-process)
@@ -9,7 +9,7 @@
 --   * create_mutual_click() AFTER-INSERT trigger              -> DROPPED (detection now
 --     runs in the send transaction with FOR UPDATE lock ordering, §4)
 --
--- PRE-PRODUCTION: per CLAUDE.md the DB is seed/demo data — these tables hold no real
+-- PRE-PRODUCTION: per CLAUDE.md the DB is seed/demo data - these tables hold no real
 -- clicks, so we drop + recreate clean rather than migrate rows in. No seed file inserts
 -- clicks/mutuals/proposals, so nothing downstream breaks.
 
@@ -27,7 +27,7 @@ drop function if exists create_mutual_click() cascade;
 
 drop table if exists user_clicks cascade;
 -- mutual_clicks is referenced by conversations.source_mutual_click_id (004, the dead
--- chat table — no DMs ever, §1). CASCADE drops only that FK *constraint*, leaving the
+-- chat table - no DMs ever, §1). CASCADE drops only that FK *constraint*, leaving the
 -- (now-orphan, unused) column in place; the conversations table itself is untouched.
 drop table if exists mutual_clicks cascade;
 
@@ -42,18 +42,18 @@ drop type if exists proposal_status cascade;
 -- §3: click row lifecycle. 'invalidated' is the terminal block/cancel/ban writes.
 create type click_status as enum ('pending', 'mutual', 'expired', 'invalidated');
 
--- §B2 axis 1 — the mutual's lifecycle.
+-- §B2 axis 1 - the mutual's lifecycle.
 create type mutual_status as enum ('active', 'connected', 'released', 'suppressed', 'expired');
 
--- §B2 axis 2 — where an active mutual is in arranging an event.
+-- §B2 axis 2 - where an active mutual is in arranging an event.
 create type coord_state as enum ('open', 'proposed', 'confirmed_together', 'dormant');
 
--- §B4 — a single proposal's lifecycle (replaces the 3-value proposal_status).
+-- §B4 - a single proposal's lifecycle (replaces the 3-value proposal_status).
 create type click_proposal_status as enum (
   'pending',        -- awaiting the other user's response
   'accepted',       -- §B5 booking coordination underway
-  'declined',       -- "Not this one" (§B4.2) — mutual untouched, coord_state -> open
-  'superseded',     -- counter-proposed (§B4.2) — the new proposal replaces this
+  'declined',       -- "Not this one" (§B4.2) - mutual untouched, coord_state -> open
+  'superseded',     -- counter-proposed (§B4.2) - the new proposal replaces this
   'expired',        -- 48h response window lapsed (§B4.2)
   'withdrawn',      -- proposer pulled it before a response (§B8 row 16)
   'event_full',     -- capacity lost at propose/accept time (§B5.1/§B5.5)
@@ -61,14 +61,14 @@ create type click_proposal_status as enum (
 );
 
 -- ---------------------------------------------------------------------------
--- 3. mutual_clicks — the RELATIONSHIP layer (§B2 unified state model)
+-- 3. mutual_clicks - the RELATIONSHIP layer (§B2 unified state model)
 --    Created before clicks because clicks.mutual_click_id references it.
 -- ---------------------------------------------------------------------------
 create table mutual_clicks (
   id uuid primary key default gen_random_uuid(),
   user_a_id uuid not null references profiles(id) on delete cascade,
   user_b_id uuid not null references profiles(id) on delete cascade,
-  -- Intent snapshot at formation (§8 "dual-intent line is a snapshot" — immutable for
+  -- Intent snapshot at formation (§8 "dual-intent line is a snapshot" - immutable for
   -- the life of the mutual; a later intent change never rewrites it).
   intent_a text,
   intent_b text,
@@ -78,7 +78,7 @@ create table mutual_clicks (
   connected_reason text check (connected_reason in ('co_attended', 'we_clicked')),
   connected_event_id uuid references events(id) on delete set null,
   mutual_at timestamptz not null default now(),
-  -- The mutual's own 7-day relationship clock (§5 / §B4.3) — distinct from the
+  -- The mutual's own 7-day relationship clock (§5 / §B4.3) - distinct from the
   -- discovery click's 7-day window and from a proposal's 48h window.
   expires_at timestamptz not null default now() + interval '7 days',
   ended_at timestamptz,                         -- set on any move out of 'active' (§B2)
@@ -101,7 +101,7 @@ create index idx_mutual_user_b on mutual_clicks (user_b_id);
 create index idx_mutual_active_expiry on mutual_clicks (expires_at) where status = 'active';
 
 -- ---------------------------------------------------------------------------
--- 4. clicks — the SEND layer (§3)
+-- 4. clicks - the SEND layer (§3)
 -- ---------------------------------------------------------------------------
 create table clicks (
   id uuid primary key default gen_random_uuid(),
@@ -135,7 +135,7 @@ create index idx_clicks_expiry on clicks (expires_at) where status = 'pending';
 create index idx_clicks_sender on clicks (sender_id);
 
 -- ---------------------------------------------------------------------------
--- 5. click_proposals — POST-MUTUAL COORDINATION (§B4) — replaces event_proposals
+-- 5. click_proposals - POST-MUTUAL COORDINATION (§B4) - replaces event_proposals
 -- ---------------------------------------------------------------------------
 create table click_proposals (
   id uuid primary key default gen_random_uuid(),
@@ -154,14 +154,14 @@ create table click_proposals (
   updated_at timestamptz not null default now()
 );
 
--- §B4.4: one PENDING proposal per mutual (partial — history rows don't block a new one).
+-- §B4.4: one PENDING proposal per mutual (partial - history rows don't block a new one).
 create unique index uq_one_pending_proposal on click_proposals (mutual_click_id)
   where status = 'pending';
 create index click_proposals_status_idx on click_proposals (status, expires_at);
 create index click_proposals_mutual_idx on click_proposals (mutual_click_id);
 
 -- ---------------------------------------------------------------------------
--- 6. pair_suppressions — "Not feeling it" soft-no (§B7.1), time-boxed + silent
+-- 6. pair_suppressions - "Not feeling it" soft-no (§B7.1), time-boxed + silent
 -- ---------------------------------------------------------------------------
 create table pair_suppressions (
   user_a_id uuid not null references profiles(id) on delete cascade,
@@ -175,7 +175,7 @@ create table pair_suppressions (
 create index idx_pair_suppressions_expiry on pair_suppressions (expires_at);
 
 -- ---------------------------------------------------------------------------
--- 7. click_swaps — post-event budget swap guard (§6.9): one swap per sender/event
+-- 7. click_swaps - post-event budget swap guard (§6.9): one swap per sender/event
 -- ---------------------------------------------------------------------------
 create table click_swaps (
   sender_id uuid not null references profiles(id) on delete cascade,
@@ -210,7 +210,7 @@ alter table mutual_clicks   enable row level security;
 alter table click_proposals enable row level security;
 
 comment on table clicks is
-  'Two-process anonymous one-way clicks (21 v9). surface=discovery (event_id null, 7d) or who_was_there (event_id set, event_end+48h). Mutual detection runs in the send transaction with FOR UPDATE lock ordering — no trigger.';
+  'Two-process anonymous one-way clicks (21 v9). surface=discovery (event_id null, 7d) or who_was_there (event_id set, event_end+48h). Mutual detection runs in the send transaction with FOR UPDATE lock ordering - no trigger.';
 comment on table mutual_clicks is
   'Pair-level mutual (21 v9 §B2). status=active/connected/released/suppressed/expired; coord_state while active. One active mutual per pair (partial unique index).';
 comment on table click_proposals is

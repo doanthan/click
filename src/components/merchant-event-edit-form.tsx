@@ -751,13 +751,16 @@ export function MerchantEventEditForm({
               ) : (
                 tags.map((tag) => (
                   <li key={tag.slug}>
-                    <span className="ck-tag ck-tag--selected">
+                    {/* --tap + a boxed x: the remove control was a bare glyph
+                        in a 24px tag, so its hit area was the character itself.
+                        Same pattern as the create wizard's tag picker. */}
+                    <span className="ck-tag ck-tag--selected ck-tag--tap">
                       {tag.label}
                       <button
                         type="button"
                         onClick={() => removeTag(tag.slug)}
                         aria-label={`Remove ${tag.label}`}
-                        className="leading-none opacity-80 hover:opacity-100"
+                        className="-mr-1.5 grid size-7 place-items-center rounded-full text-sm leading-none text-[color:var(--champagne)] hover:opacity-75"
                       >
                         ×
                       </button>
@@ -774,8 +777,13 @@ export function MerchantEventEditForm({
               placeholder="Search tags to add…"
               className="ck-input mt-1.5 w-full"
             />
+            {/* No inner scroll area: on phones a tap inside a nested
+                overflow-y-auto box gets swallowed as a scroll-start, so tags
+                could not be added (bug board #179). `available` is already
+                capped at 24, so a plain wrapping cloud can't blow out the
+                form. `touch-manipulation` drops the mobile tap delay. */}
             {query.trim() ? (
-              <div className="mt-2 flex max-h-40 flex-wrap gap-1.5 overflow-y-auto">
+              <div className="mt-2 flex flex-wrap gap-1.5">
                 {available.length === 0 ? (
                   <span className="text-xs font-medium text-[color:var(--slate)]">
                     No matching tags.
@@ -786,7 +794,7 @@ export function MerchantEventEditForm({
                       key={tag.slug}
                       type="button"
                       onClick={() => addTag(tag)}
-                      className="ck-tag ck-tag--select"
+                      className="ck-tag ck-tag--select ck-tag--tap touch-manipulation"
                     >
                       + {tag.label}
                     </button>

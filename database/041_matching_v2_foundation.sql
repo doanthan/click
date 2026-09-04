@@ -1,10 +1,10 @@
 -- 041_matching_v2_foundation.sql
 --
--- Matching Algorithm v2 — Phase 0 foundation (spec: context/04_MATCHING_ALGORITHM_V2.md).
+-- Matching Algorithm v2 - Phase 0 foundation (spec: context/04_MATCHING_ALGORITHM_V2.md).
 --
 -- v1 (src/lib/personalized-matching.ts) is a hand-tuned, uniform-weight linear
 -- scorer with a "popular events" cold-start fallback and Click-Persona as a
--- signal — the three things §0/§4.2/§9 of the spec call out as wrong. This
+-- signal - the three things §0/§4.2/§9 of the spec call out as wrong. This
 -- migration lays the persistent foundation for v2 WITHOUT ripping out v1: a
 -- feature store, sub-tag column, impression log, cold-start label table, and a
 -- versioned cohort-weights table. v1 stays wired until v2 is verified.
@@ -13,14 +13,14 @@
 -- uses profiles / click_personas / event_attendees / user_clicks. Columns below
 -- are mapped to what actually exists. Features with no source yet (event vibe
 -- prefs, availability, distance willingness, dating range) are intentionally
--- omitted — they need profile/persona schema extensions in a later stage.
+-- omitted - they need profile/persona schema extensions in a later stage.
 --
 -- Additive and idempotent: safe to run on every environment.
 
 begin;
 
 -- ---------------------------------------------------------------------------
--- §1.2 events.sub_tags — behavioural sub-tag source. Derived at publish from
+-- §1.2 events.sub_tags - behavioural sub-tag source. Derived at publish from
 -- title+description against the SUB_TAG_PATTERNS taxonomy in code
 -- (src/lib/matching/sub-tags.ts), e.g. {'yoga_hot','wine_natural'}.
 -- ---------------------------------------------------------------------------
@@ -28,7 +28,7 @@ alter table events add column if not exists sub_tags text[] not null default '{}
 create index if not exists idx_events_sub_tags on events using gin(sub_tags);
 
 -- ---------------------------------------------------------------------------
--- §1.4 user_features — denormalised feature store, one row per profile. Declared
+-- §1.4 user_features - denormalised feature store, one row per profile. Declared
 -- features mirror profiles/click_personas/user_tags; behavioural features are
 -- refreshed by batch jobs (later stage). Read only via the matching engine.
 -- ---------------------------------------------------------------------------
@@ -70,7 +70,7 @@ create index if not exists idx_user_features_subtags on user_features using gin(
 alter table user_features enable row level security;
 
 -- ---------------------------------------------------------------------------
--- §2.3 cohort_weights — versioned per-cohort feature weights. Phase 0 seeds
+-- §2.3 cohort_weights - versioned per-cohort feature weights. Phase 0 seeds
 -- hand-curated weights from code (src/lib/matching/weights.ts); Month 2+ the
 -- training pipeline writes new versioned rows. Never overwritten → rollback is
 -- a time-bounded SELECT.
@@ -88,7 +88,7 @@ create index if not exists idx_cohort_weights_latest
   on cohort_weights(cohort_id, trained_at desc);
 
 -- ---------------------------------------------------------------------------
--- §5.4 / §9 match_impressions — every surfaced candidate, for anti-repeat
+-- §5.4 / §9 match_impressions - every surfaced candidate, for anti-repeat
 -- (don't re-show within 14d) and as future ML training labels (shown-but-not-
 -- clicked = negative example).
 -- ---------------------------------------------------------------------------
@@ -111,7 +111,7 @@ create index if not exists idx_match_impressions_user_pair
   on match_impressions(viewer_profile_id, shown_profile_id);
 
 -- ---------------------------------------------------------------------------
--- §4.1 curated_match_labels — human cold-start labels (community-manager admin
+-- §4.1 curated_match_labels - human cold-start labels (community-manager admin
 -- tool, Month 0–2). features_snapshot captures the feature vector AT label time
 -- so training isn't corrupted by later feature drift.
 -- ---------------------------------------------------------------------------

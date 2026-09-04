@@ -44,7 +44,7 @@ test("the stripe webhook handles both payload styles on one route", () => {
     "utf8",
   );
   // Thin (v2) notifications must be verified with the second destination's own
-  // secret — constructEvent throws on them by design.
+  // secret - constructEvent throws on them by design.
   assert.match(route, /isThinEventNotification/);
   assert.match(route, /parseEventNotification\(rawBody, signature, secretV2\)/);
   assert.match(route, /getStripeWebhookSecretV2/);

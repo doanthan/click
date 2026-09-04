@@ -1,5 +1,5 @@
 /**
- * Merchant location waitlist — Sydney-only pilot gate.
+ * Merchant location waitlist - Sydney-only pilot gate.
  *
  * POST json { address?, suburb?, latitude?, longitude?, note? }
  *   Records the merchant's interest in a location outside greater Sydney so we

@@ -66,7 +66,7 @@ const dateOnlyFormatter = new Intl.DateTimeFormat("en-AU", {
 });
 
 function formatMoney(amountCents: number | null | undefined, currency: string) {
-  if (amountCents == null) return "—";
+  if (amountCents == null) return "-";
   return new Intl.NumberFormat("en-AU", {
     style: "currency",
     currency,
@@ -105,7 +105,7 @@ function payoutStatusTone(status: string): BadgeTone {
 }
 
 function truncate(value: string | null, head = 8, tail = 4) {
-  if (!value) return "—";
+  if (!value) return "-";
   if (value.length <= head + tail + 1) return value;
   return `${value.slice(0, head)}…${value.slice(-tail)}`;
 }
@@ -203,8 +203,8 @@ export function AdminTransactionsTable({
     return counts;
   }, [transactions]);
 
-  // Precompute everything each cell renders — parsed/formatted dates, currency
-  // strings, the derived net, and a lowercased search haystack — so render and
+  // Precompute everything each cell renders - parsed/formatted dates, currency
+  // strings, the derived net, and a lowercased search haystack - so render and
   // filtering read precomputed values instead of re-parsing on every keystroke.
   const displayRows = useMemo(() => {
     return transactions.map((t) => {
@@ -230,7 +230,7 @@ export function AdminTransactionsTable({
         feeLabel: formatMoney(t.applicationFeeCents, t.currency),
         netLabel: formatMoney(net, t.currency),
         refundedLabel:
-          t.refundedAmountCents > 0 ? formatMoney(t.refundedAmountCents, t.currency) : "—",
+          t.refundedAmountCents > 0 ? formatMoney(t.refundedAmountCents, t.currency) : "-",
         piLabel: truncate(t.stripePaymentIntentId),
         haystack: [
           t.eventTitle,
@@ -609,14 +609,14 @@ export function AdminTransactionsTable({
                       </div>
                       <div>
                         <p className="font-semibold text-[color:var(--ink)]">
-                          {t.eventTitle ?? "—"}
+                          {t.eventTitle ?? "-"}
                         </p>
                         <p className="text-xs">{t.attendeeName ?? "(unknown)"}</p>
                         <p className="text-[11px]">{t.attendeeEmail ?? ""}</p>
                       </div>
                       <div>
                         <p className="font-semibold text-[color:var(--ink)]">
-                          {t.merchantName ?? "—"}
+                          {t.merchantName ?? "-"}
                         </p>
                       </div>
                       {/* Below lg the headers are gone and these cells stack, so
@@ -939,13 +939,13 @@ function TransactionDetail({
             v={row.stripeChargeId ?? "(not synced yet)"}
             mono
           />
-          <Detail k="Payment intent" v={row.stripePaymentIntentId ?? "—"} mono />
+          <Detail k="Payment intent" v={row.stripePaymentIntentId ?? "-"} mono />
           <Detail
             k="Transfer"
             v={
               row.transferAmountCents != null
                 ? `${formatMoney(row.transferAmountCents, row.currency)} to merchant`
-                : "—"
+                : "-"
             }
           />
           <Detail k="Last synced" v={row.lastSyncedAt ? dateTimeFormatter.format(new Date(row.lastSyncedAt)) : "never"} />
@@ -1008,7 +1008,7 @@ function TransactionDetail({
                     onChange={(e) => setReason(e.target.value as RefundReason | "")}
                     className="mt-1 w-full rounded-xl border border-[color:var(--mist)] bg-white px-4 py-2 text-sm text-[color:var(--ink)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)]"
                   >
-                    <option value="">— select —</option>
+                    <option value=""> - select - </option>
                     <option value="requested_by_customer">Requested by customer</option>
                     <option value="duplicate">Duplicate</option>
                     <option value="fraudulent">Fraudulent</option>
@@ -1181,7 +1181,7 @@ function PayoutsView({ payouts }: { payouts: AdminPayoutRow[] }) {
         >
           <span>{dateOnlyFormatter.format(new Date(p.createdAt))}</span>
           <div>
-            <p className="font-semibold text-[color:var(--ink)]">{p.merchantName ?? "—"}</p>
+            <p className="font-semibold text-[color:var(--ink)]">{p.merchantName ?? "-"}</p>
             <p className="font-mono text-[11px]">
               {truncate(p.stripeConnectAccountId)}
             </p>
@@ -1198,7 +1198,7 @@ function PayoutsView({ payouts }: { payouts: AdminPayoutRow[] }) {
             ) : null}
           </div>
           <span className="text-xs">
-            {p.arrivalDate ? dateOnlyFormatter.format(new Date(p.arrivalDate)) : "—"}
+            {p.arrivalDate ? dateOnlyFormatter.format(new Date(p.arrivalDate)) : "-"}
             {p.bankLast4 ? ` · •${p.bankLast4}` : ""}
           </span>
           <span className="font-mono text-[11px]">{truncate(p.stripePayoutId, 10, 4)}</span>

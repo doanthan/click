@@ -3,7 +3,7 @@ import type { RefundTier } from "./refund-policy";
 
 // Append-only booking-lifecycle log. See database/045_booking_events.sql and
 // TECH/22_ANALYTICS.md §2. Every code path that mutates booking state must also
-// record the transition here — inside the same transaction as the local state
+// record the transition here - inside the same transaction as the local state
 // change, or in the webhook handler for Stripe-driven events.
 
 export type BookingEventType =
@@ -66,7 +66,7 @@ type Queryable = Pick<Pool | PoolClient, "query">;
 // replays (same stripe_object_id + event_type) a no-op rather than a duplicate.
 //
 // IMPORTANT: when called with an open-transaction client, this MUST be allowed
-// to throw — a failed insert aborts the surrounding Postgres transaction, and
+// to throw - a failed insert aborts the surrounding Postgres transaction, and
 // the caller's rollback is what keeps the state change and its log atomic.
 // Callers logging AFTER commit (with the pool) should wrap this in a .catch().
 export async function logBookingEvent(

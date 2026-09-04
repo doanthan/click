@@ -1,4 +1,4 @@
-// Matching v2 §4.1 — Phase 0 hand-curated cohort weights.
+// Matching v2 §4.1 - Phase 0 hand-curated cohort weights.
 //
 // No behavioural data exists pre-launch, so we can't train yet. These are the
 // hand-curated priors the engine ships with; the Month 2+ training pipeline
@@ -8,7 +8,7 @@
 // Weights are logistic-regression coefficients. All features feed in on a 0–1
 // scale (jaccard overlaps, normalised closeness, fill ratio), so a weight is its
 // feature's contribution to the logit. Intercepts are negative to keep the
-// baseline match probability low — a pair/event has to earn its score.
+// baseline match probability low - a pair/event has to earn its score.
 
 import type { CohortId, CohortWeights } from "./types";
 
@@ -18,12 +18,12 @@ import type { CohortId, CohortWeights } from "./types";
 export const MODEL_VERSION = "v2-handcurated-phase0";
 
 // The priors encode the spec's intuitions:
-//  • new_to_sydney / new_local — no history, so declared overlap (interest, life,
+//  • new_to_sydney / new_local - no history, so declared overlap (interest, life,
 //    intent) dominates and behavioural features (sub-tags, shared events) are
 //    near-zero.
-//  • active_local / engaged_local — trust behaviour: sub-tag overlap and
+//  • active_local / engaged_local - trust behaviour: sub-tag overlap and
 //    having-attended-the-same-events carry real weight.
-//  • dating_* — interest + social-energy fit + age closeness lead; intent
+//  • dating_* - interest + social-energy fit + age closeness lead; intent
 //    overlap matters less (both are already dating-mode).
 export const DEFAULT_COHORT_WEIGHTS: Record<CohortId, CohortWeights> = {
   new_local: {
@@ -129,14 +129,14 @@ export const DEFAULT_COHORT_WEIGHTS: Record<CohortId, CohortWeights> = {
 // Latest weights for a cohort. `trained` is the latest versioned row set from
 // cohort_weights (passed in by the caller that read the DB); when absent or
 // empty we fall back to the hand-curated prior. This is the single seam the ML
-// pipeline plugs into — nothing else in the engine changes when training starts.
+// pipeline plugs into - nothing else in the engine changes when training starts.
 export function getCohortWeights(
   cohortId: CohortId,
   trained?: Partial<Record<string, number>> | null,
 ): CohortWeights {
   const prior = DEFAULT_COHORT_WEIGHTS[cohortId] ?? DEFAULT_COHORT_WEIGHTS.new_local;
   if (!trained || Object.keys(trained).length === 0) return prior;
-  // A trained row set is authoritative once present — it already carries every
+  // A trained row set is authoritative once present - it already carries every
   // feature + intercept the model fit.
   return { intercept: 0, ...trained } as CohortWeights;
 }

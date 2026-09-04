@@ -5,7 +5,7 @@
 //   the already-booked side renders "I'm in" / "both going" (never a live RSVP), AND a
 //   dead/sold-out event drops the seat flags to false (card falls to the C12 recovery).
 // C12 (§B0/§B6): proposeAlternativeForProposal reopens an ACCEPTED proposal only when its
-//   agreed event has died (cancelled / past / sold out) — never a still-live agreement —
+//   agreed event has died (cancelled / past / sold out) - never a still-live agreement -
 //   flipping it back to a live pending/proposed plan so a dead event is never a terminal.
 //
 // Drives the exact SQL added to the repository against seeded rows. Self-cleaning.
@@ -47,8 +47,8 @@ const profiles = [];
 const events = [];
 const mutuals = [];
 function check(label, cond) {
-  if (cond) console.log(`  ok   — ${label}`);
-  else { failures++; console.error(`  FAIL — ${label}`); }
+  if (cond) console.log(`  ok - ${label}`);
+  else { failures++; console.error(`  FAIL - ${label}`); }
 }
 
 async function mkProfile() {
@@ -131,7 +131,7 @@ async function stillLive(proposalId) {
 }
 
 try {
-  console.log("C11 — seat flags track the block-safe suggested-event join:");
+  console.log("C11 - seat flags track the block-safe suggested-event join:");
   {
     const a = await mkProfile();
     const b = await mkProfile();
@@ -157,7 +157,7 @@ try {
     check("event cancelled → seat flags false despite confirmed attendance", f.event_live === false && f.viewer_has_seat === false);
   }
 
-  console.log("\nC12 — reopen guard fires only on a DEAD agreed event:");
+  console.log("\nC12 - reopen guard fires only on a DEAD agreed event:");
   {
     const a = await mkProfile();
     const b = await mkProfile();
@@ -199,7 +199,7 @@ try {
       row.status === "pending" && row.confirmed_by === null && row.coord_state === "proposed");
   }
 
-  console.log(failures === 0 ? "\nPASS — C11 seat flags + C12 reopen guard correct." : `\nFAIL — ${failures} assertion(s).`);
+  console.log(failures === 0 ? "\nPASS - C11 seat flags + C12 reopen guard correct." : `\nFAIL - ${failures} assertion(s).`);
 } catch (err) {
   console.error("ERROR:", err.message);
   failures++;

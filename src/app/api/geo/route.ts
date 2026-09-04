@@ -10,7 +10,7 @@ import { NextResponse } from "next/server";
 // the extension never sees a tracker domain, so the request goes through.
 //
 // ipapi geo-locates the *caller's* IP, so when proxying we must forward the
-// real client IP (`<ip>/json/`) — otherwise ipapi would resolve our server's
+// real client IP (`<ip>/json/`) - otherwise ipapi would resolve our server's
 // location for every visitor. When we can't determine a public client IP
 // (local dev, loopback), fall back to the token-less `json/` form so ipapi
 // uses the outbound connection's IP.
@@ -24,7 +24,7 @@ function firstPublicIp(forwarded: string | null): string | null {
   for (const raw of forwarded.split(",")) {
     const ip = raw.trim();
     if (!ip) continue;
-    // Skip loopback / private / link-local ranges — ipapi rejects them.
+    // Skip loopback / private / link-local ranges - ipapi rejects them.
     if (
       ip === "::1" ||
       ip.startsWith("127.") ||

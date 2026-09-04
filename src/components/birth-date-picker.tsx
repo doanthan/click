@@ -429,7 +429,7 @@ export function BirthDatePicker({
               type="button"
               onClick={() => (mode === "days" ? shiftMonth(-1) : shiftYearPage(-1))}
               aria-label={mode === "days" ? "Previous month" : "Previous years"}
-              className="grid size-8 place-items-center rounded-full text-[color:var(--ink)] transition hover:bg-[color:var(--peach-soft)]"
+              className="grid size-11 place-items-center rounded-full text-[color:var(--ink)] transition hover:bg-[color:var(--peach-soft)] sm:size-8"
             >
               <ChevronIcon direction="left" />
             </button>
@@ -456,7 +456,7 @@ export function BirthDatePicker({
               type="button"
               onClick={() => (mode === "days" ? shiftMonth(1) : shiftYearPage(1))}
               aria-label={mode === "days" ? "Next month" : "Next years"}
-              className="grid size-8 place-items-center rounded-full text-[color:var(--ink)] transition hover:bg-[color:var(--peach-soft)]"
+              className="grid size-11 place-items-center rounded-full text-[color:var(--ink)] transition hover:bg-[color:var(--peach-soft)] sm:size-8"
             >
               <ChevronIcon direction="right" />
             </button>

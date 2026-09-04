@@ -12,6 +12,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "node --test tests/*.test.mjs",
+    "greps": "node scripts/click-greps.mjs",
     "check": "npm run lint && npm run typecheck && npm test && npm run build && npm audit --audit-level=high",
     "release:check": "node scripts/release-check.mjs",
     "launch:check": "npm run check && node scripts/release-check.mjs --launch",

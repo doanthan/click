@@ -4,7 +4,7 @@
 --
 -- ADAPTATION (recorded as spec/code divergence to reconcile in spec 19 + 05):
 -- The spec models seats as a single `bookings` row with `ticket_count` 1–4 and
--- hangs guest_spots off it. This codebase has no `bookings`/`ticket_count` — it's
+-- hangs guest_spots off it. This codebase has no `bookings`/`ticket_count` - it's
 -- one `event_attendees` row per (event, profile). So here EACH extra seat the
 -- purchaser buys IS a `guest_spots` row:
 --   * The purchaser's own seat stays their normal `event_attendees` row.

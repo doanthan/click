@@ -15,7 +15,7 @@ import { Reveal } from "./reveal";
 // far from the events (or who just want everything) aren't filtered to nothing.
 const MAX_DISTANCE_KM = 50;
 
-// Tap-friendly radius presets — replaces a fiddly range slider that's painful
+// Tap-friendly radius presets - replaces a fiddly range slider that's painful
 // on touch. The last entry maps to MAX_DISTANCE_KM ("any distance").
 const DISTANCE_OPTIONS = [2, 5, 10, 25, MAX_DISTANCE_KM] as const;
 
@@ -241,9 +241,14 @@ export function EventExplorer({
       ...event,
       // An event with no pinned coordinates has no distance from anywhere -
       // recomputing it from the CBD fallback would just move the wrong number.
+      // Coordinates are also withheld on this surface for anyone who has not
+      // booked (B5 item 5 - suburb only), so when they are null we keep the
+      // server's distance rather than measuring to (0, 0). It is measured from
+      // the CBD instead of from here, which is coarser than the user asked for
+      // but never wrong by more than the CBD offset.
       distanceKm:
-        event.distanceKm == null
-          ? null
+        event.distanceKm == null || event.lat == null || event.lng == null
+          ? event.distanceKm
           : roundKm(haversineKm(userCoords, { lat: event.lat, lng: event.lng })),
     }));
   }, [events, userCoords]);
@@ -463,7 +468,7 @@ export function EventExplorer({
     (tagFilter.trim() ? 1 : 0);
   const anyFilter = filterCount > 0 || !!searchQuery.trim() || !!categoryFilter;
 
-  // Applied-filter chips — the removable summary of what's narrowing the results.
+  // Applied-filter chips - the removable summary of what's narrowing the results.
   const chips: Array<{ key: string; label: string; clear: () => void }> = [];
   if (selectedSuburb !== "All Sydney") {
     chips.push({ key: "suburb", label: selectedSuburb, clear: () => setSelectedSuburb("All Sydney") });
@@ -837,7 +842,7 @@ export function EventExplorer({
         </div>
       </div>
 
-      {/* Mobile filters — a bottom sheet with a grab handle, Reset / ✕ / scrim
+      {/* Mobile filters - a bottom sheet with a grab handle, Reset / ✕ / scrim
           close, and a sticky "Show N events" apply. */}
       {/* ModalShell owns Escape, the Tab trap, the scroll lock and focus
           restore. The hand-rolled version here claimed aria-modal while doing
@@ -855,7 +860,7 @@ export function EventExplorer({
           cardClassName="w-full rise-soft"
         >
           <div
-            className="flex max-h-[86vh] w-full flex-col overflow-hidden rounded-t-[var(--radius-2xl)] bg-[color:var(--paper)] shadow-[var(--shadow-lg)]"
+            className="flex max-h-[86dvh] w-full flex-col overflow-hidden rounded-t-[var(--radius-2xl)] bg-[color:var(--paper)] shadow-[var(--shadow-lg)]"
           >
             <div className="flex justify-center pt-2">
               <span className="h-[5px] w-10 rounded-full bg-[color:var(--mist-strong)]" />

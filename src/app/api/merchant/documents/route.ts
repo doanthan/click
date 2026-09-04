@@ -15,14 +15,14 @@ import {
 // Multipart endpoint used by the merchant signup wizard Step 3.
 //
 // Expected form fields:
-//   document_type — one of: abn_certificate | public_liability_insurance | liquor_licence
-//   file          — the file blob (PDF/JPG/PNG, max 5MB)
+//   document_type - one of: abn_certificate | public_liability_insurance | liquor_licence
+//   file - the file blob (PDF/JPG/PNG, max 5MB)
 //
 // Flow:
 //   1. Validate session + file constraints.
 //   2. Upload to private Supabase Storage bucket "merchant-documents" via
 //      the service-role admin client.
-//   3. Record metadata in merchant_documents (keyed off profile_id — the
+//   3. Record metadata in merchant_documents (keyed off profile_id - the
 //      merchant_profiles row may not exist yet because Step 4 hasn't run).
 //
 // DELETE ?document_type=… takes one back off the pile: same two calls the
@@ -156,7 +156,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, document: row });
   } catch (error) {
     // Best-effort: try to remove the orphan object so the bucket doesn't
-    // collect failed uploads. Swallow errors — the metadata error is what
+    // collect failed uploads. Swallow errors - the metadata error is what
     // matters for the user.
     await supabase.storage.from(BUCKET).remove([objectKey]).catch(() => undefined);
     if (error instanceof Error) {

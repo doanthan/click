@@ -6,7 +6,7 @@ import { CategoryCircle, Icon, Spark, categoryGlyphKey } from "@/components/ds";
 import { EmptyState } from "@/components/empty-state";
 import { CardRail, MomentBanner, Section } from "@/components/dashboard-ds";
 import { Reveal } from "@/components/reveal";
-import { PostEventClickCard } from "@/components/post-event-click-card";
+import { PostEventClickCard, PostEventMomentBanner } from "@/components/post-event-click-card";
 import { ClickRadar } from "@/components/click-radar";
 import { ClickWithSomeoneUserCard } from "@/components/click-with-someone-user-card";
 import {
@@ -20,6 +20,7 @@ import {
   getProfileStatus,
   getSuggestedPeople,
 } from "@/lib/event-repository";
+import { APP_TIME_ZONE } from "@/lib/datetime";
 
 export const metadata = {
   title: "Dashboard",
@@ -34,6 +35,34 @@ function greetingFor(hour: number) {
   if (hour < 12) return "Good morning";
   if (hour < 18) return "Good afternoon";
   return "Good evening";
+}
+
+const weekday = new Intl.DateTimeFormat("en-AU", { weekday: "long", timeZone: APP_TIME_ZONE });
+
+// en-CA formats as YYYY-MM-DD, so these keys compare as calendar days.
+const sydneyDay = new Intl.DateTimeFormat("en-CA", { timeZone: APP_TIME_ZONE });
+
+// Stage 0.5 locks the post-event eyebrow as `Yesterday · [Event]`, but the prompt
+// opens 2 hours after the event ends (POST_EVENT_PROMPT_DELAY_HOURS, §6.8), so it
+// can land the same night. Name the day it actually was rather than printing a
+// "Yesterday" that is wrong for half the people who see it.
+//
+// Every day boundary here is Sydney's, never the server's: this renders on Vercel,
+// where local time is UTC (see the note in lib/datetime.ts). Read server-local, a
+// Friday 22:00 event still reads as Friday at 09:00 Saturday morning - so the
+// banner says "Today" about last night, which is exactly the read it exists for.
+function dayLabelFor(endedAt: string) {
+  const ended = new Date(endedAt);
+  const endedDay = sydneyDay.format(ended);
+  const today = sydneyDay.format(new Date());
+  if (endedDay >= today) return "Today";
+  // Both keys are anchored at UTC midnight purely to subtract them, so the
+  // difference is a whole number of calendar days and DST cannot skew it.
+  const daysAgo = Math.round(
+    (Date.parse(`${today}T00:00:00Z`) - Date.parse(`${endedDay}T00:00:00Z`)) / 86_400_000,
+  );
+  if (daysAgo === 1) return "Yesterday";
+  return weekday.format(ended);
 }
 
 export default async function DashboardPage() {
@@ -54,7 +83,12 @@ export default async function DashboardPage() {
       getMutualClicksForSession(session),
     ]);
 
-  const activePrompts = postEventPrompts.filter((p) => p.coAttendees.some((c) => !c.alreadyClicked));
+  // No client-side filter any more. Stage 0.5's "answered" rule is persisted now
+  // (post_event_click_answers), so the repository already drops any event this
+  // viewer has resolved - by clicking someone or by tapping "No one this time".
+  // Filtering on "someone is still unclicked" here used to keep an event alive
+  // long after it was answered, and hid the empty-pool state entirely.
+  const activePrompts = postEventPrompts;
 
   const userName = dashboard.userName || session.user.email || "there";
   const firstName = userName.split(" ")[0];
@@ -170,21 +204,10 @@ export default async function DashboardPage() {
 
         {/* ---- The one moment banner ---- */}
         {postEvent ? (
-          <div className="rise-soft rise-d2 mt-6 max-w-[760px]">
-            <MomentBanner
-              icon="calendar"
-              eyebrow={postEvent.eventTitle}
-              title="Did you click with anyone?"
-              /* No sub. The banner's whole job is to get you to the card, and the
-                 card 250px below already states the window - from the same
-                 constant, next to the taps it governs, and it is the ONLY carrier
-                 on /events/[slug], where there is no banner. Everything else true
-                 here ("who was actually there", "private unless mutual") is the
-                 Section sub's line. A sub can only repeat one of them. */
-              actionLabel="See who was there"
-              actionHref="#who-was-there"
-            />
-          </div>
+          <PostEventMomentBanner
+            eyebrow={`${dayLabelFor(postEvent.endedAt)} · ${postEvent.eventTitle}`}
+            eventSlug={postEvent.eventSlug}
+          />
         ) : coordConsolidated ? (
           <div className="rise-soft rise-d2 mt-6 max-w-[760px]">
             <MomentBanner

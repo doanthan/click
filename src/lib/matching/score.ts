@@ -1,4 +1,4 @@
-// Matching v2 §3 — scoring.
+// Matching v2 §3 - scoring.
 //
 // Two scorers, same shape: build a 0–1 feature vector, dot it with the viewer's
 // cohort weights, squash through a sigmoid → 0–100. Logistic regression is
@@ -32,7 +32,7 @@ export function sigmoid(z: number): number {
   return 1 / (1 + Math.exp(-z));
 }
 
-// Cosine-ish overlap of two sub-tag count maps — weights shared sub-tags by how
+// Cosine-ish overlap of two sub-tag count maps - weights shared sub-tags by how
 // strongly each user expresses them, so yoga_hot:6↔yoga_hot:5 beats a single
 // incidental overlap. Returns 0–1.
 export function subTagOverlap(

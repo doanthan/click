@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /* ============================================================================
-   DESIGN CONVENTIONS — the scale this app composes against. Keep new UI on it.
+   DESIGN CONVENTIONS - the scale this app composes against. Keep new UI on it.
    ----------------------------------------------------------------------------
    Color     : use color:var(--token), never hardcoded hex. Click DS (canon:
                context/Click Design System + context/DESIGN.MD): --champagne
@@ -33,7 +33,7 @@
    Primitives : loading -> components/skeleton.tsx + route loading.tsx · empty
                 -> components/empty-state.tsx (pass `bare` to embed in a card) ·
                 confirm/prompt -> components/confirm-dialog.tsx (focus-trapped).
-   Motion     : prefers-reduced-motion is handled GLOBALLY (block near EOF) —
+   Motion     : prefers-reduced-motion is handled GLOBALLY (block near EOF) -
                 no per-element guard needed; don't rely on motion for meaning.
    ============================================================================ */
 
@@ -220,7 +220,7 @@
   /* "Condensed" label voice now resolves to Schibsted Grotesk (the concept
      uses one grotesque for labels, not a separate condensed face). */
   --font-condensed: var(--font-click-display);
-  /* Legacy aliases — `font-script` / `font-brand` now resolve to Schibsted
+  /* Legacy aliases - `font-script` / `font-brand` now resolve to Schibsted
      Grotesk so the files still using them stay coherent. */
   --font-script: var(--font-click-display);
   --font-brand: var(--font-click-display);
@@ -499,7 +499,18 @@ body {
 }
 
 /* ---- Horizontal rails (category strip, chip rows) hide their scrollbar ---- */
-.ckRail { scrollbar-width: none; -ms-overflow-style: none; }
+/* position: relative is load-bearing, not decoration. Tailwind's .sr-only is
+   `position: absolute`, so without a positioned ancestor INSIDE the rail its
+   containing block resolves to <body> - and an element whose containing block
+   sits outside the scroller cannot be clipped by that scroller's overflow-x.
+   Every "3 spots left" / "Venue shown when you RSVP" span in a rail card was
+   therefore laid out at its static x (out at 1009px, 1333px ...) against the
+   DOCUMENT, dragging the whole page 958px wide at 375px: /discover, the home
+   rail and the dashboard rail all scrolled sideways with a band of dead cream
+   beside them. Making the rail the containing block puts those spans back
+   inside it, where overflow-x clips them. Measured: documentElement.scrollWidth
+   1333 -> 375 at a 375px viewport. */
+.ckRail { position: relative; scrollbar-width: none; -ms-overflow-style: none; }
 .ckRail::-webkit-scrollbar { display: none; }
 
 /* ---- The ONE signed-in layout container: same max-width and, crucially, the
@@ -509,9 +520,15 @@ body {
   width: 100%;
   max-width: var(--container-max);
   margin-inline: auto;
-  padding-inline: 20px;
+  /* max() not a bare 20px: viewport-fit=cover (set in layout.tsx) paints the
+     page under a notched phone's sensor housing in landscape, where
+     safe-area-inset-left can reach 44px+. On every other device both insets
+     are 0 and this collapses to the same 20px it always was. */
+  padding-inline: max(20px, env(safe-area-inset-left)) max(20px, env(safe-area-inset-right));
 }
-@media (min-width: 640px) { .ck-page { padding-inline: 32px; } }
+@media (min-width: 640px) {
+  .ck-page { padding-inline: max(32px, env(safe-area-inset-left)) max(32px, env(safe-area-inset-right)); }
+}
 
 /* The sticky site header's real height, published once so anything that has to
    sit UNDER it can stop guessing. It was guessed, twice, in
@@ -537,7 +554,7 @@ body {
 
 /* ---------- Highlight & marker ----------
    Highlight bg colors don't flip across modes (peach stays peach), so the
-   text on top must always be a constant dark — using --surface-deep keeps
+   text on top must always be a constant dark - using --surface-deep keeps
    contrast ~10:1 against peach in both modes.
    In dark mode the page bg is also dark, so a partial-height marker band
    leaves the upper portion of letters as dark-on-dark. Cover the full
@@ -599,7 +616,7 @@ body {
 }
 
 /* ---------- Shadows ----------
-   River uses quiet, realistic elevation — soft, vertically-biased shadows
+   River uses quiet, realistic elevation - soft, vertically-biased shadows
    rather than the old hard zine offset. These class names are reused
    app-wide, so redefining them here re-skins every surface at once. */
 .hard-shadow {
@@ -642,7 +659,7 @@ body {
   transition: transform 200ms ease, box-shadow 200ms ease, background-color 200ms ease;
 }
 .sticker:hover { transform: translateY(-1px); box-shadow: 0 6px 16px -8px rgba(22, 24, 29, 0.22); }
-/* Press feedback — the soft elevation system implies physicality, so a pressed
+/* Press feedback - the soft elevation system implies physicality, so a pressed
    capsule settles back flush. */
 .sticker:active { transform: translateY(0); box-shadow: 0 1px 1px rgba(22, 24, 29, 0.06); }
 .sticker--rose { background: var(--rose); color: var(--champagne); border-color: transparent; }
@@ -966,6 +983,21 @@ body:has([data-home-hero]) .site-header--marketing .ck-btn {
 }
 .pop-in { animation: pop-in 700ms cubic-bezier(.22,1,.36,1) both; }
 
+/* ---------- The sent-click settle ----------
+   What a landed click looks like when it is NOT allowed to be a glow (the DS
+   keeps shadows soft, low and purple-tinted - never a halo). The card flashes
+   the --lav-bg your-move wash - the very fill the DS already reserves for "your
+   move" emphasis - holds it a beat, then drains back to paper. Background-colour
+   only: nothing shifts position, so it can't nudge the row it sits in, and the
+   global reduced-motion block near EOF collapses it straight to the resting
+   white. Paired with .rise-soft on the "clicked" pill that replaces the CTA. */
+@keyframes click-settle {
+  0%   { background-color: var(--lav-bg); }
+  55%  { background-color: var(--lav-bg); }
+  100% { background-color: var(--paper); }
+}
+.click-settle { animation: click-settle 1100ms cubic-bezier(.2,.7,.2,1) both; }
+
 /* ---------- Home discovery motion ----------
    Motion on the public home page has one job per treatment: establish the
    social scene, make interactive surfaces feel tactile, and reveal browse
@@ -1123,6 +1155,54 @@ body:has([data-home-hero]) .site-header--marketing .ck-btn {
 }
 
 /* ---------- Buttons / inputs ---------- */
+
+/* ---- .ck-taplink: a STANDALONE text link, given a thumb-sized hit area ----
+   A link like "View ->" or "How Click works ->" is a real control, but its box
+   is only as tall as its text - 15-20px, well under the 44px touch floor every
+   .ck-btn holds to. Growing the element would shove the surrounding layout
+   around, so the HIT AREA grows instead: an invisible ::after band centred on
+   the link. The link paints at exactly the same size and place; only the thumb
+   notices.
+   ONLY for a link that stands alone (an action row, a block link after a
+   section). NEVER put it on a link inside a sentence - WCAG 2.5.8 exempts
+   inline links precisely because a 44px band over running prose would swallow
+   taps meant for the text around it. */
+@media (pointer: coarse) {
+  .ck-taplink { position: relative; }
+  .ck-taplink::after {
+    content: "";
+    position: absolute;
+    inset-inline: -6px;
+    top: 50%;
+    height: 44px;
+    transform: translateY(-50%);
+  }
+}
+
+
+/* The 16px floor. iOS Safari force-zooms the whole page when you focus a field
+   whose font-size is under 16px, and it does NOT zoom back out - you are left
+   on a page scrolled sideways, hunting for the rest of the form. Every field in
+   the app tripped it: .ck-input is 15px, so profile edit, the merchant signup
+   wizard and the event-create wizard all did; so did the home date picker (14px),
+   the Discover search box (15px) and its filter select (13px).
+   Deliberately UNLAYERED. .ck-input and friends live inside @layer components,
+   and Tailwind's utilities layer sorts after it - a layered rule here would lose
+   to `text-[15px]` on the element. Unlayered CSS outranks every layer, so this
+   is the one place the floor actually holds.
+   max(16px, 1em) is a floor, not an override: a field that already sets 17px or
+   1.25rem keeps its size, and this only ever raises a field to 16px.
+   Scoped to pointer: coarse - the same test .ck-btn--sm already uses for its
+   44px touch height - so mouse-driven desktop density is untouched. */
+@media (pointer: coarse) {
+  /* The [class] duplicates lift this to specificity (0,1,1). A bare element
+     selector is (0,0,1) and loses to any third-party single-class rule - which
+     is exactly what happened to Mapbox's `.mbx--Input` (0,1,0) inside the
+     address autocomplete a merchant uses to enter a venue on their phone. */
+  input, select, textarea,
+  input[class], select[class], textarea[class] { font-size: max(16px, 1em); }
+}
+
 button, a, select, textarea, input {
   transition:
     background-color 180ms ease,
@@ -1235,7 +1315,7 @@ button:focus-visible, a:focus-visible, select:focus-visible, textarea:focus-visi
 
 /* ---------- Skeleton (loading shimmer) ----------
    Premium loading state in the warm palette: a champagne-deep base with a soft
-   cream light-sweep that mirrors the surface of the cards it stands in for —
+   cream light-sweep that mirrors the surface of the cards it stands in for -
    never a generic gray pulse. The global prefers-reduced-motion block below
    freezes the sweep; we also pin a flat base there so a frozen frame can never
    look like a half-finished swipe. */
@@ -1284,6 +1364,14 @@ button:focus-visible, a:focus-visible, select:focus-visible, textarea:focus-visi
 /* Fixed support chrome must not cover controls in a modal or bottom sheet.
    ModalShell owns the stack marker so this also stays correct when dialogs are
    layered (booking -> Stripe checkout) and only returns after the last closes. */
+/* The scrim is `fixed inset-0`, so it sits OUTSIDE the dialog wrapper's scroll
+   chain and overscroll-contain on that wrapper cannot reach it - a touch-drag
+   on the dark area beside a dialog still rubber-banded the page, or fired
+   pull-to-refresh mid-checkout. The body lock is only `overflow: hidden`,
+   which mobile Safari does not honour for touch, so the marker class the shell
+   already sets on <body> is the one place that covers every dialog at once. */
+.modal-shell-open { overscroll-behavior: none; }
+
 .modal-shell-open [data-support-widget] > button[aria-label="Report a bug"] {
   visibility: hidden;
   pointer-events: none;

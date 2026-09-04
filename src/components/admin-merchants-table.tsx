@@ -64,7 +64,7 @@ function MerchantActions({
   const canSuspend = status === "approved";
   // Reject is only for the initial vetting decision on a pending application.
   // Once approved, the deactivation path is Suspend (reversible, hides events
-  // but keeps existing RSVPs valid) — not Reject.
+  // but keeps existing RSVPs valid) - not Reject.
   const canReject = status === "pending";
   // Trusting a merchant flips on auto_approve_events so their future events
   // publish straight to `live`, skipping the pending review queue. Only

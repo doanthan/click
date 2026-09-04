@@ -38,7 +38,7 @@ function errorResponse(error: unknown) {
 // GET /api/merchant/events/[eventId]/duplicate
 // Returns a prefilled "draft" (the source event's details, with the date left
 // blank and no "Copy of" prefix) that the client seeds into the create wizard,
-// so duplicating an event becomes "create event, pre-populated" — the merchant
+// so duplicating an event becomes "create event, pre-populated" - the merchant
 // picks a new date/time, tweaks anything, and publishes through the normal flow
 // (so the copy actually lands in discovery). Bug board #184/#185/#191.
 export async function GET(_request: Request, context: RouteContext) {

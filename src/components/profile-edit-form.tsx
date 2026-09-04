@@ -509,11 +509,15 @@ export function ProfileEditForm({
                         </option>
                       ))}
                     </select>
+                    {/* 44px on touch, 36px back on desktop (same idiom as the
+                        notifications bell and the bookmark button). It is an
+                        icon-only DESTRUCTIVE control 8px from a 44px select, so
+                        at 375px a 36px box loses the typed answer to a near-miss. */}
                     <button
                       type="button"
                       onClick={() => setPrompts((list) => list.filter((_, i) => i !== index))}
                       aria-label="Remove prompt"
-                      className="grid size-9 shrink-0 place-items-center rounded-[10px] text-[color:var(--slate)] transition-colors hover:bg-[color:var(--lavender-100)] hover:text-[color:var(--ink)]"
+                      className="grid size-11 shrink-0 place-items-center rounded-[10px] text-[color:var(--slate)] transition-colors hover:bg-[color:var(--lavender-100)] hover:text-[color:var(--ink)] lg:size-9"
                     >
                       <Icon name="x" size={16} stroke={2.2} />
                     </button>
@@ -546,7 +550,7 @@ export function ProfileEditForm({
                   const next = PROFILE_PROMPTS.find((p) => !used.has(p.id));
                   if (next) setPrompts((list) => [...list, { id: next.id, answer: "" }]);
                 }}
-                className="font-display inline-flex w-fit items-center gap-1.5 rounded-[12px] px-1 py-1 text-[13.5px] font-semibold text-[color:var(--purple)] hover:underline"
+                className="ck-taplink font-display inline-flex w-fit items-center gap-1.5 rounded-[12px] px-1 py-1 text-[13.5px] font-semibold text-[color:var(--purple)] hover:underline"
               >
                 <Icon name="plus" size={15} stroke={2.2} />
                 Add a prompt
@@ -751,9 +755,12 @@ export function ProfileEditForm({
         </div>
 
         <div className="flex items-center gap-3">
+          {/* ck-taplink gives this bare link a 44px hit band on touch without
+              moving it - a 20px-tall Cancel 12px from a 44px Save is a coin
+              flip for a thumb. Stays a quiet link, not a second button. */}
           <Link
             href="/profile"
-            className="font-display px-2 text-[14px] font-semibold text-[color:var(--slate)] hover:text-[color:var(--ink)]"
+            className="ck-taplink font-display px-2 text-[14px] font-semibold text-[color:var(--slate)] hover:text-[color:var(--ink)]"
           >
             Cancel
           </Link>
@@ -840,7 +847,13 @@ function IntentCard({
 
 /* The DS `Tag` pill, made pressable. `.ck-tag--select` carries the hover/focus
    states; `.ck-tag--selected` is the Deep-Purple fill (the fill IS the signal -
-   no tick). Status colour never lands on a tag. */
+   no tick). Status colour never lands on a tag.
+   `.ck-tag--tap` for the same reason the onboarding cloud, the merchant signup
+   wizard and the event-create wizard all use it: here the tag IS the control,
+   not a label, and the bare .ck-tag is a 24px box. This is the app's biggest
+   cloud - 77 of them on one screen - so a bare tag meant 77 half-height targets
+   packed together, on the one screen a phone user is most likely to be thumbing
+   through one-handed. */
 function TagButton({
   label,
   selected,
@@ -855,7 +868,7 @@ function TagButton({
       type="button"
       onClick={onClick}
       aria-pressed={selected}
-      className={`ck-tag ck-tag--select ${selected ? "ck-tag--selected" : ""}`}
+      className={`ck-tag ck-tag--select ck-tag--tap touch-manipulation ${selected ? "ck-tag--selected" : ""}`}
     >
       {label}
     </button>

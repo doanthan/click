@@ -17,7 +17,7 @@ export const metadata = {
   robots: { index: false, follow: false },
 };
 
-// HTML blob comes from email_events — keep the page dynamic so a recent
+// HTML blob comes from email_events - keep the page dynamic so a recent
 // notification reflects the latest rendered email without a stale cache.
 export const dynamic = "force-dynamic";
 
@@ -48,7 +48,7 @@ export default async function NotificationEmailPage({ params }: PageProps) {
   const view = await getNotificationEmailForSession(session, id);
   if (!view) notFound();
 
-  // Treat opening the email as reading the notification — matches what users
+  // Treat opening the email as reading the notification - matches what users
   // expect from any inbox-style UI and clears the unread badge on /notifications.
   if (!view.notification.readAt) {
     await markNotificationRead(session, id);

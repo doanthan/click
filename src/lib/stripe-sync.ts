@@ -3,13 +3,13 @@
 // Three modes feed `payment_transactions`, `payment_refunds` and
 // `merchant_payouts`:
 //   1. The "Sync from Stripe" admin button (this file's `sync*` exports) does
-//      bounded backfills against the Stripe REST API — used to recover from
+//      bounded backfills against the Stripe REST API - used to recover from
 //      missed webhook deliveries and to populate enrichment columns when the
 //      feature ships against existing data.
 //   2. The extended `/api/webhooks/stripe` handler calls
 //      `syncTransactionFromStripe(paymentIntentId)` whenever `charge.refunded`
 //      fires (and `upsertPayoutFromEvent` for `payout.*`).
-//   3. `issueRefund(...)` is the admin-initiated refund action — it calls
+//   3. `issueRefund(...)` is the admin-initiated refund action - it calls
 //      Stripe and then mirrors the response into the local tables in one txn,
 //      writing an `audit_logs` row attributable to the admin.
 //
@@ -18,7 +18,7 @@
 //
 // We use the v1 REST surface (`stripe.charges.list`, `stripe.payouts.list`,
 // `stripe.refunds.*`). Connect account capability state already lives in
-// `src/lib/stripe-connect.ts` (`getConnectedAccountStatus`) — `syncConnectAll`
+// `src/lib/stripe-connect.ts` (`getConnectedAccountStatus`) - `syncConnectAll`
 // just calls it for every merchant we know about.
 
 import type Stripe from "stripe";
@@ -100,7 +100,7 @@ function transferFromCharge(charge: Stripe.Charge): Stripe.Transfer | null {
 }
 
 // Pulls a single Stripe PI (charge + refunds + transfer) and mirrors it into
-// our tables. Idempotent — safe to invoke from a webhook retry.
+// our tables. Idempotent - safe to invoke from a webhook retry.
 export async function syncTransactionFromStripe(
   paymentIntentId: string,
 ): Promise<{
@@ -182,7 +182,7 @@ export async function syncTransactionFromStripe(
 
     const txnId = updated.rows[0]?.id ?? null;
     if (!txnId) {
-      // No local row — likely a Stripe-side test charge we don't track. Roll
+      // No local row - likely a Stripe-side test charge we don't track. Roll
       // back so the partial commit doesn't leave inconsistent refunds rows.
       await client.query("rollback");
       return {
@@ -247,8 +247,8 @@ export async function syncTransactionFromStripe(
     // would leave a buyer's `event_attendees` stuck on 'pending_payment' when
     // the original `checkout.session.completed` webhook was missed (the case
     // the admin "Sync from Stripe" button exists to recover). markPaymentSucceeded
-    // is idempotent — it no-ops the email/notification when nothing actually
-    // flipped — so calling it for every already-confirmed paid charge is safe.
+    // is idempotent - it no-ops the email/notification when nothing actually
+    // flipped - so calling it for every already-confirmed paid charge is safe.
     if (derivedStatus === "paid") {
       try {
         await markPaymentSucceeded(txnId);
@@ -280,13 +280,13 @@ export async function syncTransactionFromStripe(
 
 // The Stripe webhook (`checkout.session.completed`) is the primary path that
 // flips `payment_transactions` → 'paid' and the attendee row → 'confirmed'. But
-// in any environment where the webhook isn't delivered — local dev without
-// `stripe listen`, a delayed delivery, or a missed event — the buyer lands back
+// in any environment where the webhook isn't delivered - local dev without
+// `stripe listen`, a delayed delivery, or a missed event - the buyer lands back
 // on the app with their seat still 'pending_payment': the event keeps prompting
 // for payment, the seat count stays 0, and it never reaches the dashboard or
 // calendar. The checkout `success_url` carries the Checkout Session id, so here
 // we retrieve the session and, if Stripe reports it paid, run the SAME
-// `markPaymentSucceeded` the webhook would have. Idempotent — that function
+// `markPaymentSucceeded` the webhook would have. Idempotent - that function
 // only promotes an active payment hold and treats refunded/cancelled/expired
 // bookings as terminal, so a later webhook delivery or page refresh is safe.
 export async function reconcileCheckoutSession(
@@ -299,7 +299,7 @@ export async function reconcileCheckoutSession(
   try {
     session = await stripe.checkout.sessions.retrieve(sessionId);
   } catch {
-    // Unknown / foreign session id in the query string — ignore quietly.
+    // Unknown / foreign session id in the query string - ignore quietly.
     return { confirmed: false };
   }
 
@@ -315,7 +315,7 @@ export async function reconcileCheckoutSession(
   }
   const confirmed = await markPaymentSucceeded(paymentTransactionId);
   if (!confirmed) return { confirmed: false };
-  // Name any reserved guest seats from session metadata — covers the case where
+  // Name any reserved guest seats from session metadata - covers the case where
   // the webhook was missed and the buyer's return / cron reconcile confirms.
   await processGuestSpotsForSession({
     paymentTransactionId,
@@ -332,8 +332,8 @@ export async function reconcileCheckoutSession(
 // 'paid'/'failed'; this is the backstop for when it never arrives. Rather than
 // scan every recent Stripe session (what reconcilePendingPayments does for the
 // admin button), it retrieves only THIS merchant's pending rows by the
-// `stripe_checkout_session_id` we now stamp at checkout — a handful of cheap
-// per-row retrieves — and flips each to paid (session paid) or failed (session
+// `stripe_checkout_session_id` we now stamp at checkout - a handful of cheap
+// per-row retrieves - and flips each to paid (session paid) or failed (session
 // expired). markPaymentSucceeded / markPaymentFailed are idempotent, so this is
 // safe to run on every page load and races harmlessly with the webhook.
 export async function reconcilePendingTransactionsForMerchant(
@@ -380,7 +380,7 @@ export async function reconcilePendingTransactionsForMerchant(
         }
         const confirmed = await markPaymentSucceeded(row.id);
         if (!confirmed) continue;
-        // Name reserved guest seats too (see reconcilePendingPayments / #192) —
+        // Name reserved guest seats too (see reconcilePendingPayments / #192) -
         // this self-heal path must invite guests just like the webhook does.
         await processGuestSpotsForSession({
           paymentTransactionId: row.id,
@@ -407,7 +407,7 @@ export async function reconcilePendingTransactionsForMerchant(
 // Server-side backstop sweep for paid-but-stuck bookings. Where
 // `reconcileCheckoutSession` depends on the buyer landing back on the success
 // URL (browser-driven, fragile), this walks recent Checkout Sessions Stripe
-// reports as `paid` and promotes any whose seat never confirmed — covering
+// reports as `paid` and promotes any whose seat never confirmed - covering
 // missed webhooks AND closed-tab returns. It keys off the
 // `payment_transaction_id` we stamp into the session metadata in the checkout
 // route, so it recovers rows that have no `stripe_payment_intent_id` yet (which
@@ -557,7 +557,7 @@ async function upsertPayout(
   }
 
   // Stripe encodes arrival_date as unix seconds. destination might be a string
-  // (bank_account id) or an expanded object — only the expanded form carries
+  // (bank_account id) or an expanded object - only the expanded form carries
   // last4. The bulk sync doesn't expand it, so this stays null in that path.
   const arrivalDate = payout.arrival_date
     ? new Date(payout.arrival_date * 1000).toISOString()
@@ -807,7 +807,7 @@ export async function issueRefund(
   // the merchant's transfer (proportionally for partial refunds) and
   // `refund_application_fee` returns the platform's fee. Without these the
   // refund is funded entirely from the platform balance while the merchant
-  // keeps their cut — the platform eats every cancellation. Platform-owned
+  // keeps their cut - the platform eats every cancellation. Platform-owned
   // events have no connected account / transfer, so the flags don't apply (and
   // `reverse_transfer` would error with no transfer to reverse).
   const isDestinationCharge = txn.merchant_profile_id != null;

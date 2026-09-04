@@ -1,8 +1,8 @@
-// Matching v2 §1.3 — sub-tag derivation.
+// Matching v2 §1.3 - sub-tag derivation.
 //
 // Declared interest tags are too coarse: `yoga` lumps hot/vinyasa/yin together,
 // which predict different lifestyles. Sub-tags refine a parent interest tag by
-// matching the event's title+description against patterns. They're ADDITIVE —
+// matching the event's title+description against patterns. They're ADDITIVE -
 // they don't replace interest tags, they sharpen the behavioural signal (two
 // "yoga" users with yoga_hot:6 vs yoga_yin:5 have low sub-tag overlap).
 //
@@ -13,7 +13,7 @@ export type SubTagPattern = { subTag: string; patterns: RegExp[] };
 
 // Keyed by the PARENT interest-tag slug as it appears in the `tags` taxonomy
 // (hyphenated, e.g. 'pc-gaming', 'korean-bbq'). Calibrated to the live Sydney
-// catalogue's actual vocabulary — adding a new interest category means adding
+// catalogue's actual vocabulary - adding a new interest category means adding
 // its sub-tags here. An event only gets a sub-tag if it carries the parent tag
 // AND its title/description matches a pattern.
 export const SUB_TAG_PATTERNS: Record<string, SubTagPattern[]> = {

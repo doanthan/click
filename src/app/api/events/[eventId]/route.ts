@@ -42,9 +42,13 @@ export async function GET(_request: Request, context: RouteContext) {
     // still "" at the moment the seat is confirmed. That is why the modal hands
     // successDetails to the registration button only when it holds a venue, and
     // otherwise lets it redirect to the unlocked event page instead.
+    // `lat`/`lng` go with them: the runbook's ceiling for an unbooked caller is
+    // "suburb only" (B5 item 5), and the merchant-pinned coordinates reverse
+    // geocode straight back to the street address we just withheld. `suburb`
+    // and the server-computed `distanceKm` stay - both are already coarse.
     const payload = viewerCanSeeVenue(event, profileStatus)
       ? event
-      : { ...event, address: null, city: null, location: "" };
+      : { ...event, address: null, city: null, location: "", lat: null, lng: null };
 
     return NextResponse.json({ event: payload });
   } catch {

@@ -25,7 +25,7 @@ function escapeIcs(value: string): string {
     .replace(/\r?\n/g, "\\n");
 }
 
-// GET /api/events/[eventId]/ics — download a .ics file so attendees can add the
+// GET /api/events/[eventId]/ics - download a .ics file so attendees can add the
 // event to Apple/Google/Outlook calendars. Public: anyone with the event link
 // can add it (the file only carries the suburb-level location, not the exact
 // venue, which stays gated behind RSVP on the page itself).

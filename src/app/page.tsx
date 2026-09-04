@@ -240,7 +240,7 @@ export default async function Home() {
                   Real plans you can book right now.
                 </p>
               </div>
-              <Link href="/discover" className="font-display text-sm font-semibold text-[color:var(--purple)] hover:underline">
+              <Link href="/discover" className="ck-taplink font-display text-sm font-semibold text-[color:var(--purple)] hover:underline">
                 See what&apos;s on <span className="nudge-arrow" aria-hidden>→</span>
               </Link>
             </div>
@@ -362,7 +362,7 @@ export default async function Home() {
               ))}
             </ol>
 
-            <Link href="/how-it-works" className="font-display mt-8 inline-flex text-sm font-semibold text-[color:var(--purple)] hover:underline">
+            <Link href="/how-it-works" className="ck-taplink font-display mt-8 inline-flex text-sm font-semibold text-[color:var(--purple)] hover:underline">
               How Click works <span className="nudge-arrow ml-1" aria-hidden>→</span>
             </Link>
           </Reveal>
@@ -389,7 +389,7 @@ export default async function Home() {
                 </ButtonLink>
                 {/* /merchant/signup, not /merchant - the latter bounces a
                     logged-out visitor through /merchant/login first. */}
-                <Link href="/merchant/signup" className="font-display text-sm font-semibold text-[color:var(--champagne)] hover:underline">
+                <Link href="/merchant/signup" className="ck-taplink font-display text-sm font-semibold text-[color:var(--champagne)] hover:underline">
                   Host an event <span className="nudge-arrow" aria-hidden>→</span>
                 </Link>
               </div>

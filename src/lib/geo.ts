@@ -24,7 +24,7 @@ export function roundKm(km: number): number {
 // as "Other" until a third market launches. Add the new region here when it does.
 export type Region = "Sydney" | "Melbourne" | "Other";
 
-// Bounding boxes are intentionally wide — Greater Sydney reaches Penrith,
+// Bounding boxes are intentionally wide - Greater Sydney reaches Penrith,
 // Greater Melbourne reaches Geelong/Frankston. Tighter than this and legitimate
 // outer-ring events fall to "Other".
 const sydneyBox = { latMin: -34.3, latMax: -33.4, lngMin: 150.3, lngMax: 151.6 };
@@ -68,7 +68,7 @@ export function regionForEvent(input: {
 // attendee onboarding) and have no coordinates. The Greater Sydney ranges below
 // are chosen to track the wide `sydneyBox` above: metro core, plus the Macarthur
 // and Penrith/Blue Mountains/Hawkesbury outer rings. Central Coast, Wollongong,
-// Newcastle and everything else fall to "Other" — i.e. outside the current
+// Newcastle and everything else fall to "Other" - i.e. outside the current
 // Sydney pilot. Melbourne is best-effort metro-core only (not load-bearing).
 type PostcodeRange = readonly [number, number];
 const SYDNEY_POSTCODE_RANGES: readonly PostcodeRange[] = [

@@ -5,13 +5,13 @@
 -- ticks "AI fixed") and humans (who confirm fixes or send them back) collaborate.
 --
 -- The reporter now captures the bug as two parts so the AI has a clear target:
---   what_is_wrong   — the observed/broken behaviour (was: message)
---   expected_behavior — what it should do instead
+--   what_is_wrong - the observed/broken behaviour (was: message)
+--   expected_behavior - what it should do instead
 --
 -- Triage flags mirrored to the sheet:
---   is_issue  — false = triaged as "not a real bug" (greyed out)
---   ai_fixed  — set true by the AI fixer pass (amber row)
---   status    — 'open' (red) → 'fixed' (green, user-confirmed)
+--   is_issue - false = triaged as "not a real bug" (greyed out)
+--   ai_fixed - set true by the AI fixer pass (amber row)
+--   status - 'open' (red) → 'fixed' (green, user-confirmed)
 
 alter table support_tickets
   add column if not exists expected_behavior text,

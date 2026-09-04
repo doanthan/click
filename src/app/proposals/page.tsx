@@ -21,7 +21,11 @@ export default async function ProposalsPage({
   const [{ open }, entries, catalogue] = await Promise.all([
     searchParams,
     getProposalsForSession(session),
-    getProposalCatalogue(),
+    // WITH the session, always. The curated arm's first two sections - "Events
+    // you're going to" and "Saved" - are reads of the viewer's own bookings and
+    // bookmarks, so a bare getProposalCatalogue() collapsed every row to "You'd
+    // both like" and those two sections could never be produced at all.
+    getProposalCatalogue(session),
   ]);
 
   return (

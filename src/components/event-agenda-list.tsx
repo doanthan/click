@@ -10,11 +10,11 @@ const ROW_DATE_FORMATTER = new Intl.DateTimeFormat("en-AU", {
   timeZone: SYDNEY_TZ,
 });
 
-// A flat, chronological list of every confirmed plan — upcoming first, then past
+// A flat, chronological list of every confirmed plan - upcoming first, then past
 // (marked "Ended"). The month-grid calendar only renders one month at a time, so
 // plans in other months sit behind the prev/next arrows; this list guarantees
 // nothing is hidden. Members repeatedly asked to "see all past and future events"
-// without paging — this is that view.
+// without paging - this is that view.
 export function EventAgendaList({
   upcoming,
   past,

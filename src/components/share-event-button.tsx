@@ -6,7 +6,7 @@ import { useDisclosure } from "./use-disclosure";
 
 // Share an event via the device's native share sheet (text / email / WhatsApp /
 // Messenger / Instagram etc. on mobile) with a desktop fallback menu of direct
-// links + copy-to-clipboard. Available on every event — locked or unlocked —
+// links + copy-to-clipboard. Available on every event - locked or unlocked -
 // because sharing the listing URL never leaks the (RSVP-gated) venue.
 export function ShareEventButton({
   title,
@@ -30,7 +30,7 @@ export function ShareEventButton({
         await navigator.share({ title, text: shareText, url: shareUrl });
         return;
       } catch {
-        // User dismissed the sheet, or share failed — fall through to the menu.
+        // User dismissed the sheet, or share failed - fall through to the menu.
       }
     }
     setOpen((o) => !o);
@@ -42,7 +42,7 @@ export function ShareEventButton({
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
     } catch {
-      // Clipboard blocked — leave the menu open so the user can copy manually.
+      // Clipboard blocked - leave the menu open so the user can copy manually.
     }
   }
 

@@ -8,8 +8,10 @@ import {
   declineProposalForSession,
   markMutualSeen,
   proposeAlternativeForProposal,
+  joinWaitlistTogetherForMutual,
   markMutualConnectedForSession,
   releaseMutualForSession,
+  softReleaseMutualForSession,
   suggestPlanForMutual,
 } from "@/lib/event-repository";
 
@@ -115,6 +117,32 @@ export async function declineProposalAction(
   return { ok: true, error: null };
 }
 
+// B1's `POST /mutuals/:id/release` - "let this one rest". Distinct from the
+// "Not feeling it" removal below: released rests on the past-clicks shelf (S16
+// "Still out there") and comes back round on the 30-day rediscovery clock, where
+// removal holds the pair apart for 90 days and is kept off that shelf. Emits
+// nothing, so there is nothing to tell the other side.
+export async function softReleaseMutualAction(
+  _prev: ProposalActionState,
+  formData: FormData,
+): Promise<ProposalActionState> {
+  const session = await auth();
+  if (!session?.user) redirect("/login?callbackUrl=/proposals");
+  const mutualId = formData.get("mutual_id");
+  if (typeof mutualId !== "string" || !UUID_RE.test(mutualId)) {
+    return { ok: false, error: "Couldn't find that click." };
+  }
+  try {
+    await softReleaseMutualForSession(session, mutualId);
+  } catch (error) {
+    return { ok: false, error: errorMessage(error) };
+  }
+  revalidatePath("/proposals");
+  return { ok: true, error: null };
+}
+
+// B1's `DELETE /mutuals/:id` - "Not feeling it". Silent, 90 days, re-clickable
+// after; the other side is told nothing.
 export async function releaseMutualAction(
   _prev: ProposalActionState,
   formData: FormData,
@@ -153,6 +181,28 @@ export async function suggestPlanAction(
 
   try {
     await suggestPlanForMutual(session, mutualId, slug);
+  } catch (error) {
+    return { ok: false, error: errorMessage(error) };
+  }
+  revalidatePath("/proposals");
+  return { ok: true, error: null };
+}
+
+// S14's second exit (runbook off-path table): put BOTH sides of the pair on the
+// sold-out event's waitlist. Not a state change - the pair stay where the runbook
+// puts them - so there is nothing here but the write and a revalidate.
+export async function joinWaitlistTogetherAction(
+  _prev: ProposalActionState,
+  formData: FormData,
+): Promise<ProposalActionState> {
+  const session = await auth();
+  if (!session?.user) redirect("/login?callbackUrl=/proposals");
+  const mutualId = formData.get("mutual_id");
+  if (typeof mutualId !== "string" || !UUID_RE.test(mutualId)) {
+    return { ok: false, error: "Couldn't find that click." };
+  }
+  try {
+    await joinWaitlistTogetherForMutual(session, mutualId);
   } catch (error) {
     return { ok: false, error: errorMessage(error) };
   }

@@ -59,17 +59,17 @@ async function mkProposal(mid, ev, by, status, { expired = false } = {}) {
 const bronte = await evId("bronte-run-club-coffee-demo");
 const pickle = await evId("marrickville-pickleball-social-demo");
 
-// MA — open, NO plan, reveal UNSEEN → tests the one-time reveal → suggest step.
+// MA - open, NO plan, reveal UNSEEN → tests the one-time reveal → suggest step.
 const MA = await mkMutual(cindy, "open", { seenByMaya: false });
-// MB — Jane suggested; Maya is the recipient, reveal seen → "you in?" + confirm/decline.
+// MB - Jane suggested; Maya is the recipient, reveal seen → "you in?" + confirm/decline.
 const MB = await mkMutual(jane, "proposed", { seenByMaya: true });
 await mkProposal(MB, bronte, jane, "pending");
-// MC — both going: accepted plan + both hold confirmed seats → both-going + add to calendar.
+// MC - both going: accepted plan + both hold confirmed seats → both-going + add to calendar.
 const MC = await mkMutual(test, "confirmed_together", { seenByMaya: true });
 await mkProposal(MC, pickle, maya, "accepted");
 await q(`insert into event_attendees (event_id, profile_id, status) values ($1::uuid,$2::uuid,'confirmed'),($1::uuid,$3::uuid,'confirmed')
          on conflict do nothing`, [pickle, maya, test]);
-// MD — lapsed: past mutual clock + past proposal → "Wound down" past-clicks row.
+// MD - lapsed: past mutual clock + past proposal → "Wound down" past-clicks row.
 const MD = await mkMutual(theo, "open", { seenByMaya: true, expired: true });
 await mkProposal(MD, bronte, theo, "pending", { expired: true });
 

@@ -48,7 +48,7 @@ export async function POST() {
     const merchant = await getApprovedMerchantForSession(session);
 
     // Gate: merchant must have completed Connect onboarding far enough that
-    // charges_enabled is true — otherwise the Express dashboard is mostly
+    // charges_enabled is true - otherwise the Express dashboard is mostly
     // empty and we'd rather route them back to /merchant/onboarding/payouts.
     if (!merchant.stripe_connect_account_id || !merchant.charges_enabled) {
       return NextResponse.json(

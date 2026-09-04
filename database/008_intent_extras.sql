@@ -5,7 +5,7 @@
 -- Postgres ≥12 allows ALTER TYPE ... ADD VALUE inside a transaction, so this
 -- file follows the begin/commit style used by the rest of database/*.sql.
 -- The new values can't be referenced in the same transaction, which is fine
--- here — we only define them, we don't query against them.
+-- here - we only define them, we don't query against them.
 
 begin;
 

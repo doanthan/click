@@ -26,7 +26,19 @@
 //           finished: finishing the quiz (home-quiz.tsx), a confirmed RSVP
 //           (event-rsvp-success-overlay.tsx), completing onboarding
 //           (onboarding-form.tsx).
-// Check any fifth call site against that line before adding it.
+// Check any further call site against that line before adding it.
+//
+// THE STANDING EXCEPTION IS REVOKED - do not re-add it.
+// click-with-someone-user-card.tsx fired `CLICK_PUFF` on a sent click as a
+// deliberate override (2026-09-02). CLICK_PROCESS_RUNBOOK Part A settles it the
+// other way and post-dates the override: invariant 8 reads "✨ on peaks only -
+// mutual, both-going, closure, consolidated. Never on waiting, proposal or
+// release. No confetti anywhere", and Stage 1 spells out the send itself - "the
+// button flips to a muted `clicked` instantly - optimistic, same footprint, no
+// spinner, no navigation, no ✨". A one-way click is invisible to the other
+// person by design; celebrating it celebrates nothing that has happened yet.
+// `CLICK_PUFF` below stays only until that call site drops its import, and goes
+// with it.
 //
 // IMPORTANT: the global prefers-reduced-motion CSS block in globals.css freezes
 // CSS animations but does NOT cover canvas-confetti's JS-driven canvas, so we
@@ -34,7 +46,25 @@
 // canvas-confetti's own disableForReducedMotion flag as a second belt).
 const BRAND_COLORS = ["#E8674C", "#C8B8F8", "#3B2F81", "#1C1830"];
 
-export async function fireBrandConfetti(origin?: { x: number; y: number }) {
+/** @deprecated The sent-click burst - banned by runbook invariant 8. Delete this
+ *  together with its last import (click-with-someone-user-card.tsx). */
+export const CLICK_PUFF = {
+  particleCount: 34,
+  spread: 50,
+  startVelocity: 26,
+  scalar: 0.72,
+  ticks: 120,
+} as const;
+
+type BurstShape = Partial<{
+  particleCount: number;
+  spread: number;
+  startVelocity: number;
+  scalar: number;
+  ticks: number;
+}>;
+
+export async function fireBrandConfetti(origin?: { x: number; y: number }, shape?: BurstShape) {
   if (typeof window === "undefined") return;
   if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
@@ -47,6 +77,7 @@ export async function fireBrandConfetti(origin?: { x: number; y: number }) {
       gravity: 0.9,
       scalar: 0.9,
       ticks: 160,
+      ...shape,
       origin: origin ?? { x: 0.5, y: 0.62 },
       colors: BRAND_COLORS,
       disableForReducedMotion: true,

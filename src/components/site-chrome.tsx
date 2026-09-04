@@ -11,7 +11,13 @@ import { MobileBottomNav, type BottomNavTab } from "./mobile-bottom-nav";
 
 const HEADER_SHELL =
   "sticky top-0 z-50 border-b border-[color:var(--line-soft)] bg-[color:var(--champagne)]";
-const HEADER_ROW = "mx-auto flex max-w-[1200px] items-center justify-between gap-4 px-5 py-3 sm:px-8 sm:py-3.5";
+// px-[max(20px,env(safe-area-inset-left))]: the root layout sets
+// viewport-fit=cover, so on a notched phone held sideways the page paints
+// under the sensor housing and a flat px-5 would tuck the wordmark beneath
+// it. .ck-page carries the same clearance for page content. Both insets are
+// 0 everywhere else, so this is exactly px-5 / sm:px-8 on every other device.
+const HEADER_ROW =
+  "mx-auto flex max-w-[1200px] items-center justify-between gap-4 py-3 pl-[max(20px,env(safe-area-inset-left))] pr-[max(20px,env(safe-area-inset-right))] sm:py-3.5 sm:pl-[max(32px,env(safe-area-inset-left))] sm:pr-[max(32px,env(safe-area-inset-right))]";
 
 /**
  * Streamed placeholder for the real SiteHeader while it awaits its session +
@@ -172,7 +178,7 @@ export async function SiteFooter() {
 
   return (
     <footer className="border-t border-[color:var(--line-soft)] bg-[color:var(--champagne)]">
-      <div className="mx-auto flex max-w-[1200px] flex-col gap-2.5 px-5 py-6 sm:px-8">
+      <div className="mx-auto flex max-w-[1200px] flex-col gap-2.5 py-6 pl-[max(20px,env(safe-area-inset-left))] pr-[max(20px,env(safe-area-inset-right))] sm:pl-[max(32px,env(safe-area-inset-left))] sm:pr-[max(32px,env(safe-area-inset-right))]">
         {/* Row 1 - wordmark left, the essential links right */}
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
           <Logo size={22} />

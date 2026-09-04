@@ -1,4 +1,4 @@
--- Proposal UI — the post-mutual-click coordination object (no chat).
+-- Proposal UI - the post-mutual-click coordination object (no chat).
 --
 -- Business plan §1.3 / §7.2: "When mutual click fires: both users see a shared
 -- event suggestion; either can confirm in one tap; 'suggest alternative' opens

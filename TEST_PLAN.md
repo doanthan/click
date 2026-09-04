@@ -1,8 +1,8 @@
-# Click — Manual Test Plan
+# Click - Manual Test Plan
 
 End-to-end test plan for the booking-workflow MVP. Walk through this once after every Stripe-touching change or before each release.
 
-The `/test` route (`http://localhost:3001/test`) is a navigation hub that links every page grouped by access level — use it as the jumping-off point for sections 1–6.
+The `/test` route (`http://localhost:3001/test`) is a navigation hub that links every page grouped by access level - use it as the jumping-off point for sections 1–6.
 
 ---
 
@@ -10,7 +10,7 @@ The `/test` route (`http://localhost:3001/test`) is a navigation hub that links 
 
 Tick all four before starting:
 
-- [ ] `.env` has `STRIPE_SECRET_KEY=sk_test_…` (not `STRIPE_PK_KEY` — that name is wrong)
+- [ ] `.env` has `STRIPE_SECRET_KEY=sk_test_…` (not `STRIPE_PK_KEY` - that name is wrong)
 - [ ] `.env` has `STRIPE_WEBHOOK_SECRET=whsec_…` from `stripe listen` output
 - [ ] `.env` has `NEXT_PUBLIC_APP_URL=http://localhost:3001` (matches the port Next is actually using)
 - [ ] Migration applied: `alter type rsvp_status add value if not exists 'pending_payment';` ran successfully in Supabase
@@ -18,13 +18,13 @@ Tick all four before starting:
 Start three terminals:
 
 ```bash
-# Terminal A — dev server
+# Terminal A - dev server
 npm run dev
 
-# Terminal B — Stripe webhook forwarder
+# Terminal B - Stripe webhook forwarder
 stripe listen --forward-to localhost:3001/api/webhooks/stripe
 
-# Terminal C — psql, for spot-checking DB rows (optional)
+# Terminal C - psql, for spot-checking DB rows (optional)
 psql "$DATABASE_URL"
 ```
 
@@ -59,7 +59,7 @@ Goal: pages render, navigation works, public surface isn't broken.
 
 ## 2. Free-event RSVP flow (regression)
 
-Goal: free events still work end-to-end. Don't skip — Stripe changes can break the free path.
+Goal: free events still work end-to-end. Don't skip - Stripe changes can break the free path.
 
 | # | Action | Expected |
 |---|---|---|
@@ -81,7 +81,7 @@ Goal: locked → reserve → pay → confirmed → calendar. This is Khang's flo
 |---|---|---|
 | 3.1 | Log in as an attendee | Lands on `/dashboard` |
 | 3.2 | From `/events`, click "RSVP" on a paid event card (e.g. Haymarket Dumpling Night $22) | Redirects to `/events/haymarket-dumpling-night` (API returned 402 with `redirectTo`) |
-| 3.3 | Detail page shows "Reserve & pay A$22" button (rose) | If you see "Stripe isn't configured", env vars aren't loaded — restart `npm run dev` |
+| 3.3 | Detail page shows "Reserve & pay A$22" button (rose) | If you see "Stripe isn't configured", env vars aren't loaded - restart `npm run dev` |
 | 3.4 | Click "Reserve & pay A$22" | Button flips to "Reserving seat…" then "Redirecting to Stripe…" |
 | 3.5 | Lands on `checkout.stripe.com/...` with the event title, price A$22, your email pre-filled | Stripe-hosted page renders |
 | 3.6 | Pay with `4242 4242 4242 4242`, any future expiry (e.g. `12/30`), any CVC (`123`), any AU postcode (`2000`) | Stripe shows success state briefly |
@@ -110,7 +110,7 @@ Goal: locked → reserve → pay → confirmed → calendar. This is Khang's flo
 | # | Action | Expected |
 |---|---|---|
 | 4.2.1 | Start checkout, then click "← Back" on the Stripe page | Lands on `/events/[slug]?canceled=1` |
-| 4.2.2 | Page shows peach banner "Checkout was cancelled. Your seat hold was released — you can try again any time." | |
+| 4.2.2 | Page shows peach banner "Checkout was cancelled. Your seat hold was released - you can try again any time." | |
 | 4.2.3 | DB check | The pending row remains until the session expires (30 min); when `stripe listen` shows `checkout.session.expired`, status flips to `cancelled` |
 | 4.2.4 | Force expiry test (optional) | In a different terminal: `stripe trigger checkout.session.expired` and watch the webhook fire |
 
@@ -122,7 +122,7 @@ Need two browsers (or normal + incognito) logged in as different users.
 |---|---|---|
 | 4.3.1 | Browser A: find a paid event with exactly 1 seat left | Seats counter shows "1 of N left" |
 | 4.3.2 | Browser A: click "Reserve & pay" | Redirects to Stripe (seat is now held as `pending_payment`) |
-| 4.3.3 | Browser B (incognito, logged in as different user): visit same event detail page | Seats counter shows "0 of N left" — held seat counts toward capacity |
+| 4.3.3 | Browser B (incognito, logged in as different user): visit same event detail page | Seats counter shows "0 of N left" - held seat counts toward capacity |
 | 4.3.4 | Browser B: button shows "Join waitlist" instead of "Reserve & pay" | Hold gating works |
 | 4.3.5 | Browser A: complete payment | Status flips `pending_payment → confirmed`, B stays on waitlist |
 
@@ -136,7 +136,7 @@ Need two browsers (or normal + incognito) logged in as different users.
 | 5.2 | Click "Join waitlist" | Button flips to "Leave waitlist", DB row inserted as `waitlisted` |
 | 5.3 | Visit `/dashboard/calendar` | Event appears with "Waitlist" badge on its date |
 | 5.4 | Open a `Locked` event (filter seed for `status='locked'`) | Status pill says "Locked"; location section shows 🔒 + suburb only, no street address |
-| 5.5 | Register (free) | After success, refresh the page — full venue + address now revealed |
+| 5.5 | Register (free) | After success, refresh the page - full venue + address now revealed |
 
 ---
 
@@ -145,7 +145,7 @@ Need two browsers (or normal + incognito) logged in as different users.
 | # | Action | Expected |
 |---|---|---|
 | 6.1 | Logged out, open a paid event detail page, click "Reserve & pay" | Login modal opens with callback URL pointing back to the event |
-| 6.2 | Log in via the modal | Returns to event detail page (not auto-purchased — by design) |
+| 6.2 | Log in via the modal | Returns to event detail page (not auto-purchased - by design) |
 | 6.3 | Logged out, click RSVP on a free event card | Login modal opens |
 | 6.4 | `curl -X POST http://localhost:3001/api/events/<slug>/register` | 401 Unauthorized |
 | 6.5 | `curl -X POST http://localhost:3001/api/events/<slug>/checkout` (no Stripe env vars) | 503 |
@@ -158,7 +158,7 @@ Need two browsers (or normal + incognito) logged in as different users.
 | # | Action | Expected |
 |---|---|---|
 | 7.1 | Log in as merchant, visit `/merchant` | Calendar + events panel render, your events listed |
-| 7.2 | Confirmed count includes `pending_payment` rows | (intentional — held seats are taken seats) |
+| 7.2 | Confirmed count includes `pending_payment` rows | (intentional - held seats are taken seats) |
 | 7.3 | Open `/merchant/events/[your-event-slug]` | Attendee list renders for `confirmed` + `waitlisted` (held buyers not shown until they pay) |
 | 7.4 | Create a new event via the merchant form | New event appears with `Pending` status |
 | 7.5 | Log in as admin, visit `/admin` | Pending events queue shows the new event |
@@ -172,8 +172,8 @@ Before declaring "ready":
 
 - [ ] All section 1 boxes ticked (smoke pass)
 - [ ] Sections 2 and 3 fully working (free RSVP + paid booking)
-- [ ] At least 4.2 (cancel) tested — 4.1 and 4.3 nice-to-have but not blocking for MVP demo
-- [ ] Section 5 — locked event + waitlist visible
+- [ ] At least 4.2 (cancel) tested - 4.1 and 4.3 nice-to-have but not blocking for MVP demo
+- [ ] Section 5 - locked event + waitlist visible
 - [ ] No console errors in browser devtools on any page
 - [ ] No 500s in `npm run dev` terminal during the run
 - [ ] `stripe listen` shows all webhook deliveries returning `200 OK`
@@ -182,10 +182,10 @@ Before declaring "ready":
 
 ## Known limitations (won't fix in MVP)
 
-- Auto-promoting the first waitlister when a paid hold expires — manual via merchant dashboard for now
-- Refunds — `'refunded'` enum exists but no UI to trigger
-- Email notifications — `notifications` table is in-app only
-- Stripe Connect (per-merchant payouts) — platform-take-all for MVP
+- Auto-promoting the first waitlister when a paid hold expires - manual via merchant dashboard for now
+- Refunds - `'refunded'` enum exists but no UI to trigger
+- Email notifications - `notifications` table is in-app only
+- Stripe Connect (per-merchant payouts) - platform-take-all for MVP
 - `.ics` / Google Calendar export from event detail page
 
 ## When something fails
@@ -194,9 +194,9 @@ Map of "if X fails, look here":
 
 | Symptom | File |
 |---|---|
-| Pay button missing on paid detail page | `src/app/events/[slug]/page.tsx` — `isPaid && !isWaitlistMode && !isRegistered` branch + Stripe key |
-| 402 from grid RSVP doesn't redirect | `src/components/event-registration-button.tsx` — `response.status === 402 && payload.redirectTo` |
+| Pay button missing on paid detail page | `src/app/events/[slug]/page.tsx` - `isPaid && !isWaitlistMode && !isRegistered` branch + Stripe key |
+| 402 from grid RSVP doesn't redirect | `src/components/event-registration-button.tsx` - `response.status === 402 && payload.redirectTo` |
 | Webhook silent / not firing | `src/app/api/webhooks/stripe/route.ts` + `STRIPE_WEBHOOK_SECRET` matches `stripe listen` output |
 | Hold not freed after abandoned checkout | `markPaymentFailed` in `src/lib/event-repository.ts` |
 | Capacity counted wrong | All capacity queries in `event-repository.ts` filter `status in ('confirmed', 'pending_payment')` |
-| Calendar toast not showing | `src/components/user-calendar.tsx` — `bookedSlug` prop |
+| Calendar toast not showing | `src/components/user-calendar.tsx` - `bookedSlug` prop |

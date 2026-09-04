@@ -120,7 +120,7 @@ export function EventDetailModal({
   const isRegistered = data.viewerRsvpStatus === "confirmed";
   const isWaitlisted = data.viewerRsvpStatus === "waitlisted";
   const isWaitlistMode = data.status === "Waitlist" || isFull;
-  // Venue stays private until the viewer confirms their RSVP — only the suburb
+  // Venue stays private until the viewer confirms their RSVP - only the suburb
   // is shown beforehand, matching the event detail page's venue gate.
   const isLockedEvent = !isRegistered;
   const isPaid = data.priceCents > 0;
@@ -173,7 +173,7 @@ export function EventDetailModal({
   // "Join waitlist" → "Joined waitlist" once joined; a booked seat reads
   // "You're going".
   // A confirmed attendee gets sent straight to their unlocked event page (full
-  // details + venue) rather than back into the booking modal — they've already
+  // details + venue) rather than back into the booking modal - they've already
   // RSVP'd. Waitlisted/unregistered viewers still open the modal.
   const isConfirmedBooking = fallbackStatus === "confirmed";
   const triggerLabel = registered
@@ -243,11 +243,14 @@ export function EventDetailModal({
                 {modalBadge}
               </span>
             ) : null}
+            {/* 44px: on a phone this card fills the viewport except for a
+                16px scrim gutter, so this is effectively the only dismiss - it
+                was 36px, under the minimum every sibling modal already meets. */}
             <button
               type="button"
               aria-label="Close"
               onClick={() => setOpen(false)}
-              className="absolute right-4 top-4 grid size-9 place-items-center rounded-lg bg-[color:var(--paper)] text-[color:var(--ink)] shadow-[var(--shadow-sm)] hover:bg-[color:var(--lavender-100)]"
+              className="absolute right-4 top-4 grid size-11 place-items-center rounded-lg bg-[color:var(--paper)] text-[color:var(--ink)] shadow-[var(--shadow-sm)] hover:bg-[color:var(--lavender-100)]"
             >
               ✕
             </button>

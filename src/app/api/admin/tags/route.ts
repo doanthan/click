@@ -9,7 +9,7 @@ import {
 
 // Surfaces that render the tag taxonomy. /profile/edit + /onboarding are
 // dynamic (cookie-gated) so they refresh on their own, but the public browse
-// pages can be cached — revalidate them all so an admin-added tag shows up
+// pages can be cached - revalidate them all so an admin-added tag shows up
 // everywhere immediately instead of only after the next deploy.
 function revalidateTagSurfaces() {
   for (const path of ["/admin/tags", "/profile/edit", "/onboarding", "/categories", "/discover"]) {

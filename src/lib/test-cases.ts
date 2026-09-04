@@ -35,7 +35,7 @@ export type TestCase = {
 };
 
 // Thrown when DATABASE_URL is unset so callers can return a 503 instead of a
-// generic 500 — mirrors how the rest of the app treats a missing database.
+// generic 500 - mirrors how the rest of the app treats a missing database.
 export class DatabaseUnavailableError extends Error {
   constructor() {
     super("DATABASE_URL is not set. Connect Postgres to manage test cases.");

@@ -25,6 +25,7 @@ import {
   getMyGuestSeatsForEvent,
   getPostEventClickPromptForEvent,
   getProfileStatus,
+  getProposalsForSession,
   getSystemSettings,
   getCancelledBookingNotice,
   getUnfulfilledPaymentNotice,
@@ -34,6 +35,7 @@ import { SUPPORT_EMAIL_DEFAULT } from "@/lib/email-templates/tokens";
 import { reconcileCheckoutSession } from "@/lib/stripe-sync";
 import { quoteCancellationRefund, refundQuoteLabel } from "@/lib/refund-policy";
 import { formatPriceLabel } from "@/lib/amounts";
+import { safeNext } from "@/lib/safe-next";
 
 type PageProps = {
   params: Promise<{ slug: string }>;
@@ -46,6 +48,13 @@ type PageProps = {
     promoted?: string;
     /** A non-zero refund was actually initiated (the <24h tier returns none). */
     refunded?: string;
+    /** Stage 6: the profile id of the mutual this booking is a plan with. Minted by
+     *  the coordination drawer's RSVP control (`planBookingHref`), so the booker
+     *  arrives here knowing the night is a plan and not a solo outing. */
+    planWith?: string;
+    /** Stage 6: where to send the booker back to - the drawer, not a receipt page.
+     *  Same-origin relative path only; validated before it is rendered. */
+    return?: string;
   }>;
 };
 
@@ -138,15 +147,29 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
     await reconcileCheckoutSession(search.session_id).catch(() => null);
   }
 
-  const [event, profileStatus, attendeePreview, systemSettings, postEventPrompt, myGuestSeats] =
-    await Promise.all([
-      getEventBySlug(slug, session),
-      session?.user ? getProfileStatus(session) : null,
-      getEventAttendeePreview(slug, session, 8),
-      getSystemSettings(),
-      session?.user ? getPostEventClickPromptForEvent(slug, session) : null,
-      session?.user ? getMyGuestSeatsForEvent(slug, session) : [],
-    ]);
+  const [
+    event,
+    profileStatus,
+    attendeePreview,
+    systemSettings,
+    postEventPrompt,
+    myGuestSeats,
+    planProposals,
+  ] = await Promise.all([
+    getEventBySlug(slug, session),
+    session?.user ? getProfileStatus(session) : null,
+    getEventAttendeePreview(slug, session, 8),
+    getSystemSettings(),
+    session?.user ? getPostEventClickPromptForEvent(slug, session) : null,
+    session?.user ? getMyGuestSeatsForEvent(slug, session) : [],
+    // Stage 6 only: the drawer's RSVP deep link carries `planWith`, and the banner
+    // it asks for has to name the person. Read from the same list the drawer itself
+    // renders rather than a lookup of its own - the link is minted FROM a proposal
+    // entry, so if there is no matching entry there is no plan to announce, and a
+    // guessed profile id in the URL gets nothing back. Only fetched when the param
+    // is actually present; a normal event view pays nothing for this.
+    session?.user && search?.planWith ? getProposalsForSession(session) : [],
+  ]);
 
   if (!event) notFound();
 
@@ -396,13 +419,35 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
         }`
       : null;
 
+  // Stage 6. The plan the drawer sent this booker here for, or null. Matched on the
+  // suggested event too, not just the person: a plan is a plan for ONE night, and a
+  // banner that named a partner over some other event would be announcing something
+  // that does not exist. Nothing is announced for an id with no live proposal behind
+  // it, so a hand-typed ?planWith= reveals no one.
+  const planEntry = search?.planWith
+    ? planProposals.find(
+        (entry) => entry.otherId === search.planWith && entry.suggestedEventSlug === slug,
+      )
+    : undefined;
+  // First name only, the same shortening getGoingWithNames does for the companion
+  // marker, so the two ways of saying "with [Name]" read alike.
+  const planPartnerName = planEntry
+    ? (planEntry.otherName.split(/\s+/)[0] ?? planEntry.otherName)
+    : null;
+  // Where the drawer asked to be sent back to. safeNext is the one place that knows
+  // this rule (it screens "/" and the protocol-relative "//evil.com"); the backslash
+  // form is folded into "//" by the URL parser and it does not screen that, so it is
+  // taken out first. Anything else falls back to the plain /proposals list.
+  const planReturn =
+    (search?.return?.includes("\\") ? null : safeNext(search?.return)) ?? "/proposals";
+
   return (
     <main className="min-h-screen bg-[color:var(--champagne)] pb-24 text-[color:var(--ink)]">
       <div className="ck-page max-w-[1180px] pt-4">
         {/* Canonical quiet back link on its own row - same form on every sub-page. */}
         <Link
           href="/discover"
-          className="font-display inline-flex items-center gap-1 text-[13.5px] font-semibold text-[color:var(--slate)] hover:text-[color:var(--ink)]"
+          className="ck-taplink font-display inline-flex items-center gap-1 text-[13.5px] font-semibold text-[color:var(--slate)] hover:text-[color:var(--ink)]"
         >
           <Icon name="chevL" size={16} stroke={2.2} /> Back
         </Link>
@@ -496,13 +541,20 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
               Hosted by {event.host} · {event.group}
             </p>
 
-            <div className="mt-4 flex flex-wrap items-center gap-1.5">
+            <div className="mt-4 flex flex-wrap items-center gap-2 lg:gap-1.5">
               <span className="inline-flex h-[22px] items-center rounded-full bg-[color:var(--lavender-100)] px-2.5 text-xs font-semibold text-[color:var(--purple-700)]">
                 {event.category}
               </span>
-              {/* The event detail page is the ONE surface that shows every tag. */}
+              {/* The event detail page is the ONE surface that shows every tag.
+                  Each tag is a filter link, so on touch the anchor carries a 44px
+                  hit band while the pill itself stays 22px - a mis-tap here would
+                  throw you out of the event and into the wrong filter. */}
               {event.tags.map((tag) => (
-                <Link key={tag} href={`/discover?tag=${encodeURIComponent(tag)}`}>
+                <Link
+                  key={tag}
+                  href={`/discover?tag=${encodeURIComponent(tag)}`}
+                  className="inline-flex min-h-11 items-center lg:min-h-0"
+                >
                   <Tag dense>{tag}</Tag>
                 </Link>
               ))}
@@ -560,6 +612,29 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
           {/* ---- Booking panel - the single home for date/time/location/price/capacity ---- */}
           <aside className="order-first lg:order-none lg:sticky lg:top-20 lg:self-start">
             <div className="rounded-[var(--radius-xl)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-5 shadow-[var(--shadow-md)]">
+              {/* Stage 6: the plan banner, above the price, because it is the reason
+                  this booker is on this page at all. Each side books their own spot
+                  (§B5.6 - there is no joint checkout), so the sub-line says so and
+                  the link hands them back to the drawer rather than leaving the plan
+                  behind a browser Back button. */}
+              {planPartnerName ? (
+                <div className="mb-4 rounded-[var(--radius-lg)] border border-[color:var(--lavender)] bg-[color:var(--lav-bg)] p-3.5">
+                  <p className="font-display text-[13.5px] font-semibold text-[color:var(--ink)]">
+                    Part of your plan with {planPartnerName}
+                  </p>
+                  <p className="mt-1 text-[13px] leading-relaxed text-[color:var(--ink-soft)]">
+                    You each save your own spot. Once you both have one, we&apos;ll tell you
+                    both.
+                  </p>
+                  <Link
+                    href={planReturn}
+                    className="ck-taplink font-display mt-2 inline-flex text-[13px] font-semibold text-[color:var(--purple-800)] underline"
+                  >
+                    Back to your clicks
+                  </Link>
+                </div>
+              ) : null}
+
               {/* Price - Ink anchor; "$X per person" or Free, never price-in-button. */}
               <div className="flex items-baseline gap-2">
                 <span

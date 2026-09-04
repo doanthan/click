@@ -5,7 +5,7 @@
 -- WHY
 --   When a user (or a merchant cancelling a whole event) cancels a paid booking,
 --   we call Stripe to issue the policy refund. If that Stripe call throws (card
---   closed, network blip, API error), the cancellation itself still proceeds —
+--   closed, network blip, API error), the cancellation itself still proceeds -
 --   the attendee row is already cancelled and we must NOT roll that back. The
 --   failed refund is logged here instead, surfaced in the admin portal, and
 --   resolved manually (retry or discretionary refund).

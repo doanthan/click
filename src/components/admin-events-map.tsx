@@ -48,7 +48,7 @@ export function AdminEventsMap({ events }: { events: AdminEventRow[] }) {
   // Gate the fit-bounds effect on the map actually being ready. On first mount
   // (and every table→map toggle, which remounts this component) the effect runs
   // before react-map-gl has populated mapRef, so getMap() is null and the fit
-  // is skipped — leaving every pin parked off-screen at the initial centroid.
+  // is skipped - leaving every pin parked off-screen at the initial centroid.
   // onLoad flips this true once the map exists, re-running the effect to fit.
   const [mapReady, setMapReady] = useState(false);
 
@@ -107,6 +107,10 @@ export function AdminEventsMap({ events }: { events: AdminEventRow[] }) {
             initialViewState={{ longitude: center.lng, latitude: center.lat, zoom: 12 }}
             style={{ width: "100%", height: "100%" }}
             attributionControl={false}
+            // Two fingers to pan, ctrl/cmd + wheel to zoom. Without it the
+            // 512px canvas swallows a one-finger drag on touch, so the page
+            // stops scrolling once the map fills the viewport.
+            cooperativeGestures
             onLoad={() => setMapReady(true)}
           >
             <NavigationControl position="top-right" showCompass={false} />

@@ -50,7 +50,7 @@ const { appendBugRow, markBugRowUserFixed, isSheetsConfigured } = await import(
 );
 
 if (!isSheetsConfigured()) {
-  console.error("✖ isSheetsConfigured() is false even though keys are set — check values.");
+  console.error("✖ isSheetsConfigured() is false even though keys are set - check values.");
   process.exit(1);
 }
 
@@ -61,7 +61,7 @@ console.log("");
 
 const stamp = process.argv[2] || "manual";
 
-// 1) RED — a plain open bug, all columns populated, with a screenshot link.
+// 1) RED - a plain open bug, all columns populated, with a screenshot link.
 const redRow = await appendBugRow({
   ticketRef: `TEST-RED-${stamp}`,
   url: "/discover?test=1",
@@ -74,7 +74,7 @@ const redRow = await appendBugRow({
 });
 console.log(redRow ? `✓ RED row appended at row ${redRow}` : "✗ RED append returned null");
 
-// 2) GREEN — append then mark user-fixed (Status = fixed).
+// 2) GREEN - append then mark user-fixed (Status = fixed).
 const greenRow = await appendBugRow({
   ticketRef: `TEST-GREEN-${stamp}`,
   url: "/dashboard",
@@ -92,7 +92,7 @@ if (greenRow) {
   console.log("✗ GREEN append returned null");
 }
 
-// 3) AMBER — append, then tick "AI fixed" (col E) directly to prove the amber rule.
+// 3) AMBER - append, then tick "AI fixed" (col E) directly to prove the amber rule.
 const amberRow = await appendBugRow({
   ticketRef: `TEST-AMBER-${stamp}`,
   url: "/events/sample",
@@ -123,5 +123,5 @@ if (amberRow) {
   console.log("✗ AMBER append returned null");
 }
 
-console.log("\nDone. Open the sheet — you should see a red, a green, and an amber TEST- row.");
+console.log("\nDone. Open the sheet - you should see a red, a green, and an amber TEST- row.");
 console.log("Delete the TEST- rows when you're satisfied.");

@@ -45,13 +45,15 @@ export default async function OwnProfilePage() {
       <div className="ck-page pt-8">
         <div className="max-w-[660px]">
           <article className="rounded-[18px] bg-[color:var(--paper)] p-6 shadow-[var(--shadow-sm)] sm:p-8">
-            {/* Header - avatar · text column · action, all on one axis */}
-            <header className="flex items-center justify-between gap-4">
+            {/* Header - avatar · text column · action. One axis from sm up; on a
+                375px phone the nowrap "Edit profile" button leaves the name column
+                ~70px, so the action drops to its own line below instead. */}
+            <header className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex min-w-0 items-center gap-4 sm:gap-[18px]">
                 <Avatar name={profile.displayName} src={avatarUrl} size={72} ring />
                 <div className="min-w-0">
                   <p className="eyebrow">Your profile</p>
-                  <h1 className="font-display mt-1.5 text-[length:var(--text-h1)] font-semibold leading-tight tracking-[-0.02em]">
+                  <h1 className="font-display mt-1.5 wrap-anywhere text-[length:var(--text-h1)] font-semibold leading-tight tracking-[-0.02em]">
                     {profile.displayName}
                     {profile.age ? ` · ${profile.age}` : ""}
                     {profile.verified ? <VerifiedTick className="ml-2.5 text-[0.8em]" /> : null}

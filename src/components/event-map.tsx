@@ -19,8 +19,16 @@ const TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 const STYLE = "mapbox://styles/mapbox/streets-v12";
 const SYDNEY = { lat: -33.8688, lng: 151.2093 };
 
+// A pinned event: one the caller is allowed to see coordinates for. Explore withholds
+// lat/lng for anyone without a seat (21 §B5.5 - a pin IS the address), so an unpinned
+// event simply has nothing to plot and drops off the map rather than landing at (0,0).
+type PinnedEvent = EventItem & { lat: number; lng: number };
+
+const isPinned = (event: EventItem): event is PinnedEvent =>
+  typeof event.lat === "number" && typeof event.lng === "number";
+
 function averageCenter(events: EventItem[]) {
-  const located = events.filter((event) => event.lat && event.lng);
+  const located = events.filter(isPinned);
   if (located.length === 0) return SYDNEY;
   const sum = located.reduce(
     (acc, event) => ({ lat: acc.lat + event.lat, lng: acc.lng + event.lng }),
@@ -30,7 +38,7 @@ function averageCenter(events: EventItem[]) {
 }
 
 // Approximate a true-km circle as a polygon. A circle paint-layer uses pixel
-// units, which would shrink/grow with zoom — a polygon keeps the radius honest
+// units, which would shrink/grow with zoom - a polygon keeps the radius honest
 // at every scale.
 function circlePolygon(
   center: LatLng,
@@ -177,7 +185,8 @@ export function EventMap({
                 </Marker>
               ) : null}
 
-              {events.map((event, index) => (
+              {events.map((event, index) =>
+                isPinned(event) ? (
                 <Marker
                   key={event.id}
                   longitude={event.lng}
@@ -196,9 +205,10 @@ export function EventMap({
                     {index + 1}
                   </button>
                 </Marker>
-              ))}
+                ) : null,
+              )}
 
-              {activeEvent ? (
+              {activeEvent && isPinned(activeEvent) ? (
                 <Popup
                   longitude={activeEvent.lng}
                   latitude={activeEvent.lat}

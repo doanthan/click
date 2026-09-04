@@ -2,14 +2,14 @@ import { NextResponse } from "next/server";
 import { expirePaymentHolds, expireWaitlistOffers } from "@/lib/event-repository";
 
 export const runtime = "nodejs";
-// Never cache — this mutates state every run.
+// Never cache - this mutates state every run.
 export const dynamic = "force-dynamic";
 
 /**
  * Sweeps lapsed waitlist promotion offers (30-min window elapsed) and rolls each
  * freed seat to the next person in the queue. Intended to run every few minutes.
  *
- * Wire it to a scheduler that sends `Authorization: Bearer ${CRON_SECRET}` — e.g.
+ * Wire it to a scheduler that sends `Authorization: Bearer ${CRON_SECRET}` - e.g.
  * a Vercel cron entry in vercel.json:
  *   { "crons": [{ "path": "/api/cron/waitlist-expiry", "schedule": "*\/5 * * * *" }] }
  * (Vercel injects the CRON_SECRET bearer automatically when the env var is set.)

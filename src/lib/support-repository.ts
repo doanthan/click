@@ -7,7 +7,7 @@
  *   3. best-effort append a RED row to the synced Google Sheet,
  *   4. backfill screenshot_url + sheet_row.
  *
- * Steps 2–3 never throw into the request — a bug always saves even if storage or
+ * Steps 2–3 never throw into the request - a bug always saves even if storage or
  * Sheets is down/unconfigured.
  */
 
@@ -110,7 +110,7 @@ function makeTicketRef(): string {
   return `TICKET-${ts}-${rand}`;
 }
 
-/** "YYYY-MM-DD HH:MM" — a value Google Sheets parses as a sortable datetime. */
+/** "YYYY-MM-DD HH:MM" - a value Google Sheets parses as a sortable datetime. */
 function formatDateAdded(d: Date): string {
   const p = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
@@ -192,7 +192,7 @@ export async function createSupportTicket(
   return { ticketRef, screenshotUrl };
 }
 
-/** Open bugs filed against a given page URL — powers the per-page checklist. */
+/** Open bugs filed against a given page URL - powers the per-page checklist. */
 export async function listOpenBugsForUrl(url: string): Promise<OpenBug[]> {
   const pool = getPostgresPool();
   if (!pool) return [];
@@ -272,7 +272,7 @@ function reopenStamp(d: Date): string {
 /**
  * Reopen a bug the user reports is still broken: clear `ai_fixed`, append the
  * tester's note to the description, and recolour the Sheet row red so the AI
- * fixer picks it up again. Idempotent-ish — always appends a fresh note. Returns
+ * fixer picks it up again. Idempotent-ish - always appends a fresh note. Returns
  * true if a matching, non-fixed ticket was updated.
  */
 export async function reopenTicketForRefix(

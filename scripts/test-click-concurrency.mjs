@@ -4,9 +4,9 @@
 //  mutual, with no deadlock surfacing as a 500 (a 500 is an anonymity leak)."
 //
 // This drives the EXACT send-click transaction from createUserClickForSession
-// (event-repository.ts) — advisory per-pair lock → insert click → FOR UPDATE
+// (event-repository.ts) - advisory per-pair lock → insert click → FOR UPDATE
 // reciprocal → insert mutual (partial-unique on status='active') → mark both
-// clicks mutual — from two connections at once, A→B and B→A, many times over.
+// clicks mutual - from two connections at once, A→B and B→A, many times over.
 //
 //   node scripts/test-click-concurrency.mjs
 //
@@ -144,7 +144,7 @@ try {
     const nMarked = marked.rows[0].n;
     if (nMutual !== 1 || nMarked !== 2) {
       failures++;
-      console.error(`  iter ${i}: FAIL — active mutuals=${nMutual} (want 1), clicks marked mutual=${nMarked} (want 2)`);
+      console.error(`  iter ${i}: FAIL - active mutuals=${nMutual} (want 1), clicks marked mutual=${nMarked} (want 2)`);
     }
     await pool.query(`delete from profiles where id in ($1::uuid, $2::uuid)`, [a, b]);
   }
@@ -153,9 +153,9 @@ try {
 }
 
 if (failures === 0 && errors === 0) {
-  console.log(`PASS — ${ITERATIONS}/${ITERATIONS} iterations: exactly one mutual, no errors.`);
+  console.log(`PASS - ${ITERATIONS}/${ITERATIONS} iterations: exactly one mutual, no errors.`);
   process.exit(0);
 } else {
-  console.error(`FAIL — ${failures} wrong-count + ${errors} errored of ${ITERATIONS} iterations.`);
+  console.error(`FAIL - ${failures} wrong-count + ${errors} errored of ${ITERATIONS} iterations.`);
   process.exit(1);
 }

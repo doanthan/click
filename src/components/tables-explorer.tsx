@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import type { DatabaseTable } from "@/lib/database-tables";
 
 function formatCount(value: number | null) {
-  if (value === null) return "—";
+  if (value === null) return "-";
   return new Intl.NumberFormat("en-AU").format(value);
 }
 
@@ -30,7 +30,7 @@ export function TablesExplorer({
 
   return (
     <div className="mt-12 grid gap-6 lg:grid-cols-[16rem_1fr]">
-      {/* Sidebar — table picker */}
+      {/* Sidebar - table picker */}
       <aside className="lg:sticky lg:top-6 lg:self-start">
         <p className="mb-3 px-1 font-mono text-[0.7rem] font-bold uppercase tracking-wider text-[color:var(--mauve)]">
           {tables.length} tables
@@ -68,7 +68,7 @@ export function TablesExplorer({
         </nav>
       </aside>
 
-      {/* Main — selected table detail */}
+      {/* Main - selected table detail */}
       <article className="flex flex-col rounded-3xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] p-6 hard-shadow-sm sm:p-8">
         <div className="flex flex-wrap items-start justify-between gap-4 border-b-2 border-[color:var(--line)]/40 pb-5">
           <div className="min-w-0">
@@ -125,7 +125,7 @@ export function TablesExplorer({
           </>
         ) : (
           <p className="mt-5 font-mono text-xs font-bold uppercase tracking-wider text-[color:var(--mauve)]">
-            {selected.columns.length} columns — set{" "}
+            {selected.columns.length} columns - set{" "}
             <code className="font-mono">DATABASE_URL</code> to introspect live
             field names, types, keys, and data.
           </p>

@@ -3,7 +3,7 @@
 // Exercises the REAL event_capacity_v view (migration 050) and the gate predicates the
 // click suggestion/proposal sites now use, asserting:
 //   • the view nets confirmed RSVPs + LIVE payment holds + paid guest +1s, and ignores
-//     EXPIRED holds and cancelled guests (CAP-2/3 — the canonical seat count);
+//     EXPIRED holds and cancelled guests (CAP-2/3 - the canonical seat count);
 //   • generation/propose gate `status in ('live','featured') and available >= 2` (the
 //     two-seat rule, CAP-1) excludes a one-free-seat event and waitlist/full events (CAP-4);
 //   • the DISPLAY gate `available >= 1` keeps a one-seat (mid-progress) plan visible;
@@ -47,8 +47,8 @@ let failures = 0;
 const events = [];
 const profiles = [];
 function check(label, cond) {
-  if (cond) console.log(`  ok   — ${label}`);
-  else { failures++; console.error(`  FAIL — ${label}`); }
+  if (cond) console.log(`  ok - ${label}`);
+  else { failures++; console.error(`  FAIL - ${label}`); }
 }
 
 async function mkProfile() {
@@ -213,9 +213,9 @@ try {
 }
 
 if (failures === 0) {
-  console.log("\nPASS — event_capacity_v + all capacity gates correct.");
+  console.log("\nPASS - event_capacity_v + all capacity gates correct.");
   process.exit(0);
 } else {
-  console.error(`\nFAIL — ${failures} assertion(s) failed.`);
+  console.error(`\nFAIL - ${failures} assertion(s) failed.`);
   process.exit(1);
 }

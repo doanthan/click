@@ -18,15 +18,18 @@ export type EventItem = {
   startsAt: string;
   // ISO end time when the event has a known duration. Optional because the
   // bundled demo catalogue below predates durations; DB-backed events always
-  // carry it. Use formatEventTimeRange() to render a start–end label.
+  // carry it. Use formatEventTimeRange() to render a start-end label.
   endsAt?: string | null;
   location: string;
   suburb: string;
   /** null when the event has no pinned coordinates - not 0, which read as
    *  "at the CBD" and won the Nearest sort. */
   distanceKm: number | null;
-  lat: number;
-  lng: number;
+  /** null on any surface that withholds the venue (21 §B5.5 / runbook B5 item 5).
+   *  A lat/lng pair IS the address, so the explore payload nulls them for a caller
+   *  who has not booked and leaves distanceKm - already suburb-rounded - to sort. */
+  lat: number | null;
+  lng: number | null;
   price: string;
   attendees: number;
   // Up to 3 avatar URLs of confirmed attendees, for the "who's going" social-
@@ -46,7 +49,7 @@ export type EventItem = {
   relationshipGoal: string;
 };
 
-// Renders a "6:30 – 8:30 PM" range when the event has a known end, otherwise
+// Renders a "6:30 - 8:30 PM" range when the event has a known end, otherwise
 // just the start time. Both ends are formatted in Australia/Sydney so the end
 // label matches the server-formatted `time` string already on the item.
 const sydneyTimeFormatter = new Intl.DateTimeFormat("en-AU", {
@@ -140,8 +143,8 @@ export const animatedPrompts = [
 export const starterPrompts = animatedPrompts.slice(0, 4);
 
 // Mirrors the public rows of the DB `tag_categories` table (internal_only =
-// false). The DB is the source of truth — the `/categories` index reads it
-// live via getEventCategories() — but this static list still drives the
+// false). The DB is the source of truth - the `/categories` index reads it
+// live via getEventCategories() - but this static list still drives the
 // `/categories/<slug>` landing pages (generateStaticParams + categoryFromSlug)
 // and the discover rail ordering, so it must stay in sync or events in a
 // missing category get dropped / their landing page 404s. The internal-only
@@ -269,7 +272,7 @@ export const lifeQuizSections = [
 
 // Music taste, used as a subtle matching signal. Each genre maps to an
 // admin-managed `tags` row (tag_type = 'music') seeded in
-// database/029_seed_music_tags.sql — the `slug` here MUST match that seed and
+// database/029_seed_music_tags.sql - the `slug` here MUST match that seed and
 // is the value submitted by the profile-edit picker. `jazz`/`indie` reuse the
 // rows from database/002_seed.sql; `house-music` is suffixed to avoid colliding
 // with the `house` *interest* tag (slug is globally unique in `tags`).

@@ -368,7 +368,7 @@ export default async function AlgoPage({
               >
                 {m.display_name}
                 <span className="ml-1.5 font-mono text-[0.58rem] uppercase opacity-70">
-                  {m.cohort_id ?? "—"}
+                  {m.cohort_id ?? "-"}
                 </span>
               </Link>
             );
@@ -390,10 +390,10 @@ export default async function AlgoPage({
               <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
                 <Feat label="Interest tags" value={viewer.interestTagIds.length} />
                 <Feat label="Life tags" value={viewer.lifeTags.length} />
-                <Feat label="Intents" value={viewer.intents.join(", ") || "—"} />
+                <Feat label="Intents" value={viewer.intents.join(", ") || "-"} />
                 <Feat label="Social energy" value={viewer.socialEnergy ?? "unknown"} />
-                <Feat label="Age" value={viewer.age ?? "—"} />
-                <Feat label="Suburb" value={viewer.suburb ?? "—"} />
+                <Feat label="Age" value={viewer.age ?? "-"} />
+                <Feat label="Suburb" value={viewer.suburb ?? "-"} />
                 <Feat label="Attended (ended)" value={viewer.attendanceCount} />
                 <Feat label="RSVPs" value={viewer.rsvpCount} />
                 <Feat label="Sub-tags" value={Object.keys(viewer.behaviouralSubTags).length} />

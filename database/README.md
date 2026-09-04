@@ -17,10 +17,10 @@ Run the SQL files in this directory against your Supabase project in order:
 6. `006_admin_extras.sql` (adds `suspended_at` / `suspended_reason` to profiles + creates `system_settings` KV)
 7. `007_test_cases.sql` (creates `test_cases` + `test_case_comments` for the editable QA board on `/test`)
 8. `008_intent_extras.sql`
-9. `009_merchant_full_signup.sql` (extends `merchant_profiles` for the 4-step wizard; creates `merchant_event_categories` + `merchant_documents` + the `merchant_document_type` enum + the private `merchant-documents` storage bucket — required by `/merchant/signup`)
+9. `009_merchant_full_signup.sql` (extends `merchant_profiles` for the 4-step wizard; creates `merchant_event_categories` + `merchant_documents` + the `merchant_document_type` enum + the private `merchant-documents` storage bucket - required by `/merchant/signup`)
 10. `010_merchant_suspended.sql` (adds `'suspended'` to the `merchant_profiles.verification_status` CHECK so admins can suspend approved merchants from the `/admin/merchants` row menu; suspended merchants' events are filtered out of the public Discover feed)
-11. `011_extend_tag_categories.sql` (adds `tag_categories.internal_only` so Life + Music — matching signals, not event types — are hidden from the merchant signup picker and the public `/categories` page; seeds 8 new categories: Outdoors, Sports, Nightlife, Games, Learning, Wellness, Family, Travel)
-12. `012_email_events.sql` (dev/staging email log — renders templates locally into `email_events` instead of wiring SMTP; see `src/lib/email.ts`)
+11. `011_extend_tag_categories.sql` (adds `tag_categories.internal_only` so Life + Music - matching signals, not event types - are hidden from the merchant signup picker and the public `/categories` page; seeds 8 new categories: Outdoors, Sports, Nightlife, Games, Learning, Wellness, Family, Travel)
+12. `012_email_events.sql` (dev/staging email log - renders templates locally into `email_events` instead of wiring SMTP; see `src/lib/email.ts`)
 13. `013_merchant_stripe_onboarding.sql` (adds `charges_enabled` / `payouts_enabled` / `details_submitted` / `onboarding_completed_at` to `merchant_profiles` for the post-approval `/merchant/onboarding` flow + Stripe Connect; the capability flags mirror the connected account and are kept in sync by the `account.updated` Connect webhook)
 
 You can paste them into the Supabase SQL editor, or pipe them through `psql`
@@ -28,7 +28,7 @@ using the connection string from Project Settings -> Database.
 
 ## Migration runner + ledger
 
-Prefer `scripts/run-migrations.mjs` over pasting by hand — it tracks what's been
+Prefer `scripts/run-migrations.mjs` over pasting by hand - it tracks what's been
 applied in a `schema_migrations` ledger (filename + sha256 + applied_at, created
 by `021_schema_migrations.sql`) and skips anything already recorded, so reruns
 are safe and drift can't go silent.
@@ -43,9 +43,9 @@ node scripts/run-migrations.mjs database/0NN_whatever.sql
 
 The runner reads `DATABASE_URL` from `.env.local`/`.env`. Each file is sent as
 one implicit transaction (a mid-file error rolls that file back and halts the
-run). It warns — but does not block — if a recorded file's checksum later
+run). It warns - but does not block - if a recorded file's checksum later
 changes on disk. `filename` is the basename, so every migration gets its own
-ledger row. Keep migration numbers unique — one file per number.
+ledger row. Keep migration numbers unique - one file per number.
 
 **Baselining an existing database** (one-time, for a DB whose schema predates
 the ledger): record the already-applied files *without* re-running their SQL,
@@ -56,7 +56,7 @@ node scripts/run-migrations.mjs --baseline database/0*.sql
 ```
 
 When you add a new migration, drop the numbered `.sql` in this directory and run
-the runner — no need to edit the runner. The numbered list above is descriptive,
+the runner - no need to edit the runner. The numbered list above is descriptive,
 not the source of truth; the ledger is.
 
 ## App connection

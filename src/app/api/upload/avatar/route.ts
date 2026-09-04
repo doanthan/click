@@ -2,17 +2,17 @@
  * POST /api/upload/avatar
  *
  * Multipart upload from the profile-edit page (and onboarding, eventually).
- * Body: `file` — a JPG/PNG/WEBP ≤ 5 MB. Server-side: sharp normalises to a
+ * Body: `file` - a JPG/PNG/WEBP ≤ 5 MB. Server-side: sharp normalises to a
  * 512×512 JPG, pushes to the configured public-media backend at
  * `<profileId>.jpg`, persists the resulting public URL on `profiles.photo_url`,
  * and returns it. R2 is preferred; Supabase remains a compatibility fallback.
  *
  * Returns:
- *   200 { url: string }                — success
- *   400 { error: string }              — bad MIME, missing file, oversize
- *   401 { error: "Sign in required." } — no session
- *   503 { error: "Upload temporarily unavailable." } — Supabase env not configured
- *   500 { error: "Upload failed." }    — anything else (already logged)
+ *   200 { url: string } - success
+ *   400 { error: string } - bad MIME, missing file, oversize
+ *   401 { error: "Sign in required." } - no session
+ *   503 { error: "Upload temporarily unavailable." } - Supabase env not configured
+ *   500 { error: "Upload failed." } - anything else (already logged)
  */
 
 import { NextResponse } from "next/server";
@@ -100,7 +100,7 @@ export async function POST(request: Request) {
     );
     const profileId = profileRow.rows[0]?.id;
     if (!profileId) {
-      // Fall through to onboarding — they need to complete it before uploading.
+      // Fall through to onboarding - they need to complete it before uploading.
       return NextResponse.json(
         { error: "Finish onboarding before uploading a photo." },
         { status: 400 },
@@ -125,17 +125,17 @@ export async function POST(request: Request) {
  * PATCH /api/upload/avatar
  *
  * Promote one of the caller's existing gallery photos to their main avatar
- * (bug board #220 — "I can't choose my main"). Body: `{ url }` where url is one
+ * (bug board #220 - "I can't choose my main"). Body: `{ url }` where url is one
  * of the profile's own gallery photos. We re-host it through the same 512×512
  * JPG pipeline as a fresh upload (so the avatar key/shape stays consistent) and
  * persist it on `profiles.photo_url`.
  *
  * Returns:
- *   200 { url: string }                — success (new avatar URL)
- *   400 { error }                      — bad body / not one of your gallery photos
- *   401 { error: "Sign in required." } — no session
- *   502 { error }                      — re-host failed
- *   503 { error }                      — storage/db not configured
+ *   200 { url: string } - success (new avatar URL)
+ *   400 { error } - bad body / not one of your gallery photos
+ *   401 { error: "Sign in required." } - no session
+ *   502 { error } - re-host failed
+ *   503 { error } - storage/db not configured
  */
 export async function PATCH(request: Request) {
   const session = await auth();
@@ -182,7 +182,7 @@ export async function PATCH(request: Request) {
       );
     }
 
-    // Only one of the caller's OWN gallery photos can become their avatar —
+    // Only one of the caller's OWN gallery photos can become their avatar -
     // never an arbitrary URL.
     if (!ownGalleryKeyFromUrl(profileId, sourceUrl)) {
       return NextResponse.json(

@@ -1,7 +1,6 @@
 import { notFound } from "next/navigation";
 import { auth } from "@/auth";
 import { Avatar, ButtonLink, Icon, Tag } from "@/components/ds";
-import { ProfileClickButton } from "@/components/profile-click-button";
 import { ProfileSafetyControls } from "@/components/profile-safety-controls";
 import { VerifiedTick } from "@/components/verified-tick";
 import { formatIntent } from "@/lib/click-data";
@@ -62,11 +61,15 @@ export default async function PublicProfilePage({ params }: PublicProfilePagePro
       <div className="ck-page pt-8">
         <div className="max-w-[660px]">
           <article className="rounded-[18px] bg-[color:var(--paper)] p-6 shadow-[var(--shadow-sm)] sm:p-8">
-            <header className="flex items-center justify-between gap-4">
+            {/* Stacks below sm for the same reason the own-profile header does:
+                at 375px the card's content box is 287px, the 72px avatar and its
+                gap take 88px, and a nowrap action beside them leaves the name
+                column ~70px - so a 28px display name spills out of the card. */}
+            <header className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex min-w-0 items-center gap-4 sm:gap-[18px]">
                 <Avatar name={profile.displayName} src={profile.photoUrl} size={72} ring />
                 <div className="min-w-0">
-                  <h1 className="font-display text-[length:var(--text-h1)] font-semibold leading-tight tracking-[-0.02em]">
+                  <h1 className="font-display wrap-anywhere text-[length:var(--text-h1)] font-semibold leading-tight tracking-[-0.02em]">
                     {profile.displayName}
                     {profile.age ? ` · ${profile.age}` : ""}
                     {profile.verified ? <VerifiedTick className="ml-2.5 text-[0.8em]" /> : null}
@@ -164,20 +167,20 @@ export default async function PublicProfilePage({ params }: PublicProfilePagePro
             ) : null}
           </article>
 
+          {/* A profile is READ-ONLY. Clicking lives on exactly two surfaces - the
+              suggested-people cards and the who-was-there grid - and never here
+              (CLICK_PROCESS_RUNBOOK Part A, invariant 1). A click sent from a
+              co-attendee's profile would also be a discovery click, which by rule
+              can never reciprocate their post-event one, so the button quietly
+              broke the mutual it looked like it was making. The one control that
+              stays is the mutual hand-off below: nothing left to click, only a
+              plan left to agree on. */}
           {clickState?.isMutual ? (
-            // Already mutual: clicking again is meaningless, so the surface hands
-            // over to the thing that IS still to be done - agreeing on a plan.
             <div className="mt-5">
               <ButtonLink href="/proposals" size="md">
                 See your click with {profile.displayName.split(/\s+/)[0]} →
               </ButtonLink>
             </div>
-          ) : clickState && !safetyState?.isBlocked ? (
-            <ProfileClickButton
-              profileId={userId}
-              firstName={profile.displayName.split(/\s+/)[0]}
-              alreadyClicked={clickState.alreadyClicked}
-            />
           ) : null}
 
           {!session?.user ? (

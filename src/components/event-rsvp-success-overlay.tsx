@@ -68,7 +68,7 @@ export function EventRsvpSuccessOverlay({
         type="button"
         aria-label="Close"
         onClick={onClose}
-        className="absolute right-4 top-4 grid size-9 place-items-center rounded-lg text-[color:var(--slate)] hover:bg-[color:var(--lavender-100)] hover:text-[color:var(--ink)]"
+        className="absolute right-2.5 top-2.5 grid size-11 place-items-center rounded-lg text-[color:var(--slate)] hover:bg-[color:var(--lavender-100)] hover:text-[color:var(--ink)]"
       >
         ✕
       </button>

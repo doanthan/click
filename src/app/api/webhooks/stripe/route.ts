@@ -36,7 +36,7 @@ function stripePaymentIntentId(
 }
 
 // Thin notifications from a v2 event destination are `"object": "v2.core.event"`;
-// snapshot webhooks are `"object": "event"`. Parsed defensively — an unparseable
+// snapshot webhooks are `"object": "event"`. Parsed defensively - an unparseable
 // body falls through to constructEvent, which rejects it with a signature error.
 function isThinEventNotification(rawBody: string) {
   try {
@@ -61,7 +61,7 @@ function isConnectAccountEventType(type: string) {
 }
 
 // Re-fetch the authoritative status from Stripe rather than trusting whatever
-// the payload carried — thin notifications carry no object at all, and the
+// the payload carried - thin notifications carry no object at all, and the
 // snapshot shape varies by event.
 async function syncConnectAccount(accountId: string) {
   const status = await getConnectedAccountStatus(accountId);
@@ -258,7 +258,7 @@ export async function POST(request: Request) {
       case "charge.dispute.created":
       case "charge.dispute.updated":
       case "charge.dispute.closed": {
-        // No first-class disputes table yet — log to audit_logs so
+        // No first-class disputes table yet - log to audit_logs so
         // /admin/audit surfaces it. Disputes table is a follow-up.
         await recordDisputeAudit(event.data.object, event.type);
         break;
@@ -277,7 +277,7 @@ export async function POST(request: Request) {
       default: {
         // Connect: a merchant's connected account changed (capabilities,
         // requirements, bank details). Re-fetch the authoritative status and
-        // cache it. Best-effort — /merchant/onboarding also syncs on return.
+        // cache it. Best-effort - /merchant/onboarding also syncs on return.
         if (isConnectAccountEventType(event.type)) {
           const accountId = connectedAccountIdFromEvent(event);
           if (accountId) await syncConnectAccount(accountId);

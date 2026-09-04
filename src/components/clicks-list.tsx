@@ -52,7 +52,14 @@ function rowState(e: ProposalEntry): { label: string; tone: Tone; sub: string } 
         tone: "amber",
         sub: e.suggestedEventStarted ? "That one's already started - pick another." : "That one filled up - pick another.",
       };
-    return { label: "RSVP needed", tone: "amber", sub: `RSVP to lock in your seat.` };
+    // Same split the drawer makes at S9: once the other side is seated the row
+    // carries the locked S9 phrasing, so the card and the drawer it opens say the
+    // same thing. Before that it would be untrue.
+    return {
+      label: "RSVP needed",
+      tone: "amber",
+      sub: e.otherHasSeat ? `${first}'s keen - save your spot.` : "RSVP to lock in your seat.",
+    };
   }
   // pending
   if (e.suggestionUnavailable)

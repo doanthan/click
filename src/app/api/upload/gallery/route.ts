@@ -10,7 +10,7 @@
  * best-effort deletes the storage object (only if the key sits under the
  * caller's own gallery prefix).
  *
- * Both return 200 `{ urls: string[] }` — the full gallery after the change —
+ * Both return 200 `{ urls: string[] }` - the full gallery after the change -
  * so the uploader can re-render without refetching.
  */
 
@@ -122,7 +122,7 @@ export async function POST(request: Request) {
 
     const row = updated.rows[0];
     if (!row) {
-      // Gallery already full — clean up the orphaned object we just wrote.
+      // Gallery already full - clean up the orphaned object we just wrote.
       const key = ownGalleryKeyFromUrl(who.profileId, url);
       if (key) void deleteGalleryObject(key);
       return NextResponse.json(
@@ -136,7 +136,7 @@ export async function POST(request: Request) {
     // profile card / in the "click with someone" pool, and the dashboard keeps
     // nagging "add a profile photo" even though they added photos (bug board
     // #182). A real square avatar uploaded later via /api/upload/avatar still
-    // overwrites this. Best-effort — never fail the gallery upload over it.
+    // overwrites this. Best-effort - never fail the gallery upload over it.
     await pool
       .query(
         `update profiles set photo_url = $2, updated_at = now()
@@ -179,7 +179,7 @@ export async function DELETE(request: Request) {
 
     // If the removed photo was also serving as the avatar (seeded from the
     // gallery on first upload), repoint the avatar to the next remaining gallery
-    // photo, or clear it if none are left — so we never leave a broken avatar
+    // photo, or clear it if none are left - so we never leave a broken avatar
     // pointing at a deleted object (bug board #182).
     await pool
       .query(
@@ -191,7 +191,7 @@ export async function DELETE(request: Request) {
       .catch(() => {});
 
     // Only delete the object when the URL provably sits under the caller's own
-    // gallery prefix — a crafted URL can't reach other users' objects.
+    // gallery prefix - a crafted URL can't reach other users' objects.
     const key = ownGalleryKeyFromUrl(who.profileId, url);
     if (key) void deleteGalleryObject(key);
 

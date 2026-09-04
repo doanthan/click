@@ -12,7 +12,7 @@
 --   * zero references            -> orphans only. event_tags.tag_id and
 --                                   user_tags.tag_id are ON DELETE CASCADE, so a
 --                                   referenced tag would take real associations
---                                   down with it — those are left in place.
+--                                   down with it - those are left in place.
 --
 -- Idempotent: a second run finds nothing left to delete.
 

@@ -1,4 +1,4 @@
-import { Skeleton, SkeletonText } from "@/components/skeleton";
+import { Skeleton } from "@/components/skeleton";
 
 /**
  * Loading shell for /people ("click with someone").
@@ -53,24 +53,32 @@ export default function PeopleLoading() {
   );
 }
 
-/** Mirrors ClickWithSomeoneUserCard: big round avatar, name, blurb, one CTA. */
+/**
+ * Mirrors ClickWithSomeoneUserCard's ROW layout, block for block: the 76px
+ * avatar (AVATAR_ROW), the identity/commonality/tag stack beside it, and the
+ * 190px action column on the right. It used to be a vertical block with a 64px
+ * circle and a bottom CTA, which meant the shell and the real card disagreed
+ * about where everything sat and the page jumped on hydration.
+ */
 function PersonCardSkeleton() {
   return (
-    <div className="rounded-[var(--radius-xl)] border border-[color:var(--line)] bg-[color:var(--paper)] p-6">
-      <div className="flex items-center gap-4">
-        <Skeleton className="size-16 shrink-0 rounded-full" />
+    <div className="flex flex-col gap-3 rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-4 sm:flex-row sm:items-center sm:gap-5 sm:p-5">
+      <div className="flex min-w-0 flex-1 items-center gap-3.5 sm:gap-4">
+        <Skeleton className="size-[76px] shrink-0 rounded-full" />
         <div className="min-w-0 flex-1">
-          <Skeleton className="h-5 w-1/2 min-w-[8rem] rounded-md" />
+          <Skeleton className="h-[18px] w-1/2 min-w-[8rem] rounded-md" />
           <Skeleton className="mt-2 h-3.5 w-2/3 rounded-full" />
+          <div className="mt-2.5 flex flex-wrap gap-1.5">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-[26px] w-20 rounded-full" />
+            ))}
+          </div>
         </div>
       </div>
-      <SkeletonText className="mt-5" lines={2} />
-      <div className="mt-5 flex flex-wrap gap-1.5">
-        {Array.from({ length: 3 }).map((_, i) => (
-          <Skeleton key={i} className="h-[26px] w-20 rounded-full" />
-        ))}
+      <div className="flex flex-col gap-2 sm:w-[190px] sm:shrink-0 sm:gap-2.5">
+        <Skeleton className="h-9 w-full rounded-xl" />
+        <Skeleton className="h-9 w-full rounded-xl" />
       </div>
-      <Skeleton className="mt-6 h-11 w-40 rounded-xl" />
     </div>
   );
 }

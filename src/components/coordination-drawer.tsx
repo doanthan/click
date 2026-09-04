@@ -10,10 +10,12 @@ import { PAIR_SUPPRESSION_DAYS } from "@/lib/clicks/constants";
 import {
   confirmProposalAction,
   declineProposalAction,
+  joinWaitlistTogetherAction,
   markMutualConnectedAction,
   markMutualSeenAction,
   proposeAlternativeAction,
   releaseMutualAction,
+  softReleaseMutualAction,
   suggestPlanAction,
   type ProposalActionState,
 } from "@/app/proposals/actions";
@@ -55,6 +57,15 @@ function gcalUrl(title: string, startIso: string | null): string | null {
   return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(
     title,
   )}&dates=${fmt(start)}/${fmt(end)}`;
+}
+
+// Stage 6: the RSVP control deep-links to the real Event Detail page carrying the
+// plan context (`planWith`) and where to come back to, so a confirmed booking
+// returns the pair to the drawer at S11 instead of a receipt page. The drawer only
+// mints the link; the event page reads it.
+function planBookingHref(entry: ProposalEntry): string {
+  const back = `/proposals?open=${entry.mutualId}`;
+  return `/events/${entry.suggestedEventSlug}?planWith=${entry.otherId}&return=${encodeURIComponent(back)}`;
 }
 
 type Step =
@@ -113,6 +124,9 @@ function projectStep(entry: ProposalEntry): Exclude<Step, "reveal"> {
  */
 function ReleaseControl({ onRequest }: { onRequest: () => void }) {
   const { pending } = useFormStatus();
+  // inline-flex + min-h-11 is for the thumb only: a bare 13px line box is ~20px tall.
+  // The box grows rather than wearing an overlaid .ck-taplink band, because its row-mate
+  // (report or block) is the same species of control - wrapped, two bands would overlap.
   return (
     <button
       type="button"
@@ -121,7 +135,7 @@ function ReleaseControl({ onRequest }: { onRequest: () => void }) {
       }}
       aria-busy={pending || undefined}
       aria-disabled={pending || undefined}
-      className="text-[13px] font-semibold text-[color:var(--slate)] underline decoration-dotted underline-offset-2 hover:text-[color:var(--ink)] aria-disabled:opacity-50"
+      className="ck-taplink text-[13px] font-semibold text-[color:var(--slate)] underline decoration-dotted underline-offset-2 hover:text-[color:var(--ink)] aria-disabled:opacity-50"
     >
       {/* "Ending…" - this ends the plan on BOTH sides; it still sends nothing to
           them. Not "Sending…", which on the safety exit implied a message had
@@ -131,6 +145,33 @@ function ReleaseControl({ onRequest }: { onRequest: () => void }) {
           mutual_clicks and pair_suppressions: no seat, no payment, which is why
           the dialog can promise the booking survives. */}
       {pending ? "Ending…" : "Not feeling it"}
+    </button>
+  );
+}
+
+/**
+ * The OTHER exit, and the quieter one. "Not feeling it" above holds the pair
+ * apart for PAIR_SUPPRESSION_DAYS and keeps them off every shelf; this one just
+ * sets the click down - status='released', which lands the pair on Past clicks
+ * as S16 "Still out there", neutral accent, still re-clickable. Both are silent:
+ * softReleaseMutualForSession writes no pair_suppressions row and emits nothing,
+ * so the other side is told nothing either way.
+ *
+ * A plain submit, unlike ReleaseControl, which opens a confirm first. A rest is
+ * picked back up; a 90-day suppression is not, so only the harder door asks.
+ */
+function SoftReleaseControl() {
+  const { pending } = useFormStatus();
+  return (
+    <button
+      type="submit"
+      disabled={pending}
+      aria-busy={pending || undefined}
+      className="ck-taplink text-[13px] font-semibold text-[color:var(--slate)] hover:text-[color:var(--ink)] disabled:opacity-50"
+    >
+      {/* "Resting…", never "Ending…": S16 is not a terminal verdict, and it is
+          not a peak either - no ✨, no confetti, no blame anywhere on this path. */}
+      {pending ? "Resting…" : "Let this one rest"}
     </button>
   );
 }
@@ -166,7 +207,13 @@ function CoordinationDrawerPanel({
   const [proposeState, proposeAction] = useActionState(proposeAlternativeAction, INITIAL);
   const [suggestState, suggestAction] = useActionState(suggestPlanAction, INITIAL);
   const [releaseState, releaseAction] = useActionState(releaseMutualAction, INITIAL);
+  const [softReleaseState, softReleaseAction] = useActionState(softReleaseMutualAction, INITIAL);
   const [connectedState, connectedAction] = useActionState(markMutualConnectedAction, INITIAL);
+  // S14's second exit. The success flag lives HERE rather than in the projection
+  // because joining the list changes no server state the drawer projects - the
+  // event is still full, so a revalidated entry still reads as S14. The panel
+  // mounts once per mutual (ClicksList keys it), so S14w holds until it closes.
+  const [waitlistState, waitlistAction] = useActionState(joinWaitlistTogetherAction, INITIAL);
 
   const [picking, setPicking] = useState(false);
   const [revealDismissed, setRevealDismissed] = useState(() =>
@@ -185,10 +232,6 @@ function CoordinationDrawerPanel({
   }
 
   const titleId = useId();
-  // The catalogue picker's only label sat unattached above the select, so a
-  // screen reader announced the one control on this step as an unlabelled
-  // combobox - "Pick an event…" and nothing about what the list is for.
-  const catalogueId = useId();
   const cardRef = useRef<HTMLDivElement>(null);
   const releaseFormRef = useRef<HTMLFormElement>(null);
   // Escape has to run the SAME close as ✕ and the scrim (which stamps reveal_seen),
@@ -252,7 +295,16 @@ function CoordinationDrawerPanel({
       document.body.style.overflow = prevOverflow;
       if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus();
     };
-  }, [onClose]);
+    // Genuinely empty, and it has to stay that way. `onClose` is never read in
+    // here - Escape routes through closeStepRef precisely so this effect can be
+    // mount-scoped - but it sat in the dep array anyway, and ClicksList hands
+    // down a fresh inline arrow every render. Every step-advancing action
+    // revalidates /proposals, so each advance re-ran the effect: the cleanup
+    // fired `previouslyFocused.focus()`, parking focus on the ClickRow trigger
+    // BEHIND an open aria-modal dialog, and flipped body overflow back and
+    // forth. Part C6's "focus returns to the trigger" is an on-CLOSE promise,
+    // not a per-render one.
+  }, []);
 
   const base = projectStep(entry);
   // Reveal fires once per user per mutual (§4). Skip on a dead/terminal mutual.
@@ -298,84 +350,21 @@ function CoordinationDrawerPanel({
   // proposeAlternative would just fail.
   const freshSuggest = (step === "open" && !entry.id) || step === "partner-cancelled";
 
-  // An empty catalogue is a normal launch-week state (nothing upcoming with two
-  // free seats). Rendering the form anyway gave a select holding only its own
-  // disabled placeholder, and `required` then met "Send suggestion" with the
-  // browser's native "Please select an item in the list." - no explanation, and
-  // the single action on this whole surface simply did not work. Say so instead,
-  // and point somewhere useful.
   const picker = picking ? (
-    catalogue.length === 0 ? (
-      <div className="rise-soft mt-4 rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-4">
-        <p className="eyebrow">Nothing to suggest yet</p>
-        <p className="mt-2 text-sm leading-relaxed text-[color:var(--slate)]">
-          There&apos;s nothing upcoming with room for two right now. New events land all
-          the time - have a look and come back when you spot one.
-        </p>
-        <div className="mt-3 flex gap-2">
-          <Link href="/discover" className="ck-btn ck-btn--sm ck-btn--primary">
-            <span className="ck-btn__label">Browse events</span>
-          </Link>
-          <button
-            type="button"
-            onClick={() => setPicking(false)}
-            className="ck-btn ck-btn--sm ck-btn--secondary"
-          >
-            Close
-          </button>
-        </div>
-      </div>
-    ) : (
-    <form
-      action={freshSuggest ? suggestAction : proposeAction}
-      className="rise-soft mt-4 rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-4"
-    >
-      {freshSuggest ? (
-        <input type="hidden" name="mutual_id" value={entry.mutualId} />
-      ) : (
-        <input type="hidden" name="proposal_id" value={entry.id} />
-      )}
-      <label htmlFor={catalogueId} className="eyebrow block">
-        Choose from the Click catalogue
-      </label>
-      <select
-        id={catalogueId}
-        name="event_slug"
-        required
-        defaultValue=""
-        className="mt-2 h-11 w-full rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] px-3 text-sm text-[color:var(--ink)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)]"
-      >
-        <option value="" disabled>
-          Pick an event…
-        </option>
-        {catalogue.map((event) => (
-          <option key={event.slug} value={event.slug}>
-            {event.title} · {event.suburb} · {longDate.format(new Date(event.startsAt))}
-          </option>
-        ))}
-      </select>
-      <div className="mt-3 flex gap-2">
-        {/* S5's primary. Naming the person is the point: it says plainly that
-            this goes TO them and that they get to answer, which is exactly the
-            step the old open-step "Confirm this plan" skipped past. */}
-        <SubmitButton size="sm" pendingLabel="Sending…">
-          Suggest this to {firstName}
-        </SubmitButton>
-        <button
-          type="button"
-          onClick={() => setPicking(false)}
-          className="ck-btn ck-btn--sm ck-btn--secondary"
-        >
-          Cancel
-        </button>
-      </div>
-      {(freshSuggest ? suggestState : proposeState).error ? (
-        <p className="mt-3 text-xs font-medium text-[color:var(--danger)]">
-          {(freshSuggest ? suggestState : proposeState).error}
-        </p>
-      ) : null}
-    </form>
-    )
+    <PlanPicker
+      catalogue={catalogue}
+      firstName={firstName}
+      formAction={freshSuggest ? suggestAction : proposeAction}
+      hidden={
+        freshSuggest ? (
+          <input type="hidden" name="mutual_id" value={entry.mutualId} />
+        ) : (
+          <input type="hidden" name="proposal_id" value={entry.id} />
+        )
+      }
+      error={(freshSuggest ? suggestState : proposeState).error}
+      onBack={() => setPicking(false)}
+    />
   ) : null;
 
   // z-110, not 130. The drawer is the BASE surface here, and its own safety confirm
@@ -402,7 +391,7 @@ function CoordinationDrawerPanel({
       <div
         ref={cardRef}
         tabIndex={-1}
-        className="step-enter-fwd relative z-10 max-h-[92vh] w-full max-w-[540px] overflow-y-auto rounded-t-[24px] bg-[color:var(--paper)] p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-[var(--shadow-lg)] outline-none sm:rounded-[24px] sm:p-7"
+        className="step-enter-fwd relative z-10 max-h-[92dvh] w-full max-w-[540px] overflow-y-auto rounded-t-[24px] bg-[color:var(--paper)] p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-[var(--shadow-lg)] outline-none sm:rounded-[24px] sm:p-7"
       >
         <button
           type="button"
@@ -441,6 +430,9 @@ function CoordinationDrawerPanel({
               onTogglePicker={() => setPicking((v) => !v)}
               onDone={closeStep}
               picker={picker}
+              waitlistAction={waitlistAction}
+              waitlistError={waitlistState.error}
+              waitlistJoined={waitlistState.ok}
             />
           )}
         </div>
@@ -471,21 +463,32 @@ function CoordinationDrawerPanel({
           ) : null}
           <div className="flex flex-wrap items-center justify-between gap-3">
             {step !== "released" && step !== "connected" ? (
-              <form ref={releaseFormRef} action={releaseAction}>
-                <input type="hidden" name="mutual_id" value={entry.mutualId} />
-                <ReleaseControl onRequest={() => openReleaseConfirm(true)} />
-              </form>
+              // Two doors out, deliberately unequal in weight and both quiet: the
+              // 90-day removal, and the neutral rest that leaves the pair
+              // re-clickable. Same gate as the release - there is nothing left to
+              // set down on either terminal step, and softReleaseMutualForSession
+              // matches status='active' only.
+              <div className="flex flex-wrap items-center gap-4">
+                <form ref={releaseFormRef} action={releaseAction}>
+                  <input type="hidden" name="mutual_id" value={entry.mutualId} />
+                  <ReleaseControl onRequest={() => openReleaseConfirm(true)} />
+                </form>
+                <form action={softReleaseAction}>
+                  <input type="hidden" name="mutual_id" value={entry.mutualId} />
+                  <SoftReleaseControl />
+                </form>
+              </div>
             ) : null}
             <Link
               href={`/profile/${entry.otherId}#safety`}
-              className="text-[13px] font-semibold text-[color:var(--slate)] underline decoration-dotted underline-offset-2 hover:text-[color:var(--ink)]"
+              className="ck-taplink text-[13px] font-semibold text-[color:var(--slate)] underline decoration-dotted underline-offset-2 hover:text-[color:var(--ink)]"
             >
               Report or block {firstName}
             </Link>
           </div>
-          {releaseState.error ? (
+          {releaseState.error || softReleaseState.error ? (
             <p role="alert" className="mt-2 text-xs font-medium text-[color:var(--danger)]">
-              {releaseState.error}
+              {releaseState.error ?? softReleaseState.error}
             </p>
           ) : null}
         </div>
@@ -516,6 +519,190 @@ function CoordinationDrawerPanel({
       </div>
     </div>,
     document.body,
+  );
+}
+
+// S5b - the own-event picker, a sub-step rather than a second modal. Runbook C5
+// regression 3 is the one this screen actually shipped: it filtered the whole
+// catalogue on every keystroke. So the two arms are binding, and they are:
+//
+//   * NO query - the three curated sections (`Events you're going to` / `Saved` /
+//     `You'd both like`) the page already fetched with getProposalCatalogue(session).
+//     Zero requests. Not "a request we happen to cache" - none is issued at all.
+//   * A query - one debounced GET to /api/events/suggestions, capped at 20 rows by
+//     the server, rendered as the flat list a search is.
+//
+// Never the whole catalogue in either arm: picking a night for two people out of a
+// scroll of sixty is not a decision anyone makes well.
+const PICKER_DEBOUNCE_MS = 250;
+
+// The section labels are locked (CLICK_UIUX_SPEC §6.2 / S5b) and this array is
+// also their order - the picker opens on the events the viewer is already going to.
+const CURATED_SECTIONS = ["Events you're going to", "Saved", "You'd both like"] as const;
+
+function PlanPicker({
+  catalogue,
+  firstName,
+  formAction,
+  hidden,
+  error,
+  onBack,
+}: {
+  catalogue: ProposalCatalogueEvent[];
+  firstName: string;
+  formAction: (payload: FormData) => void;
+  hidden: React.ReactNode;
+  error: string | null;
+  onBack: () => void;
+}) {
+  const [query, setQuery] = useState("");
+  // ONE piece of search state: the rows, and the query they answer. "The list on
+  // screen is stale" is then derivable, instead of a second in-flight flag that
+  // can disagree with it mid-keystroke.
+  const [found, setFound] = useState<{ q: string; rows: ProposalCatalogueEvent[] } | null>(null);
+  const searchId = useId();
+  const q = query.trim();
+
+  useEffect(() => {
+    // C5 regression 3, the load-bearing half: an empty query issues NO request.
+    // The curated sections below are already in hand from the server render.
+    if (!q) return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      fetch(`/api/events/suggestions?q=${encodeURIComponent(q)}`, { signal: controller.signal })
+        .then((res) => (res.ok ? res.json() : { events: [] }))
+        .then((body: { events?: ProposalCatalogueEvent[] }) =>
+          setFound({ q, rows: Array.isArray(body.events) ? body.events : [] }),
+        )
+        // Aborted by the next keystroke (the next fetch answers), or the network
+        // is out. Swallowed either way: the row stays in its searching state
+        // rather than the picker claiming no events match, which would be a
+        // dead end invented out of a dropped request.
+        .catch(() => {});
+    }, PICKER_DEBOUNCE_MS);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [q]);
+
+  const results = q && found?.q === q ? found.rows : null;
+  const searching = Boolean(q) && !results;
+  const sections = q
+    ? null
+    : CURATED_SECTIONS.map((label) => ({
+        label,
+        // The locked screen caps the general shelf at 4; the other two are the
+        // viewer's own bookings and saves, which are theirs to see in full.
+        rows: catalogue
+          .filter((e) => e.section === label)
+          .slice(0, label === "You'd both like" ? 4 : undefined),
+      })).filter((section) => section.rows.length > 0);
+
+  // A radio, not a <select>: the row has to carry the suburb and the date too, and
+  // the native control still submits `event_slug` with the form and still enforces
+  // `required` - no state to keep in sync, no listbox to rebuild.
+  const row = (event: ProposalCatalogueEvent) => (
+    <label
+      key={event.slug}
+      className="flex cursor-pointer items-start gap-3 rounded-[var(--radius-md)] px-3 py-2 hover:bg-[color:var(--cream)] has-[:checked]:bg-[color:var(--lav-bg)]"
+    >
+      <input
+        type="radio"
+        name="event_slug"
+        value={event.slug}
+        required
+        className="mt-1 accent-[var(--purple)]"
+      />
+      <span className="min-w-0">
+        <span className="block truncate text-sm font-semibold text-[color:var(--ink)]">
+          {event.title}
+        </span>
+        <span className="block text-xs font-medium text-[color:var(--slate)]">
+          {event.suburb} · {longDate.format(new Date(event.startsAt))}
+        </span>
+      </span>
+    </label>
+  );
+
+  return (
+    <form
+      action={formAction}
+      className="rise-soft mt-4 rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-4"
+    >
+      {hidden}
+      {/* S5b's back link - this is a sub-step of the suggest card, not a modal of
+          its own, so the way out is back rather than cancel. */}
+      <button
+        type="button"
+        onClick={onBack}
+        className="ck-taplink text-[13px] font-semibold text-[color:var(--slate)] hover:text-[color:var(--ink)]"
+      >
+        ‹ Back
+      </button>
+      <p className="font-display mt-2 text-base font-semibold tracking-[-0.02em] text-[color:var(--ink)]">
+        Choose an event for {firstName}
+      </p>
+      <label htmlFor={searchId} className="eyebrow mt-3 block">
+        Search events
+      </label>
+      <input
+        id={searchId}
+        type="search"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Search events"
+        className="mt-2 h-11 w-full rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] px-3 text-sm text-[color:var(--ink)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)]"
+      />
+
+      <div className="mt-3 grid gap-3">
+        {sections?.map((section) => (
+          <div key={section.label}>
+            <p className="eyebrow">{section.label}</p>
+            <div className="mt-1 grid gap-1">{section.rows.map(row)}</div>
+          </div>
+        ))}
+        {/* An empty catalogue is a normal launch-week state (nothing upcoming with
+            room for two), not a broken picker - and search stays reachable, because
+            "nothing curated" and "nothing at all" are different things. */}
+        {sections?.length === 0 ? (
+          <div>
+            <p className="eyebrow">Nothing to suggest yet</p>
+            <p className="mt-2 text-sm leading-relaxed text-[color:var(--slate)]">
+              There&apos;s nothing upcoming with room for two right now. Search above, or
+              have a look around - new events land all the time.
+            </p>
+            <Link href="/discover" className="ck-btn ck-btn--sm ck-btn--primary mt-3">
+              <span className="ck-btn__label">Browse events</span>
+            </Link>
+          </div>
+        ) : null}
+        {searching ? (
+          <p className="text-sm font-medium text-[color:var(--slate)]">Searching…</p>
+        ) : null}
+        {results ? <div className="grid gap-1">{results.map(row)}</div> : null}
+        {/* The locked no-results line (S5b), verbatim. The banned "match" is the
+            people one - "you and Mia matched"; this is a search reporting on a
+            query string, and the lock spells it out this way on purpose. */}
+        {results?.length === 0 ? (
+          <p className="text-sm font-medium text-[color:var(--slate)]">
+            No events match &quot;{q}&quot; - try another search.
+          </p>
+        ) : null}
+      </div>
+
+      <div className="mt-4">
+        {/* S5's primary. Naming the person is the point: it says plainly that
+            this goes TO them and that they get to answer, which is exactly the
+            step the old open-step "Confirm this plan" skipped past. */}
+        <SubmitButton size="sm" pendingLabel="Sending…">
+          Suggest this to {firstName}
+        </SubmitButton>
+      </div>
+      {error ? (
+        <p className="mt-3 text-xs font-medium text-[color:var(--danger)]">{error}</p>
+      ) : null}
+    </form>
   );
 }
 
@@ -554,6 +741,15 @@ function RevealStep({
       >
         You clicked with {firstName}.
       </h2>
+      {/* Stage 3's shared context, above the pill: a post-event mutual names the
+          night the two of them were actually at, which is the reason the reveal
+          means anything. Null on a discovery mutual - there is no shared night, so
+          the line is simply absent rather than invented. */}
+      {entry.sourceEventTitle ? (
+        <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--ink-soft)]">
+          You were both at {entry.sourceEventTitle}.
+        </p>
+      ) : null}
       {/* A desire, never a status - and a MIXED pair reads as two sides. The line
           arrives whole from the projection because only it knows which intent is
           whose; wrapping a fragment here could only ever produce the banned
@@ -562,6 +758,23 @@ function RevealStep({
         {entry.intentLine}
         {entry.bothDating ? " · both open to dating" : null}
       </p>
+      {/* Stage 3's other half: "<=2 shared tags", under the intent pill. There is
+          deliberately no filtering here - B5 item 6 ("sensitive life tags, even when
+          shared") is enforced in the projection's SQL, so a life-quiz answer never
+          reaches this component to be rendered by accident. Tags are the pills in
+          this design system; the buttons are the radius-12 ones. */}
+      {entry.sharedTags.length > 0 ? (
+        <ul className="mt-3 flex flex-wrap gap-2">
+          {entry.sharedTags.map((tag) => (
+            <li
+              key={tag}
+              className="rounded-full bg-[color:var(--lav-bg)] px-3 py-1 text-xs font-semibold text-[color:var(--purple)]"
+            >
+              {tag}
+            </li>
+          ))}
+        </ul>
+      ) : null}
       <p className="mt-4 text-base font-medium leading-6 text-[color:var(--ink-soft)]">
         Find a thing you&apos;d both enjoy, and just show up.
       </p>
@@ -575,13 +788,13 @@ function RevealStep({
         <button
           type="button"
           onClick={onLater}
-          className="text-[13px] font-semibold text-[color:var(--slate)] hover:text-[color:var(--ink)]"
+          className="ck-taplink text-[13px] font-semibold text-[color:var(--slate)] hover:text-[color:var(--ink)]"
         >
           Maybe later
         </button>
         <Link
           href="/how-it-works"
-          className="text-[13px] font-semibold text-[color:var(--slate)] underline decoration-dotted underline-offset-2 hover:text-[color:var(--ink)]"
+          className="ck-taplink text-[13px] font-semibold text-[color:var(--slate)] underline decoration-dotted underline-offset-2 hover:text-[color:var(--ink)]"
         >
           How clicking works →
         </Link>
@@ -602,6 +815,9 @@ function CoordinationBody({
   onTogglePicker,
   onDone,
   picker,
+  waitlistAction,
+  waitlistError,
+  waitlistJoined,
 }: {
   entry: ProposalEntry;
   step: Exclude<Step, "reveal">;
@@ -614,13 +830,28 @@ function CoordinationBody({
   onTogglePicker: () => void;
   onDone: () => void;
   picker: React.ReactNode;
+  waitlistAction: (payload: FormData) => void;
+  waitlistError: string | null;
+  waitlistJoined: boolean;
 }) {
   const eventTitle = entry.suggestedEventTitle ?? "the event";
   const cal = step === "confirmed" ? gcalUrl(eventTitle, entry.suggestedEventStartsAt) : null;
   // Mirrors proposeAlternativeForProposal exactly: the budget is joint, and a plan
   // that can no longer be joined is recovered from rather than countered, so it
   // neither spends the budget nor is stopped by it.
-  const capReached = entry.alternativesRemaining === 0 && !entry.suggestionUnavailable;
+  //
+  // A BOOLEAN, never a remainder. Part A invariant 9 - "no timers, caps, rankings
+  // or refresh cadence shown, ever" - is a back-end obligation too (Part B), so
+  // the count no longer crosses the wire at all: the server sends only whether one
+  // more suggestion is available.
+  const capReached = !entry.canSuggestAlternative && !entry.suggestionUnavailable;
+  // S14 proper - the seat filled first. A cancelled or already-started event is a
+  // different disappointment and keeps its own line, so it is deliberately excluded.
+  const seatRace =
+    entry.suggestionUnavailable && !entry.suggestedEventCancelled && !entry.suggestedEventStarted;
+  // S6 - the proposer's waiting face. Never while a seat race is on: that arm owns
+  // the screen and has its own disc and lead line.
+  const waitingAsProposer = step === "proposed" && entry.proposedByMe && !entry.suggestionUnavailable;
 
   return (
     <div>
@@ -676,7 +907,7 @@ function CoordinationBody({
               <div className="mt-3">
                 <Link
                   href={`/events/${entry.suggestedEventSlug}`}
-                  className="text-[13px] font-semibold text-[color:var(--purple)] underline decoration-dotted underline-offset-2"
+                  className="ck-taplink text-[13px] font-semibold text-[color:var(--purple)] underline decoration-dotted underline-offset-2"
                 >
                   {eventTitle} →
                 </Link>
@@ -685,29 +916,58 @@ function CoordinationBody({
           </>
         ) : entry.suggestedEventJoinable ? (
           // Viewer still needs a seat, and can still get one - keep the live RSVP.
+          // With the OTHER side already seated this is S9, whose headline, sub-line
+          // and both controls are locked verbatim (Stage 6 / CLICK_UIUX_SPEC §9).
+          // Without their seat it is not S9 yet - "they've saved their spot" would
+          // simply be untrue - so that face keeps its own honest line.
           <>
             <h2 id={titleId} className={headingClass}>
-              {entry.confirmedByMe
-                ? "You're in - now lock in your seat."
-                : `${firstName} confirmed this plan`}
+              {entry.otherHasSeat
+                ? `${firstName}'s keen - save your spot`
+                : entry.confirmedByMe
+                  ? "You're in - now lock in your seat."
+                  : `${firstName} confirmed this plan`}
             </h2>
             <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--ink-soft)]">
               {entry.otherHasSeat ? (
                 <>
-                  {firstName} already has a seat. RSVP to lock in yours - you&apos;re going together
-                  once you do.
+                  {firstName}&apos;s saved their spot - grab yours and you&apos;re both set.
                 </>
               ) : (
                 <>RSVP to lock in your seat. You&apos;re both going once you each have a spot.</>
               )}
             </p>
+            {/* The event mini row - the locked screen names the plan beside the CTA
+                rather than welding the title into the button label. */}
+            {entry.suggestedEventStartsAt ? (
+              <p className="mt-3 text-xs font-semibold tracking-[0.04em] text-[color:var(--slate)]">
+                {eventTitle} · {longDate.format(new Date(entry.suggestedEventStartsAt))}
+              </p>
+            ) : null}
             {entry.suggestedEventSlug ? (
-              <Link
-                href={`/events/${entry.suggestedEventSlug}`}
-                className="ck-btn ck-btn--md ck-btn--primary mt-5"
-              >
-                RSVP to {eventTitle} →
-              </Link>
+              <div className="mt-5 flex flex-wrap items-center gap-2">
+                {/* Stage 6: the booking control deep-links to the REAL event page
+                    carrying the plan context, and hands it the drawer to come back
+                    to - a confirmed RSVP belongs at S11, not on a receipt page. */}
+                <Link
+                  href={planBookingHref(entry)}
+                  className="ck-btn ck-btn--md ck-btn--primary"
+                >
+                  Save my spot · RSVP
+                </Link>
+                {/* Ghost, not secondary: the locked S9 row is "primary `Save my
+                    spot - RSVP` - ghost `Back to your clicks`"
+                    (CLICK_UIUX_SPEC §6.4). A filled secondary reads as a second
+                    equal-weight action beside the Deep Purple primary; this exit
+                    is meant to be the quiet one. */}
+                <button
+                  type="button"
+                  onClick={onDone}
+                  className="ck-btn ck-btn--md ck-btn--ghost"
+                >
+                  Back to your clicks
+                </button>
+              </div>
             ) : null}
           </>
         ) : (
@@ -847,20 +1107,53 @@ function CoordinationBody({
             Back to your clicks
           </button>
         </>
+      ) : waitlistJoined ? (
+        // S14w - both on the list. The holding face after S14's second exit, and
+        // like S14 it is not a peak: lavender clock disc, no ✨, no loss framing,
+        // nothing about being too slow. It is not a state the server holds either -
+        // the pair sit exactly where the runbook leaves them (`open`), and the
+        // 30-minute claim, if a seat frees up, arrives through the normal waitlist
+        // promotion every waitlister gets.
+        <>
+          <div
+            aria-hidden
+            className="mb-1 grid h-16 w-16 place-items-center rounded-full bg-[color:var(--lav-bg)] text-2xl leading-none text-[color:var(--purple)]"
+          >
+            🕐
+          </div>
+          <h2 id={titleId} className={headingClass}>
+            You&apos;re both on the list
+          </h2>
+          <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--ink-soft)]">
+            If a spot opens at {eventTitle}, you&apos;re first in line - together. We&apos;ll let
+            you both know.
+          </p>
+          <div className="mt-5 flex flex-wrap items-center gap-3">
+            <button type="button" onClick={onDone} className="ck-btn ck-btn--md ck-btn--secondary">
+              Back to your clicks
+            </button>
+            {entry.suggestedEventSlug ? (
+              <Link
+                href={`/events/${entry.suggestedEventSlug}`}
+                className="ck-taplink text-[13px] font-semibold text-[color:var(--purple)] underline decoration-dotted underline-offset-2"
+              >
+                {eventTitle} →
+              </Link>
+            ) : null}
+          </div>
+        </>
       ) : (
         // open / proposed - a plan is (or can be) on the table.
         <>
-          {/* S14 - the seat filled first. Lavender compass disc, calm copy, never
-              coral. Only for the sold-out arm: a cancelled or already-started
-              event is a different disappointment and keeps its own line. */}
-          {entry.suggestionUnavailable &&
-          !entry.suggestedEventCancelled &&
-          !entry.suggestedEventStarted ? (
+          {/* S14 - the seat filled first: lavender compass disc, calm copy, never
+              coral. S6 - the proposer waiting: lavender clock disc. Neither is a
+              peak, so neither gets a ✨ (invariant 8). */}
+          {seatRace || waitingAsProposer ? (
             <div
               aria-hidden
               className="mb-1 grid h-16 w-16 place-items-center rounded-full bg-[color:var(--lav-bg)] text-2xl leading-none text-[color:var(--purple)]"
             >
-              ⊙
+              {seatRace ? "⊙" : "🕐"}
             </div>
           ) : null}
           <h2 id={titleId} className={headingClass}>
@@ -873,8 +1166,11 @@ function CoordinationBody({
                 // Locked (CLICK_LANGUAGE §5, "Seat-race-lost").
                 <>That one just filled up.</>
               )
-            ) : step === "proposed" && entry.proposedByMe ? (
-              <>You&apos;re in - waiting on {firstName}</>
+            ) : waitingAsProposer ? (
+              // S6, locked verbatim (Stage 5 table). It used to read "You're in -
+              // waiting on [Name]", which asserts a booking against a cell that
+              // ends "nobody has paid yet".
+              <>Suggested to {firstName}</>
             ) : step === "proposed" ? (
               <>
                 {firstName}&apos;s keen for {eventTitle} - you in?
@@ -885,11 +1181,16 @@ function CoordinationBody({
               <>Pick something to do with {firstName}.</>
             )}
           </h2>
-          {entry.suggestionUnavailable &&
-          !entry.suggestedEventCancelled &&
-          !entry.suggestedEventStarted ? (
+          {seatRace ? (
             <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--ink-soft)]">
               No drama - there&apos;s always another. Find one you&apos;ll both like.
+            </p>
+          ) : waitingAsProposer ? (
+            // S6's locked reassurance. No countdown, no "seen" receipt, no nudge -
+            // the whole point of the line is that there is nothing to do but wait.
+            <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--ink-soft)]">
+              We&apos;ll let {firstName} know, and tell you the moment it&apos;s confirmed - no
+              rush.
             </p>
           ) : null}
           {entry.suggestedEventStartsAt ? (
@@ -953,33 +1254,56 @@ function CoordinationBody({
                 aria-describedby={capReached ? "suggest-cap-note" : undefined}
                 className="ck-btn ck-btn--md ck-btn--secondary disabled:cursor-not-allowed"
               >
-                {entry.suggestedEventSlug ? "Suggest alternative" : "Suggest a plan"}
+                {seatRace
+                  ? // S14's locked exit label.
+                    "Find another together"
+                  : entry.suggestedEventSlug
+                    ? "Suggest alternative"
+                    : "Suggest a plan"}
               </button>
-              {/* Say the number before it runs out, and explain the dead button
-                  when it has. alternativesRemaining was referenced exactly once
-                  in this component - its own definition.
-                  At the cap both sides used to read "it's their turn to pick",
-                  so each sat waiting for a move the other could not make: the
-                  budget is joint, so neither button is live. Split on who
-                  proposed. The proposer is genuinely waiting; the recipient
-                  still holds both live controls beside this note, and passing
-                  declines the plan, which drops the proposal row and hands the
-                  pair a fresh budget on the next suggestion. */}
-              {entry.suggestedEventSlug && entry.alternativesRemaining <= 2 && !entry.suggestionUnavailable ? (
+              {/* Explain the dead button WITHOUT counting anything. Invariant 9
+                  bans a visible cap outright, and a remaining-suggestions counter
+                  is the depleting-budget copy the DS bans by name - it just
+                  slipped the literal CI grep, which only looks for the click one.
+                  So the note says only what is true and actionable now, and splits
+                  on who proposed: at the joint cap neither button is live, and both
+                  sides used to be told it was the other's turn to pick. The
+                  proposer is genuinely waiting; the recipient still holds the two
+                  live controls beside this note, and passing drops the proposal
+                  row so the pair starts fresh. */}
+              {capReached && entry.suggestedEventSlug ? (
                 <p
                   id="suggest-cap-note"
                   className="text-[11.5px] font-medium text-[color:var(--slate)]"
                 >
-                  {entry.alternativesRemaining === 0
-                    ? entry.proposedByMe
-                      ? `You've both used up the suggestions for this plan - it's with ${firstName} to confirm or pass.`
-                      : "You've both used up the suggestions for this plan - confirm it, or pass and you two can start fresh."
-                    : `${entry.alternativesRemaining} suggestion${
-                        entry.alternativesRemaining === 1 ? "" : "s"
-                      } left for this plan.`}
+                  {entry.proposedByMe
+                    ? `It's with ${firstName} to confirm or pass.`
+                    : "Confirm it, or pass and you two can start fresh."}
                 </p>
               ) : null}
             </div>
+            {/* S14's SECOND exit (runbook off-path table). Not a state change and
+                not a booking: it puts BOTH of them on that event's waitlist, and if
+                a seat frees up the normal promotion hands them the 30-minute claim.
+                Seat-race only - the cancelled and already-started arms have no queue
+                to join. Secondary, like the exit beside it: S14 is not a peak, and
+                Deep Purple is the primary-action colour, so neither recovery route
+                gets to shout. */}
+            {seatRace ? (
+              <form action={waitlistAction}>
+                <input type="hidden" name="mutual_id" value={entry.mutualId} />
+                <SubmitButton variant="secondary" pendingLabel="Adding you both…">
+                  Join the waitlist together
+                </SubmitButton>
+              </form>
+            ) : null}
+            {/* S6's locked exit. The waiting side has nothing to do here, so give
+                them a real way out rather than a hunt for the corner ✕. */}
+            {waitingAsProposer ? (
+              <button type="button" onClick={onDone} className="ck-btn ck-btn--md ck-btn--secondary">
+                Back to your clicks
+              </button>
+            ) : null}
             {/* Decline is the recipient's no - returns to open, no blame (§B6). */}
             {step === "proposed" && !entry.proposedByMe ? (
               <form action={declineAction}>
@@ -1009,6 +1333,14 @@ function CoordinationBody({
               className="mt-3 rounded-[var(--radius-md)] bg-[color-mix(in_srgb,var(--danger)_10%,var(--paper))] px-3 py-2 text-xs font-medium text-[color:var(--danger)]"
             >
               {declineError}
+            </p>
+          ) : null}
+          {waitlistError ? (
+            <p
+              role="alert"
+              className="mt-3 rounded-[var(--radius-md)] bg-[color-mix(in_srgb,var(--danger)_10%,var(--paper))] px-3 py-2 text-xs font-medium text-[color:var(--danger)]"
+            >
+              {waitlistError}
             </p>
           ) : null}
 

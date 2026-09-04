@@ -133,14 +133,14 @@ export function LoginModal({
       className="px-4 py-8"
       scrimClassName="bg-[rgba(28,24,48,0.5)]"
     >
-      <div className="relative z-10 max-h-[92vh] w-full max-w-[452px] overflow-y-auto rounded-[20px] bg-[color:var(--paper)] p-6 shadow-[0_12px_32px_rgba(28,24,48,.14),0_2px_6px_rgba(28,24,48,.08)] sm:p-7">
+      <div className="relative z-10 max-h-[92dvh] w-full max-w-[452px] overflow-y-auto rounded-[20px] bg-[color:var(--paper)] p-6 shadow-[0_12px_32px_rgba(28,24,48,.14),0_2px_6px_rgba(28,24,48,.08)] sm:p-7">
         <div className="flex items-start justify-between gap-4">
           <Logo size={26} />
           <button
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="-m-1 flex size-8 items-center justify-center rounded-lg text-[color:var(--slate)] hover:bg-[color:var(--lavender-100)] hover:text-[color:var(--ink)]"
+            className="-m-2.5 flex size-11 items-center justify-center rounded-lg text-[color:var(--slate)] hover:bg-[color:var(--lavender-100)] hover:text-[color:var(--ink)]"
           >
             <Icon name="x" size={18} stroke={2.2} />
           </button>

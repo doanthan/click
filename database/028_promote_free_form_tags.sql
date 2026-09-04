@@ -2,7 +2,7 @@
 --
 -- After database/027_remove_orphan_tags.sql deletes the unreferenced leftovers,
 -- the only `admin_managed = false` / `tag_type = 'interest'` rows still standing
--- are ones a real event or profile points at. Those are legitimate in-use tags —
+-- are ones a real event or profile points at. Those are legitimate in-use tags -
 -- promote them into the curated taxonomy so they're treated like any other click
 -- tag (and won't be caught by a future admin_managed = false sweep). The
 -- associations are untouched; this only flips the flag.

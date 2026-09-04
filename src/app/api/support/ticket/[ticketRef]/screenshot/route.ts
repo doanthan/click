@@ -46,7 +46,7 @@ export async function GET(
     return htmlPage({
       status: 404,
       title: "No screenshot for this ticket",
-      body: `Ticket <code>${escapeHtml(ticketRef)}</code> exists in the queue but didn't include a screenshot — the reporter either skipped capture or it failed to upload.`,
+      body: `Ticket <code>${escapeHtml(ticketRef)}</code> exists in the queue but didn't include a screenshot - the reporter either skipped capture or it failed to upload.`,
     });
   } catch (error) {
     console.error("[support] screenshot redirect failed:", error);

@@ -7,9 +7,9 @@
  * so it's fast and works offline.
  *
  * Returns:
- *   200 { postcode, state, suburbs: string[] } — known postcode
- *   400 { error }                              — missing / malformed code
- *   404 { error }                              — well-formed but unknown postcode
+ *   200 { postcode, state, suburbs: string[] } - known postcode
+ *   400 { error } - missing / malformed code
+ *   404 { error } - well-formed but unknown postcode
  */
 
 import { NextResponse } from "next/server";
@@ -33,7 +33,7 @@ export function GET(request: Request) {
     );
   }
 
-  // Suburbs change about as often as the postal map — let the edge cache hold
+  // Suburbs change about as often as the postal map - let the edge cache hold
   // the answer for a day.
   return NextResponse.json(match, {
     headers: { "Cache-Control": "public, max-age=86400, s-maxage=86400" },

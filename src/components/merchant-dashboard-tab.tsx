@@ -390,8 +390,16 @@ function MerchantTrends({
                       {m.confirmed} booking{m.confirmed === 1 ? "" : "s"}
                     </span>
                   </div>
+                  {/* Whole dollars on the axis label only. At 375px the card is
+                      full width (the section is lg:grid-cols-2), so six columns
+                      share ~42px each - and a money token has no break
+                      opportunity, so "$1,234.50" overhangs the 8px gap and
+                      smears into its neighbours. Rounding to dollars lets
+                      formatMoney drop the fraction digits and the label fits.
+                      The exact cents are still on the hover/focus tooltip above
+                      and in this column's aria-label. */}
                   <span className="text-[11px] font-semibold tabular-nums text-[color:var(--slate)]">
-                    {formatMoney(m.revenueCents)}
+                    {formatMoney(Math.round(m.revenueCents / 100) * 100)}
                   </span>
                   <div className="flex w-full flex-1 items-end justify-center gap-1">
                     <div

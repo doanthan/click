@@ -2,7 +2,7 @@ import type Stripe from "stripe";
 import { getStripeClient } from "./stripe";
 
 // Stripe Connect helpers for the post-approval merchant onboarding flow
-// (/merchant/onboarding). Sibling to src/lib/stripe.ts — reuses its singleton
+// (/merchant/onboarding). Sibling to src/lib/stripe.ts - reuses its singleton
 // client (callers build return/refresh URLs with getAppUrl()).
 //
 // We use the Accounts v2 API (POST /v2/core/accounts) with `controller`-style
@@ -10,7 +10,7 @@ import { getStripeClient } from "./stripe";
 // matches Stripe's marketplace quickstart: the platform is merchant of record,
 // pays Stripe fees, is liable for losses (fees_collector/losses_collector =
 // 'application'), and connected accounts get a lightweight Express dashboard.
-// Funds move later via destination charges (out of scope for this task) — here
+// Funds move later via destination charges (out of scope for this task) - here
 // we only create the account and drive Stripe's hosted onboarding so the
 // merchant submits their bank details + KYC.
 
@@ -42,7 +42,7 @@ export function isRealConnectAccountId(
   return Boolean(accountId) && /^acct_[A-Za-z0-9]+$/.test(accountId!) && !accountId!.startsWith("acct_seed_");
 }
 
-// Platform take rate, in basis points (100 = 1%). Default 0 — we route the
+// Platform take rate, in basis points (100 = 1%). Default 0 - we route the
 // full charge to the merchant. Flip via env when we turn on platform fees;
 // `calculateApplicationFee` then returns the cut Stripe will retain from each
 // destination charge before transferring to the merchant.
@@ -62,7 +62,7 @@ export function calculateApplicationFee(
   if (priceCents <= 0) return 0;
   const bps = Math.max(0, Math.min(Math.round(feeBps), 5000));
   if (bps === 0) return 0;
-  // floor — round in the platform's favour would surprise merchants; round
+  // floor - round in the platform's favour would surprise merchants; round
   // down so the merchant sees a clean number.
   return Math.floor((priceCents * bps) / 10000);
 }

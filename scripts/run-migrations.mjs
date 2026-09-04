@@ -1,7 +1,7 @@
 // Migration runner with an applied-migrations ledger (schema_migrations).
 //
 // Each file is sent as a single simple query, so Postgres runs it as one
-// implicit transaction — a mid-file error rolls that file back. Files already
+// implicit transaction - a mid-file error rolls that file back. Files already
 // recorded in schema_migrations are skipped; a file that applies cleanly is
 // recorded (basename + sha256). Uses the same connection settings as the app
 // (Supabase pooler + relaxed TLS).
@@ -87,13 +87,13 @@ try {
     if (applied.has(name)) {
       const drift =
         applied.get(name) !== sum ? "  (warning: file changed since it was applied)" : "";
-      console.log(`Skipping ${name} — already applied${drift}`);
+      console.log(`Skipping ${name} - already applied${drift}`);
       continue;
     }
 
     if (baseline) {
       await record(name, sum);
-      console.log(`Baselined ${name} — recorded as applied (SQL not run)`);
+      console.log(`Baselined ${name} - recorded as applied (SQL not run)`);
       continue;
     }
 

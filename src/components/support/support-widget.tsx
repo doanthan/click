@@ -595,7 +595,15 @@ export default function SupportWidget({ canTriage = false }: { canTriage?: boole
                 <BugIcon />
                 <span>Report a bug</span>
               </div>
-              <button type="button" onClick={() => setOpen(false)} aria-label="Close" className="rounded p-1 hover:bg-[color-mix(in_srgb,var(--paper)_20%,transparent)]">
+              {/* At 375px the panel is the whole viewport, so it buries the
+                  tappable scrim and this X is the only way out on a phone -
+                  p-1 around an 18px glyph made that exit a 26px target. The
+                  negative margins stop the 44px box inflating the header:
+                  -my-2 pulls 8px back off each side, so the header grows by
+                  2px rather than by the full 18px the taller button would
+                  otherwise add, and -mr-1 keeps the glyph from drifting too
+                  far in from the px-4 edge. */}
+              <button type="button" onClick={() => setOpen(false)} aria-label="Close" className="-my-2 -mr-1 inline-flex min-h-11 min-w-11 items-center justify-center rounded hover:bg-[color-mix(in_srgb,var(--paper)_20%,transparent)]">
                 <CloseIcon />
               </button>
             </header>

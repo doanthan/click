@@ -41,8 +41,8 @@ let failures = 0;
 const profiles = [];
 const mutuals = [];
 function check(label, cond) {
-  if (cond) console.log(`  ok   — ${label}`);
-  else { failures++; console.error(`  FAIL — ${label}`); }
+  if (cond) console.log(`  ok - ${label}`);
+  else { failures++; console.error(`  FAIL - ${label}`); }
 }
 
 async function mkProfile() {
@@ -74,7 +74,7 @@ async function revealState(mutualId, viewerId) {
   );
   return r.rows[0] ? { seen: Boolean(r.rows[0].seen) } : null;
 }
-// Mirrors markMutualSeen exactly — returns true only on the first view.
+// Mirrors markMutualSeen exactly - returns true only on the first view.
 async function markSeen(mutualId, viewerId) {
   const r = await pool.query(
     `update mutual_clicks
@@ -89,7 +89,7 @@ async function markSeen(mutualId, viewerId) {
 }
 
 try {
-  console.log("§4 — reveal fires once per user, per mutual:");
+  console.log("§4 - reveal fires once per user, per mutual:");
   const a = await mkProfile();
   const b = await mkProfile();
   const stranger = await mkProfile();
@@ -111,7 +111,7 @@ try {
 
   check("stranger can't stamp a mutual they're not in", (await markSeen(m, stranger)) === false);
 
-  console.log(failures === 0 ? "\nPASS — reveal fires once per user, idempotent, per-side." : `\nFAIL — ${failures} assertion(s).`);
+  console.log(failures === 0 ? "\nPASS - reveal fires once per user, idempotent, per-side." : `\nFAIL - ${failures} assertion(s).`);
 } catch (err) {
   console.error("ERROR:", err.message);
   failures++;

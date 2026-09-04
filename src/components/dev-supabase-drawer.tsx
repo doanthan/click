@@ -91,7 +91,7 @@ function relativeTime(iso: string) {
 }
 
 function formatValue(value: unknown) {
-  if (value === null || value === undefined) return "—";
+  if (value === null || value === undefined) return "-";
   const text = typeof value === "object" ? JSON.stringify(value) : String(value);
   return text.length > 300 ? `${text.slice(0, 300)}…` : text;
 }
@@ -121,7 +121,7 @@ export default function DevSupabaseDrawer() {
   const [newEmailIds, setNewEmailIds] = useState<Set<string>>(new Set());
 
   // Every row id we've ever observed. The first poll seeds this as the
-  // "baseline" so existing rows don't flash — only rows created afterwards do.
+  // "baseline" so existing rows don't flash - only rows created afterwards do.
   const knownRef = useRef<Set<string>>(new Set());
   const baselineRef = useRef(false);
 
@@ -195,7 +195,7 @@ export default function DevSupabaseDrawer() {
         for (const entry of fresh) next.add(entry.id);
         return next;
       });
-      // Don't auto-expand emails — the iframes are heavy and a single fresh
+      // Don't auto-expand emails - the iframes are heavy and a single fresh
       // one collapses the others on its own when the dev clicks it.
     } catch (err) {
       setEmailError(err instanceof Error ? err.message : "Failed to load email log");
@@ -249,7 +249,7 @@ export default function DevSupabaseDrawer() {
 
   const newCount = newIds.size;
   const newEmailCount = newEmailIds.size;
-  // Combined badge — the launcher button doesn't know which tab the dev
+  // Combined badge - the launcher button doesn't know which tab the dev
   // cares about, so we surface either.
   const totalNew = newCount + newEmailCount;
 
@@ -275,7 +275,7 @@ export default function DevSupabaseDrawer() {
         }
       `}</style>
 
-      {/* Floating launcher — present on every page while in DEVELOPMENT mode. */}
+      {/* Floating launcher - present on every page while in DEVELOPMENT mode. */}
       <button
         type="button"
         onClick={() => {
@@ -346,7 +346,7 @@ export default function DevSupabaseDrawer() {
               </div>
             </header>
 
-            {/* Tab switcher — same visual treatment as the table-filter pill row
+            {/* Tab switcher - same visual treatment as the table-filter pill row
                 below it so the two feel like one control surface. */}
             <div
               role="tablist"
@@ -537,7 +537,7 @@ function WritesView({
         {filtered.length === 0 && !error ? (
           <p className="text-sm font-medium text-[color:var(--mauve)]">
             {entries.length === 0
-              ? "No rows yet. Do something in the app — new writes appear here automatically."
+              ? "No rows yet. Do something in the app - new writes appear here automatically."
               : "No rows match the current filter."}
           </p>
         ) : null}
@@ -615,7 +615,7 @@ function WritesView({
 // Lists rows from `email_events`. Click a card to open a full-size modal with
 // the rendered HTML in a sandboxed iframe (same `srcDoc` approach as /email's
 // preview). `allow-same-origin` lets Google Fonts load; no `allow-scripts` so
-// no email JS can run — same rule real clients enforce.
+// no email JS can run - same rule real clients enforce.
 
 function EmailsView({
   entries,
@@ -637,7 +637,7 @@ function EmailsView({
   // The email currently shown in the preview modal (null = closed).
   const [preview, setPreview] = useState<EmailEntry | null>(null);
 
-  // Esc closes the modal only — registered in the capture phase with
+  // Esc closes the modal only - registered in the capture phase with
   // stopImmediatePropagation so the drawer's own Esc-to-close (a bubble-phase
   // window listener) doesn't also fire and yank the whole drawer shut.
   useEffect(() => {
@@ -652,7 +652,7 @@ function EmailsView({
     return () => window.removeEventListener("keydown", onKey, true);
   }, [preview]);
 
-  // Load the scenario list lazily — it's just a static array on the server
+  // Load the scenario list lazily - it's just a static array on the server
   // but importing it directly would pull all the email-template builders
   // (and their fixtures) into this client bundle.
   useEffect(() => {
@@ -667,7 +667,7 @@ function EmailsView({
         if (!active) return;
         setScenarios(json.scenarios ?? []);
       } catch {
-        // Non-critical — the "Send fake email" form just won't have options
+        // Non-critical - the "Send fake email" form just won't have options
         // until the page is reloaded.
       }
     })();
@@ -697,7 +697,7 @@ function EmailsView({
   }
 
   const newCount = newIds.size;
-  // Same defence as the writes tab — guarantee latest-first regardless of
+  // Same defence as the writes tab - guarantee latest-first regardless of
   // what /api/test/email-log returned.
   const sortedEntries = useMemo(
     () =>
@@ -776,7 +776,7 @@ function EmailsView({
         {error ? (
           <div className="mb-4 rounded-xl border-2 border-[color:var(--ink)] bg-[color:var(--rose)]/20 p-4 text-sm font-medium text-[color:var(--ink)]">
             {error}
-            {/* Most common cause — surface the migration path inline. */}
+            {/* Most common cause - surface the migration path inline. */}
             {error.toLowerCase().includes("email_events") ? (
               <span className="mt-2 block font-mono text-[0.65rem] text-[color:var(--mauve)]">
                 Run <code>database/012_email_events.sql</code> against your Supabase project.
@@ -799,7 +799,7 @@ function EmailsView({
             const isNew = newIds.has(entry.id);
             return (
               <li key={entry.id}>
-                {/* Whole card is the trigger — click opens the preview modal. */}
+                {/* Whole card is the trigger - click opens the preview modal. */}
                 <button
                   type="button"
                   onClick={() => setPreview(entry)}

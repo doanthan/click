@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { sendMerchantMonthlyReports } from "@/lib/event-repository";
 
 export const runtime = "nodejs";
-// Never cache — this writes email_events rows every run.
+// Never cache - this writes email_events rows every run.
 export const dynamic = "force-dynamic";
 
 /**
@@ -18,7 +18,7 @@ export const dynamic = "force-dynamic";
  * reports the month that just ended). Override for backfills/tests with
  * `?year=YYYY&month=MM`.
  *
- * Wire to a scheduler that sends `Authorization: Bearer ${CRON_SECRET}` — e.g.
+ * Wire to a scheduler that sends `Authorization: Bearer ${CRON_SECRET}` - e.g.
  * a Vercel cron in vercel.json running at the start of each month:
  *   { "path": "/api/cron/merchant-monthly-reports", "schedule": "0 8 1 * *" }
  * Returns 503 until CRON_SECRET is configured, so the endpoint is never open.

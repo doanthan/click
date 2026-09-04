@@ -4,7 +4,7 @@
 -- but was never written. This migration adds:
 --   * mirror columns of the connected account's capability state, kept in sync
 --     by the `account.updated` Connect webhook (src/app/api/webhooks/stripe).
---     These are a cache for gating/UI — Stripe remains the source of truth.
+--     These are a cache for gating/UI - Stripe remains the source of truth.
 --   * onboarding_completed_at: marks that the merchant has been through (or
 --     skipped) the one-time post-approval walkthrough at /merchant/onboarding,
 --     so /merchant stops redirecting them into it.

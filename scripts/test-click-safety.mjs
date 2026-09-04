@@ -9,7 +9,7 @@
 //   • ban  (severAllCoordinationForUser): the SAME teardown across EVERY pair the
 //     banned user is in, and pairCoordinationAllowed() FALSE via is_banned.
 //   • suspend = freeze, NOT teardown: a suspended partner makes pairCoordinationAllowed()
-//     FALSE, but the mutual stays ACTIVE (reversible — only ban/block tear down).
+//     FALSE, but the mutual stays ACTIVE (reversible - only ban/block tear down).
 //
 // The SQL here MUST stay in lock-step with src/lib/clicks/teardown.ts. Self-cleaning.
 //
@@ -51,10 +51,10 @@ let failures = 0;
 const created = [];
 function check(label, cond) {
   if (cond) {
-    console.log(`  ok   — ${label}`);
+    console.log(`  ok - ${label}`);
   } else {
     failures++;
-    console.error(`  FAIL — ${label}`);
+    console.error(`  FAIL - ${label}`);
   }
 }
 
@@ -72,7 +72,7 @@ async function mkProfile(label) {
 async function seedLiveCoordination(aId, bId) {
   const exp7 = new Date(Date.now() + 7 * 86400_000).toISOString();
   // Once a mutual forms, the pair's click rows are status='mutual' (history), not
-  // pending — the teardown leaves these and tears down the relationship layer.
+  // pending - the teardown leaves these and tears down the relationship layer.
   await pool.query(
     `insert into clicks (sender_id, receiver_id, event_id, intent_mode, surface, status, expires_at)
      values ($1::uuid,$2::uuid,null,'friendship','discovery','mutual',$3::timestamptz),
@@ -287,9 +287,9 @@ try {
 }
 
 if (failures === 0) {
-  console.log("\nPASS — all safety teardown + re-check invariants hold.");
+  console.log("\nPASS - all safety teardown + re-check invariants hold.");
   process.exit(0);
 } else {
-  console.error(`\nFAIL — ${failures} assertion(s) failed.`);
+  console.error(`\nFAIL - ${failures} assertion(s) failed.`);
   process.exit(1);
 }

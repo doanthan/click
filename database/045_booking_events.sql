@@ -1,5 +1,5 @@
 -- 045_booking_events.sql
--- Spec: TECH/22_ANALYTICS.md §2 (Phase A — "ship before first paid ticket").
+-- Spec: TECH/22_ANALYTICS.md §2 (Phase A - "ship before first paid ticket").
 --
 -- Append-only log of every booking-lifecycle transition. The live tables
 -- (`event_attendees`, `payment_transactions`) remain the source of truth for
@@ -10,7 +10,7 @@
 --
 -- Schema deviations from the spec, by design, to match this codebase:
 --   * `booking_id` = `event_attendees.id` (we have no separate `bookings`
---     table; the attendee row IS the booking). No FK — history outlives deletes.
+--     table; the attendee row IS the booking). No FK - history outlives deletes.
 --   * `merchant_id` is NULLABLE here. The spec assumes every event has a
 --     merchant ("no open hosting"), but this implementation still has
 --     platform-owned events (seed/admin) with `events.merchant_profile_id IS

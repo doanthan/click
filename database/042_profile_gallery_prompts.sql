@@ -11,7 +11,7 @@
 --    on read so retiring a prompt never breaks a profile.
 --
 -- The verification tick reuses the existing `profiles.photo_verified_at`
--- column from 001 — admins stamp/clear it from /admin/members.
+-- column from 001 - admins stamp/clear it from /admin/members.
 
 alter table profiles
   add column if not exists gallery_photos text[] not null default '{}',

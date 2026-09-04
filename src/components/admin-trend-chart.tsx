@@ -56,7 +56,7 @@ export function AdminTrendChart({ buckets }: { buckets: AdminTrendBucket[] }) {
                   // height resolves against a definite parent height (otherwise
                   // the bars collapse to zero and the chart looks empty).
                   // `tabIndex` lets keyboard users reveal the CSS-only popover
-                  // via :focus-within — no JS, so the component stays an RSC.
+                  // via :focus-within - no JS, so the component stays an RSC.
                   <div
                     key={`${m.key}-${b.week}`}
                     className="group relative flex h-full flex-1 items-end focus:outline-none"

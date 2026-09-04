@@ -1,15 +1,15 @@
 /**
- * Event media gallery — derived from the real images stored on `events`
+ * Event media gallery - derived from the real images stored on `events`
  * (`image_urls[]`, falling back to the single `image_url`).
  *
  * We deliberately do NOT pad the gallery with unrelated stock photos: a
  * floral-arrangement event was surfacing concert/yoga frames, which read as
- * fake. When a merchant uploads only one image we show only that one tile —
+ * fake. When a merchant uploads only one image we show only that one tile -
  * the gallery component (`EventMediaGallery`) renders cleanly with <5 tiles.
  *
  * Type supports `kind: "video"` so the gallery component renders posters and
  * play affordances correctly. When an `event_media` table is added, swap
- * `buildEventMediaGallery` to read from it — the consumers won't change.
+ * `buildEventMediaGallery` to read from it - the consumers won't change.
  */
 
 export type MediaImage = {
@@ -29,7 +29,7 @@ export type MediaItem = MediaImage | MediaVideo;
 
 /**
  * Returns a gallery built only from the event's real images, in order. No
- * synthetic stock fillers — an event with a single upload yields a single
+ * synthetic stock fillers - an event with a single upload yields a single
  * tile. Blank/duplicate URLs are dropped.
  */
 export function buildEventMediaGallery({

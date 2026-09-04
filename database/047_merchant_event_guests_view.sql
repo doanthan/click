@@ -2,7 +2,7 @@
 -- Spec: TECH/19_GUEST_RSVP.md §11 (Merchant View / day-of door list).
 --
 -- The merchant's door list: the NAMED guest spots ('invited' / 'claimed') for an
--- event, exposing FIRST NAME + STATUS + who purchased the seat — and nothing else.
+-- event, exposing FIRST NAME + STATUS + who purchased the seat - and nothing else.
 -- No email, no DOB: "First name + status only" is the entire merchant-visible
 -- footprint of a guest (spec §9 + §11). Unnamed +1s are deliberately absent here;
 -- they exist only in the seat headcount (counted separately in query code), exactly
@@ -10,7 +10,7 @@
 --
 -- ADAPTATION (spec/code divergence, same basis recorded in 046_guest_spots.sql):
 -- the spec joins `bookings b on b.id = gs.booking_id and b.status = 'confirmed'`
--- and reads `p.full_name` off `b.user_id`. This codebase has no `bookings` table —
+-- and reads `p.full_name` off `b.user_id`. This codebase has no `bookings` table -
 -- the purchaser's "confirmed booking" is their confirmed `event_attendees` row,
 -- matched to the seat through `payment_transactions` (guest_spots.payment_transaction_id),
 -- and the purchaser's identity is `guest_spots.purchaser_profile_id`. We surface

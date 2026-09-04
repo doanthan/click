@@ -8,8 +8,8 @@
  *   • humans confirm a fix by setting Status = "fixed" (green), or send it back
  *     by un-ticking "AI fixed" (→ red, the AI picks it up again).
  *
- * Row colour is driven by **conditional formatting** set up once on the sheet —
- * NOT by us recolouring imperatively — so colours stay correct no matter who
+ * Row colour is driven by **conditional formatting** set up once on the sheet -
+ * NOT by us recolouring imperatively - so colours stay correct no matter who
  * edits the cells (our API, the AI agent, or a person typing in Google Sheets).
  *
  * Columns:  A URL · B What is wrong · C What it should be · D Is issue ·
@@ -81,7 +81,7 @@ function getClient(): sheets_v4.Sheets {
   });
   // Force a real OAuth2 access token. With scopes set, google-auth-library
   // otherwise sends a *self-signed JWT*, which the Sheets API rejects with
-  // "401 — Expected OAuth 2 access token".
+  // "401 - Expected OAuth 2 access token".
   auth.useJWTAccessWithScope = false;
   cachedClient = google.sheets({ version: "v4", auth });
   return cachedClient;
@@ -113,7 +113,7 @@ async function ensureSheet(sheets: sheets_v4.Sheets): Promise<number> {
   cachedSheetId = sheetId;
   cachedRowCount = sheet?.properties?.gridProperties?.rowCount ?? 1000;
 
-  // Ensure the header row exists — handles a tab that already existed (e.g.
+  // Ensure the header row exists - handles a tab that already existed (e.g.
   // created by hand) but is empty, so appends don't land on row 1.
   const firstRow = await sheets.spreadsheets.values.get({
     spreadsheetId: spreadsheetId(),
@@ -173,7 +173,7 @@ async function applyFormatting(
     deleteConditionalFormatRule: { sheetId, index: 0 },
   }));
   // Google clamps an unbounded conditional-format range to the grid's row count
-  // at creation time, so size the grid up first (grow-only) — this keeps the
+  // at creation time, so size the grid up first (grow-only) - this keeps the
   // colour rules covering rows well beyond any realistic bug count.
   const grow =
     cachedRowCount < GRID_ROWS
@@ -214,7 +214,7 @@ async function applyFormatting(
             rule: { condition: { type: "BOOLEAN" }, showCustomUi: true },
           },
         },
-        // Colour rules — first match wins for background, so order = priority.
+        // Colour rules - first match wins for background, so order = priority.
         rule('=$G2="fixed"', GREEN, sheetId, 0), // user-confirmed fixed (Status)
         rule("=$F2=TRUE", AMBER, sheetId, 1), // AI fixed
         rule("=$E2=FALSE", GRAY, sheetId, 2), // triaged: not an issue
@@ -228,7 +228,7 @@ export type SheetRowInput = {
   ticketRef: string;
   url: string; // pathname+search (fallback display)
   fullUrl: string; // absolute URL incl. origin, for a clickable link
-  role: string; // reporter's role — "Logged in as"
+  role: string; // reporter's role - "Logged in as"
   dateAdded: string; // when filed, e.g. "2026-06-02 14:30"
   whatIsWrong: string;
   expected: string;
@@ -285,7 +285,7 @@ export async function appendBugRow(input: SheetRowInput): Promise<number | null>
       ? `=HYPERLINK("${sheetStr(urlDisplay)}","${sheetStr(urlDisplay)}")`
       : "";
 
-    // Determine the next row explicitly from column A (URL — never a checkbox),
+    // Determine the next row explicitly from column A (URL - never a checkbox),
     // rather than spreadsheets.append, whose table-detection gets confused by the
     // checkbox data-validation in columns D/E and scatters rows to the grid end.
     const colA = await sheets.spreadsheets.values.get({
@@ -333,7 +333,7 @@ export async function appendBugRow(input: SheetRowInput): Promise<number | null>
             screenshotCell, // H
             input.dateAdded, // I Date added
             input.ticketRef, // J
-            "", // K AI Comment — filled by the AI fixer pass, empty on report
+            "", // K AI Comment - filled by the AI fixer pass, empty on report
           ],
         ],
       },
@@ -370,8 +370,8 @@ export async function markBugRowUserFixed(rowNumber: number | null | undefined):
 /**
  * Refresh a row after the reporter edits the bug: "What is wrong" (C) and "What
  * it should be" (D). When `state` is supplied (the reporter also changed the
- * status), the triage cells are rewritten too — Is issue (E), AI fixed (F),
- * Status (G) — and conditional formatting recolours the row. No-op if
+ * status), the triage cells are rewritten too - Is issue (E), AI fixed (F),
+ * Status (G) - and conditional formatting recolours the row. No-op if
  * unconfigured.
  */
 export async function updateBugRowContent(

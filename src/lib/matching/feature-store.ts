@@ -1,4 +1,4 @@
-// Matching v2 — feature population (spec §1.2 / §1.5 / §10 items 2 & 4).
+// Matching v2 - feature population (spec §1.2 / §1.5 / §10 items 2 & 4).
 //
 // Turns the live relational tables into the denormalised `user_features` store
 // and event `sub_tags` the scoring engine reads. Pure data layer: every function
@@ -8,8 +8,8 @@
 // Deviation from spec, documented on purpose: the spec defines "attendance" as
 // `checked_in_at IS NOT NULL`. This app only sets check-in via a rarely-used
 // admin toggle, so on real/seed data that count is ~0 and every user collapses
-// into one cohort. We use a pragmatic proxy — a CONFIRMED RSVP to an event that
-// has already ENDED — which is the strongest attendance signal actually present.
+// into one cohort. We use a pragmatic proxy - a CONFIRMED RSVP to an event that
+// has already ENDED - which is the strongest attendance signal actually present.
 // Swap the `attended` CTE to `checked_in_at IS NOT NULL` once check-in is wired.
 
 import type { Pool } from "pg";
@@ -19,7 +19,7 @@ import type { SocialEnergy, UserFeatures } from "./types";
 
 // ---------------------------------------------------------------------------
 // Event sub-tags (§1.2). Derive from title+description scoped to the event's
-// interest tags, write events.sub_tags. Idempotent — safe to re-run.
+// interest tags, write events.sub_tags. Idempotent - safe to re-run.
 // ---------------------------------------------------------------------------
 
 const EVENT_INTEREST_SLUGS_SQL = `
@@ -54,7 +54,7 @@ export async function backfillEventSubTags(pool: Pool): Promise<number> {
   return updated;
 }
 
-// Single event, by slug — called fire-and-forget at publish so a new event has
+// Single event, by slug - called fire-and-forget at publish so a new event has
 // sub-tags before the next batch cycle.
 export async function deriveEventSubTagsBySlug(pool: Pool, slug: string): Promise<void> {
   const { rows } = await pool.query<{ title: string; description: string; slugs: string[] }>(
@@ -285,7 +285,7 @@ export async function refreshAllUserFeatures(pool: Pool): Promise<number> {
   return rows.length;
 }
 
-// Single profile — for the dirty-row / on-change refresh path (spec §1.5).
+// Single profile - for the dirty-row / on-change refresh path (spec §1.5).
 export async function refreshUserFeatures(pool: Pool, profileId: string): Promise<boolean> {
   const { rows } = await pool.query<FeatureRow>(
     `${FEATURES_QUERY} where p.id = $1::uuid`,

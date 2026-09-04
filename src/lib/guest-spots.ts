@@ -1,7 +1,7 @@
 import { createHash } from "crypto";
 import type { Pool, PoolClient } from "pg";
 
-// Guest Spots (spec 19). A guest is an anonymous +1 with a name attached — no
+// Guest Spots (spec 19). A guest is an anonymous +1 with a name attached - no
 // account exists until the friend claims. See database/046_guest_spots.sql for
 // the data model and the adaptation notes.
 
@@ -27,14 +27,14 @@ function validationError(message: string): never {
   throw error;
 }
 
-// sha256(lower(trim(email))) — the only form of a removed guest's email we keep.
+// sha256(lower(trim(email))) - the only form of a removed guest's email we keep.
 export function hashGuestEmail(email: string): string {
   return createHash("sha256").update(email.trim().toLowerCase()).digest("hex");
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-// Guard before any `$1::uuid` cast on a user-supplied claim token — a malformed
+// Guard before any `$1::uuid` cast on a user-supplied claim token - a malformed
 // token should be a clean "not found", not a 22P02 invalid-uuid query error.
 export function isUuid(value: string): boolean {
   return UUID_RE.test(value);
@@ -88,7 +88,7 @@ export function validateGuestDetails(
   });
 }
 
-// Returns the lower-cased emails (of the given set) that are suppressed — a
+// Returns the lower-cased emails (of the given set) that are suppressed - a
 // person who said "remove my details" (or bounced/complained) is never re-invited.
 export async function filterSuppressedEmails(
   db: Queryable,
@@ -105,7 +105,7 @@ export async function filterSuppressedEmails(
 }
 
 // Emails (of the given set) that already hold a live (invited/claimed) spot at
-// this event — the uq_guest_email_per_event invariant, surfaced at checkout so
+// this event - the uq_guest_email_per_event invariant, surfaced at checkout so
 // we can reject before charging rather than silently dropping the seat.
 export async function liveGuestEmailsForEvent(
   db: Queryable,
@@ -126,7 +126,7 @@ export async function liveGuestEmailsForEvent(
   return new Set(res.rows.map((r) => r.email));
 }
 
-// Reserve `count` extra seats at hold time as unnamed placeholders — zero PII,
+// Reserve `count` extra seats at hold time as unnamed placeholders - zero PII,
 // but they consume capacity immediately so a concurrent buyer can't take the
 // friends' seats while the purchaser is in Stripe Checkout. Named at webhook
 // time. Must run inside the same txn/lock as the capacity check.
@@ -189,7 +189,7 @@ export async function nameReservedGuestSeats(
 ): Promise<NamedGuestOutcome[]> {
   const outcomes: NamedGuestOutcome[] = [];
   for (const guest of args.guests) {
-    // Already named on this booking (replay) — nothing to do.
+    // Already named on this booking (replay) - nothing to do.
     const already = await client.query<{ id: string }>(
       `select id::text from guest_spots
         where payment_transaction_id = $1::uuid and lower(guest_email) = $2 and status in ('invited','claimed')
@@ -249,8 +249,8 @@ export async function nameReservedGuestSeats(
     );
     const row = named.rows[0];
     if (!row) {
-      // No unnamed seat left to name (shouldn't happen — we reserved one per
-      // guest at hold time — but never overrun the booking's seats).
+      // No unnamed seat left to name (shouldn't happen - we reserved one per
+      // guest at hold time - but never overrun the booking's seats).
       outcomes.push({ kind: "skipped_no_seat", firstName: guest.firstName, email: guest.email });
       continue;
     }

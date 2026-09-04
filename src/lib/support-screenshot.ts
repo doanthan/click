@@ -1,7 +1,7 @@
 /**
  * Viewport screenshot helper for the bug reporter.
  *
- * html2canvas-pro is dynamically imported so it never lands in the main bundle —
+ * html2canvas-pro is dynamically imported so it never lands in the main bundle -
  * it's only pulled in when a tester actually opens the panel. We use the `-pro`
  * fork (not classic html2canvas) because this app is Tailwind 4, whose default
  * palette uses `oklch()` colors that classic html2canvas can't parse.
@@ -29,7 +29,7 @@ export async function captureViewport(): Promise<Screenshot> {
 
   try {
     const canvas = await html2canvas(document.body, {
-      // Current viewport only — not the whole scrollable page. We offset the
+      // Current viewport only - not the whole scrollable page. We offset the
       // render origin by the scroll position (scrollX/scrollY: -scroll) rather
       // than cropping with x/y: in html2canvas-pro v2 the x/y crop ignores the
       // scroll offset on a scrolled page and captures the top of the document
@@ -48,7 +48,7 @@ export async function captureViewport(): Promise<Screenshot> {
       // html2canvas renders a fresh clone of the DOM in an off-screen iframe,
       // which RESTARTS every CSS animation from time 0. Entrance animations like
       // `.rise` start at `opacity: 0` / `translateY(28px)`, so the clone captures
-      // them invisible — that's why the homepage hero (and any `.rise`/`.pop-in`
+      // them invisible - that's why the homepage hero (and any `.rise`/`.pop-in`
       // section) came out blank. Snap every animation to its final keyframe in
       // the clone so elements render in their resting state.
       onclone: (doc: Document) => {

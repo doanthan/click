@@ -173,6 +173,11 @@ function MarketingBanner({ text }: { text: string }) {
     <div className="w-full bg-[color:var(--lav-bg)] px-4 py-2.5">
       <div className="mx-auto flex max-w-7xl items-center justify-center gap-3">
         <p className="text-[13px] font-medium leading-5 text-[color:var(--ink)]">{text}</p>
+        {/* The glyph's box is 18px tall and ~22px wide - half the 44px touch
+            floor, and this is the only control the banner has. So the HIT AREA
+            grows via an invisible ::after rather than the button itself: a real
+            44px box would push this strip from ~40px to ~64px and eat the top of
+            a 375px viewport on every route. */}
         <button
           type="button"
           onClick={() => {
@@ -187,7 +192,7 @@ function MarketingBanner({ text }: { text: string }) {
             announceDismissal();
           }}
           aria-label="Dismiss announcement"
-          className="shrink-0 rounded-lg px-1.5 text-lg leading-none text-[color:var(--slate)] transition-colors hover:text-[color:var(--ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--purple)]"
+          className="relative shrink-0 rounded-lg px-1.5 text-lg leading-none text-[color:var(--slate)] transition-colors after:absolute after:left-1/2 after:top-1/2 after:h-11 after:w-11 after:-translate-x-1/2 after:-translate-y-1/2 after:content-[''] hover:text-[color:var(--ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--purple)]"
         >
           &times;
         </button>

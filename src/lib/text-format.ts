@@ -3,7 +3,7 @@
 // both the browser bundle (event-create wizard) and Node (event-repository).
 
 // Words that stay lowercase in title case unless they're the first or last word
-// of the title. Deliberately short — the goal is "Restaurant Meetup: Table for
+// of the title. Deliberately short - the goal is "Restaurant Meetup: Table for
 // Eight", not a copy-editor's full style guide.
 const MINOR_WORDS = new Set([
   "a", "an", "and", "as", "at", "but", "by", "for", "in", "nor", "of", "on",

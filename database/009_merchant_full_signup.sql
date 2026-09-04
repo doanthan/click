@@ -6,7 +6,7 @@
 -- uploads. Documents themselves live in the private Supabase Storage bucket
 -- "merchant-documents"; this table just stores the metadata + path.
 --
--- Idempotent — safe to re-run.
+-- Idempotent - safe to re-run.
 
 begin;
 
@@ -82,7 +82,7 @@ create index if not exists merchant_documents_profile_idx
 alter table merchant_documents enable row level security;
 
 -- ---------------------------------------------------------------------------
--- 4. Storage bucket — private, signed-URL only.
+-- 4. Storage bucket - private, signed-URL only.
 --    Safe to skip if storage extension isn't available in this DB (the API
 --    route will surface a 503 with a clear "Storage not configured" message).
 -- ---------------------------------------------------------------------------

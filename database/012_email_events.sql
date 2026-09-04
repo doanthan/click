@@ -3,7 +3,7 @@
 -- View a row in Supabase Studio → Table Editor → email_events → click the row
 -- and the side-drawer shows the full rendered `html` and the `vars` jsonb.
 --
--- This is intentionally not a queue or outbox — there's no `sent_at`, no
+-- This is intentionally not a queue or outbox - there's no `sent_at`, no
 -- retry, no provider id. Once a real provider is wired, add those columns
 -- (or move to a proper `email_outbox` table) and keep this for the dev log.
 

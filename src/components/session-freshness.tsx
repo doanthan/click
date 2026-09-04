@@ -5,7 +5,7 @@ import { useEffect } from "react";
 // Guards against the browser back/forward cache (bfcache) resurrecting a page
 // that was server-rendered under a PREVIOUS session. Every authed surface here
 // is rendered per-request from the session cookie, but bfcache restores the
-// full DOM snapshot from memory without hitting the server — so after a
+// full DOM snapshot from memory without hitting the server - so after a
 // sign-out or account switch, pressing Back (or restoring the tab) shows the
 // old user's dashboard/header as if they were still signed in. Reported as
 // "I logged in as Ellen but got Janey's account" / "logged out but it

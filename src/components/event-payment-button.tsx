@@ -343,7 +343,12 @@ export function EventPaymentButton({
                     key={i}
                     className="grid gap-1.5 rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] p-2"
                   >
-                    <div className="grid grid-cols-2 gap-1.5">
+                    {/* Single column on phones: two tracks inside the booking
+                        dialog leave ~92px of field, which clips a native date
+                        input's year digits - and the DOB has no visible label,
+                        so its own dd/mm/yyyy text is the only cue for what the
+                        box is. Two-up returns from sm, where the cells fit. */}
+                    <div className="grid gap-1.5 sm:grid-cols-2">
                       <input
                         value={row.firstName}
                         onChange={(e) => updateRow(i, { firstName: e.target.value })}

@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Suspense } from "react";
 import { IBM_Plex_Mono, Poppins } from "next/font/google";
 import { Toaster } from "sonner";
@@ -67,6 +67,22 @@ export const metadata: Metadata = {
     icon: "/click-mark.svg",
     apple: "/click-mark.svg",
   },
+};
+
+// Next's default viewport is `width=device-width, initial-scale=1` - correct,
+// but WITHOUT viewport-fit=cover, which is the switch that makes
+// env(safe-area-inset-*) resolve to anything other than 0px. The app already
+// leans on those insets in ten places (the bottom tab bar's own padding, the
+// spacer this layout renders for it, the onboarding header and footer, the
+// coordination drawer, the explorer's action bar), so until now every one of
+// them was quietly computing max(x, 0px) and the tab bar sat underneath an
+// iPhone's home indicator. Turning cover on is what those rules were written
+// for. Nothing scales: user-scalable stays on and maximumScale is left unset,
+// because pinch-zoom is an accessibility feature, not a layout bug.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default async function RootLayout({

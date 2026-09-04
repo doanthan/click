@@ -3,7 +3,7 @@
  *
  * Single source of truth for the prompt catalogue, shared by the /profile/edit
  * picker (client) and the server-side sanitiser. Answers persist on
- * `profiles.prompts` as jsonb `[{ id, answer }]` (migration 042) — only the id
+ * `profiles.prompts` as jsonb `[{ id, answer }]` (migration 042) - only the id
  * is stored, so a label tweak here updates every profile retroactively.
  *
  * Keep this file dependency-free: it's imported by client components and must

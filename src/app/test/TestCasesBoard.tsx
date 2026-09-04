@@ -257,7 +257,7 @@ export default function TestCasesBoard() {
         </p>
       </div>
 
-      {/* Shared name — reused for new cases and comments. */}
+      {/* Shared name - reused for new cases and comments. */}
       <div className="mt-6 flex flex-wrap items-center gap-3">
         <label className="font-mono text-[0.7rem] font-bold uppercase tracking-[0.14em] text-[color:var(--mauve)]">
           Your name
@@ -266,7 +266,7 @@ export default function TestCasesBoard() {
           value={author}
           onChange={(e) => setAuthor(e.target.value)}
           onBlur={() => persistAuthor(author)}
-          placeholder="optional — shown on what you post"
+          placeholder="optional - shown on what you post"
           className="min-w-[14rem] flex-1 rounded-full border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-2 text-sm font-medium text-[color:var(--ink)] outline-none focus:border-[color:var(--rose)]"
         />
       </div>
@@ -280,7 +280,7 @@ export default function TestCasesBoard() {
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="Test case title — e.g. “Booking a paid event charges the card”"
+            placeholder="Test case title - e.g. “Booking a paid event charges the card”"
             className="rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--champagne)] px-4 py-2.5 text-sm font-bold text-[color:var(--ink)] outline-none focus:border-[color:var(--rose)]"
           />
           <select
@@ -326,7 +326,7 @@ export default function TestCasesBoard() {
           </div>
         ) : cases.length === 0 ? (
           <p className="rounded-2xl border-2 border-dashed border-[color:var(--line-soft)] p-6 text-center text-sm font-medium text-[color:var(--mauve)]">
-            No test cases yet — add the first one above.
+            No test cases yet - add the first one above.
           </p>
         ) : (
           cases.map((testCase) => (

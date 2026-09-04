@@ -1,7 +1,7 @@
-// Email previews — a dev gallery of every Click transactional email rendered
+// Email previews - a dev gallery of every Click transactional email rendered
 // with realistic mock data from `database/002_seed.sql` personas. Public
 // (matches `/test` and `/tables`); noindex because it's a dev tool. No DB
-// queries — fixtures are static so the page works without Postgres up.
+// queries - fixtures are static so the page works without Postgres up.
 //
 // URL: /email?scenario=<id>. The sidebar links update the search param so
 // every preview is shareable and back/forward buttons work.
@@ -20,7 +20,7 @@ export const metadata = {
   robots: { index: false, follow: false },
 };
 
-// The page builds HTML strings on every request — keep it dynamic so a
+// The page builds HTML strings on every request - keep it dynamic so a
 // fixture tweak shows up immediately during dev without a cache busy-bee.
 export const dynamic = "force-dynamic";
 

@@ -5,7 +5,7 @@
 -- `admin_managed = false` from whatever a user typed/selected. We're locking the
 -- write paths (`saveOnboarding`, `createEventForMerchant`) to attach only tags
 -- that already exist, matched by slug. For that to work the chips users can pick
--- must exist as real, admin-managed tags first — that's what this migration seeds.
+-- must exist as real, admin-managed tags first - that's what this migration seeds.
 --
 -- Slugs match the runtime slugifier used by the write paths:
 --   trim(both '-' from regexp_replace(lower(trim(label)), '[^a-z0-9]+', '-', 'g'))

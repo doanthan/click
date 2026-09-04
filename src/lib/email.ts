@@ -112,8 +112,8 @@ export async function sendTransactionalEmail(
 // and the side drawer shows the full rendered `html` and `vars` jsonb. The
 // 012_email_events.sql migration creates the table.
 //
-// `logEmailEvent` is fire-and-forget — failures are warn-logged, never
-// thrown — so a busted template never breaks the signup/RSVP flow that
+// `logEmailEvent` is fire-and-forget - failures are warn-logged, never
+// thrown - so a busted template never breaks the signup/RSVP flow that
 // triggered it. Wire it as `void logEmailEvent(...)` at the end of a handler.
 
 export type EmailTemplate =
@@ -218,7 +218,7 @@ const SUBJECTS: Record<EmailTemplate, (vars: Record<string, string>) => string> 
 };
 
 // In-process cache. .html files don't change between requests during a single
-// Next process — restart the dev server to pick up template edits.
+// Next process - restart the dev server to pick up template edits.
 const templateCache = new Map<EmailTemplate, string>();
 
 async function loadTemplate(template: EmailTemplate): Promise<string> {

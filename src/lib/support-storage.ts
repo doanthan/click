@@ -1,12 +1,12 @@
 /**
- * Bug-report screenshot storage — Supabase Storage backend.
+ * Bug-report screenshot storage - Supabase Storage backend.
  *
  * Screenshots can contain personal or diagnostic information, so they reuse
  * the private `merchant-documents` bucket under `support/<ticketRef>.jpg` and
  * are only opened through a short-lived signed URL from the admin route.
  *
  * Normalised to JPEG via sharp so stored size is predictable. Returns null when
- * storage isn't configured — the ticket still saves to Postgres without an image.
+ * storage isn't configured - the ticket still saves to Postgres without an image.
  */
 
 import { getSupabaseAdmin, StorageNotConfiguredError } from "@/utils/supabase/admin";

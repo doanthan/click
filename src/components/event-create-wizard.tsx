@@ -3449,11 +3449,15 @@ export function ReviewSection() {
                 things a host expects of an underlined word), and the onClick
                 just tells the shell that mounts on the destination that this is
                 a detour - so it can offer one tap back here instead of four
-                Nexts. */}
+                Nexts.
+                ck-taplink because the glyph box is only ~26x16px and this is
+                the only way to correct a field before creating a chargeable
+                event. It widens the HIT AREA on coarse pointers only; growing
+                the box would break the row's items-baseline alignment. */}
             <Link
               href={STEP_PATHS[row.step]}
               onClick={() => setFromReview(true)}
-              className="text-[12px] font-semibold text-[color:var(--purple)] underline underline-offset-2"
+              className="ck-taplink text-[12px] font-semibold text-[color:var(--purple)] underline underline-offset-2"
             >
               Edit <span className="sr-only">{row.label}</span>
             </Link>

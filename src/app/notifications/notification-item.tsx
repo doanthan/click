@@ -94,7 +94,7 @@ export function NotificationItem({
           {actionUrl ? (
             <Link
               href={actionUrl}
-              className="font-display text-[13px] font-semibold text-[color:var(--purple)] hover:underline"
+              className="ck-taplink font-display text-[13px] font-semibold text-[color:var(--purple)] hover:underline"
             >
               View →
             </Link>
@@ -103,7 +103,7 @@ export function NotificationItem({
               the emailed copy of this notification, so it says so. */}
           <Link
             href={`/notifications/${id}/email`}
-            className="font-display text-[13px] font-semibold text-[color:var(--slate)] hover:text-[color:var(--ink)]"
+            className="ck-taplink font-display text-[13px] font-semibold text-[color:var(--slate)] hover:text-[color:var(--ink)]"
           >
             Read the email
           </Link>

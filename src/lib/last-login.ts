@@ -15,7 +15,7 @@ export function readLastLoginMethod(): LoginMethod | null {
       ? (value as LoginMethod)
       : null;
   } catch {
-    // localStorage can be unavailable (private mode, blocked cookies) — ignore.
+    // localStorage can be unavailable (private mode, blocked cookies) - ignore.
     return null;
   }
 }
@@ -25,6 +25,6 @@ export function rememberLoginMethod(method: LoginMethod): void {
   try {
     window.localStorage.setItem(STORAGE_KEY, method);
   } catch {
-    // localStorage can be unavailable — ignore.
+    // localStorage can be unavailable - ignore.
   }
 }

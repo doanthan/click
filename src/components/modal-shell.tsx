@@ -232,6 +232,15 @@ function ModalShellBody({
     // listing it satisfies the deps rule without ever actually re-running.
   }, [initialFocusRef]);
 
+  /* overscroll-contain on the wrapper below, because the body lock is only
+     `overflow: hidden`, which mobile Safari does not honour for touch: a flick
+     past either end of a tall dialog otherwise chains to the document and
+     rubber-bands the page - or fires pull-to-refresh mid-checkout. The wrapper
+     is the outermost scroller in every dialog, so a flick that reaches it stops
+     here instead of reaching the document. Where the CARD owns its own scroller
+     (the booking dialog's max-h-[calc(100dvh-2rem)], the RSVP overlay) a flick
+     past the card's end still chains one level up into this wrapper first - and
+     that is precisely the level this contains, so the page behind never moves. */
   const content = (
     <div
       role="dialog"
@@ -240,7 +249,7 @@ function ModalShellBody({
       aria-labelledby={labelledBy}
       aria-describedby={describedBy}
       style={{ zIndex }}
-      className={`fixed inset-0 flex justify-center overflow-y-auto p-4 ${ALIGN[align]} ${className}`}
+      className={`fixed inset-0 flex justify-center overflow-y-auto overscroll-contain p-4 ${ALIGN[align]} ${className}`}
     >
       {/* `fixed`, not `absolute`: the wrapper above can scroll, and an absolute
           scrim would scroll away with it and leave the page bare at the edges. */}

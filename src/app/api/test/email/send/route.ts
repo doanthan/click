@@ -1,10 +1,10 @@
-// Dev-only "fake send" — renders an email scenario through the same builder
+// Dev-only "fake send" - renders an email scenario through the same builder
 // the /email preview page uses and inserts the resulting HTML into the
 // `email_events` table so it shows up in the Supabase writes drawer.
 //
 // No SMTP, no Resend, no network. Body shape:
 //   { scenario: "<id from src/lib/email-templates/index.ts>", to?: "x@y.z" }
-// `to` defaults to the scenario's bundled fixture address — handy from the
+// `to` defaults to the scenario's bundled fixture address - handy from the
 // /email page where the recipient is just whatever the persona is.
 
 import { NextResponse } from "next/server";
@@ -37,7 +37,7 @@ export async function POST(request: Request) {
   try {
     body = (await request.json()) as typeof body;
   } catch {
-    // empty body is fine — we'll fall back to defaults
+    // empty body is fine - we'll fall back to defaults
   }
 
   // We deliberately don't trust an arbitrary `template` value; the caller

@@ -1,4 +1,4 @@
-// Matching v2 — shared types. See context/04_MATCHING_ALGORITHM_V2.md.
+// Matching v2 - shared types. See context/04_MATCHING_ALGORITHM_V2.md.
 //
 // These mirror the `user_features` store (migration 041) but are the in-memory
 // shape the scoring engine consumes. The batch jobs (later stage) populate the

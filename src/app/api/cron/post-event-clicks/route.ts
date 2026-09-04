@@ -2,13 +2,13 @@ import { NextResponse } from "next/server";
 import { notifyPostEventClickPrompts } from "@/lib/event-repository";
 
 export const runtime = "nodejs";
-// Never cache — this mutates state every run.
+// Never cache - this mutates state every run.
 export const dynamic = "force-dynamic";
 
 /**
  * Sends the post-event "did you click with anyone?" notification to attendees
  * once an event has crossed the 12-hour Click window. Idempotent (dedupes per
- * attendee+event), so it's safe to run on any cadence — hourly is plenty.
+ * attendee+event), so it's safe to run on any cadence - hourly is plenty.
  *
  * Wire it to a scheduler that sends `Authorization: Bearer ${CRON_SECRET}`, e.g.
  * a Vercel cron in vercel.json:

@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 
 // /events and /discover used to render the identical explorer. They're now
 // consolidated onto /discover (which also carries the personalized rail), so
-// this route just forwards — preserving any ?tag= / ?category= / ?search=
+// this route just forwards - preserving any ?tag= / ?category= / ?search=
 // deep links that still point here (homepage chips, emails, old bookmarks).
 export default async function EventsPage({
   searchParams,

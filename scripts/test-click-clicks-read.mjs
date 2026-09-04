@@ -45,8 +45,8 @@ const profiles = [];
 const events = [];
 const mutuals = [];
 function check(label, cond) {
-  if (cond) console.log(`  ok   — ${label}`);
-  else { failures++; console.error(`  FAIL — ${label}`); }
+  if (cond) console.log(`  ok - ${label}`);
+  else { failures++; console.error(`  FAIL - ${label}`); }
 }
 
 async function mkProfile() {
@@ -153,7 +153,7 @@ try {
   check("no mutual fans out (each appears exactly once)", seen.length === new Set(seen).size);
   check("M6 blocked pair → hidden (SAFE-05)", !by.has(M6));
 
-  console.log(failures === 0 ? "\nPASS — mutual-centric read: open mutuals visible, no fan-out, block hidden." : `\nFAIL — ${failures} assertion(s).`);
+  console.log(failures === 0 ? "\nPASS - mutual-centric read: open mutuals visible, no fan-out, block hidden." : `\nFAIL - ${failures} assertion(s).`);
 } catch (err) {
   console.error("ERROR:", err.message);
   failures++;

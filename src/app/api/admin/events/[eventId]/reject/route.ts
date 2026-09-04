@@ -45,7 +45,7 @@ export async function POST(request: Request, context: RouteContext) {
   const session = await auth();
 
   // The admin's free-text reason rides through to the event-rejected-merchant
-  // email + audit log. Optional — the repository falls back to a generic line.
+  // email + audit log. Optional - the repository falls back to a generic line.
   const body = (await request.json().catch(() => ({}))) as { reason?: unknown };
   const reason = typeof body.reason === "string" ? body.reason : "";
 

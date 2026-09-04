@@ -39,7 +39,7 @@ export default async function EditProfilePage() {
         {/* Sub-page: ONE quiet "back" link, top-left on its own row. */}
         <Link
           href="/profile"
-          className="font-display -ml-1 inline-flex items-center gap-1.5 px-1 py-1.5 text-[14px] font-semibold text-[color:var(--slate)] hover:text-[color:var(--ink)]"
+          className="ck-taplink font-display -ml-1 inline-flex items-center gap-1.5 px-1 py-1.5 text-[14px] font-semibold text-[color:var(--slate)] hover:text-[color:var(--ink)]"
         >
           <Icon name="chevL" size={18} stroke={2.4} />
           Back to profile

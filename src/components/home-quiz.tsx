@@ -193,7 +193,7 @@ function QuizModal({ onClose }: { onClose: () => void }) {
       className="px-4 py-8"
       scrimClassName="bg-[rgba(28,24,48,0.5)]"
     >
-      <div className="relative z-10 max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-[var(--radius-xl)] bg-[color:var(--paper)] shadow-[0_12px_32px_rgba(28,24,48,0.14)]">
+      <div className="relative z-10 max-h-[92dvh] w-full max-w-2xl overflow-y-auto rounded-[var(--radius-xl)] bg-[color:var(--paper)] shadow-[0_12px_32px_rgba(28,24,48,0.14)]">
         <div className="flex items-center justify-between gap-3 border-b border-[color:var(--line-soft)] px-5 py-3.5">
           <span className="text-xs font-bold tracking-[0.08em] uppercase text-[color:var(--purple-500)]">
             Pick your vibe
@@ -202,7 +202,7 @@ function QuizModal({ onClose }: { onClose: () => void }) {
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="grid size-8 place-items-center rounded-full bg-[color:var(--lavender-100)] text-sm text-[color:var(--slate)] hover:text-[color:var(--ink)]"
+            className="-m-1.5 grid size-11 place-items-center rounded-full text-sm text-[color:var(--slate)] hover:bg-[color:var(--lavender-100)] hover:text-[color:var(--ink)]"
           >
             ✕
           </button>

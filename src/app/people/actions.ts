@@ -42,7 +42,7 @@ export async function clickPersonAction(
   // drops the person from its "click with someone" rotation). Revalidating the
   // current page instead re-renders it mid-action and the dashboard's
   // already-clicked filter unmounts this very card before the user ever sees the
-  // "Clicked privately — pending their Click" confirmation (bug board #188). The
+  // "Clicked privately - pending their Click" confirmation (bug board #188). The
   // optimistic state below keeps the card mounted so that pending state shows.
   return {
     ok: true,

@@ -88,7 +88,7 @@ export function EventTileCard({
   const isFull = seatsLeft === 0;
   const isWaitlist = event.status === "Waitlist";
 
-  // Honest availability signal — no invented ratings. Drives the corner badge
+  // Honest availability signal - no invented ratings. Drives the corner badge
   // on the image, mirroring how Meetup/ClassBento surface urgency + capacity.
   const availability = isFull
     ? { label: isWaitlist ? "Waitlist open" : "Sold out", tone: "full" as const }
@@ -123,7 +123,7 @@ export function EventTileCard({
         />
         <div className="absolute inset-0 bg-gradient-to-t from-[color:var(--ink)]/35 via-transparent to-transparent" />
 
-        {/* Date chip — the single most-scanned datum on an event card. */}
+        {/* Date chip - the single most-scanned datum on an event card. */}
         <span className="absolute left-3 top-3 rounded-full bg-[color:var(--champagne)]/95 px-3 py-1 font-mono text-[0.62rem] font-bold uppercase tracking-[0.12em] text-[color:var(--ink)] shadow-sm backdrop-blur">
           {formatDateBadge(event)}
         </span>
@@ -167,7 +167,7 @@ export function EventTileCard({
           </span>
         </div>
 
-        {/* Price + real "going" count — the two numbers people decide on. */}
+        {/* Price + real "going" count - the two numbers people decide on. */}
         <div className="mt-0.5 flex items-center justify-between gap-2 text-sm">
           <span className="font-black text-[color:var(--ink)]">{event.price}</span>
           <span className="inline-flex items-center gap-1.5 font-semibold text-[color:var(--mauve)]">

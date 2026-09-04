@@ -9,8 +9,8 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 //
 // As you type (and on blur after a pick), the SearchBox aborts each superseded
 // request via `AbortController.abort()` (no reason). On some paths the aborted
-// work escapes as a benign unhandled rejection — `AbortError: signal is aborted
-// without reason` — which Next's dev overlay paints as a "Runtime AbortError".
+// work escapes as a benign unhandled rejection - `AbortError: signal is aborted
+// without reason` - which Next's dev overlay paints as a "Runtime AbortError".
 // That's swallowed globally in `src/instrumentation-client.ts`, which registers
 // an `unhandledrejection` handler before Next's overlay does (component code
 // can't win that registration race, but the instrumentation hook can).
@@ -183,7 +183,7 @@ export function MapboxAutocomplete({
     boxRef.current?.querySelector("input")?.setAttribute("aria-label", ariaLabel);
   }, [ariaLabel, value]);
 
-  // Stable options object — a fresh literal each render would re-assign
+  // Stable options object - a fresh literal each render would re-assign
   // `.options` on the SearchBox (it keys a useEffect on the prop) every
   // keystroke, churning the underlying web component.
   const options = useMemo(
@@ -213,7 +213,7 @@ export function MapboxAutocomplete({
         postcode: postcodeFrom(feature),
       });
       // After a pick the SearchBox keeps its (now stale) suggestion list and
-      // re-opens it whenever the input regains focus — and focus bounces back
+      // re-opens it whenever the input regains focus - and focus bounces back
       // to the input as soon as the just-clicked suggestion element is hidden.
       // Blur the input so the dropdown stays closed; the SearchBox's own
       // `focusout` handler then runs hideResults().

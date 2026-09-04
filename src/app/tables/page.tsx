@@ -13,7 +13,7 @@ export const metadata = {
 export const dynamic = "force-dynamic";
 
 function formatCount(value: number | null) {
-  if (value === null) return "—";
+  if (value === null) return "-";
   return new Intl.NumberFormat("en-AU").format(value);
 }
 
@@ -50,7 +50,7 @@ export default async function TablesPage() {
             <MetricCard label="Columns" value={String(totalColumns)} tone="peach" />
             <MetricCard
               label="Rows"
-              value={isLive ? formatCount(totalRows) : "—"}
+              value={isLive ? formatCount(totalRows) : "-"}
               tone="ink"
             />
           </div>
@@ -67,7 +67,7 @@ export default async function TablesPage() {
 
           {!isLive ? (
             <p className="mt-8 rounded-2xl border-2 border-[color:var(--line)] bg-[color:var(--peach)] p-4 text-sm font-bold text-[color:var(--surface-deep)] hard-shadow-sm">
-              Showing the static table list — no database is connected. Set{" "}
+              Showing the static table list - no database is connected. Set{" "}
               <code className="font-mono">DATABASE_URL</code> to introspect live
               columns, types, and row counts.
             </p>

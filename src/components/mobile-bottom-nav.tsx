@@ -14,7 +14,7 @@ export type BottomNavTab = {
   icon: BottomNavIcon;
 };
 
-// Thumb-reachable bottom tab bar — the mobile replacement for the desktop nav
+// Thumb-reachable bottom tab bar - the mobile replacement for the desktop nav
 // links, which are `hidden lg:flex` in the header. Hidden from `lg` up, where
 // the header nav takes over. Tabs are computed server-side (role-aware) in
 // SiteHeader and passed in; active state is resolved here against the pathname.

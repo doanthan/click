@@ -1,4 +1,4 @@
-// Matching v2 §5 — candidate generation & scoring strategy.
+// Matching v2 §5 - candidate generation & scoring strategy.
 //
 // You can't score every pair. Cheap hard filters cut the pool, then the
 // (relatively) expensive logistic model scores only survivors. Spec targets:
@@ -81,7 +81,7 @@ export async function loadUserFeatures(
   return rows[0] ? mapUserFeatures(rows[0]) : null;
 }
 
-// Batch load — for re-ranking an already-selected candidate list (e.g. the
+// Batch load - for re-ranking an already-selected candidate list (e.g. the
 // people surface) without N round-trips. Profiles absent from the store are
 // simply missing from the map.
 export async function loadManyUserFeatures(
@@ -181,7 +181,7 @@ export async function generateEventCandidates(
   if (!user) return [];
 
   // §5.2 candidate pool: upcoming live events the user isn't already on and
-  // hasn't been shown in 14d. Tag prefilter dropped at N≈26 — we score them all
+  // hasn't been shown in 14d. Tag prefilter dropped at N≈26 - we score them all
   // (well under the spec's LIMIT 100) and let interest_match rank.
   const { rows } = await pool.query<EventFeatureRow>(
     `
@@ -245,7 +245,7 @@ export type ImpressionItem = {
 };
 
 // Record what was actually surfaced. Called by the serving surface at render
-// time (Stage 4), not by generation — so generating a preview doesn't burn the
+// time (Stage 4), not by generation - so generating a preview doesn't burn the
 // anti-repeat window.
 export async function recordImpressions(
   pool: Pool,

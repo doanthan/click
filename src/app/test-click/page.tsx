@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ClickWalkthrough } from "@/components/click-walkthrough";
+import { ClickHarnessBoard } from "./harness-board";
 import { isProductionDeployment } from "@/lib/runtime-mode";
 import { ClickAuditReport } from "./audit-report";
 
@@ -40,8 +41,13 @@ const RECAP = [
 
 const RECAP_CLOCKS = ["2h post-event gate", "7-day click", "7-day proposal"];
 
-export default function TestClickPage() {
+export default async function TestClickPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ a?: string; b?: string }>;
+}) {
   if (isProductionDeployment()) notFound();
+  const selected = await searchParams;
   return (
     <main className="paper-noise min-h-screen text-[color:var(--ink)]">
       {/* Section 1 - hero: the one-sentence reframe */}
@@ -74,6 +80,14 @@ export default function TestClickPage() {
             </span>
           </div>
         </div>
+      </section>
+
+      {/* The live two-person driver - the reason this route is not public. */}
+      <section
+        id="driver"
+        className="border-t border-[color:var(--mist)] bg-[color:var(--lav-bg)]"
+      >
+        <ClickHarnessBoard searchParams={selected} />
       </section>
 
       {/* Sections 2–4 (diagram + entry fork + interactive stepper) */}

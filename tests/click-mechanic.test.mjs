@@ -111,8 +111,16 @@ test("every send-click attempt is audited, outside its own transaction", () => {
 test("the post-event surface answers the public clock and the private roster separately", () => {
   // Fused, the two leaked into each other: on an event the sender knows is open and
   // knows they attended, "window closed" could only mean the receiver wasn't there.
-  const windowMessage = /The window to click people from this event has closed/;
+  // The refusal reaches the browser verbatim through clickCoAttendeeAction's
+  // passthrough, so it is bound by invariant 9 as much as any rendered string: it
+  // says open or not open and never how long the window was.
+  const windowMessage = /That event is wrapped up now - your next one is where it happens\./;
   assert.match(sendClickInner, windowMessage);
+  assert.doesNotMatch(
+    sendClickInner,
+    /stays open \d+ hours|stays open \$\{POST_EVENT_CLICK_WINDOW_HOURS\}/,
+    "a window duration must never leave the server (runbook B5 / invariant 9)",
+  );
   // The SQL only - the prose around it names both tables on purpose.
   const windowSqlStart = sendClickInner.indexOf("const windowResult");
   const windowQuery = sendClickInner.slice(
@@ -163,6 +171,11 @@ test("attendance is never public by face", () => {
 test("a post-event roster only offers people the send path will accept", () => {
   // A roster that lists someone you cannot click is a dead button AND a disclosure:
   // the refusal that follows confirms their state.
+  // Three sites: the two pull rosters and the push cron. There was a fourth -
+  // Stage 0.5's empty-pool "answered on view" insert - but it bought no reads
+  // (both consumers already carry this guard themselves) and it retired a still
+  // open window permanently the moment one of these predicates flipped back, so
+  // it was removed rather than kept in sync.
   const rosterGuards = repo.match(/and other\.default_attend_visibility/g) ?? [];
   assert.equal(rosterGuards.length, 3, "both pull rosters and the push cron need the guard");
   const socialGuards = repo.match(/and other\.social_visible = true/g) ?? [];
@@ -211,11 +224,15 @@ test("a plan that died under a pair can always be re-picked", () => {
   assert.match(propose, /const recovering = !planStillLive;/);
   assert.match(propose, /if \(\s*\n?\s*!recovering &&/);
   assert.match(propose, /alternatives_count \+ \$\{recovering \? 0 : 1\}/);
-  // The UI must agree with the server, or the button lies in one direction or the other.
+  // The UI must agree with the server, or the button lies in one direction or the
+  // other. The count itself no longer crosses the boundary (invariant 9 bans a
+  // rendered "N left"): the server hands over `canSuggestAlternative` as a bare
+  // boolean and the drawer reads that.
   assert.match(
     drawer,
-    /const capReached = entry\.alternativesRemaining === 0 && !entry\.suggestionUnavailable;/,
+    /const capReached = !entry\.canSuggestAlternative && !entry\.suggestionUnavailable;/,
   );
+  assert.doesNotMatch(drawer, /alternativesRemaining/, "the alternatives budget is not a number the UI may see");
   assert.match(drawer, /disabled=\{capReached\}/);
 });
 
@@ -282,7 +299,7 @@ test("a pair with a night in the diary is never wound down", () => {
   // card vanished from /people and /proposals and both were notified that nothing
   // came of it. Must run BEFORE the wound-down snapshot, which selects status='active'.
   const extend = lifecycleSweep.indexOf("set expires_at = greatest(");
-  const softRelease = lifecycleSweep.indexOf("const softReleased = await client.query");
+  const softRelease = lifecycleSweep.indexOf("const mutuals = await client.query");
   assert.ok(extend > 0, "the sweep must extend a mutual that has a shared upcoming event");
   assert.ok(extend < softRelease, "the extension has to land before the soft-release snapshot");
   // event_participants_v, not event_attendees: a claimed guest +1 holds a real seat
@@ -306,7 +323,7 @@ test("a pair who went out together end as connected, not expired", () => {
   // Ahead of the wound-down snapshot, which is what keeps them out of it.
   assert.ok(
     lifecycleSweep.indexOf("const connected = await client.query") <
-      lifecycleSweep.indexOf("const softReleased = await client.query"),
+      lifecycleSweep.indexOf("const mutuals = await client.query"),
     "the connected transition must run before the soft-release snapshot",
   );
   // Its notification points at /proposals, so the card has to survive to be opened.
@@ -363,23 +380,24 @@ test("the three mutual terminals are not rotated", () => {
   assert.doesNotMatch(teardown, /status = 'suppressed'/);
 });
 
-test("a soft release is never framed as a loss", () => {
-  // B7.6 bans "winding down" and "about to expire" by name, and the old sweep copy
-  // was the banned phrase verbatim plus a verdict ("nothing came of it") delivered
-  // to a pair who were never told a clock was running. Asserted on the notification
-  // COPY alone - the function is entitled to say `expires_at` and 'expired' all it
-  // likes, those are a column and a status, not something a person reads.
-  const block = lifecycleSweep.slice(
-    lifecycleSweep.indexOf("if (softReleased.rowCount) {"),
-    lifecycleSweep.indexOf("const suppressions = await client.query"),
+test("a soft release taps nobody on the shoulder", () => {
+  // This test used to guard the WORDING of a soft-release notification. Runbook B4
+  // ("Never emitted at any layer") says that notification must not exist at all: a
+  // pair who were never told a clock was running cannot be told it ran out, however
+  // kindly it is phrased. So the sweep now writes status/coord_state and stops -
+  // S16 is a shelf the user finds on Past clicks when they look, not a tap on the
+  // shoulder. This is also C4.19's "window close" arm: zero notifications.
+  assert.match(lifecycleSweep, /set status = 'released', coord_state = 'dormant'/);
+  assert.doesNotMatch(
+    lifecycleSweep,
+    /insert into notifications/,
+    "the hourly sweep must end things silently - B4 bans a wind-down notice",
   );
-  assert.ok(block.length > 200, "failed to slice the soft-release notification");
-  const copy = block
-    .split("\n")
-    .filter((line) => !line.trim().startsWith("//"))
-    .join("\n");
-  assert.doesNotMatch(copy, /wound down|winding down|ran out|expir|missed|nothing came of/i);
-  assert.match(copy, /still out there/i);
+  assert.doesNotMatch(
+    lifecycleSweep,
+    /logEmailEvent\(/,
+    "nor may it reach for the inbox instead of the bell",
+  );
 });
 
 test("a released pair is not offered back to each other the next day", () => {
@@ -480,8 +498,12 @@ test("the post-event surface has a spent state instead of vanishing", () => {
   // returned null the moment everyone was clicked, so the card simply stopped
   // existing - no account of where the three went, no sign the swap was on offer.
   assert.doesNotMatch(postEventCard, /if \(clickable\.length === 0\) return null;/);
-  assert.match(postEventCard, /const spent = remaining === 0;/);
-  assert.match(postEventCard, /You used your \{POST_EVENT_CLICK_CAP\} clicks for this event already/);
+  // The budget crosses the boundary as a boolean, never a count (contract C1 /
+  // invariant 9): the card used to compute `remaining` client-side and print it.
+  assert.match(postEventCard, /const spent = prompt\.budgetSpent;/);
+  assert.doesNotMatch(postEventCard, /remaining/, "a remaining count is a countdown by another name");
+  // The spent state still SAYS something - vanishing was the bug.
+  assert.match(postEventCard, /Your clicks for this one are already with the people you picked\./);
   // The swap is offered only when there is a pending click to give up, someone to
   // spend it on, and the one swap is unspent.
   assert.match(
@@ -593,12 +615,13 @@ test("an admin account can reach every click surface, in both directions", () =>
     !/role = 'attendee'/.test(repo),
     "no click roster may gate on role = 'attendee' - it locks admins out of being clicked",
   );
-  // All four rosters (discovery, the two post-event pulls, the prompt push) plus
-  // nothing else: sendClickInner has no role check at all, so the rosters must not
-  // be stricter than the send path they feed.
+  // All four rosters - discovery, the two post-event pulls, the prompt push - and
+  // nothing else. sendClickInner has no role check at all, so none of these may be
+  // stricter than the send path they feed. (There was a fifth, Stage 0.5's
+  // empty-pool "answered on view" mark; it was removed, see the roster-guard test.)
   assert.equal(
     (repo.match(/role <> 'merchant'/g) ?? []).length,
     4,
-    "all four click rosters must share one social-graph definition",
+    "every click roster must share one social-graph definition",
   );
 });

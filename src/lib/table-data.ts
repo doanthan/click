@@ -113,7 +113,7 @@ export async function getTableRows(
   const ident = quoteIdent(tableName);
   // Show newest rows first. Prefer created_at / inserted_at / updated_at
   // (desc, nulls last), then break ties on the primary key (desc) for stable
-  // pagination. If neither is available, fall back to ctid desc — always
+  // pagination. If neither is available, fall back to ctid desc - always
   // present, cheap, and gives a "physically newest first" approximation.
   const [pkColumns, newestColumn] = await Promise.all([
     primaryKeyColumns(pool, tableName),

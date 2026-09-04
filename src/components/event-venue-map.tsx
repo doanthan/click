@@ -32,6 +32,12 @@ export function EventVenueMap({
             style={{ width: "100%", height: "100%" }}
             attributionControl={false}
             scrollZoom={false}
+            // scrollZoom={false} only kills the desktop wheel. On touch, dragPan
+            // still sets touch-action:none on the canvas, so a one-finger swipe
+            // starting on this full-width block pans the map instead of scrolling
+            // the page. cooperativeGestures restores page scroll (two fingers to
+            // pan the map) and shows the hint overlay.
+            cooperativeGestures
           >
             <NavigationControl position="top-right" showCompass={false} />
             <Marker longitude={lng} latitude={lat} anchor="bottom">

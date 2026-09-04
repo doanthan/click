@@ -5,13 +5,6 @@ import { ClickRadar } from "@/components/click-radar";
 import { ClickWithSomeoneUserCard } from "@/components/click-with-someone-user-card";
 import { Avatar, Icon, ckBtn } from "@/components/ds";
 import {
-  DISCOVERY_CLICK_WINDOW_DAYS,
-  MUTUAL_CLOCK_DAYS,
-  POST_EVENT_CLICK_CAP,
-  POST_EVENT_CLICK_WINDOW_HOURS,
-  POST_EVENT_PROMPT_DELAY_HOURS,
-} from "@/lib/clicks/constants";
-import {
   getMutualClicksForSession,
   getPersonalizedDiscovery,
   getProfileCompletion,
@@ -52,11 +45,12 @@ export default async function PeoplePage() {
   // same three muted "clicked" cards forever with nothing left to do and no word
   // on what happens next.
   const clickable = suggested.filter((p) => !p.alreadyClicked);
-  // Rotated by the Sydney date, so "3 people for you today" is true tomorrow as
-  // well. It used to be a flat slice(0, 3): sit on your hands and the same three
-  // faces greeted you every morning under a heading promising new ones, which
-  // teaches people the page is not worth reopening. Rotating the window costs no
-  // extra query and suits a drip - the people you skipped come back around.
+  // Rotated by the Sydney date, so the set moves on its own. It used to be a flat
+  // slice(0, 3): sit on your hands and the same three faces greeted you every
+  // morning, which teaches people the page is not worth reopening. Rotating the
+  // window costs no extra query and suits a drip - the people you skipped come
+  // back around. The rotation is never NAMED in the copy (invariant 9 bans showing
+  // a refresh cadence); it just quietly happens.
   const dayKey = Number(
     new Intl.DateTimeFormat("en-CA", { timeZone: "Australia/Sydney" })
       .format(new Date())
@@ -97,8 +91,10 @@ export default async function PeoplePage() {
         {/* The rules, where the question actually gets asked. /how-it-works is the
             MARKETING page and teases the mechanic on purpose, so the link that used
             to sit here answered "how does this work" with a pitch. A native
-            <details> costs no client JS, and every number below is read from
-            clicks/constants.ts so the copy cannot drift from the enforcement. */}
+            <details> costs no client JS. NO NUMBERS BELOW, ever: the click window,
+            the mutual clock, the post-event prompt delay and the per-event budget
+            are back-end concepts and invariant 9 bans showing a timer, a cap or a
+            cadence anywhere. The bullets carry the reassurance, not the tuning. */}
         <details className="group mt-3 rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] px-4 py-3">
           <summary className="cursor-pointer list-none text-[13.5px] font-semibold text-[color:var(--purple)] marker:content-none">
             How clicking works
@@ -118,46 +114,48 @@ export default async function PeoplePage() {
             </li>
             <li>
               <strong className="font-semibold text-[color:var(--ink)]">
-                Clicks don&apos;t hang around.
+                A click keeps its own time.
               </strong>{" "}
-              A click stays open {DISCOVERY_CLICK_WINDOW_DAYS} days for them to click back. After
-              that it&apos;s still out there - cross paths again and you can pick it back up. A
-              mutual has {MUTUAL_CLOCK_DAYS} days to turn into a plan.
+              It stays open for them to click back, and after that it&apos;s still out there - if
+              you cross paths again, you can pick it back up. No rush.
             </li>
             <li>
               <strong className="font-semibold text-[color:var(--ink)]">
                 After an event, it opens up.
               </strong>{" "}
-              Who was there appears {POST_EVENT_PROMPT_DELAY_HOURS} hours after it ends, and you
-              have {POST_EVENT_CLICK_WINDOW_HOURS} hours from the end of the event to click up to{" "}
-              {POST_EVENT_CLICK_CAP} of them.
+              Who was there appears shortly after it ends, while the night is still fresh. Tap
+              anyone worth a second hang - we&apos;ll do the rest.
             </li>
           </ul>
         </details>
 
         {/* ---- The daily set ---- */}
         <section className="mt-7">
-          <div className="mb-4 flex items-baseline justify-between gap-4">
-            <h2 className="font-display text-[1.075rem] font-semibold tracking-[-0.01em] text-[color:var(--ink)] sm:text-[1.3rem]">
-              {dailySet.length > 0 ? `${dailySet.length} ${dailySet.length === 1 ? "person" : "people"} for you today` : "People for you"}
-            </h2>
-            {dailySet.length > 0 ? (
-              <span className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[color:var(--slate)]">
-                <Icon name="trend" size={14} className="text-[color:var(--purple-400)]" />
-                Fresh today
-              </span>
-            ) : null}
-          </div>
+          {/* One flat heading, no count and no cadence badge. Invariant 9 bans
+              showing a refresh cadence, and the old counted heading plus its
+              sibling badge were the daily rotation announcing itself. The
+              rotation stays - the runbook bans SHOWING a cadence, not having
+              one. */}
+          <h2 className="font-display mb-4 text-[1.075rem] font-semibold tracking-[-0.01em] text-[color:var(--ink)] sm:text-[1.3rem]">
+            People for you
+          </h2>
 
           {dailySet.length > 0 ? (
             <>
+              {/* The set arrives in reading order rather than all at once - the
+                  DS-calm 8px .rise-soft on the .rise-d* ladder, pure CSS so it
+                  plays before hydration and the global reduced-motion block
+                  collapses it. The wrapper exists only to carry the animation:
+                  both keyframes end on `transform: none`, so it never lingers as
+                  a containing block over the card's own hover lift. */}
               <div className="grid gap-4">
-                {dailySet.map((person) => (
-                  <ClickWithSomeoneUserCard
-                    key={person.id}
-                    person={person}
-                    viewerOpenToDating={profileStatus.datingVisible}
-                  />
+                {dailySet.map((person, i) => (
+                  <div key={person.id} className={`rise-soft rise-d${i + 1}`}>
+                    <ClickWithSomeoneUserCard
+                      person={person}
+                      viewerOpenToDating={profileStatus.datingVisible}
+                    />
+                  </div>
                 ))}
               </div>
               {/* The anonymity reassurance shows ONCE at the top of the section,
@@ -336,16 +334,20 @@ function YourClickRow({
   yourMove?: boolean;
   going?: boolean;
 }) {
+  // The row wraps rather than squeezing the identity column: the CTA is nowrap and
+  // shrink-0, so at 375px it would otherwise crush the name - the only thing telling
+  // one mutual click from another - to a couple of glyphs. basis-40 is the floor that
+  // pushes the CTA onto its own line on a phone; the row still fits one line from sm up.
   return (
     <article
-      className={`flex items-center gap-3.5 rounded-[var(--radius-lg)] border p-4 ${
+      className={`flex flex-wrap items-center gap-3.5 rounded-[var(--radius-lg)] border p-4 ${
         yourMove
           ? "border-transparent bg-[color:var(--lav-bg)]"
           : "border-[color:var(--line-soft)] bg-[color:var(--paper)]"
       }`}
     >
       <Avatar name={name} size={52} />
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 basis-40">
         <div className="flex items-center gap-2">
           <Link
             href={`/profile/${profileId}`}

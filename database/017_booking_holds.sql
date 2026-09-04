@@ -1,4 +1,4 @@
--- Booking hold expiry — closes the capacity race / ghost-seat bug.
+-- Booking hold expiry - closes the capacity race / ghost-seat bug.
 --
 -- A paid checkout reserves a seat with an `event_attendees` row in
 -- status 'pending_payment' (see 003_stripe_hold.sql). Previously such a hold

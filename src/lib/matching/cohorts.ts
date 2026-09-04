@@ -1,8 +1,8 @@
-// Matching v2 §2 — cohort segmentation.
+// Matching v2 §2 - cohort segmentation.
 //
 // One weight set can't fit all users (spec problem #1). A user belongs to
 // exactly one cohort, recomputed weekly; the viewer's cohort selects the weights
-// used to score their candidates. Cohorts are intentionally few — too many
+// used to score their candidates. Cohorts are intentionally few - too many
 // fragments the training data below usable N.
 
 import type { CohortId, UserFeatures } from "./types";
@@ -20,7 +20,7 @@ export function assignCohort(user: UserFeatures): CohortId {
   }
 
   // Recency-of-arrival: new-to-Sydney users have no behavioural data but a strong
-  // "find anyone" affinity — score them on declared overlap, not history.
+  // "find anyone" affinity - score them on declared overlap, not history.
   if (user.lifeTags.some((t) => NEW_TO_TOWN_TAGS.has(t.toLowerCase()))) {
     return "new_to_sydney";
   }

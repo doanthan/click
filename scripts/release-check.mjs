@@ -201,7 +201,7 @@ if (value("RESEND_API_KEY") && !value("RESEND_API_KEY").startsWith("re_")) {
 }
 // Resend verifies send.letsclick.app, not the root. A from address on the root
 // is accepted by this file but rejected by Resend with a 403, which silently
-// kills every magic link — so the check pins the actual verified subdomain.
+// kills every magic link - so the check pins the actual verified subdomain.
 if (
   value("RESEND_FROM_EMAIL") &&
   !/@send\.letsclick\.app[>\s]*$/i.test(value("RESEND_FROM_EMAIL"))

@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { clickPersonAction } from "@/app/people/actions";
 import type { SuggestedPerson } from "@/lib/event-repository";
+import { CLICK_PUFF, fireBrandConfetti } from "./brand-confetti";
 import { Avatar, Button, CommonalityLine, Spark, TagRow, ckBtn, commonality } from "./ds";
 
 /**
@@ -12,7 +13,7 @@ import { Avatar, Button, CommonalityLine, Spark, TagRow, ckBtn, commonality } fr
  * dashboard's rotated person, the who-was-there grid).
  *
  * The anatomy is INVARIANT; only the ACTION LAYOUT adapts to the width:
- *   avatar LEFT (one size, 52 - never shrunk)
+ *   avatar LEFT (one size per layout - never shrunk, and never per-surface)
  *   name + intent grouped TIGHT and INLINE (never stacked, intent never green)
  *   a CONDITIONAL commonality line on a NON-interest axis (so it can never
  *     restate the tags below it); omitted cleanly when there's no overlap
@@ -23,6 +24,16 @@ import { Avatar, Button, CommonalityLine, Spark, TagRow, ckBtn, commonality } fr
  * quiz persona, life tags (private until mutual), and the anonymity
  * reassurance - that shows ONCE at the top of the section, never per card.
  */
+
+/* The photo is the reason anyone stops on this card, and at the DS's ~52 it was
+ * the smallest thing in a 760px row - a thumbnail beside three lines of text.
+ * Sizing it to the content block it sits next to (name + commonality + tags is
+ * ~76px tall) makes the person, not the copy, the centre of gravity. Held here
+ * as constants rather than inline so both layouts and the /people loading
+ * skeleton stay in step. */
+const AVATAR_ROW = 76;
+const AVATAR_GRID = 64;
+
 export function ClickWithSomeoneUserCard({
   person,
   layout = "row",
@@ -39,6 +50,34 @@ export function ClickWithSomeoneUserCard({
 }) {
   const [state, formAction, submitting] = useActionState(clickPersonAction, null);
 
+  /* The celebration is for the click the user just made, never for one the
+     server merely remembers. `sent` is true on every reload once the click is
+     recorded (person.alreadyClicked), so the burst hangs off `justSent`, which
+     only a fresh successful submit in this session can set - and a ref gates it
+     so a re-render can't fire it twice. */
+  const [justSent, setJustSent] = useState(false);
+  const celebrated = useRef(false);
+  const actionsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (state?.ok !== true || celebrated.current) return;
+    celebrated.current = true;
+    setJustSent(true);
+
+    /* Fired from the button the user actually pressed rather than the middle of
+       the viewport: on a three-card list, a burst from screen-centre reads as
+       "something happened somewhere", not "that one went". canvas-confetti wants
+       0-1 viewport fractions, hence the divide. */
+    const rect = actionsRef.current?.getBoundingClientRect();
+    const origin = rect
+      ? {
+          x: (rect.left + rect.width / 2) / window.innerWidth,
+          y: (rect.top + rect.height / 2) / window.innerHeight,
+        }
+      : undefined;
+    void fireBrandConfetti(origin, CLICK_PUFF);
+  }, [state]);
+
   // "sent" persists across reloads via person.alreadyClicked (a pending click
   // already recorded server-side), and also flips immediately after a fresh
   // successful submit in this session.
@@ -50,6 +89,27 @@ export function ClickWithSomeoneUserCard({
     sharedMusic: person.sharedMusic,
     proximity: person.nearby ? "you're both nearby" : null,
   });
+
+  /* The photo, sized up and made the second route into the profile. It is
+     aria-hidden + untabbable on purpose: the "View profile" ghost below is
+     already the labelled way there, so this only widens the POINTER target and
+     never adds a duplicate tab stop or a second identical link for a screen
+     reader to read out. */
+  const avatar = (
+    <Link
+      href={`/profile/${person.id}`}
+      aria-hidden
+      tabIndex={-1}
+      className="shrink-0 rounded-full focus:outline-none"
+    >
+      <Avatar
+        name={person.displayName}
+        src={person.photoUrl}
+        size={layout === "row" ? AVATAR_ROW : AVATAR_GRID}
+        className="transition-transform duration-200 ease-out group-hover:scale-[1.04]"
+      />
+    </Link>
+  );
 
   // Identity pair - name and intent INLINE on the baseline, grouped tight.
   const content = (
@@ -76,9 +136,17 @@ export function ClickWithSomeoneUserCard({
   const actions = (
     <form action={formAction} className={layout === "row" ? "contents sm:block" : "contents"}>
       <input type="hidden" name="profile_id" value={person.id} />
-      <div className={layout === "row" ? "flex flex-col gap-2 sm:gap-2.5" : "flex flex-wrap items-center gap-2"}>
+      <div
+        ref={actionsRef}
+        className={layout === "row" ? "flex flex-col gap-2 sm:gap-2.5" : "flex flex-wrap items-center gap-2"}
+      >
         {sent ? (
-          <span className={ckBtn("pending", "sm", { full: true })} aria-live="polite">
+          /* .rise-soft only when it just happened - on a reload the pill is
+             simply the resting state and has nothing to announce. */
+          <span
+            className={ckBtn("pending", "sm", { full: true, className: justSent ? "rise-soft" : "" })}
+            aria-live="polite"
+          >
             <span className="ck-btn__label">clicked</span>
           </span>
         ) : (
@@ -93,17 +161,22 @@ export function ClickWithSomeoneUserCard({
     </form>
   );
 
+  /* Same hover idiom as the Event Card (event-card.tsx:88) so the two card
+     families in the app feel like one surface: a 3px lift onto the next shadow
+     step, plus the photo's 1.04 push. `click-settle` is additive on top - the
+     lavender wash a landed click drains out of. */
   const card =
-    "rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] shadow-[var(--shadow-sm)]";
+    "group rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] shadow-[var(--shadow-sm)] transition duration-200 hover:-translate-y-[3px] hover:shadow-[var(--shadow-md)]";
+  const settle = justSent ? " click-settle" : "";
 
   // WIDE ROW - avatar + content + a right-hand action column on desktop; on
   // mobile the pair stacks full-width (side by side, two nowrap --full buttons
   // sat at their text width and pushed the card past a 320px viewport).
   if (layout === "row") {
     return (
-      <article className={`${card} flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:gap-5 sm:p-5`}>
-        <div className="flex min-w-0 flex-1 items-start gap-3 sm:items-center">
-          <Avatar name={person.displayName} src={person.photoUrl} size={52} />
+      <article className={`${card}${settle} flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:gap-5 sm:p-5`}>
+        <div className="flex min-w-0 flex-1 items-center gap-3.5 sm:gap-4">
+          {avatar}
           {content}
         </div>
         <div className="sm:w-[190px] sm:shrink-0">{actions}</div>
@@ -114,9 +187,9 @@ export function ClickWithSomeoneUserCard({
   // NARROW CARD - content on top, the action pair kept together in a bottom row
   // (never split to opposite corners).
   return (
-    <article className={`${card} flex h-full flex-col gap-3 p-4`}>
-      <div className="flex min-w-0 flex-1 items-start gap-3">
-        <Avatar name={person.displayName} src={person.photoUrl} size={52} />
+    <article className={`${card}${settle} flex h-full flex-col gap-3 p-4`}>
+      <div className="flex min-w-0 flex-1 items-center gap-3.5">
+        {avatar}
         {content}
       </div>
       {actions}

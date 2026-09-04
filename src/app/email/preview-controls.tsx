@@ -1,6 +1,6 @@
 "use client";
 
-// Interactive island for the /email gallery — owns the view toggle
+// Interactive island for the /email gallery - owns the view toggle
 // (rendered HTML vs. plain text), device width toggle (600px desktop vs.
 // 375px mobile), and the "Copy HTML" button. The server component hands us
 // the already-built strings; this component never sees a template module.
@@ -18,7 +18,7 @@ type View = "html" | "text";
 type Device = "desktop" | "mobile";
 
 // "Log to drawer" inserts a row into `email_events` using the same scenario
-// the page is showing. Status is local UI state — the actual row appears via
+// the page is showing. Status is local UI state - the actual row appears via
 // the drawer's own poll within ~5s.
 type LogState = "idle" | "sending" | "logged" | "error";
 
@@ -141,7 +141,7 @@ export function PreviewControls({ html, text, scenarioLabel, scenarioId }: Props
               title={`${scenarioLabel} preview`}
               srcDoc={html}
               // `allow-same-origin` lets the iframe load Google Fonts and use
-              // `view-source:` debugging. No `allow-scripts` — no email-side JS
+              // `view-source:` debugging. No `allow-scripts` - no email-side JS
               // can run, which is also a reminder that real clients won't.
               sandbox="allow-same-origin"
               style={{
@@ -164,7 +164,7 @@ export function PreviewControls({ html, text, scenarioLabel, scenarioId }: Props
       <p className="font-mono text-[0.7rem] uppercase tracking-[0.18em] text-[color:var(--mauve)]">
         {view === "html"
           ? "Rendered inside a sandboxed <iframe srcDoc>. Email CSS is isolated from this page."
-          : "This is the plain-text alternative — what Outlook plain-text mode and many corporate filters actually show."}
+          : "This is the plain-text alternative - what Outlook plain-text mode and many corporate filters actually show."}
       </p>
     </div>
   );

@@ -47,7 +47,7 @@ function isoDateInSydney(date: Date) {
   // day MUST be "2-digit": with "numeric" the part comes back unpadded ("1"),
   // so the key "2026-07-1" never matched the grid cell's "2026-07-01" and any
   // event on the 1st–9th of a month silently vanished from the calendar grid
-  // (bug board #80/#88 — "July events not showing", "Korean BBQ 4 June missing").
+  // (bug board #80/#88 - "July events not showing", "Korean BBQ 4 June missing").
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: SYDNEY_TZ,
     year: "numeric",
@@ -99,7 +99,7 @@ function anchorMonthIndex(monthAnchor: Date) {
   return monthAnchor.getUTCFullYear() * 12 + monthAnchor.getUTCMonth();
 }
 
-// When the user hasn't picked a month, open on the current month — unless it has
+// When the user hasn't picked a month, open on the current month - unless it has
 // no events and there ARE future RSVPs. In that case jump to the soonest future
 // event's month so plans that are weeks/months out (e.g. a July RSVP viewed in
 // June) are visible immediately instead of looking like they never landed on the
@@ -224,13 +224,19 @@ export function UserCalendar({
 }: UserCalendarProps) {
   // Default to the current month so the calendar opens on "today" rather than
   // the earliest RSVP's month (which, with past events included, could be far in
-  // the past) — but if today's month is empty and there are future RSVPs, open on
+  // the past) - but if today's month is empty and there are future RSVPs, open on
   // the soonest one. The prev/next arrows + count dots page to other months.
   const monthAnchor = monthParam
     ? parseMonthParam(monthParam, new Date())
     : defaultMonthAnchor(events);
   const todayIso = isoDateInSydney(new Date());
   const cells = buildCells(monthAnchor, events, todayIso);
+  // The phone agenda paints the same month as the grid, so it reads off the same
+  // cells - leading/trailing days belong to a neighbouring month and would make
+  // the "N events this month" count disagree with the list.
+  const agendaCells = cells.filter(
+    (cell) => cell.isCurrentMonth && cell.events.length > 0,
+  );
   const prevMonth = formatMonthParam(addMonths(monthAnchor, -1));
   const nextMonth = formatMonthParam(addMonths(monthAnchor, 1));
   const heading = MONTH_NAME_FORMATTER.format(monthAnchor);
@@ -243,7 +249,7 @@ export function UserCalendar({
   );
   // A month grid only renders one month, so RSVPs in other months (e.g. one you
   // just booked further out than your soonest event) are off-screen. Count them
-  // per direction so the prev/next arrows can signal there's more to page to —
+  // per direction so the prev/next arrows can signal there's more to page to -
   // otherwise the event looks like it never landed on the calendar.
   const eventsBeforeCount = events.filter(
     (event) => eventMonthIndex(event) < currentMonthIndex,
@@ -286,7 +292,7 @@ export function UserCalendar({
           />
           <Link
             href={basePath}
-            className="font-display rounded-[10px] border border-[color:var(--mist-strong)] px-3 py-1.5 text-[13px] font-semibold text-[color:var(--ink-soft)] transition-colors hover:bg-[color:var(--lavender-100)]"
+            className="font-display inline-flex min-h-11 items-center rounded-[10px] border border-[color:var(--mist-strong)] px-3 py-1.5 text-[13px] font-semibold text-[color:var(--ink-soft)] lg:min-h-0 transition-colors hover:bg-[color:var(--lavender-100)]"
           >
             Today
           </Link>
@@ -303,7 +309,7 @@ export function UserCalendar({
         </div>
       </header>
 
-      <div className="grid grid-cols-7 px-2">
+      <div className="hidden grid-cols-7 px-2 md:grid">
         {WEEK_LABELS.map((label) => (
           <div
             key={label}
@@ -315,7 +321,7 @@ export function UserCalendar({
         ))}
       </div>
 
-      <div className="grid grid-cols-7 gap-1 px-2 pb-3">
+      <div className="hidden grid-cols-7 gap-1 px-2 pb-3 md:grid">
         {cells.map((cell) => (
           <CalendarDayCell
             key={cell.isoDate}
@@ -325,6 +331,47 @@ export function UserCalendar({
           />
         ))}
       </div>
+
+      {/* Below md the seven-column grid is not a calendar, it is seven 42px
+          columns of clipped text: a 375px phone leaves each cell ~28px of
+          content, so a chip title line-clamps to a character and the
+          "7:00pm · You're going" line under it never fits. Same events, same
+          chips, same tint vocabulary - in a column that has room for them, so
+          the two views cannot say different things. Mirrors MerchantCalendar. */}
+      <ol className="grid gap-3 px-4 pb-4 md:hidden">
+        {agendaCells.length === 0 ? (
+          <li className="py-3 text-sm font-medium text-[color:var(--slate)]">
+            Nothing booked in {heading}.
+          </li>
+        ) : (
+          agendaCells.map((cell) => (
+            <li key={cell.isoDate}>
+              <p
+                className={`text-[12px] font-semibold ${
+                  cell.isToday
+                    ? "text-[color:var(--purple-700)]"
+                    : "text-[color:var(--slate)]"
+                }`}
+              >
+                {FULL_DATE_FORMATTER.format(cell.date)}
+              </p>
+              {/* The chip is sized for a grid cell; at full row width it also has
+                  to be the tap target, so pad it up to the 44px touch floor. */}
+              <div className="mt-1.5 grid gap-1.5 [&>a]:px-3 [&>a]:py-2.5">
+                {cell.events.map((event) => (
+                  <CalendarEventChip
+                    key={event.id}
+                    event={event}
+                    cellDate={cell.date}
+                    registeredEventIds={registeredEventIds}
+                    waitlistedEventIds={waitlistedEventIds}
+                  />
+                ))}
+              </div>
+            </li>
+          ))
+        )}
+      </ol>
     </article>
   );
 }
@@ -342,11 +389,14 @@ function MonthNav({
   count: number;
   label: string;
 }) {
+  // size-11 below sm: these two arrows ARE the calendar's navigation, and 36px
+  // is below the 44px touch floor the rest of the app holds to. Desktop density
+  // is unchanged from sm up.
   return (
     <Link
       href={href}
       aria-label={label}
-      className="relative grid size-9 place-items-center rounded-[10px] border border-[color:var(--mist-strong)] text-[color:var(--slate)] transition-colors hover:bg-[color:var(--lavender-100)] hover:text-[color:var(--ink)]"
+      className="relative grid size-11 place-items-center rounded-[10px] border sm:size-9 border-[color:var(--mist-strong)] text-[color:var(--slate)] transition-colors hover:bg-[color:var(--lavender-100)] hover:text-[color:var(--ink)]"
     >
       <Icon name={icon} size={16} stroke={2.2} />
       {count > 0 ? (

@@ -350,8 +350,8 @@ test("no em-dashes or en-dashes anywhere on the host surfaces", () => {
   ];
   for (const file of files) {
     const source = read(file);
-    assert.ok(!source.includes("—"), `${file} contains an em-dash`);
-    assert.ok(!source.includes("–"), `${file} contains an en-dash`);
+    assert.ok(!source.includes("\u2014"), `${file} contains an em-dash`);
+    assert.ok(!source.includes("\u2013"), `${file} contains an en-dash`);
   }
 });
 

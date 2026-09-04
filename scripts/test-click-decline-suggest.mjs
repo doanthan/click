@@ -45,8 +45,8 @@ const profiles = [];
 const events = [];
 const mutuals = [];
 function check(label, cond) {
-  if (cond) console.log(`  ok   — ${label}`);
-  else { failures++; console.error(`  FAIL — ${label}`); }
+  if (cond) console.log(`  ok - ${label}`);
+  else { failures++; console.error(`  FAIL - ${label}`); }
 }
 
 async function mkProfile() {
@@ -103,7 +103,7 @@ async function bookableForTwo(slug) {
 }
 
 try {
-  console.log("§B6 — decline returns the mutual to `open`, no terminal:");
+  console.log("§B6 - decline returns the mutual to `open`, no terminal:");
   {
     const a = await mkProfile();
     const b = await mkProfile();
@@ -120,7 +120,7 @@ try {
     check("mutual → coord_state 'open'", (await readCoord(m)) === "open");
     check("re-decline refused (guard: status !== 'pending')", (await readProposal(p)).status !== "pending");
 
-    console.log("\n§B4 — suggest from `open` re-fills the plan (decline is no dead end):");
+    console.log("\n§B4 - suggest from `open` re-fills the plan (decline is no dead end):");
     check("precondition: mutual is `open`", (await readCoord(m)) === "open");
     const fresh = await bookableForTwo(e.slug);
     check("catalogue event is bookable-for-two", Boolean(fresh));
@@ -143,7 +143,7 @@ try {
     check("suggest refused when not `open` (guard)", (await readCoord(m)) !== "open");
   }
 
-  console.log("\n§B4 — suggest rejects a non-bookable event:");
+  console.log("\n§B4 - suggest rejects a non-bookable event:");
   {
     const past = await mkEvent({ startsInDays: -1 });
     const cancelled = await mkEvent({ status: "cancelled" });
@@ -151,7 +151,7 @@ try {
     check("cancelled event → not bookable", (await bookableForTwo(cancelled.slug)) === undefined);
   }
 
-  console.log(failures === 0 ? "\nPASS — decline↔suggest loop correct, guards hold." : `\nFAIL — ${failures} assertion(s).`);
+  console.log(failures === 0 ? "\nPASS - decline↔suggest loop correct, guards hold." : `\nFAIL - ${failures} assertion(s).`);
 } catch (err) {
   console.error("ERROR:", err.message);
   failures++;

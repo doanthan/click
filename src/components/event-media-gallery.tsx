@@ -17,7 +17,7 @@ type EventMediaGalleryProps = {
  * Layout:
  * - Mobile (<sm): single hero + horizontal thumb strip + "View all" pill
  * - Tablet (sm–lg): 2×2 grid with hero spanning + "View all" pill
- * - Desktop (lg+): 4-col × 2-row mosaic — small | hero(2×2) | small | small,
+ * - Desktop (lg+): 4-col × 2-row mosaic - small | hero(2×2) | small | small,
  *                  with the second small column stacked below the first.
  *
  * Each tile is an independent card (radius-lg + soft shadow) to match the
@@ -71,7 +71,7 @@ export function EventMediaGallery({ items, statusLabel, categoryLabel }: EventMe
       <Lightbox items={items} index={lightboxIndex} onClose={close} onNext={next} onPrev={prev} />
     ) : null;
 
-  // Layout adapts to how many photos the merchant actually uploaded — no sparse
+  // Layout adapts to how many photos the merchant actually uploaded - no sparse
   // mosaic with empty hero slots when there are only 2–4, no stock fillers.
 
   // 1 → one honest full-width hero (no "view all").
@@ -343,7 +343,7 @@ function Lightbox({
           </button>
         ) : null}
 
-        <div className="relative h-full max-h-[80vh] w-full max-w-5xl">
+        <div className="relative h-full max-h-[80dvh] w-full max-w-5xl">
           {item.kind === "video" ? (
             <video
               key={item.url}

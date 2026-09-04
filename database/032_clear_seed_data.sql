@@ -7,23 +7,23 @@
 --   * The seeded user/host/attendee profiles (auth_subject like 'seed:%' or
 --     email like '%@click.local') and the 4 seeded merchant profiles.
 --   * Every event owned by one of those seed profiles (host or merchant).
---   * Everything that hangs off them — attendees, waitlists, bookmarks,
---     event_tags, notifications, clicks, personas, messages, etc. — which the
+--   * Everything that hangs off them - attendees, waitlists, bookmarks,
+--     event_tags, notifications, clicks, personas, messages, etc. - which the
 --     schema removes automatically via ON DELETE CASCADE once the parent
 --     profile/event rows go.
 --
 -- WHAT THIS KEEPS
 --   * The tag taxonomy (tag_categories + interest/music tags). These are
 --     functional reference data the /categories pages and the quiz/onboarding
---     tag pickers rely on — not visible "dummy content". An optional block at
+--     tag pickers rely on - not visible "dummy content". An optional block at
 --     the bottom removes them too, but it is commented out on purpose.
 --   * Any real profiles/events you created through the UI (they don't carry a
 --     seed marker, so the WHERE clauses below never match them).
 --
 -- This is REVERSIBLE: re-run 002_seed.sql + 024_seed_remaining_events.sql to
--- restore the demo dataset (both are idempotent — ON CONFLICT DO NOTHING).
+-- restore the demo dataset (both are idempotent - ON CONFLICT DO NOTHING).
 --
--- HOW TO RUN (against the Supabase *pooler* host — direct db.* is IPv6-only):
+-- HOW TO RUN (against the Supabase *pooler* host - direct db.* is IPv6-only):
 --   psql "$DATABASE_URL" -f database/032_clear_seed_data.sql
 -- or paste it into the Supabase SQL editor (it already runs as one txn).
 
@@ -55,7 +55,7 @@ where host_profile_id in (select id from _seed_profiles)
 delete from profiles
 where id in (select id from _seed_profiles);
 
--- Sanity check — both should report 0 remaining.
+-- Sanity check - both should report 0 remaining.
 do $$
 declare
   remaining_profiles int;
@@ -77,7 +77,7 @@ end $$;
 commit;
 
 -- -----------------------------------------------------------------------------
--- OPTIONAL — also wipe the seeded tag taxonomy.
+-- OPTIONAL - also wipe the seeded tag taxonomy.
 -- Leave this commented unless you specifically want the category pages and the
 -- quiz/onboarding tag pickers to start empty too. Re-seed with 002_seed.sql,
 -- 026/028 (interest tag curation) and 029_seed_music_tags.sql.

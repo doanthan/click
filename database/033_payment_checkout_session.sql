@@ -8,7 +8,7 @@
 --   attachPaymentIntent() call in the checkout route was effectively a no-op and
 --   rows were stored with no Stripe handle at all (no PI, no charge). When the
 --   `checkout.session.completed` webhook missed AND fulfill-on-return didn't
---   fire, those rows were orphaned 'pending' forever with no recovery path —
+--   fire, those rows were orphaned 'pending' forever with no recovery path -
 --   the admin "Sync from Stripe" backfill matches on stripe_payment_intent_id,
 --   which was null.
 --

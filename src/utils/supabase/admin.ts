@@ -1,7 +1,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 // Server-only Supabase client that uses the service role key. Used for
-// privileged operations the public clients can't do — uploads to the private
+// privileged operations the public clients can't do - uploads to the private
 // `merchant-documents` bucket and the public `avatars` bucket (the avatars
 // bucket is public for reads, but writes still need credentials). Never
 // expose this to the browser.

@@ -3,7 +3,7 @@
 -- The click_personas table was added by appending to 001_schema.sql after the
 -- base schema had already been provisioned. Databases created before that edit
 -- (e.g. production) never got the table, so the Personality Quiz "Save Persona"
--- server action throws on insert — surfacing as an opaque server error right
+-- server action throws on insert - surfacing as an opaque server error right
 -- after submit. The read path (getLatestPersonaForSession) swallows the error
 -- and returns null, which is why only the write breaks.
 --

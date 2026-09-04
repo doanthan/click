@@ -60,7 +60,7 @@ export function getAppUrl() {
     process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? "http://localhost:3000";
   // Stripe redirects (checkout success_url/return_url, Connect onboarding return)
   // must land on the canonical www host. The bare apex letsclick.app only
-  // 307-redirects to www — and that extra hop times out behind strict corporate
+  // 307-redirects to www - and that extra hop times out behind strict corporate
   // proxies (e.g. hospital/clinical networks), surfacing as ERR_TIMED_OUT on the
   // post-payment return page even though the charge succeeded. Force www so the
   // browser never touches the apex. Idempotent + scoped to this one domain; any

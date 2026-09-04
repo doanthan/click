@@ -1,7 +1,7 @@
-// Safety teardown — the §6.5 (block) / §6.7a (ban) state-machine sever, plus the
+// Safety teardown - the §6.5 (block) / §6.7a (ban) state-machine sever, plus the
 // §B4 coordination re-check gate (SAFE-01/02/03/06).
 //
-// Pure SQL helpers, no session / no Next imports — every function takes an OPEN
+// Pure SQL helpers, no session / no Next imports - every function takes an OPEN
 // transaction `client` so the caller owns the transaction boundary and can do the
 // flag-write + teardown atomically. Shared by:
 //   • blockUser                  → severPairCoordination   (one pair)
@@ -54,7 +54,7 @@ export async function severPairCoordination(
   );
 
   // 2. Withdraw any live proposal (pending or accepted) under the pair's active
-  //    mutual — done before the mutual is ended so the subselect still finds it.
+  //    mutual - done before the mutual is ended so the subselect still finds it.
   await client.query(
     `update click_proposals set status = 'withdrawn', updated_at = now()
        where status in ('pending', 'accepted')
@@ -80,7 +80,7 @@ export async function severPairCoordination(
 }
 
 // ---------------------------------------------------------------------------
-// User-scoped sever (ban, §6.7a) — every pair the banned user is part of.
+// User-scoped sever (ban, §6.7a) - every pair the banned user is part of.
 // ---------------------------------------------------------------------------
 export async function severAllCoordinationForUser(
   client: PoolClient,
@@ -120,7 +120,7 @@ export async function severAllCoordinationForUser(
 //   • either has blocked the other (either direction), OR
 //   • either party is banned or suspended.
 // Mute is deliberately NOT here (SAFE-09): mute suppresses the in-app ping only,
-// never the state machine — that gate stays on the notification insert.
+// never the state machine - that gate stays on the notification insert.
 // ---------------------------------------------------------------------------
 export async function pairCoordinationAllowed(
   client: PoolClient,
@@ -146,7 +146,7 @@ export async function pairCoordinationAllowed(
 }
 
 // ---------------------------------------------------------------------------
-// §B5.6 — a partner cancels their booking during `confirmed_together`.
+// §B5.6 - a partner cancels their booking during `confirmed_together`.
 //
 // Marked launch-blocking in the spec, and it existed in no form: not one cancel
 // path touched mutual_clicks or click_proposals. The survivor kept a "Going with

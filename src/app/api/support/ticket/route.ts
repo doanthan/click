@@ -30,7 +30,7 @@ function safeParse<T>(value: FormDataEntryValue | null, fallback: T): T {
   }
 }
 
-// POST /api/support/ticket — file a bug (multipart FormData from SupportPanel).
+// POST /api/support/ticket - file a bug (multipart FormData from SupportPanel).
 export async function POST(request: Request) {
   // Pre-launch this is open to signed-out visitors; they file as the guest
   // reporter (see resolveReporter) and are rate-limited per IP instead of
@@ -118,7 +118,7 @@ export async function POST(request: Request) {
   }
 }
 
-// GET /api/support/ticket?url=<pathname> — open bugs for a page (the checklist).
+// GET /api/support/ticket?url=<pathname> - open bugs for a page (the checklist).
 export async function GET(request: Request) {
   // Operators only. A ticket carries the reporter's name and their free-text
   // account of what broke; this used to answer any anonymous caller. Reporting

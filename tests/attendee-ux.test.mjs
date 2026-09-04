@@ -630,22 +630,49 @@ test("money on the merchant and admin surfaces is never rounded to whole dollars
   assert.doesNotMatch(shared, /export function formatMoney|export function formatPrice|priceFormatter/);
 });
 
-test("the post-event window is named where the prompt is offered", () => {
-  // The banner above the prompt used to say "No rush" for a surface that hard-
-  // closes at event end + 48h. The window is named on the CARD - the component
-  // that offers the taps - so it travels to BOTH surfaces that render the
-  // prompt, including /events/[slug], which has no banner above it at all.
+test("the post-event window is never named where the prompt is offered", () => {
+  // This test used to REQUIRE the opposite: it asserted the card named
+  // POST_EVENT_CLICK_WINDOW_HOURS, on the reasoning that a surface which hard-
+  // closes should say so. Runbook invariant 9 rules that out - "No timers, caps,
+  // rankings or refresh cadence shown, ever - including the click window's own
+  // duration" - and Stage 0.5 puts the whole window on the server's side of the
+  // line: "the UI only ever knows open or not open". So the assertion is
+  // inverted, not deleted: the card and the pages that render it must carry no
+  // duration at all.
   const dashboard = readFileSync(path.join(root, "src/app/dashboard/page.tsx"), "utf8");
   const detail = readFileSync(path.join(root, "src/app/events/[slug]/page.tsx"), "utf8");
   const card = readFileSync(path.join(root, "src/components/post-event-click-card.tsx"), "utf8");
   assert.doesNotMatch(dashboard, /No rush/);
-  assert.match(card, /POST_EVENT_CLICK_WINDOW_HOURS/);
-  // Naming it on the card only counts if the card is what these pages render.
+  // The constant cannot be imported here at all - a rendered count is one JSX
+  // interpolation away from any reference to it.
+  assert.doesNotMatch(
+    card,
+    /POST_EVENT_CLICK_WINDOW_HOURS|POST_EVENT_CLICK_CAP|POST_EVENT_PROMPT_DELAY_HOURS/,
+    "the click card must not know the window's duration or the per-event budget",
+  );
+  // Naming nothing on the card only counts if the card is what these pages render.
   assert.match(dashboard, /<PostEventClickCard/);
   assert.match(detail, /<PostEventClickCard/);
-  // One deadline, one place. The banner restating the card's line verbatim is
-  // how this surface grew three headings saying the same thing before.
-  assert.doesNotMatch(dashboard, /hours after the event/);
+  // And the prose forms of the same leak, on every surface that offers the prompt.
+  // Comment lines are stripped: these files are entitled to explain the window's
+  // real duration to the next reader, they just may not print it. (The refund
+  // policy's "within 24 hours of the event" on the detail page is a different
+  // clock and a public one, which is why the patterns name the click window.)
+  for (const [rel, src] of [
+    ["dashboard/page", dashboard],
+    ["events/[slug]/page", detail],
+    ["post-event-click-card", card],
+  ]) {
+    const copy = src
+      .split("\n")
+      .filter((line) => !line.trim().startsWith("//") && !line.trim().startsWith("*"))
+      .join("\n");
+    assert.doesNotMatch(
+      copy,
+      /hours after the event|hours from the end|days left|clicks left|closes soon|window closes/i,
+      `${rel} puts the click window's clock in front of the user`,
+    );
+  }
 });
 
 test("no unwired proposal clock sits beside the one that ships", () => {

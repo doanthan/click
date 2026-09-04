@@ -802,9 +802,28 @@ export function AdminEventQueue({
                       </span>
                     ) : null}
                   </span>
-                  <span>{event.category}</span>
-                  <span>{startsLabel}</span>
-                  <span>{createdLabel}</span>
+                  {/* Below md the header strip is hidden and these cells stack, so a
+                      bare category sat above two dates with nothing naming either -
+                      an admin cannot tell the event start from the submission date.
+                      Same remedy as admin-members-table.tsx. */}
+                  <span>
+                    <span className="text-[11px] font-semibold text-[color:var(--slate)] md:hidden">
+                      Category:{" "}
+                    </span>
+                    {event.category}
+                  </span>
+                  <span>
+                    <span className="text-[11px] font-semibold text-[color:var(--slate)] md:hidden">
+                      Starts:{" "}
+                    </span>
+                    {startsLabel}
+                  </span>
+                  <span>
+                    <span className="text-[11px] font-semibold text-[color:var(--slate)] md:hidden">
+                      Created:{" "}
+                    </span>
+                    {createdLabel}
+                  </span>
                   <span className="font-semibold text-[color:var(--ink)]">
                     {event.attendees}/{event.capacity}
                   </span>
@@ -1226,13 +1245,15 @@ function EventTagEditor({
         ) : (
           selected.map((tag) => (
             <li key={tag.slug}>
-              <span className="ck-tag">
+              <span className="ck-tag ck-tag--tap">
                 {tag.label}
+                {/* The bare glyph was the whole hit area (~8x12px). Negative margin
+                    keeps the pill's visual width; the 44px tag supplies the height. */}
                 <button
                   type="button"
                   onClick={() => remove(tag.slug)}
                   aria-label={`Remove ${tag.label}`}
-                  className="leading-none text-[color:var(--slate)] hover:text-[color:var(--ink)]"
+                  className="-mr-1.5 grid size-7 place-items-center rounded-full text-sm leading-none text-[color:var(--slate)] hover:text-[color:var(--ink)]"
                 >
                   ×
                 </button>
@@ -1244,7 +1265,7 @@ function EventTagEditor({
           <button
             type="button"
             onClick={() => setAdding((v) => !v)}
-            className="ck-tag ck-tag--select border-dashed"
+            className="ck-tag ck-tag--select ck-tag--tap touch-manipulation border-dashed"
           >
             {adding ? "Done adding" : "+ Add tag"}
           </button>
@@ -1271,7 +1292,7 @@ function EventTagEditor({
                   key={tag.slug}
                   type="button"
                   onClick={() => add(tag)}
-                  className="ck-tag ck-tag--select"
+                  className="ck-tag ck-tag--select ck-tag--tap touch-manipulation"
                 >
                   + {tag.label}
                 </button>

@@ -22,7 +22,7 @@ function errorResponse(error: unknown) {
     return NextResponse.json({ error: error.message }, { status: 503 });
   }
 
-  // Unexpected error — surface it in the server console so we can debug.
+  // Unexpected error - surface it in the server console so we can debug.
   console.error("[bookmark] unexpected error:", error);
   return NextResponse.json({ error: error.message || "Bookmark failed." }, { status: 500 });
 }

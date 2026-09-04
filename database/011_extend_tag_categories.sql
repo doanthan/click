@@ -1,6 +1,6 @@
 -- Extend the event-category taxonomy and split out internal-only categories.
 --
--- 1. `internal_only` flag — Life + Music are matching signals (Life Quiz tags
+-- 1. `internal_only` flag - Life + Music are matching signals (Life Quiz tags
 --    and music-taste vibes), not event types a merchant hosts. They were
 --    leaking into the merchant signup picker (`getMerchantCategoryOptions`)
 --    and the public `/categories` page (`getEventCategories`). New flag is

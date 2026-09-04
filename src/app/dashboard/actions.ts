@@ -1,9 +1,13 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import type { ClickResult } from "@/app/people/actions";
-import { createUserClickForSession } from "@/lib/event-repository";
+import {
+  answerPostEventWindowForSession,
+  createUserClickForSession,
+} from "@/lib/event-repository";
 import { CLICK_SENT_LINE } from "@/lib/clicks/constants";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -64,4 +68,44 @@ export async function clickCoAttendeeAction(
     ok: true,
     message: CLICK_SENT_LINE,
   };
+}
+
+// "No one this time" - the explicit answer to a post-event window (Stage 0.5,
+// C4.13). It retires that event's card permanently, which is exactly why it is a
+// server action and `Maybe later` is not: one is an answer, the other is a
+// this-session dismissal the client owns on its own.
+//
+// Unlike clickCoAttendeeAction this DOES revalidate: the whole point is that the
+// card goes away, and there is no optimistic confirmation to protect.
+export async function answerPostEventWindowAction(
+  _prev: ClickResult | null,
+  formData: FormData,
+): Promise<ClickResult> {
+  const session = await auth();
+  if (!session?.user) redirect("/login?callbackUrl=/dashboard");
+
+  const sourceEvent = formData.get("source_event");
+  if (typeof sourceEvent !== "string" || !sourceEvent) {
+    return { ok: false, message: "That event could not be found." };
+  }
+
+  try {
+    await answerPostEventWindowForSession(sourceEvent, session);
+  } catch (error) {
+    const message =
+      error instanceof Error && error.message
+        ? error.message
+        : "Could not save that. Try again.";
+    return { ok: false, message };
+  }
+
+  // Both surfaces, because the control lives on both. The dashboard is where the
+  // answer takes the card away (getPostEventClickPrompts carries the answered
+  // gate); /events/<slug> keeps the who-was-there picker either way - it has no
+  // such gate, on purpose, so the per-event budget survives an answer - but it
+  // still has to re-render, or the tap leaves a success line sitting under a card
+  // rendered from before it. `sourceEvent` is the event slug the form carried.
+  revalidatePath("/dashboard");
+  revalidatePath(`/events/${sourceEvent}`);
+  return { ok: true, message: "Noted - we won't ask about this one again." };
 }

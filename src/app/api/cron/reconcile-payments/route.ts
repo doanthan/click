@@ -2,17 +2,17 @@ import { NextResponse } from "next/server";
 import { reconcilePendingPayments } from "@/lib/stripe-sync";
 
 export const runtime = "nodejs";
-// Never cache — this mutates state every run.
+// Never cache - this mutates state every run.
 export const dynamic = "force-dynamic";
 
 /**
  * Safety net for missed Stripe webhooks: walks recent Checkout Sessions Stripe
  * reports as paid and promotes any booking still stuck on 'pending' /
- * 'pending_payment' (see reconcilePendingPayments). Idempotent — already
- * confirmed sessions are cheap no-ops — so it's safe on any schedule; every
+ * 'pending_payment' (see reconcilePendingPayments). Idempotent - already
+ * confirmed sessions are cheap no-ops - so it's safe on any schedule; every
  * 15 minutes is plenty.
  *
- * Wire it to a scheduler that sends `Authorization: Bearer ${CRON_SECRET}` — e.g.
+ * Wire it to a scheduler that sends `Authorization: Bearer ${CRON_SECRET}` - e.g.
  * a Vercel cron entry in vercel.json:
  *   { "crons": [{ "path": "/api/cron/reconcile-payments", "schedule": "*\/15 * * * *" }] }
  * (Vercel injects the CRON_SECRET bearer automatically when the env var is set.)

@@ -10,7 +10,7 @@
 -- detail page (POST /api/admin/merchants/[merchantId]/auto-approve) to send a
 -- merchant back to manual review.
 --
--- Idempotent — safe to re-run.
+-- Idempotent - safe to re-run.
 
 begin;
 

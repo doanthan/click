@@ -25,7 +25,7 @@ function responseForError(error: unknown) {
     return NextResponse.json({ error: error.message }, { status: 401 });
   }
 
-  // Paid events can't be confirmed without payment — route the buyer to checkout.
+  // Paid events can't be confirmed without payment - route the buyer to checkout.
   if (error.name === "PaymentRequiredError") {
     const slug = (error as Error & { eventSlug?: string }).eventSlug;
     return NextResponse.json(

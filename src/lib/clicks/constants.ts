@@ -13,11 +13,11 @@ export const POST_EVENT_CLICK_WINDOW_HOURS = 48;
 // ── Budgets (§2 rule 5) ──────────────────────────────────────────────────────────────
 /** Max post-event clicks per user per attended event. */
 export const POST_EVENT_CLICK_CAP = 3;
-/** Rolling cap on live (pending) discovery clicks a user may hold — silent (never shown). */
+/** Rolling cap on live (pending) discovery clicks a user may hold - silent (never shown). */
 export const DISCOVERY_CLICK_CAP = 20;
 
 // ── Mutual lifecycle (§B2) ───────────────────────────────────────────────────────────
-/** The mutual's own relationship clock — distinct from the discovery click's 7d window. */
+/** The mutual's own relationship clock - distinct from the discovery click's 7d window. */
 export const MUTUAL_CLOCK_DAYS = 7;
 /** Soft cap on *actionable* (open/proposed) active mutuals before down-ranking (§B7.2). */
 export const ACTIVE_MUTUAL_SOFT_CAP = 8;
@@ -34,7 +34,7 @@ export const REDISCOVERY_COOLDOWN_DAYS = 30;
 // 7 days to 48 hours. Change the two writers first if the spec is meant to win.
 /** Events sooner than this are never *suggested* (manual propose still allowed) (§B3.2). */
 export const SUGGESTION_LEADTIME_FLOOR_HOURS = 48;
-/** Suggestion ceiling — the load-spreader (§B3.2). */
+/** Suggestion ceiling - the load-spreader (§B3.2). */
 export const SUGGESTION_WINDOW_DAYS = 30;
 /** Joint counter-propose budget per coordination attempt (§B4 / legacy proposal cap). */
 export const PROPOSAL_ALTERNATIVES_CAP = 3;

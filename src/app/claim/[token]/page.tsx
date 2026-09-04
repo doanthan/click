@@ -21,7 +21,7 @@ export const metadata = {
 const SANS = "var(--font-click-body), system-ui, -apple-system, sans-serif";
 
 const SHELL: React.CSSProperties = {
-  minHeight: "100vh",
+  minHeight: "100dvh",
   background: "var(--champagne)",
   display: "flex",
   alignItems: "center",

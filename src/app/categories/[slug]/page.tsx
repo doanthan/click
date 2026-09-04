@@ -48,7 +48,7 @@ export default async function CategoryPage({
   const bookmarkedSet = new Set(profileStatus?.bookmarkedEventIds ?? []);
   const registeredSet = new Set(profileStatus?.registeredEventIds ?? []);
   const waitlistedSet = new Set(profileStatus?.waitlistedEventIds ?? []);
-  // Real seat state for the booking modal — without it a confirmed attendee
+  // Real seat state for the booking modal - without it a confirmed attendee
   // of a full event is inferred as "waitlisted" (bug board #163).
   const bookingStatusFor = (id: string): "confirmed" | "waitlisted" | undefined =>
     registeredSet.has(id)
