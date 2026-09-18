@@ -11,6 +11,7 @@ import {
   AuthDivider,
   AuthError,
   Field,
+  AuthConsent,
   AuthNote,
   MagicLinkSentNote,
   HOST_SIGNUP_CALLBACK_URL,
@@ -288,6 +289,10 @@ export function LoginModal({
             {emailPending ? <span className="ck-btn__spinner" aria-hidden /> : null}
           </button>
         </form>
+
+        <div className="mt-4">
+          <AuthConsent action={isSignup ? "creating an account" : "continuing"} />
+        </div>
 
         <p className="mt-5 text-center text-sm text-[color:var(--slate)]">
           {isSignup ? "Already on Click?" : "New to Click?"}{" "}

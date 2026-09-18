@@ -192,7 +192,20 @@ export async function SiteFooter() {
                 ) : null}
                 <Link
                   href={href}
-                  className="text-[13px] font-medium whitespace-nowrap text-[color:var(--slate)] transition-colors hover:text-[color:var(--purple-700)]"
+                  // py-1.5 takes the hit box from 20px to 32px. These are the
+                  // one link cluster in the app with no thumb allowance: at
+                  // 13px they were 20px tall and 6px apart, under WCAG 2.5.8's
+                  // 24px floor and far under the 44px .ck-taplink documents as
+                  // the standard. .ck-taplink is the wrong tool here - its
+                  // 44px band is absolutely positioned, and across three
+                  // wrapped rows at this pitch the bands would overlap and
+                  // steal each other's taps. Real padding is what a wrapping
+                  // cluster needs, and it has to be REAL height: pulling it
+                  // back with a negative margin would hold the row pitch at
+                  // 26px while the boxes grew to 32px, so stacked rows would
+                  // overlap by 6px and steal taps from each other - the same
+                  // defect, moved. 32px boxes plus the 6px gap-y stay clear.
+                  className="py-1.5 text-[13px] font-medium whitespace-nowrap text-[color:var(--slate)] transition-colors hover:text-[color:var(--purple-700)]"
                 >
                   {label}
                 </Link>
@@ -219,7 +232,7 @@ export async function SiteFooter() {
             </SocialLink>
             <a
               href={`mailto:${SUPPORT_EMAIL_DEFAULT}`}
-              className="ml-1.5 transition-colors hover:text-[color:var(--purple-700)]"
+              className="ml-1.5 py-1.5 transition-colors hover:text-[color:var(--purple-700)]"
             >
               {SUPPORT_EMAIL_DEFAULT}
             </a>

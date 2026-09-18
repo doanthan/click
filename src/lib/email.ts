@@ -128,6 +128,7 @@ export type EmailTemplate =
   | "event-rejected-merchant"
   | "event-cancelled-merchant"
   | "event-cancelled-attendee"
+  | "event-address-changed-attendee"
   | "merchant-application-received"
   | "merchant-waitlisted-merchant"
   | "merchant-verified-merchant"
@@ -139,6 +140,7 @@ export type EmailTemplate =
   | "waitlist-joined-attendee"
   | "waitlist-promoted-attendee"
   | "merchant-suspended-merchant"
+  | "payments-paused-merchant"
   | "payment-receipt-attendee"
   | "report-received-admin"
   | "merchant-monthly-report"
@@ -179,6 +181,8 @@ const SUBJECTS: Record<EmailTemplate, (vars: Record<string, string>) => string> 
     `${v.eventTitle ?? "Your event"} was cancelled by Click`,
   "event-cancelled-attendee": (v) =>
     `${v.eventTitle ?? "Your event"} has been cancelled`,
+  "event-address-changed-attendee": (v) =>
+    `New address - ${v.eventTitle ?? "your event"}`,
   "merchant-application-received": (v) =>
     `We've got your application - ${v.businessName ?? "your business"}`,
   "merchant-waitlisted-merchant": (v) =>
@@ -197,6 +201,8 @@ const SUBJECTS: Record<EmailTemplate, (vars: Record<string, string>) => string> 
     `A spot opened - ${v.eventTitle ?? "your event"}`,
   "merchant-suspended-merchant": (v) =>
     `${v.businessName ?? "Your account"} has been suspended on Click`,
+  "payments-paused-merchant": (v) =>
+    `Action needed - Stripe has paused ticket sales for ${v.businessName ?? "your events"}`,
   "booking-refunded-attendee": (v) =>
     `Refunded - ${v.eventTitle ?? "your booking"}`,
   "payment-receipt-attendee": (v) =>

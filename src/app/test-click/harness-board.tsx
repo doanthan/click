@@ -225,6 +225,18 @@ function FixturesPanel({
               hint="Takes every free seat with OTHER QA people - never the pair - so their own agreed plan can be watched selling out from under them."
             />
           ) : null}
+          {pair ? (
+            <HarnessButton
+              label={`Call off ${cancelTarget(pair)}`}
+              tone="danger"
+              fields={{
+                step: "cancel_fixture_event",
+                ...pairOf(pair),
+                event_slug: cancelTarget(pair),
+              }}
+              hint="The fixture's own host cancels it. A full event is a recovery; a cancelled one is not, and this is the only way to reach that difference. Rebuild the fixtures to bring it back - resetting the pair will not."
+            />
+          ) : null}
         </div>
       </div>
     </Panel>
@@ -641,6 +653,14 @@ function SideColumn({
           hint="Confirming a plan is not booking it - this is the separate step."
         />
         <HarnessButton
+          label="Give up the seat"
+          tone="danger"
+          fields={{ step: "cancel_rsvp", ...p, actor: me.email, event_slug: planEventSlug }}
+          disabled={!planEventSlug}
+          disabledReason="No agreed event."
+          hint="The partner-cancel door. Both sides must be seated first; the mutual survives on 'open', the plan retires, and only the side still holding a seat should be told."
+        />
+        <HarnessButton
           label="Join the waitlist together"
           fields={{ step: "waitlist_together", ...p, actor: me.email, mutual_id: mutualId }}
           disabled={!mutualId}
@@ -690,6 +710,16 @@ function SideColumn({
 function sellOutTarget(pair: PairState): string {
   const agreed = pair.viewA.proposal?.suggestedEventSlug ?? pair.viewB.proposal?.suggestedEventSlug;
   return agreed && agreed.startsWith("qa-") ? agreed : "qa-click-full-night";
+}
+
+/**
+ * Falls back to plan-a, not to the capacity-2 fixture sellOutTarget uses. Killing
+ * the tight one would leave nothing to test the sell-out recovery with, and the
+ * cancel is only interesting on the night the pair actually agreed on.
+ */
+function cancelTarget(pair: PairState): string {
+  const agreed = pair.viewA.proposal?.suggestedEventSlug ?? pair.viewB.proposal?.suggestedEventSlug;
+  return agreed && agreed.startsWith("qa-") ? agreed : "qa-click-plan-a";
 }
 
 /** The pair a step belongs to, so its before/after snapshot brackets the right rows. */

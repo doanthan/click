@@ -3,6 +3,11 @@ import { sendEventReminders } from "@/lib/event-repository";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// One email row per attendee across every event starting tomorrow, four at a
+// time. A truncated run is safe - sendEventReminders dedupes against
+// email_events, so the next run picks up whoever was missed - but it is still
+// silent under-delivery, so give it room to finish in one pass.
+export const maxDuration = 300;
 
 async function handle(request: Request) {
   const secret = process.env.CRON_SECRET;

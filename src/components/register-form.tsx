@@ -6,6 +6,7 @@ import {
   AuthDivider,
   AuthError,
   Field,
+  AuthConsent,
   AuthNote,
   HOST_SIGNUP_CALLBACK_URL,
   SignupRoleChoice,
@@ -95,6 +96,8 @@ export function RegisterForm({
           {isHost ? "Create host account" : "Create account"}
         </SubmitButton>
       </form>
+
+      <AuthConsent action="creating an account" />
 
       {isHost ? (
         <AuthNote icon="info">

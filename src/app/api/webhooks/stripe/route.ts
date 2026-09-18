@@ -16,6 +16,7 @@ import {
 } from "@/lib/stripe";
 import {
   recordDisputeAudit,
+  recordRefundReversal,
   syncTransactionFromStripe,
   upsertPayoutFromEvent,
 } from "@/lib/stripe-sync";
@@ -255,9 +256,60 @@ export async function POST(request: Request) {
         }
         break;
       }
+      case "charge.refund.updated":
+      case "refund.updated":
+      case "refund.failed": {
+        // A refund is not final the moment we create it. A pending refund can
+        // be REJECTED by the receiving bank days later; Stripe flips it to
+        // `failed` and puts `charge.amount_refunded` back. Without this branch
+        // our ledger kept the money as returned forever: the transaction read
+        // 'refunded', the seat stayed cancelled, the attendee had been emailed
+        // a receipt for money they never got, and nothing in the console ever
+        // disagreed.
+        //
+        // `charge.refunded` does NOT fire again on that transition, which is
+        // why the existing branch cannot cover it. Both event families are
+        // handled because the legacy `charge.refund.updated` and the modern
+        // `refund.*` events carry the same Refund object and an account may be
+        // subscribed to either.
+        //
+        // The re-sync does the whole job: summariseRefunds drops `failed` and
+        // `canceled` refunds, so the cached total walks back down and the
+        // derived status follows it. Migration 066 is what lets that write
+        // past the 055 terminal-status trigger.
+        const refund = event.data.object;
+        const pi =
+          typeof refund.payment_intent === "string"
+            ? refund.payment_intent
+            : refund.payment_intent?.id ?? null;
+        if (pi) {
+          const synced = await syncTransactionFromStripe(pi);
+          if (refund.status === "failed" || refund.status === "canceled") {
+            // The seat is deliberately NOT un-cancelled. Re-confirming someone
+            // who was told their booking ended - possibly after their seat went
+            // to the waitlist - is a worse outcome than a queue entry. This
+            // lands in the same operator queue a failed refund attempt does, so
+            // /admin sees the money is still ours and can decide.
+            await recordRefundReversal({
+              paymentTransactionId: synced.paymentTransactionId,
+              stripeRefundId: refund.id,
+              amountCents: refund.amount ?? 0,
+              currency: (refund.currency ?? "aud").toUpperCase(),
+              failureReason: refund.failure_reason ?? null,
+            });
+          }
+        }
+        break;
+      }
       case "charge.dispute.created":
       case "charge.dispute.updated":
-      case "charge.dispute.closed": {
+      case "charge.dispute.closed":
+      // The funds events are the ones that actually move money - a dispute can
+      // sit 'under_review' for weeks while the charge amount and the fee are
+      // already gone, and reinstated again if we win. Same audit row; without
+      // them /admin/audit shows the argument but never the money.
+      case "charge.dispute.funds_withdrawn":
+      case "charge.dispute.funds_reinstated": {
         // No first-class disputes table yet - log to audit_logs so
         // /admin/audit surfaces it. Disputes table is a follow-up.
         await recordDisputeAudit(event.data.object, event.type);

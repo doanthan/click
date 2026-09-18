@@ -43,14 +43,57 @@ test("the harness cannot mint a session for anything but the QA namespace", () =
   );
 });
 
-test("the harness is closed on a production deployment and behind the QA unlock", () => {
+test("the harness is behind the QA unlock, on every environment including production", () => {
+  // The unlock IS the boundary now - there is no second gate behind it to fall
+  // back on. isTestSwitcherUnlocked() returning true unconditionally in local
+  // development is the only exemption, and it is the same one the persona
+  // switcher takes.
   assert.match(
     harness,
-    /if \(isProductionDeployment\(\)\) return false;\s*\n\s*return isTestSwitcherUnlocked\(\);/,
-    "isHarnessAllowed must fail closed on production AND require the same unlock " +
-      "cookie as the persona switcher.",
+    /export async function isHarnessAllowed\(\): Promise<boolean> \{\s*\n\s*return isTestSwitcherUnlocked\(\);\s*\n\}/,
+    "isHarnessAllowed must be exactly the persona switcher's unlock check - no " +
+      "extra condition that could be true without a live QA grant.",
   );
-  assert.match(page, /if \(isProductionDeployment\(\)\) notFound\(\);/);
+  // The import, not the identifier - the block comment above isHarnessAllowed
+  // names isProductionDeployment to explain why it was dropped, and a test that
+  // failed on its own rationale would just get the rationale deleted.
+  assert.doesNotMatch(
+    harness,
+    /^import .*isProductionDeployment.*$/m,
+    "the environment check is gone on purpose (the harness now runs UAT on the " +
+      "deployment itself); it must not creep back as a second, weaker gate.",
+  );
+  assert.match(
+    page,
+    /if \(!\(await isHarnessAllowed\(\)\)\) notFound\(\);/,
+    "the page must run the gate itself and 404 on it, not trust src/proxy.ts alone.",
+  );
+});
+
+test("the production edge opens /test-click only for a live QA grant", () => {
+  // src/proxy.ts is the layer furthest from the code and the only one that can
+  // answer 404 without first committing a 200 shell. Pin BOTH halves: the path
+  // is allowed through, and only alongside testSwitcherCookieHolds.
+  const proxy = read("src/proxy.ts");
+  const guard = proxy.slice(
+    proxy.indexOf("isProductionDeployment() && isInternalRoute"),
+    proxy.indexOf("if (pathname.startsWith(\"/dashboard\")"),
+  );
+  assert.match(
+    guard,
+    /pathname === "\/test-click"/,
+    "/test-click must be an exact-match exception in the production proxy.",
+  );
+  assert.match(
+    guard,
+    /testSwitcherCookieHolds\(qaCookie\)/,
+    "the exception must be conditioned on the QA grant - an unconditional one " +
+      "would put a two-person click driver on the public internet.",
+  );
+  assert.ok(
+    !/pathname\.startsWith\("\/test/.test(guard),
+    "the exceptions are exact paths, never prefixes - /test/anything must stay 404.",
+  );
 });
 
 test("every harness action runs the gate, not just the ones that need a session", () => {
@@ -249,11 +292,15 @@ test("a fixture rebuild re-homes the events, so it cannot collide later", () => 
   );
 });
 
-test("the driver is not a third click surface, because the route never ships", () => {
+test("the driver is not a third click surface, because no user can reach it", () => {
   // Part A's hardest invariant is that there are EXACTLY TWO click surfaces and a
   // profile is never one of them - it is why src/components/profile-click-button.tsx
   // was deleted. The driver plainly renders click controls, so the only thing making
-  // that legal is that /test-click cannot be reached by a user at all.
+  // that legal is that /test-click is unreachable without a QA grant. It is no
+  // longer unreachable on production per se (the test above pins the exception),
+  // so this list membership is what still routes it through that exception rather
+  // than past it: drop it from INTERNAL_ROUTE_PREFIXES and the proxy stops looking
+  // at the path at all, which opens it to everyone.
   //
   // scripts/click-greps.mjs does not catch this on its own: grep 1 only inspects
   // lines that also mention "profile" or "attendee", and the driver's buttons name

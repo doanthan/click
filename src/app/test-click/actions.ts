@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import {
   blockUser,
+  cancelRegistration,
   confirmProposal,
   createUserClickForSession,
   declineProposalForSession,
@@ -18,6 +19,7 @@ import {
 } from "@/lib/event-repository";
 import {
   assertHarnessAllowed,
+  cancelFixtureEvent,
   fillEventToCapacity,
   harnessSession,
   leaveFixtureEvent,
@@ -192,6 +194,11 @@ async function runStep(step: string, form: FormData): Promise<string> {
     case "leave_event": {
       return leaveFixtureEvent(actorEmail, eventSlug);
     }
+    case "cancel_fixture_event": {
+      // The merchant's own cancel, not an admin's, and not leave_event's raw
+      // DELETE - only this path retires the pair's plan to 'event_cancelled'.
+      return cancelFixtureEvent(eventSlug);
+    }
 
     // --- the send layer ------------------------------------------------------
     case "send_discovery": {
@@ -240,7 +247,11 @@ async function runStep(step: string, form: FormData): Promise<string> {
       const marked = await markMutualSeen(await harnessSession(actorEmail), mutualId);
       return marked
         ? "Reveal marked seen. It is once per person, forever - it will not show again."
-        : "Nothing to mark - this person had already seen it, and seeing it twice is not a thing.";
+        // Two causes, and the old copy asserted the wrong one. markMutualSeen
+        // writes only an ACTIVE mutual whose own seen_at is null, so a false here
+        // means EITHER this side had already seen it OR the mutual has since
+        // ended. Claiming idempotence on a released pair reads as a pass.
+        : "Nothing stamped. That is either 'this side had already seen it' or 'the mutual is no longer active' - markMutualSeen requires both. Read the board's mutual status to tell them apart.";
     }
 
     // --- coordination --------------------------------------------------------
@@ -269,6 +280,15 @@ async function runStep(step: string, form: FormData): Promise<string> {
     case "rsvp": {
       await registerForEvent(eventSlug, await harnessSession(actorEmail));
       return `Seat taken on ${eventSlug}.`;
+    }
+    case "cancel_rsvp": {
+      // The real product cancel, which is the entire point: leave_event's raw
+      // DELETE never reaches severConfirmedTogetherForCancel, so it can put the
+      // pair back to one seat without ever producing the partner-cancel state.
+      // Takes a slug despite the parameter being named eventId - the query keys
+      // `event.slug = $1`, same as cancelEvent.
+      await cancelRegistration(eventSlug, await harnessSession(actorEmail));
+      return "Seat given up. The mutual should survive and the plan should not - and only the OTHER side should be told about it.";
     }
     case "waitlist_together": {
       await joinWaitlistTogetherForMutual(await harnessSession(actorEmail), mutualId);

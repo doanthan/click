@@ -110,7 +110,7 @@ import {
 } from "./guest-spots";
 import { isDerivedFromEmail } from "./display-name";
 import { lookupPostcode } from "./postcode";
-import { getPostgresPool } from "./postgres";
+import { getPostgresPool, mapWithConcurrency } from "./postgres";
 import { getSupabaseAdmin } from "@/utils/supabase/admin";
 import { toTitleCase } from "./text-format";
 import { parseEventStart } from "./datetime";
@@ -3039,21 +3039,47 @@ export async function approveEventAddressChange(
 ): Promise<{ applied: boolean; title: string; address: string | null }> {
   const pool = getPostgresPool();
   if (!pool) throw databaseUnavailableError();
-  await requireAdminProfile(session);
+  const actor = await requireAdminProfile(session);
 
   const result = await pool.query<{
+    id: string;
     title: string;
     host_profile_id: string | null;
+    host_name: string | null;
     address: string | null;
+    previous_address: string | null;
+    starts_at: Date | null;
+    ends_at: Date | null;
+    timezone: string | null;
     applied: boolean;
   }>(
     `
+      -- The OLD address is captured in the CTE because the UPDATE is about to
+      -- overwrite it, and this is the only moment it still exists. The attendee
+      -- email below is unreadable without it: "we moved" means nothing if you
+      -- cannot see what it moved from.
+      with previous as (
+        select id, address as previous_address
+        from events
+        where slug = $1
+      )
       update events
-      set address = pending_address,
+      set address = events.pending_address,
           pending_address = null,
           updated_at = now()
-      where slug = $1 and pending_address is not null
-      returning title, host_profile_id::text, address, true as applied
+      from previous
+      where events.id = previous.id
+        and events.pending_address is not null
+      returning events.id::text,
+                events.title,
+                events.host_profile_id::text,
+                events.host_name,
+                events.address,
+                previous.previous_address,
+                events.starts_at,
+                events.ends_at,
+                events.timezone,
+                true as applied
     `,
     [eventSlug],
   );
@@ -3087,7 +3113,111 @@ export async function approveEventAddressChange(
       .catch(() => {});
   }
 
+  // This decision changes where people have to physically turn up, and it was
+  // the only admin mutation in the console with no audit row at all.
+  await writeAuditLog({
+    actorProfileId: actor.id,
+    action: "event.address_change_approved",
+    entityTable: "events",
+    entityId: row.id,
+    metadata: {
+      slug: eventSlug,
+      previous_address: row.previous_address,
+      new_address: row.address,
+    },
+  });
+
+  // Tell the people who are going. The merchant got a notification; the
+  // attendees - the only ones who have to be somewhere different - got nothing,
+  // so the first they knew of it was arriving at the old address.
+  await notifyAttendeesOfAddressChange({
+    eventId: row.id,
+    eventSlug,
+    title: row.title,
+    hostName: row.host_name,
+    previousAddress: row.previous_address,
+    newAddress: row.address,
+    startsAt: row.starts_at,
+    endsAt: row.ends_at,
+    timezone: row.timezone,
+  });
+
   return { applied: true, title: row.title, address: row.address };
+}
+
+/**
+ * Fan-out for an approved venue change: one email per confirmed attendee.
+ *
+ * Post-commit and best-effort, like every other email in this file - the
+ * address is already live and a send failure must not undo it. Confirmed seats
+ * only: a waitlisted person has no spot to turn up to yet, and will get the
+ * current address when they are promoted.
+ */
+async function notifyAttendeesOfAddressChange(input: {
+  eventId: string;
+  eventSlug: string;
+  title: string;
+  hostName: string | null;
+  previousAddress: string | null;
+  newAddress: string | null;
+  startsAt: Date | null;
+  endsAt: Date | null;
+  timezone: string | null;
+}) {
+  const pool = getPostgresPool();
+  if (!pool) return;
+  // Nothing useful to say if we cannot show what changed.
+  if (!input.newAddress || input.newAddress === input.previousAddress) return;
+
+  try {
+    const attendees = await pool.query<{
+      profile_id: string;
+      email: string;
+      display_name: string | null;
+    }>(
+      `
+        select attendee.profile_id::text, profile.email::text, profile.display_name
+        from event_attendees attendee
+        join profiles profile on profile.id = attendee.profile_id
+        where attendee.event_id = $1::uuid
+          and attendee.status = 'confirmed'
+      `,
+      [input.eventId],
+    );
+    if (attendees.rowCount === 0) return;
+
+    const origin = emailOrigin();
+    // starts_at is not null in practice (the create wizard requires it) but the
+    // column allows it. An event with no date still has people holding a spot,
+    // so the address change still has to reach them - just without the date line.
+    const dates = input.startsAt
+      ? formatEmailDates(input.startsAt, input.endsAt, input.timezone ?? "")
+      : { eventLongDate: "Date to be confirmed", eventStartTime: "" };
+
+    await mapWithConcurrency(attendees.rows, async (attendee) => {
+      await logEmailEvent({
+        template: "event-address-changed-attendee",
+        toEmail: attendee.email,
+        toProfileId: attendee.profile_id,
+        vars: {
+          firstName: (attendee.display_name || "").split(/\s+/)[0] || "there",
+          eventTitle: input.title,
+          eventLongDate: dates.eventLongDate,
+          eventStartTime: dates.eventStartTime,
+          eventHostName: input.hostName || "your host",
+          previousAddress: input.previousAddress || "Not previously listed",
+          newAddress: input.newAddress ?? "",
+          eventUrl: `${origin}/events/${input.eventSlug}`,
+          supportEmail: SUPPORT_EMAIL,
+          unsubscribeUrl: `${origin}/account-settings`,
+        },
+      });
+    });
+  } catch (error) {
+    if (process.env.CLICK_DB_DEBUG === "true") {
+      console.warn("address-change attendee fan-out failed", error);
+    }
+  }
 }
 
 // Admin rejects a queued address change: the parked pending_address is discarded
@@ -3098,15 +3228,30 @@ export async function rejectEventAddressChange(
 ): Promise<{ rejected: boolean; title: string }> {
   const pool = getPostgresPool();
   if (!pool) throw databaseUnavailableError();
-  await requireAdminProfile(session);
+  const actor = await requireAdminProfile(session);
 
-  const result = await pool.query<{ title: string; host_profile_id: string | null }>(
+  const result = await pool.query<{
+    id: string;
+    title: string;
+    host_profile_id: string | null;
+    // Discarded by this statement, so it is captured for the audit row - it is
+    // the only record that the request was ever made.
+    rejected_address: string | null;
+  }>(
     `
+      with previous as (
+        select id, pending_address as rejected_address
+        from events
+        where slug = $1
+      )
       update events
       set pending_address = null,
           updated_at = now()
-      where slug = $1 and pending_address is not null
-      returning title, host_profile_id::text
+      from previous
+      where events.id = previous.id
+        and events.pending_address is not null
+      returning events.id::text, events.title, events.host_profile_id::text,
+                previous.rejected_address
     `,
     [eventSlug],
   );
@@ -3133,6 +3278,17 @@ export async function rejectEventAddressChange(
       )
       .catch(() => {});
   }
+
+  // The rejected address is discarded by the statement above, so without this
+  // row there is no record anywhere that a merchant ever asked, or that an
+  // admin said no.
+  await writeAuditLog({
+    actorProfileId: actor.id,
+    action: "event.address_change_rejected",
+    entityTable: "events",
+    entityId: row.id,
+    metadata: { slug: eventSlug, rejected_address: row.rejected_address },
+  });
 
   return { rejected: true, title: row.title };
 }
@@ -5721,9 +5877,41 @@ function fallbackAdminMetrics(eventCount: number, pendingCount: number): AdminMe
   };
 }
 
-export async function getAdminMembers(): Promise<AdminMemberRow[]> {
+/**
+ * One page of the member list.
+ *
+ * `search` matters more than it looks. Suspend, unsuspend and ban only exist
+ * inside a row of this list, and the list is a hard-capped window of the most
+ * recent signups - so without a server-side search, member 251 could not be
+ * moderated at all. The sidebar badge meanwhile counts every profile, so the
+ * nav said 4,000 while the table held 250 and nothing on the screen admitted
+ * the difference.
+ *
+ * The term is matched against the profile's own fields only. Event titles are
+ * in the client-side haystack too, but they arrive through the attendee join
+ * that feeds the counts, and filtering on them in WHERE would drop a profile's
+ * other attendance rows before the GROUP BY - silently understating the
+ * bookmark and RSVP numbers on every row it returned.
+ */
+export async function getAdminMembers(
+  filter: { search?: string; limit?: number; offset?: number } = {},
+): Promise<AdminMemberRow[]> {
   const pool = getPostgresPool();
   if (!pool) return fallbackAdminMembers;
+
+  const limit = Math.min(Math.max(filter.limit ?? 250, 1), 500);
+  const offset = Math.max(filter.offset ?? 0, 0);
+  const search = filter.search?.trim();
+  const params: unknown[] = [limit, offset];
+  let searchClause = "";
+  if (search) {
+    params.push(`%${search}%`);
+    searchClause = `where (
+        profile.display_name ilike $${params.length}
+        or profile.email::text ilike $${params.length}
+        or profile.suburb ilike $${params.length}
+      )`;
+  }
 
   try {
     const result = await pool.query<{
@@ -5743,7 +5931,8 @@ export async function getAdminMembers(): Promise<AdminMemberRow[]> {
       suspended_at: Date | null;
       suspended_reason: string | null;
       is_banned: boolean;
-    }>(`
+    }>(
+      `
       select
         profile.id::text,
         profile.display_name,
@@ -5771,10 +5960,13 @@ export async function getAdminMembers(): Promise<AdminMemberRow[]> {
       left join bookmarks bookmark on bookmark.profile_id = profile.id
       left join event_attendees attendee on attendee.profile_id = profile.id
       left join events event on event.id = attendee.event_id
+      ${searchClause}
       group by profile.id
       order by profile.created_at desc
-      limit 250
-    `);
+      limit $1 offset $2
+    `,
+      params,
+    );
 
     return result.rows.map((row): AdminMemberRow => ({
       id: row.id,
@@ -6036,9 +6228,42 @@ export async function getAdminMemberDetail(
   }
 }
 
-export async function getAdminMerchants(): Promise<AdminMerchantRow[]> {
+/**
+ * One page of the merchant list.
+ *
+ * Ordering is the fix that matters. This was `created_at desc limit 60` with no
+ * pagination and no search, so once 60 merchants had signed up, an application
+ * still sitting on 'pending' fell off the bottom and became unreviewable - while
+ * the sidebar badge kept counting it. Every other queue in the console (events,
+ * reports) floats its pending work; this one buried it under whoever registered
+ * most recently.
+ *
+ * Pending float to the top, OLDEST first: the applicant who has been waiting
+ * longest is the one to look at, which is the opposite of what `created_at desc`
+ * gave. Everything already decided stays newest-first below.
+ */
+export async function getAdminMerchants(
+  filter: { search?: string; limit?: number; offset?: number } = {},
+): Promise<AdminMerchantRow[]> {
   const pool = getPostgresPool();
   if (!pool) return fallbackAdminMerchants;
+
+  const limit = Math.min(Math.max(filter.limit ?? 200, 1), 500);
+  const offset = Math.max(filter.offset ?? 0, 0);
+  const search = filter.search?.trim();
+  const params: unknown[] = [limit, offset];
+  let searchClause = "";
+  if (search) {
+    params.push(`%${search}%`);
+    searchClause = `where (
+        merchant.business_name ilike $${params.length}
+        or merchant.trading_name ilike $${params.length}
+        or merchant.contact_email::text ilike $${params.length}
+        or merchant.abn ilike $${params.length}
+        or owner.display_name ilike $${params.length}
+        or owner.email::text ilike $${params.length}
+      )`;
+  }
 
   try {
     const result = await pool.query<{
@@ -6053,7 +6278,8 @@ export async function getAdminMerchants(): Promise<AdminMerchantRow[]> {
       events_hosted: string;
       created_at: Date;
       auto_approve_events: boolean;
-    }>(`
+    }>(
+      `
       select
         merchant.id::text,
         merchant.business_name,
@@ -6069,10 +6295,17 @@ export async function getAdminMerchants(): Promise<AdminMerchantRow[]> {
       from merchant_profiles merchant
       join profiles owner on owner.id = merchant.profile_id
       left join events event on event.merchant_profile_id = merchant.id
+      ${searchClause}
       group by merchant.id, owner.id
-      order by merchant.created_at desc
-      limit 60
-    `);
+      order by
+        (merchant.verification_status = 'pending') desc,
+        case when merchant.verification_status = 'pending'
+             then merchant.created_at end asc,
+        merchant.created_at desc
+      limit $1 offset $2
+    `,
+      params,
+    );
 
     return result.rows.map((row): AdminMerchantRow => ({
       id: row.id,
@@ -6204,13 +6437,33 @@ export async function getAdminMerchantDetail(
               event.currency::text as currency,
               coalesce(count(distinct attendee.id) filter (where attendee.status = 'confirmed'), 0)::text as confirmed_attendees,
               coalesce(count(distinct attendee.id) filter (where attendee.status = 'waitlisted'), 0)::text as waitlisted_attendees,
-              coalesce(sum(pt.amount_cents), 0)::text as gross_revenue_cents,
-              coalesce(sum(pt.amount_cents) filter (where pt.status = 'paid'), 0)::text as paid_revenue_cents
+              coalesce(money.gross, 0)::text as gross_revenue_cents,
+              coalesce(money.paid, 0)::text as paid_revenue_cents
             from events event
             left join event_attendees attendee on attendee.event_id = event.id
-            left join payment_transactions pt on pt.event_id = event.id
+            -- Money is aggregated in a lateral, NOT joined alongside attendees.
+            -- Joining both to "events" is a fan-out: every payment row is paired
+            -- with every attendee row, so a 10-person event reported 10x its
+            -- revenue. The attendee counts were immune because they use
+            -- count(distinct ...); sums have no such defence. The lateral
+            -- returns exactly one row per event, so neither side multiplies.
+            left join lateral (
+              select
+                sum(pt.amount_cents) as gross,
+                -- Net of refunds, and deliberately not status = 'paid': that
+                -- test dropped the entire charge the moment any money went
+                -- back, so a $1 refund erased $100 of revenue. Fully refunded
+                -- charges stay excluded, matching the merchant finances
+                -- aggregate below - they net to zero anyway, and excluding them
+                -- means a charge whose refund rows we have not finished syncing
+                -- cannot leave a residue behind.
+                sum(pt.amount_cents - pt.refunded_amount_cents)
+                  filter (where pt.status in ('paid', 'partially_refunded')) as paid
+              from payment_transactions pt
+              where pt.event_id = event.id
+            ) money on true
             where event.merchant_profile_id = $1::uuid
-            group by event.id
+            group by event.id, money.gross, money.paid
             order by event.starts_at desc nulls last
             limit 200
           `,
@@ -6260,11 +6513,22 @@ export async function getAdminMerchantDetail(
           `
             select
               coalesce(sum(amount_cents), 0)::text as total,
-              coalesce(sum(amount_cents) filter (where status = 'paid'), 0)::text as paid,
+              -- What the merchant actually kept. status = 'paid' alone hid
+              -- every charge that had any money returned, so "Paid" fell by the
+              -- full charge on a $1 partial refund while "Total revenue"
+              -- did not - two tiles on one screen that could not both be right.
+              coalesce(
+                sum(amount_cents - refunded_amount_cents)
+                  filter (where status in ('paid', 'partially_refunded')),
+                0
+              )::text as paid,
               coalesce(sum(amount_cents) filter (where status = 'pending'), 0)::text as pending,
-              coalesce(sum(amount_cents) filter (where status = 'refunded'), 0)::text as refunded,
+              -- Real money returned, partials included. Filtering on
+              -- status = 'refunded' counted only charges refunded in FULL, and
+              -- counted them at face value rather than at what went back.
+              coalesce(sum(refunded_amount_cents), 0)::text as refunded,
               count(*)::text as total_bookings,
-              count(*) filter (where status = 'paid')::text as paid_bookings
+              count(*) filter (where status in ('paid', 'partially_refunded'))::text as paid_bookings
             from payment_transactions
             where merchant_profile_id = $1::uuid
           `,
@@ -6510,7 +6774,9 @@ export async function createTagForAdmin(
   input: {
     label: string;
     categoryName: string;
-    tagType: "interest" | "music" | "vibe";
+    // 'life' included: it is in the tags.tag_type check constraint, life-quiz
+    // tags use it, and omitting it here is what let an edit retype one.
+    tagType: "interest" | "life" | "music" | "vibe";
   },
   session: Session | null,
 ) {
@@ -6590,13 +6856,34 @@ export async function createTagForAdmin(
     ],
   );
 
+  // NOT hardcoded 0. This is an upsert on slug, so "Save tag" for a label whose
+  // slug already exists rewrites that tag's label, category and type in place -
+  // and reporting 0 told the admin they had just created something new when
+  // they had in fact just retyped a tag hundreds of people carry. The real
+  // count is what makes that visible in the row that re-renders.
+  const usage = await pool.query<{ usage_count: string }>(
+    `
+      select
+        (
+          count(distinct user_tag.profile_id)
+          + count(distinct event_tag.event_id)
+        )::text as usage_count
+      from tags tag
+      left join user_tags user_tag on user_tag.tag_id = tag.id
+      left join event_tags event_tag on event_tag.tag_id = tag.id
+      where tag.id = $1::uuid
+      group by tag.id
+    `,
+    [tag.id],
+  );
+
   return {
     id: tag.id,
     label: tag.label,
     slug: tag.slug,
     tagType: tag.tag_type,
     categoryName: tag.category_name,
-    usageCount: 0,
+    usageCount: Number(usage.rows[0]?.usage_count ?? 0),
     createdAt: tag.created_at.toISOString(),
   } satisfies AdminTagRow;
 }
@@ -6611,7 +6898,7 @@ export async function updateTagForAdmin(
     id: string;
     label: string;
     categoryName: string;
-    tagType: "interest" | "music" | "vibe";
+    tagType: "interest" | "life" | "music" | "vibe";
   },
   session: Session | null,
 ) {
@@ -6982,7 +7269,13 @@ export async function getAdminSidebarCounts(): Promise<AdminSidebarCounts> {
         (select count(*) from events where status = 'pending') as events,
         (select count(*) from merchant_profiles where verification_status = 'pending') as merchants,
         (select count(*) from tags) as tags,
-        (select count(*) from audit_logs) as audit,
+        -- Recent activity, NOT the size of the table. count(*) over all of
+        -- audit_logs was a sequential scan of the fastest-growing table we have
+        -- (every send_click writes a row) on EVERY admin page render, and the
+        -- number it produced - total rows ever written - was not something an
+        -- admin could act on. A 24-hour window answers "has anything happened"
+        -- and rides the created_at index from migration 067.
+        (select count(*) from audit_logs where created_at >= now() - interval '24 hours') as audit,
         (select count(*) from user_reports where status = 'open') as reports,
         (
           (select count(*) from refund_failures where resolution = 'pending')
@@ -7656,6 +7949,92 @@ export async function setMerchantConnectAccountId(
   );
 }
 
+/**
+ * Tells a host their paid events have stopped selling - or started again.
+ *
+ * Stripe turns `charges_enabled` off on a connected account by itself, for
+ * reasons that have nothing to do with us: a verification deadline passes,
+ * requested documents go unfiled, a risk review opens. The moment it does,
+ * `createPaymentHold` starts refusing every buyer on that host's paid events
+ * with "the host is finishing payout setup" - correct, and the reason no money
+ * can go astray here, but the host is the only person who can fix it and, until
+ * this existed, the only person nobody told. Their events stayed on Discover
+ * looking perfectly bookable and quietly converted nobody.
+ *
+ * Both edges, because the restore edge is the one that ends the outage and it
+ * arrives as another webhook, not as anything the host does on Click.
+ *
+ * Best-effort by construction: the caller is a Stripe webhook whose failure is
+ * a 500 and a retry, and re-delivering the *capability sync* because a
+ * courtesy email failed would be a bad trade.
+ */
+async function announceChargeCapabilityChange(
+  pool: Pool,
+  merchant: { merchantProfileId: string; ownerProfileId: string; businessName: string },
+  chargesEnabled: boolean,
+) {
+  // Only worth saying anything if they actually have paid events riding on it.
+  const affected = await pool.query<{ count: string }>(
+    `
+      select count(*)::text as count
+      from events
+      where merchant_profile_id = $1::uuid
+        and status in ('live', 'featured', 'locked', 'waitlist')
+        and starts_at > now()
+        and price_cents > 0
+    `,
+    [merchant.merchantProfileId],
+  );
+  const affectedCount = Number(affected.rows[0]?.count ?? "0");
+  if (affectedCount === 0) return;
+
+  const eventWord = affectedCount === 1 ? "event" : "events";
+  await pool.query(
+    `
+      insert into notifications (profile_id, title, body, action_url)
+      values ($1::uuid, $2, $3, '/merchant')
+    `,
+    [
+      merchant.ownerProfileId,
+      chargesEnabled ? "Ticket sales are back on" : "Ticket sales are paused",
+      chargesEnabled
+        ? `Stripe has re-enabled payments for ${merchant.businessName}. Your ${affectedCount} paid ${eventWord} can take bookings again.`
+        : `Stripe has paused payments for ${merchant.businessName}, so your ${affectedCount} paid ${eventWord} can't take bookings. Finish what Stripe is asking for to switch them back on.`,
+    ],
+  );
+
+  // The suspension edge also emails: it is the one that costs the host money
+  // for every hour they don't know. The restore edge is good news arriving at
+  // someone already watching their Stripe dashboard - the in-app notice is
+  // enough, and a second email would train them to ignore the first.
+  if (chargesEnabled) return;
+
+  const owner = await pool.query<{ email: string; display_name: string | null }>(
+    `select email, display_name from profiles where id = $1::uuid`,
+    [merchant.ownerProfileId],
+  );
+  const ownerRow = owner.rows[0];
+  if (!ownerRow?.email) return;
+
+  const origin = emailOrigin();
+  await logEmailEvent({
+    template: "payments-paused-merchant",
+    toEmail: ownerRow.email,
+    toProfileId: merchant.ownerProfileId,
+    vars: {
+      businessName: merchant.businessName,
+      merchantFirstName:
+        (ownerRow.display_name || merchant.businessName || "").split(/\s+/)[0] || "there",
+      affectedEventCount: String(affectedCount),
+      affectedEventLabel: `${affectedCount} paid ${eventWord}`,
+      stripeDashboardUrl: `${origin}/merchant`,
+      merchantDashboardUrl: `${origin}/merchant`,
+      supportEmail: SUPPORT_EMAIL,
+      unsubscribeUrl: `${origin}/account-settings`,
+    },
+  });
+}
+
 // Caches the connected account's capability state on the merchant row. Keyed by
 // the account id so the Stripe webhook can sync without knowing the profile.
 // Returns true when a row matched (false if the account id is unknown to us).
@@ -7665,18 +8044,61 @@ export async function updateMerchantConnectStatus(
 ): Promise<boolean> {
   const pool = getPostgresPool();
   if (!pool) throw databaseUnavailableError();
-  const result = await pool.query(
+  // The pre-image comes back through a CTE because `returning` can only see the
+  // row as it now is, and the whole point here is the edge: this sync runs on
+  // every account.updated Stripe sends, so writing charges_enabled = false over
+  // charges_enabled = false must stay silent.
+  const result = await pool.query<{
+    was_charges_enabled: boolean;
+    merchant_profile_id: string;
+    owner_profile_id: string;
+    business_name: string;
+  }>(
     `
-      update merchant_profiles
+      with before as (
+        select id, charges_enabled
+        from merchant_profiles
+        where stripe_connect_account_id = $1
+      )
+      update merchant_profiles m
       set charges_enabled = $2,
           payouts_enabled = $3,
           details_submitted = $4,
           updated_at = now()
-      where stripe_connect_account_id = $1
+      from before b
+      where m.id = b.id
+      returning b.charges_enabled as was_charges_enabled,
+                m.id::text as merchant_profile_id,
+                m.profile_id::text as owner_profile_id,
+                m.business_name
     `,
     [accountId, status.chargesEnabled, status.payoutsEnabled, status.detailsSubmitted],
   );
-  return (result.rowCount ?? 0) > 0;
+
+  const row = result.rows[0];
+  if (!row) return false;
+
+  if (row.was_charges_enabled !== status.chargesEnabled) {
+    try {
+      await announceChargeCapabilityChange(
+        pool,
+        {
+          merchantProfileId: row.merchant_profile_id,
+          ownerProfileId: row.owner_profile_id,
+          businessName: row.business_name,
+        },
+        status.chargesEnabled,
+      );
+    } catch (error) {
+      console.warn("Failed to announce a Stripe charge-capability change", {
+        accountId,
+        chargesEnabled: status.chargesEnabled,
+        error,
+      });
+    }
+  }
+
+  return true;
 }
 
 // Marks the one-time post-approval walkthrough as done (or skipped), so
@@ -10279,6 +10701,9 @@ export async function cancelRegistration(eventId: string, session: Session | nul
   // Hoisted for the post-commit booking_events refund log (spec 22 §2).
   let cancelledBookingId = "";
   let cancelledMerchantId: string | null = null;
+  // The Checkout Session of a LIVE hold this cancel is releasing early, retired
+  // after commit. See the note at the release below.
+  let abandonedCheckoutSessionId: string | null = null;
 
   try {
     await client.query("begin");
@@ -10298,6 +10723,7 @@ export async function cancelRegistration(eventId: string, session: Session | nul
       txn_refunded_amount_cents: number | null;
       txn_currency: string | null;
       txn_status: string | null;
+      txn_checkout_session_id: string | null;
     }>(
       `
         select
@@ -10314,7 +10740,8 @@ export async function cancelRegistration(eventId: string, session: Session | nul
           pt.amount_cents as txn_amount_cents,
           coalesce(pt.refunded_amount_cents, 0) as txn_refunded_amount_cents,
           pt.currency::text as txn_currency,
-          pt.status::text as txn_status
+          pt.status::text as txn_status,
+          pt.stripe_checkout_session_id as txn_checkout_session_id
         from event_attendees attendee
         join events event on event.id = attendee.event_id
         left join event_waitlists waitlist
@@ -10373,6 +10800,17 @@ export async function cancelRegistration(eventId: string, session: Session | nul
     // drop the guest spots riding on the same hold, and retire the orphaned
     // transaction so it doesn't sit pending forever. Mirrors expirePaymentHolds.
     if (row.previous_status === "pending_payment") {
+      // Retire the Stripe Session too, post-commit. Releasing the hold early
+      // only closed OUR side of it: the Session kept its own `expires_at` (the
+      // original 31-minute deadline), so a buyer who backed out with the
+      // checkout modal still open could pay against a booking we had already
+      // torn down. markPaymentSucceeded handles that correctly - it takes the
+      // newSettlementHasNoSeat branch, refunds in full and says so - but a
+      // charge that immediately reverses still costs us Stripe's processing
+      // fee, which is not returned on a refund, and it puts a charge and a
+      // refund on the buyer's statement for a seat they deliberately gave up.
+      // Expiring the Session means the card is never charged at all.
+      abandonedCheckoutSessionId = row.txn_checkout_session_id;
       await client.query(
         `update event_attendees set hold_expires_at = null where id = $1::uuid`,
         [row.attendee_id],
@@ -10470,6 +10908,24 @@ export async function cancelRegistration(eventId: string, session: Session | nul
   }
 
   // ---------- post-commit side effects (fire-and-forget) ----------
+
+  // Close the abandoned Checkout Session before anything else, because this is
+  // the only side effect racing a buyer's card. Best-effort by construction:
+  // the seat is already released, and the worst case if this throws is exactly
+  // the old behaviour - a Session that lapses on its own at the hold deadline,
+  // with markPaymentSucceeded's auto-refund still standing behind it.
+  if (abandonedCheckoutSessionId) {
+    try {
+      const { getStripeClient } = await import("./stripe");
+      await getStripeClient()?.checkout.sessions.expire(abandonedCheckoutSessionId);
+    } catch (error) {
+      console.warn("Failed to expire the checkout session of a released hold", {
+        stripeCheckoutSessionId: abandonedCheckoutSessionId,
+        error,
+      });
+    }
+  }
+
   let refund: { refundCents: number; tier: RefundTier; failed: boolean } | null = null;
   let refundLine = "";
 
@@ -11614,9 +12070,18 @@ async function cancelEvent(eventId: string, actor: EventCancellationActor) {
     // Per attendee: issue the 100% refund (full remaining balance), then email.
     // Each refund is isolated - a Stripe failure logs to refund_failures and the
     // cancellation/notice still goes out (spec §5 "refund fails during bulk").
+    //
+    // Bounded, not Promise.all. This list is as long as the event was popular,
+    // and every arm of it takes a pool connection (issueRefund, the
+    // refund_failures insert, logBookingEvent, logEmailEvent) out of a pool of
+    // five with a five-second acquire timeout. Unbounded, a sold-out cancel
+    // turns its own refunds into connection timeouts - and the catch below
+    // faithfully files each one as a refund failure, so an entirely
+    // self-inflicted outage arrives looking like Stripe refused the money.
     let refundedCount = 0;
-    await Promise.all(
-      affectedProfiles.map(async (attendee) => {
+    await mapWithConcurrency(
+      affectedProfiles,
+      async (attendee) => {
         let refundLabel = "You were not charged.";
 
         if (attendee.refundableCents > 0 && attendee.paymentTransactionId) {
@@ -11683,7 +12148,7 @@ async function cancelEvent(eventId: string, actor: EventCancellationActor) {
             unsubscribeUrl: `${origin}/account-settings`,
           },
         });
-      }),
+      },
     );
 
     if (
@@ -12776,6 +13241,85 @@ export async function attachPaymentIntent(
     `,
     [paymentTransactionId, stripePaymentIntentId],
   );
+}
+
+/**
+ * Push a live seat hold out far enough that a Checkout Session created RIGHT
+ * NOW clears Stripe's floor, and return the deadline the row ends up carrying.
+ *
+ * Stripe requires `expires_at` to be 30 minutes to 24 hours after the SESSION
+ * is created - not after the hold was. The hold is `now() + 31 minutes`, which
+ * leaves the first checkout about a minute of headroom and a rebuild none at
+ * all: the corrected-guest path in /api/events/[eventId]/checkout retires a
+ * Session and builds a replacement against a hold that is already minutes old,
+ * so the original deadline sits under Stripe's floor and the create 400s. The
+ * buyer is then unable to fix a typo'd invite address for the rest of the hold,
+ * while the Session carrying the typo stays payable.
+ *
+ * Three properties this has to keep:
+ *
+ * 1. A floor with real margin, unconditionally. Re-stamping only when the hold
+ *    looks short leaves the common case - a fresh 31-minute hold - sitting a
+ *    few seconds above Stripe's 30-minute line, where a slow request, a clock
+ *    a second out of step with Stripe's, or plain network latency tips it
+ *    under. `+ 32 minutes` off a truncated minute is always at least 31 minutes
+ *    out, so there is a whole minute of slack instead of none.
+ * 2. Determinism. Concurrent double-tap retries share one Stripe idempotency
+ *    key, and Stripe rejects a replay whose parameters differ, so the two must
+ *    compute the same deadline. `date_trunc('minute', now())` is identical for
+ *    any two calls in the same minute, and `greatest` then makes the second
+ *    call read back what the first one wrote. (Two taps that straddle a minute
+ *    boundary can still disagree; that request fails and the retry behind it
+ *    takes the already-attached-Session path, which is a far smaller window
+ *    than the one this function exists to close.)
+ * 3. It never shortens a hold - hence `greatest` rather than an assignment -
+ *    and it refuses rather than extending one that is already gone. A Session
+ *    minted against a released seat is the charge-then-force-refund case
+ *    markPaymentSucceeded exists to clean up.
+ *
+ * The guest seats ride along for free: every capacity arm counts a guest_spots
+ * row through its purchaser's attendee row, so extending that row extends them.
+ *
+ * Extending never claims a seat that should have been released: the
+ * `hold_expires_at > now()` predicate means the row was still live - and so
+ * still counted as taken by every capacity arm - at the instant we wrote it.
+ * The event_id is in the predicate so this rides
+ * event_attendees_occupancy_idx (event_id, status, hold_expires_at);
+ * payment_transaction_id carries no index of its own.
+ */
+export async function extendPaymentHold(
+  paymentTransactionId: string,
+  eventId: string,
+): Promise<Date> {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+
+  const result = await pool.query<{ hold_expires_at: Date }>(
+    `
+      update event_attendees
+      set hold_expires_at = greatest(
+            hold_expires_at,
+            date_trunc('minute', now()) + interval '32 minutes'
+          ),
+          updated_at = now()
+      where event_id = $2::uuid
+        and payment_transaction_id = $1::uuid
+        and status = 'pending_payment'
+        and hold_expires_at > now()
+      returning hold_expires_at
+    `,
+    [paymentTransactionId, eventId],
+  );
+
+  const extended = result.rows[0]?.hold_expires_at;
+  if (!extended) {
+    const error = new Error(
+      "This checkout hold has expired. Refresh the event to start again.",
+    );
+    error.name = "ConflictError";
+    throw error;
+  }
+  return extended;
 }
 
 // Persists the Stripe Checkout Session id captured at session creation. Unlike
@@ -13975,6 +14519,36 @@ export type SuggestedPerson = {
   alreadyClicked: boolean;
 };
 
+/* ---- QA namespace isolation -------------------------------------------------
+   @click.local personas live in the PRODUCTION database on purpose: the persona
+   switcher exists so staff can walk the real click flow on the real deployment.
+   Nothing kept them out of a real member's rosters, though. Measured against
+   production: of the seven profiles that cleared every gate below, FIVE were QA
+   accounts - including admin@click.local, whose card renders the CTA "click
+   with Click". A launch member would have spent all three daily slots on people
+   who can never click back.
+
+   Symmetric on purpose. Hiding QA people from real members but not the reverse
+   still lets a tester form a mutual with a real person, which is the worse
+   direction to get wrong. Equality gives a closed world each way - a real
+   viewer sees only real people, a QA viewer sees only QA people - which is the
+   same namespace rule auth already enforces on the switcher itself
+   (login/actions.ts). It is a FILTER, never a refusal: nobody is told the other
+   namespace exists.
+
+   profiles.email is NOT NULL (verified: zero nulls in production), so no
+   coalesce is needed. The LIKE is unindexed, which costs nothing at this table
+   size and sits on no hot path. */
+const QA_NAMESPACE_SUFFIX = "%@click.local";
+
+/** `candidate` and `viewerEmailSql` must be on the SAME side of the namespace. */
+function qaNamespaceScope(candidateAlias: string, viewerEmailSql: string) {
+  return `(${candidateAlias}.email like '${QA_NAMESPACE_SUFFIX}') = ((${viewerEmailSql}) like '${QA_NAMESPACE_SUFFIX}')`;
+}
+
+/** Every pull-based roster passes the viewer's profile id as $1. */
+const QA_VIEWER_EMAIL_BY_ID = "select qa_viewer.email from profiles qa_viewer where qa_viewer.id = $1::uuid";
+
 export async function getSuggestedPeople(session: Session | null): Promise<SuggestedPerson[]> {
   const pool = getPostgresPool();
   const email = getSessionEmail(session);
@@ -14089,6 +14663,8 @@ export async function getSuggestedPeople(session: Session | null): Promise<Sugge
           -- means "has set up a real profile"; role was never doing that job.
           and p.role <> 'merchant'
           and p.suspended_at is null
+          -- QA namespace isolation - see qaNamespaceScope above.
+          and ${qaNamespaceScope("p", QA_VIEWER_EMAIL_BY_ID)}
           -- SAFE-07: independent ≥18 age gate (§6.7b) - never surface someone we can't
           -- confirm is an adult into the click pool. NULL age is excluded (can't verify),
           -- matching the send-path gate that would refuse them anyway.
@@ -14937,6 +15513,8 @@ export async function getPostEventClickPrompts(
           -- 049: opting out takes you off this roster, so nobody can click you from
           -- an event you chose not to be listed at.
           and other.role <> 'merchant' and other.suspended_at is null and other.is_banned = false
+          -- QA namespace isolation - see qaNamespaceScope above.
+          and ${qaNamespaceScope("other", QA_VIEWER_EMAIL_BY_ID)}
           and other.social_visible = true
           and (other.paused_until is null or other.paused_until <= now())
           and other.default_attend_visibility
@@ -15109,6 +15687,8 @@ export async function getPostEventClickPromptForEvent(
           -- 049: opting out takes you off this roster, so nobody can click you from
           -- an event you chose not to be listed at.
           and other.role <> 'merchant' and other.suspended_at is null and other.is_banned = false
+          -- QA namespace isolation - see qaNamespaceScope above.
+          and ${qaNamespaceScope("other", QA_VIEWER_EMAIL_BY_ID)}
           and other.social_visible = true
           and (other.paused_until is null or other.paused_until <= now())
           and other.default_attend_visibility
@@ -15244,6 +15824,9 @@ export async function notifyPostEventClickPrompts(): Promise<number> {
           from event_participants_v theirs
           join profiles other on other.id = theirs.profile_id
             and other.role <> 'merchant' and other.suspended_at is null and other.is_banned = false
+            -- QA namespace isolation. The viewer here is the 'me' join, not
+            -- $1: this query fans out over every attendee at once.
+            and ${qaNamespaceScope("other", "me.email")}
             -- Same social-graph definition as the two pull-based rosters and the
             -- send path: never push "did you click with anyone?" on the strength of
             -- a co-attendee who has opted out, paused, or hidden their attendance.
@@ -16637,8 +17220,9 @@ export async function joinWaitlistTogetherForMutual(session: Session | null, mut
   // send mail logs an email_events row). After the commit and outside the client,
   // and awaited rather than detached - a serverless response can freeze a loose
   // promise before the write lands.
-  await Promise.all(
-    joined.profileIds.map((id) => logWaitlistJoinedEmail(pool, joined.eventId, id)),
+  // Bounded: one pool query per id, against a pool of five (see postgres.ts).
+  await mapWithConcurrency(joined.profileIds, (id) =>
+    logWaitlistJoinedEmail(pool, joined.eventId, id),
   );
 }
 
@@ -17379,7 +17963,16 @@ export async function getMerchantFinancesSummary(
         `
           select
             to_char(date_trunc('month', created_at at time zone 'Australia/Sydney'), 'YYYY-MM') as month,
-            coalesce(sum(amount_cents) filter (where status = 'paid'), 0)::text as paid,
+            -- Matches the "collected" figure in the aggregate above, which the
+            -- merchant sees on the same screen. status = 'paid' alone did
+            -- not: it dropped a charge entirely once any of it was refunded, so
+            -- the chart and the headline number disagreed for any month
+            -- containing a refund.
+            coalesce(
+              sum(amount_cents - refunded_amount_cents)
+                filter (where status in ('paid', 'partially_refunded')),
+              0
+            )::text as paid,
             coalesce(sum(amount_cents), 0)::text as gross
           from payment_transactions
           where merchant_profile_id = $1::uuid
@@ -17562,9 +18155,14 @@ export async function sendMerchantMonthlyReports(opts: {
              where e.merchant_profile_id = mp.id
                and a.status = 'confirmed'
                and e.starts_at >= $1 and e.starts_at < $2) as attendees_count,
-          (select coalesce(sum(amount_cents), 0) from payment_transactions pt
+          -- Net of refunds. This number is emailed to the merchant as their
+          -- month's takings, so a charge that was refunded must not be counted
+          -- at face value - and status = 'paid' also dropped partially
+          -- refunded charges entirely, understating the same report.
+          (select coalesce(sum(pt.amount_cents - pt.refunded_amount_cents), 0)
+             from payment_transactions pt
              where pt.merchant_profile_id = mp.id
-               and pt.status = 'paid'
+               and pt.status in ('paid', 'partially_refunded')
                and pt.created_at >= $1 and pt.created_at < $2)::text as paid_cents,
           (select e.title from events e
              where e.merchant_profile_id = mp.id
@@ -17781,9 +18379,15 @@ export async function getAdminWeeklyTrend(): Promise<AdminTrendBucket[]> {
               and status = 'confirmed'
           ) as rsvps,
           (
-            select coalesce(sum(amount_cents), 0)::text from payment_transactions
+            -- Net revenue for the week. status = 'paid' alone dropped the
+            -- WHOLE charge as soon as any of it was refunded, so a single $1
+            -- refund deleted $100 from the chart and the week appeared to have
+            -- lost a sale that really happened. Netting the refunded amount
+            -- instead keeps the sale and subtracts only what went back.
+            select coalesce(sum(amount_cents - refunded_amount_cents), 0)::text
+            from payment_transactions
             where created_at >= weeks.week and created_at < weeks.week + interval '1 week'
-              and status = 'paid'
+              and status in ('paid', 'partially_refunded')
           ) as revenue_cents
         from weeks
         order by weeks.week asc
@@ -18600,8 +19204,10 @@ export async function sendEventReminders() {
   );
 
   const origin = emailOrigin();
-  await Promise.all(
-    result.rows.map(async (row) => {
+  // Bounded: this is every unsent reminder across every event due tomorrow, so
+  // its length is set by how well the platform is doing. One pool query each,
+  // against a pool of five (see postgres.ts).
+  await mapWithConcurrency(result.rows, async (row) => {
       const dates = formatEmailDates(row.starts_at, row.ends_at, row.timezone);
       const firstName = row.display_name.split(/\s+/)[0] || "there";
       const directionsQuery = [row.location_name, row.address, row.city]
@@ -18634,8 +19240,7 @@ export async function sendEventReminders() {
           supportEmail: "hello@letsclick.app",
         },
       });
-    }),
-  );
+  });
 
   return { processed: result.rowCount ?? result.rows.length };
 }
@@ -18806,11 +19411,20 @@ export async function markPaymentFailed(
     await client.query(
       `
         update event_attendees
-        set status = 'cancelled', updated_at = now()
+        set status = 'cancelled', hold_expires_at = null, updated_at = now()
         where event_id = $1::uuid and profile_id = $2::uuid and status = 'pending_payment'
       `,
       [payment.event_id, payment.profile_id],
     );
+
+    // ...and the friends' seats riding on the same hold. Every sibling release
+    // path does this (expirePaymentHolds, cancelRegistration's hold branch,
+    // settleRefundedBooking); this one did not, so a checkout.session.expired
+    // left its 'unnamed' guest_spots behind for good. They hold no capacity -
+    // every capacity arm joins back to a live attendee row, which is now
+    // cancelled - but they are still rows about a booking that never happened,
+    // sitting against the purchaser and the event forever.
+    await cancelGuestSeatsForTransaction(client, payment.id);
 
     await client.query("commit");
   } catch (error) {

@@ -122,7 +122,11 @@ const RULES: Array<[string, string]> = [
   ["hidden from this event", "§6.1 - default_attend_visibility = false, byte-identical to not having been there."],
   ["wrapped up now", `§5 - the post-event window is event_end to event_end + POST_EVENT_CLICK_WINDOW_HOURS = 48. The event clock is public, so this one is safe to say plainly.`],
   ["cannot Click yourself", "§2 - a self-click is a validation error, not a receiver-state refusal, because it discloses nothing."],
-  ["at your click limit", `§2 rule 5 - DISCOVERY_CLICK_CAP = 20 live clicks, POST_EVENT_CLICK_CAP = 3 per attended event.`],
+  // Two needles, because the mechanic says it two different ways and the old
+  // single "at your click limit" matched neither - so every cap refusal fell
+  // through to the unmatched bucket and the log never named the rule.
+  ["already with the people you picked", `§2 rule 5 - POST_EVENT_CLICK_CAP = 3 per attended event. Never names the number.`],
+  ["live-click limit", `§2 rule 5 - DISCOVERY_CLICK_CAP = 20 live clicks at once.`],
   ["went unused", "§B7.3 - two free-event no-shows in 90 days withdraws the post-event surface for 30 days. The sender's own state, so it is safe to name."],
   ["already a plan here", "§B4 - one live plan per mutual click. A second suggestion must re-point the first, never stack on it."],
   ["already settled", "§B0/§B6 - a confirmed plan whose event is still joinable is terminal."],
@@ -131,8 +135,8 @@ const RULES: Array<[string, string]> = [
   ["no longer available", "SAFE-03 - block, ban and suspend are re-checked before any write to shared coordination state."],
   ["Proposal not found", "§B3 - the actor is not one of the two people in this mutual click. Not a 404 for them, a refusal to act."],
   ["not available to click with right now", "§6.1 R_NOT_ELIGIBLE - the single refusal every receiver-state check collapses to."],
-  ["only acts as", "Harness gate 3 - synthetic sessions are limited to the @click.local namespace."],
-  ["not available on this environment", "Harness gates 1 and 2 - production deployment, or the QA unlock is not set."],
+  ["only acts as", "Harness gate 2 - synthetic sessions are limited to the @click.local namespace."],
+  ["not available on this environment", "Harness gate 1 - this browser holds no live QA unlock."],
 ];
 
 export function ruleFor(reason: string | null, message: string): string | null {

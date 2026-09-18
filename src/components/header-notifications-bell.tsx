@@ -10,12 +10,20 @@ export function HeaderNotificationsBell({ unreadCount }: { unreadCount: number }
   // surfaced here too - otherwise the bell claims a raw "1058 unread" the inbox
   // can never show, which reads as a bug (bug board #222).
   const countLabel = unreadCount > 99 ? "99+" : String(unreadCount);
+  // The BADGE caps at 9, far tighter than countLabel's 99, because it is a
+  // 16px disc. That is fine to look at and wrong to announce: the accessible
+  // name has to CONTAIN the visible text (WCAG 2.5.3), and "Notifications (13
+  // unread)" over a badge reading "9+" told a speech-input user to say a number
+  // the button does not show. So the name quotes the badge and the panel below
+  // keeps the fuller count. aria-hidden on the badge does NOT satisfy the rule -
+  // axe counts the text either way; verified against axe-core 4.12.1.
+  const badgeLabel = unreadCount > 9 ? "9+" : String(unreadCount);
 
   return (
     <div className="relative" ref={ref}>
       <button
         type="button"
-        aria-label={`Notifications (${countLabel} unread)`}
+        aria-label={unreadCount > 0 ? `Notifications (${badgeLabel} unread)` : "Notifications"}
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
         className="relative flex size-11 items-center justify-center rounded-full text-[color:var(--ink-soft)] transition-colors hover:bg-[color:var(--lavender-100)] lg:size-9"
@@ -24,7 +32,7 @@ export function HeaderNotificationsBell({ unreadCount }: { unreadCount: number }
         {/* Unread dot is Deep Purple - the brand's one accent, never a status hue. */}
         {unreadCount > 0 ? (
           <span className="absolute top-1.5 right-1.5 grid min-w-[16px] place-items-center rounded-full bg-[color:var(--purple)] px-1 text-[10px] leading-4 font-bold text-[color:var(--champagne)] shadow-[0_0_0_2px_var(--champagne)]">
-            {unreadCount > 9 ? "9+" : unreadCount}
+            {badgeLabel}
           </span>
         ) : null}
       </button>

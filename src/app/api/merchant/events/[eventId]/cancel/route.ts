@@ -2,6 +2,14 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { cancelMerchantEvent } from "@/lib/event-repository";
 
+// Past the commit this fans out a Stripe refund and an email per attendee, four
+// at a time (mapWithConcurrency). It is one of the few requests here whose work
+// is proportional to how full the event was, and the only one where being cut
+// off mid-flight leaves refunds unissued - cancelEvent's post-commit catch
+// exists precisely because that half-finished state cannot be retried safely.
+// 300 matches the ceiling the two /api/generate routes already run at.
+export const maxDuration = 300;
+
 type RouteContext = {
   params: Promise<{ eventId: string }>;
 };

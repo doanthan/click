@@ -342,7 +342,7 @@ export function QaTestingDrawer({ currentEmail }: { currentEmail: string | null 
         type="button"
         onClick={() => setOpen(true)}
         aria-label={`Open test recorder. ${problemCount} problems recorded.`}
-        className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] left-3 z-[75] flex min-h-11 items-center gap-2 rounded-xl border border-[color:var(--purple-800)] bg-[color:var(--purple)] px-3 py-2 text-[12.5px] font-semibold text-[color:var(--paper)] shadow-[0_8px_24px_rgba(45,35,105,0.28)] transition-transform hover:-translate-y-px lg:bottom-5 lg:left-5"
+        className="ck-fab fixed left-3 z-[75] flex min-h-11 items-center gap-2 rounded-xl border border-[color:var(--purple-800)] bg-[color:var(--purple)] px-3 py-2 text-[12.5px] font-semibold text-[color:var(--paper)] shadow-[0_8px_24px_rgba(45,35,105,0.28)] transition-transform hover:-translate-y-px lg:left-5"
       >
         <Icon name="trend" size={16} stroke={2} />
         <span>Test record</span>

@@ -6,7 +6,7 @@ import {
   signInWithGoogle,
   signInWithMeta,
 } from "@/app/login/actions";
-import { AuthNote, SsoButton } from "@/components/auth-ui";
+import { AuthConsent, AuthNote, SsoButton } from "@/components/auth-ui";
 import { SubmitButton } from "@/components/ds-client";
 import { authErrorMessage } from "@/lib/auth-error-copy";
 
@@ -219,6 +219,10 @@ export default async function MerchantLoginPage({ searchParams }: LoginPageProps
                 Didn&apos;t get your link? Send another.
               </Link>
             </form>
+
+            <div className="mt-5">
+              <AuthConsent />
+            </div>
           </div>
 
           <div className="border-t border-[color:var(--line)] bg-[color:var(--champagne)] px-6 py-4 sm:px-7">

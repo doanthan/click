@@ -141,7 +141,12 @@ export function AuthDivider({ label = "or" }: { label?: string }) {
   return (
     <div className="flex items-center gap-3.5">
       <span className="h-px flex-1 bg-[color:var(--mist)]" />
-      <span className="text-[12.5px] font-medium text-[color:var(--ink-faint)]">{label}</span>
+      {/* --slate, not --ink-faint. "or" is the only thing telling you the SSO
+          buttons and the email form are alternatives rather than steps, and
+          --ink-faint (#A8A2BC) on cream is 2.27:1 - it failed WCAG 1.4.3 on
+          every auth surface at once. --slate is 5.1:1 and is what the rest of
+          the meta text on these pages already uses. */}
+      <span className="text-[12.5px] font-medium text-[color:var(--slate)]">{label}</span>
       <span className="h-px flex-1 bg-[color:var(--mist)]" />
     </div>
   );
@@ -276,6 +281,56 @@ export function MagicLinkSentNote({
         </>
       )}
     </AuthNote>
+  );
+}
+
+/* ------------------------------------------------------------------- consent */
+/**
+ * The Terms / Privacy disclosure, shown where consent actually happens.
+ *
+ * ChromeGate hides the global footer on every auth route, and that footer holds
+ * the app's only links to /terms and /privacy - so the one screen where a
+ * visitor agrees to them was the one screen that could not reach them.
+ *
+ * On EVERY auth surface, not just /register. `src/auth.ts` declares no `signIn`
+ * callback, so an unrecognised Google or Facebook account is created on the
+ * spot wherever an SsoButton renders: /login and /merchant/login sign people up
+ * as readily as the signup page does. Wire this in beside the SSO cluster, not
+ * beside the word "signup".
+ *
+ * A sentence, not a checkbox - the same clickwrap the merchant wizard already
+ * uses at its submit step, and the sentence names the button it sits under.
+ *
+ * The two links are exempt from WCAG 2.5.8's 24px target floor under its
+ * Inline exception (a target in a sentence of text). Do not "fix" them with
+ * padding: an inline box tall enough to pass would overlap the line above when
+ * this paragraph wraps, which is a real tap-stealing bug traded for a
+ * non-failure.
+ */
+export function AuthConsent({
+  /** Completes "By ___ you agree to". Name the actual button below. */
+  action = "continuing",
+}: {
+  action?: string;
+}) {
+  return (
+    <p className="text-center text-[12px] leading-[1.6] text-[color:var(--slate)]">
+      By {action} you agree to Click&rsquo;s{" "}
+      <Link
+        href="/terms"
+        className="font-semibold text-[color:var(--purple)] underline underline-offset-2"
+      >
+        Terms
+      </Link>{" "}
+      and{" "}
+      <Link
+        href="/privacy"
+        className="font-semibold text-[color:var(--purple)] underline underline-offset-2"
+      >
+        Privacy Policy
+      </Link>
+      .
+    </p>
   );
 }
 

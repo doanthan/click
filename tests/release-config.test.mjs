@@ -108,8 +108,47 @@ test("checkout reuses an active hold and only books published event states", () 
   // we just expired - typo'd invite address and all.
   assert.match(checkout, /idempotencyKey: `click-checkout-\$\{hold\.paymentTransactionId\}-\$\{createHash\(/);
   assert.match(checkout, /\.update\(submittedGuests\)/);
-  assert.match(checkout, /expires_at: Math\.floor\(hold\.holdExpiresAt\.getTime\(\) \/ 1000\)/);
   assert.match(checkout, /if \(hold && !hold\.reused\)/);
+
+  // Stripe measures `expires_at` from when the SESSION is created, not from
+  // when the hold was taken, and refuses anything under 30 minutes out. The
+  // hold's own deadline is therefore only safe on a fresh hold - on the
+  // corrected-guest rebuild directly above, the hold is already minutes old and
+  // Stripe 400s, leaving the buyer unable to fix a typo'd invite address for
+  // the rest of the window while the Session carrying the typo stays payable.
+  // So the route must clamp through extendPaymentHold and send back what the
+  // ROW now holds, never `hold.holdExpiresAt`.
+  assert.match(
+    checkout,
+    /const holdExpiresAt = await extendPaymentHold\(\s*hold\.paymentTransactionId,\s*hold\.eventUuid,\s*\)/,
+    "checkout must re-stamp the hold before creating a Session",
+  );
+  assert.match(checkout, /expires_at: Math\.floor\(holdExpiresAt\.getTime\(\) \/ 1000\)/);
+  assert.doesNotMatch(
+    checkout,
+    /expires_at: Math\.floor\(hold\.holdExpiresAt/,
+    "hold.holdExpiresAt is the pre-clamp deadline - it is the one Stripe rejects",
+  );
+
+  // The clamp must not shorten a hold, must refuse a dead one rather than mint
+  // a Session against a released seat, and must be stable within a minute: the
+  // concurrent double-tap retries above share one Stripe idempotency key, and
+  // Stripe rejects a replay whose parameters differ. A bare `now() + interval`
+  // would give two in-flight requests deadlines milliseconds apart.
+  const extend = repository.slice(
+    repository.indexOf("export async function extendPaymentHold"),
+  );
+  const extendBody = extend.slice(0, extend.indexOf("\nexport async function", 1));
+  assert.match(
+    extendBody,
+    /greatest\(\s*hold_expires_at,\s*date_trunc\('minute', now\(\)\) \+ interval '32 minutes'\s*\)/,
+    "the clamp must be unconditional (margin over Stripe's floor), minute-stable, and never shorten a hold",
+  );
+  assert.match(extendBody, /and hold_expires_at > now\(\)/);
+  assert.match(extendBody, /error\.name = "ConflictError"/);
+  // event_attendees has no index on payment_transaction_id, so the event_id
+  // predicate is what keeps this off a seq scan of every seat ever sold.
+  assert.match(extendBody, /where event_id = \$2::uuid/);
 
   const registration = readFileSync(
     path.join(root, "src/app/api/events/[eventId]/register/route.ts"),
@@ -506,7 +545,13 @@ test("the production testing workspace stays behind the QA unlock", () => {
     /isProductionDeployment\(\) && isInternalRoute\(pathname\)/,
     "all internal routes must pass the production route filter",
   );
-  assert.match(proxy, /pathname === "\/test" && testSwitcherCookieHolds\(qaCookie\)/);
+  // Two exact-path exceptions, both conditioned on the same live cookie:
+  // /test (the persona workspace) and /test-click (the two-person click driver).
+  assert.match(
+    proxy,
+    /\(pathname === "\/test" \|\| pathname === "\/test-click"\) &&\s*\n\s*testSwitcherCookieHolds\(qaCookie\)/,
+    "the UAT exceptions must be exact paths AND gated on the live QA cookie",
+  );
   assert.match(proxy, /nextRequest\.cookies\.get\(TEST_SWITCHER_COOKIE\)/);
   assert.match(
     gate,

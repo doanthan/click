@@ -6,7 +6,8 @@ Project guide for Claude Code working in this repo.
 
 The app has no public users yet, but **the production stack is armed**. Treat production data as real and **ask before any destructive operation**.
 
-- **Stripe is LIVE mode.** `STRIPE_SECRET_KEY` is `sk_live_…` and the deployed bundle ships a `pk_live_…` publishable key. `scripts/release-check.mjs` *fails the release* on anything else, and `src/lib/stripe.ts` refuses to initialise a non-live key in production. A completed checkout moves real money - never assume a `payment_transactions` row is fake.
+- **Stripe is in TEST mode in production right now, and that is a launch blocker.** `.env.production.local` carries `sk_test_…` / `pk_test_…` with `STRIPE_ALLOW_TEST_MODE=true`, which is the escape hatch `src/lib/stripe.ts` checks before refusing a non-live key in production. So no real money can move today. **`npm run release:check` does not catch this - only `npm run launch:check` does** (the gate at `scripts/release-check.mjs:156` is behind `launchMode`, and only `package.json`'s `launch:check` passes `--launch`). Run `launch:check` before going live; it also fails on `admin@click.local` still being in `ADMIN_EMAILS`.
+  - Once flipped to live keys, treat every `payment_transactions` row as real money. Note that `isRealConnectAccountId` only checks the `acct_` shape and does not record key mode, so merchants onboarded under test keys have account ids that will not exist after the flip - onboard merchants after it, not before.
 - **Do not `TRUNCATE`, wipe, or reseed production.** Query counts first; if a table looks like demo data, say so and ask. Destructive migrations need explicit sign-off.
 - `profiles` is tied to real Google/Facebook OAuth logins and `email_events` is the audit/dev-inbox trail. Neither is disposable.
 - **`.env.local` currently points at the production database** (same `aws-1-ap-southeast-1.pooler.supabase.com` host as `.env.production.local`) and has no `RESEND_API_KEY`. So `npm run dev` writes into production and logs mail as `delivery_status='skipped'` - every such row in production so far came from localhost, not the deployment. Point local dev at its own database before assuming otherwise.
@@ -56,7 +57,7 @@ Both buckets are written via the service-role admin client in `src/utils/supabas
 - Helper: `src/utils/supabase/admin.ts` (the same service-role client).
 - Bucket: `merchant-documents`, **private**. Access requires a signed URL.
 - Upload route: `POST /api/merchant/documents` (Step 3 of `/merchant/signup`). Key scheme `<profileId>/<documentType>/<uuid>.<ext>`; metadata persisted via `recordMerchantDocument()`.
-- There is currently **no admin read path** - when adding one, use `createSignedUrl()` with a short TTL; never expose object paths to the browser directly.
+- The admin read path is `getMerchantDocumentsForAdmin` in `src/lib/event-repository.ts`, rendered on `/admin/merchants/[merchantId]`. It issues `createSignedUrl(file_path, 300)` - a 5-minute TTL, generated per request. Keep any new read path to that shape; never expose object paths to the browser directly.
 
 ### Why two buckets
 
@@ -84,11 +85,13 @@ Public bucket = anyone with the URL can read (avatars rendered on event cards, h
 | `event-rejected-merchant` | `rejectEventForAdmin` in `src/lib/event-repository.ts`, via `logEventRejectedEmail` helper (carries the admin's free-text reason; skipped for platform-owned events) |
 | `rsvp-cancelled-attendee` + `rsvp-cancelled-merchant` | `cancelRegistration` in `src/lib/event-repository.ts`, after commit, via `logRsvpCancelledEmails` helper |
 | `event-cancelled-attendee` | `cancelMerchantEvent` in `src/lib/event-repository.ts`, fan-out to every affected attendee after commit |
+| `event-address-changed-attendee` | `approveEventAddressChange` in `src/lib/event-repository.ts`, via the `notifyAttendeesOfAddressChange` helper - fan-out to every CONFIRMED attendee after the address is applied. Skipped when the new address is empty or unchanged. The merchant's half is an in-app notification, not an email. |
 | `payment-receipt-attendee` | `markPaymentSucceeded` in `src/lib/event-repository.ts`, via `logPaymentReceiptEmail` helper (GST receipt, tax = total / 11) |
 | `password-reset` | **NOT WIRED - dead template.** Passwords are no longer stored; `requestPasswordReset` in `src/app/forgot-password/actions.ts` just delegates to `signInWithEmail`, so that page sends `signin-link` (or `signin-no-account`). Nothing calls `logEmailEvent({ template: "password-reset" })`. Delete the template + its union/`SUBJECTS` entries, or leave it parked - but do not trust this row's old claim that it fires. |
 | `waitlist-joined-attendee` | `registerForEvent` in `src/lib/event-repository.ts`, after commit on the waitlisted branch, via `logWaitlistJoinedEmail` |
 | `waitlist-promoted-attendee` | `logWaitlistPromotedEmail` in `src/lib/event-repository.ts`, called from all four promotion sites: `cancelRegistration`, `cancelGuestSeatForPurchaser`, `expireWaitlistOffers`, `expirePaymentHolds` |
 | `merchant-suspended-merchant` | `updateMerchantVerificationForAdmin` in `src/lib/event-repository.ts`, on the `suspended` branch |
+| `payments-paused-merchant` | `updateMerchantConnectStatus` in `src/lib/event-repository.ts`, via `announceChargeCapabilityChange`, on the `charges_enabled` true→false edge only, and only when the host has upcoming paid events. The false→true edge posts an in-app notification and sends no email |
 | `event-cancelled-merchant` | `cancelEvent` in `src/lib/event-repository.ts` (admin-initiated cancel), alongside the attendee fan-out |
 | `merchant-waitlisted-merchant` | `registerMerchantWizardSubmit` in `src/lib/event-repository.ts`, when the venue falls outside the launch pilot |
 | `mutual-click-attendee` | `sendClickInner` in `src/lib/event-repository.ts` - two sites, one per side of the mutual click |

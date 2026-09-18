@@ -5,6 +5,7 @@ import {
   useDeferredValue,
   useEffect,
   useMemo,
+  useRef,
   useState,
   useTransition,
   type ReactNode,
@@ -25,9 +26,11 @@ import { Badge, type BadgeTone } from "@/components/ds";
 
 // /admin/transactions client UI:
 // • A 30-day default view of payment_transactions joined with event + attendee
-//   + merchant, re-queryable to any window through the From/To dates. Filters:
-//   status pill, free-text search, merchant select - those run over the rows
-//   already loaded, so an older charge is reached by widening the dates first.
+//   + merchant, re-queryable to any window through the From/To dates. The
+//   free-text search re-queries the server across the whole window (event,
+//   attendee name/email, merchant, pi_ and ch_ ids). The status pill and
+//   merchant select filter the loaded rows, because both are built from those
+//   rows and cannot offer a value the window does not contain.
 // • KPI stickers across the top reflect the currently-filtered set so admins
 //   can sanity-check what they're looking at, not raw totals.
 // • Four tabs: Needs attention (default WHEN it has anything in it - see
@@ -150,6 +153,7 @@ export function AdminTransactionsTable({
     dateFrom: string;
     dateTo: string;
     offset: number;
+    search?: string;
   }) => Promise<{ rows: AdminTransactionRow[]; hasMore: boolean }>;
   /** Server action on the page - re-gates admin, then reads payment_refunds. */
   loadRefunds: (transactionId: string) => Promise<AdminTransactionRefund[]>;
@@ -179,7 +183,13 @@ export function AdminTransactionsTable({
 
   // Typing stays responsive on the row cap by filtering against a deferred copy
   // of the search term; the input itself stays bound to the immediate `search`.
+  // The in-memory filter below still runs: it narrows the loaded rows instantly
+  // while the server query for the same term is in flight, over exactly the six
+  // fields listAdminTransactions ILIKEs, so the two never disagree.
   const deferredSearch = useDeferredValue(search);
+  // The term the server has already been asked for, so a re-render does not
+  // re-issue it.
+  const lastQueriedSearch = useRef("");
 
   const merchants = useMemo(() => {
     const map = new Map<string, string>();
@@ -286,12 +296,11 @@ export function AdminTransactionsTable({
     setSearch("");
   }
 
-  // Re-query the ledger for a new window. Everything else on this screen -
-  // the pills, the merchant select, the search box - only ever filtered the
-  // rows already in memory, so before this the console could not look at a
-  // charge older than its one fixed 30-day slice, and the refund control lives
-  // inside a loaded row.
-  function reload(nextFrom: string, nextTo: string) {
+  // Re-query the ledger. The date window and the search box both come through
+  // here; the status pill and merchant select still filter in memory, because
+  // both are built FROM the loaded rows and cannot name a value the window does
+  // not contain.
+  function reload(nextFrom: string, nextTo: string, nextSearch = search) {
     setLoadError(null);
     startLoad(async () => {
       try {
@@ -299,6 +308,7 @@ export function AdminTransactionsTable({
           dateFrom: startOfDay(nextFrom),
           dateTo: endOfDay(nextTo),
           offset: 0,
+          search: nextSearch,
         });
         setTransactions(page.rows);
         setHasMore(page.hasMore);
@@ -312,6 +322,21 @@ export function AdminTransactionsTable({
     });
   }
 
+  // Search runs against the whole window server-side, not just the rows already
+  // loaded. Debounced because every keystroke would otherwise be a query, and
+  // guarded by a ref so a re-render cannot re-fire a term we already asked for.
+  useEffect(() => {
+    if (deferredSearch.trim() === lastQueriedSearch.current) return;
+    const timer = setTimeout(() => {
+      lastQueriedSearch.current = deferredSearch.trim();
+      reload(dateFrom, dateTo, deferredSearch);
+    }, 350);
+    return () => clearTimeout(timer);
+    // reload closes over state that is stable for this purpose; re-running on
+    // its identity would restart the debounce on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deferredSearch, dateFrom, dateTo]);
+
   function loadMore() {
     setLoadError(null);
     startLoad(async () => {
@@ -320,6 +345,7 @@ export function AdminTransactionsTable({
           dateFrom: startOfDay(dateFrom),
           dateTo: endOfDay(dateTo),
           offset: transactions.length,
+          search,
         });
         setTransactions((current) => [...current, ...page.rows]);
         setHasMore(page.hasMore);
@@ -572,7 +598,7 @@ export function AdminTransactionsTable({
                   title="No transactions match this filter."
                   body={
                     filtersActive
-                      ? "Nothing here for the current status, merchant or search - and search only reads the rows loaded below. Clear the filters, or widen the dates to look further back."
+                      ? "Nothing here for the current status, merchant or search. Search runs across the whole date window, so widen the dates to look further back, or clear the filters."
                       : "No payment_transactions in this window. Widen the dates, or run Sync from Stripe to backfill anything the webhook missed."
                   }
                   action={

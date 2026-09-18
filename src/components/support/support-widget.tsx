@@ -562,7 +562,7 @@ export default function SupportWidget({ canTriage = false }: { canTriage?: boole
           type="button"
           onClick={() => setOpen(true)}
           aria-label="Report a bug"
-          className="fixed right-5 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-[80] flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-xl p-3 text-sm font-semibold text-[color:var(--champagne)] shadow-lg transition hover:scale-105 lg:bottom-5 lg:px-4 lg:py-3"
+          className="ck-fab fixed right-5 z-[80] flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-xl p-3 text-sm font-semibold text-[color:var(--champagne)] shadow-lg transition hover:scale-105 lg:px-4 lg:py-3"
           style={{ backgroundColor: ACCENT }}
         >
           <BugIcon />

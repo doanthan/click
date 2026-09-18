@@ -6,7 +6,12 @@ import type { AdminTagRow } from "@/lib/event-repository";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { EmptyState } from "@/components/empty-state";
 
-const tagTypeOptions = ["interest", "music", "vibe"] as const;
+// Mirrors the tags.tag_type check constraint in database/001_schema.sql. 'life'
+// belongs here: life-quiz tags are real rows, and leaving the type off this
+// list did not hide them - the edit form fell back to 'interest' for anything
+// unrecognised, so opening a life tag and pressing Save silently retyped it.
+// That is the corruption migration 057 exists to undo, re-applied by hand.
+const tagTypeOptions = ["interest", "life", "music", "vibe"] as const;
 
 export function AdminTagManager({ tags }: { tags: AdminTagRow[] }) {
   const [rows, setRows] = useState(tags);

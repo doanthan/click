@@ -6,6 +6,7 @@ import {
   AuthDivider,
   AuthError,
   Field,
+  AuthConsent,
   AuthNote,
   MagicLinkSentNote,
   AuthShell,
@@ -168,6 +169,12 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           Send me a fresh sign-in link
         </Link>
       </form>
+
+      {/* Under the whole cluster, because the Google button above it is an
+          account-creation control for an address we have never seen. */}
+      <div className="mt-5">
+        <AuthConsent />
+      </div>
 
       {showDemoCredentials ? (
         <div className="mt-5">

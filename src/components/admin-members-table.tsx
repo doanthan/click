@@ -478,21 +478,58 @@ function MemberRow({
 }
 
 export function AdminMembersTable({
-  members,
+  members: initialMembers,
   eventOptions = [],
+  windowSize,
+  searchMembers,
 }: {
   members: AdminMemberRow[];
   eventOptions?: EventOption[];
+  /** How many rows the server window holds, so the cap can be disclosed. */
+  windowSize?: number;
+  /** Re-queries every profile, not just the loaded window. */
+  searchMembers?: (term: string) => Promise<AdminMemberRow[]>;
 }) {
+  const [members, setMembers] = useState(initialMembers);
   const [role, setRole] = useState<RoleFilter>("all");
   const [query, setQuery] = useState("");
   const [eventFilter, setEventFilter] = useState<string>("all");
   const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
   const [page, setPage] = useState<number>(1);
+  const [searching, startSearch] = useTransition();
+  const [searchError, setSearchError] = useState<string | null>(null);
 
   // Filter against a deferred copy of the search term so typing stays snappy on
   // the row cap; the input itself stays bound to the immediate `query`.
   const deferredQuery = useDeferredValue(query);
+
+  // The term the server has already been asked for, so a re-render cannot
+  // re-issue it.
+  const lastQueriedTerm = useRef("");
+
+  // Search re-queries the SERVER, not just the loaded rows. Suspend and ban only
+  // exist inside a row of this table, so while the search was in-memory only,
+  // anyone past the newest windowSize signups could not be moderated at all.
+  // The in-memory filter below still runs over whatever is loaded, which keeps
+  // the table responsive while the query is in flight.
+  useEffect(() => {
+    if (!searchMembers) return;
+    const term = deferredQuery.trim();
+    if (term === lastQueriedTerm.current) return;
+    const timer = setTimeout(() => {
+      lastQueriedTerm.current = term;
+      setSearchError(null);
+      startSearch(async () => {
+        try {
+          setMembers(await searchMembers(term));
+          setPage(1);
+        } catch {
+          setSearchError("Could not search members. Try again.");
+        }
+      });
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [deferredQuery, searchMembers]);
 
   // Build a combined event list: every event we got from the page plus any
   // event present on a member but missing from the server list (defensive).
@@ -625,10 +662,19 @@ export function AdminMembersTable({
               setPage(1);
             }}
             placeholder="Search name, email, suburb, event…"
+            aria-busy={searching}
             className="w-full rounded-xl border border-[color:var(--mist)] bg-white px-4 py-2 text-sm text-[color:var(--ink)] placeholder:text-[color:var(--slate)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)] sm:w-72"
           />
         </div>
       </div>
+
+      <p aria-live="polite" className="mt-2 min-h-[1rem] text-xs font-semibold text-[color:var(--slate)]">
+        {searchError ? (
+          <span className="text-[color:var(--danger)]">{searchError}</span>
+        ) : searching ? (
+          "Searching every member…"
+        ) : null}
+      </p>
 
       <div className="mt-6 rounded-2xl bg-[color:var(--paper)] shadow-[var(--shadow-sm)]">
         <div className="hidden grid-cols-[1.4fr_0.6fr_0.8fr_0.8fr_0.7fr_0.6fr_0.7fr] gap-4 border-b border-[color:var(--line)] px-5 py-3 text-xs font-semibold text-[color:var(--slate)] md:grid">
@@ -681,6 +727,17 @@ export function AdminMembersTable({
           {filtered.length === 0
             ? "0 members"
             : `${countFormatter.format(startRow)}-${countFormatter.format(endIndex)} of ${countFormatter.format(filtered.length)}`}
+          {/* The window is a cap, not a total. Saying so is the difference
+              between "there are 250 members" and "these are the 250 newest" -
+              and the sidebar badge shows the real total right next to it. */}
+          {windowSize && members.length >= windowSize ? (
+            <span className="font-normal">
+              {" "}
+              {query.trim()
+                ? `- first ${countFormatter.format(windowSize)} matches. Narrow the search to see the rest.`
+                : `- the ${countFormatter.format(windowSize)} newest. Search to reach anyone else.`}
+            </span>
+          ) : null}
         </p>
         <div className="flex items-center gap-2">
           <label className="text-xs font-semibold text-[color:var(--slate)]">

@@ -17,7 +17,11 @@ function revalidateTagSurfaces() {
   }
 }
 
-const allowedTagTypes = new Set(["interest", "music", "vibe"]);
+// Must match the tags.tag_type check constraint (database/001_schema.sql) and
+// tagTypeOptions in src/components/admin-tag-manager.tsx. Narrower than the
+// constraint is not "safer" here: it rejected the type a life-quiz tag already
+// has, which is how editing one silently retyped it to 'interest'.
+const allowedTagTypes = new Set(["interest", "life", "music", "vibe"]);
 
 function errorResponse(error: unknown) {
   if (!(error instanceof Error)) {

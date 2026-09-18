@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { cancelEventForAdmin } from "@/lib/event-repository";
 
+// Same refund-and-email fan-out as the merchant cancel route; see the note
+// there. Being killed mid-fan-out is the one failure this path cannot retry.
+export const maxDuration = 300;
+
 type RouteContext = {
   params: Promise<{ eventId: string }>;
 };

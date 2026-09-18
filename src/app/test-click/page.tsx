@@ -2,13 +2,17 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ClickWalkthrough } from "@/components/click-walkthrough";
 import { ClickHarnessBoard } from "./harness-board";
-import { isProductionDeployment } from "@/lib/runtime-mode";
+import { isHarnessAllowed } from "@/lib/click-test-harness";
 import { ClickAuditReport } from "./audit-report";
 
 export const metadata = {
   title: "How a click works",
   description:
     "A step-by-step walkthrough of the click mechanic: a private tap, a mutual click, a shared plan - never a chat.",
+  // Same as /test. A crawler gets a 404 from src/proxy.ts long before it reads
+  // this, but the route answers 200 to an unlocked browser now, and a header is
+  // cheaper than trusting that no unlocked browser ever hands a URL to one.
+  robots: { index: false, follow: false },
 };
 
 const MYTHS = ["not a notification to them", "not a DM", "not a chat request"];
@@ -46,7 +50,11 @@ export default async function TestClickPage({
 }: {
   searchParams: Promise<{ a?: string; b?: string }>;
 }) {
-  if (isProductionDeployment()) notFound();
+  // The same predicate src/proxy.ts checks at the edge, checked again here so
+  // the page is not relying on the proxy's matcher having been kept in step -
+  // and so a cookie that lapses between the two still lands on a 404 rather
+  // than a half-rendered board.
+  if (!(await isHarnessAllowed())) notFound();
   const selected = await searchParams;
   return (
     <main className="paper-noise min-h-screen text-[color:var(--ink)]">

@@ -722,7 +722,17 @@ body:has([data-home-hero]) .site-header--marketing {
 body:has([data-home-hero]) .site-header--marketing a[aria-label="Click home"] > span {
   color: var(--champagne) !important;
 }
-body:has([data-home-hero]) .site-header--marketing button {
+/* The overlay repaints the bar's controls cream, and `button` alone missed the
+   one that matters. LoginTrigger renders an <a> on purpose - it is the only way
+   into the product for a signed-out visitor, so it stays a real href that works
+   before JS. That left "Log in" painted --ink-soft on a dark photo: 1.42:1,
+   effectively invisible, sitting next to a bright Sign up pill. Lighthouse
+   cannot catch this one either - the background is an image, so the
+   colour-contrast audit skips the node and scores a clean 100.
+   :not(.ck-btn) leaves the Sign up pill to its own rule below, which needs
+   purple ON cream - matching here would paint it cream on cream. */
+body:has([data-home-hero]) .site-header--marketing button,
+body:has([data-home-hero]) .site-header--marketing a:not(.ck-btn) {
   color: var(--champagne);
 }
 body:has([data-home-hero]) .site-header--marketing .ck-btn {
@@ -1176,6 +1186,38 @@ body:has([data-home-hero]) .site-header--marketing .ck-btn {
     top: 50%;
     height: 44px;
     transform: translateY(-50%);
+  }
+}
+
+
+/* ---- .ck-fab: the bottom offset shared by every floating corner button ----
+   Currently the support widget (bottom-right) and the QA test recorder
+   (bottom-left). Both carried their own copy of the offset below, so the
+   bug described here had to be found twice; a new FAB gets the class, never
+   a third copy of the arithmetic.
+   It cleared the mobile tab bar by 5rem. But that bar is only rendered for a
+   SIGNED-IN viewer on a route that keeps its chrome - and the auth routes are
+   chromeless (see ChromeGate), so on /register the 5rem parked a 44px button
+   on top of the right-hand end of "Create account". Measured at 375x667: the
+   button spans y 513-565 and the FAB y 543-587, and the FAB wins on z-index,
+   so that corner opened the bug reporter instead of creating the account. It
+   only bites on short viewports - at 390x844 the FAB sits well clear - which
+   is exactly why it survived review.
+   So key the clearance on the bar BEING there rather than guessing. :has()
+   matches on presence, not visibility, and the bar is `lg:hidden` rather than
+   unmounted, hence the desktop override. Written as :not(:has(...)) on
+   purpose: where :has() is unsupported the rule is dropped and the button
+   keeps the safe 5rem it has always had, never the other way round. */
+.ck-fab {
+  bottom: calc(5rem + env(safe-area-inset-bottom));
+}
+body:not(:has(nav[aria-label="Primary"])) .ck-fab {
+  bottom: calc(1.25rem + env(safe-area-inset-bottom));
+}
+@media (min-width: 1024px) {
+  .ck-fab,
+  body:not(:has(nav[aria-label="Primary"])) .ck-fab {
+    bottom: 1.25rem;
   }
 }
 

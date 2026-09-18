@@ -23,6 +23,7 @@ Every template listed here is wired through `logEmailEvent` and fires today, wit
 | `rsvp-cancelled-attendee.html` | After an attendee uses the `cancelRsvpUrl` flow. | `RSVP cancelled - {{eventTitle}}` |
 | `event-reminder-attendee.html` | ~24h before `events.starts_at` (cron job - not request-triggered). | `Tomorrow - {{eventTitle}}` |
 | `event-cancelled-attendee.html` | Fan-out to every confirmed RSVP after `POST /api/merchant/events/[eventId]/cancel`. | `{{eventTitle}} has been cancelled` |
+| `event-address-changed-attendee.html` | Fan-out to every confirmed RSVP when an admin approves a queued venue change (`approveEventAddressChange`). The merchant already gets an in-app notification; this is the half that reaches the people who have to turn up somewhere different. | `New address - {{eventTitle}}` |
 | `payment-receipt-attendee.html` | From the Stripe webhook (`checkout.session.completed`) on paid events. | `Receipt - {{eventTitle}} ({{totalLabel}})` |
 | `waitlist-joined-attendee.html` | When an RSVP lands on a full event's waitlist (`registerForEvent`). | `You're on the waitlist - {{eventTitle}}` |
 | `waitlist-promoted-attendee.html` | When a freed seat is offered to the next person in the queue. Time-sensitive - the hold is already ticking. | `A spot opened - {{eventTitle}}` |
@@ -48,6 +49,7 @@ No `unsubscribeUrl` on any of these - security mail is transactional and exempt 
 | `merchant-verified-merchant.html` | After `POST /api/admin/merchants/[merchantId]/verification` approves. | `{{businessName}} is verified - post your first event` |
 | `merchant-rejected-merchant.html` | Same route, declined. | `{{businessName}} application - one small change` |
 | `merchant-suspended-merchant.html` | Same route, suspended. Their live events are hidden from Discover until an admin reinstates them. | `{{businessName}} has been suspended on Click` |
+| `payments-paused-merchant.html` | Stripe turned `charges_enabled` off on their connected account, so their paid events stop taking bookings. Fires on the true→false edge only, and only when they have upcoming paid events. | `Action needed - Stripe has paused ticket sales for {{businessName}}` |
 | `event-created-merchant.html` | After a merchant submits an event for review (`POST /api/merchant/events`). | `Your event is in review - {{eventTitle}}` |
 | `event-approved-merchant.html` | After `POST /api/admin/events/[eventId]/approve` succeeds. | `{{eventTitle}} is live` |
 | `event-rejected-merchant.html` | After `POST /api/admin/events/[eventId]/reject` succeeds. | `{{eventTitle}} needs another pass` |
@@ -219,6 +221,21 @@ Day-before nudge. Variables overlap heavily with `rsvp-attendee.html` so the sam
 | `supportEmail` |  |
 | `unsubscribeUrl` |  |
 
+### `event-address-changed-attendee.html`
+
+| Variable | Notes |
+| --- | --- |
+| `firstName` |  |
+| `eventTitle` |  |
+| `eventLongDate` | Falls back to `Date to be confirmed` when the event has no start time. |
+| `eventStartTime` | Empty string when the event has no start time. |
+| `eventHostName` |  |
+| `previousAddress` | The address being replaced, rendered struck-through. `Not previously listed` when there wasn't one. |
+| `newAddress` | The approved address. The send is skipped entirely when this is empty or unchanged. |
+| `eventUrl` | Absolute public event URL, so the attendee can cancel if the new spot doesn't work. |
+| `supportEmail` |  |
+| `unsubscribeUrl` |  |
+
 ### `event-cancelled-merchant.html`
 
 | Variable | Notes |
@@ -342,6 +359,20 @@ This also closed a real leak: the old early return never reached `issueMagicLink
 | `merchantFirstName` |  |
 | `businessName` |  |
 | `suspensionReason` | Free-text from the admin. Rendered as a single paragraph - newlines OK but no markdown. Falls back to a neutral sentence when the admin left it blank. |
+| `merchantDashboardUrl` | `/merchant`. |
+| `supportEmail` |  |
+
+### `payments-paused-merchant.html`
+
+Stripe, not Click, paused these payments - the copy has to say so, because the host can only fix it in Stripe and support cannot fix it for them. The restore edge deliberately sends no email; it posts an in-app notification only.
+
+| Variable | Notes |
+| --- | --- |
+| `merchantFirstName` |  |
+| `businessName` |  |
+| `affectedEventCount` | Count of their upcoming paid events. The email is skipped entirely when this is 0. |
+| `affectedEventLabel` | Pre-pluralised, e.g. `3 paid events` / `1 paid event`. |
+| `stripeDashboardUrl` | `/merchant` - the Click page that links through to the Express dashboard. Never a raw Stripe URL: those are single-use and expire. |
 | `merchantDashboardUrl` | `/merchant`. |
 | `supportEmail` |  |
 

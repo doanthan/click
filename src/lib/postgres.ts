@@ -52,3 +52,38 @@ export function getPostgresPool() {
 
   return globalThis.clickPostgresPool;
 }
+
+/**
+ * Runs `worker` over `items` with at most `limit` of them in flight.
+ *
+ * This lives next to the pool because it exists entirely to respect it. Every
+ * fan-out in this app bottoms out in a pool query, and the pool above is
+ * `max: 5` with a 5-second acquire timeout. A bare
+ * `Promise.all(rows.map(...))` over a list whose length is decided by the data
+ * - every attendee on a cancelled event, every reminder due tonight - does not
+ * merely run hot: past five in flight the remainder queue on the pool, and
+ * past five seconds of queueing they throw. On the bulk-cancel path those
+ * throws are refunds, so the failure mode is real money that never moved,
+ * recorded as a connection timeout nobody was watching for.
+ *
+ * The default of 4 keeps one connection free for the rest of the request.
+ * Rejection semantics match `Promise.all`: the first rejection propagates.
+ */
+export async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  worker: (item: T, index: number) => Promise<R>,
+  limit = 4,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  // `next++` is read and incremented synchronously before the await, and JS is
+  // single-threaded, so two runners can never claim the same index.
+  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const index = next++;
+      results[index] = await worker(items[index], index);
+    }
+  });
+  await Promise.all(runners);
+  return results;
+}

@@ -34,6 +34,7 @@ async function fetchLedgerPage(filter: {
   dateFrom?: string;
   dateTo?: string;
   offset?: number;
+  search?: string;
 }) {
   const rows = await listAdminTransactions({ ...filter, limit: PAGE_SIZE + 1 });
   return { rows: rows.slice(0, PAGE_SIZE), hasMore: rows.length > PAGE_SIZE };
@@ -58,16 +59,24 @@ async function loadLedgerPage(input: {
   dateFrom: string;
   dateTo: string;
   offset: number;
+  search?: string;
 }) {
   "use server";
   const session = await auth();
   if (!isAdminEmail(session?.user?.email)) {
     throw new Error("Admin access is required.");
   }
+  // The search term reaches listAdminTransactions, which ILIKEs event title,
+  // attendee name, attendee email, merchant business name, PI id and charge id.
+  // Without this the box on the table only ever filtered the rows already in
+  // memory, so "a customer is disputing pi_xxx" meant widening the date window
+  // and reading - and the refund control only exists inside a loaded row.
+  const search = input.search?.trim();
   return fetchLedgerPage({
     dateFrom: isoOrUndefined(input.dateFrom),
     dateTo: isoOrUndefined(input.dateTo),
     offset: Number.isFinite(input.offset) ? Math.max(Math.floor(input.offset), 0) : 0,
+    search: search ? search : undefined,
   });
 }
 

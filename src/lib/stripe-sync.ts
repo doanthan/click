@@ -22,6 +22,7 @@
 // just calls it for every merchant we know about.
 
 import type Stripe from "stripe";
+import type { PoolClient } from "pg";
 import { getStripeClient } from "./stripe";
 import { getPostgresPool } from "./postgres";
 import {
@@ -74,11 +75,151 @@ function invalid(message: string): never {
 // Reduces a list of Stripe refunds for a single charge to our DB shape. Status
 // + refunded total are recomputed from the live Stripe data so a partial →
 // full refund correctly flips `payment_transactions.status`.
+//
+// `pending` counts, and has to: it is money already committed and on its way
+// back, and it is exactly how issueRefund sums the local payment_refunds rows.
+// Counting only `succeeded` made the two disagree the moment a refund was not
+// instantaneous. A partial pending refund summed to 0 here, derived 'paid', and
+// the 055 terminal-status trigger then refused the write - turning every
+// charge.refunded delivery into a 500 that Stripe retries until the refund
+// settles (and disables the endpoint if it never does). A FULL pending refund
+// got past the trigger, because charge.refunded is already true, and wrote
+// refunded_amount_cents = 0 - which is the figure settleRefundedBooking then
+// puts in the attendee's "you have been refunded $0.00" email.
+//
+// `failed` and `canceled` still correctly fall out: those are refunds that did
+// NOT happen, and dropping them is what lets a sync walk a transaction back to
+// 'paid' after a refund bounces.
 function summariseRefunds(refunds: Stripe.Refund[]) {
   const totalRefundedCents = refunds
-    .filter((r) => r.status === "succeeded")
+    .filter((r) => r.status === "succeeded" || r.status === "pending")
     .reduce((sum, r) => sum + (r.amount ?? 0), 0);
   return { totalRefundedCents, refunds };
+}
+
+/**
+ * Closes the operator-queue entries that a refund actually paid for.
+ *
+ * WHY THIS IS NOT `amount_cents <= totalRefunded`
+ *   `refund_failures` rows are debts: "we owed this attendee $X and the Stripe
+ *   call threw". `totalRefundedCents` is the CUMULATIVE refunded total on the
+ *   charge, which includes refunds issued for entirely unrelated reasons. So a
+ *   later $50 discretionary refund silently closed a $30 queue entry whose
+ *   money never moved, and the attendee was owed $30 by a row that now read
+ *   'resolved'. Two failures of $30 on one charge both closed on a single $30
+ *   refund, for the same reason.
+ *
+ *   A debt is settled only if the money that moved covers everything already
+ *   credited against this charge PLUS the row itself. Oldest first, because
+ *   that is the order the debts were incurred. The table has no
+ *   stripe_refund_id to match on - this running total is the closest honest
+ *   attribution without a schema change.
+ *
+ * Runs inside the caller's transaction so the credit and the ledger row commit
+ * together.
+ */
+async function resolveCoveredRefundFailures(
+  client: PoolClient,
+  paymentTransactionId: string,
+  totalRefundedCents: number,
+  resolvedByProfileId?: string | null,
+) {
+  if (totalRefundedCents <= 0) return;
+  await client.query(
+    `
+      with claimable as (
+        select rf.id,
+               coalesce(
+                 (select sum(amount_cents)
+                  from refund_failures
+                  where payment_transaction_id = $1::uuid
+                    and resolution = 'resolved'),
+                 0
+               )
+               + sum(rf.amount_cents) over (
+                   order by rf.created_at, rf.id
+                   rows between unbounded preceding and current row
+                 ) as running_total
+        from refund_failures rf
+        where rf.payment_transaction_id = $1::uuid
+          and rf.resolution = 'pending'
+      )
+      update refund_failures
+      set resolution = 'resolved',
+          resolved_by_profile_id = coalesce($3::uuid, resolved_by_profile_id),
+          resolved_at = coalesce(resolved_at, now()),
+          resolution_note = coalesce(
+            resolution_note,
+            'Auto-resolved: Stripe reports a refund covering this amount succeeded.'
+          )
+      where id in (select id from claimable where running_total <= $2)
+    `,
+    [paymentTransactionId, totalRefundedCents, resolvedByProfileId ?? null],
+  );
+}
+
+/**
+ * Queues a refund that Stripe REVERSED (failed or cancelled) for an operator.
+ *
+ * The attendee was told their money was coming back and it is not. Nothing else
+ * in the system will notice: `charge.refunded` does not fire again on that
+ * transition, so without this the row simply sat at 'refunded' forever. This
+ * reuses the `refund_failures` queue that /admin already renders rather than
+ * inventing a second surface - the debt is the same shape ("we owe this person
+ * $X and Stripe did not move it"), it just failed later than the other five
+ * insert sites do.
+ *
+ * Deduped on the Stripe refund id inside the error message: `refund.updated`
+ * can fire repeatedly for one refund, and an operator chasing the same debt
+ * twice is its own bug.
+ */
+export async function recordRefundReversal(input: {
+  paymentTransactionId: string | null;
+  stripeRefundId: string;
+  amountCents: number;
+  currency: string;
+  failureReason: string | null;
+}): Promise<void> {
+  if (!input.paymentTransactionId) return;
+  const pool = getPostgresPool();
+  if (!pool) return;
+
+  const marker = `stripe_refund_id=${input.stripeRefundId}`;
+  const message = `Stripe reversed this refund (${
+    input.failureReason ?? "no reason given"
+  }). The money is still ours and the attendee has not been paid. ${marker}`;
+
+  try {
+    await pool.query(
+      `
+        insert into refund_failures (
+          payment_transaction_id, event_id, profile_id,
+          amount_cents, currency, error_message
+        )
+        select pt.id, pt.event_id, pt.profile_id, $2, $3, $4
+        from payment_transactions pt
+        where pt.id = $1::uuid
+          and not exists (
+            select 1 from refund_failures existing
+            where existing.payment_transaction_id = pt.id
+              and existing.error_message like $5
+          )
+      `,
+      [
+        input.paymentTransactionId,
+        input.amountCents,
+        input.currency,
+        message,
+        `%${marker}%`,
+      ],
+    );
+  } catch (error) {
+    // Never throw into the webhook: a 500 here makes Stripe retry the whole
+    // delivery, and the ledger half of the healing has already committed.
+    if (process.env.CLICK_DB_DEBUG === "true") {
+      console.warn(`failed to queue refund reversal ${input.stripeRefundId}`, error);
+    }
+  }
 }
 
 function chargeFromPi(pi: Stripe.PaymentIntent): Stripe.Charge | null {
@@ -229,16 +370,7 @@ export async function syncTransactionFromStripe(
     // A successful Stripe retry closes any matching operator-queue entry. The
     // webhook/backfill path may be the process that first observes success, so
     // resolution belongs here as well as in the direct refund path.
-    if (totalRefundedCents > 0) {
-      await client.query(
-        `update refund_failures
-         set resolution = 'resolved', resolved_at = coalesce(resolved_at, now())
-         where payment_transaction_id = $1::uuid
-           and resolution = 'pending'
-           and amount_cents <= $2`,
-        [txnId, totalRefundedCents],
-      );
-    }
+    await resolveCoveredRefundFailures(client, txnId, totalRefundedCents);
 
     await client.query("commit");
 
@@ -743,51 +875,67 @@ export async function issueRefund(
   if (!pool) databaseUnavailable();
 
   // Load the txn to validate and find the charge id.
-  const txnQ = await pool.query<{
-    id: string;
-    amount_cents: number;
-    refunded_amount_cents: number;
-    currency: string;
-    status: string;
-    stripe_charge_id: string | null;
-    stripe_payment_intent_id: string | null;
-    merchant_profile_id: string | null;
-  }>(
-    `
-      select id::text,
-             amount_cents,
-             refunded_amount_cents,
-             currency,
-             status::text,
-             stripe_charge_id,
-             stripe_payment_intent_id,
-             merchant_profile_id::text
-      from payment_transactions
-      where id = $1::uuid
-      limit 1
-    `,
-    [input.paymentTransactionId],
-  );
-  const txn = txnQ.rows[0];
+  const loadTxn = async () => {
+    const q = await pool.query<{
+      id: string;
+      amount_cents: number;
+      refunded_amount_cents: number;
+      currency: string;
+      status: string;
+      stripe_charge_id: string | null;
+      stripe_payment_intent_id: string | null;
+      merchant_profile_id: string | null;
+    }>(
+      `
+        select id::text,
+               amount_cents,
+               refunded_amount_cents,
+               currency,
+               status::text,
+               stripe_charge_id,
+               stripe_payment_intent_id,
+               merchant_profile_id::text
+        from payment_transactions
+        where id = $1::uuid
+        limit 1
+      `,
+      [input.paymentTransactionId],
+    );
+    return q.rows[0];
+  };
+
+  let txn = await loadTxn();
   if (!txn) notFound("Payment transaction not found.");
 
+  // Reconcile with Stripe BEFORE reading our own numbers, not just when the
+  // charge id is missing.
+  //
+  // WHY THIS RUNS EVERY TIME. Both the refundable balance validated below and
+  // the idempotency key built for Stripe are derived from
+  // `refunded_amount_cents`. If an earlier attempt reached Stripe but died
+  // before its local write (deploy, timeout, crash), that cached figure is
+  // behind reality - and a retry for a DIFFERENT amount computes a different
+  // key, so Stripe treats it as a brand new refund and the attendee is paid
+  // twice. Syncing first collapses that window: the refund Stripe already
+  // issued lands in payment_refunds, the cached total catches up, and the
+  // operator is quoting from the real remaining balance.
+  //
+  // Idempotent, and it is the same call the charge-id discovery already made.
+  if (txn.stripe_payment_intent_id) {
+    await syncTransactionFromStripe(txn.stripe_payment_intent_id).catch(() => null);
+    txn = (await loadTxn()) ?? txn;
+  }
+
+  // Checked after the sync, deliberately: the sync may have discovered that
+  // this charge is already fully refunded, and refusing here is the point.
   if (!["paid", "partially_refunded"].includes(txn.status)) {
     invalid(`Cannot refund a transaction in status '${txn.status}'.`);
   }
 
-  // If we somehow haven't synced the charge id yet, do a single-PI sync first
-  // to discover it. Refunds need either a charge id or a payment_intent id;
-  // Stripe accepts payment_intent on `refunds.create`, but we still need the
-  // charge id to attribute the refund correctly in our DB.
-  let chargeId = txn.stripe_charge_id;
-  if (!chargeId && txn.stripe_payment_intent_id) {
-    await syncTransactionFromStripe(txn.stripe_payment_intent_id).catch(() => null);
-    const reread = await pool.query<{ stripe_charge_id: string | null }>(
-      `select stripe_charge_id from payment_transactions where id = $1::uuid`,
-      [input.paymentTransactionId],
-    );
-    chargeId = reread.rows[0]?.stripe_charge_id ?? null;
-  }
+  // Refunds need either a charge id or a payment_intent id; Stripe accepts
+  // payment_intent on `refunds.create`, but we still need the charge id to
+  // attribute the refund correctly in our DB.
+  const chargeId = txn.stripe_charge_id;
   if (!chargeId) {
     invalid("This transaction has no captured charge to refund yet.");
   }
@@ -829,12 +977,19 @@ export async function issueRefund(
       // retries overlap), replay the same refund instead of charging the
       // platform twice. A later intentional partial refund has a new cached
       // refunded amount and therefore a distinct key.
+      //
+      // The reason is deliberately NOT part of the key. It is free-text chosen
+      // per click, so two attempts at the SAME refund that happened to be
+      // annotated differently hashed to different keys and Stripe issued both -
+      // and the two callers never agree: retryRefundFailureAsAdmin sends no
+      // reason at all, the ledger drawer sends one. Only the money identifies
+      // the refund. The reason is still persisted on payment_refunds and in the
+      // audit row, which is where an operator looks for it.
       idempotencyKey: [
         "click-refund",
         txn.id,
         txn.refunded_amount_cents,
         requestedAmount,
-        input.reason ?? "unspecified",
       ].join(":"),
     },
   );
@@ -910,15 +1065,11 @@ export async function issueRefund(
       [txn.id, refundedAmountCents, newStatus],
     );
 
-    await client.query(
-      `update refund_failures
-       set resolution = 'resolved',
-           resolved_by_profile_id = coalesce($2::uuid, resolved_by_profile_id),
-           resolved_at = coalesce(resolved_at, now())
-       where payment_transaction_id = $1::uuid
-         and resolution = 'pending'
-         and amount_cents <= $3`,
-      [txn.id, input.adminProfileId, refundedAmountCents],
+    await resolveCoveredRefundFailures(
+      client,
+      txn.id,
+      refundedAmountCents,
+      input.adminProfileId,
     );
 
     await client.query("commit");

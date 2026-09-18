@@ -27,14 +27,22 @@ export const proxy = auth((request) => {
   const session = request.auth;
 
   // Test harnesses and database inspection tools are never public product.
-  // /test is the one production UAT exception, but only for a request carrying
-  // the same live QA grant that its page and actions verify again. Do this in
-  // the proxy as well: a Server Component notFound() may stream a 404 shell
-  // under an already-committed HTTP 200, which leaks the route's existence and
-  // fails the launch smoke contract even though it hides the workspace body.
+  // /test and /test-click are the production UAT exceptions, but only for a
+  // request carrying the same live QA grant that their pages and actions verify
+  // again. Do this in the proxy as well: a Server Component notFound() may
+  // stream a 404 shell under an already-committed HTTP 200, which leaks the
+  // route's existence and fails the launch smoke contract even though it hides
+  // the workspace body.
+  //
+  // Exact matches, never prefixes. /test-click's server actions POST to the
+  // page's own path so they are covered, but nothing DEEPER than these two
+  // paths is - a future /test/anything stays 404 until it is listed here on
+  // purpose.
   if (isProductionDeployment() && isInternalRoute(pathname)) {
     const qaCookie = nextRequest.cookies.get(TEST_SWITCHER_COOKIE)?.value ?? "";
-    const isUnlockedWorkspace = pathname === "/test" && testSwitcherCookieHolds(qaCookie);
+    const isUnlockedWorkspace =
+      (pathname === "/test" || pathname === "/test-click") &&
+      testSwitcherCookieHolds(qaCookie);
     if (!isUnlockedWorkspace) {
       return new NextResponse(null, {
         status: 404,

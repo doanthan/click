@@ -19,7 +19,12 @@ const checks = [
   ["/api/upload/gallery", [405]],
   ["/api/upload/event-image", [405]],
   ["/tables", [404]],
+  // /test and /test-click are the two UAT exceptions in src/proxy.ts, open to a
+  // browser carrying a live QA grant. This run is anonymous, so both must still
+  // answer 404 - that is exactly what makes the exception worth smoke-testing
+  // rather than trusting.
   ["/test", [404]],
+  ["/test-click", [404]],
   ["/business", [404]],
   ["/scale", [404]],
   ["/api/tables/profiles/rows", [404]],

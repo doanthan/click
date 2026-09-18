@@ -170,14 +170,48 @@ function MerchantActions({
 export function AdminMerchantsTable({
   merchants,
   initialStatus = "all",
+  windowSize,
+  searchMerchants,
 }: {
   merchants: AdminMerchantRow[];
   /** Preselect a status chip - lets the dashboard link straight to ?status=pending. */
   initialStatus?: StatusFilter;
+  /** How many rows the server window holds, so the cap can be disclosed. */
+  windowSize?: number;
+  /** Re-queries every merchant, not just the loaded window. */
+  searchMerchants?: (term: string) => Promise<AdminMerchantRow[]>;
 }) {
   const [rows, setRows] = useState(merchants);
   const [status, setStatus] = useState<StatusFilter>(initialStatus);
   const [query, setQuery] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  // The term the server has already been asked for, so a re-render cannot
+  // re-issue it.
+  const lastQueriedTerm = useRef("");
+
+  // Search re-queries the SERVER. Approve and reject only exist inside a row of
+  // this table, so while the search was in-memory only, an application that fell
+  // past the loaded window could not be actioned at all - and the sidebar badge
+  // went on counting it.
+  useEffect(() => {
+    if (!searchMerchants) return;
+    const term = query.trim();
+    if (term === lastQueriedTerm.current) return;
+    const timer = setTimeout(async () => {
+      lastQueriedTerm.current = term;
+      setSearching(true);
+      setSearchError(null);
+      try {
+        setRows(await searchMerchants(term));
+      } catch {
+        setSearchError("Could not search merchants. Try again.");
+      } finally {
+        setSearching(false);
+      }
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [query, searchMerchants]);
   // Merchant id currently mid-request (drives both dialogs' busy state).
   const [busyId, setBusyId] = useState<string | null>(null);
   // Merchant queued for the branded reject confirmation (null = dialog closed).
@@ -340,10 +374,26 @@ export function AdminMerchantsTable({
           type="search"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search business, contact, owner…"
+          placeholder="Search business, contact, owner, ABN…"
+          aria-busy={searching}
           className="w-full rounded-xl border border-[color:var(--mist)] bg-white px-4 py-2 text-sm text-[color:var(--ink)] placeholder:text-[color:var(--slate)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)] sm:w-72"
         />
       </div>
+
+      <p aria-live="polite" className="mt-2 min-h-[1rem] text-xs font-semibold text-[color:var(--slate)]">
+        {searchError ? (
+          <span className="text-[color:var(--danger)]">{searchError}</span>
+        ) : searching ? (
+          "Searching every merchant…"
+        ) : windowSize && rows.length >= windowSize ? (
+          // The window is a cap, not a total. Pending applications are floated
+          // to the top of it, so what falls off here is already-decided history.
+          <>
+            Showing {windowSize} merchants, pending applications first. Search to
+            reach anyone else.
+          </>
+        ) : null}
+      </p>
 
       {/* overflow-visible so the row's dropdown menu can render outside the
           card edge instead of being clipped by overflow-hidden. */}

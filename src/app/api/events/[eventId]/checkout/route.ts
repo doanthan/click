@@ -5,6 +5,7 @@ import {
   attachCheckoutSession,
   attachPaymentIntent,
   createPaymentHold,
+  extendPaymentHold,
   getSystemSettings,
   markPaymentFailed,
 } from "@/lib/event-repository";
@@ -203,6 +204,20 @@ export async function POST(request: Request, context: RouteContext) {
       }
     }
 
+    // We are about to CREATE a Session, and Stripe measures `expires_at` from
+    // that moment - so the hold's own deadline is only usable while it is still
+    // more than 30 minutes away. On a first checkout it is (31 minutes, minus
+    // however long this request has taken). On the corrected-guest rebuild
+    // above it is not: that hold was created when the buyer first opened
+    // checkout, so by the time they have spotted a typo and resubmitted, the
+    // original deadline is under Stripe's floor and the create below 400s.
+    // extendPaymentHold pushes the seat hold out only when it has to, and hands
+    // back the deadline the row now carries - so the two still expire together.
+    const holdExpiresAt = await extendPaymentHold(
+      hold.paymentTransactionId,
+      hold.eventUuid,
+    );
+
     const checkoutSession = await stripe.checkout.sessions.create({
       mode: "payment",
       payment_method_types: ["card"],
@@ -247,10 +262,13 @@ export async function POST(request: Request, context: RouteContext) {
       // confirmation doesn't depend solely on webhook delivery. See
       // reconcileCheckoutSession in stripe-sync.
       ...uiModeParams,
-      // Matches the `hold_expires_at` set in createPaymentHold so the reserved
-      // seat and the Stripe session expire together. The DB uses 31 minutes to
-      // leave headroom above Stripe's 30-minute minimum while the request runs.
-      expires_at: Math.floor(hold.holdExpiresAt.getTime() / 1000),
+      // The seat hold's own deadline, after the clamp above - so the reserved
+      // seat and the Stripe Session still expire together, and the value is
+      // still deterministic across the concurrent retries that share this
+      // call's idempotency key. Never read hold.holdExpiresAt here: that is the
+      // deadline as it stood when the hold was taken, which is the one Stripe
+      // rejects.
+      expires_at: Math.floor(holdExpiresAt.getTime() / 1000),
       metadata: {
         payment_transaction_id: hold.paymentTransactionId,
         event_uuid: hold.eventUuid,

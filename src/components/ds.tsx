@@ -59,9 +59,45 @@ export function Spark({
 }
 
 /**
- * Logo - the lowercase `click` wordmark. Poppins SemiBold, and the i is
- * DOTLESS (U+0131) so the sparkle-pair can sit in as its dot.
+ * Logo - the lowercase `click` wordmark. Poppins SemiBold, with the sparkle
+ * pair standing in for the i's tittle.
+ *
+ * The tittle is removed by CLIPPING a real `i`, not by typing U+0131 (dotless
+ * i), which is what this used to do. Two things were wrong with the character:
+ *
+ * 1. `next/font` loads Poppins with `subsets: ["latin"]` (see layout.tsx), and
+ *    U+0131 lives in Latin Extended-A. Poppins never shipped that glyph to the
+ *    browser at all, so the middle letter of the brand wordmark silently
+ *    rendered in the system fallback face - different stem weight, and 1.2%
+ *    wider than Poppins' own `i`.
+ * 2. It fails axe's `label-content-name-mismatch` (serious): every wrapper link
+ *    is labelled "Click home", and the U+0131 spelling is not a substring of
+ *    that, so speech-input users were told to say a word the page never
+ *    actually contained.
+ *
+ * Verified against axe-core 4.12.1, which is unusually picky here, so do not
+ * "simplify" this back:
+ *   - `aria-hidden` on the glyph, `role="img"` + aria-label, and a visually
+ *     hidden duplicate ALL still fail. axe counts the text either way.
+ *   - `overflow: hidden` also fails: collapsing the box makes axe treat the
+ *     glyph as invisible, and the visible text drops to "clck".
+ *   - `clip-path` passes, because the box keeps its real size and axe does no
+ *     pixel analysis. That is the whole trick.
  */
+
+/**
+ * Where to cut, as a fraction of font-size, measured from the inline box's top
+ * edge down to the top of the i's stem (Poppins SemiBold: baseline sits ~0.845em
+ * below the box top at line-height 1, and the stem starts 0.5567em above the
+ * baseline).
+ *
+ * The browser rounds the baseline to the half pixel, so the true value drifts
+ * about +/-0.25px across sizes. That is harmless: the empty gap between stem and
+ * tittle is 0.23em - roughly 6px at the default size - so this lands mid-gap at
+ * every size, and an error would have to be 20x larger to touch either.
+ */
+const TITTLE_CLIP_EM = 0.285;
+
 export function Logo({ size = 26, cream = false }: { size?: number; cream?: boolean }) {
   const color = cream ? "var(--champagne)" : "var(--purple)";
   const sparkSize = Math.round(size * 0.4);
@@ -82,7 +118,7 @@ export function Logo({ size = 26, cream = false }: { size?: number; cream?: bool
     >
       cl
       <span style={{ position: "relative", display: "inline-block" }}>
-        {"ı"}
+        <span style={{ display: "inline-block", verticalAlign: "baseline", clipPath: `inset(${TITTLE_CLIP_EM}em 0 0 0)` }}>i</span>
         <span style={{ position: "absolute", left: "50%", bottom: `calc(100% + ${lift}px)`, transform: "translateX(-42%)" }}>
           <Spark size={sparkSize} />
         </span>
