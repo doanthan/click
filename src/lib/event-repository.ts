@@ -16004,7 +16004,7 @@ export async function getProposalsForSession(session: Session | null): Promise<P
       other_intent: string | null;
       both_dating: boolean;
       proposed_by_me: boolean;
-      partner_cancelled: boolean;
+      plan_partner_cancelled: boolean;
       // §B5.3 both-booked detection, independent of any proposal. Null unless the
       // pair genuinely share a seat on an upcoming event.
       both_going_slug: string | null;
@@ -16024,7 +16024,20 @@ export async function getProposalsForSession(session: Session | null): Promise<P
           (
             m.status <> 'active'
             or p.status = 'expired'
-            or (p.status is distinct from 'accepted' and coalesce(p.expires_at, m.expires_at) <= now())
+            -- A RETIRED plan does not lend the mutual its clock. 'partner_cancelled'
+            -- is terminal and §B5.6 deliberately leaves the mutual active on 'open',
+            -- so the pair fall back to the mutual's own deadline exactly as they do
+            -- with no proposal at all. Reading the dead plan's 48 hours instead put
+            -- the canceller on the read-only release shelf while the pair were still
+            -- a pair, free to suggest something else - previously masked because the
+            -- S18 flag short-circuited ahead of this one for BOTH of them.
+            or (
+              p.status is distinct from 'accepted'
+              and coalesce(
+                case when p.status = 'partner_cancelled' then null else p.expires_at end,
+                m.expires_at
+              ) <= now()
+            )
           ) as expired,
           case when m.user_a_id = $1::uuid then m.user_b_id::text else m.user_a_id::text end as other_id,
           other.display_name as other_name,
@@ -16098,7 +16111,10 @@ export async function getProposalsForSession(session: Session | null): Promise<P
           -- silently never rendered for them.
           (me.dating_visible and other.dating_visible) as both_dating,
           (p.proposed_by = $1::uuid) as proposed_by_me,
-          (p.status = 'partner_cancelled') as partner_cancelled,
+          -- ROW-level truth only: the plan retired because SOMEBODY walked. It is
+          -- deliberately NOT the drawer's flag - who was left is a per-viewer
+          -- question, answered in the mapper against the seat flags above.
+          (p.status = 'partner_cancelled') as plan_partner_cancelled,
           both_going.slug as both_going_slug,
           both_going.title as both_going_title,
           both_going.starts_at as both_going_starts_at,
@@ -16264,7 +16280,24 @@ export async function getProposalsForSession(session: Session | null): Promise<P
       intentLine: intentLine(row.viewer_intent, row.other_intent),
       bothDating: Boolean(row.both_dating),
       proposedByMe: Boolean(row.proposed_by_me),
-      partnerCancelled: Boolean(row.partner_cancelled),
+      // §B5.6 is a two-sided fact and the row records only one side of it. Keyed on
+      // the row alone, the person who CANCELLED was served the survivor's card -
+      // "their plans changed · Your spot's still yours" - about their own decision,
+      // and handed a re-plan prompt step 7 bans by name.
+      //
+      // The survivor is the side still holding a seat on that event, and that is not
+      // a new definition: it is the same predicate severConfirmedTogetherForCancel
+      // uses to decide who to notify (clicks/teardown.ts - "the partner is still
+      // going to THIS event: that is what makes them a survivor rather than someone
+      // who already left too"). Read off the RAW row flags, never the independentPlan
+      // overrides below, which force both seats true for a plan that has no proposal.
+      //
+      // Derived here rather than at the two call sites because both the drawer and
+      // the list key their whole step off this one boolean.
+      partnerCancelled:
+        Boolean(row.plan_partner_cancelled) &&
+        Boolean(row.viewer_has_seat) &&
+        !row.other_has_seat,
       sourceEventTitle: row.source_event_title,
       sharedTags: row.shared_tags ?? [],
       };

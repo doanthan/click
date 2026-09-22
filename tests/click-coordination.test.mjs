@@ -139,6 +139,35 @@ test("the survivor is never left on the both-going peak", () => {
   assert.match(list, /partnerCancelled/);
 });
 
+test("the canceller is never served the survivor's card", () => {
+  // The other half of §B5.6, and the one the QA board caught: partnerCancelled was
+  // `(p.status = 'partner_cancelled')` - a fact about the ROW - while both the
+  // drawer and the list key their whole step off it. So the person who gave up
+  // their own seat was shown "their plans changed · Your spot's still yours" about
+  // their own decision, plus the re-plan prompt step 7 bans by name.
+  //
+  // The SQL alias must stay row-level and must NOT be the projected flag.
+  assert.match(repo, /\(p\.status = 'partner_cancelled'\) as plan_partner_cancelled/);
+  assert.doesNotMatch(
+    repo,
+    /partnerCancelled: Boolean\(row\.plan_partner_cancelled\),/,
+    "partnerCancelled must be scoped to the viewer, not mapped straight off the row",
+  );
+
+  // Scoped on the SAME predicate the teardown uses to pick who to notify: the
+  // survivor is the side still holding a seat on that event.
+  const mapped = sliceFn(repo, "§B5.6 is a two-sided fact", "sourceEventTitle:");
+  assert.match(mapped, /row\.plan_partner_cancelled/);
+  assert.match(mapped, /row\.viewer_has_seat/);
+  assert.match(mapped, /!row\.other_has_seat/);
+
+  // And the retired plan must not lend the mutual its 48-hour clock, or the fix
+  // above just moves the canceller from the wrong card onto the release shelf -
+  // the mutual is deliberately still active and open (§B5.6 step 2).
+  const expired = sliceFn(repo, "m.status <> 'active'", "as expired,");
+  assert.match(expired, /case when p\.status = 'partner_cancelled' then null else p\.expires_at end/);
+});
+
 // ── Part 7 - the drawer binds to BOTH axes ───────────────────────────────────────
 
 test("the drawer reads mutual status before coord_state", () => {
