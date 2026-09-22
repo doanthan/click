@@ -2,7 +2,7 @@
 // `status: 'confirmed'` on an event the merchant hosts. Voice + split-card
 // layout ported from `emails/rsvp-merchant.html`.
 
-import { escapeHtml, eyebrow, heroTitle, paragraph, renderButton, renderNoteList, renderShell } from "./chrome";
+import { escapeHtml, eyebrow, heroTitle, paragraph, renderButton, renderShell } from "./chrome";
 import { CHAMPAGNE, FONT_SANS, FONT_SERIF, INK, LINE_HARD, MAUVE, PEACH, SURFACE_DEEP, TEXT_BODY } from "./tokens";
 
 export type MerchantNewRsvpData = {
@@ -105,11 +105,6 @@ export function buildMerchantNewRsvpEmail(d: MerchantNewRsvpData) {
         </p>
       </td>
     </tr>
-    ${renderNoteList("A small nudge", [
-      "First-timers turn up nervous. A short welcome message before the day - what to wear, where to park, what to expect at the door - goes a long way.",
-      'If capacity is filling fast, mark it "Almost full" or open a waitlist from the dashboard. Both make the card pop in discover.',
-      "You'll get one of these emails per RSVP today, then we'll switch to a daily digest once you cross 10 bookings.",
-    ])}
   `;
 
   const html = renderShell({
