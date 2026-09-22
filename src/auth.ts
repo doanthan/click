@@ -5,7 +5,9 @@ import Facebook from "next-auth/providers/facebook";
 import Google from "next-auth/providers/google";
 // Machine-made until the member picks one - src/lib/display-name.ts explains why
 // the surfaces that publish a name have to tell the two apart.
-import { hasConfiguredAdmins } from "@/lib/admin-emails";
+import { hasConfiguredAdmins, isAdminEmail } from "@/lib/admin-emails";
+import { accountSwitchActor } from "@/lib/account-switch-policy";
+import { randomUUID } from "node:crypto";
 import { nameFromEmail } from "@/lib/display-name";
 import { isLocalDevelopment } from "@/lib/runtime-mode";
 import { isTestSwitcherConfigured } from "@/lib/test-switcher";
@@ -93,6 +95,19 @@ if (isLocalDevelopment() || isTestSwitcherConfigured() || hasConfiguredAdmins())
   );
 }
 
+providers.push(Credentials({
+  id: "admin-account-switch",
+  name: "Admin account switch",
+  credentials: { targetId: {}, intent: {} },
+  async authorize(credentials) {
+    const { authorizeAccountSwitch } = await import("@/lib/admin-account-switch");
+    return authorizeAccountSwitch(
+      getStringCredential(credentials?.targetId),
+      credentials?.intent === "return",
+    );
+  },
+}));
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   pages: {
     signIn: "/login",
@@ -101,6 +116,25 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     strategy: "jwt",
   },
   providers,
+  callbacks: {
+    jwt({ token, user }) {
+      if (user) {
+        token.sessionVersion = randomUUID();
+        // Only server-authorized User fields enter the JWT. Never consume a
+        // client session update payload for identity or impersonation claims.
+        token.impersonation = user.impersonation;
+      }
+      if (token.impersonation && !accountSwitchActor({ impersonation: token.impersonation }, isAdminEmail)) {
+        return null;
+      }
+      return token;
+    },
+    session({ session, token }) {
+      session.sessionVersion = token.sessionVersion;
+      session.impersonation = token.impersonation;
+      return session;
+    },
+  },
   // No `authorized` callback, deliberately. It used to list protected routes
   // here and return a boolean - and that boolean was thrown away. Our middleware
   // (src/proxy.ts) passes its OWN handler to auth(), and next-auth's handleAuth

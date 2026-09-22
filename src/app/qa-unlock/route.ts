@@ -82,6 +82,7 @@ export async function GET(request: Request) {
   // The cookie is a signed grant over their address, not a bare flag, and the
   // gate re-checks that address against ADMIN_EMAILS on every request.
   const session = await auth();
+  if (session?.impersonation) return notFound();
   const email = session?.user?.email ?? "";
 
   // mintAdminUnlockCookie returns "" for anyone who may not have one: not an

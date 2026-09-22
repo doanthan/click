@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { fixtureReadiness } from "@/lib/click-fixture-readiness";
 import {
   isHarnessAllowed,
   listHarnessPeople,
@@ -153,7 +154,7 @@ function FixturesPanel({
   fixtures: Awaited<ReturnType<typeof readFixtureReport>>;
   pair: PairState | null;
 }) {
-  const stale = fixtures.length === 0;
+  const issues = fixtureReadiness(fixtures);
   return (
     <Panel
       title="Fixtures"
@@ -161,12 +162,14 @@ function FixturesPanel({
     >
       <div className="grid gap-4 lg:grid-cols-[1fr_240px]">
         <div className="overflow-x-auto">
-          {stale ? (
-            <p className="rounded-[12px] bg-[color:var(--amber)]/12 p-3 text-[0.8rem] font-semibold text-[color:var(--amber-ink)]">
-              No fixtures yet. Build them before anything else - without an event that ended in the
-              last 48 hours and one at least 2 days out, half the mechanic has nothing to point at.
-            </p>
-          ) : (
+          {issues.length > 0 ? (
+            <div role="status" className="mb-3 rounded-[12px] bg-[color:var(--amber)]/12 p-3 text-[0.8rem] text-[color:var(--amber-ink)]">
+              <p className="font-semibold">Setup needed: rebuild the fixtures before testing.</p>
+              <p>These events no longer support their labelled scenarios. A refusal here is not a product failure.</p>
+              <ul className="mt-2 list-inside list-disc">{issues.map((issue) => <li key={issue}>{issue}</li>)}</ul>
+            </div>
+          ) : <p role="status" className="mb-3 text-[0.8rem] text-[color:var(--sage-ink)]">Fixture clocks are ready. This does not mean the scenarios have passed.</p>}
+          {fixtures.length > 0 ? (
             <table className="w-full min-w-[520px] text-left text-[0.75rem]">
               <thead>
                 <tr className="border-b border-[color:var(--mist)] text-[0.65rem] uppercase tracking-[0.08em] text-[color:var(--slate)]">
@@ -198,19 +201,19 @@ function FixturesPanel({
                 ))}
               </tbody>
             </table>
-          )}
+          ) : null}
         </div>
         <div className="flex flex-col gap-2">
           <HarnessButton
             label="Rebuild fixtures from now()"
             tone="primary"
             fields={{ step: "refresh_fixtures", ...pairOf(pair) }}
-            hint="Idempotent. Only ever touches qa-click-* events and @click.local people."
+            hint="Reschedules all seven QA fixtures and clears their seats and waitlists. Coordinate with other testers before rebuilding."
           />
           <HarnessButton
             label="Run the lifecycle sweep"
             fields={{ step: "run_sweep", ...pairOf(pair) }}
-            hint="The real cron body - expires clicks, mutuals and plans whose clocks have passed."
+            hint="Admin test only: runs the real lifecycle job for ALL users, not just this pair. Skip this during ordinary user testing."
           />
           {pair ? (
             <HarnessButton
@@ -551,7 +554,7 @@ function SideColumn({
               target_id: them.id,
               event_slug: justEndedSlug,
             }}
-            hint="Ended 30 minutes ago. The send window opens the moment an event ends, but the prompt waits 2 hours - so this must be accepted while the post-event prompt count stays 0."
+            hint="Ended 30 minutes ago. The send window opens the moment an event ends, but the prompt waits 2 hours - so this must be accepted without adding a prompt for this event. The total may include other events."
           />
         ) : null}
         <HarnessButton

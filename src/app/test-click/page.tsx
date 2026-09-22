@@ -43,7 +43,7 @@ const RECAP = [
   "5 · Both going - both seats held 🎉",
 ];
 
-const RECAP_CLOCKS = ["2h post-event gate", "7-day click", "7-day proposal"];
+const RECAP_CLOCKS = ["2h prompt delay", "7-day click", "7-day proposal"];
 
 export default async function TestClickPage({
   searchParams,
@@ -89,6 +89,8 @@ export default async function TestClickPage({
           </div>
         </div>
       </section>
+
+      <ClickAuditReport />
 
       {/* The live two-person driver - the reason this route is not public. */}
       <section
@@ -139,9 +141,6 @@ export default async function TestClickPage({
           </p>
         </div>
       </section>
-
-      {/* Engineering audit - accuracy, edge cases, gaps */}
-      <ClickAuditReport />
 
       {/* Section 6 - TL;DR recap + jump-off links */}
       <section className="border-t-2 border-[color:var(--line)] bg-[color:var(--ink)] px-4 py-16 text-[color:var(--on-deep)] sm:px-6">

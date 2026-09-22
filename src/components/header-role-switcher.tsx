@@ -40,6 +40,7 @@ export function HeaderRoleSwitcher({
   avatarUrl,
   showHostCta = false,
   canSwitchAccounts = false,
+  canSwitchAnyAccount = false,
   currentEmail = null,
 }: {
   roles: PortalRole[];
@@ -53,6 +54,7 @@ export function HeaderRoleSwitcher({
   /** The production QA gate has already been verified server-side. The forms
    *  inside the picker independently re-check it before changing sessions. */
   canSwitchAccounts?: boolean;
+  canSwitchAnyAccount?: boolean;
   currentEmail?: string | null;
 }) {
   const { open, setOpen, ref } = useDisclosure<HTMLDivElement>();
@@ -202,6 +204,13 @@ export function HeaderRoleSwitcher({
                 </>
               ) : null}
 
+              {canSwitchAnyAccount ? (
+                <Link href="/account-switch" onClick={() => setOpen(false)}
+                  className="mt-1 block rounded-xl px-3 py-2.5 text-[14.5px] font-medium text-[color:var(--ink)] hover:bg-[color:var(--lavender-100)]">
+                  Switch account
+                  <span className="mt-0.5 block text-[11.5px] text-[color:var(--slate)]">Find any existing customer, host, or admin</span>
+                </Link>
+              ) : null}
               {canSwitchAccounts ? (
                 <>
                   <div className="my-1 h-px bg-[color:var(--line-soft)]" />

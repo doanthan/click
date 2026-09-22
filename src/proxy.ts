@@ -2,7 +2,8 @@ import { auth } from "@/auth";
 import { updateSession } from "@/utils/supabase/middleware";
 import { isInternalRoute, isProductionDeployment } from "@/lib/runtime-mode";
 import { TEST_SWITCHER_COOKIE, testSwitcherCookieHolds } from "@/lib/test-switcher";
-import { NextResponse, type NextRequest } from "next/server";
+import { withoutSessionRefreshCookies } from "@/lib/session-refresh";
+import { NextResponse, type NextRequest, type NextFetchEvent } from "next/server";
 
 function redirectToLogin(request: NextRequest, target: "customer" | "merchant" = "customer") {
   // Merchant-area routes bounce to the host login surface, not the customer
@@ -21,7 +22,10 @@ function redirectToLogin(request: NextRequest, target: "customer" | "merchant" =
   return NextResponse.redirect(loginUrl);
 }
 
-export const proxy = auth((request) => {
+// The second parameter selects Auth.js's middleware overload instead of its
+// route-handler overload; this gate itself does not need the fetch event.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const authenticatedProxy = auth((request, _event: NextFetchEvent) => {
   const nextRequest = request as NextRequest;
   const pathname = nextRequest.nextUrl.pathname;
   const session = request.auth;
@@ -77,6 +81,17 @@ export const proxy = auth((request) => {
 
   return updateSession(nextRequest);
 });
+
+export async function proxy(request: NextRequest, event: NextFetchEvent) {
+  const response = await authenticatedProxy(request, event);
+  // Auth.js refreshes the incoming session on every proxy request. That old
+  // cookie can overwrite a server action's new session (or its sign-out), and
+  // even a delayed prefetch can switch the browser back to the previous user.
+  // Keep authentication checks read-only here. Auth endpoints/actions remain
+  // responsible for issuing, refreshing and deleting the actual session.
+  if (response) withoutSessionRefreshCookies(response.headers);
+  return response;
+}
 
 export const config = {
   matcher: [

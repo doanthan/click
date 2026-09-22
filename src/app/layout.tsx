@@ -6,6 +6,7 @@ import DevSupabaseDrawer from "@/components/dev-supabase-drawer";
 import SupportWidget from "@/components/support/support-widget";
 import { TestAccountSwitcher } from "@/components/test-account-switcher";
 import { SessionFreshness } from "@/components/session-freshness";
+import { AccountViewingBanner } from "@/components/account-viewing-banner";
 import { LoginModalHost } from "@/components/login-modal-host";
 import { ChromeGate } from "@/components/chrome-gate";
 import { SiteFooter, SiteHeader, SiteHeaderShell } from "@/components/site-chrome";
@@ -129,7 +130,7 @@ export default async function RootLayout({
         {/* Tells every form draft which account it belongs to, so one browser
             signing in as several people (the QA switcher, a shared laptop)
             never hands the next person the last one's half-filled form. */}
-        <AccountScopeProvider scope={session?.user?.email}>
+        <AccountScopeProvider key={session?.sessionVersion ?? session?.user?.email ?? "anon"} scope={session?.user?.email}>
         <QaFreshStateClearer />
         {/* First tab stop everywhere: jump past the sticky header straight to
             the page content. */}
@@ -148,7 +149,9 @@ export default async function RootLayout({
             fact visible on every surface, including chromeless onboarding
             pages. The exit remains available after the 12-hour unlock expires
             so a tester is never stranded inside a seeded account. */}
-        {isQaSession ? (
+        {session?.impersonation ? (
+          <AccountViewingBanner email={session.user?.email ?? ""} adminEmail={session.impersonation.actor.email} />
+        ) : isQaSession ? (
           <QaSessionBanner currentEmail={qaSessionEmail} unlocked={qaSwitcherUnlocked} />
         ) : null}
         {/* The live header awaits the session profile + notification queries;
@@ -214,7 +217,7 @@ export default async function RootLayout({
             },
           }}
         />
-        <SessionFreshness />
+        <SessionFreshness version={session?.sessionVersion ?? session?.user?.email ?? "anon"} expiresAt={session?.impersonation?.expiresAt} />
         {/* The recorder follows one unlocked browser through real admin,
             customer, host and signed-out QA states. Its client timeline is
             privacy-bounded and session-scoped; mounting remains behind the

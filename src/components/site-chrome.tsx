@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { auth, isAdminEmail } from "@/auth";
+import { accountSwitchActor } from "@/lib/account-switch-policy";
 import { SUPPORT_EMAIL_DEFAULT } from "@/lib/email-templates/tokens";
 import { getProfileStatus, getUnreadNotificationCount } from "@/lib/event-repository";
 import { ButtonLink, Logo } from "./ds";
@@ -133,11 +134,12 @@ export async function SiteHeader({
             ) : null}
             <HeaderNotificationsBell unreadCount={unreadCount} />
             <HeaderRoleSwitcher
+              canSwitchAnyAccount={!!accountSwitchActor(session, isAdminEmail)}
               roles={portalRoles}
               userLabel={userLabel}
               avatarUrl={avatarUrl}
               showHostCta={!hasHostApplication}
-              canSwitchAccounts={qaSwitcherUnlocked}
+              canSwitchAccounts={qaSwitcherUnlocked && !session.impersonation}
               currentEmail={session.user.email}
             />
           </div>

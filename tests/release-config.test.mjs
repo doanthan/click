@@ -498,7 +498,7 @@ test("the QA persona switcher cannot be reached without the unlock key", () => {
   // The floating control remains only for the signed-out test state, otherwise
   // choosing "Not signed in" would leave the tester with no way back in.
   assert.match(layout, /<SiteHeader qaSwitcherUnlocked=\{qaSwitcherUnlocked\}/);
-  assert.match(chrome, /canSwitchAccounts=\{qaSwitcherUnlocked\}/);
+  assert.match(chrome, /canSwitchAccounts=\{qaSwitcherUnlocked && !session\.impersonation\}/);
   assert.match(accountMenu, /canSwitchAccounts[\s\S]*Test as another person[\s\S]*TestAccountRows/);
   assert.match(layout, /qaSwitcherUnlocked && !session\?\.user \? \(/);
 });
@@ -608,7 +608,9 @@ test("a persona row reports the switch it just started", () => {
 
   // signInAsTestAccount provisions before it redirects, so the row is the only
   // thing standing between the tester and a press that looks ignored.
-  assert.match(switcher, /const \{ pending \} = useFormStatus\(\)/);
+  assert.match(switcher, /const \{ pending: formPending, data \} = useFormStatus\(\)/);
+  assert.match(switcher, /formPending && data\?\.get\("email"\) === email/);
+  assert.match(switcher, /aria-disabled=\{anyPending \|\| active \|\| undefined\}/);
   assert.match(switcher, /aria-busy=\{pending \|\| undefined\}/);
   assert.match(switcher, /\{pending \? pendingLabel : exercises\}/);
   assert.doesNotMatch(

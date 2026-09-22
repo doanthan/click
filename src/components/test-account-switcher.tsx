@@ -2,10 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
-import {
-  signInAsTestAccount,
-  signOutOfTestAccount,
-} from "@/app/login/actions";
+import { switchQaAccount } from "@/app/account-switch/actions";
+import { AccountSwitchForm, useAccountSwitchPending } from "./account-switch-form";
 import { QA_PERSONAS, QA_SCENARIO_GROUPS } from "@/lib/qa-personas";
 import { Icon } from "./ds";
 
@@ -34,21 +32,27 @@ function PersonaButton({
   exercises,
   active,
   pendingLabel = "Switching...",
+  email,
 }: {
   label: string;
   exercises: string;
   active: boolean;
   /** Replaces `exercises` while this row's form is in flight. */
   pendingLabel?: string;
+  email: string;
 }) {
   // signInAsTestAccount provisions the persona's whole data set BEFORE minting
   // the session, then redirects - seconds, not milliseconds. With no busy state
   // the press read as ignored and testers clicked a second persona on top of it.
-  const { pending } = useFormStatus();
+  const { pending: formPending, data } = useFormStatus();
+  const anyPending = useAccountSwitchPending();
+  const pending = formPending && data?.get("email") === email;
 
   return (
     <button
       type="submit"
+      name="email"
+      value={email}
       aria-current={active || undefined}
       aria-busy={pending || undefined}
       /* aria-disabled, not `disabled`: the browser blurs a disabled element, so
@@ -56,9 +60,9 @@ function PersonaButton({
          reader users at the top of the document mid-switch. Same trade the DS
          Button makes - and like it, the click guard below is what actually stops
          a second provision run, since aria-disabled is advisory only. */
-      aria-disabled={pending || undefined}
+      aria-disabled={anyPending || active || undefined}
       onClick={
-        pending
+        anyPending || active
           ? (event) => {
               event.preventDefault();
               event.stopPropagation();
@@ -109,6 +113,8 @@ function PersonaRows({
 }) {
   const signedOut = !normalizedCurrent;
   return (
+    <AccountSwitchForm action={switchQaAccount}>
+    <input type="hidden" name="redirectTo" value={redirectTo} />
     <div className="max-h-[70vh] overflow-y-auto">
       {QA_SCENARIO_GROUPS.map((group) => (
         <section key={group.id}>
@@ -118,14 +124,12 @@ function PersonaRows({
           <ul className="grid gap-1 px-2 pb-1">
             {QA_PERSONAS.filter((persona) => persona.group === group.id).map((persona) => (
               <li key={persona.email}>
-                <form action={signInAsTestAccount}>
-                  <input type="hidden" name="email" value={persona.email} />
                   <PersonaButton
+                    email={persona.email}
                     label={persona.label}
                     exercises={persona.exercises}
                     active={persona.email === normalizedCurrent}
                   />
-                </form>
               </li>
             ))}
           </ul>
@@ -138,17 +142,15 @@ function PersonaRows({
         </h3>
         <ul className="grid gap-1 px-2 pb-2">
           <li>
-            <form action={signOutOfTestAccount}>
-              <input type="hidden" name="redirectTo" value={redirectTo} />
               <fieldset disabled={signedOut} className="contents">
                 <PersonaButton
+                  email="signed-out"
                   label="Not signed in"
                   exercises="Public surfaces, sign-up and the login gate"
                   pendingLabel="Signing out..."
                   active={signedOut}
                 />
               </fieldset>
-            </form>
           </li>
         </ul>
       </section>
@@ -167,6 +169,7 @@ function PersonaRows({
         </a>
       </div>
     </div>
+    </AccountSwitchForm>
   );
 }
 

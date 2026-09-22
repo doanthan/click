@@ -300,7 +300,7 @@ const LEGEND = [
   { swatch: "bg-[color:var(--champagne-deep)]", label: "ended" },
 ];
 
-const CLOCKS = ["2h post-event gate", "7-day click", "7-day proposal"];
+const CLOCKS = ["2h prompt delay", "7-day click", "7-day proposal"];
 
 function nodeTintClass(tint: NodeTint) {
   if (tint === "rose") return "bg-[color:var(--rose)] text-[color:var(--surface-deep)]";
@@ -343,7 +343,7 @@ const STEPS = [
           trigger="You tap “click with [name]” - on your dashboard, the people page, or a post-event prompt."
           youSee="The button flips to a muted “clicked - pending their click back”."
           theySee="Nothing - they are never told. It only surfaces if they click you back."
-          clock="Stored as pending; auto-expires after 7 days."
+          clock="Discovery: 7 days. Post-event: until 48 hours after the event ends."
         />
         <div className="mt-4 flex flex-wrap gap-1.5">
           <Pill tone="cream">Can&rsquo;t click with yourself</Pill>
@@ -508,7 +508,7 @@ export function ClickWalkthrough() {
             One private tap → a mutual → a plan.
           </h2>
           <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-[color:var(--mauve)]">
-            Post-event clicks open 2 hours after the event ends; discovery clicks work anytime.
+            Post-event sends open when the event ends and close 48 hours later; prompts appear after 2 hours. Discovery clicks use a separate 7-day window.
             Tap any stage to jump to it.
           </p>
 

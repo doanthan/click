@@ -31,6 +31,9 @@ export async function setAdminQaAccessAction(
 ): Promise<AdminQaAccessState> {
   const enabled = formData.get("enabled") === "true";
   const session = await auth();
+  if (session?.impersonation) {
+    return { ok: false, enabled: !enabled, message: "Return to your own admin account to change testing access." };
+  }
   const email = session?.user?.email ?? "";
 
   if (!email) {
