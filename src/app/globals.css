@@ -450,6 +450,22 @@ body {
 .ck-input--invalid { border-color: var(--danger); }
 /* Textarea sizing: roughly three lines before it scrolls. */
 .ck-input--area { min-height: 96px; padding-block: 12px; resize: vertical; }
+/* Select: the SAME box as a text field, plus a chevron (the DS "styled native
+   select"). Left to its native appearance, Safari - iOS and macOS - paints its
+   own control over this class: a grey, differently sized box that never lined
+   up with the field beside it (bug board #252, the suburb picker next to the
+   postcode on /profile/edit). The chevron is two gradient triangles rather than
+   an SVG data URI, so it stays on the Slate token instead of a hard-coded hex. */
+select.ck-input {
+  appearance: none;
+  padding-right: 40px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--slate) 50%),
+    linear-gradient(135deg, var(--slate) 50%, transparent 50%);
+  background-position: calc(100% - 21px) 50%, calc(100% - 16px) 50%;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+}
 
 /* ---- Tag: ONE neutral look everywhere. White fill, mist hairline, ink text,
    no dot. Selected = Deep-Purple fill, cream label, NO tick (the fill IS the
@@ -1005,7 +1021,7 @@ body:has([data-home-hero]) .site-header--marketing .ck-btn {
 /* ---------- Hero word cycle ----------
    The last word of the hero headline changes with the photo behind it, one
    word per photo, so the hero moves on a single beat. The ANCHOR word
-   ("obsession.") sits in normal flow: it sizes the box and it is the only copy
+   ("click.") sits in normal flow: it sizes the box and it is the only copy
    a crawler, a screen reader or a no-JS visitor sees. It plays once, over the
    courtyard on arrival. The alternates are aria-hidden absolute overlays, one
    per slide, plus "click." for every later pass back to the courtyard.
@@ -1060,7 +1076,7 @@ body:has([data-home-hero]) .site-header--marketing .ck-btn {
 /* ---------- Hero pause ----------
    A plain checkbox (HeroMotionToggle in page.tsx), so it works with no JS.
    Checked, the hero drops to the still frame a reduced-motion visitor gets:
-   the courtyard and "obsession.". Unchecked, both cycles restart together from
+   the courtyard and "click.". Unchecked, both cycles restart together from
    the top, since leaving display:none restarts an animation. Reduced motion
    has nothing to pause, so the toggle isn't shown there. */
 .hero-motion-toggle { display: none; }

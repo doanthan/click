@@ -3,10 +3,12 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
+import { formatPriceLabel } from "@/lib/amounts";
 import type { EventItem } from "@/lib/click-data";
 import { Pill } from "./click-ui";
 import { ckBtn } from "./ds";
 import { EventBookmarkButton } from "./event-bookmark-button";
+import { EventPaymentButton } from "./event-payment-button";
 import { EventRegistrationButton } from "./event-registration-button";
 import type { EventSuccessDetails } from "./event-rsvp-success-overlay";
 import { EventImage } from "./event-image";
@@ -24,6 +26,11 @@ type EventDetailData = EventItem & {
     | null;
   // ISO timestamp of a live waitlist promotion offer for the viewer, if any.
   waitlistOfferExpiresAt?: string | null;
+  // Another booking of the viewer's that overlaps this one (getEventBySlug).
+  viewerClashEventTitle?: string | null;
+  // Per-seat booking fee from api/events/<id>. Absent until the live record has
+  // loaded, which is what keeps the paid path on its link until then.
+  bookingFeeCents?: number;
 };
 
 function priceToCents(price: string) {
@@ -120,6 +127,21 @@ export function EventDetailModal({
   const isRegistered = data.viewerRsvpStatus === "confirmed";
   const isWaitlisted = data.viewerRsvpStatus === "waitlisted";
   const isWaitlistMode = data.status === "Waitlist" || isFull;
+  // The event page's rule (bug board #227): waitlisted, no offer out to them,
+  // and a seat is open anyway - they get to book it, not just "Leave waitlist".
+  const seatOpenForWaitlister =
+    isWaitlisted && !data.waitlistOfferExpiresAt && !isWaitlistMode;
+  // Only the live record carries the fee, and quoting a party of three without
+  // it would print a $0 total - so paid booking waits for it (see below).
+  const bookingFeeCents = detail?.bookingFeeCents;
+  // The paid booking control, +1 naming and all, is on screen - see the CTA
+  // stack. It is what makes this card stop being a read-only quick view.
+  const booksPaidSeatHere =
+    !isRegistered &&
+    (!isWaitlisted || seatOpenForWaitlister) &&
+    data.priceCents > 0 &&
+    !isWaitlistMode &&
+    bookingFeeCents !== undefined;
   // Venue stays private until the viewer confirms their RSVP - only the suburb
   // is shown beforehand, matching the event detail page's venue gate.
   const isLockedEvent = !isRegistered;
@@ -220,12 +242,14 @@ export function EventDetailModal({
           /* Matches the pre-migration z-[100]. The checkout modal this can open
              sits above it at z-140, the login gate a 401 raises at z-200. */
           zIndex={100}
-          /* A scrim tap closes this one. It is a read-only quick view - nothing
-             typed, nothing lost - so the usual "tap outside to dismiss" applies,
-             unlike the booking dialog where a stray tap would discard guest
-             details. (The old markup meant to do this but never could: its scrim
-             sat over the wrapper, so the target/currentTarget check never
-             matched.) */
+          /* A scrim tap closes this one while it is a read-only quick view -
+             nothing typed, nothing lost - so the usual "tap outside to dismiss"
+             applies. Not once it carries the paid booking control: that is where
+             a buyer types their +1s' names, emails and dates of birth, and the
+             booking dialog refuses a scrim tap for exactly that reason. (The old
+             markup meant to allow it but never could: its scrim sat over the
+             wrapper, so the target/currentTarget check never matched.) */
+          closeOnScrim={!booksPaidSeatHere}
           cardClassName="rise-soft my-auto flex max-h-[calc(100dvh-2rem)] w-full max-w-3xl flex-col overflow-hidden rounded-[var(--radius-xl)] bg-[color:var(--paper)] shadow-[var(--shadow-lg)]"
         >
           <div className="relative h-52 w-full shrink-0 overflow-hidden sm:h-72">
@@ -340,11 +364,29 @@ export function EventDetailModal({
             </div>
 
             <div className="mt-6 grid gap-2">
+              {/* The event page's clash heads-up, on the one booking surface that
+                  never showed it: a free event books from right here in one tap
+                  (bug board #51). Non-blocking, same as the page. */}
+              {data.viewerClashEventTitle && !isRegistered ? (
+                <p className="rounded-[var(--radius-md)] bg-[color-mix(in_srgb,var(--amber)_14%,var(--paper))] p-3 text-[13px] text-[color:var(--amber-ink)]">
+                  Heads up - this clashes with{" "}
+                  <span className="font-semibold">{data.viewerClashEventTitle}</span>, which you&apos;re
+                  already going to. You can still book both.
+                </p>
+              ) : null}
+
+              {seatOpenForWaitlister ? (
+                <p className="rounded-[var(--radius-md)] bg-[color:var(--lav-bg)] p-3 text-[13px] text-[color:var(--ink-soft)]">
+                  A seat has opened up - RSVP and it&apos;s yours. Until then you keep your place on the
+                  waitlist.
+                </p>
+              ) : null}
+
               {/* successDetails on both registration buttons: the first covers
                   accepting a waitlist promotion, the second a plain RSVP. Both
                   end in a confirmed seat, and both should celebrate here rather
                   than throw the browser at a new page. */}
-              {isRegistered || isWaitlisted ? (
+              {isRegistered || (isWaitlisted && !seatOpenForWaitlister) ? (
                 <EventRegistrationButton
                   eventId={data.id}
                   initiallyRegistered
@@ -353,9 +395,32 @@ export function EventDetailModal({
                   successDetails={data.location ? successDetails : undefined}
                 />
               ) : isPaid && !isWaitlistMode ? (
-                <Link href={`/events/${data.id}`} className="ck-btn ck-btn--md ck-btn--full ck-btn--primary">
-                  <span className="ck-btn__label">See details &amp; book</span>
-                </Link>
+                bookingFeeCents === undefined ? (
+                  <Link href={`/events/${data.id}`} className="ck-btn ck-btn--md ck-btn--full ck-btn--primary">
+                    <span className="ck-btn__label">See details &amp; book</span>
+                  </Link>
+                ) : (
+                  // The same booking control as the event page's dialog, +1s
+                  // included - this used to be a link away from them, so "RSVP"
+                  // on a card never offered to bring anyone (bug board #216/#232).
+                  <>
+                    <EventPaymentButton
+                      eventId={data.id}
+                      priceLabel={formatPriceLabel(data.priceCents + bookingFeeCents, "AUD")}
+                      allowGuests
+                      availableSeats={seatsLeft}
+                      perSeatCents={data.priceCents + bookingFeeCents}
+                      bookingFeePerSeatCents={bookingFeeCents}
+                      eventDateISO={data.startsAt}
+                    />
+                    <p className="text-[12px] text-[color:var(--slate)]">
+                      Your seat is held while you pay.{" "}
+                      <Link href="/refund-policy" className="underline">
+                        Refund policy
+                      </Link>
+                    </p>
+                  </>
+                )
               ) : (
                 <EventRegistrationButton
                   eventId={data.id}
@@ -364,6 +429,10 @@ export function EventDetailModal({
                   successDetails={data.location ? successDetails : undefined}
                 />
               )}
+
+              {seatOpenForWaitlister ? (
+                <EventRegistrationButton eventId={data.id} initiallyRegistered isWaitlist />
+              ) : null}
 
               <EventBookmarkButton eventId={data.id} initiallySaved={bookmarked} />
 

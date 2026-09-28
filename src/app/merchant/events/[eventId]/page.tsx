@@ -326,10 +326,10 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
         <div className="mt-8 grid gap-3 sm:grid-cols-4">
           <Metric label="Confirmed" value={`${confirmedSeats} / ${event.capacity}`} />
           <Metric label="Waitlist" value={event.waitlisted.toString()} />
-          <Metric
-            label="Seats left"
-            value={Math.max(0, event.capacity - confirmedSeats).toString()}
-          />
+          {/* The canonical count, not capacity - confirmed: a seat held by a live
+              checkout or offered to the waitlist is not one anybody can take
+              (bug board #226). */}
+          <Metric label="Seats left" value={event.seatsAvailable.toString()} />
           <Metric label="Price" value={formatPriceLabel(event.priceCents)} />
         </div>
 
@@ -456,6 +456,16 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
                   {waitlistedAttendees.length === 1 ? "person" : "people"}{" "}
                   waiting
                 </h2>
+                {/* A seat can be open AND someone still waiting: it has been
+                    offered to them and is held for 30 minutes. Without this line
+                    the host saw "1 / 2" beside a waitlist and no reason (#226). */}
+                {event.offeredSeats > 0 ? (
+                  <p className="mt-2 text-sm font-medium text-[color:var(--slate)]">
+                    {event.offeredSeats === 1
+                      ? "A seat opened up and is held for the next person in line for 30 minutes."
+                      : `${event.offeredSeats} seats opened up and are held for the next people in line for 30 minutes.`}
+                  </p>
+                ) : null}
               </div>
               <Badge tone="amber">{waitlistedAttendees.length}</Badge>
             </div>

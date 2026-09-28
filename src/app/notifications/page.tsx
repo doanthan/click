@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { Icon } from "@/components/ds";
 import { SubmitButton } from "@/components/ds-client";
-import { getNotificationsForSession } from "@/lib/event-repository";
+import { getNotificationsForSession, getUnreadNotificationCount } from "@/lib/event-repository";
 import { markAllReadAction } from "./actions";
 import { NotificationItem } from "./notification-item";
 
@@ -28,9 +28,18 @@ export default async function NotificationsPage() {
     redirect("/login?callbackUrl=/notifications");
   }
 
-  const notifications = await getNotificationsForSession(session);
+  // The count is the bell's own (memoised - the layout already took it for this
+  // request). The list stops at the newest 50, so an inbox with 1058 unread
+  // showed 50 under a bell that said 99+, and nothing said why (bug board
+  // #222). The band now carries the real total and says when it lists fewer.
+  const [notifications, unreadTotal] = await Promise.all([
+    getNotificationsForSession(session),
+    getUnreadNotificationCount(session),
+  ]);
   const unread = notifications.filter((n) => !n.readAt);
   const read = notifications.filter((n) => n.readAt);
+  // Two reads, so one can land between them; never print fewer than we list.
+  const unreadCount = Math.max(unreadTotal.count, unread.length);
 
   return (
     <main className="min-h-screen bg-[color:var(--champagne)] pb-24 text-[color:var(--ink)]">
@@ -66,9 +75,16 @@ export default async function NotificationsPage() {
         ) : (
           <div className="mt-7 overflow-hidden rounded-[var(--radius-xl)] border border-[color:var(--line-soft)] bg-[color:var(--paper)]">
             {unread.length > 0 ? (
-              <p className="px-4 pt-4 pb-2 text-[11.5px] font-bold tracking-[0.08em] uppercase text-[color:var(--slate)]">
-                Unread
-              </p>
+              <div className="px-4 pt-4 pb-2">
+                <p className="text-[11.5px] font-bold tracking-[0.08em] uppercase text-[color:var(--slate)]">
+                  Unread · {unreadCount.toLocaleString("en-AU")}
+                </p>
+                {unreadCount > unread.length ? (
+                  <p className="mt-1 text-[13px] leading-5 text-[color:var(--slate)]">
+                    Showing the newest {unread.length}. Mark all as read clears the rest too.
+                  </p>
+                ) : null}
+              </div>
             ) : null}
             {/* The timestamp is formatted HERE, on the server, and passed down
                 as a string: NotificationItem is a Client Component now, and

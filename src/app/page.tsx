@@ -38,11 +38,12 @@ const HERO_SLIDES: Array<{ src: StaticImageData; word: string; crop: string }> =
   { src: heroSlideGig, word: "big night.", crop: "object-[72%_center] sm:object-center" },
 ];
 
-/* The headline's last word. "obsession." is the anchor - it stays in normal
-   flow, so it is what crawlers, screen readers and reduced-motion visitors get,
-   and it plays once, over the courtyard on arrival. These are the aria-hidden
-   overlays: one per slide, then "click." for every later pass back to the
-   courtyard. */
+/* The headline's last word. "click." is the anchor - "find your next click",
+   the language canon's own line, which replaced "obsession." (bug board #260).
+   It stays in normal flow, so it is what crawlers, screen readers and
+   reduced-motion visitors get, and it plays once, over the courtyard on
+   arrival. These are the aria-hidden overlays: one per slide, then "click."
+   again for every later pass back to the courtyard. */
 const HERO_CYCLE_WORDS = [...HERO_SLIDES.map((slide) => slide.word), "click."];
 
 /* Logo takes a px size, so each breakpoint gets its own copy and CSS shows one.
@@ -246,7 +247,7 @@ export default async function Home() {
             <h1 className="rise-soft rise-d1 font-display mt-5 max-w-[720px] text-[clamp(3.25rem,7vw,5.8rem)] leading-[0.96] font-semibold tracking-[-0.055em] text-balance text-[color:var(--on-deep)]">
               Find your next{" "}
               <span className="word-cycle">
-                <span className="word-cycle__anchor">obsession.</span>
+                <span className="word-cycle__anchor">click.</span>
                 {HERO_CYCLE_WORDS.map((word, index) => (
                   <span
                     key={word}

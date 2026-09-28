@@ -37,24 +37,14 @@
 // button flips to a muted `clicked` instantly - optimistic, same footprint, no
 // spinner, no navigation, no ✨". A one-way click is invisible to the other
 // person by design; celebrating it celebrates nothing that has happened yet.
-// `CLICK_PUFF` below stays only until that call site drops its import, and goes
-// with it.
+// The call site and its `CLICK_PUFF` burst are gone (bug board #266); the one
+// celebration a mutual gets is the reveal's soft pop (mutual-reveal.tsx).
 //
 // IMPORTANT: the global prefers-reduced-motion CSS block in globals.css freezes
 // CSS animations but does NOT cover canvas-confetti's JS-driven canvas, so we
 // guard every fire with an explicit window.matchMedia check (and pass
 // canvas-confetti's own disableForReducedMotion flag as a second belt).
 const BRAND_COLORS = ["#E8674C", "#C8B8F8", "#3B2F81", "#1C1830"];
-
-/** @deprecated The sent-click burst - banned by runbook invariant 8. Delete this
- *  together with its last import (click-with-someone-user-card.tsx). */
-export const CLICK_PUFF = {
-  particleCount: 34,
-  spread: 50,
-  startVelocity: 26,
-  scalar: 0.72,
-  ticks: 120,
-} as const;
 
 type BurstShape = Partial<{
   particleCount: number;

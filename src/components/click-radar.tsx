@@ -8,9 +8,10 @@ import { Icon } from "./ds";
  * anonymous AGGREGATE line ("3 going also like hiking") tied to an event, and
  * taps through to that event.
  *
- * Counts only - never names, never photos, and never below a floor of 3, so a
- * line can't identify anyone. The same bar renders on the dashboard and on the
- * click-with-someone page.
+ * Counts only - never names, never photos, and nothing about what the people
+ * going are like below three confirmed attendees, so a line can't identify
+ * anyone. getRadarSignals (event-repository.ts) builds the lines for both
+ * surfaces the bar renders on: the dashboard and the click-with-someone page.
  */
 export function ClickRadar({
   events,
@@ -59,8 +60,13 @@ export function ClickRadar({
           <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[color:var(--lavender-100)] text-[color:var(--purple)]">
             <Icon name={fomoBySlug[event.id] ? "users" : "trend"} size={16} />
           </span>
+          {/* DS radar row: the line, " → ", then the event name. Without the
+              arrow the two ran together into one phrase - "3 going so far Jazz
+              Night" (bug board #288). Screen readers get a comma instead. */}
           <span className="min-w-0 flex-1 text-sm leading-snug text-[color:var(--ink-soft)]">
-            {fomoBySlug[event.id] ?? "Trending in Sydney"}{" "}
+            {fomoBySlug[event.id] ?? "Trending in Sydney"}
+            <span aria-hidden="true"> → </span>
+            <span className="sr-only">, </span>
             <span className="font-semibold text-[color:var(--ink)]">{event.title}</span>
           </span>
           <Icon name="chevR" size={16} stroke={2} className="text-[color:var(--slate)]" />

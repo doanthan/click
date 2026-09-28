@@ -27,7 +27,9 @@ import {
 } from "@/lib/abn";
 import {
   auPhoneHint,
+  auPhoneProgress,
   formatAuPhone,
+  formatAuPhoneAsYouType,
   isValidAuPhone,
   normalizeAuPhone,
   validateAuPhone,
@@ -1394,6 +1396,8 @@ function CategoryPicker({
 export function ContactSection() {
   const { state, dispatch } = useWizard();
   const { fieldErrors } = state;
+  // Set once the phone field has been left - see phoneError below.
+  const [phoneTouched, setPhoneTouched] = useState(false);
 
   // The five optional handles start folded away - see the panel below.
   // Destructured, like every other useDisclosure call site: the react-hooks/refs
@@ -1452,15 +1456,19 @@ export function ContactSection() {
     /^\d{4}$/.test(postcode) && !isWithinSydneyPilot(state.addressState || null, postcode);
   const areaLabel = state.addressSuburb.trim() || "That area";
 
-  /* Two sources feed one error slot. The live check answers while you type (and
-     stays quiet until you have typed something), and validateStep's mark arrives
-     on Next - which is also the only one that can speak for an EMPTY field. The
-     mark clears itself on the next keystroke, so the live check takes back over
-     the moment the host starts fixing it. */
+  /* Two sources feed one error slot. The live check waits until the host has
+     left the field once - a half-typed number is not a mistake, and flagging
+     "Mobiles need 10 digits" at the second keystroke is what made a tester say
+     it errored on a real number (bug board #144). Until then the hint counts
+     them through it instead. validateStep's mark arrives on Next - the only one
+     that can speak for an EMPTY field - and clears on the next keystroke, so
+     the live check takes back over while they fix it. */
   const phoneTyped = state.phone.trim() !== "";
   const phoneValid = isValidAuPhone(state.phone);
   const phoneError =
-    fieldErrors.phone ?? (phoneTyped && !phoneValid ? auPhoneHint(state.phone) : undefined);
+    fieldErrors.phone ??
+    (phoneTouched && phoneTyped && !phoneValid ? auPhoneHint(state.phone) : undefined);
+  const phoneId = fieldAnchorId("phone");
 
   const socialCount = SOCIAL_PLATFORMS.filter((p) => state.socials[p.value].trim()).length;
   const socialsPanelId = "ms-socials-panel";
@@ -1480,28 +1488,58 @@ export function ContactSection() {
           onChange={(e) => dispatch({ type: "field", key: "contactEmail", value: e.target.value })}
           placeholder="bookings@example.com"
         />
+        {/* The +61 sits in its own fixed box so the field only asks for the
+            national number, and the digits regroup as they're typed, so a
+            number that is one short reads as one short (bug board #144). */}
         <FormField
           label="Phone (AU)"
           required
-          type="tel"
-          inputMode="tel"
-          autoComplete="tel"
+          htmlFor={phoneId}
+          id={phoneId}
           error={phoneError}
           hint={
-            phoneTyped && phoneValid ? (
+            phoneValid ? (
               <span className="font-semibold text-[color:var(--purple)]">✓ Looks good.</span>
             ) : (
-              "Mobile, landline or business line - e.g. 0412 345 678, 02 9646 8888 or 1300 123 456. Spaces, brackets and +61 are fine."
+              auPhoneProgress(state.phone)
             )
           }
-          id={fieldAnchorId("phone")}
-          value={state.phone}
-          onChange={(e) => dispatch({ type: "field", key: "phone", value: e.target.value })}
-          onBlur={() =>
-            dispatch({ type: "field", key: "phone", value: formatAuPhone(state.phone) })
-          }
-          placeholder="0412 345 678"
-        />
+        >
+          <div className="flex gap-2">
+            <span
+              aria-hidden
+              className="ck-input flex shrink-0 items-center bg-[color:var(--champagne-deep)] font-semibold text-[color:var(--ink-soft)]"
+            >
+              +61
+            </span>
+            <input
+              id={phoneId}
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel-national"
+              required
+              aria-invalid={phoneError ? true : undefined}
+              aria-describedby={`${phoneId}-${phoneError ? "error" : "hint"}`}
+              className={`ck-input w-full min-w-0${phoneError ? " ck-input--invalid" : ""}`}
+              value={state.phone}
+              onChange={(e) => {
+                // Regroup only while typing at the end - reformatting an edit in
+                // the middle would throw the caret to the end of the field.
+                const { value, selectionStart } = e.target;
+                dispatch({
+                  type: "field",
+                  key: "phone",
+                  value: selectionStart === value.length ? formatAuPhoneAsYouType(value) : value,
+                });
+              }}
+              onBlur={() => {
+                setPhoneTouched(true);
+                dispatch({ type: "field", key: "phone", value: formatAuPhone(state.phone) });
+              }}
+              placeholder="0412 345 678"
+            />
+          </div>
+        </FormField>
       </div>
 
       <FormField

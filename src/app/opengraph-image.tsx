@@ -44,7 +44,7 @@ export default async function OpenGraphImage() {
         click.
       </div>
       <div style={{ display: "flex", fontSize: 76, fontWeight: 700, letterSpacing: "-3px", lineHeight: 1, marginTop: 34, maxWidth: 650, position: "relative" }}>
-        Find your next obsession.
+        Find your next click.
       </div>
       <div style={{ color: "rgba(249,246,240,0.78)", display: "flex", fontSize: 28, lineHeight: 1.35, marginTop: 24, maxWidth: 650, position: "relative" }}>
         Book fun Sydney activities, meet people naturally, and see who you click with.

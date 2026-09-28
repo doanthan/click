@@ -120,11 +120,10 @@ export function ProfileSafetyControls({
         )}
       </div>
 
-      <p className="mt-3 max-w-[520px] text-[12.5px] leading-[1.55] text-[color:var(--slate)]">
-        {BLOCK_CONSEQUENCE} Muting stops notifications. Reporting someone mutes them too. Reports go to our safety team and are
-        reviewed within 24 hours. The &ldquo;under review&rdquo; badge clears once that review closes - we
-        don&rsquo;t share the outcome, and anyone you muted stays muted until you unmute them.
-      </p>
+      {/* No standing explainer paragraph (bug board #271 - it read as a wall of
+          text under three small buttons). Each consequence is told where it lands:
+          BLOCK_CONSEQUENCE in the block confirm, the review promise in the report
+          toast. */}
 
       {reportOpen && !state.hasReported ? (
         <form action={reportUserAction} className="mt-5 grid max-w-[520px] gap-3.5">

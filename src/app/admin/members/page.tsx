@@ -1,46 +1,54 @@
-import { AdminMembersTable } from "@/components/admin-members-table";
+import { AdminMembersTable, type MembersFilters } from "@/components/admin-members-table";
 import { AdminPageHeader } from "@/components/admin-page-header";
 import { getAdminEventOptions, getAdminMembers } from "@/lib/event-repository";
 import { requireAdminPage } from "@/lib/admin-guard";
-import { auth, isAdminEmail } from "@/auth";
 
 export const metadata = {
   title: "Attendees Management | Admin",
 };
 
-// The window the table loads with. Matches the repository default; named here
-// because the table needs the same number to tell the admin the list is capped.
-const PAGE_SIZE = 250;
+// One page of rows, fetched per request. Filters and the page number live in
+// the URL, so the server decides every one of them and a filtered view can be
+// linked to.
+const PAGE_SIZE = 25;
 
-/**
- * Re-query members for a search term.
- *
- * A server action is its own public POST endpoint - requireAdminPage() below
- * runs for the page render, NOT for this - so admin is re-derived on every
- * call, the same way the transactions ledger action does it.
- */
-async function searchMembers(term: string) {
-  "use server";
-  const session = await auth();
-  if (!isAdminEmail(session?.user?.email)) {
-    throw new Error("Admin access is required.");
-  }
-  const search = term.trim();
-  return getAdminMembers({ search: search || undefined, limit: PAGE_SIZE });
-}
+const ROLES = new Set(["attendee", "merchant", "admin"]);
 
-export default async function AdminMembersPage() {
+type SearchParams = Record<"q" | "role" | "event" | "area" | "page", string | string[] | undefined>;
+
+// A repeated param (?q=a&q=b) arrives as an array; the first one wins.
+const first = (value: string | string[] | undefined) =>
+  (Array.isArray(value) ? value[0] : value)?.trim() ?? "";
+
+export default async function AdminMembersPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Partial<SearchParams>>;
+}) {
   await requireAdminPage();
 
-  const [members, options] = await Promise.all([
-    getAdminMembers({ limit: PAGE_SIZE }),
+  const params = (await searchParams) ?? {};
+  const role = first(params.role);
+  const filters: MembersFilters = {
+    q: first(params.q),
+    role: ROLES.has(role) ? (role as MembersFilters["role"]) : "all",
+    event: first(params.event),
+    area: first(params.area) === "outside" ? "outside" : "all",
+  };
+  const requestedPage = Math.max(1, Number.parseInt(first(params.page) || "1", 10) || 1);
+
+  const [page, options] = await Promise.all([
+    getAdminMembers({
+      search: filters.q || undefined,
+      role: filters.role === "all" ? undefined : filters.role,
+      eventSlug: filters.event || undefined,
+      outsidePilot: filters.area === "outside",
+      limit: PAGE_SIZE,
+      offset: (requestedPage - 1) * PAGE_SIZE,
+    }),
     // Only the {slug,title} picker is needed here, not the full events payload.
     getAdminEventOptions(),
   ]);
-
-  // Keep the same case-insensitive ordering the previous getAdminEvents()-backed
-  // list produced (the table component re-sorts the same way, but this preserves
-  // the exact data handed in).
   const eventOptions = [...options].sort((a, b) => a.title.localeCompare(b.title));
 
   return (
@@ -51,10 +59,10 @@ export default async function AdminMembersPage() {
         description="Search, verify, and moderate member accounts."
       />
       <AdminMembersTable
-        members={members}
+        page={page}
+        pageSize={PAGE_SIZE}
+        filters={filters}
         eventOptions={eventOptions}
-        windowSize={PAGE_SIZE}
-        searchMembers={searchMembers}
       />
     </div>
   );

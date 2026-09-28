@@ -158,6 +158,11 @@ function validateStep(step: StepIndex, v: WizardValues): FieldErrors {
     // which makes this the check that stops a wrong one going out.
     if (!v.category.trim()) errors.category = "Pick the category it belongs in.";
     if (!v.description.trim()) errors.description = "Add a short description.";
+    // Required since bug board #272 - tags are how the right people find an
+    // event. createEventForMerchant holds the same line server-side.
+    if (parseTags(v.tags).length === 0) {
+      errors.tags = "Pick at least one tag - it's how the right people find your event.";
+    }
   }
 
   if (step === 1) {
@@ -923,6 +928,9 @@ export function WizardShell({
       // Whether the created event(s) went straight live (trusted / auto-approved
       // merchant) vs landed in the pending review queue - drives the toast copy.
       let firstStatus: string | undefined;
+      // One of the host's own events a created date overlaps. Allowed - it is
+      // named, not refused (bug board #223/#273).
+      let firstOverlap: { title: string; startsAt: string } | undefined;
 
       // Indexed rather than for-of purely so the bar below can say which
       // occurrence is in flight. The order, the awaits and the one-POST-at-a-time
@@ -969,7 +977,11 @@ export function WizardShell({
         }
 
         const payload = (await response.json().catch(() => ({}))) as {
-          event?: { title?: string; status?: string };
+          event?: {
+            title?: string;
+            status?: string;
+            overlapsWith?: { title: string; startsAt: string } | null;
+          };
           error?: string;
           redirect?: string;
         };
@@ -996,6 +1008,7 @@ export function WizardShell({
         okCount++;
         firstTitle = firstTitle ?? payload.event?.title;
         firstStatus = firstStatus ?? payload.event?.status;
+        firstOverlap = firstOverlap ?? payload.event?.overlapsWith ?? undefined;
       }
 
       if (okCount === 0) {
@@ -1039,6 +1052,22 @@ export function WizardShell({
       // failed with nothing to retry from. clearDraft is useFormDraft's clear()
       // - it swallows a blocked storage write itself, so nothing to catch here.
       clearDraft();
+      // "Notify the merchant on the event creation end" - the product owner's
+      // call on overlaps (bug board #273): both events stand, this just names
+      // the clash in case it was a slip on the Schedule step.
+      const overlapNote = firstOverlap
+        ? `Heads up - it overlaps your event "${firstOverlap.title}" (${new Intl.DateTimeFormat(
+            "en-AU",
+            {
+              weekday: "short",
+              day: "numeric",
+              month: "short",
+              hour: "numeric",
+              minute: "2-digit",
+              timeZone: "Australia/Sydney",
+            },
+          ).format(new Date(firstOverlap.startsAt))}). Both stay on, and you can change the time from your events tab.`
+        : undefined;
       toast.success(
         liveNow
           ? startsAtList.length === 1
@@ -1051,6 +1080,7 @@ export function WizardShell({
             : startsAtList.length === 1
               ? `${label} submitted for admin review.`
               : `${okCount} occurrences of ${label} submitted for admin review.`,
+        overlapNote ? { description: overlapNote, duration: 12000 } : undefined,
       );
       router.push("/merchant?tab=events");
       router.refresh();
@@ -1289,11 +1319,6 @@ export function WizardShell({
 // createEventForMerchant so the UI can't promise more than the backend keeps.
 const MAX_TAGS = 8;
 
-// The TagPicker's search box. Fixed rather than generated because ds.tsx is
-// hook-free (it renders on the server too), so FormField cannot mint an id of
-// its own to hand its label - and there is only ever one tag picker on screen.
-const TAG_SEARCH_ID = "ce-tag-search";
-
 function parseTags(value: string): string[] {
   return value
     .split(",")
@@ -1314,13 +1339,16 @@ function TagPicker({
   category,
   onChange,
   id,
+  invalid,
 }: {
   value: string;
   options: EventTagOption[];
   category?: string;
   onChange: (next: string) => void;
-  /** id of the search input, so the wrapping FormField's label can point at it. */
+  /** id of the search input - the field anchor, so the wrapping FormField's
+      label and "focus the first offender" both land on it. */
   id?: string;
+  invalid?: boolean;
 }) {
   const [query, setQuery] = useState("");
 
@@ -1427,7 +1455,10 @@ function TagPicker({
         placeholder={
           atLimit ? `Tag limit reached (${MAX_TAGS})` : "Search tags…"
         }
-        className="ck-input w-full disabled:cursor-not-allowed disabled:opacity-60"
+        aria-invalid={invalid || undefined}
+        className={`ck-input w-full disabled:cursor-not-allowed disabled:opacity-60${
+          invalid ? " ck-input--invalid" : ""
+        }`}
       />
 
       {/* Browsable chip cloud - tap to add, no typing required. The list does
@@ -1476,6 +1507,114 @@ function TagPicker({
           );
         })()
       ) : null}
+    </div>
+  );
+}
+
+// "Can't find the right tag?" - the one way a host gets a tag added (bug board
+// #275). The picker stays a closed list; this queues the ask for an admin on
+// /admin/tags (POST /api/merchant/tag-requests) and never holds the event up -
+// the host picks the closest tag now and adds the new one once it exists.
+function TagRequestForm() {
+  const [open, setOpen] = useState(false);
+  const [label, setLabel] = useState("");
+  const [note, setNote] = useState("");
+  const [sending, setSending] = useState(false);
+  const labelId = useId();
+  const ready = label.trim().length >= 2 && !sending;
+
+  async function send() {
+    if (!ready) return;
+    setSending(true);
+    try {
+      const response = await fetch("/api/merchant/tag-requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label, note }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        status?: "requested" | "exists";
+        label?: string;
+        error?: string;
+      };
+      if (!response.ok) {
+        toast.error(payload.error ?? "Couldn't send that request - try again.");
+        return;
+      }
+      if (payload.status === "exists") {
+        toast.success(`"${payload.label}" is already a tag - search for it above.`);
+        return;
+      }
+      toast.success(`Sent - we'll let you know when "${payload.label ?? label.trim()}" is added.`);
+      setLabel("");
+      setNote("");
+      setOpen(false);
+    } catch {
+      toast.error("Could not reach the server - try again.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="ck-taplink justify-self-start text-[12.5px] font-semibold text-[color:var(--purple)] underline underline-offset-2"
+      >
+        Can&apos;t find the right tag? Request one
+      </button>
+    );
+  }
+
+  return (
+    <div className="grid gap-2 rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] p-3">
+      <label htmlFor={labelId} className="text-[13.5px] font-semibold text-[color:var(--ink)]">
+        Tag you&apos;d like added
+      </label>
+      <input
+        id={labelId}
+        value={label}
+        maxLength={40}
+        onChange={(e) => setLabel(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            void send();
+          }
+        }}
+        placeholder="e.g. Board games"
+        className="ck-input w-full"
+      />
+      <input
+        value={note}
+        maxLength={300}
+        onChange={(e) => setNote(e.target.value)}
+        aria-label="Note for the Click team (optional)"
+        placeholder="Anything we should know? (optional)"
+        className="ck-input w-full"
+      />
+      <p className="text-[12.5px] leading-5 text-[color:var(--slate)]">
+        An admin reviews it. Your event doesn&apos;t wait - pick the closest tag for now.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => void send()}
+          aria-disabled={!ready || undefined}
+          className={`ck-btn ck-btn--primary ck-btn--sm${ready ? "" : " opacity-60"}`}
+        >
+          <span className="ck-btn__label">{sending ? "Sending…" : "Send request"}</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          className="ck-btn ck-btn--secondary ck-btn--sm"
+        >
+          <span className="ck-btn__label">Cancel</span>
+        </button>
+      </div>
     </div>
   );
 }
@@ -1730,8 +1869,8 @@ export function BasicsSection() {
             Naming the editable set is the difference between a host taking care
             over the right fields and finding out afterwards. */}
         <p className="mt-2 text-sm leading-6 text-[color:var(--slate)]">
-          You can edit the title and description later from your event page.
-          Category is fixed once you submit. Matching details are optional and
+          You can edit the title, description and tags later from your event page.
+          Category is fixed once you submit. Audience details are optional and
           can use Click&apos;s defaults.
         </p>
       </header>
@@ -1804,6 +1943,27 @@ export function BasicsSection() {
             placeholder="A hosted restaurant table for people who want dinner plans without the awkward group-chat setup…"
           />
         </div>
+        {/* Out of the optional panel below and required (bug board #272): an
+            untagged event reaches nobody's suggestions. */}
+        <div className="grid gap-2 md:col-span-2">
+          <FormField
+            label="Tags"
+            required
+            error={fieldErrors.tags}
+            hint={`Pick up to ${MAX_TAGS} that describe the event. Category suggestions appear first.`}
+            htmlFor={fieldAnchorId("tags")}
+          >
+            <TagPicker
+              id={fieldAnchorId("tags")}
+              invalid={Boolean(fieldErrors.tags)}
+              value={values.tags}
+              options={tagOptions}
+              category={values.category}
+              onChange={(next) => set("tags", next)}
+            />
+          </FormField>
+          <TagRequestForm />
+        </div>
       </div>
       <details className="group rounded-2xl border border-[color:var(--mist)] bg-[color:var(--champagne)] rise-soft rise-d3">
         <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--purple)] [&::-webkit-details-marker]:hidden">
@@ -1812,7 +1972,7 @@ export function BasicsSection() {
               Help Click match this event <span className="font-normal text-[color:var(--slate)]">(optional)</span>
             </span>
             <span className="mt-0.5 block text-[12.5px] leading-5 text-[color:var(--slate)]">
-              Suggested tags and audience details help the right people find it.
+              Audience details help the right people find it.
             </span>
           </span>
           <span aria-hidden className="text-lg text-[color:var(--purple)] transition-transform group-open:rotate-45">
@@ -1820,19 +1980,6 @@ export function BasicsSection() {
           </span>
         </summary>
         <div className="space-y-5 border-t border-[color:var(--mist)] px-4 py-4">
-          <FormField
-            label="Tags (optional)"
-            hint={`Pick only the tags that describe the event - up to ${MAX_TAGS}. Category suggestions appear first.`}
-            htmlFor={TAG_SEARCH_ID}
-          >
-            <TagPicker
-              id={TAG_SEARCH_ID}
-              value={values.tags}
-              options={tagOptions}
-              category={values.category}
-              onChange={(next) => set("tags", next)}
-            />
-          </FormField>
           {/* No htmlFor: these chips are a GROUP, not one control, so FormField
               renders role="group" and a click on the label correctly does nothing.
               It used to toggle the first chip and rewrite the goal sentence. */}
@@ -1931,7 +2078,6 @@ export function ScheduleSection() {
         <FormField
           as="select"
           label="Duration"
-          hint="How long does the event run?"
           value={values.durationMinutes}
           onChange={(e) => set("durationMinutes", e.target.value)}
         >
@@ -1974,7 +2120,7 @@ export function ScheduleSection() {
             // "Price" beside "Capacity" read as the price of the whole event to
             // anyone listing a table or a room, and Stripe is live: a host who
             // meant $120 for eight seats charged each of the eight $120.
-            hint="What ONE guest pays. Enter 0 for free. Dollars and cents, e.g. 12.50."
+            hint="What one guest pays. 0 for free."
             error={fieldErrors.price}
             id={fieldAnchorId("price")}
             // type="text" + inputMode="decimal", NOT type="number": the number
@@ -1988,56 +2134,51 @@ export function ScheduleSection() {
             placeholder="0"
           />
         </div>
-        {/* The money facts, at the moment the price is typed. Every line here was
-            previously something a host only found out from their first payout,
-            their tax return, or an attendee asking for a refund. */}
+        {/* The money facts, at the moment the price is typed: what a guest pays
+            and what the host keeps - the fee is a real deduction on a real
+            payout. GST, the booking fee and the refund rules used to be spelled
+            out here too, but the host accepted them with the Host Terms at
+            signup; "less is better, these details should already be in the
+            terms of set up" (bug board #261/#262), so they are a link now. */}
         {isPaid ? (
           <div className="space-y-2 rounded-xl border border-[color:var(--mist)] bg-[color:var(--lav-bg)] px-4 py-3 text-sm leading-6 text-[color:var(--slate)]">
             <p className="text-[color:var(--ink)]">
-              Each guest pays{" "}
-              <strong className="font-semibold">{money(priceCents)}</strong>
+              Guests pay <strong className="font-semibold">{money(priceCents)}</strong> each
               {platformFeeBps > 0 ? (
                 <>
-                  . Click keeps{" "}
+                  {" "}- you receive <strong className="font-semibold">{money(netCents)}</strong>{" "}
+                  after Click&rsquo;s{" "}
                   {/* 290 bps reads "2.9%", not "2.90%" - up to two places, no
                       trailing zero. */}
-                  <strong className="font-semibold">
-                    {new Intl.NumberFormat("en-AU", {
-                      maximumFractionDigits: 2,
-                    }).format(platformFeeBps / 100)}
-                    %
-                  </strong>{" "}
-                  ({money(feeCents)}), so you receive{" "}
-                  <strong className="font-semibold">{money(netCents)}</strong> per
-                  seat.
+                  {new Intl.NumberFormat("en-AU", {
+                    maximumFractionDigits: 2,
+                  }).format(platformFeeBps / 100)}
+                  % fee.
                 </>
               ) : (
-                <>. You receive the full amount - Click takes no cut.</>
+                <> - you receive all of it.</>
               )}
             </p>
             <p>
-              This price is GST-inclusive - the tax invoice takes the GST out of
-              it (one eleventh of what the guest paid), it is never added on top.
-              Guests may also see a separate booking fee; that one is Click&rsquo;s,
-              not yours.
-            </p>
-            <p>
-              Cancellations: a guest cancelling 48+ hours out gets a full refund,
-              24-48 hours out gets half, and under 24 hours gets none. If you
-              cancel the event, everyone is refunded in full.
+              Refunds and GST follow the{" "}
+              <a
+                href="/terms"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium text-[color:var(--purple)] underline underline-offset-2"
+              >
+                Host Terms
+              </a>{" "}
+              you agreed to.
             </p>
             {!stripeReady ? (
               <p className="text-[color:var(--ink)]">
-                {/* Scoped to the PAID event being priced. It used to add "free
-                    events included", which stopped being true when
-                    createEventForMerchant started gating on price:
-                    `needsStripe = priceCents > 0` (event-repository.ts:4369). */}
                 {/* A trusted host's event publishes itself once payouts are
                     live (publishEventsHeldForPayouts); anyone else's still
                     waits for an admin after that. */}
                 {autoApproveEvents
-                  ? "Payout setup isn’t finished, so this paid event goes live as soon as it is."
-                  : "Payout setup isn’t finished, so this paid event stays in review until it is."}{" "}
+                  ? "Goes live once payouts are set up."
+                  : "Stays in review until payouts are set up."}{" "}
                 <a
                   href={`/merchant/onboarding/payouts?returnTo=${encodeURIComponent(STEP_PATHS[1])}`}
                   className="font-medium text-[color:var(--purple)] underline underline-offset-2"
@@ -2047,26 +2188,6 @@ export function ScheduleSection() {
               </p>
             ) : null}
           </div>
-        ) : !stripeReady ? (
-          <p className="rounded-xl border border-[color:var(--mist)] bg-[color:var(--lav-bg)] px-4 py-3 text-sm leading-6 text-[color:var(--slate)]">
-            {/* This branch renders ONLY when the price is 0, and it used to say
-                an unfinished payout setup held free events in review too. That
-                was true once and is not any more: createEventForMerchant gates
-                on price - `needsStripe = priceCents > 0`, then
-                `autoApprove && (!needsStripe || stripeReady)` - so an approved
-                host's free event publishes with no Stripe at all. Onboarding
-                explicitly offers "skip for now, you can keep running free
-                events", so this note was telling the hosts who took that offer
-                that the offer was not real. */}
-            No payout setup needed for a free event - this publishes as normal. You
-            only need Stripe once you charge for a seat.{" "}
-            <a
-              href={`/merchant/onboarding/payouts?returnTo=${encodeURIComponent(STEP_PATHS[1])}`}
-              className="font-medium text-[color:var(--purple)] underline underline-offset-2"
-            >
-              Set up payouts anyway
-            </a>
-          </p>
         ) : null}
       </div>
     </div>
@@ -2452,7 +2573,7 @@ function RecurrencePicker({
             />
           </label>
           <span className="text-xs font-medium text-[color:var(--slate)]">
-            Max 26 · one event row per date below.
+            Up to 26.
           </span>
           {error ? (
             <span
@@ -3337,15 +3458,14 @@ export function ReviewSection() {
         {/* Branch, do not assert. This line used to say "Submissions go to admin
             for approval before going live" unconditionally - directly above a
             badge and a submit button that both correctly say the opposite for a
-            trusted host. The same host was told two contradictory things about
-            what their next tap does, in the same viewport. */}
+            trusted host. One short line now: "less text" (bug board #263), and
+            the caption under the card already says it is the Discover card. */}
         <p className="mt-2 text-sm leading-6 text-[color:var(--slate)]">
-          This is how your event card will look on Click.{" "}
           {publishesImmediately
-            ? "Submitting puts it straight on Discover - you can edit it afterwards."
+            ? "Goes straight on Discover. You can edit it after."
             : heldForPayouts
-              ? "It goes on Discover as soon as your payout setup is finished, and we'll email you when it's live."
-              : "Submitting sends it to admin for approval, and we'll email you the outcome."}
+              ? "Goes on Discover once payouts are set up."
+              : "An admin checks it first - we'll email you."}
         </p>
       </header>
 
@@ -3438,8 +3558,7 @@ export function ReviewSection() {
           </div>
         </article>
         <p className="mt-3 text-center text-xs font-medium text-[color:var(--slate)]">
-          Preview · the card members see on Discover. Your venue name stays
-          hidden until someone has a seat.
+          Your Discover card. The venue stays hidden until someone has a seat.
         </p>
       </div>
 

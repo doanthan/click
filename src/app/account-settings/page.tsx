@@ -261,6 +261,15 @@ function SecurityTab({ email }: { email: string }) {
       <dl className="grid gap-4 sm:grid-cols-2">
         <ReadOnlyField label="Signed in as" value={email} />
       </dl>
+      {/* Testers came here looking for "change password" (bug board #254).
+          There is none to change: sign-in is a one-time email link or an OAuth
+          provider, and profiles are keyed on the email address, so any of the
+          three opens this same account. */}
+      <p className="mt-4 max-w-[520px] text-[13px] leading-[1.55] text-[color:var(--slate)]">
+        Click doesn&apos;t use passwords, so there&apos;s none to change. You sign in with a one-time
+        link we email you, or with Google or Facebook - any of them opens this same account, as
+        long as the email address matches.
+      </p>
       <div className="mt-5 grid gap-1">
         <SignOutRow />
         <div className="mt-3 border-t border-[color:var(--mist)] pt-4">

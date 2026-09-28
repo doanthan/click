@@ -118,6 +118,10 @@ const CHECKS = [
         why: "A server-side refusal telling the SENDER about their own profile. Names no receiver and renders no button.",
       },
       {
+        re: /Add a profile photo before you can click with anyone\./,
+        why: "R_PHOTO, the same kind of sender-own refusal as the date-of-birth one above (bug board #190). Names no receiver and renders no button.",
+      },
+      {
         re: /profile card \/ in the "click with someone" pool/,
         why: "Upload-route comment naming the pool an avatar feeds.",
       },

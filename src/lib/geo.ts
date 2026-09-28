@@ -131,3 +131,75 @@ export function regionFromPostcode(postcode: string | null | undefined): Region 
   if (MELBOURNE_POSTCODE_RANGES.some(([lo, hi]) => code >= lo && code <= hi)) return "Melbourne";
   return "Other";
 }
+
+/** The shape of src/lib/au-postcodes.json: `{ "2204": { s: "NSW", l: ["Marrickville", ...] } }`. */
+export type PostcodeTable = Readonly<Record<string, { s: string; l: readonly string[] }>>;
+
+export type StoredSuburbPlace = {
+  /** "pilot" = inside the attendee pilot (regionFromPostcode says Sydney, the
+   *  same test onboarding's "outside our first suburbs" note uses); "outside" =
+   *  a real place beyond it; "unknown" = empty, or a name the table has never seen. */
+  area: "pilot" | "outside" | "unknown";
+  /** What the stored value can mean - for "outside", only the out-of-pilot postcodes. */
+  postcodes: string[];
+  states: string[];
+};
+
+type PlaceIndex = Map<string, { pilot: boolean; outside: { postcode: string; state: string }[] }>;
+const placeIndexes = new WeakMap<PostcodeTable, PlaceIndex>();
+
+function placeIndexFor(table: PostcodeTable): PlaceIndex {
+  const cached = placeIndexes.get(table);
+  if (cached) return cached;
+  const index: PlaceIndex = new Map();
+  for (const [postcode, entry] of Object.entries(table)) {
+    const pilot = regionFromPostcode(postcode) === "Sydney";
+    for (const name of entry.l) {
+      const key = name.trim().toLowerCase();
+      const place = index.get(key) ?? { pilot: false, outside: [] };
+      if (pilot) place.pilot = true;
+      else place.outside.push({ postcode, state: entry.s });
+      index.set(key, place);
+    }
+  }
+  placeIndexes.set(table, index);
+  return index;
+}
+
+/**
+ * Where a member is, read from what profiles.suburb holds. There is no postcode
+ * column: saveOnboarding turns the postcode into the first suburb it names, and
+ * /profile/edit stores a suburb name, so the name is walked back to its
+ * postcodes here. Older rows (and codes the table lacks) hold the 4-digit code
+ * itself, which regionFromPostcode reads directly.
+ *
+ * A name that exists both inside the pilot and elsewhere (Richmond, Epping,
+ * Carlton) counts as the pilot: the name alone cannot tell them apart, and a
+ * Sydney member wrongly told Click has "reached their city" is the worse
+ * mistake. Keeping the postcode itself at onboarding would make this exact.
+ */
+export function placeForStoredSuburb(
+  stored: string | null | undefined,
+  table: PostcodeTable,
+): StoredSuburbPlace {
+  const value = (stored ?? "").trim();
+  if (!value) return { area: "unknown", postcodes: [], states: [] };
+
+  if (/^\d{4}$/.test(value)) {
+    const state = table[value]?.s;
+    return {
+      area: regionFromPostcode(value) === "Sydney" ? "pilot" : "outside",
+      postcodes: [value],
+      states: state ? [state] : [],
+    };
+  }
+
+  const place = placeIndexFor(table).get(value.toLowerCase());
+  if (!place) return { area: "unknown", postcodes: [], states: [] };
+  if (place.pilot) return { area: "pilot", postcodes: [], states: [] };
+  return {
+    area: "outside",
+    postcodes: [...new Set(place.outside.map((p) => p.postcode))],
+    states: [...new Set(place.outside.map((p) => p.state))],
+  };
+}

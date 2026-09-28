@@ -59,7 +59,11 @@ export async function POST(request: Request) {
       session,
     );
 
-    return NextResponse.json({ ok: true, profileId: result.profileId });
+    return NextResponse.json({
+      ok: true,
+      profileId: result.profileId,
+      photoUrl: result.photoUrl,
+    });
   } catch (error) {
     return errorResponse(error);
   }

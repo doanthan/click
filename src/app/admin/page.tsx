@@ -5,6 +5,7 @@ import { InfoCard, MetricCard } from "@/components/click-ui";
 import { adminModules } from "@/lib/click-data";
 import {
   countAdminMoneyAlerts,
+  getAdminClickOutcomes,
   getAdminMetrics,
   getAdminWeeklyTrend,
 } from "@/lib/event-repository";
@@ -23,11 +24,20 @@ export default async function AdminOverviewPage() {
   // pendingCount are 0 in that path regardless). Passing [] here is therefore
   // behaviourally identical and lets all three fan out concurrently instead of
   // awaiting metrics serially after the events query.
-  const [trend, metrics, money] = await Promise.all([
+  const [trend, metrics, money, clicks] = await Promise.all([
     getAdminWeeklyTrend(),
     getAdminMetrics([]),
     countAdminMoneyAlerts(),
+    getAdminClickOutcomes(),
   ]);
+
+  // Bug board #277: where live mutual clicks stall before a first night out.
+  const stalls = [
+    { label: "No plan suggested yet", value: clicks.noPlanYet },
+    { label: "Plan suggested, waiting on a reply", value: clicks.awaitingReply },
+    { label: "Plan agreed, not both booked", value: clicks.agreedNotBooked },
+    { label: "Plan fell through (declined, unanswered or the event filled)", value: clicks.planFellThrough },
+  ];
 
   return (
     <div className="space-y-12 py-10">
@@ -88,6 +98,55 @@ export default async function AdminOverviewPage() {
         <MetricCard label="Merchants" value={metrics.totalMerchants.toLocaleString()} tone="rose" href="/admin/merchants" />
         <MetricCard label="Mutual Clicks" value={metrics.mutualClicks.toLocaleString()} tone="ink" />
       </div>
+
+      {/* Bug board #276/#277 - did the click turn into a night out, and where do
+          the rest stall. Definitions live on getAdminClickOutcomes. */}
+      <section aria-labelledby="click-outcomes-heading">
+        <p className="eyebrow">Clicks to nights out</p>
+        <h2
+          id="click-outcomes-heading"
+          className="font-display mt-2 text-2xl font-semibold leading-tight text-[color:var(--ink)]"
+        >
+          Did the mutual click make it out?
+        </h2>
+        <p className="mt-2 max-w-[720px] text-sm leading-6 text-[color:var(--slate)]">
+          A pair has gone out together once both held a seat at the same event after their
+          mutual click, and that event has happened. Pairs count once, however many times they
+          clicked. Door check-in is optional for hosts, so it is shown as a subset, not the test.
+        </p>
+        <div className="mt-5 grid gap-4 sm:grid-cols-3">
+          <MetricCard label="Went to an event together" value={clicks.wentTogether.toLocaleString()} tone="rose" />
+          <MetricCard label="Both checked in at the door" value={clicks.checkedInTogether.toLocaleString()} tone="cream" />
+          <MetricCard label="Booked together, first night coming up" value={clicks.bookedTogether.toLocaleString()} tone="peach" />
+        </div>
+
+        <div className="mt-4 rounded-2xl bg-[color:var(--paper)] p-5 shadow-[var(--shadow-sm)]">
+          <h3 className="font-display text-lg font-semibold text-[color:var(--ink)]">
+            Still working it out
+          </h3>
+          <p className="mt-1 text-sm leading-6 text-[color:var(--slate)]">
+            Live mutual clicks with no night out together yet, by where their plan is.
+          </p>
+          <dl className="mt-4 grid gap-x-8 gap-y-3 sm:grid-cols-2">
+            {stalls.map((stall) => (
+              <div
+                key={stall.label}
+                className="flex items-baseline justify-between gap-4 border-b border-[color:var(--line)] pb-2"
+              >
+                <dt className="text-sm text-[color:var(--ink)]">{stall.label}</dt>
+                <dd className="font-display text-xl font-semibold tabular-nums text-[color:var(--ink)]">
+                  {stall.value.toLocaleString()}
+                </dd>
+              </div>
+            ))}
+          </dl>
+          <p className="mt-4 text-sm text-[color:var(--slate)]">
+            {clicks.endedWithoutNightOut.toLocaleString()} mutual{" "}
+            {clicks.endedWithoutNightOut === 1 ? "click has" : "clicks have"} run their course
+            without a night out together.
+          </p>
+        </div>
+      </section>
 
       <div>
         <AdminTrendChart buckets={trend} />

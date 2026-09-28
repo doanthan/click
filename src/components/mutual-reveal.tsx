@@ -109,9 +109,13 @@ export function RevealStep({
     // aria-live so a screen-reader user gets the moment too - it is announced, not
     // just drawn (Part 9). Polite: it must never interrupt what they were reading.
     <div aria-live="polite">
+      {/* The one celebration a mutual gets (bug board #266): the DS's "soft pop
+          animation, prefers-reduced-motion safe" on the ✨ disc - never confetti on
+          a mutual surface (brand-confetti.ts). Decorative only, so no content waits
+          on the animation. */}
       <div
         aria-hidden
-        className="grid h-[74px] w-[74px] place-items-center rounded-full bg-[color:var(--lav-bg)] text-[28px] leading-none text-[color:var(--purple)]"
+        className="pop-in grid h-[74px] w-[74px] place-items-center rounded-full bg-[color:var(--lav-bg)] text-[28px] leading-none text-[color:var(--purple)]"
       >
         ✨
       </div>

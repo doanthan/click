@@ -1,10 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useEffect, useRef, useState } from "react";
+import { useActionState, useEffect, useRef } from "react";
 import { clickPersonAction } from "@/app/people/actions";
 import type { SuggestedPerson } from "@/lib/event-repository";
-import { CLICK_PUFF, fireBrandConfetti } from "./brand-confetti";
 import { Avatar, Button, CommonalityLine, Spark, TagRow, ckBtn, commonality } from "./ds";
 import { MutualClickLink, announceClickSent, useRevealedMutual } from "./mutual-reveal";
 
@@ -51,41 +50,27 @@ export function ClickWithSomeoneUserCard({
 }) {
   const [state, formAction, submitting] = useActionState(clickPersonAction, null);
 
-  /* The celebration is for the click the user just made, never for one the
-     server merely remembers. `sent` is true on every reload once the click is
-     recorded (person.alreadyClicked), so the burst hangs off `justSent`, which
-     only a fresh successful submit in this session can set - and a ref gates it
-     so a re-render can't fire it twice. */
-  const [justSent, setJustSent] = useState(false);
-  const celebrated = useRef(false);
-  const actionsRef = useRef<HTMLDivElement>(null);
-
+  // The reply cannot say whether this completed a mutual (§6.1); the reveal host
+  // finds out with its own read, and plays the reveal if it did. A ref so a
+  // re-render can't announce the same send twice.
+  const announced = useRef(false);
   useEffect(() => {
-    if (state?.ok !== true || celebrated.current) return;
-    celebrated.current = true;
-    setJustSent(true);
-    // The reply cannot say whether this completed a mutual (§6.1); the reveal host
-    // finds out with its own read, and plays the reveal if it did.
+    if (state?.ok !== true || announced.current) return;
+    announced.current = true;
     announceClickSent();
-
-    /* Fired from the button the user actually pressed rather than the middle of
-       the viewport: on a three-card list, a burst from screen-centre reads as
-       "something happened somewhere", not "that one went". canvas-confetti wants
-       0-1 viewport fractions, hence the divide. */
-    const rect = actionsRef.current?.getBoundingClientRect();
-    const origin = rect
-      ? {
-          x: (rect.left + rect.width / 2) / window.innerWidth,
-          y: (rect.top + rect.height / 2) / window.innerHeight,
-        }
-      : undefined;
-    void fireBrandConfetti(origin, CLICK_PUFF);
   }, [state]);
 
-  // "sent" persists across reloads via person.alreadyClicked (a pending click
-  // already recorded server-side), and also flips immediately after a fresh
-  // successful submit in this session.
-  const sent = state?.ok === true || person.alreadyClicked;
+  // Runbook Stage 1: "the button flips to a muted `clicked` instantly -
+  // optimistic, same footprint, no spinner, no ✨". It used to wait for the whole
+  // send (a dozen round trips to the database) behind a spinner and then fire a
+  // confetti burst, which read as slow and celebrated a one-way click the other
+  // person never sees (bug board #266 - the burst is banned, see
+  // brand-confetti.ts). `flipped` is this session's own send, in flight or landed;
+  // a refused one drops back to the button, with the reason under the tags.
+  const flipped = submitting || state?.ok === true;
+  // "sent" also persists across reloads via person.alreadyClicked (a pending click
+  // already recorded server-side).
+  const sent = flipped || person.alreadyClicked;
   const mutualId = useRevealedMutual(person.id);
   const firstName = person.displayName.split(/\s+/)[0] ?? person.displayName;
   const intent = intentLine(person.intents, viewerOpenToDating);
@@ -132,8 +117,9 @@ export function ClickWithSomeoneUserCard({
       {/* Stacks under the tags in BOTH layouts. Rendered as a sibling of the
           columns it became a third flex item once the action returned a
           message, collapsing the identity column and clipping TagRow. */}
-      {/* "We'll only show you if it's mutual" has been answered once the reveal played. */}
-      {mutualId ? null : <Status state={state} />}
+      {/* "We'll only show you if it's mutual" has been answered once the reveal played,
+          and a retry must not carry the previous refusal under its fresh "clicked". */}
+      {mutualId || submitting ? null : <Status state={state} />}
     </div>
   );
 
@@ -144,22 +130,22 @@ export function ClickWithSomeoneUserCard({
     <form action={formAction} className={layout === "row" ? "contents sm:block" : "contents"}>
       <input type="hidden" name="profile_id" value={person.id} />
       <div
-        ref={actionsRef}
         className={layout === "row" ? "flex flex-col gap-2 sm:gap-2.5" : "flex flex-wrap items-center gap-2"}
       >
         {mutualId ? (
           <MutualClickLink mutualId={mutualId} firstName={firstName} full />
         ) : sent ? (
           /* .rise-soft only when it just happened - on a reload the pill is
-             simply the resting state and has nothing to announce. */
+             simply the resting state and has nothing to announce. The class holds
+             from the tap through the reply, so the landing never replays it. */
           <span
-            className={ckBtn("pending", "sm", { full: true, className: justSent ? "rise-soft" : "" })}
+            className={ckBtn("pending", "sm", { full: true, className: flipped ? "rise-soft" : "" })}
             aria-live="polite"
           >
             <span className="ck-btn__label">clicked</span>
           </span>
         ) : (
-          <Button type="submit" variant="primary" size="sm" full loading={submitting}>
+          <Button type="submit" variant="primary" size="sm" full>
             click with {firstName}
           </Button>
         )}
@@ -176,7 +162,7 @@ export function ClickWithSomeoneUserCard({
      lavender wash a landed click drains out of. */
   const card =
     "group rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] shadow-[var(--shadow-sm)] transition duration-200 hover:-translate-y-[3px] hover:shadow-[var(--shadow-md)]";
-  const settle = justSent ? " click-settle" : "";
+  const settle = flipped ? " click-settle" : "";
 
   // WIDE ROW - avatar + content + a right-hand action column on desktop; on
   // mobile the pair stacks full-width (side by side, two nowrap --full buttons

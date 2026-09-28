@@ -9,15 +9,16 @@ import { Reveal } from "@/components/reveal";
 import { PostEventClickCard, PostEventMomentBanner } from "@/components/post-event-click-card";
 import { ClickRadar } from "@/components/click-radar";
 import { ClickWithSomeoneUserCard } from "@/components/click-with-someone-user-card";
+import { LifeQuizModalLink } from "@/components/life-quiz-modal";
 import {
   getDashboardData,
   getGoingWithNames,
-  getEventAttendeePreview,
   getMutualClicksForSession,
   getPersonalizedDiscovery,
   getPostEventClickPrompts,
   getProfileCompletion,
   getProfileStatus,
+  getRadarSignals,
   getSuggestedPeople,
 } from "@/lib/event-repository";
 import { APP_TIME_ZONE } from "@/lib/datetime";
@@ -36,6 +37,12 @@ function greetingFor(hour: number) {
   if (hour < 18) return "Good afternoon";
   return "Good evening";
 }
+
+// The greeting's hour on Sydney's clock. This used to be `new Date().getHours()`
+// - the SERVER's hour, which is UTC on Vercel - so members were told "Good
+// morning" all through a Sydney afternoon (bug board #286). h23 so midnight
+// reads 0, never 24.
+const sydneyHour = new Intl.DateTimeFormat("en-AU", { hour: "numeric", hourCycle: "h23", timeZone: APP_TIME_ZONE });
 
 const weekday = new Intl.DateTimeFormat("en-AU", { weekday: "long", timeZone: APP_TIME_ZONE });
 
@@ -103,41 +110,24 @@ export default async function DashboardPage() {
   const nowForRotation = Date.now();
   const sixHourIndex = Math.floor(nowForRotation / (6 * 3_600_000));
   const hourIndex = Math.floor(nowForRotation / 3_600_000);
-  const hourOfDay = new Date().getHours();
+  const hourOfDay = Number(sydneyHour.format(new Date()));
 
   // Drop anyone the viewer has already clicked: an active click shouldn't keep
   // resurfacing as a "click with X" suggestion.
   const clickablePeople = suggestedPeople.filter((p) => !p.alreadyClicked);
   const rotatedPeople = clickablePeople.length > 0 ? [clickablePeople[sixHourIndex % clickablePeople.length]] : [];
+  // Rotate through the events people are actually going to whenever there are
+  // any. The rotation used to land on empty rooms too, and an empty room can
+  // only ever get the fallback line - so the radar sat on "Trending in Sydney"
+  // with nobody going while the FOMO line it exists for never showed (bug
+  // board #172). "People like you are showing up to these" should be true.
   const radarPool = personalized?.events ?? [];
-  const rotatedRadar = radarPool.length > 0 ? [radarPool[hourIndex % radarPool.length]] : [];
+  const radarWithPeople = radarPool.filter((event) => event.attendees > 0);
+  const radarRotation = radarWithPeople.length > 0 ? radarWithPeople : radarPool;
+  const rotatedRadar = radarRotation.length > 0 ? [radarRotation[hourIndex % radarRotation.length]] : [];
 
-  // Aggregate FOMO signal for the one radar event. Counts only, never names or
-  // photos - the radar can never identify who is going.
-  const fomoBySlug: Record<string, string> = {};
-  if (rotatedRadar[0]) {
-    const preview = await getEventAttendeePreview(rotatedRadar[0].id, session, 8);
-    const interestCounts = new Map<string, number>();
-    let datingCount = 0;
-    for (const p of preview.items) {
-      if (p.datingMinded) datingCount += 1;
-      for (const interest of p.sharedInterests) {
-        interestCounts.set(interest, (interestCounts.get(interest) ?? 0) + 1);
-      }
-    }
-    const top = [...interestCounts.entries()].sort((a, b) => b[1] - a[1])[0];
-    const signals: string[] = [];
-    if (top) signals.push(`${top[1]} going also like ${top[0]}`);
-    // Dating is a two-way signal: only nudge "open to dating" when the viewer is
-    // also dating-visible, so we never surface it to someone who keeps dating off.
-    if (datingCount > 0 && profileStatus.datingVisible) {
-      signals.push(`${datingCount} open to dating`);
-    }
-    if (signals.length === 0 && preview.totalConfirmed > 0) {
-      signals.push(preview.totalConfirmed === 1 ? "1 person going so far" : `${preview.totalConfirmed} going so far`);
-    }
-    if (signals.length > 0) fomoBySlug[rotatedRadar[0].id] = signals.join(" · ");
-  }
+  // Aggregate FOMO line for the radar row - counts only, never names or photos.
+  const fomoBySlug = await getRadarSignals(rotatedRadar, session);
 
   const upcoming = dashboard.upcomingEvents;
   // §B5.3: the durable half of "you're both going" - the badge that outlives the
@@ -153,11 +143,6 @@ export default async function DashboardPage() {
   const savedIds = new Set(saved.map((event) => event.id));
   const waitlisted = dashboard.waitlistedEvents.filter((event) => !savedIds.has(event.id));
   const savedAndWaitlisted = [...saved, ...waitlisted];
-  // Whether the viewer has enough interests for matching to have something to
-  // work with - the "click with someone" empty state below says something
-  // different depending on the answer. getProfileCompletion marks this done at
-  // 3+ tags, the same bar the matcher cares about.
-  const hasInterests = completion.items.find((i) => i.key === "tags")?.done ?? false;
   const bookmarkSet = new Set(profileStatus.bookmarkedEventIds);
   const registeredSet = new Set(profileStatus.registeredEventIds);
   const waitlistedSet = new Set(profileStatus.waitlistedEventIds);
@@ -333,30 +318,21 @@ export default async function DashboardPage() {
             </Reveal>
           ) : (
             <Reveal delay={60}>
-              {/* Two different reasons land here and they need different
-                  sentences. Someone who has just picked their interests in
-                  onboarding was being told "tell us what you're into" and sent
-                  to /profile/edit to do the thing they had already done - the
-                  first thing a brand-new member saw on their dashboard. */}
-              {hasInterests ? (
-                <EmptyState
-                  eyebrow="Nobody yet"
-                  icon={<Icon name="users" size={24} stroke={1.7} />}
-                  title="No one to show you just yet."
-                  body="We only suggest people with real overlap, so this fills up as more members join near you. Going to an event is the fastest way to meet them."
-                  actionHref="/discover"
-                  actionLabel="See what's on"
-                />
-              ) : (
-                <EmptyState
-                  eyebrow="Nobody yet"
-                  icon={<Icon name="users" size={24} stroke={1.7} />}
-                  title="Tell us what you're into."
-                  body="A few interests on your profile is all we need to start surfacing people with real overlap."
-                  actionHref="/profile/edit"
-                  actionLabel="Add interests"
-                />
-              )}
+              {/* One honest state, whatever the viewer's interests. The pool is
+                  empty because too few people nearby have finished a profile -
+                  getSuggestedPeople filters on the CANDIDATES, never on the
+                  viewer's tags - so the old "Tell us what you're into / Add
+                  interests" branch sent members who had just added interests
+                  back to add more, with no one appearing after (bug board
+                  #242). Interests still sit in Finish setting up above. */}
+              <EmptyState
+                eyebrow="Nobody yet"
+                icon={<Icon name="users" size={24} stroke={1.7} />}
+                title="No one to show you just yet."
+                body="This fills up as more people near you finish their profiles. Going to an event is the fastest way to meet them."
+                actionHref="/discover"
+                actionLabel="See what's on"
+              />
             </Reveal>
           )}
         </Section>
@@ -524,15 +500,16 @@ function SetupRow({
   // The WHOLE row is the link, not just the 13px "Add →" - the row is the
   // affordance people aim at, and on a phone a text link that small is a miss
   // waiting to happen. min-h-11 keeps every row at the 44px touch floor.
+  const className = `group flex min-h-11 items-center gap-3.5 transition-colors ${
+    featured
+      ? "my-1.5 rounded-xl bg-[color-mix(in_srgb,var(--lavender)_15%,var(--paper))] px-3 py-2.5 hover:bg-[color:var(--lavender-200)]"
+      : "border-t border-[color:var(--line-soft)] px-0.5 py-3 hover:bg-[color:var(--lavender-100)]"
+  }`;
+  // The quiz opens as a modal over the dashboard (bug board #253); its href is
+  // the fallback for a new tab or no JavaScript.
+  const Row = item.key === "quiz" ? LifeQuizModalLink : Link;
   return (
-    <Link
-      href={item.href}
-      className={`group flex min-h-11 items-center gap-3.5 transition-colors ${
-        featured
-          ? "my-1.5 rounded-xl bg-[color-mix(in_srgb,var(--lavender)_15%,var(--paper))] px-3 py-2.5 hover:bg-[color:var(--lavender-200)]"
-          : "border-t border-[color:var(--line-soft)] px-0.5 py-3 hover:bg-[color:var(--lavender-100)]"
-      }`}
-    >
+    <Row href={item.href} className={className}>
       <span
         aria-hidden
         className="size-6 shrink-0 rounded-full border-2 border-[color:var(--mist-strong)]"
@@ -553,7 +530,7 @@ function SetupRow({
       >
         Add →
       </span>
-    </Link>
+    </Row>
   );
 }
 

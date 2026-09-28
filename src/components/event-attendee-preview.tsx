@@ -1,30 +1,30 @@
 import Link from "next/link";
-import type { EventAttendeePreviewRow } from "@/lib/event-repository";
+import { attendeeFomoSignals } from "@/lib/attendee-fomo";
+import type { EventAttendeePreviewData } from "@/lib/event-repository";
 import { Avatar, AvatarStack, Icon, TagRow } from "./ds";
 
 /**
  * "Who's going" - the DS event-detail attendee surface.
  *
  * LOCKED (not going yet): a COMPACT aggregate only - an avatar cluster + count,
- * then aggregate social-proof lines that lead with "A few people you might click
- * with are going". Never names, never photos, a floor of 3 so no line can
- * identify anyone.
+ * then aggregate social-proof lines ("4 going also like Hiking") once three are
+ * going - the DS floor, see attendee-fomo.ts. Never names, never photos.
  *
- * UNLOCKED (booked): a calm grid where the WHOLE card opens the profile (a quiet
- * chevron signals it) - first name + up to 3 shared interest tags, no life tags,
- * no age. "Open to dating" is shown only under a mutual opt-in, so it never
- * appears here on a named attendee.
+ * UNLOCKED (booked): the same aggregate lines, then a calm grid where the WHOLE
+ * card opens the profile (a quiet chevron signals it) - first name + up to 3
+ * shared interest tags, no life tags, no age. The viewer's own card leads it, and
+ * a +1 their host named but who has not signed up yet sits in it as a
+ * placeholder with no link. "Open to dating" is shown only under a mutual
+ * opt-in, so it never appears here on a named attendee.
  */
 export function EventAttendeePreview({
-  items,
-  totalConfirmed,
+  preview,
   isAuthenticated,
   viewerIsAttendee,
   eventSlug,
   viewerOpenToDating = false,
 }: {
-  items: EventAttendeePreviewRow[];
-  totalConfirmed: number;
+  preview: EventAttendeePreviewData;
   isAuthenticated: boolean;
   viewerIsAttendee: boolean;
   eventSlug: string;
@@ -33,6 +33,7 @@ export function EventAttendeePreview({
   // leaked "N here are open to dating" to everybody.
   viewerOpenToDating?: boolean;
 }) {
+  const { items, totalConfirmed, viewer, guests } = preview;
   const heading = (
     <h2 className="font-display text-[1.075rem] font-semibold tracking-[-0.01em] text-[color:var(--ink)] sm:text-[1.15rem]">
       Who&apos;s going
@@ -46,7 +47,7 @@ export function EventAttendeePreview({
         {heading}
         <p className="mt-2 text-sm leading-relaxed text-[color:var(--slate)]">
           {totalConfirmed > 0
-            ? `${totalConfirmed} ${totalConfirmed === 1 ? "person has" : "people have"} RSVP'd.`
+            ? `${totalConfirmed} ${totalConfirmed === 1 ? "person is" : "people are"} going.`
             : "No one has RSVP'd yet."}{" "}
           <Link
             href={`/login?callbackUrl=${encodeURIComponent(`/events/${eventSlug}`)}`}
@@ -67,27 +68,30 @@ export function EventAttendeePreview({
     );
   }
 
-  // Signed in, not going - COMPACT aggregate FOMO only (≥3 floor), no identities.
-  if (!viewerIsAttendee) {
-    const interestCounts = new Map<string, number>();
-    let datingCount = 0;
-    for (const p of items) {
-      if (p.datingMinded) datingCount += 1;
-      for (const interest of p.sharedInterests) {
-        interestCounts.set(interest, (interestCounts.get(interest) ?? 0) + 1);
-      }
-    }
-    const signals: string[] = [];
-    const topShared = Array.from(interestCounts.entries()).sort((a, b) => b[1] - a[1])[0];
-    if (topShared && topShared[1] >= 3) {
-      signals.push(
-        `A few people you might click with are going - at least ${topShared[1]} also like ${topShared[0]}`,
-      );
-    }
-    if (viewerOpenToDating && datingCount >= 3) {
-      signals.push(`At least ${datingCount} here are open to dating`);
-    }
+  // The aggregate lines, for both signed-in states (bug board #236/#258): counts
+  // over the whole visible room, never a name or a face.
+  const signals = attendeeFomoSignals({
+    confirmed: totalConfirmed,
+    topSharedInterest: preview.topSharedInterest,
+    datingCount: preview.datingCount,
+    viewerOpenToDating,
+  });
+  const signalList =
+    signals.length > 0 ? (
+      <ul className="mt-3 flex flex-col gap-1.5">
+        {signals.map((s) => (
+          <li key={s} className="flex items-start gap-2 text-[13px] text-[color:var(--ink-soft)]">
+            <Icon name="users" size={14} className="mt-0.5 text-[color:var(--purple)]" />
+            {s}
+          </li>
+        ))}
+      </ul>
+    ) : null;
 
+  // Signed in, not going - COMPACT aggregate only, no identities. The DS lead line
+  // "A few people you might click with are going" heads it once three or more
+  // share the interest.
+  if (!viewerIsAttendee) {
     return (
       <section>
         {heading}
@@ -106,27 +110,19 @@ export function EventAttendeePreview({
                 : "Be the first to RSVP."}
             </p>
           )}
-          {signals.length > 0 ? (
-            <ul className="mt-3 flex flex-col gap-1.5">
-              {signals.map((s) => (
-                <li key={s} className="flex items-start gap-2 text-[13px] text-[color:var(--ink-soft)]">
-                  <Icon name="users" size={14} className="mt-0.5 text-[color:var(--purple)]" />
-                  {s}
-                </li>
-              ))}
-            </ul>
+          {(preview.topSharedInterest?.count ?? 0) >= 3 ? (
+            <p className="mt-3 text-[13px] font-semibold text-[color:var(--ink)]">
+              A few people you might click with are going
+            </p>
           ) : null}
+          {signalList}
         </div>
-        <p className="mt-2.5 flex items-start gap-1.5 text-[12.5px] leading-relaxed text-[color:var(--slate)]">
-          <Icon name="lock" size={13} className="mt-0.5" />
-          Clicking is anonymous - we&apos;ll only show you if it&apos;s mutual.
-        </p>
       </section>
     );
   }
 
-  // Going, but empty roster.
-  if (totalConfirmed === 0) {
+  // Going (or managing it), but nobody holds a seat yet.
+  if (totalConfirmed === 0 && !viewer && guests.length === 0) {
     return (
       <section>
         {heading}
@@ -140,11 +136,35 @@ export function EventAttendeePreview({
   }
 
   // Going - the unlocked attendee grid. Whole card opens the profile.
-  const remaining = Math.max(0, totalConfirmed - items.length);
+  const remaining = Math.max(0, totalConfirmed - items.length - guests.length - (viewer ? 1 : 0));
+  const onlyViewer = viewer && items.length === 0 && guests.length === 0 && remaining === 0;
   return (
     <section>
       {heading}
+      {signalList}
       <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {viewer ? (
+          <Link
+            href="/profile"
+            className="relative flex items-start gap-3 rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-4 pr-9 transition-colors hover:bg-[color:var(--lavender-100)]"
+          >
+            <Icon name="chevR" size={16} stroke={2} className="absolute top-4 right-3 text-[color:var(--ink-faint)]" />
+            <Avatar name={viewer.displayName} src={viewer.photoUrl} size={44} />
+            <div className="min-w-0 flex-1">
+              <span className="flex items-baseline gap-2">
+                <span className="font-display truncate text-[15px] font-semibold text-[color:var(--ink)]">
+                  {viewer.displayName.split(" ")[0]}
+                </span>
+                <span className="shrink-0 text-[12.5px] font-medium text-[color:var(--slate)]">You</span>
+              </span>
+              {viewer.hiddenFromOthers ? (
+                <span className="mt-1 block text-[12.5px] leading-snug text-[color:var(--slate)]">
+                  Hidden from this list - only you see yourself here.
+                </span>
+              ) : null}
+            </div>
+          </Link>
+        ) : null}
         {items.map((p) => (
           <Link
             key={p.profileId}
@@ -165,10 +185,35 @@ export function EventAttendeePreview({
             </div>
           </Link>
         ))}
+        {/* A named +1 with no account yet: nothing to open, so no link and no
+            chevron. It becomes a real card once they sign up via their invite. */}
+        {guests.map((g) => (
+          <div
+            key={g.id}
+            className="flex items-start gap-3 rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-4"
+          >
+            <Avatar name={g.firstName} size={44} />
+            <div className="min-w-0 flex-1">
+              <span className="font-display block truncate text-[15px] font-semibold text-[color:var(--ink)]">
+                {g.firstName}
+              </span>
+              <span className="mt-1 block text-[12.5px] leading-snug text-[color:var(--slate)]">
+                {g.isViewersGuest
+                  ? "Your guest - their card fills in once they sign up"
+                  : `Guest of ${g.hostFirstName}`}
+              </span>
+            </div>
+          </div>
+        ))}
       </div>
       {remaining > 0 ? (
         <p className="mt-3 text-[13px] font-medium text-[color:var(--slate)]">
           + {remaining} more going
+        </p>
+      ) : null}
+      {onlyViewer ? (
+        <p className="mt-3 text-[13px] font-medium text-[color:var(--slate)]">
+          You&apos;re the first one in. Everyone who RSVPs shows up here too.
         </p>
       ) : null}
     </section>

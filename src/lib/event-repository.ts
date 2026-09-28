@@ -97,6 +97,7 @@ import { isAdminEmail } from "./admin-emails";
 import { logBookingEvent, refundBandFromTier } from "./booking-events";
 import {
   type GuestDetailInput,
+  type NamedGuestOutcome,
   type NormalizedGuest,
   GUEST_MAX,
   validateGuestDetails,
@@ -109,8 +110,9 @@ import {
   isUuid,
 } from "./guest-spots";
 import { isDerivedFromEmail } from "./display-name";
-import { lookupPostcode } from "./postcode";
+import { lookupPostcode, placeForSuburb } from "./postcode";
 import { getPostgresPool, mapWithConcurrency } from "./postgres";
+import { attendeeFomoSignals } from "./attendee-fomo";
 import { getSupabaseAdmin } from "@/utils/supabase/admin";
 import { toTitleCase } from "./text-format";
 import { parseEventStart } from "./datetime";
@@ -316,15 +318,16 @@ export type AdminEventRow = {
   // event" gate. (When recurring events land, a still-repeating series should
   // stay approvable - extend this predicate then.)
   approvable: boolean;
+  // Title of the same host's live event this PENDING event overlaps, else null.
+  // Overlaps are allowed (bug board #278); the queue warns and asks for a
+  // confirm before approving.
+  overlapsWith: string | null;
   // Interest tags attached to the event, editable by admins from the queue.
   tags: { slug: string; label: string }[];
 };
 
-export type AdminMemberEventRef = {
-  slug: string;
-  title: string;
-};
-
+// One line per member (bug board #274). Intents, event history and bookmarks
+// live on /admin/members/[memberId]; the list only carries what a row shows.
 export type AdminMemberRow = {
   id: string;
   displayName: string;
@@ -334,16 +337,55 @@ export type AdminMemberRow = {
   // False for profiles that entered an email but never finished onboarding -
   // they're listed (so admins can nudge them) but not counted as attendees.
   onboardingComplete: boolean;
-  intents: string[];
-  bookmarks: number;
   registrations: number;
-  events: AdminMemberEventRef[];
-  emailVerified: boolean;
   photoVerified: boolean;
   joinedAt: string;
   suspendedAt: string | null;
   suspendedReason: string | null;
   isBanned: boolean;
+};
+
+export type AdminMembersFilter = {
+  search?: string;
+  role?: AdminMemberRow["role"];
+  /** Only people holding a seat at this event (own booking or claimed +1). */
+  eventSlug?: string;
+  /** Only members whose saved suburb is outside the pilot (bug board #248/#264). */
+  outsidePilot?: boolean;
+  limit?: number;
+  offset?: number;
+};
+
+export type AdminMembersPage = {
+  rows: AdminMemberRow[];
+  /** Every member matching the filters, across all pages. */
+  total: number;
+  /** The offset actually served - a request past the last page gets the last page. */
+  offset: number;
+  /** Per-role totals under the same search / event / area filters, for the pills. */
+  roleCounts: Record<"all" | AdminMemberRow["role"], number>;
+};
+
+export type AdminOutOfAreaMember = {
+  displayName: string;
+  email: string;
+  postcode: string;
+  suburb: string;
+  state: string;
+  joinedAt: string;
+};
+
+// Bug board #276/#277: did a mutual click turn into a night out, and where do the
+// rest stall. See getAdminClickOutcomes for how each number is counted.
+export type AdminClickOutcomes = {
+  wentTogether: number;
+  checkedInTogether: number;
+  bookedTogether: number;
+  noPlanYet: number;
+  awaitingReply: number;
+  agreedNotBooked: number;
+  planFellThrough: number;
+  endedWithoutNightOut: number;
 };
 
 export type AdminMemberDetailTag = {
@@ -1025,17 +1067,17 @@ async function logWaitlistJoinedEmail(
   }
 }
 
-// A freed seat has been offered to the next person in the queue. Called from
-// all four promotion sites (attendee cancel, guest-seat cancel, and the two
-// expiry crons) so the offer email is identical wherever the seat came from.
+// A freed seat has been offered to the next person in the queue. Called once per
+// offer offerFreeSeatsToWaitlist makes, from every path that frees a seat, so the
+// offer email is identical wherever the seat came from.
 // The offer window is already ticking when this runs, so it stays awaited
 // rather than fire-and-forget - but it never throws into the caller.
 async function logWaitlistPromotedEmail(
   pool: NonNullable<ReturnType<typeof getPostgresPool>>,
   promotion: WaitlistPromotion,
 ) {
-  // Honoured here rather than at the four call sites, so a fifth promotion site
-  // cannot reintroduce the mail. The in-app notification is written regardless.
+  // Honoured here rather than at the call sites, so a new promotion site cannot
+  // reintroduce the mail. The in-app notification is written regardless.
   if (!promotion.wantsOfferEmail) return;
   try {
     const result = await pool.query<{
@@ -1288,7 +1330,7 @@ export async function settleRefundedBooking(input: {
     const row = detail.rows[0];
     if (!row) return;
 
-    let promotion: WaitlistPromotion | null = null;
+    let promotions: WaitlistPromotion[] = [];
     // Whether this call is what moved the seat out of 'confirmed' /
     // 'pending_payment' - the signal `notify: "if-released"` gates on.
     let seatWasReleased = false;
@@ -1315,7 +1357,8 @@ export async function settleRefundedBooking(input: {
         if ((cancelled.rowCount ?? 0) > 0) {
           seatWasReleased = true;
           await cancelGuestSeatsForTransaction(client, input.paymentTransactionId);
-          promotion = await promoteNextWaitlister(
+          // The seat and every +1 refunded with it go to the queue.
+          promotions = await offerFreeSeatsToWaitlist(
             client,
             row.event_id,
             row.event_title,
@@ -1354,7 +1397,7 @@ export async function settleRefundedBooking(input: {
       }
     }
 
-    if (promotion) await logWaitlistPromotedEmail(pool, promotion);
+    for (const promoted of promotions) await logWaitlistPromotedEmail(pool, promoted);
     await notifyPartnerCancelled(pool, settledSurvivors);
 
     const shouldNotify =
@@ -1573,9 +1616,16 @@ async function logRsvpCancelledEmails(
             from event_attendees a
             where a.event_id = e.id and a.status = 'confirmed'
           ) as confirmed_count,
+          -- Joined to the attendee's CURRENT status like every other queue read:
+          -- a waitlister confirmed through checkout used to keep an open queue
+          -- row, so the host was told they were still waiting (bug board #162).
           (
             select count(*)::text
             from event_waitlists w
+            join event_attendees wa
+              on wa.event_id = w.event_id
+             and wa.profile_id = w.profile_id
+             and wa.status = 'waitlisted'
             where w.event_id = e.id and w.accepted_at is null
           ) as waitlist_count,
           p.email::text as attendee_email,
@@ -2430,6 +2480,13 @@ export type MerchantEventDetail = MerchantEventSummary & {
   // "Confirmed N / capacity" headcount counts seats - matching the public event
   // page and the checkout capacity gate. guestSeats - guests.length = unnamed +1s.
   guestSeats: number;
+  // Seats anyone could book right now, from event_capacity_v - the canonical
+  // count the booking gates use. "capacity - confirmed" over-reported it: a seat
+  // held by a live checkout or offered to the waitlist read as free, so a host
+  // saw "1 / 2" beside a waitlist and asked why nobody had the seat (#226).
+  seatsAvailable: number;
+  // Seats currently offered to the next people on the waitlist (30-minute holds).
+  offeredSeats: number;
   // Interest tags currently attached, so the merchant edit form can pre-fill.
   tags: { slug: string; label: string }[];
 };
@@ -2561,6 +2618,8 @@ export async function getMerchantEventDetail(
     confirmed: string;
     waitlisted: string;
     guest_seats: string;
+    seats_available: string;
+    offered_seats: string;
   }>(
     `
       select
@@ -2584,6 +2643,20 @@ export async function getMerchantEventDetail(
         event.image_alt,
         count(attendee.id) filter (where attendee.status = 'confirmed') as confirmed,
         count(attendee.id) filter (where attendee.status = 'waitlisted') as waitlisted,
+        coalesce((
+          select cap.available from event_capacity_v cap where cap.event_id = event.id
+        ), 0) as seats_available,
+        coalesce((
+          select count(*)
+          from event_waitlists w
+          join event_attendees wa
+            on wa.event_id = w.event_id
+           and wa.profile_id = w.profile_id
+           and wa.status = 'waitlisted'
+          where w.event_id = event.id
+            and w.accepted_at is null
+            and w.offered_until > now()
+        ), 0) as offered_seats,
         -- Live guest SEATS on this event's confirmed bookings (named + unnamed),
         -- so the page counts seats, not just profile attendees (spec 19 §9/§11).
         -- exists() (not a join) so a seat can't fan out across attendee rows.
@@ -2717,6 +2790,8 @@ export async function getMerchantEventDetail(
       attended: g.attended,
     })),
     guestSeats: Number(row.guest_seats),
+    seatsAvailable: Number(row.seats_available),
+    offeredSeats: Number(row.offered_seats),
   };
 }
 
@@ -3498,6 +3573,26 @@ export type PersonalizedDiscovery = {
   blurb: string;
 };
 
+// The rail's heading and line. Below the readiness bar the line used to tell
+// EVERYONE to "add a few interest tags" - including members who had just added
+// some and were short on another signal, who read it as the app ignoring what
+// they had done (bug board #242). It now says what would actually move them.
+// tagCount is readinessScore's own input, ctx.tagSlugs.length.
+function personalizedDiscoveryCopy(fallback: boolean, tagCount: number) {
+  if (!fallback) {
+    return { heading: "Picked for you", blurb: "Ranked by your interests, intent, and persona." };
+  }
+  return {
+    heading: "Popular in inner Sydney",
+    blurb:
+      tagCount === 0
+        ? "Add a few interests to your profile and this becomes personalised to you."
+        : tagCount < 3
+          ? "A couple more interests and this starts picking for you."
+          : "This gets more personal as you go to events.",
+  };
+}
+
 // Ranks the live catalogue for one member. Above the readiness threshold we
 // sort by the tunable personalised score; below it (cold-start) we serve the
 // editorial fallback feed of popular events. Returns null when signed out / no
@@ -3584,10 +3679,7 @@ export async function getPersonalizedDiscovery(
           events: v2ranked.slice(0, limit),
           readiness,
           fallback,
-          heading: fallback ? "Popular in inner Sydney" : "Picked for you",
-          blurb: fallback
-            ? "Add a few interest tags to your profile and this becomes personalised to you."
-            : "Ranked by your interests, intent, and persona.",
+          ...personalizedDiscoveryCopy(fallback, ctx.tagSlugs.length),
         };
       }
     }
@@ -3603,10 +3695,7 @@ export async function getPersonalizedDiscovery(
       events: ranked.slice(0, limit),
       readiness,
       fallback,
-      heading: fallback ? "Popular in inner Sydney" : "Picked for you",
-      blurb: fallback
-        ? "Add a few interest tags to your profile and this becomes personalised to you."
-        : "Ranked by your interests, intent, and persona.",
+      ...personalizedDiscoveryCopy(fallback, ctx.tagSlugs.length),
     };
   } catch {
     return null;
@@ -4096,21 +4185,27 @@ export async function getEventBySlug(
       // Schedule-clash check: warn the viewer if they already hold a spot at
       // another event whose time window overlaps this one. Only relevant when
       // they aren't already committed to THIS event. Two windows overlap when
-      // start_a < end_b AND start_b < end_a; a null ends_at collapses to its
-      // start. Non-blocking - just surfaces a heads-up on the RSVP CTA.
+      // start_a < end_b AND start_b < end_a. A null ends_at is the 2-hour block
+      // the .ics route and the create wizard both assume - it used to collapse
+      // to its start, a zero-length window that overlaps nothing, so two events
+      // starting at the same minute never clashed (bug board #51). Non-blocking -
+      // just surfaces a heads-up on the RSVP CTA and inside the booking dialog.
       if (status !== "confirmed" && status !== "waitlisted" && status !== "pending_payment") {
         const clashResult = await pool.query<{ title: string }>(
           `
             select other_event.title
-            from event_attendees attendee
+            -- A claimed +1 at the other event is a seat too.
+            from ${seatRowsSql} attendee
             join profiles profile on profile.id = attendee.profile_id
             join events other_event on other_event.id = attendee.event_id
             where profile.email = $1
               and other_event.slug <> $2
               and attendee.status in ('confirmed', 'waitlisted', 'pending_payment')
               and other_event.status <> 'cancelled'
-              and other_event.starts_at < coalesce(($4)::timestamptz, ($3)::timestamptz)
-              and coalesce(other_event.ends_at, other_event.starts_at) > ($3)::timestamptz
+              and other_event.starts_at
+                  < coalesce(($4)::timestamptz, ($3)::timestamptz + interval '2 hours')
+              and coalesce(other_event.ends_at, other_event.starts_at + interval '2 hours')
+                  > ($3)::timestamptz
             order by other_event.starts_at asc
             limit 1
           `,
@@ -4373,6 +4468,15 @@ export async function registerForEvent(eventId: string, session: Session | null)
         );
       }
 
+      // A waitlister booking an open seat (#227) is promoted: close their queue entry (#162).
+      if (rsvpChanged && status === "confirmed" && existingRsvp?.status === "waitlisted") {
+        await client.query(
+          `update event_waitlists set accepted_at = now()
+            where event_id = $1::uuid and profile_id = $2::uuid and accepted_at is null`,
+          [event.id, profile.id],
+        );
+      }
+
       if (rsvpChanged) {
         await client.query(
           `
@@ -4543,6 +4647,45 @@ async function detectConfirmedTogether(
   } catch (error) {
     if (process.env.CLICK_DB_DEBUG === "true") {
       console.warn("detectConfirmedTogether failed", error);
+    }
+  }
+}
+
+// The same detection for a pair who became mutual while ALREADY holding seats at the
+// same upcoming night - the one way to "both get there" that involves no booking
+// confirm after the mutual, so the booking-path calls above never see it. Picks the
+// soonest such night, exactly as getProposalsForSession's both_going lateral does,
+// and hands it to detectConfirmedTogether, which re-checks both seats and every guard.
+async function detectConfirmedTogetherForPair(
+  pool: NonNullable<ReturnType<typeof getPostgresPool>>,
+  profileId: string,
+  otherId: string,
+): Promise<void> {
+  try {
+    const shared = await pool.query<{ id: string }>(
+      `
+        select e.id::text
+        from events e
+        where e.starts_at > now()
+          and e.status in ('live', 'featured')
+          and exists (
+            select 1 from event_participants_v pv
+            where pv.event_id = e.id and pv.profile_id = $1::uuid
+          )
+          and exists (
+            select 1 from event_participants_v pv
+            where pv.event_id = e.id and pv.profile_id = $2::uuid
+          )
+        order by e.starts_at asc
+        limit 1
+      `,
+      [profileId, otherId],
+    );
+    const eventId = shared.rows[0]?.id;
+    if (eventId) await detectConfirmedTogether(pool, eventId, profileId);
+  } catch (error) {
+    if (process.env.CLICK_DB_DEBUG === "true") {
+      console.warn("detectConfirmedTogetherForPair failed", error);
     }
   }
 }
@@ -4840,6 +4983,18 @@ export async function acceptWaitlistOffer(eventId: string, session: Session | nu
   }
 }
 
+// An event's time window, for the same-host overlap heads-ups that replaced the
+// prevent_merchant_event_overlap trigger (database/069). No end time reads as
+// the two hours createEventForMerchant defaults to.
+function eventWindowSql(alias: string) {
+  return `tstzrange(${alias}.starts_at, coalesce(${alias}.ends_at, ${alias}.starts_at + interval '2 hours'), '[)')`;
+}
+
+// The trigger's own error, raised until database/069 drops it.
+function isMerchantOverlapTriggerError(error: unknown) {
+  return error instanceof Error && /overlapping live event/i.test(error.message);
+}
+
 export async function createEventForMerchant(input: CreateEventInput, session: Session | null) {
   const pool = getPostgresPool();
 
@@ -4873,6 +5028,38 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
 
     if (!title || !description || Number.isNaN(startsAt.getTime())) {
       const error = new Error("Title, description, and valid start date are required.");
+      error.name = "ValidationError";
+      throw error;
+    }
+
+    const rawTags = input.tags
+      .split(",")
+      .map((tag) => tag.trim().toLowerCase())
+      .filter(Boolean)
+      .slice(0, 8);
+
+    // At least one tag the picker offers (interest or vibe), checked before the
+    // insert so a refusal leaves nothing behind. Tags are how the right people
+    // find an event, and they were optional - folded away under "Help Click
+    // match this event" - so events went out with none (bug board #272). Only
+    // enforced while the taxonomy has something to pick; an empty tags table
+    // must not dead-end every host. Matched the way the attach below matches -
+    // by slug OR label, since an admin rename keeps the old slug - so a picked,
+    // renamed tag is never refused here and then attached anyway.
+    const tagCheck = await pool.query<{ matched: string; available: string }>(
+      `
+        select
+          count(*) filter (
+            where slug = any($1::text[]) or lower(label) = any($2::text[])
+          )::text as matched,
+          count(*)::text as available
+        from tags
+        where tag_type in ('interest', 'vibe')
+      `,
+      [rawTags.map(tagSlugFromLabel), rawTags],
+    );
+    if (Number(tagCheck.rows[0]?.matched ?? 0) === 0 && Number(tagCheck.rows[0]?.available ?? 0) > 0) {
+      const error = new Error("Pick at least one tag - it's how the right people find your event.");
       error.name = "ValidationError";
       throw error;
     }
@@ -4921,6 +5108,23 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
       resolveEventImage(dedupedGallery[0] || input.imageUrl?.trim(), category, input.title);
     const imageUrlsForDb =
       dedupedGallery.length > 0 ? dedupedGallery : null;
+
+    // A host running two of their own events at once is allowed (bug board
+    // #223/#273/#278 - 069 drops the trigger that refused it), but it is still
+    // usually a slip on the Schedule step, so the wizard names the clash
+    // instead of blocking it.
+    const overlap = await pool.query<{ title: string; starts_at: Date }>(
+      `
+        select existing.title, existing.starts_at
+        from events existing
+        where existing.merchant_profile_id = $1::uuid
+          and existing.status in ('pending', 'live', 'featured', 'locked', 'waitlist')
+          and ${eventWindowSql("existing")} && tstzrange($2::timestamptz, $3::timestamptz, '[)')
+        order by existing.starts_at
+        limit 1
+      `,
+      [merchantProfile.id, startsAt, endsAt],
+    );
 
     const result = await pool.query<{ slug: string; title: string }>(
       `
@@ -5011,17 +5215,17 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
       ],
     );
 
-    const rawTags = input.tags
-      .split(",")
-      .map((tag) => tag.trim().toLowerCase())
-      .filter(Boolean)
-      .slice(0, 8);
-
     if (rawTags.length > 0) {
       // Tags are "click tags" - never free-form. Attach only tags that already
       // exist in the curated taxonomy, matched by slug; anything unrecognised is
       // silently dropped (the UI only offers existing tags, this is defence in
       // depth). New tags are created exclusively by admins via /api/admin/tags.
+      //
+      // The picker sends LABELS, and an admin rename (updateTagForAdmin) changes
+      // a tag's label but keeps its slug, so the slug derived from a renamed
+      // label matched nothing and the tag the host picked was dropped without a
+      // word - an event with no interest tags on its page or its card (bug
+      // board #282/#291/#292). The label itself is matched too.
       await pool.query(
         `
           with target_event as (
@@ -5032,6 +5236,7 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
             from unnest($2::text[]) as input(label)
             join tags tag
               on tag.slug = trim(both '-' from regexp_replace(input.label, '[^a-z0-9]+', '-', 'g'))
+              or lower(tag.label) = input.label
           )
           insert into event_tags (event_id, tag_id)
           select target_event.id, matched_tags.id
@@ -5110,24 +5315,27 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
     // Hand back the resolved status so the create wizard can tell a trusted
     // merchant their event is LIVE (vs the generic "submitted for review"
     // message), which otherwise reads as a contradiction of auto-approval
-    // (bug board #180).
-    return { slug: result.rows[0].slug, title: result.rows[0].title, status: eventStatus };
+    // (bug board #180) - and the host's own event it overlaps, if any.
+    return {
+      slug: result.rows[0].slug,
+      title: result.rows[0].title,
+      status: eventStatus,
+      overlapsWith: overlap.rows[0]
+        ? { title: overlap.rows[0].title, startsAt: overlap.rows[0].starts_at.toISOString() }
+        : null,
+    };
   } catch (error) {
     if (isDatabaseConnectivityError(error)) {
       return createLocalEventForMerchant(input, session);
     }
 
-    // The prevent_merchant_event_overlap trigger (database/001_schema.sql) raises
-    // "merchant has an overlapping live event" when this event's time window
-    // collides with another live event of the same merchant. That fires most
-    // often when DUPLICATING an event and re-picking the source's own date/time
-    // (the source is still live) - the raw Postgres message reads like an
-    // internal error. Translate it into a clear, actionable validation message
-    // pointing the merchant back at the Schedule step (bug board #194).
-    if (
-      error instanceof Error &&
-      /overlapping live event/i.test(error.message)
-    ) {
+    // Only reachable until database/069 is applied: the old
+    // prevent_merchant_event_overlap trigger (001_schema.sql) raises "merchant
+    // has an overlapping live event" when a live insert collides with another
+    // live event of the same merchant. The raw Postgres message reads like an
+    // internal error, so it is translated into one pointing at the Schedule
+    // step (bug board #194).
+    if (isMerchantOverlapTriggerError(error)) {
       const friendly = new Error(
         "You already have a live event during that time. Pick a different date or time on the Schedule step.",
       );
@@ -5432,6 +5640,18 @@ export async function approveEventForAdmin(eventId: string, session: Session | n
       return approveLocalEventForAdmin(eventId, session);
     }
 
+    // An overlap with the host's own live event no longer blocks approval (bug
+    // board #278 - the queue warns and asks for a confirm instead), but the old
+    // trigger still refuses it until 069 runs. Say so rather than surfacing the
+    // raw Postgres message.
+    if (isMerchantOverlapTriggerError(error)) {
+      const friendly = new Error(
+        "This host already has a live event at that time. Overlaps are allowed now, but this database still refuses them until migration 069_allow_merchant_event_overlap.sql is applied.",
+      );
+      friendly.name = "ValidationError";
+      throw friendly;
+    }
+
     throw error;
   }
 }
@@ -5547,6 +5767,7 @@ export async function updateMerchantVerificationForAdmin(
     owner_email: string;
     owner_name: string;
     verification_status: string;
+    auto_approve_events: boolean;
   }>(
     `
       update merchant_profiles merchant
@@ -5574,7 +5795,8 @@ export async function updateMerchantVerificationForAdmin(
         owner.id::text as owner_profile_id,
         owner.email::text as owner_email,
         owner.display_name as owner_name,
-        merchant.verification_status
+        merchant.verification_status,
+        merchant.auto_approve_events
     `,
     [merchantId, status],
   );
@@ -5702,13 +5924,18 @@ export async function updateMerchantVerificationForAdmin(
   return {
     id: merchant.id,
     verificationStatus: merchant.verification_status,
+    // The trust flag this update just set, so the merchants table can show it
+    // without a reload. It used to keep offering "Trust merchant" on a host the
+    // approval had already trusted, which read as "approving doesn't trust"
+    // (bug board #259).
+    autoApproveEvents: merchant.auto_approve_events,
   };
 }
 
 // Grant or revoke a merchant's "trusted" status. When on, their new events skip
-// the pending review queue and publish straight to 'live'. Approving an event
-// flips this on automatically; admins use this to revoke trust (send a merchant
-// back to manual review) or grant it ahead of a first approval.
+// the pending review queue and publish straight to 'live'. Approving the
+// merchant (or one of their events) flips this on automatically; admins use
+// this to send a merchant back to reviewing every event, or to trust them again.
 export async function setMerchantAutoApproveForAdmin(
   merchantId: string,
   autoApprove: boolean,
@@ -5785,6 +6012,7 @@ export async function getAdminEvents() {
       has_merchant: boolean;
       merchant_charges_enabled: boolean | null;
       approvable: boolean;
+      overlaps_with: string | null;
     }>(`
       select
         event.slug,
@@ -5806,6 +6034,19 @@ export async function getAdminEvents() {
         bool_or(merchant.id is not null) as has_merchant,
         bool_or(merchant.charges_enabled) as merchant_charges_enabled,
         (coalesce(event.ends_at, event.starts_at) >= now()) as approvable,
+        -- A pending event that would go live on top of one of the same host's
+        -- live events. Allowed (bug board #278), but the queue flags it and asks
+        -- the admin to confirm before approving.
+        case when event.status = 'pending' then (
+          select other.title
+          from events other
+          where other.merchant_profile_id = event.merchant_profile_id
+            and other.id <> event.id
+            and other.status in ('live', 'featured', 'locked', 'waitlist')
+            and ${eventWindowSql("other")} && ${eventWindowSql("event")}
+          order by other.starts_at
+          limit 1
+        ) end as overlaps_with,
         count(attendee.id) filter (where attendee.status = 'confirmed') as confirmed_attendees
       from events event
       left join event_attendees attendee on attendee.event_id = event.id
@@ -5870,6 +6111,7 @@ export async function getAdminEvents() {
         payoutsNotConnected:
           priceCents > 0 && event.has_merchant && !event.merchant_charges_enabled,
         approvable: event.approvable,
+        overlapsWith: event.overlaps_with,
         tags: tagsBySlug.get(event.slug) ?? [],
       };
     });
@@ -5935,43 +6177,96 @@ function fallbackAdminMetrics(eventCount: number, pendingCount: number): AdminMe
   };
 }
 
+// The distinct suburb values on profiles that sit outside the attendee pilot,
+// lower-cased the way the filters below compare them. Classified in JS because
+// the postcode table lives there (placeForSuburb); the distinct set is bounded
+// by the number of places in Australia, not by the number of members.
+async function outsidePilotSuburbs(pool: Pool): Promise<string[]> {
+  const result = await pool.query<{ suburb: string }>(
+    `select distinct lower(btrim(suburb)) as suburb
+       from profiles
+      where suburb is not null and btrim(suburb) <> ''`,
+  );
+  return result.rows
+    .map((row) => row.suburb)
+    .filter((suburb) => placeForSuburb(suburb).area === "outside");
+}
+
 /**
- * One page of the member list.
+ * One page of the member list (bug board #274).
  *
- * `search` matters more than it looks. Suspend, unsuspend and ban only exist
- * inside a row of this list, and the list is a hard-capped window of the most
- * recent signups - so without a server-side search, member 251 could not be
- * moderated at all. The sidebar badge meanwhile counts every profile, so the
- * nav said 4,000 while the table held 250 and nothing on the screen admitted
- * the difference.
+ * Everything is decided in SQL - search, role, event, area, the page itself and
+ * the totals - so the page loads the same one-page payload at 40 members or
+ * 40,000. It used to pull the newest 250 with their whole event history and
+ * page through them in the browser, which both got heavier with every signup
+ * and hid everyone past the window from moderation. Suspend, unsuspend and ban
+ * only exist inside a row of this list, so search stays server-side.
  *
- * The term is matched against the profile's own fields only. Event titles are
- * in the client-side haystack too, but they arrive through the attendee join
- * that feeds the counts, and filtering on them in WHERE would drop a profile's
- * other attendance rows before the GROUP BY - silently understating the
- * bookmark and RSVP numbers on every row it returned.
+ * The term is matched against the profile's own fields only. An offset past the
+ * end is pulled back to the last page, and the one actually served is returned.
  */
 export async function getAdminMembers(
-  filter: { search?: string; limit?: number; offset?: number } = {},
-): Promise<AdminMemberRow[]> {
+  filter: AdminMembersFilter = {},
+): Promise<AdminMembersPage> {
+  const roleCounts: AdminMembersPage["roleCounts"] = { all: 0, attendee: 0, merchant: 0, admin: 0 };
   const pool = getPostgresPool();
-  if (!pool) return fallbackAdminMembers;
+  if (!pool) return { rows: fallbackAdminMembers, total: 0, roleCounts, offset: 0 };
 
-  const limit = Math.min(Math.max(filter.limit ?? 250, 1), 500);
-  const offset = Math.max(filter.offset ?? 0, 0);
+  const limit = Math.min(Math.max(filter.limit ?? 25, 1), 500);
   const search = filter.search?.trim();
-  const params: unknown[] = [limit, offset];
-  let searchClause = "";
-  if (search) {
-    params.push(`%${search}%`);
-    searchClause = `where (
+
+  try {
+    const params: unknown[] = [];
+    const where: string[] = [];
+    if (search) {
+      params.push(`%${search}%`);
+      where.push(`(
         profile.display_name ilike $${params.length}
         or profile.email::text ilike $${params.length}
         or profile.suburb ilike $${params.length}
-      )`;
-  }
+      )`);
+    }
+    if (filter.eventSlug) {
+      // The event's real roster: a claimed +1 is at the event too.
+      params.push(filter.eventSlug);
+      where.push(`exists (
+        select 1 from event_participants_v seat
+        join events event on event.id = seat.event_id
+        where seat.profile_id = profile.id and event.slug = $${params.length}
+      )`);
+    }
+    if (filter.outsidePilot) {
+      // A waitlist to write to when Click reaches them, so not the banned and
+      // not a profile de-identified at its owner's request.
+      params.push(await outsidePilotSuburbs(pool));
+      where.push(`lower(btrim(profile.suburb)) = any($${params.length}::text[])
+        and profile.deleted_at is null
+        and not profile.is_banned`);
+    }
 
-  try {
+    const counts = await pool.query<{ role: AdminMemberRow["role"]; count: string }>(
+      `select profile.role::text as role, count(*)::text as count
+         from profiles profile
+         ${where.length ? `where ${where.join(" and ")}` : ""}
+        group by profile.role`,
+      params,
+    );
+    for (const row of counts.rows) {
+      roleCounts[row.role] = Number(row.count);
+      roleCounts.all += Number(row.count);
+    }
+    const total = filter.role ? roleCounts[filter.role] : roleCounts.all;
+    const lastPageOffset = total === 0 ? 0 : Math.floor((total - 1) / limit) * limit;
+    const offset = Math.min(Math.max(filter.offset ?? 0, 0), lastPageOffset);
+
+    const pageWhere = [...where];
+    const pageParams = [...params];
+    if (filter.role) {
+      pageParams.push(filter.role);
+      pageWhere.push(`profile.role = $${pageParams.length}::user_role`);
+    }
+    pageParams.push(limit, offset);
+
     const result = await pool.query<{
       id: string;
       display_name: string;
@@ -5979,11 +6274,7 @@ export async function getAdminMembers(
       role: string;
       suburb: string | null;
       birth_date: Date | null;
-      intents: string[] | null;
-      bookmarks: string;
-      registrations: string;
-      events: AdminMemberEventRef[] | null;
-      email_verified_at: Date | null;
+      registrations: number;
       photo_verified_at: Date | null;
       created_at: Date;
       suspended_at: Date | null;
@@ -5992,41 +6283,39 @@ export async function getAdminMembers(
     }>(
       `
       select
-        profile.id::text,
-        profile.display_name,
-        profile.email::text,
-        profile.role::text,
-        profile.suburb,
-        profile.birth_date,
-        profile.connection_intents::text[] as intents,
-        coalesce(count(distinct bookmark.event_id), 0) as bookmarks,
+        page.*,
         -- Confirmed seats only (bug board #161): a waitlist spot or an unpaid
         -- checkout hold is not attendance, so it must not show as an RSVP here.
-        coalesce(count(distinct attendee.id) filter (where attendee.status = 'confirmed'), 0) as registrations,
-        coalesce(
-          jsonb_agg(distinct jsonb_build_object('slug', event.slug, 'title', event.title))
-            filter (where attendee.status = 'confirmed' and event.id is not null),
-          '[]'::jsonb
-        ) as events,
-        profile.email_verified_at,
-        profile.photo_verified_at,
-        profile.created_at,
-        profile.suspended_at,
-        profile.suspended_reason,
-        profile.is_banned
-      from profiles profile
-      left join bookmarks bookmark on bookmark.profile_id = profile.id
-      left join event_attendees attendee on attendee.profile_id = profile.id
-      left join events event on event.id = attendee.event_id
-      ${searchClause}
-      group by profile.id
-      order by profile.created_at desc
-      limit $1 offset $2
+        -- Counted for this page's rows only, after the limit.
+        (
+          select count(*)::int from event_attendees attendee
+          where attendee.profile_id = page.profile_id and attendee.status = 'confirmed'
+        ) as registrations
+      from (
+        select
+          profile.id as profile_id,
+          profile.id::text,
+          profile.display_name,
+          profile.email::text,
+          profile.role::text,
+          profile.suburb,
+          profile.birth_date,
+          profile.photo_verified_at,
+          profile.created_at,
+          profile.suspended_at,
+          profile.suspended_reason,
+          profile.is_banned
+        from profiles profile
+        ${pageWhere.length ? `where ${pageWhere.join(" and ")}` : ""}
+        order by profile.created_at desc, profile.id
+        limit $${pageParams.length - 1} offset $${pageParams.length}
+      ) page
+      order by page.created_at desc, page.profile_id
     `,
-      params,
+      pageParams,
     );
 
-    return result.rows.map((row): AdminMemberRow => ({
+    const rows = result.rows.map((row): AdminMemberRow => ({
       id: row.id,
       displayName: row.display_name,
       email: row.email,
@@ -6036,24 +6325,183 @@ export async function getAdminMembers(
       // the fields saveOnboarding enforces. An email-only signup (bug board
       // #164) is not a countable attendee until they finish onboarding.
       onboardingComplete: !!row.suburb && !!row.birth_date,
-      intents: row.intents ?? [],
-      bookmarks: Number(row.bookmarks),
       registrations: Number(row.registrations),
-      events: (row.events ?? []).filter(
-        (event): event is AdminMemberEventRef => !!event && !!event.slug && !!event.title,
-      ),
-      emailVerified: !!row.email_verified_at,
       photoVerified: !!row.photo_verified_at,
       joinedAt: row.created_at.toISOString(),
       suspendedAt: row.suspended_at ? row.suspended_at.toISOString() : null,
       suspendedReason: row.suspended_reason,
       isBanned: !!row.is_banned,
     }));
+    return { rows, total, roleCounts, offset };
   } catch (error) {
     if (process.env.CLICK_DB_DEBUG === "true") {
       console.warn("Falling back to static admin members.", error);
     }
-    return fallbackAdminMembers;
+    return { rows: fallbackAdminMembers, total: 0, roleCounts, offset: 0 };
+  }
+}
+
+/**
+ * Everyone who signed up from outside the pilot, for the "Out of area" CSV on
+ * /admin/members (bug board #248/#264). Onboarding already lets them in with
+ * "we'll tell you the moment Click reaches your area"; this is the list that
+ * promise is kept from. Same rule as the page's Out of area view.
+ */
+export async function getOutOfAreaMembersForExport(
+  session: Session | null,
+): Promise<AdminOutOfAreaMember[]> {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+  // A bulk export of member emails: re-check the admin here, not only in the route.
+  await requireAdminProfile(session);
+
+  const suburbs = await outsidePilotSuburbs(pool);
+  if (suburbs.length === 0) return [];
+
+  const result = await pool.query<{
+    display_name: string;
+    email: string;
+    suburb: string;
+    created_at: Date;
+  }>(
+    `select display_name, email::text, suburb, created_at
+       from profiles
+      where lower(btrim(suburb)) = any($1::text[])
+        and deleted_at is null
+        and not is_banned
+      order by created_at desc`,
+    [suburbs],
+  );
+
+  return result.rows.map((row) => {
+    const place = placeForSuburb(row.suburb);
+    // A legacy row holds the code itself; name the place it stands for.
+    const suburb = /^\d{4}$/.test(row.suburb.trim())
+      ? (lookupPostcode(row.suburb)?.suburbs[0] ?? "")
+      : row.suburb.trim();
+    return {
+      displayName: row.display_name,
+      email: row.email,
+      // One name can sit under several postcodes (Springfield is in four
+      // states), so all of them go in rather than a guess.
+      postcode: place.postcodes.join(" / "),
+      suburb,
+      state: place.states.join(" / "),
+      joinedAt: row.created_at.toISOString(),
+    };
+  });
+}
+
+/**
+ * Bug board #276/#277 - did a mutual click turn into a night out, and where do
+ * the others stall.
+ *
+ * "Went together" is the same test the mutual sweep uses to close a pair as
+ * 'connected' (co_attended): both hold a seat on the event's real roster
+ * (event_participants_v, so a claimed +1 counts), the event has happened and was
+ * not cancelled, and it ended after they clicked - the night that introduced a
+ * post-event pair does not count as them going out. It is computed here rather
+ * than read off status = 'connected' because that is only written when a
+ * mutual's clock runs out. Counted in distinct PAIRS, since one pair can click
+ * more than once. Door check-in is optional for hosts, so "checked in together"
+ * is the subset where both were checked in, not the definition.
+ *
+ * Everything else is about mutual clicks that are live right now (active, clock
+ * still running) and have not been out together yet, split by their plan: none
+ * ever suggested; one waiting on a reply; one agreed but not both booked; or
+ * every plan so far declined, lapsed, withdrawn or bumped by a full event.
+ * "Booked together" is a live pair who both hold a seat at the same upcoming
+ * event. "Ended without a night out" is every mutual click that ran its course
+ * (or is about to) without one. A pair closed by a block, or by a "we clicked"
+ * tap with no shared event, is in none of these.
+ */
+export async function getAdminClickOutcomes(): Promise<AdminClickOutcomes> {
+  const empty: AdminClickOutcomes = {
+    wentTogether: 0,
+    checkedInTogether: 0,
+    bookedTogether: 0,
+    noPlanYet: 0,
+    awaitingReply: 0,
+    agreedNotBooked: 0,
+    planFellThrough: 0,
+    endedWithoutNightOut: 0,
+  };
+  const pool = getPostgresPool();
+  if (!pool) return empty;
+
+  try {
+    const result = await pool.query<Record<keyof AdminClickOutcomes, number>>(`
+      with door as (
+        select ea.event_id, ea.profile_id
+        from event_attendees ea
+        where ea.status = 'confirmed' and ea.checked_in_at is not null
+        union
+        select gs.event_id, gs.claimed_profile_id
+        from guest_spots gs
+        where gs.status = 'claimed' and gs.claimed_profile_id is not null and gs.attended
+      ),
+      mutual as (
+        select
+          m.user_a_id,
+          m.user_b_id,
+          m.status::text as status,
+          (m.status = 'active' and m.expires_at > now()) as live,
+          exists (
+            select 1
+            from event_participants_v a
+            join event_participants_v b on b.event_id = a.event_id and b.profile_id = m.user_b_id
+            join events e on e.id = a.event_id
+            where a.profile_id = m.user_a_id
+              and e.status <> 'cancelled'
+              and coalesce(e.ends_at, e.starts_at) <= now()
+              and coalesce(e.ends_at, e.starts_at) >= m.mutual_at
+          ) as went,
+          exists (
+            select 1
+            from door a
+            join door b on b.event_id = a.event_id and b.profile_id = m.user_b_id
+            join events e on e.id = a.event_id
+            where a.profile_id = m.user_a_id
+              and e.status <> 'cancelled'
+              and coalesce(e.ends_at, e.starts_at) <= now()
+              and coalesce(e.ends_at, e.starts_at) >= m.mutual_at
+          ) as checked_in,
+          exists (
+            select 1
+            from event_participants_v a
+            join event_participants_v b on b.event_id = a.event_id and b.profile_id = m.user_b_id
+            join events e on e.id = a.event_id
+            where a.profile_id = m.user_a_id
+              and e.status <> 'cancelled'
+              and coalesce(e.ends_at, e.starts_at) > now()
+          ) as booked,
+          (
+            select p.status::text from click_proposals p
+            where p.mutual_click_id = m.id and p.status in ('pending', 'accepted')
+            order by p.created_at desc
+            limit 1
+          ) as live_plan,
+          exists (select 1 from click_proposals p where p.mutual_click_id = m.id) as ever_planned
+        from mutual_clicks m
+      )
+      select
+        count(distinct (user_a_id, user_b_id)) filter (where went)::int as "wentTogether",
+        count(distinct (user_a_id, user_b_id)) filter (where checked_in)::int as "checkedInTogether",
+        count(*) filter (where live and not went and booked)::int as "bookedTogether",
+        count(*) filter (where live and not went and not booked and live_plan is null and not ever_planned)::int as "noPlanYet",
+        count(*) filter (where live and not went and not booked and live_plan = 'pending')::int as "awaitingReply",
+        count(*) filter (where live and not went and not booked and live_plan = 'accepted')::int as "agreedNotBooked",
+        count(*) filter (where live and not went and not booked and live_plan is null and ever_planned)::int as "planFellThrough",
+        count(*) filter (where not went and (status in ('released', 'expired') or (status = 'active' and not live)))::int as "endedWithoutNightOut"
+      from mutual
+    `);
+    const row = result.rows[0];
+    return row ? { ...empty, ...row } : empty;
+  } catch (error) {
+    if (process.env.CLICK_DB_DEBUG === "true") {
+      console.warn("Falling back to empty click outcomes.", error);
+    }
+    return empty;
   }
 }
 
@@ -7134,6 +7582,256 @@ export async function deleteTagForAdmin(id: string, session: Session | null) {
   return { id: tagId };
 }
 
+/* ---------------- tag requests (database/068) ----------------
+   A host asks for a tag the wizard's picker doesn't have; an admin approves it
+   (creating the tag) or dismisses it, from /admin/tags (bug board #272/#275).
+   Everything here reads the table fail-soft: until 068 is applied the queue is
+   empty and the request form says requests aren't switched on, and neither the
+   wizard nor /admin/tags breaks. */
+
+// Postgres "undefined_table" - 068 not applied yet.
+function isMissingTagRequestsTable(error: unknown) {
+  return (error as { code?: string } | null)?.code === "42P01";
+}
+
+function tagRequestsUnavailableError() {
+  const error = new Error("Tag requests aren't switched on yet. Try again soon.");
+  error.name = "DatabaseUnavailableError";
+  return error;
+}
+
+export type AdminTagRequestRow = {
+  id: string;
+  label: string;
+  note: string | null;
+  businessName: string;
+  createdAt: string;
+};
+
+export async function requestTagForMerchant(
+  input: { label: string; note?: string },
+  session: Session | null,
+): Promise<{ status: "requested" | "exists"; label: string }> {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+
+  const profile = await ensureProfileForSession(session);
+  const merchant = await getMerchantProfile(pool, profile.id);
+  if (!merchant || merchant.verification_status !== "approved") {
+    const error = new Error("Only approved hosts can request tags.");
+    error.name = "ForbiddenError";
+    throw error;
+  }
+
+  const label = input.label.trim().replace(/\s+/g, " ");
+  const note = (input.note ?? "").trim().slice(0, 300) || null;
+  const slug = tagSlugFromLabel(label);
+  if (label.length < 2 || label.length > 40 || !slug) {
+    const error = new Error("Tags are 2-40 characters, e.g. Board games.");
+    error.name = "ValidationError";
+    throw error;
+  }
+
+  // Already in the picker (maybe under different casing or punctuation) - say
+  // so instead of queueing a duplicate for an admin to dismiss. Same types the
+  // picker offers (getMerchantTagOptions).
+  const existing = await pool.query<{ label: string }>(
+    `select label from tags where slug = $1 and tag_type in ('interest', 'vibe')`,
+    [slug],
+  );
+  if (existing.rows[0]) return { status: "exists", label: existing.rows[0].label };
+
+  try {
+    const inserted = await pool.query(
+      `
+        insert into tag_requests (merchant_profile_id, requested_by_profile_id, label, note)
+        values ($1::uuid, $2::uuid, $3, $4)
+        on conflict do nothing
+      `,
+      [merchant.id, profile.id, label, note],
+    );
+    // A repeat of an open request is a no-op, and so is its admin ping.
+    if ((inserted.rowCount ?? 0) > 0) {
+      void pool
+        .query(
+          `
+            insert into notifications (profile_id, title, body, action_url)
+            select id, $1, $2, $3
+            from profiles
+            where role = 'admin'
+          `,
+          ["Tag request", `${merchant.business_name} asked for a "${label}" tag.`, "/admin/tags"],
+        )
+        .catch((error) => {
+          console.warn("Failed to notify admins of a tag request.", error);
+        });
+    }
+  } catch (error) {
+    if (isMissingTagRequestsTable(error)) throw tagRequestsUnavailableError();
+    throw error;
+  }
+
+  return { status: "requested", label };
+}
+
+export async function getTagRequestsForAdmin(): Promise<AdminTagRequestRow[]> {
+  const pool = getPostgresPool();
+  if (!pool) return [];
+
+  try {
+    const result = await pool.query<{
+      id: string;
+      label: string;
+      note: string | null;
+      business_name: string;
+      created_at: Date;
+    }>(`
+      select request.id::text, request.label, request.note,
+             merchant.business_name, request.created_at
+      from tag_requests request
+      join merchant_profiles merchant on merchant.id = request.merchant_profile_id
+      where request.status = 'pending'
+      order by request.created_at asc
+      limit 100
+    `);
+    return result.rows.map((row) => ({
+      id: row.id,
+      label: row.label,
+      note: row.note,
+      businessName: row.business_name,
+      createdAt: row.created_at.toISOString(),
+    }));
+  } catch (error) {
+    if (!isMissingTagRequestsTable(error)) {
+      console.warn("getTagRequestsForAdmin failed", error);
+    }
+    return [];
+  }
+}
+
+export async function decideTagRequestForAdmin(
+  requestId: string,
+  decision:
+    | { action: "approve"; label: string; categoryName: string }
+    | { action: "dismiss"; note?: string },
+  session: Session | null,
+) {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+
+  const profile = await requireAdminProfile(session);
+  if (!UUID_RE.test(requestId)) {
+    const error = new Error("Valid tag request id is required.");
+    error.name = "ValidationError";
+    throw error;
+  }
+
+  let request: { label: string; owner_profile_id: string } | undefined;
+  try {
+    const found = await pool.query<{ label: string; owner_profile_id: string }>(
+      `
+        select request.label, merchant.profile_id::text as owner_profile_id
+        from tag_requests request
+        join merchant_profiles merchant on merchant.id = request.merchant_profile_id
+        where request.id = $1::uuid and request.status = 'pending'
+      `,
+      [requestId],
+    );
+    request = found.rows[0];
+  } catch (error) {
+    if (isMissingTagRequestsTable(error)) throw tagRequestsUnavailableError();
+    throw error;
+  }
+  if (!request) {
+    const error = new Error("That tag request has already been handled.");
+    error.name = "NotFoundError";
+    throw error;
+  }
+
+  let tag: { id: string; label: string } | null = null;
+  if (decision.action === "approve") {
+    const label = decision.label.trim() || request.label;
+    // createTagForAdmin is an upsert on slug: pointed at a tag that already
+    // exists it would rewrite that tag's category and type. An event tag added
+    // since the request came in is simply linked instead, and a quiz or music
+    // tag holding the name is never retyped - the admin renames the request.
+    const existing = await pool.query<{ id: string; label: string; tag_type: string }>(
+      `select id::text, label, tag_type from tags where slug = $1`,
+      [tagSlugFromLabel(label)],
+    );
+    const match = existing.rows[0];
+    if (match && match.tag_type !== "interest" && match.tag_type !== "vibe") {
+      const error = new Error(
+        `"${match.label}" is already a ${match.tag_type} tag. Change the label to add it as an event tag.`,
+      );
+      error.name = "ValidationError";
+      throw error;
+    }
+    tag = match
+      ? { id: match.id, label: match.label }
+      : await createTagForAdmin(
+          { label, categoryName: decision.categoryName, tagType: "interest" },
+          session,
+        );
+  }
+
+  const updated = await pool.query(
+    `
+      update tag_requests
+      set status = $2,
+          tag_id = $3::uuid,
+          admin_note = $4,
+          decided_by_profile_id = $5::uuid,
+          decided_at = now()
+      where id = $1::uuid and status = 'pending'
+    `,
+    [
+      requestId,
+      decision.action === "approve" ? "approved" : "dismissed",
+      tag?.id ?? null,
+      decision.action === "dismiss" ? (decision.note ?? "").trim().slice(0, 500) || null : null,
+      profile.id,
+    ],
+  );
+  if ((updated.rowCount ?? 0) === 0) {
+    const error = new Error("That tag request has already been handled.");
+    error.name = "NotFoundError";
+    throw error;
+  }
+
+  const note = decision.action === "dismiss" ? (decision.note ?? "").trim() : "";
+  await pool.query(
+    `
+      insert into audit_logs (actor_profile_id, action, entity_table, entity_id, metadata)
+      values ($1::uuid, $2, 'tag_requests', $3::uuid, $4::jsonb)
+    `,
+    [
+      profile.id,
+      decision.action === "approve" ? "approve_tag_request" : "dismiss_tag_request",
+      requestId,
+      JSON.stringify({ label: request.label, tag: tag?.label ?? null, note: note || null }),
+    ],
+  );
+
+  // In-app only - a tag decision is not worth an email.
+  await pool.query(
+    `
+      insert into notifications (profile_id, title, body, action_url)
+      values ($1::uuid, $2, $3, $4)
+    `,
+    [
+      request.owner_profile_id,
+      decision.action === "approve" ? "Tag added" : "Tag request",
+      decision.action === "approve"
+        ? `"${tag?.label ?? request.label}" is in the tag list now - you can add it to your events.`
+        : `We didn't add "${request.label}"${note ? `: ${note}` : "."}`,
+      "/merchant?tab=events",
+    ],
+  );
+
+  return { id: requestId, status: decision.action === "approve" ? "approved" : "dismissed", tag };
+}
+
 // Replace an event's interest tags (admin-only). Other tag types (life/vibe/
 // music, e.g. quiz-derived) are left untouched. `slugs` must already exist in
 // `tags` as interest tags; unknown slugs are dropped. Identified by event slug
@@ -7870,6 +8568,11 @@ export type ProfileCompletion = {
   items: ProfileCompletionItem[];
 };
 
+// "Write a short bio" opens the edit page ON the bio field, with a save button
+// beside it (bug board #241). The plain /profile/edit put the bio three sections
+// down, under the photos, and left the member to find it and the save.
+const PROFILE_EDIT_BIO_HREF = "/profile/edit?focus=bio";
+
 // Profile-completion checklist for the attendee dashboard. Each item is an
 // equal-weight step; `percent` is done/total. Quiz completion is surfaced both
 // as a checklist item and as a standalone `quizComplete` flag so the dashboard
@@ -7885,9 +8588,11 @@ export async function getProfileCompletion(
       // /profile/edit now detects and repairs (splitSuburb + the postcode →
       // suburb lookup). Steering here at /onboarding recreated the bug.
       { key: "suburb", label: "Set your suburb", done: false, href: "/profile/edit" },
-      { key: "bio", label: "Write a short bio", done: false, href: "/profile/edit" },
       { key: "tags", label: "Pick at least 3 interests", done: false, href: "/profile/edit" },
+      // The quiz outranks the bio (bug board #283): it is what sharpens every
+      // suggestion, and the dashboard features the first undone item.
       { key: "quiz", label: "Take the Click quiz", done: false, href: "/quiz/life" },
+      { key: "bio", label: "Write a short bio", done: false, href: PROFILE_EDIT_BIO_HREF },
     ];
     return { percent: 0, complete: false, quizComplete: false, items };
   };
@@ -7953,9 +8658,10 @@ export async function getProfileCompletion(
       // Same reason as the `empty()` list above - /profile/edit is the only
       // surface that stores a real suburb name and repairs a legacy postcode.
       { key: "suburb", label: "Set your suburb", done: !!row?.suburb, href: "/profile/edit" },
-      { key: "bio", label: "Write a short bio", done: !!row?.bio, href: "/profile/edit" },
       { key: "tags", label: "Pick at least 3 interests", done: tagCount >= 3, href: "/profile/edit" },
+      // Same order as `empty()` above - the quiz before the bio (#283).
       { key: "quiz", label: "Take the Click quiz", done: quizComplete, href: "/quiz/life" },
+      { key: "bio", label: "Write a short bio", done: !!row?.bio, href: PROFILE_EDIT_BIO_HREF },
     ];
 
     const doneCount = items.filter((i) => i.done).length;
@@ -8383,7 +9089,10 @@ export async function saveOnboarding(input: OnboardingInput, session: Session | 
 
   const profile = await ensureProfileForSession(session);
 
-  await pool.query(
+  // photo_url comes back so the form can show a Google/Facebook photo on its
+  // photo step. /post-login rehosts that photo AFTER its response, so it is
+  // rarely there when /onboarding first renders - but it is by the first save.
+  const saved = await pool.query<{ photo_url: string | null }>(
     `
       update profiles
       set
@@ -8397,6 +9106,7 @@ export async function saveOnboarding(input: OnboardingInput, session: Session | 
         flexible_discovery = coalesce($9::boolean, flexible_discovery),
         updated_at = now()
       where id = $1::uuid
+      returning photo_url
     `,
     [
       profile.id,
@@ -8438,7 +9148,7 @@ export async function saveOnboarding(input: OnboardingInput, session: Session | 
     );
   }
 
-  return { ok: true, profileId: profile.id };
+  return { ok: true, profileId: profile.id, photoUrl: saved.rows[0]?.photo_url ?? null };
 }
 
 const AU_STATES = ["NSW", "VIC", "QLD", "WA", "SA", "TAS", "ACT", "NT"] as const;
@@ -9437,10 +10147,11 @@ async function sendClickInner(
       social_visible: boolean;
       paused_until: string | null;
       default_attend_visibility: boolean;
+      photo_url: string | null;
     }>(
       `
         select id::text, display_name, email::text, age, is_banned, social_visible,
-               paused_until::text, default_attend_visibility
+               paused_until::text, default_attend_visibility, photo_url
         from profiles
         where id = $1::uuid
         limit 1
@@ -9539,6 +10250,13 @@ async function sendClickInner(
             ? "Receiver has opted out of the social graph."
             : "Receiver has clicking paused.",
       );
+    }
+    // Clicking is face-first (bug board #190): every roster that offers a person
+    // drops anyone photoless, so the send refuses them too - a stale page or a
+    // hand-rolled POST must not reach someone no surface would show. Same test the
+    // rosters use, and receiver state, so it stays neutral.
+    if (!resolveAvatarImage(clickedProfile.photo_url)) {
+      throw notEligibleError("Receiver has no profile photo.");
     }
 
     const blockResult = await client.query<{ blocked: boolean }>(
@@ -9672,6 +10390,17 @@ async function sendClickInner(
     } else {
       surface = "discovery";
       expiresAt = new Date(Date.now() + DISCOVERY_CLICK_WINDOW_DAYS * 86400_000);
+    }
+
+    // R_PHOTO (21_CLICK_MECHANIC §6.1 check-ordering, row S9): a sender with no
+    // profile photo cannot click. It sat in the spec and the onboarding copy ("A
+    // photo unlocks clicking with people") but was never enforced, so a photoless
+    // profile could still send while no roster would ever show them back (bug
+    // board #190). The sender's own state, so it may name itself - but only here,
+    // AFTER every receiver-eligibility branch above, so a photoless account cannot
+    // use the difference to tell a hidden receiver from an absent one.
+    if (!resolveAvatarImage(sender?.photo_url)) {
+      throw validationError("Add a profile photo before you can click with anyone.");
     }
 
     // A still-pending click to this person on this surface = a duplicate send: quiet
@@ -10189,6 +10918,14 @@ async function sendClickInner(
           });
         }
       });
+      // §B5.3's other way to "both get there": a pair who already hold seats at the
+      // same upcoming night BEFORE they clicked. detectConfirmedTogether only ran on
+      // a booking confirm, so no booking ever came after the mutual to trigger it and
+      // /proposals offered "Here's a plan" to two people already going together (bug
+      // board #225). After the response, like the mail above, so it adds nothing a
+      // send's latency could be read for.
+      const otherId = clickedProfile.id;
+      afterResponse(() => detectConfirmedTogetherForPair(pool, profile.id, otherId));
     }
 
     // B7.4b - the click as a liveness test. Someone who has not opened the app in 30
@@ -10771,6 +11508,35 @@ async function promoteNextWaitlister(
   };
 }
 
+/**
+ * Offer EVERY free seat on the event to the queue, oldest first, until the
+ * event has no room or nobody is left waiting. Every path that frees a seat
+ * routes through here (bug board #226/#227): they each called
+ * promoteNextWaitlister once, so a refund or a lapsed hold that freed a buyer's
+ * +1s as well offered one seat and left the rest sitting open under a waitlist,
+ * and a failed payment offered none at all. The waitlister then saw "1 of 2
+ * going" beside "you're #1 on the waitlist" with nothing to tap.
+ *
+ * Terminates on its own: each offer it makes is counted as taken by
+ * event_capacity_v, and its holder stops being eligible, so this runs at most
+ * min(free seats, queue length) passes. The cap is a backstop, not a limit
+ * anything reaches. MUST run inside an open transaction (`client`).
+ */
+async function offerFreeSeatsToWaitlist(
+  client: PoolClient,
+  eventId: string,
+  eventTitle: string,
+  eventSlug: string,
+): Promise<WaitlistPromotion[]> {
+  const promotions: WaitlistPromotion[] = [];
+  for (let pass = 0; pass < 100; pass += 1) {
+    const promoted = await promoteNextWaitlister(client, eventId, eventTitle, eventSlug);
+    if (!promoted) break;
+    promotions.push(promoted);
+  }
+  return promotions;
+}
+
 function formatAud(cents: number, currency = "AUD"): string {
   return new Intl.NumberFormat("en-AU", {
     style: "currency",
@@ -10818,12 +11584,11 @@ export async function cancelRegistration(eventId: string, session: Session | nul
   const profile = await ensureProfileForSession(session);
   const client = await pool.connect();
 
-  let promotion: WaitlistPromotion | null = null;
   // §B5.6: survivors of this cancel, collected inside the txn, notified after it.
   let partnerCancelSurvivors: PartnerCancelSurvivor[] = [];
-  // Every seat this cancellation frees gets its own offer - see the loop below.
+  // Every seat this cancellation frees gets its own offer - see
+  // offerFreeSeatsToWaitlist below.
   const promotions: WaitlistPromotion[] = [];
-  let freedGuestSeats = 0;
   // Refund to actually initiate after commit (paid confirmed cancels with a
   // non-zero policy refund). Stripe + ledger work happens via issueRefund.
   let refundPlan:
@@ -10927,7 +11692,7 @@ export async function cancelRegistration(eventId: string, session: Session | nul
       // together with their own. The refund computed below is on the full
       // payment_transactions.amount_cents (all seats), so the money reconciles.
       if (row.txn_id) {
-        freedGuestSeats = await cancelGuestSeatsForTransaction(client, row.txn_id);
+        await cancelGuestSeatsForTransaction(client, row.txn_id);
       }
     }
 
@@ -10971,29 +11736,14 @@ export async function cancelRegistration(eventId: string, session: Session | nul
 
     if (row.previous_status === "waitlisted") {
       // Drop them off the waitlist. If they were holding a LIVE promotion offer,
-      // the seat they were sitting on rolls to the next person (spec §3.5).
-      const hadLiveOffer = !!row.offered_until && row.offered_until.getTime() > Date.now();
+      // the seat they were sitting on rolls to the next person (spec §3.5) -
+      // offerFreeSeatsToWaitlist below. That offer used to go out without its
+      // email: it was kept apart from `promotions`, the list the mail loop reads.
       await client.query(
         `delete from event_waitlists where event_id = $1::uuid and profile_id = $2::uuid`,
         [row.event_id, profile.id],
       );
-      if (hadLiveOffer) {
-        promotion = await promoteNextWaitlister(client, row.event_id, row.title, row.slug);
-      }
     } else {
-      // Seats just freed - offer EVERY one of them to the queue (spec §3
-      // Principle 3). A 4-seat booking cancelling on a full event freed four
-      // seats and notified exactly one waitlister, because promoteNextWaitlister
-      // is `limit 1` and was called once. It re-checks capacity on each pass, so
-      // it simply returns null once the event is no longer below capacity.
-      const seatsFreed = 1 + freedGuestSeats;
-      for (let i = 0; i < seatsFreed; i += 1) {
-        const promoted = await promoteNextWaitlister(client, row.event_id, row.title, row.slug);
-        if (!promoted) break;
-        promotions.push(promoted);
-      }
-      promotion = promotions[0] ?? null;
-
       // Paid booking → compute the tiered policy refund. Only refundable txns
       // (paid / partially_refunded) qualify; the actual Stripe call runs after
       // commit so a network hiccup can't roll back the cancellation.
@@ -11025,6 +11775,14 @@ export async function cancelRegistration(eventId: string, session: Session | nul
         }
       }
     }
+
+    // Seats just freed - the canceller's own, every +1 on the booking, or the
+    // live offer a leaving waitlister was sitting on - each go to the queue
+    // (spec §3 Principle 3). A 4-seat booking cancelling on a full event used to
+    // notify exactly one waitlister.
+    promotions.push(
+      ...(await offerFreeSeatsToWaitlist(client, row.event_id, row.title, row.slug)),
+    );
 
     // §B5.6, IN THE SAME TRANSACTION as the booking cancellation: if this cancel
     // leaves a partner holding a plan with nobody in it, retire the plan and hand
@@ -11155,7 +11913,7 @@ export async function cancelRegistration(eventId: string, session: Session | nul
 
   return {
     eventTitle: cancelledTitle,
-    promotedWaitlist: !!promotion,
+    promotedWaitlist: promotions.length > 0,
     refund,
   };
 }
@@ -11166,6 +11924,9 @@ export async function cancelRegistration(eventId: string, session: Session | nul
 export type MyGuestSeat = {
   guestSpotId: string;
   firstName: string | null;
+  /** The address the purchaser gave, so they can check or correct it. Null once
+   *  the guest removed their details, and on a seat never named. */
+  email: string | null;
   status: "unnamed" | "invited" | "claimed" | "released" | "removed";
   claimed: boolean;
 };
@@ -11182,6 +11943,7 @@ export async function getMyGuestSeatsForEvent(
   const result = await pool.query<{
     guest_spot_id: string;
     guest_first_name: string | null;
+    guest_email: string | null;
     status: string;
     claimed: boolean;
   }>(
@@ -11189,6 +11951,7 @@ export async function getMyGuestSeatsForEvent(
       select
         gs.id::text as guest_spot_id,
         gs.guest_first_name,
+        gs.guest_email::text,
         gs.status::text,
         (gs.claimed_profile_id is not null) as claimed
       from guest_spots gs
@@ -11204,9 +11967,256 @@ export async function getMyGuestSeatsForEvent(
   return result.rows.map((r) => ({
     guestSpotId: r.guest_spot_id,
     firstName: r.guest_first_name,
+    email: r.guest_email,
     status: r.status as MyGuestSeat["status"],
     claimed: r.claimed,
   }));
+}
+
+function guestSeatError(name: "ValidationError" | "NotFoundError", message: string): never {
+  const error = new Error(message);
+  error.name = name;
+  throw error;
+}
+
+/**
+ * The purchaser names - or renames - one of their +1 seats after booking (bug
+ * board #228). The host's door list already told them "the buyer can name them
+ * anytime before the event", and nothing let them: checkout naming reads the
+ * Stripe metadata once and that is the only time a seat ever got a name.
+ *
+ * Two shapes:
+ *  - Fixing the name on a seat already invited, same email: the name alone.
+ *  - Naming someone (an unnamed, handed-back or removed seat, or a different
+ *    email on an invited one): the checkout rules exactly - 18+ at the event,
+ *    never the purchaser, not suppressed, not already holding a spot here - and
+ *    a fresh claim token, so the link the previous invite carried stops working
+ *    the moment the seat is someone else's. Then the same invite checkout sends.
+ * A claimed seat belongs to a member now, and their name comes from their profile.
+ */
+export async function nameGuestSeatForPurchaser(
+  guestSpotId: string,
+  input: { firstName: string; email?: string; dob?: string },
+  session: Session | null,
+): Promise<MyGuestSeat> {
+  const pool = getPostgresPool();
+  const email = getSessionEmail(session);
+  if (!email) throw authError();
+  if (!pool) throw databaseUnavailableError();
+  if (!isUuid(guestSpotId)) guestSeatError("ValidationError", "Invalid guest seat.");
+
+  const profile = await ensureProfileForSession(session);
+  const client = await pool.connect();
+  let seat: MyGuestSeat;
+  let announce: { booking: GuestSeatBooking; outcome: NamedGuestOutcome } | null = null;
+
+  try {
+    await client.query("begin");
+
+    const result = await client.query<{
+      guest_spot_id: string;
+      status: string;
+      guest_first_name: string | null;
+      guest_email: string | null;
+      event_id: string;
+      title: string;
+      slug: string;
+      starts_at: Date;
+      timezone: string;
+      suburb: string | null;
+      purchaser_name: string | null;
+    }>(
+      `
+        select
+          gs.id::text as guest_spot_id,
+          gs.status::text,
+          gs.guest_first_name,
+          gs.guest_email::text,
+          e.id::text as event_id,
+          e.title,
+          e.slug,
+          e.starts_at,
+          e.timezone,
+          e.suburb,
+          purchaser.display_name as purchaser_name
+        from guest_spots gs
+        join events e on e.id = gs.event_id
+        join profiles purchaser on purchaser.id = gs.purchaser_profile_id
+        -- Only a seat on a booking that is actually confirmed: an abandoned
+        -- hold's placeholders are not anybody's to hand out.
+        join event_attendees booking
+          on booking.payment_transaction_id = gs.payment_transaction_id
+         and booking.profile_id = gs.purchaser_profile_id
+         and booking.status = 'confirmed'
+        where gs.id = $1::uuid
+          and gs.purchaser_profile_id = $2::uuid
+          and gs.status <> 'cancelled'
+        for update of gs
+      `,
+      [guestSpotId, profile.id],
+    );
+    const row = result.rows[0];
+    if (!row) guestSeatError("NotFoundError", "That guest seat can't be changed.");
+    if (row.starts_at.getTime() <= Date.now()) {
+      guestSeatError("ValidationError", "This event has started, so its guest list is set.");
+    }
+    if (row.status === "claimed") {
+      guestSeatError(
+        "ValidationError",
+        `${row.guest_first_name?.trim() || "Your guest"} has joined Click, so their name comes from their own profile.`,
+      );
+    }
+
+    const firstName = input.firstName.trim();
+    const newEmail = (input.email ?? "").trim().toLowerCase();
+    const currentEmail = (row.guest_email ?? "").trim().toLowerCase();
+
+    if (row.status === "invited" && (!newEmail || newEmail === currentEmail)) {
+      if (firstName.length < 2 || firstName.length > 50) {
+        guestSeatError("ValidationError", "First name must be 2 - 50 characters.");
+      }
+      await client.query(
+        `update guest_spots set guest_first_name = $2, updated_at = now() where id = $1::uuid`,
+        [row.guest_spot_id, firstName],
+      );
+      seat = {
+        guestSpotId: row.guest_spot_id,
+        firstName,
+        email: row.guest_email,
+        status: "invited",
+        claimed: false,
+      };
+    } else {
+      let guest: NormalizedGuest;
+      try {
+        [guest] = validateGuestDetails([{ firstName, email: newEmail, dob: input.dob ?? "" }], {
+          purchaserEmail: profile.email,
+          eventDate: row.starts_at,
+        });
+      } catch (error) {
+        // One seat on screen, so drop the checkout form's "Guest 1:" prefix.
+        const message = error instanceof Error ? error.message.replace(/^Guest 1: /, "") : "";
+        guestSeatError(
+          "ValidationError",
+          message ? message[0].toUpperCase() + message.slice(1) : "Check the guest's details.",
+        );
+      }
+
+      const suppressed = await filterSuppressedEmails(client, [guest.email]);
+      if (suppressed.has(guest.email)) {
+        guestSeatError("ValidationError", `${guest.firstName} asked not to be invited to Click events.`);
+      }
+      // Anyone already in the room under this address: another live +1 seat
+      // (uq_guest_email_per_event's rule, this seat excluded), or a member who
+      // booked their own - one person, one seat.
+      const taken = await client.query<{ profile_id: string | null; taken: boolean }>(
+        `
+          select
+            (select p.id::text from profiles p where lower(p.email) = $3 limit 1) as profile_id,
+            (
+              exists (
+                select 1 from guest_spots other
+                where other.event_id = $1::uuid
+                  and other.id <> $2::uuid
+                  and other.status in ('invited', 'claimed')
+                  and lower(other.guest_email) = $3
+              )
+              or exists (
+                select 1
+                from event_attendees own
+                join profiles p on p.id = own.profile_id
+                where own.event_id = $1::uuid
+                  and lower(p.email) = $3
+                  and (own.status = 'confirmed'
+                       or (own.status = 'pending_payment' and own.hold_expires_at > now()))
+              )
+            ) as taken
+        `,
+        [row.event_id, row.guest_spot_id, guest.email],
+      );
+      if (taken.rows[0]?.taken) {
+        guestSeatError("ValidationError", `${guest.firstName} already has a spot at this event.`);
+      }
+
+      // Someone already on Click is linked at once, exactly as checkout naming
+      // does (nameReservedGuestSeats); anyone else gets an invite to claim it.
+      const claimedProfileId = taken.rows[0]?.profile_id ?? null;
+      const named = await client.query<{ claim_token: string }>(
+        `
+          update guest_spots
+          set guest_first_name = $2,
+              guest_email = $3,
+              guest_dob = $4::date,
+              status = $5,
+              claimed_profile_id = $6::uuid,
+              claimed_at = case when $6::uuid is not null then now() else null end,
+              invite_sent_at = case when $6::uuid is null then now() else null end,
+              claim_token = gen_random_uuid(),
+              claim_token_expires_at = now() + interval '30 days',
+              invite_resend_count = 0,
+              updated_at = now()
+          where id = $1::uuid
+          returning claim_token::text
+        `,
+        [
+          row.guest_spot_id,
+          guest.firstName,
+          guest.email,
+          guest.dob,
+          claimedProfileId ? "claimed" : "invited",
+          claimedProfileId,
+        ],
+      );
+
+      seat = {
+        guestSpotId: row.guest_spot_id,
+        firstName: guest.firstName,
+        email: guest.email,
+        status: claimedProfileId ? "claimed" : "invited",
+        claimed: Boolean(claimedProfileId),
+      };
+      announce = {
+        booking: {
+          purchaserProfileId: profile.id,
+          purchaserName: row.purchaser_name,
+          title: row.title,
+          slug: row.slug,
+          startsAt: row.starts_at,
+          timezone: row.timezone,
+          suburb: row.suburb,
+        },
+        outcome: claimedProfileId
+          ? {
+              kind: "claimed",
+              guestSpotId: row.guest_spot_id,
+              firstName: guest.firstName,
+              email: guest.email,
+              claimedProfileId,
+            }
+          : {
+              kind: "invited",
+              guestSpotId: row.guest_spot_id,
+              firstName: guest.firstName,
+              email: guest.email,
+              claimToken: named.rows[0].claim_token,
+            },
+      };
+    }
+
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback").catch(() => {});
+    // uq_guest_email_per_event, if a concurrent naming beat the check above.
+    if ((error as { code?: string })?.code === "23505") {
+      guestSeatError("ValidationError", "That person already has a spot at this event.");
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  if (announce) await announceNamedGuests(pool, announce.booking, [announce.outcome]);
+  return seat;
 }
 
 // Purchaser cancels ONE +1 seat without cancelling their whole booking (spec 19
@@ -11237,7 +12247,7 @@ export async function cancelGuestSeatForPurchaser(
   const profile = await ensureProfileForSession(session);
   const client = await pool.connect();
 
-  let promotion: WaitlistPromotion | null = null;
+  let promotions: WaitlistPromotion[] = [];
   // §B5.6: survivors of this release, collected inside the txn, notified after.
   let partnerCancelSurvivors: PartnerCancelSurvivor[] = [];
   let refundPlan:
@@ -11342,8 +12352,8 @@ export async function cancelGuestSeatForPurchaser(
       [row.guest_spot_id],
     );
 
-    // One seat freed → offer it to the next person in line (spec §10.1).
-    promotion = await promoteNextWaitlister(client, row.event_id, row.title, row.slug);
+    // Seat freed → offer it to the next person in line (spec §10.1).
+    promotions = await offerFreeSeatsToWaitlist(client, row.event_id, row.title, row.slug);
 
     // Per-seat policy refund. The unit is what the buyer ACTUALLY paid per seat,
     // divided out of the transaction itself - recomputing it from the current
@@ -11502,15 +12512,15 @@ export async function cancelGuestSeatForPurchaser(
     }
   }
 
-  if (promotion) {
-    await logWaitlistPromotedEmail(pool, promotion);
+  for (const promoted of promotions) {
+    await logWaitlistPromotedEmail(pool, promoted);
   }
 
   await notifyPartnerCancelled(pool, partnerCancelSurvivors);
 
   return {
     refund,
-    promotedWaitlist: !!promotion,
+    promotedWaitlist: promotions.length > 0,
     wasClaimed: !!claimed,
     eventTitle,
   };
@@ -11620,14 +12630,12 @@ export async function expireWaitlistOffers(): Promise<{ expired: number; reoffer
       );
 
       // Roll the seat on - the just-expired user is now deprioritised.
-      const promo = await promoteNextWaitlister(client, row.event_id, row.title, row.slug);
+      const offered = await offerFreeSeatsToWaitlist(client, row.event_id, row.title, row.slug);
       await client.query("commit");
 
       expired += 1;
-      if (promo) {
-        reoffered += 1;
-        promotions.push(promo);
-      }
+      reoffered += offered.length;
+      promotions.push(...offered);
     } catch {
       await client.query("rollback").catch(() => {});
     } finally {
@@ -11776,45 +12784,16 @@ export async function expirePaymentHolds(): Promise<{ expired: number; reoffered
         ],
       );
 
-      // Re-offer the freed seat only if the event is genuinely full once you
-      // account for live offers already reserving a slot - otherwise we'd
-      // over-offer beyond capacity.
-      const roomResult = await client.query<{ available: string }>(
-        `
-          -- count(distinct …) on both joined tables: the two left joins form a
-          -- cartesian product, so a plain count would multiply attendees by the
-          -- number of waitlist rows (and vice-versa).
-          select (
-            e.capacity
-            - count(distinct a.id) filter (
-                where a.status = 'confirmed'
-                   or (a.status = 'pending_payment' and a.hold_expires_at > now())
-              )
-            - count(distinct w.id) filter (
-                where w.accepted_at is null and w.offered_until is not null and w.offered_until > now()
-              )
-          )::text as available
-          from events e
-          left join event_attendees a on a.event_id = e.id
-          left join event_waitlists w on w.event_id = e.id
-          where e.id = $1::uuid
-          group by e.capacity
-        `,
-        [row.event_id],
-      );
-      const available = Number(roomResult.rows[0]?.available ?? 0);
-
-      let promo: WaitlistPromotion | null = null;
-      if (available > 0) {
-        promo = await promoteNextWaitlister(client, row.event_id, row.title, row.slug);
-      }
+      // Re-offer what the lapsed hold freed - the buyer's seat and every +1
+      // riding on it. offerFreeSeatsToWaitlist re-reads room against
+      // event_capacity_v on each pass (guest seats included, which the inline
+      // count this replaced left out), so it never offers past capacity.
+      const offered = await offerFreeSeatsToWaitlist(client, row.event_id, row.title, row.slug);
       await client.query("commit");
 
       expired += 1;
-      if (promo) {
-        reoffered += 1;
-        promotions.push(promo);
-      }
+      reoffered += offered.length;
+      promotions.push(...offered);
     } catch {
       await client.query("rollback").catch(() => {});
     } finally {
@@ -12708,17 +13687,23 @@ export async function createPaymentHold(
     // 'paid', the money is in - promote the seat in place and stop, rather than
     // opening a new checkout. markPaymentSucceeded stays the primary path; this
     // is the backstop that prevents a double charge.
-    // Only a transaction that still backs a LIVE seat counts. A booking cancelled
-    // inside the no-refund window (or whose refund failed) keeps its ledger row at
-    // 'paid' forever - cancelRegistration never writes payment_transactions - so an
-    // unscoped lookup here permanently blocks that buyer from ever re-booking.
-    // Mirrors the same guard markPaymentSucceeded already applies.
+    // Only the transaction that backs THIS seat counts, and only while the seat is
+    // live. A booking cancelled inside the no-refund window (or whose refund
+    // failed) keeps its ledger row at 'paid' forever - cancelRegistration never
+    // writes payment_transactions - so an unscoped lookup told a buyer who had
+    // cancelled that they had "already paid" and could never re-book (bug board
+    // #237). Matching on event + person alone was still wrong: once that buyer
+    // opened a new hold the seat was live again, and the OLD paid row promoted
+    // the new hold to confirmed for free. The seat's own payment_transaction_id
+    // is what markPaymentSucceeded settles against, so it is the only honest key.
     const paidTxn = await client.query<{ id: string }>(
       `
         select pt.id::text
         from payment_transactions pt
         join event_attendees a
-          on a.event_id = pt.event_id and a.profile_id = pt.profile_id
+          on a.payment_transaction_id = pt.id
+         and a.event_id = pt.event_id
+         and a.profile_id = pt.profile_id
         where pt.event_id = $1::uuid
           and pt.profile_id = $2::uuid
           and pt.status = 'paid'
@@ -12856,6 +13841,106 @@ export async function createPaymentHold(
   }
 }
 
+type GuestSeatBooking = {
+  purchaserProfileId: string;
+  purchaserName: string | null;
+  title: string;
+  slug: string;
+  startsAt: Date;
+  timezone: string;
+  suburb: string | null;
+};
+
+// What a freshly named +1 seat sends, wherever it was named - at checkout
+// (processGuestSpotsForSession) or afterwards by the purchaser
+// (nameGuestSeatForPurchaser): the invite for someone new to Click, or the
+// "saved you a spot" notification + email for someone already on it. A skipped
+// name tells the purchaser the seat stays theirs as a +1 (spec §5 partial-failure
+// rule). Returns the first names that did get a seat. Post-commit, never throws
+// (logEmailEvent swallows its own failures, the notifications are .catch'd).
+async function announceNamedGuests(
+  pool: NonNullable<ReturnType<typeof getPostgresPool>>,
+  booking: GuestSeatBooking,
+  outcomes: NamedGuestOutcome[],
+): Promise<string[]> {
+  const origin = emailOrigin();
+  const purchaserFirst = (booking.purchaserName || "").split(/\s+/)[0] || "A friend";
+  const dates = formatEmailDates(booking.startsAt, null, booking.timezone);
+  const suburb = booking.suburb ?? "";
+  // The start time and a link to the event ride on both emails (bug board #289):
+  // the invite named the night but never said when it started or where to read
+  // about it, so a +1 had to ask the friend who booked.
+  const eventUrl = `${origin}/events/${booking.slug}`;
+  const named: string[] = [];
+
+  for (const o of outcomes) {
+    if (o.kind === "invited") {
+      named.push(o.firstName);
+      await logEmailEvent({
+        template: "guest-invite",
+        toEmail: o.email,
+        vars: {
+          guestFirstName: o.firstName,
+          purchaserFirstName: purchaserFirst,
+          eventTitle: booking.title,
+          eventLongDate: dates.eventLongDate,
+          eventStartTime: dates.eventStartTime,
+          suburb,
+          eventUrl,
+          claimUrl: `${origin}/claim/${o.claimToken}`,
+          releaseUrl: `${origin}/claim/${o.claimToken}?action=release`,
+          removeUrl: `${origin}/claim/${o.claimToken}?action=remove`,
+        },
+      });
+    } else if (o.kind === "claimed") {
+      named.push(o.firstName);
+      void pool
+        .query(
+          `insert into notifications (profile_id, title, body, action_url) values ($1::uuid, $2, $3, $4)`,
+          [
+            o.claimedProfileId,
+            `${purchaserFirst} saved you a spot`,
+            `${purchaserFirst} saved you a spot at ${booking.title} - it's in your Upcoming Events.`,
+            `/events/${booking.slug}`,
+          ],
+        )
+        .catch(() => {});
+      await logEmailEvent({
+        template: "guest-spot-existing-user",
+        toEmail: o.email,
+        toProfileId: o.claimedProfileId,
+        vars: {
+          purchaserFirstName: purchaserFirst,
+          eventTitle: booking.title,
+          eventLongDate: dates.eventLongDate,
+          eventStartTime: dates.eventStartTime,
+          suburb,
+          eventUrl,
+          releaseUrl: eventUrl,
+        },
+      });
+    } else {
+      const why =
+        o.kind === "skipped_conflict"
+          ? `${o.firstName} already has a spot at this event`
+          : `We couldn't save a named spot for ${o.firstName}`;
+      void pool
+        .query(
+          `insert into notifications (profile_id, title, body, action_url) values ($1::uuid, $2, $3, $4)`,
+          [
+            booking.purchaserProfileId,
+            "A guest spot stayed unnamed",
+            `${why} - the seat is still yours to bring a +1.`,
+            `/events/${booking.slug}`,
+          ],
+        )
+        .catch(() => {});
+    }
+  }
+
+  return named;
+}
+
 // Names the reserved guest seats from the Stripe session's `guest_details`
 // metadata once payment is confirmed (spec 19 §5). Called from the webhook and
 // from reconcileCheckoutSession (the return/cron fallback), both of which hold
@@ -12930,75 +14015,19 @@ export async function processGuestSpotsForSession(args: {
       client.release();
     }
 
-    const origin = emailOrigin();
-    const purchaserFirst = (booking.purchaser_name || "").split(/\s+/)[0] || "A friend";
-    const dates = formatEmailDates(booking.starts_at, null, booking.timezone);
-    const suburb = booking.suburb ?? "";
-    const named: string[] = [];
-
-    for (const o of outcomes) {
-      if (o.kind === "invited") {
-        named.push(o.firstName);
-        await logEmailEvent({
-          template: "guest-invite",
-          toEmail: o.email,
-          vars: {
-            guestFirstName: o.firstName,
-            purchaserFirstName: purchaserFirst,
-            eventTitle: booking.title,
-            eventLongDate: dates.eventLongDate,
-            suburb,
-            claimUrl: `${origin}/claim/${o.claimToken}`,
-            releaseUrl: `${origin}/claim/${o.claimToken}?action=release`,
-            removeUrl: `${origin}/claim/${o.claimToken}?action=remove`,
-          },
-        });
-      } else if (o.kind === "claimed") {
-        named.push(o.firstName);
-        void pool
-          .query(
-            `insert into notifications (profile_id, title, body, action_url) values ($1::uuid, $2, $3, $4)`,
-            [
-              o.claimedProfileId,
-              `${purchaserFirst} saved you a spot`,
-              `${purchaserFirst} saved you a spot at ${booking.title} - it's in your Upcoming Events.`,
-              `/events/${booking.slug}`,
-            ],
-          )
-          .catch(() => {});
-        await logEmailEvent({
-          template: "guest-spot-existing-user",
-          toEmail: o.email,
-          toProfileId: o.claimedProfileId,
-          vars: {
-            purchaserFirstName: purchaserFirst,
-            eventTitle: booking.title,
-            eventLongDate: dates.eventLongDate,
-            suburb,
-            eventUrl: `${origin}/events/${booking.slug}`,
-            releaseUrl: `${origin}/events/${booking.slug}`,
-          },
-        });
-      } else {
-        // Skipped (suppressed / already-has-a-spot / no-seat): tell the
-        // purchaser the seat stays theirs as a +1 (spec §5 partial-failure rule).
-        const why =
-          o.kind === "skipped_conflict"
-            ? `${o.firstName} already has a spot at this event`
-            : `We couldn't save a named spot for ${o.firstName}`;
-        void pool
-          .query(
-            `insert into notifications (profile_id, title, body, action_url) values ($1::uuid, $2, $3, $4)`,
-            [
-              booking.purchaser_profile_id,
-              "A guest spot stayed unnamed",
-              `${why} - the seat is still yours to bring a +1.`,
-              `/events/${booking.slug}`,
-            ],
-          )
-          .catch(() => {});
-      }
-    }
+    const named = await announceNamedGuests(
+      pool,
+      {
+        purchaserProfileId: booking.purchaser_profile_id,
+        purchaserName: booking.purchaser_name,
+        title: booking.title,
+        slug: booking.slug,
+        startsAt: booking.starts_at,
+        timezone: booking.timezone,
+        suburb: booking.suburb,
+      },
+      outcomes,
+    );
 
     if (named.length > 0) {
       void pool
@@ -13721,6 +14750,18 @@ export async function markPaymentSucceeded(paymentTransactionId: string): Promis
     // serialises webhook/reconcile/return callers, so this fires once. In-txn so
     // the confirmation and its log commit together.
     if (attendeeFlipped) {
+      // A waitlister who has just paid for their seat - an offer, or a seat that
+      // was simply open - is off the queue now. acceptWaitlistOffer closes the
+      // entry for a free seat; the paid path never did, so the queue still
+      // listed a confirmed attendee as waiting (bug board #162).
+      await client.query(
+        `
+          update event_waitlists
+          set accepted_at = now()
+          where event_id = $1::uuid and profile_id = $2::uuid and accepted_at is null
+        `,
+        [payment.event_id, payment.profile_id],
+      );
       await logBookingEvent(client, {
         bookingId: attendeeUpdate.rows[0].id,
         eventId: payment.event_id,
@@ -15700,6 +16741,9 @@ export async function getPostEventClickPrompts(
           and other.social_visible = true
           and (other.paused_until is null or other.paused_until <= now())
           and other.default_attend_visibility
+          -- Face-first, like the discovery pool and the send path (bug board #190):
+          -- a photoless co-attendee is not offered as someone to click with.
+          and nullif(btrim(other.photo_url), '') is not null
         where coalesce(e.ends_at, e.starts_at) + interval '${POST_EVENT_PROMPT_DELAY_HOURS} hours' <= now()
           and coalesce(e.ends_at, e.starts_at) + interval '${POST_EVENT_CLICK_WINDOW_HOURS} hours' > now()
           and not exists (
@@ -15730,6 +16774,9 @@ export async function getPostEventClickPrompts(
 
     const byEvent = new Map<string, PostEventClickPrompt>();
     for (const row of result.rows) {
+      // The SQL guard only proves the column is non-blank; this is the render-time
+      // test the send path refuses on, as in getSuggestedPeople (#190).
+      if (!resolveAvatarImage(row.other_photo_url)) continue;
       let entry = byEvent.get(row.event_slug);
       if (!entry) {
         entry = {
@@ -15886,6 +16933,10 @@ export async function getPostEventClickPromptForEvent(
           and other.social_visible = true
           and (other.paused_until is null or other.paused_until <= now())
           and other.default_attend_visibility
+          -- Face-first (bug board #190) - see getPostEventClickPrompts. In this ON
+          -- clause like every other co-attendee predicate, so a night of photoless
+          -- co-attendees is the empty pool's "Quiet one", not a missing window.
+          and nullif(btrim(other.photo_url), '') is not null
           and not exists (
             select 1 from user_blocks b
             where (b.blocker_profile_id = $1::uuid and b.blocked_profile_id = other.id)
@@ -15926,7 +16977,13 @@ export async function getPostEventClickPromptForEvent(
       budgetSpent: first.budget_spent,
       swapUsed: first.swap_used,
       coAttendees: result.rows
-        .filter((row) => row.other_id !== null && row.other_name !== null)
+        .filter(
+          (row) =>
+            row.other_id !== null &&
+            row.other_name !== null &&
+            // Render-time photo test, the one the send path refuses on (#190).
+            resolveAvatarImage(row.other_photo_url) !== null,
+        )
         .map((row) => ({
           id: row.other_id as string,
           displayName: row.other_name as string,
@@ -16028,6 +17085,9 @@ export async function notifyPostEventClickPrompts(): Promise<number> {
             and other.social_visible = true
             and (other.paused_until is null or other.paused_until <= now())
             and other.default_attend_visibility
+            -- ...and the rosters' photo rule (bug board #190), so a night of only
+            -- photoless co-attendees does not push onto an empty picker.
+            and nullif(btrim(other.photo_url), '') is not null
           where theirs.event_id = e.id
             and theirs.profile_id <> mine.profile_id
             -- Same event scoping as the two roster queries above: without it a
@@ -16441,9 +17501,18 @@ export async function getProposalsForSession(session: Session | null): Promise<P
       // points at, THAT is the plan - fill the event facts and both seat flags from
       // the lateral. Without this an independently-both-booked pair projected a null
       // event and two false seat flags, so the win state had nothing to render at
-      // all. A live proposal always wins: it is the event they actually agreed on.
-      const independentPlan = !row.event_slug && Boolean(row.both_going_slug);
-      const eventStartsAt = row.event_starts_at ?? (independentPlan ? row.both_going_starts_at : null);
+      // all. An ACCEPTED proposal always wins: it is the event they actually agreed on.
+      //
+      // A merely pending one does not, once the pair are confirmed_together: that
+      // state is written only when both hold seats at one upcoming night, and the
+      // pending suggestion is usually some other event (the suggester ranks nights
+      // neither is booked on first). Projected off the suggestion, the win state read
+      // the seat flags of an event nobody booked and asked two people already going
+      // together to RSVP (bug board #224/#225).
+      const independentPlan =
+        Boolean(row.both_going_slug) &&
+        (!row.event_slug || (row.coord_state === "confirmed_together" && row.status === "pending"));
+      const eventStartsAt = independentPlan ? row.both_going_starts_at : row.event_starts_at;
 
       return {
       // "" when the mutual has no live plan (open, e.g. post-decline) - the drawer
@@ -16456,8 +17525,8 @@ export async function getProposalsForSession(session: Session | null): Promise<P
       isExpired: Boolean(row.expired),
       otherId: row.other_id,
       otherName: row.other_name,
-      suggestedEventSlug: row.event_slug ?? (independentPlan ? row.both_going_slug : null),
-      suggestedEventTitle: row.event_title ?? (independentPlan ? row.both_going_title : null),
+      suggestedEventSlug: independentPlan ? row.both_going_slug : row.event_slug,
+      suggestedEventTitle: independentPlan ? row.both_going_title : row.event_title,
       suggestedEventStartsAt: eventStartsAt ? eventStartsAt.toISOString() : null,
       // A suggestion exists but can no longer be RSVP'd to - it sold out, was
       // cancelled, or has started. Only meaningful while still pending.
@@ -16468,11 +17537,15 @@ export async function getProposalsForSession(session: Session | null): Promise<P
       // - pick another together", and stripped the confirm that would have let them
       // say so. Needing zero seats is not the same as being locked out (C11/§B5.1
       // needed=0).
+      // The event_* flags below all describe the SUGGESTED event, so on an
+      // independent plan (whose event is the lateral's upcoming, live one) they are
+      // not this plan's - exactly as they were null with no proposal at all.
       suggestionUnavailable:
+        !independentPlan &&
         row.had_suggestion && !row.event_joinable && !row.viewer_has_seat && row.status === "pending",
-      suggestedEventJoinable: Boolean(row.event_joinable),
-      suggestedEventCancelled: Boolean(row.event_cancelled),
-      suggestedEventStarted: Boolean(row.event_started),
+      suggestedEventJoinable: !independentPlan && Boolean(row.event_joinable),
+      suggestedEventCancelled: !independentPlan && Boolean(row.event_cancelled),
+      suggestedEventStarted: !independentPlan && Boolean(row.event_started),
       canSuggestAlternative: row.alternatives_count < PROPOSAL_ALTERNATIVES_CAP,
       confirmedAt: row.confirmed_at ? row.confirmed_at.toISOString() : null,
       confirmedByMe: Boolean(row.confirmed_by_me),
@@ -19536,6 +20609,34 @@ export type EventAttendeePreviewRow = {
   datingMinded: boolean;
 };
 
+// A +1 the purchaser named who has not claimed the seat yet: no profile, so the
+// who's-going grid shows a placeholder card (first name, whose guest they are,
+// no link) until they sign up through their invite and appear as themselves.
+export type EventGuestPlaceholder = {
+  id: string;
+  firstName: string;
+  hostFirstName: string;
+  isViewersGuest: boolean;
+};
+
+export type EventAttendeePreviewData = {
+  // Visible participants other than the viewer, earliest first, capped at the
+  // caller's limit.
+  items: EventAttendeePreviewRow[];
+  // Seats taken by people who are going: confirmed attendees plus the live +1
+  // seats on their bookings. Hidden attendees still count - it says how many,
+  // never who.
+  totalConfirmed: number;
+  // The viewer's own card, when they hold a seat (bug board #281).
+  viewer: (EventAttendeePreviewRow & { hiddenFromOthers: boolean }) | null;
+  // Named +1s still waiting to claim (bug board #284).
+  guests: EventGuestPlaceholder[];
+  // Aggregates over EVERY visible participant, not just the capped grid, so a
+  // FOMO line reflects the room rather than its first eight arrivals.
+  topSharedInterest: { label: string; count: number } | null;
+  datingCount: number;
+};
+
 export async function sendEventReminders() {
   const pool = getPostgresPool();
   if (!pool) throw databaseUnavailableError();
@@ -19639,13 +20740,60 @@ export async function sendEventReminders() {
   return { processed: result.rowCount ?? result.rows.length };
 }
 
+// The roster query reads every visible participant, not just the grid's slice,
+// so the FOMO aggregates count the whole room.
+// ponytail: the counts are taken in JS over one capped read of the roster; move
+// them into SQL if an event ever outgrows the cap.
+const WHO_IS_GOING_ROSTER_CAP = 500;
+
+// The people who hold a seat at the event, with when they joined. Two kinds, the
+// same two event_participants_v reads: a confirmed attendee row, and a claimed +1
+// (21_CLICK_MECHANIC: "confirmed booking or claimed guest spot"), who has no
+// attendee row of their own and used to be missing from this list entirely. A
+// claimed seat only counts while the purchaser's own booking is confirmed. Both
+// kinds honour the per-booking opt-out beside the profile-wide one.
+const WHO_IS_GOING_PARTICIPANTS = `
+          with participant as (
+            select attendee.profile_id, attendee.created_at as joined_at
+            from event_attendees attendee
+            join events event on event.id = attendee.event_id
+            where event.slug = $1
+              -- Only paid-and-confirmed attendees are shown by name (bug board
+              -- #161/#162: a pending_payment hold - e.g. a failed/abandoned
+              -- checkout - must never display a person as "attending"). Live
+              -- holds still occupy seats for capacity math elsewhere; they just
+              -- don't appear in the who's-going list or its count.
+              and attendee.status = 'confirmed'
+              and attendee.visible_to_attendees
+            union all
+            select gs.claimed_profile_id, coalesce(gs.claimed_at, gs.created_at)
+            from guest_spots gs
+            join events event on event.id = gs.event_id
+            join event_attendees purchaser_seat
+              on purchaser_seat.payment_transaction_id = gs.payment_transaction_id
+             and purchaser_seat.profile_id = gs.purchaser_profile_id
+            where event.slug = $1
+              and gs.status = 'claimed'
+              and gs.claimed_profile_id is not null
+              and gs.visible_to_attendees
+              and purchaser_seat.status = 'confirmed'
+          )`;
+
 export async function getEventAttendeePreview(
   eventSlug: string,
   session: Session | null,
   limit = 8,
-): Promise<{ items: EventAttendeePreviewRow[]; totalConfirmed: number }> {
+): Promise<EventAttendeePreviewData> {
+  const empty: EventAttendeePreviewData = {
+    items: [],
+    totalConfirmed: 0,
+    viewer: null,
+    guests: [],
+    topSharedInterest: null,
+    datingCount: 0,
+  };
   const pool = getPostgresPool();
-  if (!pool) return { items: [], totalConfirmed: 0 };
+  if (!pool) return empty;
 
   // Resolve the viewer so we can highlight interests they share with each
   // attendee. Best-effort: anonymous viewers (or a hiccup) just get no overlap.
@@ -19659,7 +20807,7 @@ export async function getEventAttendeePreview(
   }
 
   try {
-    const [previewResult, countResult] = await Promise.all([
+    const [previewResult, countResult, guestResult, viewerResult] = await Promise.all([
       pool.query<{
         profile_id: string;
         display_name: string;
@@ -19669,6 +20817,7 @@ export async function getEventAttendeePreview(
         shared: string[];
       }>(
         `
+          ${WHO_IS_GOING_PARTICIPANTS}
           select profile.id::text as profile_id,
                  profile.display_name,
                  profile.photo_url,
@@ -19680,29 +20829,28 @@ export async function getEventAttendeePreview(
                      filter (where shared_tag.label is not null),
                    '{}'
                  ) as shared
-          from event_attendees attendee
-          join events event on event.id = attendee.event_id
-          join profiles profile on profile.id = attendee.profile_id
+          from participant
+          join profiles profile on profile.id = participant.profile_id
           -- Shared-interest overlap with the viewer (skipped for the viewer's own
           -- row so we don't show "you share everything with yourself").
           left join user_tags ut
             on ut.profile_id = profile.id
            and $3::uuid is not null
            and profile.id <> $3::uuid
+          -- Interest tags only. The life quiz writes its answers into user_tags
+          -- too ("Recently single", "New parent"), and without this test a
+          -- shared one printed on a named attendee's card and counted towards
+          -- the FOMO line. Same sensitivity gate the proposals projection and
+          -- the public profile use.
           left join tags shared_tag
             on shared_tag.id = ut.tag_id
+           and shared_tag.tag_type = 'interest'
            and shared_tag.id in (select tag_id from user_tags where profile_id = $3::uuid)
-          where event.slug = $1
-            -- Only paid-and-confirmed attendees are shown by name (bug board
-            -- #161/#162: a pending_payment hold - e.g. a failed/abandoned
-            -- checkout - must never display a person as "attending"). Live
-            -- holds still occupy seats for capacity math elsewhere; they just
-            -- don't appear in the who's-going list or its count.
-            and attendee.status = 'confirmed'
+          where
             -- Same anti-join every other person-surfacing query in this file
             -- carries. Without it this was the one screen that put a blocked
             -- pair back in front of each other, by name, photo and profile link.
-            and profile.is_banned = false
+                profile.is_banned = false
             and profile.suspended_at is null
             -- A de-identified account is not a person to show. Its name renders
             -- as "Deleted member" and its profile link now 404s, so without this
@@ -19715,6 +20863,7 @@ export async function getEventAttendeePreview(
             -- headline count deliberately still counts them - it says how many are
             -- going, identifies nobody, and shrinking it would misreport the event.
             and profile.default_attend_visibility
+            -- The viewer gets their own card separately (viewerResult below).
             and ($3::uuid is null or profile.id <> $3::uuid)
             and ($3::uuid is null or not exists (
               select 1 from user_blocks b
@@ -19722,25 +20871,142 @@ export async function getEventAttendeePreview(
                  or (b.blocker_profile_id = profile.id and b.blocked_profile_id = $3::uuid)
             ))
           group by profile.id
-          order by min(attendee.created_at) asc
+          order by min(participant.joined_at) asc
           limit $2
         `,
-        [eventSlug, limit, viewerProfileId],
+        [eventSlug, WHO_IS_GOING_ROSTER_CAP, viewerProfileId],
       ),
+      // Every seat held by someone going: the confirmed attendee rows, plus the +1
+      // seats riding on a confirmed booking (named, claimed or not). A claimed +1
+      // has no attendee row, so nothing is counted twice.
       pool.query<{ count: string }>(
         `
           select count(*)::text as count
-          from event_attendees attendee
-          join events event on event.id = attendee.event_id
-          where event.slug = $1
-            and attendee.status = 'confirmed'
+          from (
+            select attendee.id
+            from event_attendees attendee
+            join events event on event.id = attendee.event_id
+            where event.slug = $1
+              and attendee.status = 'confirmed'
+            union all
+            select gs.id
+            from guest_spots gs
+            join events event on event.id = gs.event_id
+            join event_attendees purchaser_seat
+              on purchaser_seat.payment_transaction_id = gs.payment_transaction_id
+             and purchaser_seat.profile_id = gs.purchaser_profile_id
+            where event.slug = $1
+              and gs.status <> 'cancelled'
+              and purchaser_seat.status = 'confirmed'
+          ) seat
         `,
         [eventSlug],
       ),
+      // Named +1s who have not claimed yet (bug board #284): a first name the
+      // purchaser typed, shown as a placeholder until the guest signs up through
+      // their invite and joins the list as themselves. "Guest of <name>" names
+      // the purchaser, so everything that would hide the purchaser hides this
+      // card too - except from the purchaser, who always sees their own guests.
+      pool.query<{
+        id: string;
+        guest_first_name: string;
+        host_name: string;
+        is_viewers_guest: boolean;
+      }>(
+        `
+          select gs.id::text,
+                 trim(gs.guest_first_name) as guest_first_name,
+                 purchaser.display_name as host_name,
+                 coalesce(purchaser.id = $2::uuid, false) as is_viewers_guest
+          from guest_spots gs
+          join events event on event.id = gs.event_id
+          join event_attendees purchaser_seat
+            on purchaser_seat.payment_transaction_id = gs.payment_transaction_id
+           and purchaser_seat.profile_id = gs.purchaser_profile_id
+          join profiles purchaser on purchaser.id = gs.purchaser_profile_id
+          where event.slug = $1
+            and gs.status = 'invited'
+            and nullif(trim(gs.guest_first_name), '') is not null
+            and gs.visible_to_attendees
+            and purchaser_seat.status = 'confirmed'
+            and purchaser.is_banned = false
+            and purchaser.suspended_at is null
+            and purchaser.deleted_at is null
+            and (
+              purchaser.id = $2::uuid
+              or (purchaser.default_attend_visibility and purchaser_seat.visible_to_attendees)
+            )
+            and ($2::uuid is null or not exists (
+              select 1 from user_blocks b
+              where (b.blocker_profile_id = $2::uuid and b.blocked_profile_id = purchaser.id)
+                 or (b.blocker_profile_id = purchaser.id and b.blocked_profile_id = $2::uuid)
+            ))
+          order by gs.created_at asc
+          limit $3
+        `,
+        [eventSlug, viewerProfileId, limit],
+      ),
+      // The viewer's own card (bug board #281): they hold a seat - their own
+      // confirmed booking or a claimed +1 - so they are in the list. Shown even
+      // when they opted out of it, with a note, since nobody else sees them there.
+      viewerProfileId
+        ? pool.query<{
+            profile_id: string;
+            display_name: string;
+            photo_url: string | null;
+            suburb: string | null;
+            hidden_from_others: boolean;
+          }>(
+            `
+              select profile.id::text as profile_id,
+                     profile.display_name,
+                     profile.photo_url,
+                     profile.suburb,
+                     not (profile.default_attend_visibility and seat.visible_to_attendees)
+                       as hidden_from_others
+              from profiles profile
+              join lateral (
+                select attendee.visible_to_attendees
+                from event_attendees attendee
+                join events event on event.id = attendee.event_id
+                where event.slug = $1
+                  and attendee.profile_id = profile.id
+                  and attendee.status = 'confirmed'
+                union all
+                select gs.visible_to_attendees
+                from guest_spots gs
+                join events event on event.id = gs.event_id
+                join event_attendees purchaser_seat
+                  on purchaser_seat.payment_transaction_id = gs.payment_transaction_id
+                 and purchaser_seat.profile_id = gs.purchaser_profile_id
+                where event.slug = $1
+                  and gs.claimed_profile_id = profile.id
+                  and gs.status = 'claimed'
+                  and purchaser_seat.status = 'confirmed'
+                limit 1
+              ) seat on true
+              where profile.id = $2::uuid
+            `,
+            [eventSlug, viewerProfileId],
+          )
+        : Promise.resolve(null),
     ]);
 
+    const rows = previewResult.rows;
+    // Counted over the whole visible roster; ties break alphabetically so the
+    // line does not flicker between equals on every render.
+    const interestCounts = new Map<string, number>();
+    for (const row of rows) {
+      for (const label of row.shared ?? []) {
+        interestCounts.set(label, (interestCounts.get(label) ?? 0) + 1);
+      }
+    }
+    const [topLabel, topCount] =
+      [...interestCounts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0] ?? [];
+    const viewerRow = viewerResult?.rows[0];
+
     return {
-      items: previewResult.rows.map((row) => ({
+      items: rows.slice(0, limit).map((row) => ({
         profileId: row.profile_id,
         displayName: row.display_name,
         photoUrl: row.photo_url,
@@ -19749,10 +21015,66 @@ export async function getEventAttendeePreview(
         datingMinded: Boolean(row.dating_minded),
       })),
       totalConfirmed: Number(countResult.rows[0]?.count ?? 0),
+      viewer: viewerRow
+        ? {
+            profileId: viewerRow.profile_id,
+            displayName: viewerRow.display_name,
+            photoUrl: viewerRow.photo_url,
+            suburb: viewerRow.suburb,
+            sharedInterests: [],
+            datingMinded: false,
+            hiddenFromOthers: Boolean(viewerRow.hidden_from_others),
+          }
+        : null,
+      guests: guestResult.rows.map((row) => ({
+        id: row.id,
+        firstName: row.guest_first_name,
+        hostFirstName: row.host_name.split(/\s+/)[0] || row.host_name,
+        isViewersGuest: Boolean(row.is_viewers_guest),
+      })),
+      topSharedInterest: topLabel ? { label: topLabel, count: topCount ?? 0 } : null,
+      datingCount: rows.filter((row) => row.dating_minded).length,
     };
   } catch {
-    return { items: [], totalConfirmed: 0 };
+    return empty;
   }
+}
+
+// The click radar's line for each event it shows, keyed by EventItem.id (the
+// slug) for ClickRadar's fomoBySlug. Both radars read it - the dashboard's one
+// row and /people's three - so a line can no longer exist on one and not the
+// other (bug board #172). The line itself comes from attendeeFomoSignals, the
+// builder the event page's Who's going uses, so the radar and the page agree.
+// A handful of events at most, two at a time: each preview is four pool
+// queries against a pool of five.
+export async function getRadarSignals(
+  events: Pick<EventItem, "id">[],
+  session: Session | null,
+): Promise<Record<string, string>> {
+  if (events.length === 0) return {};
+  // Memoised per request, so pages that already asked pay nothing for it.
+  const { datingVisible } = await getProfileStatus(session);
+  const lines = await mapWithConcurrency(
+    events,
+    async (event) => {
+      const preview = await getEventAttendeePreview(event.id, session, 8);
+      const signals = attendeeFomoSignals({
+        confirmed: preview.totalConfirmed,
+        topSharedInterest: preview.topSharedInterest,
+        datingCount: preview.datingCount,
+        viewerOpenToDating: datingVisible,
+        countFallback: true,
+      });
+      return signals.length > 0 ? signals.join(" · ") : null;
+    },
+    2,
+  );
+  const signals: Record<string, string> = {};
+  events.forEach((event, i) => {
+    const line = lines[i];
+    if (line) signals[event.id] = line;
+  });
+  return signals;
 }
 
 export async function markPaymentFailed(
@@ -19772,6 +21094,7 @@ export async function markPaymentFailed(
   const pool = getPostgresPool();
   if (!pool) throw databaseUnavailableError();
 
+  let promotions: WaitlistPromotion[] = [];
   const client = await pool.connect();
   try {
     await client.query("begin");
@@ -19780,17 +21103,22 @@ export async function markPaymentFailed(
       id: string;
       event_id: string;
       profile_id: string;
+      event_title: string;
+      event_slug: string;
     }>(
       `
-        update payment_transactions
+        update payment_transactions pt
         set status = 'failed', updated_at = now()
-        where id = $1::uuid and status = 'pending'
+        from events e
+        where pt.id = $1::uuid and pt.status = 'pending'
+          and e.id = pt.event_id
           and (
             $2::text is null
-            or stripe_checkout_session_id is null
-            or stripe_checkout_session_id = $2::text
+            or pt.stripe_checkout_session_id is null
+            or pt.stripe_checkout_session_id = $2::text
           )
-        returning id::text, event_id::text, profile_id::text
+        returning pt.id::text, pt.event_id::text, pt.profile_id::text,
+                  e.title as event_title, e.slug as event_slug
       `,
       [paymentTransactionId, stripeCheckoutSessionId ?? null],
     );
@@ -19820,12 +21148,28 @@ export async function markPaymentFailed(
     // sitting against the purchaser and the event forever.
     await cancelGuestSeatsForTransaction(client, payment.id);
 
+    // The seats this hold was reserving go to the queue, like every other
+    // release. This one never offered them: checkout.session.expired lands at
+    // the hold's own deadline, often before the 5-minute sweep, and once it had
+    // cancelled the row the sweep found nothing to release - so a waitlister
+    // watched a free seat sit there with no offer (bug board #226/#227).
+    promotions = await offerFreeSeatsToWaitlist(
+      client,
+      payment.event_id,
+      payment.event_title,
+      payment.event_slug,
+    );
+
     await client.query("commit");
   } catch (error) {
     await client.query("rollback");
     throw error;
   } finally {
     client.release();
+  }
+
+  for (const promoted of promotions) {
+    await logWaitlistPromotedEmail(pool, promoted);
   }
 }
 

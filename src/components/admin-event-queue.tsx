@@ -187,6 +187,9 @@ export function AdminEventQueue({
   // branded <ConfirmDialog> (replaces the native window.prompt).
   const [rejectTarget, setRejectTarget] = useState<AdminEventRow | null>(null);
   const [cancelTarget, setCancelTarget] = useState<AdminEventRow | null>(null);
+  // A pending event that overlaps one of the same host's live events, waiting
+  // on the admin's "approve anyway" (bug board #278).
+  const [overlapTarget, setOverlapTarget] = useState<AdminEventRow | null>(null);
 
   // The query string is the single source of truth for every filter, so the
   // browser Back/Forward buttons replay filter states and each combination is
@@ -420,7 +423,8 @@ export function AdminEventQueue({
 
       setRows((current) =>
         current.map((event) =>
-          event.id === eventId ? { ...event, status: "Live" } : event,
+          // overlapsWith only ever describes a pending event - see AdminEventRow.
+          event.id === eventId ? { ...event, status: "Live", overlapsWith: null } : event,
         ),
       );
       toast.success(`${payload.event?.title ?? "Event"} is now live.`);
@@ -801,6 +805,14 @@ export function AdminEventQueue({
                         ⚠ No payouts
                       </span>
                     ) : null}
+                    {event.overlapsWith ? (
+                      <span
+                        title={`Overlaps "${event.overlapsWith}", a live event from the same host. You can still approve it - both stay live.`}
+                        className="inline-flex items-center gap-1 rounded-lg bg-[color:var(--amber)]/15 px-2 py-0.5 text-[11px] font-semibold text-[color:var(--amber-ink)]"
+                      >
+                        ⚠ Overlaps
+                      </span>
+                    ) : null}
                   </span>
                   {/* Below md the header strip is hidden and these cells stack, so a
                       bare category sat above two dates with nothing naming either -
@@ -832,7 +844,9 @@ export function AdminEventQueue({
                     isExpanded={isExpanded}
                     isBusy={busyId === event.id}
                     onToggleExpand={() => setExpanded(isExpanded ? null : event.id)}
-                    onApprove={() => approve(event.id)}
+                    onApprove={() =>
+                      event.overlapsWith ? setOverlapTarget(event) : approve(event.id)
+                    }
                     onReject={() => setRejectTarget(event)}
                     onCancel={() => setCancelTarget(event)}
                   />
@@ -972,6 +986,27 @@ export function AdminEventQueue({
         }}
         onCancel={() => setRejectTarget(null)}
       />
+      {/* An overlap with the host's own live event is allowed, so it is a
+          heads-up and a confirm, never a block (bug board #278). */}
+      <ConfirmDialog
+        open={overlapTarget !== null}
+        title="Approve an overlapping event?"
+        description={
+          overlapTarget
+            ? `"${overlapTarget.title}" runs at the same time as "${overlapTarget.overlapsWith}", a live event from the same host. Both will be live if you approve.`
+            : undefined
+        }
+        tone="peach"
+        confirmLabel="Approve anyway"
+        cancelLabel="Keep pending"
+        busy={overlapTarget !== null && busyId === overlapTarget.id}
+        onConfirm={() => {
+          if (!overlapTarget) return;
+          setOverlapTarget(null);
+          approve(overlapTarget.id);
+        }}
+        onCancel={() => setOverlapTarget(null)}
+      />
       <ConfirmDialog
         open={cancelTarget !== null}
         title="Cancel and unpublish this event?"
@@ -1070,6 +1105,12 @@ function EventActions({
                 <p className="mb-1 rounded-lg bg-[color:var(--amber)]/15 px-3 py-2 text-[0.65rem] font-medium leading-snug text-[color:var(--amber-ink)]">
                   ⚠ Paid event, but the merchant hasn&rsquo;t connected payouts.
                   Approving publishes it; no one can pay until they finish setup.
+                </p>
+              ) : null}
+              {event.overlapsWith ? (
+                <p className="mb-1 rounded-lg bg-[color:var(--amber)]/15 px-3 py-2 text-[0.65rem] font-medium leading-snug text-[color:var(--amber-ink)]">
+                  ⚠ Overlaps &ldquo;{event.overlapsWith}&rdquo;, a live event from the same host.
+                  You can still approve it.
                 </p>
               ) : null}
               {!event.approvable ? (

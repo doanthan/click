@@ -30,6 +30,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { AuthNote } from "@/components/auth-ui";
 import { AvatarUploader } from "@/components/avatar-uploader";
 import { ProfileGalleryUploader } from "@/components/profile-gallery-uploader";
 import { SettingRow, Switch } from "@/components/account-setting-toggle";
@@ -37,7 +38,9 @@ import { VerifiedTick } from "@/components/verified-tick";
 import { Badge, FormField, Icon } from "@/components/ds";
 import { SubmitButton } from "@/components/ds-client";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { LifeQuizModalLink } from "@/components/life-quiz-modal";
 import { Reveal } from "@/components/reveal";
+import { regionFromPostcode } from "@/lib/geo";
 import { useFormDraft } from "@/lib/use-form-draft";
 import { useUnsavedGuard } from "@/lib/use-unsaved-guard";
 import type { OwnProfile, ProfileCompletion, ProfileTagOptions } from "@/lib/event-repository";
@@ -125,6 +128,7 @@ export function ProfileEditForm({
   profile,
   tagOptions,
   completion,
+  focusBio = false,
 }: {
   profile: OwnProfile;
   tagOptions: ProfileTagOptions;
@@ -132,6 +136,8 @@ export function ProfileEditForm({
    *  and weighting stay the repository's; only the four items this form owns get
    *  re-evaluated against live state below. */
   completion: ProfileCompletion;
+  /** Opened from "Write a short bio" (?focus=bio): land on the bio, not the photos. */
+  focusBio?: boolean;
 }) {
   const base = useMemo<DraftValues>(() => {
     const { postcode, suburb } = splitSuburb(profile.suburb);
@@ -167,6 +173,10 @@ export function ProfileEditForm({
   const [suburbOptions, setSuburbOptions] = useState<string[]>(base.suburb ? [base.suburb] : []);
   const [pcStatus, setPcStatus] = useState<"idle" | "loading" | "error">("idle");
   const [pcMessage, setPcMessage] = useState<string | null>(null);
+  // A real postcode outside the Sydney pilot. That is not a problem with the
+  // field - Click never blocks an out-of-area member - so it is said as a note,
+  // never as an error (bug board #250, #251).
+  const [outOfArea, setOutOfArea] = useState(false);
 
   // The legacy lookup below swaps a stored postcode for a real suburb name. That
   // is the page tidying up after itself, not the user editing, so the baseline
@@ -190,12 +200,19 @@ export function ProfileEditForm({
         // "pick the closest suburb below". Drop the stale list and say the one
         // thing they can actually act on.
         setSuburbOptions([]);
+        setOutOfArea(false);
+        if (res.status === 404) {
+          // Well-formed but not in the table: most likely a typo, possibly a
+          // code we don't hold. Neither is worth the red error it used to get
+          // (#251) - nothing is lost, the stored suburb is simply left as it is.
+          setPcStatus("idle");
+          setPcMessage(
+            "We can't place that postcode - check the digits. If it's right, it's outside our first suburbs for now.",
+          );
+          return;
+        }
         setPcStatus("error");
-        setPcMessage(
-          res.status === 404
-            ? "We don't recognise that postcode - check it, or try a nearby one."
-            : "Couldn't look that up. Try again.",
-        );
+        setPcMessage("Couldn't look that up. Try again.");
         return;
       }
       const data = (await res.json()) as { state: string; suburbs: string[] };
@@ -203,6 +220,7 @@ export function ProfileEditForm({
       setSuburbOptions(data.suburbs);
       setPcStatus("idle");
       setPcMessage(`${data.suburbs.length > 1 ? "Pick your suburb" : "Suburb"} · ${data.state}`);
+      setOutOfArea(regionFromPostcode(code) !== "Sydney");
       // Default to the first suburb unless the current pick is still valid.
       setSuburb((prev) => (prev && data.suburbs.includes(prev) ? prev : data.suburbs[0] ?? ""));
       // Legacy resolve only: the suburb we just derived IS the saved value in a
@@ -213,6 +231,7 @@ export function ProfileEditForm({
       // Same staleness as the !res.ok branch above: the options on screen are
       // the last postcode's, not this one's.
       setSuburbOptions([]);
+      setOutOfArea(false);
       setPcStatus("error");
       setPcMessage("Couldn't look that up. Check your connection.");
     }
@@ -231,9 +250,22 @@ export function ProfileEditForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // "Write a short bio" from the dashboard (#241): bring the field into view and
+  // put the caret at the end of whatever is there, instead of leaving someone at
+  // the photo uploader to go looking for it.
+  const bioRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const field = bioRef.current;
+    if (!focusBio || !field) return;
+    field.scrollIntoView({ block: "center" });
+    field.focus({ preventScroll: true });
+    field.setSelectionRange(field.value.length, field.value.length);
+  }, [focusBio]);
+
   function handlePostcodeChange(raw: string) {
     const code = raw.replace(/\D/g, "").slice(0, 4);
     setPostcode(code);
+    setOutOfArea(false);
     if (timer.current) clearTimeout(timer.current);
 
     if (!isValidPostcode(code)) {
@@ -330,6 +362,32 @@ export function ProfileEditForm({
      saveProfileEditAction reads a blank suburb as "leave the stored one alone"
      rather than writing NULL, so nothing is lost by letting the save through -
      the hint on the Suburb field below says so where it is relevant. */
+
+  const bioGroup = (
+    <Group>
+      <div id="bio" className="scroll-mt-28">
+        <SectionHead sub="A line or two in your own words - e.g. potter by hobby, gig-goer by habit.">
+          Bio
+        </SectionHead>
+        <textarea
+          ref={bioRef}
+          name="bio"
+          rows={4}
+          value={bio}
+          onChange={(e) => setBio(e.target.value)}
+          placeholder="What you're into, and what you're here for."
+          className="ck-input ck-input--area w-full"
+        />
+        {/* Opened for the bio: its save sits right under it, not in the bar at
+            the foot of a nine-section form (#241). Same form, same action. */}
+        {focusBio ? (
+          <div className="mt-3">
+            <SubmitButton pendingLabel="Saving…">Save bio</SubmitButton>
+          </div>
+        ) : null}
+      </div>
+    </Group>
+  );
 
   return (
     <form action={saveProfileEditAction} className="mt-2">
@@ -439,6 +497,16 @@ export function ProfileEditForm({
           </FormField>
         </div>
 
+        {/* The same promise onboarding makes, in the same note. */}
+        {outOfArea ? (
+          <div className="mt-3 max-w-[520px]">
+            <AuthNote icon="pin">
+              You&apos;re outside our first suburbs for now - you&apos;re still in, and we&apos;ll
+              tell you the moment Click reaches your area.
+            </AuthNote>
+          </div>
+        ) : null}
+
         {/* No-JS honesty. The suburb options are fetched by handlePostcodeChange,
             so with scripting off this select is stuck on whatever the server
             rendered. Say that out loud rather than leaving a control that looks
@@ -462,22 +530,10 @@ export function ProfileEditForm({
       {/* ----- Bio ----- */}
       {/* From here down every section is a <Reveal>: nine stacked groups is a long
           scroll, which is the one shape Reveal is for. Plain and undelayed - they
-          arrive one at a time as you scroll, so a stagger would only add waiting. */}
-      <Reveal>
-        <Group>
-          <SectionHead sub="A line or two in your own words - e.g. potter by hobby, gig-goer by habit.">
-            Bio
-          </SectionHead>
-          <textarea
-            name="bio"
-            rows={4}
-            value={bio}
-            onChange={(e) => setBio(e.target.value)}
-            placeholder="What you're into, and what you're here for."
-            className="ck-input ck-input--area w-full"
-          />
-        </Group>
-      </Reveal>
+          arrive one at a time as you scroll, so a stagger would only add waiting.
+          The bio is the exception when the page was opened FOR it (?focus=bio):
+          unwrapped so it is on screen the moment the page scrolls to it. */}
+      {focusBio ? bioGroup : <Reveal>{bioGroup}</Reveal>}
 
       {/* ----- Prompts ----- */}
       <Reveal>
@@ -690,10 +746,12 @@ export function ProfileEditForm({
       </Reveal>
 
       {/* ----- Click quiz ----- */}
+      {/* Opens the quiz as a modal over this page (bug board #287), so unsaved
+          edits here are still on screen when it closes - it used to navigate
+          away, into the leave-without-saving guard. */}
       <Reveal>
         <Group last>
-          <Link
-            href="/quiz/life"
+          <LifeQuizModalLink
             className="flex w-full items-center gap-3.5 rounded-[16px] bg-[color:var(--paper)] px-4 py-4 shadow-[var(--shadow-sm)] transition-colors hover:bg-[color:var(--lavender-100)]"
           >
             <span className="grid size-10 shrink-0 place-items-center rounded-[12px] bg-[color:var(--lavender-100)] text-[color:var(--purple)]">
@@ -710,7 +768,7 @@ export function ProfileEditForm({
               </span>
             </span>
             <Icon name="chevR" size={18} className="text-[color:var(--ink-faint)]" />
-          </Link>
+          </LifeQuizModalLink>
         </Group>
       </Reveal>
 

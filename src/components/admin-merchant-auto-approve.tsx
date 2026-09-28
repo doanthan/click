@@ -75,9 +75,13 @@ export function AdminMerchantAutoApprove({
               ? "Trusted - free events publish live; paid events wait until payouts are connected."
               : "Manual review - every new event waits in the pending queue."}
           </p>
+          {/* Approving the MERCHANT has granted this since June
+              (updateMerchantVerificationForAdmin); the old line only credited
+              an event approval, so admins read trust as something still to do
+              (bug board #259). */}
           <p className="mt-1 text-xs text-[color:var(--slate)]">
-            Approving any one of this merchant&apos;s events turns this on
-            automatically. Turn it off to send them back to manual review.
+            Approving the merchant turns this on. Choose &ldquo;Require review&rdquo; to check
+            every new event before it goes live.
           </p>
         </div>
         <button

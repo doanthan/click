@@ -148,13 +148,8 @@ function MerchantActions({
               onClick={() => runTrust(!merchant.autoApproveEvents)}
               className="block w-full rounded-lg px-3 py-2 text-left text-[13px] font-medium text-[color:var(--ink)] transition-colors hover:bg-[color:var(--lavender-100)]"
             >
-              {merchant.autoApproveEvents ? "Require event review" : "Trust merchant"}
+              {merchant.autoApproveEvents ? "Review every event" : "Trust merchant"}
             </button>
-          ) : null}
-          {canTrust && merchant.autoApproveEvents ? (
-            <p className="mt-1 px-3 py-1 text-[11px] font-semibold text-[color:var(--slate)]">
-              Events auto-publish (no review)
-            </p>
           ) : null}
           {status === "suspended" ? (
             <p className="mt-1 px-3 py-1 text-[11px] font-semibold text-[color:var(--slate)]">
@@ -283,6 +278,7 @@ export function AdminMerchantsTable({
       const payload = (await response.json().catch(() => ({}))) as {
         error?: string;
         verificationStatus?: string;
+        autoApproveEvents?: boolean;
       };
 
       if (!response.ok) {
@@ -296,13 +292,16 @@ export function AdminMerchantsTable({
             ? {
                 ...merchant,
                 verificationStatus: payload.verificationStatus ?? nextStatus,
+                // Approving trusts the merchant, rejecting or suspending revokes
+                // it - server-side, in the same update (bug board #259).
+                autoApproveEvents: payload.autoApproveEvents ?? merchant.autoApproveEvents,
               }
             : merchant,
         ),
       );
       toast.success(
         nextStatus === "approved"
-          ? "Merchant approved."
+          ? "Merchant approved and trusted - their events skip review."
           : nextStatus === "suspended"
             ? "Merchant suspended."
             : nextStatus === "rejected"
@@ -346,7 +345,7 @@ export function AdminMerchantsTable({
         ),
       );
       toast.success(
-        applied ? "Trusted - events auto-publish." : "Review required for future events.",
+        applied ? "Trusted - events auto-publish." : "Every new event now waits for review.",
       );
     } catch {
       toast.error("Could not reach the server - nothing changed.");
@@ -454,6 +453,14 @@ export function AdminMerchantsTable({
                 <Badge tone={statusTone(merchant.verificationStatus)}>
                   {merchant.verificationStatus}
                 </Badge>
+                {/* Trust used to be visible only inside the row menu, so a list of
+                    approved hosts gave no hint that approving had already trusted
+                    them (bug board #259). */}
+                {merchant.verificationStatus === "approved" ? (
+                  <p className="mt-1 text-[11px] font-semibold text-[color:var(--slate)]">
+                    {merchant.autoApproveEvents ? "Trusted - no event review" : "Reviews every event"}
+                  </p>
+                ) : null}
                 {merchant.abn ? (
                   <p className="mt-1 text-[11px] text-[color:var(--slate)]">
                     ABN {merchant.abn}

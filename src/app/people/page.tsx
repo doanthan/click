@@ -4,11 +4,13 @@ import { auth } from "@/auth";
 import { ClickRadar } from "@/components/click-radar";
 import { ClickWithSomeoneUserCard } from "@/components/click-with-someone-user-card";
 import { Avatar, Icon, ckBtn } from "@/components/ds";
+import { resolveAvatarImage } from "@/lib/avatar-images";
 import {
   getMutualClicksForSession,
   getPersonalizedDiscovery,
   getProfileCompletion,
   getProfileStatus,
+  getRadarSignals,
   getSuggestedPeople,
 } from "@/lib/event-repository";
 
@@ -38,6 +40,10 @@ export default async function PeoplePage() {
   // viewer has interests - and telling someone who just picked five of them to
   // go and pick some is the first thing this page said to a new member.
   const hasInterests = completion.items.find((i) => i.key === "tags")?.done ?? false;
+  // Clicking needs your own photo (sendClickInner's R_PHOTO gate, bug board #190),
+  // so say so BEFORE a tap is refused rather than only after it. Same test the send
+  // path uses; the gallery alone is not a face on the card.
+  const viewerHasPhoto = resolveAvatarImage(profileStatus.photoUrl) !== null;
 
   // The daily set is a small, curated pool - a drip, not an endless feed. People
   // you've already clicked drop OUT of it (same rule the dashboard uses): the set
@@ -76,6 +82,15 @@ export default async function PeoplePage() {
   const waitlistedSet = new Set(profileStatus.waitlistedEventIds);
   const viewerHasSeat = (slug: string | null) =>
     slug != null && registeredSet.has(slug) && !waitlistedSet.has(slug);
+
+  // The radar's rows, rooms with people in them first (a stable sort keeps the
+  // personalised order within each group), with the same lines the dashboard's
+  // row gets. This bar used to render with no lines at all - every row read
+  // "Trending in Sydney" however many people were going (bug board #172).
+  const radarEvents = [...(personalized?.events ?? [])]
+    .sort((a, b) => Number(b.attendees > 0) - Number(a.attendees > 0))
+    .slice(0, 3);
+  const radarSignals = await getRadarSignals(radarEvents, session);
 
   return (
     <main className="min-h-screen bg-[color:var(--champagne)] pb-24 text-[color:var(--ink)]">
@@ -140,6 +155,18 @@ export default async function PeoplePage() {
             People for you
           </h2>
 
+          {viewerHasPhoto ? null : (
+            <p className="mb-4 flex items-start gap-[7px] rounded-[var(--radius-lg)] bg-[color:var(--lav-bg)] px-4 py-3 text-[13.5px] leading-relaxed text-[color:var(--ink-soft)]">
+              <Icon name="camera" size={15} className="mt-0.5 shrink-0" />
+              <span>
+                Add a photo to click with people - it&apos;s the first thing they see.{" "}
+                <Link href="/profile/edit" className="font-semibold whitespace-nowrap text-[color:var(--purple)]">
+                  Add a photo →
+                </Link>
+              </span>
+            </p>
+          )}
+
           {dailySet.length > 0 ? (
             <>
               {/* The set arrives in reading order rather than all at once - the
@@ -188,9 +215,14 @@ export default async function PeoplePage() {
                   <p className="font-display text-[15px] font-semibold text-[color:var(--ink)]">
                     No one to show you just yet.
                   </p>
+                  {/* Says what the set is actually drawn from. It used to claim "we only
+                      suggest people with real overlap", which getSuggestedPeople has
+                      never filtered on - the gate is a finished profile with a photo
+                      (bug board #255). */}
                   <p className="mx-auto mt-1.5 max-w-[420px] text-sm leading-relaxed text-[color:var(--ink-soft)]">
-                    We only suggest people with real overlap, so this fills up as more members
-                    join near you. Going to an event is the fastest way to meet them.
+                    Suggestions come from members with a photo and a finished profile, and
+                    there&apos;s no one new to show you yet. Going to an event is the fastest
+                    way to meet people.
                   </p>
                   <Link href="/discover" className={`${ckBtn("primary", "sm")} mt-4`}>
                     <span className="ck-btn__label">Find an event →</span>
@@ -217,7 +249,7 @@ export default async function PeoplePage() {
           <p className="mb-4 text-[13.5px] font-medium text-[color:var(--slate)]">
             People like you are showing up to these.
           </p>
-          <ClickRadar events={personalized?.events ?? []} />
+          <ClickRadar events={radarEvents} fomoBySlug={radarSignals} />
         </section>
 
         {/* ---- Your clicks ---- */}

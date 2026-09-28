@@ -4,6 +4,7 @@ import {
   PUBLIC_EVENT_STATUSES,
   getEventBySlug,
   getProfileStatus,
+  getSystemSettings,
   isEventOperator,
   viewerCanSeeVenue,
 } from "@/lib/event-repository";
@@ -50,7 +51,14 @@ export async function GET(_request: Request, context: RouteContext) {
       ? event
       : { ...event, address: null, city: null, location: "", lat: null, lng: null };
 
-    return NextResponse.json({ event: payload });
+    // Per-seat booking fee, the same formula createPaymentHold charges and the
+    // event page quotes, so the quick-view can take a booking (with +1s) and
+    // show the total Stripe will actually charge (bug board #216/#232).
+    const { bookingFeeBps } = await getSystemSettings();
+    const bookingFeeCents =
+      event.priceCents > 0 ? Math.round((event.priceCents * bookingFeeBps) / 10_000) : 0;
+
+    return NextResponse.json({ event: { ...payload, bookingFeeCents } });
   } catch {
     return NextResponse.json({ error: "Could not load event." }, { status: 500 });
   }

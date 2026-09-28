@@ -11,6 +11,7 @@
  */
 
 import raw from "./au-postcodes.json";
+import { placeForStoredSuburb, type StoredSuburbPlace } from "./geo";
 
 type PostcodeEntry = { s: string; l: string[] };
 
@@ -38,4 +39,9 @@ export function lookupPostcode(code: string): PostcodeLookup | null {
   const entry = TABLE[postcode];
   if (!entry) return null;
   return { postcode, state: entry.s, suburbs: entry.l };
+}
+
+/** Inside or outside the attendee pilot, for a profiles.suburb value - see placeForStoredSuburb. */
+export function placeForSuburb(stored: string | null | undefined): StoredSuburbPlace {
+  return placeForStoredSuburb(stored, TABLE);
 }

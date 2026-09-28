@@ -291,6 +291,12 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
   const heldSeats = Math.max(1, event.heldSeatCount ?? 1);
   const isFull = event.attendees >= event.capacity;
   const isWaitlistMode = event.status === "Waitlist" || isFull;
+  // Waitlisted, no offer out to them, and a seat is open anyway - a lapsed offer
+  // or hold the 5-minute sweep hasn't rolled on yet. A stranger could book that
+  // seat; the person already in the queue was shown "you're #1" and nothing to
+  // tap (bug board #227). `attendees` already counts every live hold and offer,
+  // so this is exactly the seat registerForEvent / createPaymentHold would give.
+  const seatOpenForWaitlister = isWaitlisted && !waitlistOfferExpiresAt && !isWaitlistMode;
   const isPaid = event.priceCents > 0;
   // Past events are closed: once the end time (or start, if no end) has passed
   // we hide every RSVP/pay/waitlist CTA and show an "ended" notice instead.
@@ -576,7 +582,12 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
             </p>
 
             {isRegistered && myGuestSeats.length > 0 ? (
-              <MyGuestSeats perSeatCents={totalCents} eventDateISO={event.startsAt} seats={myGuestSeats} />
+              <MyGuestSeats
+                perSeatCents={totalCents}
+                eventDateISO={event.startsAt}
+                seats={myGuestSeats}
+                editable={startsAtMs > nowMs}
+              />
             ) : null}
 
             {event.relationshipGoal ? (
@@ -588,8 +599,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
 
             <div className="mt-8">
               <EventAttendeePreview
-                items={attendeePreview.items}
-                totalConfirmed={attendeePreview.totalConfirmed}
+                preview={attendeePreview}
                 isAuthenticated={isAuthenticated}
                 viewerIsAttendee={isRegistered || isAdmin || isOwner}
                 eventSlug={event.id}
@@ -749,7 +759,12 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                       </p>
                     ) : null}
 
-                    {isWaitlisted && !waitlistOfferExpiresAt && event.waitlistPosition ? (
+                    {seatOpenForWaitlister ? (
+                      <p className="rounded-[var(--radius-md)] bg-[color:var(--lav-bg)] p-3 text-[13px] text-[color:var(--ink-soft)]">
+                        A seat has opened up - RSVP and it&apos;s yours. Until then you keep your place on the
+                        waitlist.
+                      </p>
+                    ) : isWaitlisted && !waitlistOfferExpiresAt && event.waitlistPosition ? (
                       <p className="rounded-[var(--radius-md)] bg-[color:var(--lav-bg)] p-3 text-[13px] text-[color:var(--ink-soft)]">
                         You&apos;re #{event.waitlistPosition} on the waitlist. When a seat opens we&apos;ll email you
                         and hold it for 30 minutes.
@@ -803,7 +818,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                           heldSeatCount={event.heldSeatCount}
                         />
                       </div>
-                    ) : isRegistered || isWaitlisted ? (
+                    ) : isRegistered || (isWaitlisted && !seatOpenForWaitlister) ? (
                       waitlistOfferExpiresAt && isPaid ? (
                         // One panel, one clock, one primary. This used to render
                         // its own "a seat opened up" panel AND the button's, and
@@ -879,19 +894,14 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                                   Book both anyway?
                                 </span>
                               ) : null}
-                              {hasBookingFee ? (
-                                <>
-                                  That&apos;s {formatPriceLabel(event.priceCents, "AUD")} ticket +{" "}
-                                  {formatPriceLabel(bookingFeeCents, "AUD")} booking fee.{" "}
-                                </>
-                              ) : null}
-                              We&apos;ll hold your seat through Stripe checkout. If you don&apos;t complete payment, the
-                              hold is released and the seat returns to the pool. Full refund up to 48h before, 50%
-                              within 48h, none within 24h -{" "}
+                              {/* One line (bug board #280). The price, fee and refund
+                                  window are all in the summary above and the
+                                  ticket breakdown below - this paragraph said
+                                  each of them a second time. */}
+                              Your seat is held while you pay.{" "}
                               <Link href="/refund-policy" className="underline">
-                                refund policy
+                                Refund policy
                               </Link>
-                              .
                             </>
                           }
                         >
@@ -940,6 +950,12 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                         />
                       </EventBookingDialog>
                     )}
+
+                    {/* The open seat above is an extra door, not a new state: they
+                        are still in the queue until they book, so leaving stays. */}
+                    {seatOpenForWaitlister ? (
+                      <EventRegistrationButton eventId={event.id} initiallyRegistered isWaitlist />
+                    ) : null}
 
                     <EventBookmarkButton eventId={event.id} initiallySaved={bookmarked} />
                   </>

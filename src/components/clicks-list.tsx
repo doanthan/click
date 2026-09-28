@@ -36,7 +36,11 @@ function rowState(e: ProposalEntry): { label: string; tone: Tone; sub: string } 
   if (e.isExpired) return { label: "Still out there", tone: "neutral", sub: "Cross paths again and you can pick it up." };
   // A seat you're holding outranks everything: it stays "both going" through the
   // night itself. Only a genuinely dead event (cancelled) is "fell through".
-  if (e.status === "confirmed") {
+  // coord_state reaches confirmed_together without an accepted proposal too - two
+  // people who each booked the same night - and the drawer's projectStep already
+  // reads it as the win state. Keyed on status alone, the row said "Plan ready"
+  // while the drawer it opens said "You're both going" (bug board #225).
+  if (e.status === "confirmed" || e.coordState === "confirmed_together") {
     if (!e.suggestedEventSlug || e.suggestedEventCancelled)
       return { label: "Pick a plan", tone: "amber", sub: "That plan fell through - pick another." };
     if (e.viewerHasSeat) {

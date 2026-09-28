@@ -9,7 +9,6 @@ import { scopedKey, useAccountScope } from "@/lib/account-scope";
 import { AvatarUploader } from "@/components/avatar-uploader";
 import { BirthDatePicker } from "@/components/birth-date-picker";
 import { AuthError, AuthNote, Field } from "@/components/auth-ui";
-import { EventImage } from "@/components/event-image";
 import { fireBrandConfetti } from "@/components/brand-confetti";
 import {
   CatGlyph,
@@ -20,20 +19,24 @@ import {
   type IconName,
 } from "@/components/ds";
 
-// Onboarding - a paced five-step flow, not one long scroll.
+// Onboarding - a paced four-step flow, not one long scroll.
 //
 // The old surface stacked all seven sections (basics, photo, birth date, intent,
 // visibility, interests, bio) down a single page, which read as a wall of
 // obligations before the visitor had seen a single reason to fill it in. This
-// version follows the spec redesign in `context/01_USER_JOURNEY.md` §2:
+// version follows the spec redesign in `context/01_USER_JOURNEY.md` §2, and the
+// DS "4-step + done" onboarding:
 //
 //   1 basics     · name, birth date, postcode        (required)
 //   2 intent     · why you're here, dating toggles inline
-//   3 preview    · "here's what Click looks like for you" - REAL upcoming
-//                  events, filtered by the intents just picked. Earns step 4.
-//   4 interests  · tags by category, soft minimum of three
-//   5 photo      · optional photo + optional one-liner, then Finish
+//   3 interests  · tags by category, soft minimum of three
+//   4 photo      · optional photo + optional one-liner, then Finish
 //   done         · the payoff: confetti, the no-chat framing, one way onward
+//
+// There used to be a "here's what Click looks like for you" event preview
+// between intent and interests. It asked nothing, so it was one more screen
+// between a new member and the app - testers asked for it gone twice (bug
+// board #249, #265).
 //
 // State lives here (not per-route) so the localStorage draft and the validation
 // stay in one place. The profile is saved twice: when step 1 is done (all that
@@ -63,46 +66,34 @@ type IntentOption = {
   /** The ONE icon treatment: a Deep-Purple line glyph on a lavender disc. Never an emoji. */
   cat?: string;
   icon?: IconName;
-  /** Category glyph keys this intent wants to see in the step-3 preview. */
-  previewCats: string[];
 };
 
 const INTENT_OPTIONS: IntentOption[] = [
-  { value: "friendship",  cat: "social",      label: "Friendship",  body: "Good people, low stakes, no agenda.",                        previewCats: ["social", "food", "music", "community"] },
-  { value: "dating",      cat: "dating",      label: "Dating",      body: "If you click with someone, see where it goes.",              previewCats: ["dating", "social", "food"] },
-  { value: "networking",  cat: "networking",  label: "Networking",  body: "A few more good faces in your week.",                        previewCats: ["networking", "learning"] },
-  { value: "hobbies",     cat: "arts",        label: "Hobbies",     body: "Find the people who share your craft.",                      previewCats: ["arts", "creative", "learning"] },
-  { value: "wellness",    cat: "wellness",    label: "Wellness",    body: "Slow mornings, mindful movement, sober-friendly nights.",    previewCats: ["wellness", "fitness", "outdoors"] },
-  { value: "community",   cat: "community",   label: "Community",   body: "Local meetups, volunteering, your neighbourhood.",           previewCats: ["community", "social"] },
-  { value: "new_in_town", cat: "travel",      label: "New in town", body: "Find your feet, and your people nearby.",                    previewCats: ["travel", "social", "community"] },
-  { value: "exploring",   icon: "compass",    label: "Exploring",   body: "Curious - show me a bit of everything.",                     previewCats: [] },
+  { value: "friendship",  cat: "social",      label: "Friendship",  body: "Good people, low stakes, no agenda." },
+  { value: "dating",      cat: "dating",      label: "Dating",      body: "If you click with someone, see where it goes." },
+  { value: "networking",  cat: "networking",  label: "Networking",  body: "A few more good faces in your week." },
+  { value: "hobbies",     cat: "arts",        label: "Hobbies",     body: "Find the people who share your craft." },
+  { value: "wellness",    cat: "wellness",    label: "Wellness",    body: "Slow mornings, mindful movement, sober-friendly nights." },
+  { value: "community",   cat: "community",   label: "Community",   body: "Local meetups, volunteering, your neighbourhood." },
+  { value: "new_in_town", cat: "travel",      label: "New in town", body: "Find your feet, and your people nearby." },
+  { value: "exploring",   icon: "compass",    label: "Exploring",   body: "Curious - show me a bit of everything." },
 ];
 
 const STORAGE_KEY = "click:onboarding-draft";
 // Namespaced per account below: one browser signs in as several people (the QA
 // persona switcher, a shared laptop), and a single global key handed the next
 // person the previous one's name, postcode and birth date.
-// v4 adds `step` so a refresh resumes where the visitor was, not at the top.
-const DRAFT_VERSION = 4;
+// v4 added `step` so a refresh resumes where the visitor was, not at the top.
+// v5 is the four-step flow. A v4 draft's step counted the old preview screen,
+// so it is mapped through V4_STEPS rather than trusted - read as-is, a v4 draft
+// saved on the interests screen reopened on the photo screen.
+const DRAFT_VERSION = 5;
+const V4_STEPS = [0, 1, 2, 2, 3];
 
 // Australian postcodes are exactly 4 digits.
 const POSTCODE_RE = /^\d{4}$/;
 
-/** The trimmed event shape the preview step needs - the page maps EventItem down
- *  to this so the whole catalogue doesn't ride along in the client payload. */
-export type OnboardingPreviewEvent = {
-  id: string;
-  title: string;
-  category: string;
-  date: string;
-  time: string;
-  suburb: string;
-  price: string;
-  image: string;
-  imageAlt: string;
-};
-
-type StepKey = "basics" | "intent" | "preview" | "interests" | "photo";
+type StepKey = "basics" | "intent" | "interests" | "photo";
 
 type StepDef = {
   key: StepKey;
@@ -124,7 +115,7 @@ const STEPS: StepDef[] = [
     title: () => "First, the basics",
     sub: "Just enough to show you what's on near you.",
     icon: "user",
-    pct: 20,
+    pct: 22,
   },
   {
     key: "intent",
@@ -133,15 +124,7 @@ const STEPS: StepDef[] = [
     sub: "Pick any that fit. It tunes what we show you, and you can change it whenever.",
     icon: "users",
     optional: true,
-    pct: 42,
-  },
-  {
-    key: "preview",
-    eyebrow: "A quick look",
-    title: () => "Here's what Click looks like for you",
-    sub: "Real events, already on. Tell us what you're into and we'll keep the good ones coming.",
-    icon: "compass",
-    pct: 60,
+    pct: 48,
   },
   {
     key: "interests",
@@ -150,7 +133,7 @@ const STEPS: StepDef[] = [
     sub: "Tap what sounds like a good night out. Three or more and your suggestions get sharp.",
     cat: "arts",
     optional: true,
-    pct: 78,
+    pct: 72,
   },
   {
     key: "photo",
@@ -189,10 +172,6 @@ type OnboardingFormProps = {
   // store a suburb NAME, and that can't seed a postcode field.
   initialPostcode?: string;
   initialPhotoUrl?: string | null;
-  // A handful of real upcoming events for the step-3 preview. Empty when the
-  // catalogue is empty or the DB is unreachable - the step falls back to copy
-  // rather than inventing events.
-  previewEvents?: OnboardingPreviewEvent[];
   // Deep link the visitor was headed to before signup interrupted them (already
   // validated by safeNext on the server). Finishing the form resumes that trip
   // instead of dumping them on /dashboard.
@@ -231,7 +210,6 @@ export function OnboardingForm({
   initialName,
   initialPostcode = "",
   initialPhotoUrl = null,
-  previewEvents = [],
   next,
 }: OnboardingFormProps) {
   const router = useRouter();
@@ -292,22 +270,6 @@ export function OnboardingForm({
     return POSTCODE_RE.test(trimmed) ? regionFromPostcode(trimmed) : null;
   }, [postcode]);
 
-  // Up to three real events, the ones matching the intents just picked first and
-  // then the soonest others to top the row up - one lonely card would undersell
-  // a screen headed "here's what Click looks like for you". The step falls back
-  // to plain copy when there are no events at all; we never fake a card.
-  const previewPicks = useMemo(() => {
-    if (!previewEvents.length) return [];
-    const wanted = new Set(
-      INTENT_OPTIONS.filter((o) => intents.has(o.value)).flatMap((o) => o.previewCats),
-    );
-    const matched = wanted.size
-      ? previewEvents.filter((e) => wanted.has(categoryGlyphKey(e.category)))
-      : [];
-    const rest = previewEvents.filter((e) => !matched.includes(e));
-    return [...matched, ...rest].slice(0, 3);
-  }, [previewEvents, intents]);
-
   const hydratedRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const headingRef = useRef<HTMLHeadingElement | null>(null);
@@ -326,7 +288,8 @@ export function OnboardingForm({
       const raw = window.localStorage.getItem(storageKey);
       if (raw) {
         const draft = JSON.parse(raw) as Partial<Draft>;
-        if (draft.v === DRAFT_VERSION) {
+        if (draft.v === 4 && typeof draft.step === "number") draft.step = V4_STEPS[draft.step];
+        if (draft.v === DRAFT_VERSION || draft.v === 4) {
           if (draft.displayName) setDisplayName(draft.displayName);
           if (typeof draft.postcode === "string") setPostcode(draft.postcode);
           if (typeof draft.birthDate === "string") setBirthDate(draft.birthDate);
@@ -501,7 +464,7 @@ export function OnboardingForm({
   }
 
   // `finishNow` is step 1's "Back to the event": save and go straight to the
-  // done screen instead of on through four optional screens.
+  // done screen instead of on through three optional screens.
   async function handleNext({ finishNow = false }: { finishNow?: boolean } = {}) {
     if (state === "submitting") return;
     const err = validateStep(step);
@@ -592,11 +555,19 @@ export function OnboardingForm({
       return false;
     }
 
-    const payload = (await response.json().catch(() => ({}))) as { error?: string };
+    const payload = (await response.json().catch(() => ({}))) as {
+      error?: string;
+      photoUrl?: string | null;
+    };
     if (!response.ok) {
       showError(payload.error ?? "Could not save your profile.");
       return false;
     }
+    // A Google or Facebook signup's photo is rehosted behind /post-login's
+    // response, so it usually lands after this page rendered without it. The
+    // save reads it back, and the photo step then opens on it instead of
+    // asking for a photo the profile already has (bug board #240).
+    if (payload.photoUrl) setPhotoUrl((current) => current ?? payload.photoUrl ?? null);
 
     // The profile now counts as finished, and onboarding/page.tsx answers a
     // finished profile with a redirect - unless the address says the visitor
@@ -660,9 +631,7 @@ export function OnboardingForm({
           <p className="mt-2 text-[12.5px] font-medium text-[color:var(--slate)]">
             {step === 0
               ? "This is the only required step."
-              : current.optional
-                ? "Optional personalisation. Skip anything you do not want to add."
-                : "No details needed here. Take a quick look, then keep going."}
+              : "Optional personalisation. Skip anything you do not want to add."}
           </p>
         </div>
       </header>
@@ -723,12 +692,7 @@ export function OnboardingForm({
                   {current.title(firstName)}
                 </h1>
                 <p className="mt-2 text-[15px] leading-[1.6] text-[color:var(--slate)]">
-                  {/* With no events to show yet, the preview step's usual line
-                      ("real events, already on") would be writing a cheque the
-                      screen can't cash. */}
-                  {current.key === "preview" && !previewPicks.length
-                    ? "Two more screens and you're done. Tell us what you're into and we'll line the first ones up."
-                    : current.sub}
+                  {current.sub}
                 </p>
               </div>
 
@@ -877,61 +841,6 @@ export function OnboardingForm({
                 </div>
               ) : null}
 
-              {current.key === "preview" ? (
-                <div className="grid gap-4">
-                  {previewPicks.length ? (
-                    <>
-                      <div className="grid gap-3">
-                        {previewPicks.map((event, index) => (
-                          <PreviewCard key={event.id} event={event} index={index} />
-                        ))}
-                      </div>
-                      <AuthNote icon="compass">
-                        Pick a few interests next and your dashboard fills with the ones that
-                        actually suit you.
-                      </AuthNote>
-                    </>
-                  ) : (
-                    <div className="grid gap-2.5">
-                      {[
-                        {
-                          icon: "compass" as IconName,
-                          label: "Find something on near you",
-                          body: "Small, real plans - a pottery table, a run club, a long lunch.",
-                        },
-                        {
-                          icon: "check" as IconName,
-                          label: "Say you're in",
-                          body: "One tap. You see who else is going before you get there.",
-                        },
-                        {
-                          icon: "users" as IconName,
-                          label: "Meet in person",
-                          body: "If you click with someone there, we take it from there.",
-                        },
-                      ].map((row) => (
-                        <div
-                          key={row.label}
-                          className="flex items-start gap-3 rounded-2xl border-[1.5px] border-[color:var(--mist-strong)] bg-[color:var(--paper)] px-4 py-3.5"
-                        >
-                          <Disc size={36}>
-                            <Icon name={row.icon} size={17} />
-                          </Disc>
-                          <span className="min-w-0">
-                            <span className="block text-[15px] font-semibold text-[color:var(--ink)]">
-                              {row.label}
-                            </span>
-                            <span className="mt-0.5 block text-[12.5px] leading-[1.45] text-[color:var(--slate)]">
-                              {row.body}
-                            </span>
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ) : null}
-
               {current.key === "interests" ? (
                 <div className="grid gap-6">
                   {interestTagCategories.map(([category, ...tagList]) => (
@@ -976,7 +885,7 @@ export function OnboardingForm({
               {current.key === "photo" ? (
                 <div className="grid gap-6">
                   <AvatarUploader
-                    initialUrl={initialPhotoUrl}
+                    initialUrl={photoUrl}
                     displayName={displayName}
                     onUploaded={setPhotoUrl}
                     optional
@@ -1092,11 +1001,9 @@ export function OnboardingForm({
             <span className="ck-btn__label">
               {isLast
                 ? "Finish"
-                : current.key === "preview"
-                  ? "Let's do it"
-                  : current.key === "interests" && picked === 0
-                    ? "Skip for now"
-                    : "Continue"}
+                : current.key === "interests" && picked === 0
+                  ? "Skip for now"
+                  : "Continue"}
               <Icon name="arrowR" size={17} />
             </span>
             {submitting ? <span className="ck-btn__spinner" aria-hidden /> : null}
@@ -1127,40 +1034,6 @@ function Disc({ children, size = 40 }: { children: ReactNode; size?: number }) {
 function Optional() {
   return (
     <span className="font-normal text-[color:var(--slate)]">(optional)</span>
-  );
-}
-
-/** A real upcoming event, shown flat on the preview step - no RSVP, no link out
- *  of the flow. Staggered entrance so the three land one after another. */
-function PreviewCard({ event, index }: { event: OnboardingPreviewEvent; index: number }) {
-  return (
-    <div
-      className={`rise-soft flex items-center gap-3.5 rounded-2xl border-[1.5px] border-[color:var(--mist-strong)] bg-[color:var(--paper)] p-3 ${
-        index === 1 ? "rise-d1" : index === 2 ? "rise-d2" : ""
-      }`}
-    >
-      <div className="relative size-[72px] flex-none overflow-hidden rounded-xl bg-[color:var(--lav-bg)]">
-        <EventImage
-          src={event.image}
-          alt={event.imageAlt}
-          category={event.category}
-          fill
-          sizes="72px"
-          className="object-cover"
-        />
-      </div>
-      <div className="min-w-0">
-        <p className="truncate text-[15px] font-semibold leading-[1.3] text-[color:var(--ink)]">
-          {event.title}
-        </p>
-        <p className="mt-1 truncate text-[12.5px] text-[color:var(--slate)]">
-          {event.date} · {event.time}
-        </p>
-        <p className="mt-0.5 truncate text-[12.5px] text-[color:var(--slate)]">
-          {event.suburb} · {event.price}
-        </p>
-      </div>
-    </div>
   );
 }
 

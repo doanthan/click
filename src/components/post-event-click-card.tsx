@@ -279,7 +279,10 @@ function CoAttendeeRow({
   const revealedMutualId = useRevealedMutual(person.id);
   const mutualId = person.mutualId ?? revealedMutualId;
   const firstName = firstNameOf(person.displayName);
-  const sent = state?.ok === true || person.alreadyClicked;
+  // Optimistic, like the People Card (runbook Stage 1: "flips to a muted `clicked`
+  // instantly ... no spinner"): the flip lands on the tap rather than after the
+  // whole send, and a refused send drops back to the button with its reason below.
+  const sent = submitting || state?.ok === true || person.alreadyClicked;
 
   return (
     <li className="rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-3">
@@ -305,7 +308,7 @@ function CoAttendeeRow({
               <span className="ck-btn__label">clicked</span>
             </span>
           ) : (
-            <Button type="submit" variant="primary" size="sm" loading={submitting}>
+            <Button type="submit" variant="primary" size="sm">
               click with {firstName}
             </Button>
           )}
@@ -313,8 +316,9 @@ function CoAttendeeRow({
       </div>
       {/* The outcome the action used to swallow: a closed post-event window, a
           spent per-event cap, or the kill switch being off all land here. Once the
-          reveal has played, "we'll only show you if it's mutual" has been answered. */}
-      {state?.message && !mutualId ? (
+          reveal has played, "we'll only show you if it's mutual" has been answered,
+          and a retry in flight must not carry the previous refusal. */}
+      {state?.message && !mutualId && !submitting ? (
         <p role="status" className="mt-2 text-xs leading-5 text-[color:var(--slate)]">
           {state.message}
         </p>

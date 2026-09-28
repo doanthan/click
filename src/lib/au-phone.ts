@@ -27,9 +27,59 @@ export function normalizeAuPhone(raw: string): string {
   // double zero ("00412345678") that fails every pattern (bug board #202).
   if (digits.startsWith("0061")) digits = "0" + digits.slice(4).replace(/^0+/, "");
   else if (digits.startsWith("61") && digits.length >= 10) digits = "0" + digits.slice(2).replace(/^0+/, "");
-  // Mobile typed without the leading 0 ("412 345 678") → add it back.
-  if (/^4\d{8}$/.test(digits)) digits = "0" + digits;
+  // A national number typed without its trunk 0 - "412 345 678", or
+  // "2 9646 8888" beside the wizard's fixed +61 box, which is how a +61 number
+  // is written - gets the 0 back. 2/3/7/8 are the area codes, 4 is mobile.
+  if (/^[23478]\d{8}$/.test(digits)) digits = "0" + digits;
   return digits;
+}
+
+// Groups `digits` into `sizes`, with anything past the last size kept on the
+// last group, so an extra digit stays visible instead of vanishing.
+function groupDigits(digits: string, sizes: number[]): string {
+  const parts: string[] = [];
+  let at = 0;
+  sizes.forEach((size, index) => {
+    if (at >= digits.length) return;
+    parts.push(digits.slice(at, index === sizes.length - 1 ? undefined : at + size));
+    at += size;
+  });
+  return parts.join(" ");
+}
+
+// The live formatter behind the signup phone field (bug board #144). Unlike
+// formatAuPhone it copes with a half-typed number: it only regroups the digits
+// the host has typed, keeps their own leading-0 choice, and never adds or drops
+// a digit of the number itself - so the count they see is the count they
+// typed. A pasted or autofilled +61 / 0061 loses the country code, because
+// the +61 has its own box.
+export function formatAuPhoneAsYouType(raw: string): string {
+  let digits = raw.replace(/[^\d]/g, "");
+  if (raw.trim().startsWith("+")) digits = digits.replace(/^61/, "");
+  else if (digits.startsWith("0061")) digits = digits.slice(4);
+  if (/^(04|1[38]00)/.test(digits)) return groupDigits(digits, [4, 3, 3]); // 0412 345 678 · 1300 123 456
+  if (/^0/.test(digits)) return groupDigits(digits, [2, 4, 4]); // 02 9646 8888
+  if (/^4/.test(digits)) return groupDigits(digits, [3, 3, 3]); // 412 345 678
+  if (/^13(?!00)/.test(digits)) return groupDigits(digits, [2, 2, 2]); // 13 12 34
+  if (/^[2378]\d{8}/.test(digits)) return groupDigits(digits, [1, 4, 4]); // 2 9646 8888
+  return groupDigits(digits, [4, 4]); // 9646 8888
+}
+
+// What the field says while the host types, before there is anything to call
+// an error: which kind of number it reads as, and how far through it they are.
+// Only the shapes whose length is certain get a count - a bare "9646..." could
+// be a local landline or the start of something longer.
+export function auPhoneProgress(raw: string): string {
+  const digits = normalizeAuPhone(raw);
+  const count = (label: string, target: number) =>
+    digits.length > target
+      ? `${label} - that's ${digits.length} digits, ${target} is enough.`
+      : `${label} - ${digits.length} of ${target} digits.`;
+  if (/^04/.test(digits)) return count("Mobile", 10);
+  if (/^4/.test(digits)) return count("Mobile", 9);
+  if (/^1[38]00/.test(digits)) return count("1300/1800 number", 10);
+  if (/^0[2378]/.test(digits)) return count("Landline", 10);
+  return "Mobile, landline with area code, or 1300/1800 number - the 0 is optional.";
 }
 
 // Display-grouping formatter, mirroring formatAbn/formatAcn's "tidy on blur"
@@ -51,7 +101,7 @@ export function formatAuPhone(raw: string): string {
     return `${digits.slice(0, 4)} ${digits.slice(4, 7)} ${digits.slice(7)}`;
   }
   // 13 xx xx short business line: 13 XX XX
-  if (/^13\d{4}$/.test(digits)) {
+  if (/^13(?!00)\d{4}$/.test(digits)) {
     return `${digits.slice(0, 2)} ${digits.slice(2, 4)} ${digits.slice(4)}`;
   }
   // Bare 8-digit local landline: XXXX XXXX
@@ -84,7 +134,10 @@ export function isValidAuPhone(raw: string): boolean {
     /^0[2-9]\d{8}$/.test(digits) || // 10-digit mobile or area-code landline
     /^\d{8}$/.test(digits) || // bare 8-digit local landline (no area code)
     /^1[38]00\d{6}$/.test(digits) || // 1300 / 1800 business line
-    /^13\d{4}$/.test(digits) // 13 xx xx short business line
+    // 13 xx xx short business line. Never 13 00 xx: those six digits are a
+    // 1300 number being typed, and calling them valid flashed "Looks good"
+    // four digits early.
+    /^13(?!00)\d{4}$/.test(digits)
   );
 }
 

@@ -10,7 +10,11 @@ const eventPage = readFileSync(path.join(root, "src/app/events/[slug]/page.tsx")
 test("replaying an RSVP returns the seat without repeating its side effects", () => {
   const start = repo.indexOf("export async function registerForEvent");
   assert.ok(start > -1, "registerForEvent not found");
-  const register = repo.slice(start, start + 9500);
+  // To the function's end, not a fixed character count - a fixed window failed
+  // this whole test the moment the function grew.
+  const end = repo.indexOf("\nasync function detectConfirmedTogether(", start);
+  assert.ok(end > start, "detectConfirmedTogether no longer follows registerForEvent");
+  const register = repo.slice(start, end);
 
   // The current attendee row is read after the event lock in a separate SQL
   // statement, so a concurrent retry sees the first request's committed state.
@@ -455,8 +459,8 @@ test("a claimed guest +1 is a seat everywhere the app asks whether you have one"
   const uses = repo.match(/from \$\{seatRowsSql\}/g) ?? [];
   assert.equal(
     uses.length,
-    6,
-    `viewerRsvpStatus + getProfileStatus + dashboard upcoming/waitlisted + confirmed-events upcoming/past = 6, found ${uses.length}`,
+    7,
+    `viewerRsvpStatus + the schedule-clash check + getProfileStatus + dashboard upcoming/waitlisted + confirmed-events upcoming/past = 7, found ${uses.length}`,
   );
 
   // Holding your own seat AND a claimed +1 for the same night is possible

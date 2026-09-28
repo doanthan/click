@@ -13,7 +13,11 @@ export const metadata = {
   title: "Edit profile",
 };
 
-export default async function EditProfilePage() {
+export default async function EditProfilePage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ focus?: string }>;
+}) {
   const session = await auth();
 
   if (!session?.user) {
@@ -28,9 +32,10 @@ export default async function EditProfilePage() {
   // The same checklist the dashboard shows. Four of its five items are edited on
   // this page, so it belongs here too - the form re-answers those four against
   // live state and leaves the rest of the definition to the repository.
-  const [tagOptions, completion] = await Promise.all([
+  const [tagOptions, completion, params] = await Promise.all([
     getProfileTagOptions(),
     getProfileCompletion(session),
+    searchParams,
   ]);
 
   return (
@@ -54,7 +59,13 @@ export default async function EditProfilePage() {
             Your photos, your words, and the things you&apos;re into.
           </p>
 
-          <ProfileEditForm profile={profile} tagOptions={tagOptions} completion={completion} />
+          <ProfileEditForm
+            profile={profile}
+            tagOptions={tagOptions}
+            completion={completion}
+            // ?focus=bio is the dashboard's "Write a short bio" (#241).
+            focusBio={params?.focus === "bio"}
+          />
         </div>
       </div>
     </main>

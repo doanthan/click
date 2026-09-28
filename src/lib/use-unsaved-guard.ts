@@ -56,6 +56,11 @@ export function useUnsavedGuard(dirty: boolean): {
 
       const anchor = event.target instanceof Element ? event.target.closest("a") : null;
       if (!anchor) return;
+      // A link that opens an overlay ON this page (the Click quiz modal) never
+      // unmounts the form - its href is only the no-JS fallback. This listener
+      // runs in the capture phase, ahead of the link's own handler, so the
+      // link cannot opt out by calling preventDefault itself.
+      if (anchor.hasAttribute("data-opens-overlay")) return;
       if (anchor.hasAttribute("download")) return;
       if (anchor.target && anchor.target !== "_self") return;
 

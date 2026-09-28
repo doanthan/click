@@ -10,7 +10,7 @@ import {
   type Dispatch,
 } from "react";
 import { useRouter } from "next/navigation";
-import { submitLifeQuizAction } from "@/app/quiz/life/actions";
+import { saveLifeQuizInPlaceAction, submitLifeQuizAction } from "@/app/quiz/life/actions";
 import { EndowedProgress, Icon, ckBtn } from "@/components/ds";
 import { useFormDraft } from "@/lib/use-form-draft";
 import { SECTIONS, KNOWN_OPTION_SLUGS, type Section } from "@/lib/life-quiz-sections";
@@ -31,6 +31,12 @@ import { SECTIONS, KNOWN_OPTION_SLUGS, type Section } from "@/lib/life-quiz-sect
 // Back / Skip / Next / Save nav. Unlike the merchant wizard there's no per-step
 // validation - the quiz is opt-in ("tap what fits, skip what doesn't"), so
 // every step is skippable and Save commits whatever's selected.
+//
+// The same steps also run as the DS quiz MODAL (LifeQuizModalLink in
+// life-quiz-modal.tsx) over /dashboard and /profile/edit: there `onStep` and
+// `onSaved` stand in for the route pushes and the hub redirect, so closing it
+// returns the member to exactly where they were. The routes stay as the no-JS
+// and open-in-new-tab fallback.
 //
 // A RETAKE IS AN EDIT, NOT AN APPEND. The layout hands this provider the answers
 // the profile already carries (getLifeQuizSelections) and seeds state with them,
@@ -203,7 +209,17 @@ export function LifeQuizProvider({
 
 // ---------- step shell ----------
 
-export function LifeQuizStep({ step }: { step: number }) {
+export function LifeQuizStep({
+  step,
+  onStep,
+  onSaved,
+}: {
+  step: number;
+  /** Modal mode (LifeQuizModalLink): move between steps in place, not by route. */
+  onStep?: (step: number) => void;
+  /** Modal mode: save without the hub redirect, then hand control back. */
+  onSaved?: () => void;
+}) {
   const { state, dispatch, initial, clearDraft } = useLifeQuiz();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -235,12 +251,15 @@ export function LifeQuizStep({ step }: { step: number }) {
   }, [dispatch, sectionSlug]);
 
   function goNext() {
-    router.push(STEP_PATHS[step + 1]);
+    if (onStep) onStep(step + 1);
+    else router.push(STEP_PATHS[step + 1]);
   }
 
   function goBack() {
     if (pending) return;
-    if (step > 0) router.push(STEP_PATHS[step - 1]);
+    if (step === 0) return;
+    if (onStep) onStep(step - 1);
+    else router.push(STEP_PATHS[step - 1]);
   }
 
   function save() {
@@ -263,6 +282,14 @@ export function LifeQuizStep({ step }: { step: number }) {
     setSaveError(false);
     startTransition(async () => {
       try {
+        if (onSaved) {
+          // The modal: same write, no redirect. Only a save that landed clears
+          // the draft and closes, exactly as below.
+          await saveLifeQuizInPlaceAction(fd);
+          clearDraft();
+          onSaved();
+          return;
+        }
         await submitLifeQuizAction(fd);
         // Success only: the action redirects on a good save, so getting past the
         // await means the write landed and the server copy is now the truth this
