@@ -1,14 +1,20 @@
 import Link from "next/link";
+import { switchAdminAccount } from "@/app/account-switch/actions";
 import { resetCurrentTestScenario, signOutOfClick } from "@/app/login/actions";
 import { findQaPersona } from "@/lib/qa-personas";
+import { AccountSwitchButton, AccountSwitchForm } from "@/components/account-switch-form";
 import { QaSubmitButton } from "@/components/qa-testing-controls";
 
 export function QaSessionBanner({
   currentEmail,
   unlocked,
+  viewingAccount = false,
 }: {
   currentEmail: string;
   unlocked: boolean;
+  /** An admin is viewing this test account, so the exit returns them to their
+   *  own account rather than signing them out of both. */
+  viewingAccount?: boolean;
 }) {
   const persona = findQaPersona(currentEmail);
   const label = persona?.label ?? "Test account";
@@ -26,7 +32,9 @@ export function QaSessionBanner({
           <p className="truncate text-[11.5px] leading-4 text-[rgba(255,255,255,0.76)]">
             {unlocked
               ? `${currentEmail} - changes stay in the @click.local test namespace.`
-              : "Testing access has expired. Exit this account, then sign in as a real admin to turn it on again."}
+              : viewingAccount
+                ? "Testing access has expired. Return to your admin account to turn it on again."
+                : "Testing access has expired. Exit this account, then sign in as a real admin to turn it on again."}
           </p>
         </div>
 
@@ -50,14 +58,26 @@ export function QaSessionBanner({
               ) : null}
             </>
           ) : null}
-          <form action={signOutOfClick}>
-            <button
-              type="submit"
-              className="inline-flex min-h-9 items-center rounded-xl bg-white px-3 text-[12.5px] font-semibold text-[color:var(--purple-800)] transition-transform hover:-translate-y-px"
-            >
-              Exit test account
-            </button>
-          </form>
+          {viewingAccount ? (
+            <AccountSwitchForm action={switchAdminAccount}>
+              <AccountSwitchButton
+                name="intent"
+                value="return"
+                className="inline-flex min-h-9 items-center rounded-xl bg-white px-3 text-[12.5px] font-semibold text-[color:var(--purple-800)] transition-transform hover:-translate-y-px"
+              >
+                Return to my admin account
+              </AccountSwitchButton>
+            </AccountSwitchForm>
+          ) : (
+            <form action={signOutOfClick}>
+              <button
+                type="submit"
+                className="inline-flex min-h-9 items-center rounded-xl bg-white px-3 text-[12.5px] font-semibold text-[color:var(--purple-800)] transition-transform hover:-translate-y-px"
+              >
+                Exit test account
+              </button>
+            </form>
+          )}
         </div>
       </div>
     </aside>

@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useId, useState } from "react";
+import { switchAdminAccount } from "@/app/account-switch/actions";
 import { signOutOfClick } from "@/app/login/actions";
+import { AccountSwitchButton, AccountSwitchForm } from "./account-switch-form";
 import { Avatar, Icon } from "./ds";
 import { TestAccountRows } from "./test-account-switcher";
 import { useDisclosure } from "./use-disclosure";
@@ -41,6 +43,7 @@ export function HeaderRoleSwitcher({
   showHostCta = false,
   canSwitchAccounts = false,
   canSwitchAnyAccount = false,
+  viewingAccount = false,
   currentEmail = null,
 }: {
   roles: PortalRole[];
@@ -55,6 +58,9 @@ export function HeaderRoleSwitcher({
    *  inside the picker independently re-check it before changing sessions. */
   canSwitchAccounts?: boolean;
   canSwitchAnyAccount?: boolean;
+  /** An admin is viewing this account. Signing out would end their own
+   *  session too - it is the same cookie - so the exit returns them instead. */
+  viewingAccount?: boolean;
   currentEmail?: string | null;
 }) {
   const { open, setOpen, ref } = useDisclosure<HTMLDivElement>();
@@ -245,14 +251,26 @@ export function HeaderRoleSwitcher({
 
               <div className="my-1 h-px bg-[color:var(--line-soft)]" />
               {/* Sign out is a quiet row - never error red, since signing out is not destructive. */}
-              <form action={signOutOfClick}>
-                <button
-                  type="submit"
-                  className="block w-full rounded-xl px-3 py-2.5 text-left text-[14.5px] font-medium text-[color:var(--ink)] hover:bg-[color:var(--lavender-100)]"
-                >
-                  {isQaSession ? "Exit test account" : "Sign out"}
-                </button>
-              </form>
+              {viewingAccount ? (
+                <AccountSwitchForm action={switchAdminAccount}>
+                  <AccountSwitchButton
+                    name="intent"
+                    value="return"
+                    className="block w-full rounded-xl px-3 py-2.5 text-left text-[14.5px] font-medium text-[color:var(--ink)] hover:bg-[color:var(--lavender-100)]"
+                  >
+                    Return to my admin account
+                  </AccountSwitchButton>
+                </AccountSwitchForm>
+              ) : (
+                <form action={signOutOfClick}>
+                  <button
+                    type="submit"
+                    className="block w-full rounded-xl px-3 py-2.5 text-left text-[14.5px] font-medium text-[color:var(--ink)] hover:bg-[color:var(--lavender-100)]"
+                  >
+                    {isQaSession ? "Exit test account" : "Sign out"}
+                  </button>
+                </form>
+              )}
             </>
           )}
         </div>

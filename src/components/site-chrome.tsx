@@ -144,7 +144,8 @@ export async function SiteHeader({
               userLabel={userLabel}
               avatarUrl={avatarUrl}
               showHostCta={!hasHostApplication}
-              canSwitchAccounts={qaSwitcherUnlocked && !session.impersonation}
+              canSwitchAccounts={qaSwitcherUnlocked}
+              viewingAccount={!!session.impersonation}
               currentEmail={session.user.email}
             />
           </div>

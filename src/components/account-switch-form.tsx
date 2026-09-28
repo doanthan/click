@@ -46,8 +46,11 @@ export function AccountSwitchForm({ action, children }: {
   );
 }
 
-export function AccountSwitchButton({ name = "targetId", value, children, current = false }: {
-  name?: string; value: string; children: ReactNode; current?: boolean;
+export function AccountSwitchButton({
+  name = "targetId", value, children, current = false,
+  className = "ck-btn ck-btn--secondary ck-btn--sm whitespace-nowrap",
+}: {
+  name?: string; value: string; children: ReactNode; current?: boolean; className?: string;
 }) {
   const { pending, data } = useFormStatus();
   const switching = useAccountSwitchPending();
@@ -55,7 +58,7 @@ export function AccountSwitchButton({ name = "targetId", value, children, curren
   return (
     <button name={name} value={value} type="submit" disabled={switching || pending || current}
       aria-busy={pending && selected || undefined}
-      className="ck-btn ck-btn--secondary ck-btn--sm whitespace-nowrap disabled:opacity-60">
+      className={`${className} disabled:opacity-60`}>
       {pending && selected ? "Switching…" : current ? "Current account" : children}
     </button>
   );

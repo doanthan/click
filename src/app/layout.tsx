@@ -149,11 +149,17 @@ export default async function RootLayout({
         {/* A QA identity is a real session, not a visual preview. Keep that
             fact visible on every surface, including chromeless onboarding
             pages. The exit remains available after the 12-hour unlock expires
-            so a tester is never stranded inside a seeded account. */}
-        {session?.impersonation ? (
+            so a tester is never stranded inside a seeded account. An admin
+            viewing a test account gets the same testing banner, with Return in
+            place of Exit; viewing a real member gets the plain viewing banner. */}
+        {isQaSession ? (
+          <QaSessionBanner
+            currentEmail={qaSessionEmail}
+            unlocked={qaSwitcherUnlocked}
+            viewingAccount={!!session?.impersonation}
+          />
+        ) : session?.impersonation ? (
           <AccountViewingBanner email={session.user?.email ?? ""} adminEmail={session.impersonation.actor.email} />
-        ) : isQaSession ? (
-          <QaSessionBanner currentEmail={qaSessionEmail} unlocked={qaSwitcherUnlocked} />
         ) : null}
         {/* The live header awaits the session profile + notification queries;
             stream it so those round-trips never block first paint of the page

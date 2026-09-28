@@ -1,5 +1,5 @@
 import { auth, isAdminEmail } from "@/auth";
-import { accountSwitchActor } from "@/lib/account-switch-policy";
+import { accountSwitchActor, viewingExpiresAt } from "@/lib/account-switch-policy";
 import { getPostgresPool } from "@/lib/postgres";
 
 export type SwitchAccount = { id: string; email: string; name: string; role: string };
@@ -45,10 +45,8 @@ export async function authorizeAccountSwitch(targetId: string, returning: boolea
     const user = target.rows[0];
     if (!user?.email) { await client.query("rollback"); return null; }
     const backToSelf = user.email.toLowerCase() === actor.email;
-    const expiresAt = session?.impersonation?.expiresAt ?? Math.min(
-      Date.now() + 60 * 60 * 1000,
-      Date.parse(session!.expires),
-    );
+    const runningUntil = session?.impersonation?.expiresAt ?? Date.parse(session!.expires);
+    const expiresAt = backToSelf ? runningUntil : viewingExpiresAt(user.email, runningUntil);
     // Require the audit write to succeed before issuing the switched session.
     await client.query(
       `insert into audit_logs (actor_profile_id, action, entity_table, entity_id, metadata)

@@ -6,7 +6,7 @@ import type { AccountSwitchResult } from "@/lib/account-switch-result";
 import { isTestSwitcherUnlocked } from "@/lib/test-switcher";
 import { findQaPersona } from "@/lib/qa-personas";
 import { provisionQaPersona } from "@/lib/qa-provision";
-import { getPostgresPool } from "@/lib/postgres";
+import { signInAsQaPersona } from "@/lib/qa-sign-in";
 
 export async function switchAdminAccount(
   _previous: AccountSwitchResult, data: FormData,
@@ -28,12 +28,18 @@ export async function switchAdminAccount(
   }
 }
 
+// Works while an admin is viewing another account too: signInAsQaPersona sends a
+// real admin through the admin switch, which keeps them as the actor.
 export async function switchQaAccount(
   _previous: AccountSwitchResult, data: FormData,
 ): Promise<AccountSwitchResult> {
-  if (!(await isTestSwitcherUnlocked())) return { error: "Testing access has expired. Sign in as an admin to enable it again." };
-  const session = await auth();
-  if (session?.impersonation) return { error: "Use Switch account in the viewing banner so you can return to your admin account." };
+  if (!(await isTestSwitcherUnlocked())) {
+    // /qa-unlock and the Admin → System toggle both refuse a viewing session.
+    const viewing = (await auth())?.impersonation;
+    return { error: viewing
+      ? "Testing access has expired. Return to your admin account to turn it on again."
+      : "Testing access has expired. Sign in as an admin to enable it again." };
+  }
   const email = String(data.get("email") ?? "").trim().toLowerCase();
   try {
     if (email === "signed-out") {
@@ -43,15 +49,7 @@ export async function switchQaAccount(
     const persona = findQaPersona(email);
     if (!persona) return { error: "Choose one of the listed test accounts." };
     await provisionQaPersona(persona.email);
-    if (accountSwitchActor(session, isAdminEmail)) {
-      const result = await getPostgresPool()?.query<{ id: string }>(
-        "select id::text from profiles where email = $1::citext", [persona.email],
-      );
-      if (!result?.rows[0]) return { error: "This persona has no profile yet. Start it from the testing workspace first." };
-      await signIn("admin-account-switch", { targetId: result.rows[0].id, redirect: false });
-    } else {
-      await signIn("test-login", { email: persona.email, redirect: false });
-    }
+    await signInAsQaPersona(persona.email);
     return { destination: "/post-login" };
   } catch {
     return { error: "Couldn’t open this test account. Your current session is unchanged. Please try again." };

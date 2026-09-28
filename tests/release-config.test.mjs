@@ -494,11 +494,14 @@ test("the QA persona switcher cannot be reached without the unlock key", () => {
     "an unreadable cookie jar must fail closed",
   );
 
-  // 4. Signed-in sessions receive the gated test-person menu inside the account menu.
+  // 4. Signed-in sessions receive the gated test-person menu inside the account menu,
+  // including while an admin is viewing another account: signInAsQaPersona keeps
+  // the admin as the actor, so hopping between test people never costs the way back.
   // The floating control remains only for the signed-out test state, otherwise
   // choosing "Not signed in" would leave the tester with no way back in.
   assert.match(layout, /<SiteHeader qaSwitcherUnlocked=\{qaSwitcherUnlocked\}/);
-  assert.match(chrome, /canSwitchAccounts=\{qaSwitcherUnlocked && !session\.impersonation\}/);
+  assert.match(chrome, /canSwitchAccounts=\{qaSwitcherUnlocked\}/);
+  assert.match(chrome, /viewingAccount=\{!!session\.impersonation\}/);
   assert.match(accountMenu, /canSwitchAccounts[\s\S]*Test as another person[\s\S]*TestAccountRows/);
   assert.match(layout, /qaSwitcherUnlocked && !session\?\.user \? \(/);
 });
@@ -518,9 +521,16 @@ test("QA account changes keep the browser on its current local origin", () => {
     actions.indexOf("export async function signInWithGoogle"),
   );
 
-  assert.match(signInHelper, /signIn\("test-login", \{ email, redirect: false \}\)/);
+  const qaSignIn = readFileSync(path.join(root, "src/lib/qa-sign-in.ts"), "utf8");
+
+  assert.match(signInHelper, /await signInAsQaPersona\(email\)/);
   assert.match(signInHelper, /redirect\(destination\)/);
   assert.doesNotMatch(signInHelper, /redirectTo/);
+  // Both ways in - test-login, and the admin switch for a real admin - mint the
+  // session without letting Auth.js navigate.
+  assert.match(qaSignIn, /signIn\("test-login", \{ email: persona\.email, redirect: false \}\)/);
+  assert.match(qaSignIn, /signIn\("admin-account-switch", \{ targetId: profile\.id, redirect: false \}\)/);
+  assert.doesNotMatch(qaSignIn, /redirectTo/);
   assert.match(signOutHelper, /signOut\(\{ redirect: false \}\)/);
   assert.match(signOutHelper, /redirect\(destination\)/);
 
@@ -575,6 +585,17 @@ test("a QA session always has a visible escape hatch", () => {
   assert.match(banner, /Testing access has expired/);
   assert.match(banner, /<form action=\{signOutOfClick\}>/);
   assert.match(banner, />\s*Exit test account\s*</);
+
+  // An admin viewing a test account leaves through Return, never a sign-out that
+  // would end their own session too - in the banner and in the account menu.
+  const accountMenu = readFileSync(
+    path.join(root, "src/components/header-role-switcher.tsx"),
+    "utf8",
+  );
+  const returns = /viewingAccount \? \(\s*<AccountSwitchForm action=\{switchAdminAccount\}>\s*<AccountSwitchButton\s+name="intent"\s+value="return"/;
+  assert.match(layout, /<QaSessionBanner[\s\S]{0,200}viewingAccount=\{!!session\?\.impersonation\}/);
+  assert.match(banner, returns);
+  assert.match(accountMenu, returns);
 });
 
 test("fresh start clears only the selected account's browser drafts", () => {

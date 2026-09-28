@@ -8,6 +8,7 @@ import { profileExistsByEmail } from "@/lib/event-repository";
 import { assertTestSwitcherUnlocked } from "@/lib/test-switcher";
 import { provisionQaPersona, resetQaData } from "@/lib/qa-provision";
 import { findQaPersona } from "@/lib/qa-personas";
+import { signInAsQaPersona } from "@/lib/qa-sign-in";
 import {
   TOKEN_TTL_MINUTES,
   issueMagicLink,
@@ -176,10 +177,11 @@ function freshScenarioDestination(path: string) {
 // opens 127.0.0.1 while AUTH_URL names localhost (or the reverse): the session
 // cookie is written for the page's hostname and the Auth redirect immediately
 // moves to the other hostname, where that cookie does not exist. Mint the
-// session without letting Auth navigate, then use Next's relative redirect so
-// the browser stays on the same origin it used to submit the server action.
+// session without letting Auth navigate (signInAsQaPersona never passes
+// redirectTo), then use Next's relative redirect so the browser stays on the
+// same origin it used to submit the server action.
 async function signInQaPersonaOnCurrentOrigin(email: string, destination: string) {
-  await signIn("test-login", { email, redirect: false });
+  await signInAsQaPersona(email);
   redirect(destination);
 }
 
@@ -275,12 +277,22 @@ export async function signInAsTestAccount(formData: FormData) {
 
 // Delete every QA persona and their events so the sign-up journeys start from
 // zero again - the merchant application in particular is one-way, so without
-// this you can only walk it once. Signs you out, since the session's own
-// profile is one of the rows being removed.
+// this you can only walk it once. A session signed in as a test person loses
+// its account here, so it is signed out - unless it is an admin viewing that
+// test person, who goes back to their own account instead. Anyone else keeps
+// their session.
 export async function resetTestAccounts() {
   await assertTestSwitcherUnlocked("QA data reset");
+  const session = await auth();
   await resetQaData();
-  await signOutOnCurrentOrigin("/");
+  if (session?.user?.email?.trim().toLowerCase().endsWith("@click.local")) {
+    if (session.impersonation) {
+      await signIn("admin-account-switch", { intent: "return", redirect: false });
+    } else {
+      await signOutOnCurrentOrigin("/");
+    }
+  }
+  redirect("/test");
 }
 
 // Start one exact scenario from /test. Unlike the quick account switcher, this
