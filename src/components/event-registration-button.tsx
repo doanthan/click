@@ -2,6 +2,7 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
+import { rsvpReturnPath } from "@/lib/rsvp-resume";
 import { Button } from "./ds";
 import { openLoginModal } from "./login-modal-host";
 import {
@@ -142,7 +143,9 @@ export function EventRegistrationButton({
 
     if (response.status === 401) {
       setState("idle");
-      openLoginModal({ callbackUrl: pathname || "/events" });
+      // Back to this event with its booking dialog reopened once they are
+      // signed up, not just back to "here" - see rsvpReturnPath.
+      openLoginModal({ callbackUrl: rsvpReturnPath(eventId) });
       return;
     }
 

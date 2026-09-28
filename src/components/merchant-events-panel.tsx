@@ -153,8 +153,8 @@ export function MerchantEventsPanel({
           You haven&apos;t created any events yet.
         </p>
         <p className="mt-1.5 text-sm leading-relaxed text-[color:var(--slate)]">
-          Every new event lands in pending status until it passes review - then it&apos;s live on
-          Discover.
+          A free event goes live on Discover as soon as you publish it; a paid one once your
+          payouts are connected.
         </p>
       </div>
     );

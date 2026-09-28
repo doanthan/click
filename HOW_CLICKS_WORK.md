@@ -309,7 +309,7 @@ The governing principle: **no chat, no free text** - coordination is taps only (
 2. Cap of 3 (`select ... for update`; `>= 3` → `validationError("You've reached the limit of 3 alternative suggestions.")`, `:11578-11585`). The cap is **one shared budget across both people**, not 3 each.
 3. **No free text** - the slug must resolve to a real `live/featured/waitlist` upcoming event, else `validationError("Pick an upcoming event from the catalogue.")` (explicit "no free text is ever accepted", `:11587-11601`).
 4. Swap `suggested_event_id`, `alternatives_count+1`, `proposed_by=viewer` (`:11603-11611`).
-5. Notify partner: "New plan suggested" → `/proposals`, mute-suppressed (`:11613-11623`).
+5. Notify partner: "New plan suggested" → `/proposals`, mute-suppressed (`:11613-11623`), plus the `plan-suggested-attendee` email after commit (same mute rule, and the `mutualClick` pref). `suggestPlanForMutual` does the same for a fresh plan.
 
 **`getProposalCatalogue`** (`:11642-11680`) - the closed input set: up to 60 events, `live/featured/waitlist`, `starts_at > now()`, not sold out, soonest-first; returns `{ slug, title, startsAt, suburb }`. There is no text field anywhere.
 

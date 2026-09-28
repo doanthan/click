@@ -124,6 +124,7 @@ export type EmailTemplate =
   | "rsvp-cancelled-merchant"
   | "event-reminder-attendee"
   | "event-created-merchant"
+  | "event-awaiting-payouts-merchant"
   | "event-approved-merchant"
   | "event-rejected-merchant"
   | "event-cancelled-merchant"
@@ -146,6 +147,7 @@ export type EmailTemplate =
   | "merchant-monthly-report"
   | "mutual-click-attendee"
   | "reengagement-click-attendee"
+  | "plan-suggested-attendee"
   | "guest-invite"
   | "guest-spot-existing-user"
   | "guest-spot-cancelled"
@@ -173,6 +175,8 @@ const SUBJECTS: Record<EmailTemplate, (vars: Record<string, string>) => string> 
     `Tomorrow - ${v.eventTitle ?? "your event"}`,
   "event-created-merchant": (v) =>
     `Your event is in review - ${v.eventTitle ?? ""}`.trim(),
+  "event-awaiting-payouts-merchant": (v) =>
+    `${v.eventTitle ?? "Your event"} is saved - connect payouts to go live`,
   "event-approved-merchant": (v) =>
     `${v.eventTitle ?? "Your event"} is live`,
   "event-rejected-merchant": (v) =>
@@ -215,6 +219,8 @@ const SUBJECTS: Record<EmailTemplate, (vars: Record<string, string>) => string> 
     `It's mutual - you clicked with ${v.otherName ?? "someone"}`,
   // Never names the sender - B7.4b anonymity. "Someone" is the whole point.
   "reengagement-click-attendee": () => "Someone clicked with you on Click",
+  "plan-suggested-attendee": (v) =>
+    `${v.otherName ?? "Someone"} suggested ${v.eventTitle ?? "an event"}`,
   "guest-invite": (v) =>
     `${v.purchaserFirstName ?? "A friend"} saved you a spot`,
   "guest-spot-existing-user": (v) =>
@@ -250,12 +256,21 @@ export type LogEmailInput = {
   toEmail: string;
   toProfileId?: string | null;
   vars: Record<string, string>;
+  // HTML-escape every var on its way into the body; the subject, a plain-text
+  // header, still gets them raw. Set it wherever a var carries another member's
+  // free text - a display name is only trimmed on write (updateOwnProfile).
+  escapeVars?: boolean;
 };
 
 export async function logEmailEvent(input: LogEmailInput): Promise<void> {
   try {
     const raw = await loadTemplate(input.template);
-    const html = renderHtml(raw, input.vars);
+    const html = renderHtml(
+      raw,
+      input.escapeVars
+        ? Object.fromEntries(Object.entries(input.vars).map(([k, v]) => [k, escapeHtml(v)]))
+        : input.vars,
+    );
     const subject = SUBJECTS[input.template](input.vars);
     const pool = getPostgresPool();
 

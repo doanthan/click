@@ -8,6 +8,7 @@ import { TestAccountSwitcher } from "@/components/test-account-switcher";
 import { SessionFreshness } from "@/components/session-freshness";
 import { AccountViewingBanner } from "@/components/account-viewing-banner";
 import { LoginModalHost } from "@/components/login-modal-host";
+import { MutualRevealHost } from "@/components/mutual-reveal-host";
 import { ChromeGate } from "@/components/chrome-gate";
 import { SiteFooter, SiteHeader, SiteHeaderShell } from "@/components/site-chrome";
 import { SiteNotices } from "@/components/site-notices";
@@ -189,6 +190,13 @@ export default async function RootLayout({
           metaConfigured={metaConfigured}
           showDemoCredentials={showInternalTools}
         />
+        {/* Inside ChromeGate: a reveal must never land on top of sign-in, onboarding
+            or a quiz takeover - it waits for the first normal page instead. */}
+        {session?.user ? (
+          <ChromeGate>
+            <MutualRevealHost />
+          </ChromeGate>
+        ) : null}
         <Toaster
           position="top-right"
           closeButton

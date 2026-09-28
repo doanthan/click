@@ -241,6 +241,11 @@ export type ProfileStatus = {
   // dating-related signals (e.g. the radar "open to dating" FOMO nudge) so they
   // only surface when BOTH parties are dating-visible.
   datingVisible: boolean;
+  // The name the person gave us (profiles.display_name), for chrome that greets
+  // them. The session's own name is not that: a magic-link session is named
+  // after the email's local part, so the account menu read "Signed in as
+  // Ckpokego1" for someone called Poppy (bug board #279/#285).
+  displayName: string | null;
 };
 
 type LocalEventStore = {
@@ -2349,7 +2354,30 @@ export type MerchantEventSummary = {
   waitlisted: number;
   priceCents: number;
   category: string;
+  // Pending only because the host's payouts are not live yet - see
+  // isHeldForPayouts. Hosts read "Pending" as "an admin is reviewing it" (bug
+  // board #270), so the portal names the real reason instead.
+  heldForPayouts: boolean;
 };
+
+// A trusted, approved host's PAID event that sits in 'pending' only because
+// Stripe charges AND payouts are not both on yet: the hold createEventForMerchant
+// and resubmitRejectedEvent apply, and publishEventsHeldForPayouts releases.
+function isHeldForPayouts(
+  merchant: Pick<
+    MerchantProfileRow,
+    "auto_approve_events" | "verification_status" | "charges_enabled" | "payouts_enabled"
+  >,
+  event: { status: string; price_cents: number },
+) {
+  return (
+    event.status === "pending" &&
+    event.price_cents > 0 &&
+    merchant.auto_approve_events === true &&
+    merchant.verification_status === "approved" &&
+    !(merchant.charges_enabled === true && merchant.payouts_enabled === true)
+  );
+}
 
 export type MerchantAttendeeRow = {
   attendeeId: string;
@@ -2494,6 +2522,7 @@ export async function getMerchantEvents(session: Session | null): Promise<Mercha
     waitlisted: Number(row.waitlisted),
     priceCents: row.price_cents,
     category: row.category,
+    heldForPayouts: isHeldForPayouts(merchant, row),
   }));
 }
 
@@ -2664,6 +2693,7 @@ export async function getMerchantEventDetail(
     waitlisted: Number(row.waitlisted),
     priceCents: row.price_cents,
     category: row.category,
+    heldForPayouts: isHeldForPayouts(merchant, row),
     images: resolveEventImages(
       row.image_urls && row.image_urls.length > 0 ? row.image_urls : [row.image_url],
       row.category,
@@ -2967,7 +2997,7 @@ export async function updateMerchantEventDetails(
 export async function resubmitRejectedEvent(
   eventSlug: string,
   session: Session | null,
-): Promise<{ slug: string; title: string; status: EventStatus }> {
+): Promise<{ slug: string; title: string; status: EventStatus; heldForPayouts: boolean }> {
   const pool = getPostgresPool();
   const email = getSessionEmail(session);
   if (!email) throw authError();
@@ -2977,14 +3007,25 @@ export async function resubmitRejectedEvent(
   const merchant = await getMerchantProfile(pool, profile.id);
   if (!merchant) throw authError("Merchant profile required.");
 
-  // Trusted merchants skip the queue, exactly like a freshly created event.
-  const autoApprove = merchant.auto_approve_events === true;
-  const newStatus = autoApprove ? "live" : "pending";
+  // Trusted merchants skip the queue, exactly like a freshly created event -
+  // including createEventForMerchant's payout rule: a PAID event only goes live
+  // once charges AND payouts are on, otherwise it waits in 'pending' and
+  // publishEventsHeldForPayouts lets it go when they are. This used to be
+  // `autoApprove ? "live" : "pending"`, which put a paid event live for a host
+  // with no Stripe account and dead-ended every buyer at checkout. The price is
+  // read off the row inside the UPDATE because the rejected-event editor can
+  // change it right before this call.
+  const autoApprove =
+    merchant.auto_approve_events === true && merchant.verification_status === "approved";
+  const stripeReady = merchant.charges_enabled === true && merchant.payouts_enabled === true;
 
-  const result = await pool.query<{ slug: string; title: string }>(
+  const result = await pool.query<{ slug: string; title: string; status: string }>(
     `
       update events
-      set status = $3,
+      set status = case
+            when $3::boolean and (events.price_cents <= 0 or $4::boolean) then 'live'::event_status
+            else 'pending'::event_status
+          end,
           rejection_reason = null,
           rejected_at = null,
           updated_at = now()
@@ -2993,9 +3034,9 @@ export async function resubmitRejectedEvent(
         where slug = $1 and merchant_profile_id = $2::uuid and status = 'rejected'
       ) target
       where events.id = target.id
-      returning events.slug, events.title
+      returning events.slug, events.title, events.status::text as status
     `,
-    [eventSlug, merchant.id, newStatus],
+    [eventSlug, merchant.id, autoApprove, stripeReady],
   );
 
   const event = result.rows[0];
@@ -3005,7 +3046,8 @@ export async function resubmitRejectedEvent(
     throw error;
   }
 
-  // Put it back in front of the admins (unless it auto-published).
+  // Put it back in front of the admins - only when an admin is what it waits
+  // on. A trusted host's paid event held for payouts is not theirs to review.
   if (!autoApprove) {
     void pool
       .query(
@@ -3026,7 +3068,13 @@ export async function resubmitRejectedEvent(
       });
   }
 
-  return { slug: event.slug, title: event.title, status: eventStatusFromDb(newStatus) };
+  return {
+    slug: event.slug,
+    title: event.title,
+    status: eventStatusFromDb(event.status),
+    // Lets the resubmit button say "waiting on payouts" instead of "in review".
+    heldForPayouts: autoApprove && event.status === "pending",
+  };
 }
 
 // Admin approves a merchant's queued address change: the parked pending_address
@@ -5000,31 +5048,41 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
     // recomputes anyway. See src/lib/matching/feature-store.ts.
     void deriveEventSubTagsBySlug(pool, slug).catch(() => {});
 
-    // Log event-created-merchant to email_events. Everything the template
-    // needs is already in scope here, so no second SELECT. Fire-and-forget.
-    const origin = emailOrigin();
-    const dates = formatEmailDates(startsAt, endsAt, "Australia/Sydney");
-    const merchantFirstName =
-      (profile.display_name || merchantProfile.business_name || "").split(/\s+/)[0] ||
-      "there";
-    await logEmailEvent({
-      template: "event-created-merchant",
-      toEmail: merchantProfile.contact_email,
-      toProfileId: profile.id,
-      vars: {
-        merchantFirstName,
-        eventTitle: title,
-        eventLongDate: dates.eventLongDate,
-        eventStartTime: dates.eventStartTime,
-        eventCity: input.suburb.trim() || "Sydney",
-        eventCategory: category,
-        eventCapacityLabel: `Capacity ${capacity}`,
-        eventDashboardUrl: `${origin}/merchant/events/${slug}`,
-        editEventUrl: `${origin}/merchant/events/${slug}`,
-        supportEmail: SUPPORT_EMAIL,
-        unsubscribeUrl: `${origin}/account-settings`,
-      },
-    });
+    // Tell the host what actually happened to the event (bug board #180). Every
+    // host used to get event-created-merchant - "in review, a moderator will
+    // look within one business day" - including a trusted host whose event was
+    // already live, and one whose paid event was only waiting on payouts, which
+    // no moderator is ever asked to look at. Fire-and-forget either way.
+    if (eventStatus === "live") {
+      await logEventApprovedEmail(pool, slug);
+    } else {
+      // Everything these templates need is already in scope, so no second SELECT.
+      const origin = emailOrigin();
+      const dates = formatEmailDates(startsAt, endsAt, "Australia/Sydney");
+      const merchantFirstName =
+        (profile.display_name || merchantProfile.business_name || "").split(/\s+/)[0] ||
+        "there";
+      await logEmailEvent({
+        // A trusted host's event is only ever pending for payouts (see eventStatus).
+        template: autoApprove ? "event-awaiting-payouts-merchant" : "event-created-merchant",
+        toEmail: merchantProfile.contact_email,
+        toProfileId: profile.id,
+        vars: {
+          merchantFirstName,
+          eventTitle: title,
+          eventLongDate: dates.eventLongDate,
+          eventStartTime: dates.eventStartTime,
+          eventCity: input.suburb.trim() || "Sydney",
+          eventCategory: category,
+          eventCapacityLabel: `Capacity ${capacity}`,
+          eventDashboardUrl: `${origin}/merchant/events/${slug}`,
+          editEventUrl: `${origin}/merchant/events/${slug}`,
+          payoutsUrl: `${origin}/merchant/onboarding/payouts?returnTo=${encodeURIComponent("/merchant")}`,
+          supportEmail: SUPPORT_EMAIL,
+          unsubscribeUrl: `${origin}/account-settings`,
+        },
+      });
+    }
 
     // Ping every admin's notification bell when an event needs review, so a fresh
     // submission doesn't sit unseen in /admin/events. Skipped for trusted
@@ -7677,6 +7735,7 @@ async function getProfileStatusUncached(session: Session | null): Promise<Profil
       photoUrl: null,
       hasGalleryPhotos: false,
       datingVisible: false,
+      displayName: null,
     };
   }
 
@@ -7744,6 +7803,7 @@ async function getProfileStatusUncached(session: Session | null): Promise<Profil
       photoUrl: row?.photo_url ?? null,
       hasGalleryPhotos: Boolean(row?.has_gallery),
       datingVisible: Boolean(row?.dating_visible),
+      displayName: profile.display_name?.trim() || null,
     };
   } catch (error) {
     console.error("getProfileStatus failed", { email, error });
@@ -7768,6 +7828,7 @@ async function getProfileStatusUncached(session: Session | null): Promise<Profil
       photoUrl: null,
       hasGalleryPhotos: false,
       datingVisible: false,
+      displayName: null,
     };
   }
 }
@@ -8098,7 +8159,80 @@ export async function updateMerchantConnectStatus(
     }
   }
 
+  // The level, not the edge: Stripe often turns payouts on in a later update
+  // than charges, and publishing only touches rows still pending, so a repeat
+  // sync finds nothing and stays silent. Runs after the announcement above, so
+  // events published here are not counted in its "sales are back on" notice.
+  if (status.chargesEnabled && status.payoutsEnabled) {
+    try {
+      await publishEventsHeldForPayouts(pool, row.merchant_profile_id);
+    } catch (error) {
+      console.warn("Failed to publish events held for payout setup", { accountId, error });
+    }
+  }
+
   return true;
+}
+
+/**
+ * Publishes a trusted host's PAID events that were parked in 'pending' only
+ * because payouts were not live yet, now that they are.
+ *
+ * createEventForMerchant keeps a paid event pending until Connect is finished
+ * (charges AND payouts), and nothing used to let it go afterwards:
+ * approveEventForAdmin refuses a paid event until charges are on, and no admin
+ * is even notified about a trusted host's event, so it sat in the queue unseen
+ * while the wizard had told the host it would wait for payouts. For a trusted
+ * host, payouts are the only thing that parks an event - free events publish
+ * straight to live, and a resubmitted rejection (resubmitRejectedEvent) follows
+ * the same payout rule - so this skips no review an admin asked for. Trust and approval are re-read
+ * inside the UPDATE rather than taken from the caller, so a revoked trust flag
+ * or a suspension wins. Same end state as an admin approval: status 'live', the
+ * legacy fomo sentinel cleared, an audit row, and the event-approved email.
+ */
+async function publishEventsHeldForPayouts(pool: Pool, merchantProfileId: string) {
+  const published = await pool.query<{ slug: string }>(
+    `
+      with published as (
+        update events e
+        set status = 'live',
+            fomo = case
+              when e.fomo = 'Pending admin review before being promoted to members.' then null
+              else e.fomo
+            end,
+            updated_at = now()
+        from merchant_profiles m
+        where m.id = $1::uuid
+          and e.merchant_profile_id = m.id
+          and m.verification_status = 'approved'
+          and m.auto_approve_events = true
+          and m.charges_enabled = true
+          and m.payouts_enabled = true
+          and e.status = 'pending'
+          and e.price_cents > 0
+          and coalesce(e.ends_at, e.starts_at) >= now()
+        returning e.id, e.slug, e.title
+      ),
+      audited as (
+        insert into audit_logs (actor_profile_id, action, entity_table, entity_id, metadata)
+        select null::uuid, 'publish_event_payouts_ready', 'events', published.id,
+               jsonb_build_object('slug', published.slug, 'title', published.title)
+        from published
+      )
+      select slug from published
+    `,
+    [merchantProfileId],
+  );
+  if (published.rows.length === 0) return;
+
+  // After the response: this sync runs inside the Stripe webhook and the
+  // payouts page render, and neither should wait on template renders and a
+  // mail send per event. logEventApprovedEmail never throws.
+  afterResponse(async () => {
+    for (const event of published.rows) {
+      await logEventApprovedEmail(pool, event.slug);
+    }
+  });
 }
 
 // Marks the one-time post-approval walkthrough as done (or skipped), so
@@ -9991,7 +10125,9 @@ async function sendClickInner(
     // serverless instance but contributes nothing measurable to the reply.
     if (freshMutualId) {
       const origin = emailOrigin();
-      const proposalsUrl = `${origin}/proposals`;
+      // The same deep link as the in-app notification above, so "Open your proposal"
+      // opens THIS mutual (and its reveal, if it hasn't played) rather than the list.
+      const proposalsUrl = `${origin}/proposals?open=${freshMutualId}`;
       const suggestionLine = suggestedEvent
         ? `We even spotted an event you could go to together: ${suggestedEvent.title}. Open your proposal to lock in a time.`
         : "Open your proposal to pick an upcoming event and plan your first hangout - no awkward back-and-forth.";
@@ -14303,28 +14439,44 @@ export async function getNotificationsForSession(session: Session | null): Promi
   }
 }
 
-export function getUnreadNotificationCount(session: Session | null): Promise<number> {
+// `countedAt` is the DATABASE's clock when the count was taken, in epoch ms.
+// The header bell holds one count from the layout render and fetches more from
+// api/notifications/unread-count, and keeps whichever was taken last. One clock
+// for both, so the answer never depends on which server instance asked. 0 means
+// nothing was counted, so a failed read can never outrank a real one.
+export type UnreadNotificationCount = { count: number; countedAt: number };
+
+export function getUnreadNotificationCount(
+  session: Session | null,
+): Promise<UnreadNotificationCount> {
   return memoizeBySessionEmail("unreadNotifications", session, () =>
     getUnreadNotificationCountUncached(session),
   );
 }
 
-async function getUnreadNotificationCountUncached(session: Session | null): Promise<number> {
+async function getUnreadNotificationCountUncached(
+  session: Session | null,
+): Promise<UnreadNotificationCount> {
   const pool = getPostgresPool();
   const email = getSessionEmail(session);
 
-  if (!pool || !email) return 0;
+  if (!pool || !email) return { count: 0, countedAt: 0 };
 
   try {
     const profile = await ensureProfileForSession(session);
-    const result = await pool.query<{ count: string }>(
-      `select count(*)::text as count from notifications
-       where profile_id = $1::uuid and read_at is null`,
+    const result = await pool.query<{ count: string; counted_at: number }>(
+      `select count(*)::text as count,
+              (extract(epoch from now()) * 1000)::float8 as counted_at
+         from notifications
+        where profile_id = $1::uuid and read_at is null`,
       [profile.id],
     );
-    return Number(result.rows[0]?.count ?? 0);
+    return {
+      count: Number(result.rows[0]?.count ?? 0),
+      countedAt: Number(result.rows[0]?.counted_at ?? 0),
+    };
   } catch {
-    return 0;
+    return { count: 0, countedAt: 0 };
   }
 }
 
@@ -14421,6 +14573,9 @@ export async function getNotificationEmailForSession(
   const templatePatterns: string[] = [];
   if (haystack.includes("mutual") || haystack.includes("clicked")) {
     templatePatterns.push("%mutual-click%");
+  }
+  if (haystack.includes("suggested")) {
+    templatePatterns.push("%plan-suggested%");
   }
   if (haystack.includes("spot") || haystack.includes("waitlist")) {
     templatePatterns.push("%waitlist%");
@@ -15352,6 +15507,11 @@ export type PostEventCoAttendee = {
   alreadyClicked: boolean;
   /** §6.9(a): this click is still pending, so its budget slot can be swapped away. */
   swappable: boolean;
+  /** The pair's live mutual, from this night, another one or discovery - null when
+   *  there is none. CLICK_LANGUAGE §91: the row then shows its mutual state, which
+   *  "taps through to the mutual, never starts a new click". Both sides already know
+   *  about a mutual, so it discloses nothing the one-way fields would. */
+  mutualId: string | null;
 };
 
 export type PostEventClickPrompt = {
@@ -15412,6 +15572,26 @@ const POST_EVENT_ROSTER_RANK = `
             else 3
           end`;
 
+// The pair's live mutual, for PostEventCoAttendee.mutualId. Shared by both roster
+// queries, with the same reading of `$1` and `other` as the rank above.
+//
+// From ANY source on purpose - post-event detection only pairs clicks at one event,
+// but "already mutual" is about the two people. Without it, someone you were mutual
+// with from another night came back on this roster as "click with [name]", and the
+// tap was sendClickInner's reciprocal-while-active no-op: it still said "we'll only
+// show you if it's mutual" to a pair who already were, and answered this event's
+// window on the way. Live = the predicate /proposals lists and the profile page's
+// isMutual read, so the row always opens a mutual that is actually there.
+const POST_EVENT_ROSTER_MUTUAL = `
+          (
+            select m.id::text from mutual_clicks m
+            where m.user_a_id = least($1::uuid, other.id)
+              and m.user_b_id = greatest($1::uuid, other.id)
+              and m.status = 'active'
+              and m.expires_at > now()
+            limit 1
+          ) as mutual_id`;
+
 // Events the viewer attended that ended between 12 hours and 14 days ago, with
 // the co-attendees they can still Click. Powers the dashboard "who did you
 // click with?" card (business plan §4.3). Blocked pairs are excluded.
@@ -15442,6 +15622,7 @@ export async function getPostEventClickPrompts(
       other_suburb: string | null;
       already_clicked: boolean;
       swappable: boolean;
+      mutual_id: string | null;
       budget_spent: boolean;
       swap_used: boolean;
     }>(
@@ -15481,6 +15662,7 @@ export async function getPostEventClickPrompts(
               and c.event_id = e.id
               and c.status = 'pending'
           ) as swappable,
+          ${POST_EVENT_ROSTER_MUTUAL},
           -- The budget, so the surface can say it is out BEFORE the viewer spends
           -- attention on it (§6.9.1) instead of only refusing the fourth tap.
           -- Compared server-side and sent as a boolean: B5.1 keeps a remaining-count
@@ -15567,9 +15749,17 @@ export async function getPostEventClickPrompts(
         suburb: row.other_suburb,
         alreadyClicked: row.already_clicked,
         swappable: row.swappable,
+        mutualId: row.mutual_id,
       });
     }
-    return Array.from(byEvent.values());
+    // Someone you're already mutual with shows as that mutual, never a new click, so
+    // a night where that is EVERYONE has nothing left to ask: PostEventClickCard draws
+    // nothing for it, and the banner and the "Who was there" section must not open
+    // onto that nothing. (Every entry here has at least one co-attendee - the roster
+    // is an inner join.)
+    return Array.from(byEvent.values()).filter(
+      (prompt) => !prompt.coAttendees.every((person) => person.mutualId),
+    );
   } catch {
     return [];
   }
@@ -15608,6 +15798,7 @@ export async function getPostEventClickPromptForEvent(
       other_suburb: string | null;
       already_clicked: boolean;
       swappable: boolean;
+      mutual_id: string | null;
       budget_spent: boolean;
       swap_used: boolean;
     }>(
@@ -15647,6 +15838,9 @@ export async function getPostEventClickPromptForEvent(
               and c.event_id = e.id
               and c.status = 'pending'
           ) as swappable,
+          -- Null on the empty pool's one co-attendee-less row: least/greatest skip
+          -- the null and compare the viewer with themselves, which no pair is.
+          ${POST_EVENT_ROSTER_MUTUAL},
           -- The budget, so the surface can say it is out BEFORE the viewer spends
           -- attention on it (§6.9.1) instead of only refusing the fourth tap.
           -- Compared server-side and sent as a boolean: B5.1 keeps a remaining-count
@@ -15740,6 +15934,7 @@ export async function getPostEventClickPromptForEvent(
           suburb: row.other_suburb,
           alreadyClicked: row.already_clicked,
           swappable: row.swappable,
+          mutualId: row.mutual_id,
         })),
     };
   } catch {
@@ -15842,6 +16037,16 @@ export async function notifyPostEventClickPrompts(): Promise<number> {
               where c.sender_id = mine.profile_id
                 and c.receiver_id = other.id
                 and c.event_id = e.id
+            )
+            -- Nor someone this person is already mutual with (POST_EVENT_ROSTER_MUTUAL):
+            -- the roster shows them as that mutual, never a new click, so a night of
+            -- only them would push onto a page with nothing to pick.
+            and not exists (
+              select 1 from mutual_clicks m
+              where m.user_a_id = least(mine.profile_id, other.id)
+                and m.user_b_id = greatest(mine.profile_id, other.id)
+                and m.status = 'active'
+                and m.expires_at > now()
             )
             and not exists (
               select 1 from user_blocks b
@@ -16371,6 +16576,74 @@ export async function markMutualSeen(
   return result.rows.length > 0;
 }
 
+export type MutualReveal = Pick<
+  ProposalEntry,
+  "mutualId" | "otherId" | "otherName" | "sourceEventTitle" | "intentLine" | "bothDating" | "sharedTags"
+>;
+
+// What MutualRevealHost plays: the viewer's newest mutual whose one-time reveal (§4,
+// the seen_at columns above) they have not seen yet. One read, two moments - the
+// next page after the other person clicks back, and straight after the viewer's own
+// send when that send is what completed the mutual.
+//
+// A READ after the send has committed, never part of it. §6.1 keeps the send's reply
+// byte-identical whether or not it formed a mutual and reveals the mutual "only via
+// the asynchronous notification" - the fact this finds is that notification's,
+// written in the same transaction and already readable through the bell by the
+// time the send returns. Playing it at once tells the viewer nothing the bell did not.
+//
+// The gate below runs on every navigation, so it is one indexed row lookup; the full
+// projection is built only on the rare page that has a reveal to show. It mirrors the
+// projection's own filter (active, clock running, pair not blocked) plus the mutual
+// notification's mute rule - a mute silences the ping, and a modal is one.
+export async function getUnseenMutualReveal(session: Session | null): Promise<MutualReveal | null> {
+  const pool = getPostgresPool();
+  if (!getSessionEmail(session) || !pool) return null;
+  try {
+    const profile = await ensureProfileForSession(session);
+    const unseen = await pool.query<{ id: string }>(
+      `
+        select m.id::text
+        from mutual_clicks m
+        where m.status = 'active'
+          and m.expires_at > now()
+          and (
+            (m.user_a_id = $1::uuid and m.seen_at_a is null)
+            or (m.user_b_id = $1::uuid and m.seen_at_b is null)
+          )
+          and not exists (
+            select 1 from user_blocks b
+            where (b.blocker_profile_id = m.user_a_id and b.blocked_profile_id = m.user_b_id)
+               or (b.blocker_profile_id = m.user_b_id and b.blocked_profile_id = m.user_a_id)
+          )
+          and not exists (
+            select 1 from user_mutes
+            where muter_profile_id = $1::uuid
+              and muted_profile_id = case when m.user_a_id = $1::uuid then m.user_b_id else m.user_a_id end
+          )
+        order by m.mutual_at desc
+        limit 1
+      `,
+      [profile.id],
+    );
+    const mutualId = unseen.rows[0]?.id;
+    if (!mutualId) return null;
+    const entry = (await getProposalsForSession(session)).find((e) => e.mutualId === mutualId);
+    if (!entry || entry.revealSeen) return null;
+    return {
+      mutualId: entry.mutualId,
+      otherId: entry.otherId,
+      otherName: entry.otherName,
+      sourceEventTitle: entry.sourceEventTitle,
+      intentLine: entry.intentLine,
+      bothDating: entry.bothDating,
+      sharedTags: entry.sharedTags,
+    };
+  } catch {
+    return null;
+  }
+}
+
 // Verifies the session profile participates in the proposal's mutual click.
 // Returns { proposalId, otherId } or throws.
 //
@@ -16577,6 +16850,79 @@ export async function confirmProposal(session: Session | null, proposalId: strin
   }
 }
 
+// The email half of "New plan suggested", from both paths that write that
+// notification: suggestPlanForMutual (a fresh plan from `open`) and
+// proposeAlternativeForProposal (re-pointing one). 21_CLICK_MECHANIC B7.10 puts
+// "proposal sent → awaiting other" on the push/email list, for the RECEIVER: "a
+// proposal needs a timely answer or the event window closes".
+//
+// Same audience as the notification - the other person, skipped when they have
+// muted the suggester (SAFE-09: mute silences the ping, and an email is one).
+// Gated on the `mutualClick` pref, the toggle that already covers mail about a
+// mutual. After the response, like the mutual email, so a Resend round-trip never
+// sits inside the suggest action. escapeVars because the suggester's display name
+// is their own free text, landing in someone else's inbox.
+function logPlanSuggestedEmail(
+  pool: NonNullable<ReturnType<typeof getPostgresPool>>,
+  args: {
+    recipientId: string;
+    suggesterId: string;
+    suggesterName: string;
+    eventId: string;
+    mutualId: string;
+  },
+) {
+  const origin = emailOrigin();
+  afterResponse(async () => {
+    try {
+      const result = await pool.query<{
+        email: string;
+        display_name: string | null;
+        title: string;
+        starts_at: Date;
+        timezone: string;
+        suburb: string;
+      }>(
+        `
+          select p.email::text, p.display_name, e.title, e.starts_at, e.timezone, e.suburb
+          from profiles p
+          cross join events e
+          where p.id = $1::uuid and e.id = $2::uuid
+            and p.email is not null
+            and coalesce((p.notification_prefs->>'mutualClick')::boolean, true)
+            and not exists (
+              select 1 from user_mutes
+              where muter_profile_id = $1::uuid and muted_profile_id = $3::uuid
+            )
+        `,
+        [args.recipientId, args.eventId, args.suggesterId],
+      );
+      const row = result.rows[0];
+      if (!row) return;
+      const dates = formatEmailDates(row.starts_at, null, row.timezone);
+      await logEmailEvent({
+        template: "plan-suggested-attendee",
+        toEmail: row.email,
+        toProfileId: args.recipientId,
+        escapeVars: true,
+        vars: {
+          firstName: (row.display_name || "").split(/\s+/)[0] || "there",
+          otherName: args.suggesterName,
+          eventTitle: row.title,
+          eventLongDate: dates.eventLongDate,
+          eventStartTime: dates.eventStartTime,
+          suburb: row.suburb,
+          proposalsUrl: `${origin}/proposals?open=${args.mutualId}`,
+          supportEmail: SUPPORT_EMAIL,
+          unsubscribeUrl: `${origin}/account-settings`,
+        },
+      });
+    } catch (error) {
+      console.warn("logPlanSuggestedEmail failed", error);
+    }
+  });
+}
+
 export async function proposeAlternativeForProposal(
   session: Session | null,
   proposalId: string,
@@ -16691,7 +17037,7 @@ export async function proposeAlternativeForProposal(
     // plan wound down" the instant they re-suggested - the recovery step handed
     // them a dead card. Same window a fresh suggestion gets, so re-suggesting
     // and suggesting behave identically.
-    await client.query(
+    const repointed = await client.query<{ mutual_click_id: string }>(
       `
         update click_proposals
         set suggested_event_id = $2::uuid, proposed_by = $3::uuid,
@@ -16700,6 +17046,7 @@ export async function proposeAlternativeForProposal(
             alternatives_count = alternatives_count + ${recovering ? 0 : 1},
             updated_at = now()
         where id = $1::uuid
+        returning mutual_click_id::text
       `,
       [proposalId, event.id, profile.id],
     );
@@ -16728,6 +17075,13 @@ export async function proposeAlternativeForProposal(
     );
 
     await client.query("commit");
+    logPlanSuggestedEmail(pool, {
+      recipientId: row.other_id,
+      suggesterId: profile.id,
+      suggesterName: profile.display_name,
+      eventId: event.id,
+      mutualId: repointed.rows[0].mutual_click_id,
+    });
   } catch (error) {
     await client.query("rollback").catch(() => {});
     throw error;
@@ -17091,6 +17445,13 @@ export async function suggestPlanForMutual(
       ],
     );
     await client.query("commit");
+    logPlanSuggestedEmail(pool, {
+      recipientId: mutual.other_id,
+      suggesterId: profile.id,
+      suggesterName: profile.display_name,
+      eventId: event.id,
+      mutualId,
+    });
   } catch (error) {
     await client.query("rollback").catch(() => {});
     throw error;

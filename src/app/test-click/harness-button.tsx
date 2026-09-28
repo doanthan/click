@@ -1,10 +1,16 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect } from "react";
 import { useFormStatus } from "react-dom";
+import { announceClickSent } from "@/components/mutual-reveal";
 import { harnessAction, type HarnessResult } from "./actions";
 
 const IDLE: HarnessResult = { ok: true, message: "" };
+
+// The steps that can form a mutual click. An accepted one tells the reveal host a
+// send landed, exactly as the product's click forms do, so when this browser is signed
+// in as one of the pair the reveal plays here on the board - not on the next page.
+const SENDS = new Set(["send_discovery", "send_post_event", "spend_post_event_budget"]);
 
 /**
  * One button, one form, one result line under it.
@@ -31,6 +37,10 @@ export function HarnessButton({
   disabledReason?: string;
 }) {
   const [state, formAction] = useActionState(harnessAction, IDLE);
+  const sends = SENDS.has(fields.step);
+  useEffect(() => {
+    if (sends && state.ok && state.message) announceClickSent();
+  }, [sends, state]);
   return (
     <form action={formAction} className="flex flex-col gap-1">
       {Object.entries(fields).map(([name, value]) => (

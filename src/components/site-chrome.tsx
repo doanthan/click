@@ -4,7 +4,7 @@ import { accountSwitchActor } from "@/lib/account-switch-policy";
 import { SUPPORT_EMAIL_DEFAULT } from "@/lib/email-templates/tokens";
 import { getProfileStatus, getUnreadNotificationCount } from "@/lib/event-repository";
 import { ButtonLink, Logo } from "./ds";
-import { HeaderNav, type HeaderNavItem } from "./header-nav";
+import { HeaderLogoLink, HeaderNav, type HeaderNavItem } from "./header-nav";
 import { HeaderNotificationsBell } from "./header-notifications-bell";
 import { HeaderRoleSwitcher, type PortalRole } from "./header-role-switcher";
 import { LoginTrigger } from "./login-trigger";
@@ -48,9 +48,12 @@ export async function SiteHeader({
   qaSwitcherUnlocked?: boolean;
 }) {
   const session = await auth();
-  const userLabel = session?.user?.name ?? session?.user?.email ?? "Account";
   const isAdmin = !!session?.user && isAdminEmail(session.user.email);
   const profileStatus = session?.user ? await getProfileStatus(session) : null;
+  // The name they gave us first. A magic-link session's own name is derived
+  // from the email handle, so the menu greeted people by it (#279/#285).
+  const userLabel =
+    profileStatus?.displayName ?? session?.user?.name ?? session?.user?.email ?? "Account";
   const merchantProfile = profileStatus?.merchantProfile ?? null;
   // A merchant_profiles row exists from the moment someone APPLIES, so plain
   // truthiness is not "is a host". It was handing pending, rejected and
@@ -63,7 +66,9 @@ export async function SiteHeader({
   // the status.
   const hasHostApplication = !!merchantProfile;
   const avatarUrl = profileStatus?.photoUrl ?? session?.user?.image ?? null;
-  const unreadCount = session?.user ? await getUnreadNotificationCount(session) : 0;
+  const unread = session?.user
+    ? await getUnreadNotificationCount(session)
+    : { count: 0, countedAt: 0 };
 
   // Logged-out MARKETING header: no app nav, no repeated big logo - just a
   // quiet "Log in" and the one primary "Sign up". The app nav belongs to
@@ -92,9 +97,11 @@ export async function SiteHeader({
   if (isApprovedHost) portalRoles.push("merchant");
   if (isAdmin) portalRoles.push("admin");
 
-  // The wordmark points at the portal you actually work in (admin → /admin,
-  // host → /merchant, otherwise the attendee dashboard).
-  const logoHref = isAdmin ? "/admin" : isApprovedHost ? "/merchant" : "/dashboard";
+  // The wordmark points at the dashboard of the view you are in - see
+  // HeaderLogoLink. These are the portals it may send you to.
+  const logoPortals: ("merchant" | "admin")[] = [];
+  if (isApprovedHost) logoPortals.push("merchant");
+  if (isAdmin) logoPortals.push("admin");
 
   // App nav, per the DS: Discover · Dashboard · click (the people destination,
   // carrying the header's one spark) · Events.
@@ -120,9 +127,7 @@ export async function SiteHeader({
     <>
       <header className={HEADER_SHELL}>
         <div className={HEADER_ROW}>
-          <Link href={logoHref} aria-label="Click home" className="flex min-h-11 items-center lg:min-h-0">
-            <Logo size={26} />
-          </Link>
+          <HeaderLogoLink portals={logoPortals} />
 
           <HeaderNav items={navItems} />
 
@@ -132,7 +137,7 @@ export async function SiteHeader({
                 Host an event
               </ButtonLink>
             ) : null}
-            <HeaderNotificationsBell unreadCount={unreadCount} />
+            <HeaderNotificationsBell unreadCount={unread.count} countedAt={unread.countedAt} />
             <HeaderRoleSwitcher
               canSwitchAnyAccount={!!accountSwitchActor(session, isAdminEmail)}
               roles={portalRoles}

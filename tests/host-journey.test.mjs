@@ -438,3 +438,101 @@ test("event matching details are optional and keep a server fallback", () => {
   const repo = read("src/lib/event-repository.ts");
   assert.match(repo, /input\.relationshipGoal\.trim\(\) \|\| "Help people meet through a shared plan\."/);
 });
+
+/* ---------------- trusted hosts, payouts and what they are told ---------------- */
+
+const fnBody = (source, start) => {
+  const at = source.indexOf(start);
+  assert.ok(at > -1, `${start} not found`);
+  return source.slice(at, source.indexOf("\nexport ", at + 1));
+};
+
+test("a resubmitted paid event waits for payouts like a new one does", () => {
+  // It used to be `autoApprove ? "live" : "pending"`: a trusted host with no
+  // Stripe account put a paid event live and every buyer hit a checkout error.
+  const resubmit = fnBody(read("src/lib/event-repository.ts"), "export async function resubmitRejectedEvent");
+  assert.doesNotMatch(resubmit, /const newStatus = autoApprove \? "live" : "pending";/);
+  assert.match(
+    resubmit,
+    /merchant\.charges_enabled === true && merchant\.payouts_enabled === true/,
+  );
+  // The price is the row's, read inside the UPDATE - the rejected-event editor
+  // can change it right before resubmitting.
+  assert.match(
+    resubmit,
+    /when \$3::boolean and \(events\.price_cents <= 0 or \$4::boolean\) then 'live'::event_status/,
+  );
+  assert.match(resubmit, /heldForPayouts: autoApprove && event\.status === "pending"/);
+  assert.match(
+    read("src/components/merchant-event-resubmit-button.tsx"),
+    /payload\.heldForPayouts\s*\?\s*"Resubmitted - it goes live as soon as your payout setup is finished\."/,
+  );
+});
+
+test("the event-created email matches the status the event landed in", () => {
+  // Bug board #180: every host was told "in review, a moderator will look",
+  // including a trusted host whose event was already live.
+  const create = fnBody(read("src/lib/event-repository.ts"), "export async function createEventForMerchant");
+  assert.match(create, /if \(eventStatus === "live"\) \{\s*await logEventApprovedEmail\(pool, slug\);/);
+  assert.match(
+    create,
+    /template: autoApprove \? "event-awaiting-payouts-merchant" : "event-created-merchant"/,
+  );
+
+  // The new template is wired everywhere a template has to be.
+  const email = read("src/lib/email.ts");
+  assert.match(email, /\| "event-awaiting-payouts-merchant"/);
+  assert.match(email, /"event-awaiting-payouts-merchant": \(v\) =>/);
+  assert.match(read("scripts/send-test-emails.mjs"), /"event-awaiting-payouts-merchant":/);
+  const html = read("emails/event-awaiting-payouts-merchant.html");
+  assert.match(html, /href="\{\{payoutsUrl\}\}"/);
+  assert.doesNotMatch(html, /moderat|in review/i, "a held event is not in review");
+  assert.ok(!html.includes("—"), "the template contains an em-dash");
+});
+
+test("finishing Stripe's form counts as done, whatever is only eventually due", () => {
+  // Bug board #269: a host back from Stripe was told to "Continue on Stripe"
+  // because requirements that are not due yet still counted as outstanding.
+  const connect = read("src/lib/stripe-connect.ts");
+  assert.match(
+    connect,
+    /entry\.awaiting_action_from === "user" &&\s*entry\.minimum_deadline\?\.status !== "eventually_due"/,
+  );
+});
+
+test("a held event says what it is waiting on, on every host surface", () => {
+  // Bug board #268/#270: "my events are pending?" - Pending read as "an admin
+  // is reviewing it" when the only thing it waited on was payouts.
+  const repo = read("src/lib/event-repository.ts");
+  const held = repo.slice(repo.indexOf("function isHeldForPayouts"), repo.indexOf("export type MerchantAttendeeRow"));
+  for (const clause of [
+    /event\.status === "pending"/,
+    /event\.price_cents > 0/,
+    /merchant\.auto_approve_events === true/,
+    /merchant\.verification_status === "approved"/,
+    /!\(merchant\.charges_enabled === true && merchant\.payouts_enabled === true\)/,
+  ]) {
+    assert.match(held, clause);
+  }
+  // Both readers carry it: the list/dashboard/calendar and the event page.
+  assert.equal((repo.match(/heldForPayouts: isHeldForPayouts\(merchant, row\)/g) ?? []).length, 2);
+
+  const ds = read("src/components/merchant-ds.tsx");
+  assert.match(ds, /awaiting_payouts: \{ tone: "amber", label: "Waiting on payouts" \}/);
+  assert.match(ds, /if \(event\.status === "Pending" && event\.heldForPayouts\) return "awaiting_payouts";/);
+
+  const page = read("src/app/merchant/events/[eventId]/page.tsx");
+  assert.match(page, /event\.heldForPayouts \? "Waiting on payouts" : event\.status/);
+  assert.match(page, /\/merchant\/onboarding\/payouts\?returnTo=/);
+});
+
+test("the wordmark goes to the dashboard of the view you are in", () => {
+  // Bug board #290: a host browsing as an attendee was put back in the host
+  // portal every time they used the logo to get to their dashboard.
+  const chrome = read("src/components/site-chrome.tsx");
+  assert.doesNotMatch(chrome, /isApprovedHost \? "\/merchant" : "\/dashboard"/);
+  assert.match(chrome, /<HeaderLogoLink portals=\{logoPortals\} \/>/);
+  const logo = read("src/components/header-nav.tsx");
+  assert.match(logo, /pathname\.startsWith\("\/merchant"\) && portals\.includes\("merchant"\)/);
+  assert.match(logo, /: "\/dashboard";/);
+});

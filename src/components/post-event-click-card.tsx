@@ -1,22 +1,31 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useState, useSyncExternalStore } from "react";
+import { useActionState, useEffect, useState, useSyncExternalStore } from "react";
 import { answerPostEventWindowAction, clickCoAttendeeAction } from "@/app/dashboard/actions";
-import type { PostEventClickPrompt } from "@/lib/event-repository";
+import type { PostEventClickPrompt, PostEventCoAttendee } from "@/lib/event-repository";
 import { MomentBanner } from "./dashboard-ds";
 import { Avatar, Button, Spark, ckBtn } from "./ds";
+import { MutualClickLink, announceClickSent, useRevealedMutual } from "./mutual-reveal";
 
 const shortDate = new Intl.DateTimeFormat("en-AU", { day: "numeric", month: "short" });
 
 const firstNameOf = (name: string) => name.split(" ")[0];
+
+// Someone a click can still go to here: none of yours at this event yet, and no live
+// mutual with them from anywhere - a mutual "never starts a new click" (§91).
+const canClick = (person: PostEventCoAttendee) => !person.alreadyClicked && !person.mutualId;
 
 // Stage 0.5, "The window's own rules": the window is a backend concept and the UI
 // only ever knows open or not open. Nothing on this surface may name the window's
 // duration or what is left of the per-event budget - no countdown, no "N clicks
 // left" - which is why the constants module is deliberately NOT imported here.
 export function PostEventClickCard({ prompt }: { prompt: PostEventClickPrompt }) {
-  const clickable = prompt.coAttendees.filter((p) => !p.alreadyClicked);
+  const clickable = prompt.coAttendees.filter(canClick);
+  // The picker's rows: everyone still clickable, plus anyone you're already mutual
+  // with, who keeps their place in the server's order as the Sage "clicked" that
+  // opens the mutual.
+  const rows = prompt.coAttendees.filter((p) => canClick(p) || p.mutualId);
   // §6.9(a): a pending click of your own is the only thing with a slot to give back.
   const swappable = prompt.coAttendees.filter((p) => p.swappable);
   // §6.9.1: once the budget is gone the surface is a SPENT STATE, not a picker. It
@@ -85,7 +94,7 @@ export function PostEventClickCard({ prompt }: { prompt: PostEventClickPrompt })
       ) : (
         <>
           <ul className="mt-4 grid gap-2.5 sm:grid-cols-2">
-            {clickable.map((person) => (
+            {rows.map((person) => (
               <CoAttendeeRow key={person.id} person={person} eventSlug={prompt.eventSlug} />
             ))}
           </ul>
@@ -202,8 +211,12 @@ export function PostEventMomentBanner({ eyebrow, eventSlug }: { eyebrow: string;
 // The swap picker. One form: who to let go of, who to spend it on.
 function SwapForm({ prompt }: { prompt: PostEventClickPrompt }) {
   const [state, formAction, submitting] = useActionState(clickCoAttendeeAction, null);
+  // A swap spends the click on someone new, so it can complete a mutual too.
+  useEffect(() => {
+    if (state?.ok) announceClickSent();
+  }, [state]);
   const swappable = prompt.coAttendees.filter((p) => p.swappable);
-  const clickable = prompt.coAttendees.filter((p) => !p.alreadyClicked);
+  const clickable = prompt.coAttendees.filter(canClick);
 
   return (
     <form action={formAction} className="mt-3 grid gap-3">
@@ -255,6 +268,16 @@ function CoAttendeeRow({
   eventSlug: string;
 }) {
   const [state, formAction, submitting] = useActionState(clickCoAttendeeAction, null);
+  // The send's reply is the same whether or not this click completed a mutual
+  // (§6.1), so the row never learns it from its own action. It tells the reveal host
+  // a send landed; the host reads, and if it plays this person's reveal the button
+  // moves to the mutual state under the modal. A mutual that already existed comes
+  // from the roster instead, so it survives a reload.
+  useEffect(() => {
+    if (state?.ok) announceClickSent();
+  }, [state]);
+  const revealedMutualId = useRevealedMutual(person.id);
+  const mutualId = person.mutualId ?? revealedMutualId;
   const firstName = firstNameOf(person.displayName);
   const sent = state?.ok === true || person.alreadyClicked;
 
@@ -274,7 +297,10 @@ function CoAttendeeRow({
         <form action={formAction}>
           <input type="hidden" name="profile_id" value={person.id} />
           <input type="hidden" name="source_event" value={eventSlug} />
-          {sent ? (
+          {mutualId ? (
+            // The same footprint in its mutual state - Sage, and the one spark (§5).
+            <MutualClickLink mutualId={mutualId} firstName={firstName} className="shrink-0" />
+          ) : sent ? (
             <span className={ckBtn("pending", "sm", { className: "shrink-0" })} aria-live="polite">
               <span className="ck-btn__label">clicked</span>
             </span>
@@ -286,8 +312,9 @@ function CoAttendeeRow({
         </form>
       </div>
       {/* The outcome the action used to swallow: a closed post-event window, a
-          spent per-event cap, or the kill switch being off all land here. */}
-      {state?.message ? (
+          spent per-event cap, or the kill switch being off all land here. Once the
+          reveal has played, "we'll only show you if it's mutual" has been answered. */}
+      {state?.message && !mutualId ? (
         <p role="status" className="mt-2 text-xs leading-5 text-[color:var(--slate)]">
           {state.message}
         </p>

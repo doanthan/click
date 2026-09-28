@@ -26,7 +26,7 @@ export function MerchantEventResubmitButton({ eventId }: { eventId: string }) {
         { method: "POST" },
       );
       const payload = (await response.json().catch(() => null)) as
-        | { error?: string; status?: string }
+        | { error?: string; status?: string; heldForPayouts?: boolean }
         | null;
 
       if (!response.ok || !payload) {
@@ -39,7 +39,9 @@ export function MerchantEventResubmitButton({ eventId }: { eventId: string }) {
       setMessage(
         payload.status === "Live"
           ? "Resubmitted - your event is live again."
-          : "Resubmitted for review. We'll email you the outcome.",
+          : payload.heldForPayouts
+            ? "Resubmitted - it goes live as soon as your payout setup is finished."
+            : "Resubmitted for review. We'll email you the outcome.",
       );
       router.refresh();
     } catch {

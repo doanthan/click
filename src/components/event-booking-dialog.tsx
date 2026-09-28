@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { ckBtn } from "./ds";
 import { ModalShell } from "./modal-shell";
 
@@ -11,7 +11,14 @@ type EventBookingDialogProps = {
   summary?: ReactNode;
   body: ReactNode;
   children: ReactNode;
+  /** Open on arrival. The event page sets it for the ?rsvp=1 hand-back - see
+   *  rsvpReturnPath in src/lib/rsvp-resume.ts. */
+  autoOpen?: boolean;
 };
+
+// "Has this page hydrated yet", as a store with nothing to subscribe to: false
+// on the server and through hydration, true from the first client pass after.
+const subscribeNever = () => () => {};
 
 export function EventBookingDialog({
   triggerLabel,
@@ -20,8 +27,34 @@ export function EventBookingDialog({
   summary,
   body,
   children,
+  autoOpen = false,
 }: EventBookingDialogProps) {
   const [open, setOpen] = useState(false);
+
+  // Someone who tapped RSVP while signed out comes back from sign-up with
+  // ?rsvp=1 and lands in this dialog again, instead of on a page with the RSVP
+  // to find and tap a second time. It opens on the first client pass AFTER
+  // hydration, not as the initial state: ModalShell renders nothing on the
+  // server, so a dialog that started open would ask React to hydrate a portal
+  // the server never sent. Once dismissed it stays shut until tapped again.
+  const hydrated = useSyncExternalStore(subscribeNever, () => true, () => false);
+  const [autoOpenDismissed, setAutoOpenDismissed] = useState(false);
+  const isOpen = open || (autoOpen && hydrated && !autoOpenDismissed);
+
+  // The flag comes off the address bar once it has done its job, so a reload,
+  // a Back into this page or a copied link does not reopen the dialog.
+  useEffect(() => {
+    if (!autoOpen) return;
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has("rsvp")) return;
+    url.searchParams.delete("rsvp");
+    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  }, [autoOpen]);
+
+  function close() {
+    setOpen(false);
+    setAutoOpenDismissed(true);
+  }
 
   // The RSVP entry is the DS Button - radius 12, one footprint. "ink" is a
   // quieter secondary for a full/waitlist context.
@@ -40,9 +73,9 @@ export function EventBookingDialog({
           open/close IS mount/unmount and the shell's cleanup (focus handed back to
           the trigger, previous body overflow restored) runs at exactly the right
           moment. */}
-      {open ? (
+      {isOpen ? (
         <ModalShell
-          onClose={() => setOpen(false)}
+          onClose={close}
           labelledBy="booking-dialog-title"
           /* Matches the pre-migration z-[100]: above the page, below the login
              gate at z-200 that a 401 inside this dialog can raise. */
@@ -78,7 +111,7 @@ export function EventBookingDialog({
             <button
               type="button"
               aria-label="Close"
-              onClick={() => setOpen(false)}
+              onClick={close}
               // 44px and radius-12: the close on a dialog you commit money in
               // was a 36px pill - under the touch minimum, and pills belong to
               // tags and avatars, not buttons.

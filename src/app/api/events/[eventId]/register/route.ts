@@ -39,13 +39,14 @@ function responseForError(error: unknown, eventSlug: string) {
   // Signed in, but the profile has no postcode / birth date yet, so the 18+
   // gate was never passed. Carry the destination so the button can hand them
   // to the form instead of just printing an error they can't act on - and carry
-  // the event on as ?next= so finishing the form lands them back on the event,
-  // ready to tap RSVP again, instead of on /dashboard with the event gone.
+  // the event on as ?next= so finishing the form lands them back on the event
+  // with its booking dialog open again (?rsvp=1, see rsvp-resume.ts), instead
+  // of on /dashboard with the event gone.
   if (error.name === "OnboardingRequiredError") {
     return NextResponse.json(
       {
         error: error.message,
-        redirectTo: `/onboarding?next=${encodeURIComponent(`/events/${eventSlug}`)}`,
+        redirectTo: `/onboarding?next=${encodeURIComponent(`/events/${eventSlug}?rsvp=1`)}`,
       },
       { status: 403 },
     );

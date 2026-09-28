@@ -7,7 +7,8 @@ export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
 export default async function OpenGraphImage() {
-  const hero = await readFile(join(process.cwd(), "public/home/hero-discover-v2.jpg"), "base64");
+  // The same photo the home hero opens on, so a shared link previews the page.
+  const hero = await readFile(join(process.cwd(), "public/home/hero-courtyard.jpg"), "base64");
   const heroSrc = `data:image/jpeg;base64,${hero}`;
 
   return new ImageResponse(

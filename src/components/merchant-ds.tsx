@@ -146,6 +146,7 @@ export type MerchantStatus =
   | "featured"
   | "ended"
   | "pending"
+  | "awaiting_payouts"
   | "pending_payment"
   | "rejected"
   | "cancelled"
@@ -164,6 +165,7 @@ const STATUS_MAP: Record<MerchantStatus, { tone: BadgeTone; label: string }> = {
   paid: { tone: "sage", label: "Paid" },
   confirmed: { tone: "lavender", label: "Confirmed" },
   pending: { tone: "amber", label: "Pending" },
+  awaiting_payouts: { tone: "amber", label: "Waiting on payouts" },
   pending_payment: { tone: "amber", label: "Awaiting payment" },
   waitlist: { tone: "amber", label: "Waitlist" },
   waitlisted: { tone: "amber", label: "Waitlisted" },
@@ -202,6 +204,8 @@ export function merchantEventDisplayStatus(event: {
   endsAt?: string | null;
   confirmed: number;
   capacity: number;
+  /** A trusted host's paid event held for payouts - see MerchantEventSummary. */
+  heldForPayouts?: boolean;
   /** Pass the host's clock reading; server components should compute it once. */
   nowMs?: number;
 }): string {
@@ -210,6 +214,7 @@ export function merchantEventDisplayStatus(event: {
   const now = event.nowMs ?? Date.now();
   if (new Date(event.endsAt ?? event.startsAt).getTime() < now) return "ended";
   if (event.confirmed >= event.capacity && event.status === "Live") return "full";
+  if (event.status === "Pending" && event.heldForPayouts) return "awaiting_payouts";
   return event.status;
 }
 

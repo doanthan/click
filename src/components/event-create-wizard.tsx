@@ -712,6 +712,11 @@ export function WizardShell({
     autoApproveEvents &&
     (Math.round((Number.parseFloat(values.price) || 0) * 100) === 0 ||
       (chargesEnabled && payoutsEnabled));
+  // A trusted host's paid event with payouts unfinished. No admin reviews it:
+  // it goes live by itself the moment payouts are (publishEventsHeldForPayouts
+  // in event-repository.ts), so "Submit for review" would leave the host
+  // waiting on the wrong thing.
+  const heldForPayouts = autoApproveEvents && !publishesImmediately;
   // Which steps genuinely hold valid input, so the stepper's ticks mean
   // something. Deep-linking to /review used to paint four green ticks over an
   // empty event because "done" was inferred from position alone.
@@ -1039,9 +1044,13 @@ export function WizardShell({
           ? startsAtList.length === 1
             ? `🎉 ${label} is live - members can find it on Discover now.`
             : `🎉 ${okCount} occurrences of ${label} are live on Discover.`
-          : startsAtList.length === 1
-            ? `${label} submitted for admin review.`
-            : `${okCount} occurrences of ${label} submitted for admin review.`,
+          : heldForPayouts
+            ? startsAtList.length === 1
+              ? `${label} is saved - it goes live as soon as your payout setup is finished.`
+              : `${okCount} occurrences of ${label} are saved - they go live as soon as your payout setup is finished.`
+            : startsAtList.length === 1
+              ? `${label} submitted for admin review.`
+              : `${okCount} occurrences of ${label} submitted for admin review.`,
       );
       router.push("/merchant?tab=events");
       router.refresh();
@@ -1232,7 +1241,9 @@ export function WizardShell({
                   ? `Retry ${retryDates.length} ${retryDates.length === 1 ? "date" : "dates"}`
                   : publishesImmediately
                     ? "Publish event"
-                    : "Submit for review"}
+                    : heldForPayouts
+                      ? "Save event"
+                      : "Submit for review"}
             </button>
           ) : (
             <button
@@ -1868,8 +1879,15 @@ export function BasicsSection() {
 }
 
 export function ScheduleSection() {
-  const { values, set, fieldErrors, chargesEnabled, payoutsEnabled, platformFeeBps } =
-    useWizard();
+  const {
+    values,
+    set,
+    fieldErrors,
+    chargesEnabled,
+    payoutsEnabled,
+    autoApproveEvents,
+    platformFeeBps,
+  } = useWizard();
   // The SAME gate the publish decision uses - createEventForMerchant's
   // `stripeReady` is charges_enabled AND payouts_enabled (event-repository.ts),
   // and WizardShell's publishesImmediately reads both too. This note used to
@@ -2014,8 +2032,12 @@ export function ScheduleSection() {
                     events included", which stopped being true when
                     createEventForMerchant started gating on price:
                     `needsStripe = priceCents > 0` (event-repository.ts:4369). */}
-                Payout setup isn&rsquo;t finished, so this paid event stays in review
-                until it is.{" "}
+                {/* A trusted host's event publishes itself once payouts are
+                    live (publishEventsHeldForPayouts); anyone else's still
+                    waits for an admin after that. */}
+                {autoApproveEvents
+                  ? "Payout setup isn’t finished, so this paid event goes live as soon as it is."
+                  : "Payout setup isn’t finished, so this paid event stays in review until it is."}{" "}
                 <a
                   href={`/merchant/onboarding/payouts?returnTo=${encodeURIComponent(STEP_PATHS[1])}`}
                   className="font-medium text-[color:var(--purple)] underline underline-offset-2"
@@ -3225,6 +3247,9 @@ export function ReviewSection() {
   const paidTicket = Math.round((Number.parseFloat(values.price) || 0) * 100) > 0;
   const publishesImmediately =
     autoApproveEvents && (!paidTicket || (chargesEnabled && payoutsEnabled));
+  // Trusted, but a paid ticket with payouts unfinished: it publishes itself
+  // once they are (see WizardShell's heldForPayouts), not after a review.
+  const heldForPayouts = autoApproveEvents && !publishesImmediately;
   const allTags = useMemo(() => parseTags(values.tags), [values.tags]);
   const tagsPreview = allTags.slice(0, 3);
 
@@ -3318,7 +3343,9 @@ export function ReviewSection() {
           This is how your event card will look on Click.{" "}
           {publishesImmediately
             ? "Submitting puts it straight on Discover - you can edit it afterwards."
-            : "Submitting sends it to admin for approval, and we'll email you the outcome."}
+            : heldForPayouts
+              ? "It goes on Discover as soon as your payout setup is finished, and we'll email you when it's live."
+              : "Submitting sends it to admin for approval, and we'll email you the outcome."}
         </p>
       </header>
 
@@ -3352,6 +3379,8 @@ export function ReviewSection() {
                   never on a CTA. */}
               {publishesImmediately ? (
                 <Badge tone="sage">Goes live</Badge>
+              ) : heldForPayouts ? (
+                <Badge tone="amber">Waiting on payouts</Badge>
               ) : (
                 <Badge tone="amber">Pending review</Badge>
               )}

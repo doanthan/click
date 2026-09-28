@@ -163,6 +163,7 @@ const VARS = {
   eventDashboardUrl: `${APP}/merchant/events/sample`,
   attendeesUrl: `${APP}/merchant/events/sample`,
   editEventUrl: `${APP}/merchant/events/sample/edit`,
+  payoutsUrl: `${APP}/merchant/onboarding/payouts?returnTo=%2Fmerchant`,
   merchantDashboardUrl: `${APP}/merchant`,
   createEventUrl: `${APP}/merchant/events/create`,
   resubmitUrl: `${APP}/merchant/signup/documents`,
@@ -186,6 +187,7 @@ const SUBJECTS = {
   "rsvp-cancelled-merchant": "{{attendeeFirstName}} can't make {{eventTitle}}",
   "event-reminder-attendee": "Tomorrow - {{eventTitle}}",
   "event-created-merchant": "Your event is in review - {{eventTitle}}",
+  "event-awaiting-payouts-merchant": "{{eventTitle}} is saved - connect payouts to go live",
   "event-approved-merchant": "{{eventTitle}} is live",
   "event-rejected-merchant": "{{eventTitle}} needs another pass",
   "event-cancelled-merchant": "{{eventTitle}} was cancelled by Click",
@@ -206,6 +208,7 @@ const SUBJECTS = {
   "merchant-monthly-report":
     "Your {{monthLabel}} on Click - {{eventsCount}} events, {{revenueLabel}}",
   "mutual-click-attendee": "It's mutual - you clicked with {{otherName}}",
+  "plan-suggested-attendee": "{{otherName}} suggested {{eventTitle}}",
   "guest-invite": "{{purchaserFirstName}} saved you a spot",
   "guest-spot-existing-user": "{{purchaserFirstName}} saved you a spot at {{eventTitle}}",
   "guest-spot-cancelled": "Your spot at {{eventTitle}} is no longer held",

@@ -78,10 +78,10 @@ Public bucket = anyone with the URL can read (avatars rendered on event cards, h
 | --- | --- |
 | `account-welcome` | `ensureProfileForSession` in `src/lib/event-repository.ts`, on fresh insert only (detected via `xmax = 0`) |
 | `rsvp-attendee` + `rsvp-merchant` | `registerForEvent` in `src/lib/event-repository.ts`, after commit on the confirmed-RSVP branch (the waitlisted branch logs `waitlist-joined-attendee`) |
-| `event-created-merchant` | `createEventForMerchant` in `src/lib/event-repository.ts`, after the events insert + tag upsert |
+| `event-created-merchant` + `event-awaiting-payouts-merchant` | `createEventForMerchant` in `src/lib/event-repository.ts`, after the events insert + tag upsert, branched on the status the event landed in: an untrusted host's `pending` event gets `event-created-merchant` ("in review"), a trusted host's paid event held `pending` for payouts gets `event-awaiting-payouts-merchant`, and an event created straight to `live` gets `event-approved-merchant` instead (see below) |
 | `merchant-verified-merchant` + `merchant-rejected-merchant` | `updateMerchantVerificationForAdmin` in `src/lib/event-repository.ts`, branched on approved/rejected |
 | `merchant-application-received` | `registerMerchantWizardSubmit` in `src/lib/event-repository.ts`, after commit, first submission only (`xmax = 0`) |
-| `event-approved-merchant` | `approveEventForAdmin` in `src/lib/event-repository.ts`, via `logEventApprovedEmail` helper (looks up the owning merchant; skipped for platform-owned events) |
+| `event-approved-merchant` | `approveEventForAdmin` in `src/lib/event-repository.ts`, via `logEventApprovedEmail` helper (looks up the owning merchant; skipped for platform-owned events). Also `createEventForMerchant` when a trusted host's event is created straight to `live`. Also `publishEventsHeldForPayouts`, called from `updateMerchantConnectStatus` once charges AND payouts are on: it publishes a trusted host's paid events that were held in `pending` for payout setup and sends this email per event, post-response via `afterResponse` |
 | `event-rejected-merchant` | `rejectEventForAdmin` in `src/lib/event-repository.ts`, via `logEventRejectedEmail` helper (carries the admin's free-text reason; skipped for platform-owned events) |
 | `rsvp-cancelled-attendee` + `rsvp-cancelled-merchant` | `cancelRegistration` in `src/lib/event-repository.ts`, after commit, via `logRsvpCancelledEmails` helper |
 | `event-cancelled-attendee` | `cancelMerchantEvent` in `src/lib/event-repository.ts`, fan-out to every affected attendee after commit |
@@ -96,6 +96,7 @@ Public bucket = anyone with the URL can read (avatars rendered on event cards, h
 | `merchant-waitlisted-merchant` | `registerMerchantWizardSubmit` in `src/lib/event-repository.ts`, when the venue falls outside the launch pilot |
 | `mutual-click-attendee` | `sendClickInner` in `src/lib/event-repository.ts` - two sites, one per side of the mutual click |
 | `reengagement-click-attendee` | `sendClickInner` in `src/lib/event-repository.ts`, post-commit via `afterResponse`, when the receiver has been inactive 30+ days and the click did NOT form a mutual (B7.4b liveness test). Claimed with a conditional UPDATE on `profiles.reengagement_clicked_at`, so it fires once per dormancy spell however many people click them. Never names the sender. |
+| `plan-suggested-attendee` | `logPlanSuggestedEmail` in `src/lib/event-repository.ts`, called after commit from both suggest paths - `suggestPlanForMutual` and `proposeAlternativeForProposal` - to the other person only (B7.10 "proposal sent → awaiting other"). Post-response via `afterResponse`; skipped when the recipient muted the suggester or has `notification_prefs.mutualClick` off. Logged with `escapeVars: true` because `otherName` is the suggester's free-text display name. |
 | `guest-invite` + `guest-spot-existing-user` | `processGuestSpotsForSession` in `src/lib/event-repository.ts`, branched on whether the guest address already has a profile |
 | `guest-spot-cancelled` | `cancelGuestSeatForPurchaser` in `src/lib/event-repository.ts` |
 | `report-received-admin` | `reportUser` in `src/lib/event-repository.ts` |

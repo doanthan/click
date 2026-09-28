@@ -1,11 +1,11 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { usePathname } from "next/navigation";
 import { useMemo, useRef, useState } from "react";
 import { openLoginModal } from "./login-modal-host";
 import { Badge, Button } from "./ds";
 import { formatMoney } from "@/lib/amounts";
+import { rsvpReturnPath } from "@/lib/rsvp-resume";
 
 // Stand-in for the checkout modal while its chunk is still in flight. The gap
 // between the pay tap and Stripe painting stacks three uninstrumented waits
@@ -107,7 +107,6 @@ export function EventPaymentButton({
   const [state, setState] = useState<PaymentState>("idle");
   const [message, setMessage] = useState("");
   const [clientSecret, setClientSecret] = useState<string | null>(null);
-  const pathname = usePathname();
 
   // Cap tickets at 4 and at the seats actually available.
   const maxTickets = Math.max(
@@ -224,7 +223,9 @@ export function EventPaymentButton({
 
     if (response.status === 401) {
       setState("idle");
-      openLoginModal({ callbackUrl: pathname || `/events/${eventId}` });
+      // Back to this event with the booking dialog reopened once they are
+      // signed up - see rsvpReturnPath.
+      openLoginModal({ callbackUrl: rsvpReturnPath(eventId) });
       return;
     }
 

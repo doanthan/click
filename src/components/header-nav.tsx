@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Icon, Spark, type IconName } from "./ds";
+import { Icon, Logo, Spark, type IconName } from "./ds";
 
 // The icon is named, not passed as a component, so the server-rendered header
 // can build the tab list without shipping components across the boundary.
@@ -50,5 +50,28 @@ export function HeaderNav({ items }: { items: HeaderNavItem[] }) {
         );
       })}
     </nav>
+  );
+}
+
+/**
+ * The wordmark goes to the dashboard of the view you are IN, read off the path
+ * the same way HeaderRoleSwitcher decides which portal is current. It used to
+ * point at the highest portal you hold (admin → /admin, host → /merchant) on
+ * every page, so a host browsing as an attendee who tapped it to get back to
+ * their dashboard was put in the host portal every time (bug board #290).
+ */
+export function HeaderLogoLink({ portals }: { portals: ("merchant" | "admin")[] }) {
+  const pathname = usePathname() ?? "";
+  const href =
+    pathname.startsWith("/admin") && portals.includes("admin")
+      ? "/admin"
+      : pathname.startsWith("/merchant") && portals.includes("merchant")
+        ? "/merchant"
+        : "/dashboard";
+
+  return (
+    <Link href={href} aria-label="Click home" className="flex min-h-11 items-center lg:min-h-0">
+      <Logo size={26} />
+    </Link>
   );
 }

@@ -18,6 +18,8 @@ const read = (p) => readFileSync(path.join(root, p), "utf8");
 const repo = read("src/lib/event-repository.ts");
 const teardown = read("src/lib/clicks/teardown.ts");
 const drawer = read("src/components/coordination-drawer.tsx");
+const reveal = read("src/components/mutual-reveal.tsx");
+const host = read("src/components/mutual-reveal-host.tsx");
 const list = read("src/components/clicks-list.tsx");
 const actions = read("src/app/proposals/actions.ts");
 
@@ -220,17 +222,28 @@ test("every way out of the reveal persists reveal_seen", () => {
     "the ✕ and the scrim must both use the reveal-persisting close",
   );
   assert.match(drawer, /closeStepRef\.current\(\);/, "Escape must use it too");
+  // RevealStep's own exits: Maybe later, and the one that navigates (/test-click's
+  // reveal-stamped-by-every-exit row names it).
+  assert.match(reveal, /<button\s+type="button"\s+onClick=\{onLater\}/, "Maybe later must stamp");
+  assert.match(
+    reveal,
+    /<Link\s+href="\/how-it-works"\s+onClick=\{onLater\}/,
+    "'How clicking works' leaves the reveal, so it must stamp like every other exit",
+  );
 });
 
 test("the reveal uses its locked strings", () => {
-  assert.match(drawer, /Suggest a plan/);
-  assert.doesNotMatch(
-    drawer,
-    /Suggest something to do/,
-    "CLICK_LANGUAGE §5 locks the reveal CTA to 'Suggest a plan'",
-  );
-  assert.match(drawer, /Find a thing you&apos;d both enjoy, and just show up\./);
-  assert.match(drawer, /Maybe later/);
+  // RevealStep lives in mutual-reveal.tsx, shared by the drawer and the reveal host.
+  assert.match(reveal, /Suggest a plan/);
+  for (const src of [reveal, drawer]) {
+    assert.doesNotMatch(
+      src,
+      /Suggest something to do/,
+      "CLICK_LANGUAGE §5 locks the reveal CTA to 'Suggest a plan'",
+    );
+  }
+  assert.match(reveal, /Find a thing you&apos;d both enjoy, and just show up\./);
+  assert.match(reveal, /Maybe later/);
 });
 
 test("a mixed-intent pair is never rounded into one frame", () => {
@@ -403,6 +416,31 @@ test("a decline, a release, a removal and a window close all enqueue nothing", (
     assert.doesNotMatch(body, /logEmailEvent\(/, `${name} reaches the inbox instead`);
     assert.doesNotMatch(body, /sendTransactionalEmail\(/, `${name} reaches the inbox instead`);
   }
+});
+
+test("a plan suggestion reaches the other person's inbox, not only the bell", () => {
+  // The other side of the ledger above. B7.10 puts "proposal sent → awaiting
+  // other" on the push/email list for the RECEIVER, and both suggest paths write
+  // the same "New plan suggested" notification - so both must hand the email to
+  // the one helper, and only once their transaction has committed.
+  const suggestPaths = [
+    ["a fresh suggestion", sliceFn(repo, "export async function suggestPlanForMutual(", "export async function joinWaitlistTogetherForMutual(")],
+    ["an alternative", sliceFn(repo, "export async function proposeAlternativeForProposal(", "export async function declineProposalForSession(")],
+  ];
+  for (const [name, body] of suggestPaths) {
+    const commit = body.indexOf('await client.query("commit")');
+    assert.ok(commit > -1, `failed to find the commit in ${name}`);
+    assert.ok(
+      body.indexOf("logPlanSuggestedEmail(pool, {") > commit,
+      `${name} must email the other person after it commits`,
+    );
+  }
+
+  const helper = sliceFn(repo, "function logPlanSuggestedEmail(", "export async function proposeAlternativeForProposal(");
+  assert.match(helper, /afterResponse\(/, "a Resend round-trip must not sit inside the suggest action");
+  assert.match(helper, /from user_mutes/, "a mute silences the email the way it silences the bell");
+  assert.match(helper, /notification_prefs->>'mutualClick'/, "the Mutual clicks toggle must gate it");
+  assert.match(helper, /escapeVars: true/, "the suggester's display name is free text in someone else's inbox");
 });
 
 test("a one-way click produces no notification and no trace the receiver can read", () => {
@@ -580,6 +618,118 @@ test("the reveal fires once because a column says so, not because a component re
   assert.match(drawer, /void markMutualSeenAction\(entry\.mutualId\);/);
   const dismiss = sliceFn(drawer, "const dismissReveal = useCallback(", "}, [entry.mutualId]);");
   assert.match(dismiss, /markMutualSeenAction/, "dismissing without persisting is the re-fire bug");
+});
+
+test("a mutual reveals live from a read after the send, never from the send's reply", () => {
+  // Tap someone who already clicked you and the reveal opens on the spot; if they
+  // click back later, it opens on your next page. §6.1 still holds because neither
+  // comes from the send: its reply stays CLICK_SENT_LINE for every outcome, and the
+  // reveal is read back through its own door once the send has committed.
+  for (const [file, name] of [
+    ["src/app/dashboard/actions.ts", "clickCoAttendeeAction"],
+    ["src/app/people/actions.ts", "clickPersonAction"],
+  ]) {
+    const body = sliceFn(read(file), `export async function ${name}(`, "\n}\n");
+    assert.doesNotMatch(body, /Reveal|seen_at/, `${name} must not look at the reveal`);
+  }
+
+  // The read: the viewer's own side only, active and in-clock, not blocked, not
+  // muted, newest first - and the full projection is built only once the gate hits.
+  const revealRead = sliceFn(repo, "export async function getUnseenMutualReveal(", "\n}\n");
+  assert.match(
+    revealRead,
+    /\(m\.user_a_id = \$1::uuid and m\.seen_at_a is null\)\s*\n\s*or \(m\.user_b_id = \$1::uuid and m\.seen_at_b is null\)/,
+  );
+  assert.match(revealRead, /m\.status = 'active'\s*\n\s*and m\.expires_at > now\(\)/);
+  assert.match(revealRead, /from user_blocks/, "a blocked pair never pops");
+  assert.match(revealRead, /from user_mutes/, "a mute silences the modal the way it silences the bell");
+  assert.match(revealRead, /order by m\.mutual_at desc/, "the mutual a send just formed comes first");
+  assert.ok(
+    revealRead.indexOf("getProposalsForSession(") > revealRead.indexOf("limit 1"),
+    "the projection runs only after the cheap gate finds something",
+  );
+
+  // The host: every way out stamps seen_at, it stands aside on /proposals where the
+  // drawer plays the reveal itself, and it renders the drawer's own RevealStep.
+  assert.match(host, /onClose=\{close\}/);
+  assert.match(host, /onLater=\{close\}/);
+  const close = sliceFn(host, "const close = useCallback(", "}, [reveal]);");
+  assert.match(close, /markMutualSeenAction\(reveal\.mutualId\)/, "a reveal closed without a stamp re-fires");
+  assert.match(close, /revealedThisSession\.add\(reveal\.mutualId\)/);
+  assert.match(host, /const onProposals = pathname === "\/proposals";/);
+  assert.match(host, /fetch\("\/api\/clicks\/reveal"/);
+  assert.match(drawer, /import \{ RevealStep, revealedThisSession \} from "\.\/mutual-reveal";/);
+  assert.doesNotMatch(drawer, /function RevealStep\(/, "one reveal component, never a second copy");
+
+  // Mounted once, for members only, inside ChromeGate.
+  assert.match(
+    read("src/app/layout.tsx"),
+    /\{session\?\.user \? \(\s*<ChromeGate>\s*<MutualRevealHost \/>\s*<\/ChromeGate>\s*\) : null\}/,
+  );
+
+  // Every click form announces its send - without it the completer waits for a page change.
+  for (const file of ["src/components/post-event-click-card.tsx", "src/components/click-with-someone-user-card.tsx"]) {
+    const src = read(file);
+    const forms = (src.match(/useActionState\(click(CoAttendee|Person)Action/g) ?? []).length;
+    const announced = (src.match(/announceClickSent\(\);/g) ?? []).length;
+    assert.ok(forms > 0 && announced >= forms, `${file}: ${forms} click forms, ${announced} announce the send`);
+  }
+});
+
+test("a post-event roster shows a mutual as the mutual, and it opens it", () => {
+  // CLICK_LANGUAGE §91: once an active mutual exists the row's button "switches to
+  // its mutual state ... taps through to the mutual, never starts a new click".
+  // Before this, someone you were already mutual with from another night came back
+  // on the roster as "click with [name]", and the tap was sendClickInner's
+  // reciprocal-while-active no-op - which still said "we'll only show you if it's
+  // mutual" to a pair who already were, and answered that event's window.
+  const mutualSql = sliceFn(repo, "const POST_EVENT_ROSTER_MUTUAL = `", "`;");
+  assert.match(mutualSql, /m\.user_a_id = least\(\$1::uuid, other\.id\)/);
+  assert.match(mutualSql, /m\.user_b_id = greatest\(\$1::uuid, other\.id\)/);
+  // Live by the predicate /proposals lists, so the row opens something that is there.
+  assert.match(mutualSql, /m\.status = 'active'\s*\n\s*and m\.expires_at > now\(\)/);
+  // About the two people, not one night: a mutual from anywhere leaves nothing to send.
+  assert.doesNotMatch(mutualSql, /event_id/);
+  // Both rosters - the dashboard's and the event page's - select it and hand it over.
+  for (const fn of [
+    "export async function getPostEventClickPrompts(",
+    "export async function getPostEventClickPromptForEvent(",
+  ]) {
+    const body = sliceFn(repo, fn, "\n}\n");
+    assert.match(body, /\$\{POST_EVENT_ROSTER_MUTUAL\},/, fn);
+    assert.match(body, /mutualId: row\.mutual_id,/, fn);
+  }
+  // A night where EVERYONE is already a mutual leaves the card nothing to draw, so it
+  // must not raise the dashboard banner or open an empty "Who was there" section.
+  assert.match(
+    sliceFn(repo, "export async function getPostEventClickPrompts(", "\n}\n"),
+    /\.filter\(\s*\(prompt\) => !prompt\.coAttendees\.every\(\(person\) => person\.mutualId\),\s*\);/,
+  );
+  // Nor push one: the push opens the event page, whose roster has nothing to pick.
+  assert.match(
+    sliceFn(repo, "export async function notifyPostEventClickPrompts(", "\n}\n"),
+    /select 1 from mutual_clicks m\s*\n\s*where m\.user_a_id = least\(mine\.profile_id, other\.id\)\s*\n\s*and m\.user_b_id = greatest\(mine\.profile_id, other\.id\)\s*\n\s*and m\.status = 'active'\s*\n\s*and m\.expires_at > now\(\)/,
+  );
+
+  const card = read("src/components/post-event-click-card.tsx");
+  assert.match(
+    card,
+    /const canClick = \(person: PostEventCoAttendee\) => !person\.alreadyClicked && !person\.mutualId;/,
+  );
+  // Neither the picker nor the swap offers them - a swap into a mutual is refused.
+  assert.equal(card.split("prompt.coAttendees.filter(canClick)").length - 1, 2);
+  assert.match(card, /const rows = prompt\.coAttendees\.filter\(\(p\) => canClick\(p\) \|\| p\.mutualId\);/);
+  assert.match(card, /\{rows\.map\(\(person\) => \(/);
+  // Already mutual per the roster, or its reveal just played on this page.
+  assert.match(card, /const mutualId = person\.mutualId \?\? revealedMutualId;/);
+
+  // On both click cards the mutual state is a link into the mutual, never a send.
+  for (const file of ["src/components/post-event-click-card.tsx", "src/components/click-with-someone-user-card.tsx"]) {
+    assert.match(read(file), /\{mutualId \? \(\s*(?:\/\/[^\n]*\s*)*<MutualClickLink mutualId=\{mutualId\}/, file);
+  }
+  assert.match(reveal, /href=\{`\/proposals\?open=\$\{mutualId\}`\}/);
+  // The host hands over the id with the person, or the in-session state has nothing to open.
+  assert.match(host, /announceMutualRevealed\(reveal\.otherId, reveal\.mutualId\)/);
 });
 
 test("the picker asks the server once the typing stops, and never for nothing", () => {

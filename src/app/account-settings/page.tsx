@@ -142,7 +142,7 @@ function NotificationsTab({ settings }: { settings: AccountSettings }) {
         <AccountSettingToggle
           settingKey="notify.mutualClick"
           label="Mutual clicks"
-          description="When you and someone both clicked."
+          description="When you and someone both clicked, and when they suggest an event."
           initialOn={n.mutualClick}
         />
         <AccountSettingToggle

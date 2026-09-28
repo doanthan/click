@@ -49,6 +49,16 @@ test("the mutual email fires only for a mutual that just formed", () => {
   assert.match(repo, /if \(freshMutualId\) \{\s*\n\s*const origin = emailOrigin\(\);/);
 });
 
+test("the mutual email opens the mutual it announces", () => {
+  // The in-app notification always deep-linked /proposals?open=<id>; the email's
+  // "Open your proposal" landed on the bare list instead, a tap short of the reveal.
+  assert.match(sendClickInner, /`\/proposals\?open=\$\{mutualClickId\}`/);
+  assert.match(
+    sendClickInner,
+    /const proposalsUrl = `\$\{origin\}\/proposals\?open=\$\{freshMutualId\}`;/,
+  );
+});
+
 test("every receiver-state refusal is the same refusal", () => {
   assert.match(repo, /function notEligibleError\(auditReason: string\)/);
   // No send-path check may mint its own wording, and none may raise a NotFoundError:
@@ -236,19 +246,26 @@ test("a plan that died under a pair can always be re-picked", () => {
   assert.match(drawer, /disabled=\{capReached\}/);
 });
 
-test("the coordination drawer survives being rendered on the server", () => {
+test("the coordination drawer survives being rendered on the server, and hydrates", () => {
   // /proposals?open=<id> is what every mutual notification and the "it's mutual"
   // email link to, and ClicksList opens that row on the first (server) render.
   // createPortal(_, document.body) threw there and the route silently fell back to
-  // client rendering through its Suspense boundary.
-  assert.match(drawer, /export function CoordinationDrawer\(props: CoordinationDrawerProps\) \{\s*\n\s*if \(typeof document === "undefined"\) return null;/);
+  // client rendering through its Suspense boundary. The `typeof document` guard that
+  // stopped the throw then failed hydration on every such load - the first client
+  // render portaled the drawer where the server had sent nothing - so the gate is a
+  // hydration flag, whose server snapshot React also reads while hydrating.
   assert.match(drawer, /function CoordinationDrawerPanel\(/);
-  // The guard has to precede every hook, or hook order differs between renders.
   const wrapper = drawer.slice(
     drawer.indexOf("export function CoordinationDrawer(props"),
     drawer.indexOf("function CoordinationDrawerPanel("),
   );
-  assert.doesNotMatch(wrapper, /use[A-Z]/);
+  assert.match(
+    wrapper,
+    /const hydrated = useSyncExternalStore\(subscribeNever, \(\) => true, \(\) => false\);\s*\n\s*if \(!hydrated\) return null;/,
+  );
+  assert.doesNotMatch(wrapper, /typeof (document|window)/, "a server/client branch is what hydration trips on");
+  // One unconditional hook ahead of the early return, so hook order never differs.
+  assert.equal(wrapper.match(/\buse[A-Z]\w*\(/g)?.length, 1);
 });
 
 test("the attendee-list opt-out is reachable from settings", () => {

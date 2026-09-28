@@ -1,6 +1,14 @@
 "use client";
 
-import { useActionState, useCallback, useEffect, useId, useRef, useState } from "react";
+import {
+  useActionState,
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { useFormStatus } from "react-dom";
 import { createPortal } from "react-dom";
 import Link from "next/link";
@@ -20,6 +28,7 @@ import {
   type ProposalActionState,
 } from "@/app/proposals/actions";
 import type { ProposalCatalogueEvent, ProposalEntry } from "@/lib/event-repository";
+import { RevealStep, revealedThisSession } from "./mutual-reveal";
 
 // COORDINATION_MODAL_SYSTEM: the entire coordination sequence - reveal → suggest →
 // waiting → both going, plus recovery/terminal states - is ONE stepped modal over the
@@ -33,12 +42,6 @@ import type { ProposalCatalogueEvent, ProposalEntry } from "@/lib/event-reposito
 // gate to stick). Reduced-motion is the global handler.
 
 const INITIAL: ProposalActionState = { ok: false, error: null };
-
-// Reveals dismissed in THIS page session. Re-opening a mutual (list, bell, dashboard)
-// must never re-fire the reveal even before the list's revealSeen snapshot catches up.
-// The server seen_at (markMutualSeen) covers reload / other devices; this covers
-// same-session re-entry - together they kill the §4 re-fire regression.
-const revealedThisSession = new Set<string>();
 
 const longDate = new Intl.DateTimeFormat("en-AU", {
   weekday: "short",
@@ -182,18 +185,24 @@ type CoordinationDrawerProps = {
   onClose: () => void;
 };
 
-// Same split as modal-shell.tsx, and for the same reason: the guard has to run
-// BEFORE any hook, so hook order can never differ between the two renders.
+// Never emits: "is this the client" does not change once hydration is over.
+const subscribeNever = () => () => {};
+
+// The panel mounts only once the page is hydrated. ClicksList seeds its open row
+// from ?open=<mutualId>, so a deep link into /proposals - which is exactly what
+// every mutual notification and the "it's mutual" email link to - renders this on
+// the server, where createPortal's document.body target does not exist.
 //
-// This one actually fired. ClicksList seeds its open row from ?open=<mutualId>,
-// so a deep link into /proposals - which is exactly what every mutual
-// notification and the "it's mutual" email link to - renders this component on
-// the server, where createPortal's document.body target does not exist. The throw
-// was caught by the route's Suspense boundary, so the page fell back to
-// proposals/loading.tsx and re-rendered on the client: no error page, just a
-// blank-then-flash and the whole route silently downgraded from streamed SSR.
+// A `typeof document` guard fixed the server throw and broke hydration instead: the
+// server sent nothing here, the first client render sent the portal, and React
+// tried to hydrate the drawer against the list's <ul> - "Hydration failed", the
+// whole route regenerated on the client. The server snapshot below is what React
+// also reads while hydrating, so that first pass matches the server's null and the
+// panel mounts on the very next one. An open from a row tap reads the client
+// snapshot straight away. One unconditional hook, so hook order never changes.
 export function CoordinationDrawer(props: CoordinationDrawerProps) {
-  if (typeof document === "undefined") return null;
+  const hydrated = useSyncExternalStore(subscribeNever, () => true, () => false);
+  if (!hydrated) return null;
   return <CoordinationDrawerPanel {...props} />;
 }
 
@@ -703,103 +712,6 @@ function PlanPicker({
         <p className="mt-3 text-xs font-medium text-[color:var(--danger)]">{error}</p>
       ) : null}
     </form>
-  );
-}
-
-// S3 - the peak micro-moment, fired exactly once per user per mutual. Every string
-// here is locked (CLICK_LANGUAGE §5); none of it is paraphrasable.
-//
-// The ✨ lives on the disc, never welded into the headline - §5 allows at most ONE
-// per element and concentrates them at the peaks. The dating clause is APPENDED to
-// the sage intent pill rather than given its own line, and only when both sides have
-// the toggle on: it is never inferred and never one-sided.
-function RevealStep({
-  entry,
-  titleId,
-  onSuggest,
-  onLater,
-}: {
-  entry: ProposalEntry;
-  titleId: string;
-  onSuggest: () => void;
-  onLater: () => void;
-}) {
-  const firstName = entry.otherName.split(/\s+/)[0];
-  return (
-    // aria-live so a screen-reader user gets the moment too - it is announced, not
-    // just drawn (Part 9). Polite: it must never interrupt what they were reading.
-    <div aria-live="polite">
-      <div
-        aria-hidden
-        className="grid h-[74px] w-[74px] place-items-center rounded-full bg-[color:var(--lav-bg)] text-[28px] leading-none text-[color:var(--purple)]"
-      >
-        ✨
-      </div>
-      <h2
-        id={titleId}
-        className="font-display mt-4 text-3xl font-semibold leading-tight tracking-[-0.025em] text-[color:var(--ink)]"
-      >
-        You clicked with {firstName}.
-      </h2>
-      {/* Stage 3's shared context, above the pill: a post-event mutual names the
-          night the two of them were actually at, which is the reason the reveal
-          means anything. Null on a discovery mutual - there is no shared night, so
-          the line is simply absent rather than invented. */}
-      {entry.sourceEventTitle ? (
-        <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--ink-soft)]">
-          You were both at {entry.sourceEventTitle}.
-        </p>
-      ) : null}
-      {/* A desire, never a status - and a MIXED pair reads as two sides. The line
-          arrives whole from the projection because only it knows which intent is
-          whose; wrapping a fragment here could only ever produce the banned
-          rounded-into-one-frame version. */}
-      <p className="mt-3 rounded-full bg-[color-mix(in_srgb,var(--sage)_16%,var(--paper))] px-3 py-1.5 text-sm font-semibold text-[color:var(--sage-ink)] inline-block">
-        {entry.intentLine}
-        {entry.bothDating ? " · both open to dating" : null}
-      </p>
-      {/* Stage 3's other half: "<=2 shared tags", under the intent pill. There is
-          deliberately no filtering here - B5 item 6 ("sensitive life tags, even when
-          shared") is enforced in the projection's SQL, so a life-quiz answer never
-          reaches this component to be rendered by accident. Tags are the pills in
-          this design system; the buttons are the radius-12 ones. */}
-      {entry.sharedTags.length > 0 ? (
-        <ul className="mt-3 flex flex-wrap gap-2">
-          {entry.sharedTags.map((tag) => (
-            <li
-              key={tag}
-              className="rounded-full bg-[color:var(--lav-bg)] px-3 py-1 text-xs font-semibold text-[color:var(--purple)]"
-            >
-              {tag}
-            </li>
-          ))}
-        </ul>
-      ) : null}
-      <p className="mt-4 text-base font-medium leading-6 text-[color:var(--ink-soft)]">
-        Find a thing you&apos;d both enjoy, and just show up.
-      </p>
-      <button type="button" onClick={onSuggest} className="ck-btn ck-btn--md ck-btn--primary mt-6">
-        Suggest a plan
-      </button>
-      <div className="mt-4 flex flex-wrap items-center gap-4">
-        {/* The quiet exit. It is a real exit, not decoration: dismissing the reveal
-            ANY way persists reveal_seen, so this can never become the one route
-            that leaves it firing forever. */}
-        <button
-          type="button"
-          onClick={onLater}
-          className="ck-taplink text-[13px] font-semibold text-[color:var(--slate)] hover:text-[color:var(--ink)]"
-        >
-          Maybe later
-        </button>
-        <Link
-          href="/how-it-works"
-          className="ck-taplink text-[13px] font-semibold text-[color:var(--slate)] underline decoration-dotted underline-offset-2 hover:text-[color:var(--ink)]"
-        >
-          How clicking works →
-        </Link>
-      </div>
-    </div>
   );
 }
 

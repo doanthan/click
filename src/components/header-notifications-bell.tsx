@@ -1,11 +1,63 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 import { Icon } from "./ds";
 import { useDisclosure } from "./use-disclosure";
 
-export function HeaderNotificationsBell({ unreadCount }: { unreadCount: number }) {
+export function HeaderNotificationsBell({
+  unreadCount: renderedCount,
+  countedAt,
+}: {
+  unreadCount: number;
+  /** When the database took renderedCount, in epoch ms (see UnreadNotificationCount). */
+  countedAt: number;
+}) {
   const { open, setOpen, ref } = useDisclosure<HTMLDivElement>();
+  // The bell renders in the root layout, and a layout does not re-render on a
+  // client-side navigation - so renderedCount is only as fresh as the last FULL
+  // page load. A mutual formed after that, including the one the viewer's own
+  // click just completed, never reached the badge until a hard refresh, which
+  // testers read as "the person I clicked was never notified". So re-ask on
+  // every navigation and whenever the tab comes back (SessionFreshness's
+  // focus/visibility idiom), and show whichever count the database took last:
+  // a revalidating action (Mark all as read) re-renders the layout with a newer
+  // countedAt, which beats an older fetch even when the number is the same.
+  const [fetched, setFetched] = useState<{ count: number; countedAt: number } | null>(null);
+  const unreadCount = fetched && fetched.countedAt > countedAt ? fetched.count : renderedCount;
+  const pathname = usePathname();
+  const lastPathname = useRef(pathname);
+  useEffect(() => {
+    let checking = false;
+    let disposed = false;
+    async function refresh() {
+      if (checking || document.visibilityState === "hidden") return;
+      checking = true;
+      try {
+        const response = await fetch("/api/notifications/unread-count", { cache: "no-store" });
+        if (response.ok) {
+          const latest = await response.json();
+          if (!disposed && typeof latest?.count === "number" && typeof latest?.countedAt === "number") {
+            setFetched(latest);
+          }
+        }
+      } catch { /* Keep the last count through a network interruption. */ }
+      finally { checking = false; }
+    }
+    // Not on mount: the server counted for this very page a moment ago.
+    if (lastPathname.current !== pathname) {
+      lastPathname.current = pathname;
+      void refresh();
+    }
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      disposed = true;
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [pathname]);
   // The /notifications page only ever lists the latest 50, so cap the count
   // surfaced here too - otherwise the bell claims a raw "1058 unread" the inbox
   // can never show, which reads as a bug (bug board #222).

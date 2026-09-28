@@ -360,11 +360,7 @@ test("the streamed header reserves the space the real one will take", () => {
   assert.match(layout, /<SiteHeaderShell marketing=\{!headerSession\?\.user\} \/>/);
 });
 
-test("the marquee stops on its own and the support drawer traps focus", () => {
-  const css = read("src/app/globals.css");
-  // WCAG 2.2.2: :hover pause is a mouse-only escape hatch.
-  assert.match(css, /animation: marquee-scroll 38s linear 4 both;/);
-  assert.match(css, /\.marquee:focus-within \.marquee__track/);
+test("the support drawer traps focus", () => {
   const widget = read("src/components/support/support-widget.tsx");
   // It claimed aria-modal while trapping nothing, on every route including checkout.
   assert.match(widget, /panelRef/);
@@ -380,12 +376,6 @@ test("fixed support chrome gets out of the way of modal controls", () => {
     css,
     /\.modal-shell-open \[data-support-widget\] > button\[aria-label="Report a bug"\]/,
   );
-});
-
-test("the homepage activity pulse uses singular person copy", () => {
-  const home = read("src/app/page.tsx");
-  assert.match(home, /peopleGoing === 1 \? "person" : "people"/);
-  assert.doesNotMatch(home, /\$\{peopleGoing\} people already going/);
 });
 
 test("the daily set is actually daily", () => {
@@ -754,4 +744,66 @@ test("booking confirmation shows the event facts and exact checkout total", () =
   assert.match(payment, /bookingFeePerSeatCents/);
   assert.match(page, /priceLabel="No charge"/);
   assert.match(page, /refundLabel=\{bookingRefundLabel\}/);
+});
+
+test("the hero photo cycle never costs a reduced-motion visitor a download", () => {
+  const page = read("src/app/page.tsx");
+  const css = read("src/app/globals.css");
+
+  // Reduced motion gets the courtyard only: the slides stay display:none until
+  // the no-preference query, and a lazy image that never renders is never
+  // fetched. An eager or preloaded slide would download for nothing.
+  const start = page.indexOf("{HERO_SLIDES.map(");
+  assert.ok(start > -1, "hero slides not found");
+  const slides = page.slice(start, page.indexOf("))}", start));
+  assert.match(slides, /alt=""/);
+  assert.doesNotMatch(slides, /\bpreload\b|loading=|\bpriority\b/);
+  // ...and low priority, so they never share bandwidth with the LCP courtyard.
+  assert.match(slides, /fetchPriority="low"/);
+  assert.match(
+    css,
+    /\.home-hero-slide \{ display: none; \}\s*@media \(prefers-reduced-motion: no-preference\) \{\s*\.home-hero-slide \{\s*display: block;/,
+  );
+
+  // hero-slide's percentages are cut for three slides on a 32s loop of 8s slots.
+  const listStart = page.indexOf("const HERO_SLIDES");
+  const list = page.slice(listStart, page.indexOf("];", listStart));
+  assert.equal(list.match(/\{ src: \w+, word: "[^"]+", crop: /g)?.length, 3, "a new slide count needs hero-slide re-cut");
+  assert.match(css, /animation: hero-slide 32s ease-in-out infinite;/);
+  assert.match(css, /animation-delay: calc\(var\(--slide-i, 1\) \* 8s\);/);
+});
+
+test("the hero word and photo change on one clock, and a visitor can stop both", () => {
+  const page = read("src/app/page.tsx");
+  const css = read("src/app/globals.css");
+
+  // Each word loops on hero-slide's clock (32s in 8s slots), landing 0.8s into
+  // its photo's dissolve. Any other loop length drifts the words off the photos.
+  assert.match(
+    css,
+    /animation: word-cycle-slot 32s [^;]+ infinite both;\s*animation-delay: calc\(var\(--cycle-i, 1\) \* 8s \+ 0\.8s\);/,
+  );
+  // One word per slide, then "click." each time the loop returns to the courtyard.
+  assert.match(page, /const HERO_CYCLE_WORDS = \[\.\.\.HERO_SLIDES\.map\(\(slide\) => slide\.word\), "click\."\];/);
+
+  // The pause is a checkbox inside the hero (the CSS finds it with :has), and
+  // checked it drops both cycles to the reduced-motion still frame.
+  const heroStart = page.indexOf('<section className="home-hero');
+  assert.ok(heroStart > -1, "hero section not found");
+  assert.match(page.slice(heroStart, page.indexOf("</section>", heroStart)), /<HeroMotionToggle \/>/);
+  assert.match(page, /<label className="hero-motion-toggle [^"]*">\s*<input type="checkbox"/);
+  assert.match(
+    css,
+    /\.home-hero:has\(\.hero-motion-toggle :checked\) :is\(\.home-hero-slide, \.word-cycle__alt\) \{ display: none; \}/,
+  );
+  assert.match(css, /\.home-hero:has\(\.hero-motion-toggle :checked\) \.word-cycle__anchor \{ animation: none; \}/);
+});
+
+test("a shared link previews the photo the home hero opens on", () => {
+  const page = read("src/app/page.tsx");
+  const hero = page.match(/<Image\s+src=\{(\w+)\}[^>]*\bpreload\b/)?.[1];
+  assert.ok(hero, "the preloaded hero photo not found");
+  const file = page.match(new RegExp(`import ${hero} from "\\.\\./\\.\\./(public/[^"]+)";`))?.[1];
+  assert.ok(file, `import for ${hero} not found`);
+  assert.ok(read("src/app/opengraph-image.tsx").includes(`"${file}"`), `opengraph-image.tsx should read ${file}`);
 });

@@ -28,6 +28,7 @@ Every template listed here is wired through `logEmailEvent` and fires today, wit
 | `waitlist-joined-attendee.html` | When an RSVP lands on a full event's waitlist (`registerForEvent`). | `You're on the waitlist - {{eventTitle}}` |
 | `waitlist-promoted-attendee.html` | When a freed seat is offered to the next person in the queue. Time-sensitive - the hold is already ticking. | `A spot opened - {{eventTitle}}` |
 | `reengagement-click-attendee.html` | Someone clicked with a member who has not opened the app in 30 days (B7.4b liveness test). Sent post-commit from `sendClickInner`, once per dormancy spell, and only when the click did NOT form a mutual. **Carries no sender variable at all** - a click is anonymous until mutual, so nothing in this template may narrow down who sent it. | `Someone clicked with you on Click` |
+| `plan-suggested-attendee.html` | A mutual click suggested an event, or re-pointed a plan at a different one (`suggestPlanForMutual`, `proposeAlternativeForProposal`, via `logPlanSuggestedEmail`). Goes to the other person only, post-commit via `afterResponse`. Skipped when they muted the suggester or turned off the Mutual clicks toggle (`notification_prefs.mutualClick`). | `{{otherName}} suggested {{eventTitle}}` |
 
 ### Auth and security
 
@@ -50,8 +51,9 @@ No `unsubscribeUrl` on any of these - security mail is transactional and exempt 
 | `merchant-rejected-merchant.html` | Same route, declined. | `{{businessName}} application - one small change` |
 | `merchant-suspended-merchant.html` | Same route, suspended. Their live events are hidden from Discover until an admin reinstates them. | `{{businessName}} has been suspended on Click` |
 | `payments-paused-merchant.html` | Stripe turned `charges_enabled` off on their connected account, so their paid events stop taking bookings. Fires on the true→false edge only, and only when they have upcoming paid events. | `Action needed - Stripe has paused ticket sales for {{businessName}}` |
-| `event-created-merchant.html` | After a merchant submits an event for review (`POST /api/merchant/events`). | `Your event is in review - {{eventTitle}}` |
-| `event-approved-merchant.html` | After `POST /api/admin/events/[eventId]/approve` succeeds. | `{{eventTitle}} is live` |
+| `event-created-merchant.html` | After an UNTRUSTED merchant creates an event, which lands in the admin review queue (`createEventForMerchant`). | `Your event is in review - {{eventTitle}}` |
+| `event-awaiting-payouts-merchant.html` | After a TRUSTED merchant creates a paid event before their Stripe charges and payouts are both on, so it is held in `pending` with no review (`createEventForMerchant`). `publishEventsHeldForPayouts` publishes it later and sends `event-approved-merchant`. | `{{eventTitle}} is saved - connect payouts to go live` |
+| `event-approved-merchant.html` | After `POST /api/admin/events/[eventId]/approve` succeeds, when a trusted merchant's event is created straight to `live`, and when a held event publishes once payouts are on. | `{{eventTitle}} is live` |
 | `event-rejected-merchant.html` | After `POST /api/admin/events/[eventId]/reject` succeeds. | `{{eventTitle}} needs another pass` |
 | `event-cancelled-merchant.html` | After an admin cancels/unpublishes a live event. | `{{eventTitle}} was cancelled by Click` |
 | `rsvp-merchant.html` | Same trigger as `rsvp-attendee.html`, sent to the event's owning merchant. | `New RSVP - {{attendeeFirstName}} is going to {{eventTitle}}` |
@@ -176,6 +178,22 @@ Day-before nudge. Variables overlap heavily with `rsvp-attendee.html` so the sam
 | `eventDetailsUrl` | `/events/[slug]`. |
 | `cancelRsvpUrl` |  |
 | `whoElseLabel` | Optional. e.g. `12 going, 4 are first-timers`. Hide row if empty. |
+| `supportEmail` |  |
+| `unsubscribeUrl` |  |
+
+### `event-awaiting-payouts-merchant.html`
+
+| Variable | Notes |
+| --- | --- |
+| `merchantFirstName` |  |
+| `eventTitle` |  |
+| `eventLongDate` |  |
+| `eventStartTime` |  |
+| `eventCity` |  |
+| `eventCategory` |  |
+| `eventCapacityLabel` | e.g. `Capacity 20`. |
+| `payoutsUrl` | Absolute `/merchant/onboarding/payouts?returnTo=%2Fmerchant` URL - the primary CTA. |
+| `eventDashboardUrl` | Link to `/merchant/events/[eventId]`. |
 | `supportEmail` |  |
 | `unsubscribeUrl` |  |
 
@@ -411,6 +429,22 @@ Sent when money goes back for a booking the attendee did NOT cancel themselves -
 | `refundAmount` | The amount actually refunded, e.g. `$28.00` - not necessarily the ticket price. |
 | `refundReasonLine` | One sentence after the amount. Says the spot was released when this refund is what released it; otherwise says nothing more is needed. |
 | `discoverUrl` | `/discover`. |
+| `supportEmail` |  |
+| `unsubscribeUrl` |  |
+
+### `plan-suggested-attendee.html`
+
+Logged with `escapeVars: true`, so every variable arrives HTML-escaped - `otherName` is the suggester's own display name, which is only trimmed on write. The subject still gets the raw values.
+
+| Variable | Notes |
+| --- | --- |
+| `firstName` | The recipient. |
+| `otherName` | The suggester's display name. |
+| `eventTitle` |  |
+| `eventLongDate` |  |
+| `eventStartTime` |  |
+| `suburb` | Suburb only - never the street address. |
+| `proposalsUrl` | `/proposals?open=<mutualClickId>`, the same deep link as the in-app notification. |
 | `supportEmail` |  |
 | `unsubscribeUrl` |  |
 

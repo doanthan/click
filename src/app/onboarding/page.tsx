@@ -13,7 +13,7 @@ export const metadata = {
 export default async function OnboardingPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ next?: string }>;
+  searchParams?: Promise<{ next?: string; resume?: string }>;
 }) {
   const session = await auth();
 
@@ -21,12 +21,18 @@ export default async function OnboardingPage({
     redirect("/login?callbackUrl=/onboarding");
   }
 
+  const params = await searchParams;
   // Where the visitor was headed before signup interrupted them - passed on by
   // /post-login and handed to the form so finishing onboarding resumes the trip.
-  const next = safeNext((await searchParams)?.next);
+  const next = safeNext(params?.next);
 
+  // ?resume=1 is the form's own marker, added the moment step 1 saves. From
+  // then on the profile counts as finished, and without the marker the first
+  // refresh inside the flow (the photo uploader refreshes on success, Finish
+  // refreshes the header) or a reload would hit this redirect and take the
+  // visitor out mid-step, past the optional screens and the done screen.
   const status = await getProfileStatus(session);
-  if (status.onboardingComplete) {
+  if (status.onboardingComplete && params?.resume !== "1") {
     redirect(next ?? "/dashboard");
   }
 

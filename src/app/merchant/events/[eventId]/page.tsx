@@ -189,7 +189,9 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
             {hasEnded && event.status !== "Cancelled" && event.status !== "Rejected" ? (
               <Badge tone="neutral">Ended</Badge>
             ) : (
-              <Badge tone={eventStatusTone(event.status)}>{event.status}</Badge>
+              <Badge tone={eventStatusTone(event.status)}>
+                {event.heldForPayouts ? "Waiting on payouts" : event.status}
+              </Badge>
             )}
             <h1 className="font-display mt-4 text-4xl font-semibold leading-[1.05] tracking-[-0.02em] text-[color:var(--ink)] sm:text-5xl">
               {event.title}
@@ -250,6 +252,23 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
             )}
           </div>
         </div>
+
+        {/* Held for payouts: nobody is reviewing it, so say what it IS waiting
+            on and hand over the one action that releases it (bug board #268 -
+            "don't let it go live without Stripe, but let the merchant know"). */}
+        {event.heldForPayouts && !hasEnded ? (
+          <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-[color:var(--paper)] p-5 shadow-[var(--shadow-sm)]">
+            <p className="text-sm leading-6 text-[color:var(--ink)]">
+              It&apos;s a paid event, so it goes live as soon as your payout setup is finished - no review needed.
+            </p>
+            <ButtonLink
+              href={`/merchant/onboarding/payouts?returnTo=${encodeURIComponent(`/merchant/events/${event.slug}`)}`}
+              variant="primary"
+            >
+              Finish payout setup
+            </ButtonLink>
+          </div>
+        ) : null}
 
         {/* Rejected: surface the admin's reason and a one-tap resubmit so the
             merchant can fix + reapply for review (bug board #217). */}

@@ -160,9 +160,17 @@ export function mapAccountStatus(
   // No outstanding requirement is waiting on the merchant → they've submitted
   // everything Stripe currently needs. Fall back to capability state when the
   // requirements list isn't expanded.
+  //
+  // "Currently needs" is the operative word. Hosted onboarding collects what is
+  // due now and leaves `eventually_due` entries on the account - still awaiting
+  // the user, but not blocking anything today. Counting those told a host who
+  // had just finished Stripe's form to "Continue on Stripe" (bug board #269),
+  // and it also skipped the payouts page's hand-back to where they started.
   const entries = account.requirements?.entries ?? [];
   const awaitingUser = entries.some(
-    (entry) => entry.awaiting_action_from === "user",
+    (entry) =>
+      entry.awaiting_action_from === "user" &&
+      entry.minimum_deadline?.status !== "eventually_due",
   );
   const detailsSubmitted =
     entries.length === 0 ? chargesEnabled || payoutsEnabled : !awaitingUser;

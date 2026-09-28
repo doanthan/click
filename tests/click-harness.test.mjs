@@ -237,6 +237,22 @@ test("the send result never claims to know whether a mutual formed", () => {
   assert.match(message, /says nothing about whether it was mutual/);
 });
 
+test("a harness send reaches the reveal the way a product send does - through the host's read", () => {
+  // The reply stays silent (the test above), so a mutual completed from the board only
+  // reaches the modal if the button tells the reveal host a send landed - the announce
+  // the product's click forms make. Without it the reveal waited for the next page,
+  // which on this board reads as "the modal is broken".
+  const button = read("src/app/test-click/harness-button.tsx");
+  assert.match(button, /import \{ announceClickSent \} from "@\/components\/mutual-reveal";/);
+  const sends = button.match(/const SENDS = new Set\(\[([^\]]*)\]\)/)?.[1] ?? "";
+  for (const step of ["send_discovery", "send_post_event", "spend_post_event_budget"]) {
+    assert.ok(sends.includes(`"${step}"`), `${step} can form a mutual, so it must announce`);
+    assert.match(actions, new RegExp(`case "${step}"`), `${step} must still be a harness step`);
+  }
+  // Only an accepted send - a refusal wrote nothing, so there is nothing to read.
+  assert.match(button, /if \(sends && state\.ok && state\.message\) announceClickSent\(\);/);
+});
+
 test("the fixture builder never upserts a live event by slug", () => {
   // The bug this pins, found by pressing Rebuild twice:
   //

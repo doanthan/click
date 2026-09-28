@@ -40,7 +40,8 @@ function errorResponse(error: unknown, eventSlug: string) {
     return NextResponse.json(
       {
         error: error.message,
-        redirectTo: `/onboarding?next=${encodeURIComponent(`/events/${eventSlug}`)}`,
+        // ?rsvp=1 reopens the booking dialog on the way back (rsvp-resume.ts).
+        redirectTo: `/onboarding?next=${encodeURIComponent(`/events/${eventSlug}?rsvp=1`)}`,
       },
       { status: 403 },
     );

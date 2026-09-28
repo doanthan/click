@@ -55,6 +55,10 @@ type PageProps = {
     /** Stage 6: where to send the booker back to - the drawer, not a receipt page.
      *  Same-origin relative path only; validated before it is rendered. */
     return?: string;
+    /** "1" when this visitor tapped RSVP while signed out and is back from
+     *  sign-up (and onboarding) - set by rsvpReturnPath and the booking routes'
+     *  onboarding redirect. Reopens the booking dialog they were in. */
+    rsvp?: string;
   }>;
 };
 
@@ -345,6 +349,10 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
   const showStripeUnavailableHint =
     isPaid && !process.env.STRIPE_SECRET_KEY && process.env.NODE_ENV !== "production";
   const isAuthenticated = Boolean(session?.user);
+  // Back from signing up to book this event: reopen the booking dialog they
+  // were in. Signed-in only - for someone still signed out it would open a
+  // dialog whose button just asks them to sign in again.
+  const resumeBooking = isAuthenticated && search?.rsvp === "1";
 
   const successDetails = {
     title: event.title,
@@ -831,6 +839,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                       <EventBookingDialog
                         triggerLabel="Join waitlist"
                         triggerTone="ink"
+                        autoOpen={resumeBooking}
                         title="Join the waitlist?"
                         body={
                           <>
@@ -851,6 +860,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                       ) : (
                         <EventBookingDialog
                           triggerLabel="RSVP"
+                          autoOpen={resumeBooking}
                           title={`Reserve a seat for ${formatPriceLabel(totalCents, "AUD")}?`}
                           summary={
                             <EventBookingSummary
@@ -899,6 +909,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                     ) : (
                       <EventBookingDialog
                         triggerLabel="RSVP"
+                        autoOpen={resumeBooking}
                         title="RSVP to this event?"
                         summary={
                           <EventBookingSummary

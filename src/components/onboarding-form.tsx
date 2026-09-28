@@ -35,10 +35,16 @@ import {
 //   5 photo      · optional photo + optional one-liner, then Finish
 //   done         · the payoff: confetti, the no-chat framing, one way onward
 //
-// State lives here (not per-route) so the localStorage draft, the validation and
-// the single POST stay exactly as they were - only the pacing changed. Forward
-// moves push a hash entry so browser Back walks the wizard instead of dropping
-// the visitor out of it.
+// State lives here (not per-route) so the localStorage draft and the validation
+// stay in one place. The profile is saved twice: when step 1 is done (all that
+// booking needs, so stopping early still leaves a usable account) and again on
+// Finish with everything else - see saveProfile. Forward moves push a hash
+// entry so browser Back walks the wizard instead of dropping the visitor out.
+//
+// Someone who came from one event - they tapped RSVP on it, or were sent a +1
+// invite - gets "Back to the event" as step 1's main button: it saves and goes
+// straight to the done screen, and "Personalise my profile first" walks the
+// rest of the flow instead.
 
 type Intent =
   | "dating"
@@ -260,10 +266,22 @@ export function OnboardingForm({
   const [photoUrl, setPhotoUrl] = useState<string | null>(initialPhotoUrl);
 
   const [state, setState] = useState<SubmitState>("idle");
+  // Which of step 1's two buttons is saving, when there are two (returnLabel),
+  // so the spinner lands on the one that was tapped.
+  const [personalising, setPersonalising] = useState(false);
   const [message, setMessage] = useState("");
   const errorRef = useRef<HTMLDivElement | null>(null);
 
   const firstName = firstNameOf(displayName);
+
+  // The way back, when `next` is one event the visitor came here for: an event
+  // page (they tapped RSVP on it) or a +1 invite. Null for every other `next`,
+  // which keeps the full flow - someone headed to Discover gains most from it.
+  const returnLabel = next?.startsWith("/events/")
+    ? "Back to the event"
+    : next?.startsWith("/claim/")
+      ? "Back to your invite"
+      : null;
 
   // Pilot is greater Sydney for now. When the postcode lands outside it, show a
   // non-blocking heads-up that we're not live there yet but they'll be on the
@@ -471,23 +489,35 @@ export function OnboardingForm({
     if (step > 0) window.history.back();
   }
 
-  function handleNext() {
+  // Puts a message on screen and brings it into view. Without the scroll the
+  // only feedback on a phone was off-screen.
+  function showError(text: string) {
+    setState("error");
+    setMessage(text);
+    requestAnimationFrame(() => {
+      errorRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+      errorRef.current?.focus();
+    });
+  }
+
+  // `finishNow` is step 1's "Back to the event": save and go straight to the
+  // done screen instead of on through four optional screens.
+  async function handleNext({ finishNow = false }: { finishNow?: boolean } = {}) {
+    if (state === "submitting") return;
     const err = validateStep(step);
     if (err) {
-      setState("error");
-      setMessage(err);
-      // Bring the explanation into view and announce it. Without this the only
-      // feedback on a phone was off-screen.
-      requestAnimationFrame(() => {
-        errorRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
-        errorRef.current?.focus();
-      });
+      showError(err);
       return;
     }
     setState("idle");
     setMessage("");
-    if (step < STEPS.length - 1) goTo(step + 1);
-    else void handleSubmit();
+    if (finishNow || step === STEPS.length - 1) {
+      await handleSubmit();
+      return;
+    }
+    // Save the required step now rather than only on Finish - see saveProfile.
+    if (step === 0 && !(await saveProfile())) return;
+    goTo(step + 1);
   }
 
   async function handleSubmit() {
@@ -503,6 +533,33 @@ export function OnboardingForm({
       return;
     }
 
+    if (!(await saveProfile())) return;
+
+    // Wipe the draft on success so a refresh doesn't resurrect it.
+    try {
+      window.localStorage.removeItem(storageKey);
+    } catch {}
+
+    submittedRef.current = true;
+    setDir("fwd");
+    setStep(DONE);
+    // Replace, not push: the saved profile is behind us, not a step to go back to.
+    window.history.replaceState(null, "", "#done");
+    // Refresh the server-rendered parts (the header reads profile status) while
+    // they read the completion screen. Safe only because saveProfile marked the
+    // address ?resume=1: a refresh is a navigation to the current URL, and
+    // without the marker it would hit the page's redirect for a finished profile.
+    router.refresh();
+  }
+
+  // Sends the whole form as it stands. It runs when step 1 is done and again on
+  // Finish. It used to run only on Finish, so anyone who stopped on the
+  // intents, interests or photo screen had no profile at all: walked back to
+  // step 1 on every login and refused at every booking, although booking needs
+  // only step 1's postcode and birth date (assertBookingEligible).
+  // saveOnboarding overwrites the same columns each time and only ever adds
+  // tags, so the Finish save builds on the first one.
+  async function saveProfile(): Promise<boolean> {
     setState("submitting");
     setMessage("");
 
@@ -526,36 +583,30 @@ export function OnboardingForm({
         }),
       });
     } catch {
-      setState("error");
-      setMessage("We couldn't reach the server. Check your connection and try again.");
-      return;
+      showError("We couldn't reach the server. Check your connection and try again.");
+      return false;
     }
 
     if (response.status === 401) {
       window.location.href = "/login?callbackUrl=/onboarding";
-      return;
+      return false;
     }
 
     const payload = (await response.json().catch(() => ({}))) as { error?: string };
     if (!response.ok) {
-      setState("error");
-      setMessage(payload.error ?? "Could not save your profile.");
-      return;
+      showError(payload.error ?? "Could not save your profile.");
+      return false;
     }
 
-    // Wipe the draft on success so a refresh doesn't resurrect it.
-    try {
-      window.localStorage.removeItem(storageKey);
-    } catch {}
+    // The profile now counts as finished, and onboarding/page.tsx answers a
+    // finished profile with a redirect - unless the address says the visitor
+    // is still mid-flow. Every later step (pushed as #hash) keeps the query.
+    const url = new URL(window.location.href);
+    url.searchParams.set("resume", "1");
+    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
 
-    submittedRef.current = true;
     setState("idle");
-    setDir("fwd");
-    setStep(DONE);
-    // Replace, not push: the saved profile is behind us, not a step to go back to.
-    window.history.replaceState(null, "", "#done");
-    // Warm the destination while they read the completion screen.
-    router.refresh();
+    return true;
   }
 
   if (step === DONE) {
@@ -565,6 +616,7 @@ export function OnboardingForm({
         intents={intents}
         tagCount={tags.size}
         hasPhoto={Boolean(photoUrl)}
+        continueLabel={returnLabel ?? "Take me in"}
         onContinue={() => {
           router.push(next ?? "/dashboard");
         }}
@@ -621,7 +673,10 @@ export function OnboardingForm({
       <div
         ref={scrollRef}
         className="flex-1 overflow-y-auto px-5 py-8 sm:px-8"
-        style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 7.5rem)" }}
+        // Clears the sticky footer, which is taller when it stacks two buttons.
+        style={{
+          paddingBottom: `calc(env(safe-area-inset-bottom) + ${step === 0 && returnLabel ? "9rem" : "7.5rem"})`,
+        }}
       >
         <form
           id="onboarding-step"
@@ -633,7 +688,9 @@ export function OnboardingForm({
           noValidate
           onSubmit={(event) => {
             event.preventDefault();
-            handleNext();
+            // Enter does what the main button says, which on step 1 is "Back
+            // to the event" for someone who came from one.
+            void handleNext({ finishNow: step === 0 && returnLabel !== null });
           }}
         >
           <div
@@ -956,6 +1013,44 @@ export function OnboardingForm({
         className="sticky bottom-0 z-20 flex-none border-t border-[color:var(--mist)] bg-[color:var(--champagne)] px-5 pt-3 sm:px-8"
         style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 0.75rem)" }}
       >
+        {step === 0 && returnLabel ? (
+          // Stacked, not side by side: at 375px the two labels overflow one row.
+          <div className="mx-auto grid max-w-xl gap-1">
+            <button
+              type="submit"
+              form="onboarding-step"
+              disabled={submitting}
+              aria-busy={(submitting && !personalising) || undefined}
+              className={ckBtn("primary", "lg", {
+                full: true,
+                className: submitting && !personalising ? "ck-btn--loading" : "",
+              })}
+            >
+              <span className="ck-btn__label">
+                {returnLabel}
+                <Icon name="arrowR" size={17} />
+              </span>
+              {submitting && !personalising ? <span className="ck-btn__spinner" aria-hidden /> : null}
+            </button>
+            <button
+              type="button"
+              disabled={submitting}
+              aria-busy={(submitting && personalising) || undefined}
+              onClick={async () => {
+                setPersonalising(true);
+                await handleNext();
+                setPersonalising(false);
+              }}
+              className={ckBtn("ghost", "sm", {
+                full: true,
+                className: submitting && personalising ? "ck-btn--loading" : "",
+              })}
+            >
+              <span className="ck-btn__label">Personalise my profile first</span>
+              {submitting && personalising ? <span className="ck-btn__spinner" aria-hidden /> : null}
+            </button>
+          </div>
+        ) : (
         <div className="mx-auto flex max-w-xl items-center gap-3">
           {step > 0 ? (
             <button
@@ -1007,6 +1102,7 @@ export function OnboardingForm({
             {submitting ? <span className="ck-btn__spinner" aria-hidden /> : null}
           </button>
         </div>
+        )}
       </footer>
     </section>
   );
@@ -1117,12 +1213,15 @@ function DoneScreen({
   intents,
   tagCount,
   hasPhoto,
+  continueLabel,
   onContinue,
 }: {
   firstName: string;
   intents: Set<Intent>;
   tagCount: number;
   hasPhoto: boolean;
+  /** Says where the button goes when that is one event ("Back to the event"). */
+  continueLabel: string;
   onContinue: () => void;
 }) {
   const chosen = INTENT_OPTIONS.filter((o) => intents.has(o.value));
@@ -1185,7 +1284,7 @@ function DoneScreen({
           <div className="rise-soft rise-d3 grid gap-3">
             <button type="button" onClick={onContinue} className={ckBtn("primary", "lg", { full: true })}>
               <span className="ck-btn__label">
-                Take me in
+                {continueLabel}
                 <Icon name="arrowR" size={17} />
               </span>
             </button>

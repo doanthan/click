@@ -108,9 +108,12 @@ function LogRow({ entry }: { entry: HarnessLogEntry }) {
 
       {entry.changes.length > 0 ? (
         <ul className="mt-1.5 space-y-0.5">
-          {entry.changes.map((change) => (
+          {/* Position in the key as well as the text, here and in `late` below: a line
+              can repeat within one list (`late` grows on every render that finds new
+              rows), and React may drop or duplicate children that share a key. */}
+          {entry.changes.map((change, i) => (
             <li
-              key={change}
+              key={`${i}:${change}`}
               className="font-mono text-[0.66rem] leading-snug text-[color:var(--ink-soft)]"
             >
               + {change}
@@ -129,9 +132,9 @@ function LogRow({ entry }: { entry: HarnessLogEntry }) {
             landed after the response
           </p>
           <ul className="mt-0.5 space-y-0.5">
-            {entry.late.map((change) => (
+            {entry.late.map((change, i) => (
               <li
-                key={change}
+                key={`${i}:${change}`}
                 className="font-mono text-[0.66rem] leading-snug text-[color:var(--ink-soft)]"
               >
                 + {change}

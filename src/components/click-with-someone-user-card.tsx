@@ -6,6 +6,7 @@ import { clickPersonAction } from "@/app/people/actions";
 import type { SuggestedPerson } from "@/lib/event-repository";
 import { CLICK_PUFF, fireBrandConfetti } from "./brand-confetti";
 import { Avatar, Button, CommonalityLine, Spark, TagRow, ckBtn, commonality } from "./ds";
+import { MutualClickLink, announceClickSent, useRevealedMutual } from "./mutual-reveal";
 
 /**
  * The People Card - the canonical "person you can click with" card, used
@@ -63,6 +64,9 @@ export function ClickWithSomeoneUserCard({
     if (state?.ok !== true || celebrated.current) return;
     celebrated.current = true;
     setJustSent(true);
+    // The reply cannot say whether this completed a mutual (§6.1); the reveal host
+    // finds out with its own read, and plays the reveal if it did.
+    announceClickSent();
 
     /* Fired from the button the user actually pressed rather than the middle of
        the viewport: on a three-card list, a burst from screen-centre reads as
@@ -82,6 +86,7 @@ export function ClickWithSomeoneUserCard({
   // already recorded server-side), and also flips immediately after a fresh
   // successful submit in this session.
   const sent = state?.ok === true || person.alreadyClicked;
+  const mutualId = useRevealedMutual(person.id);
   const firstName = person.displayName.split(/\s+/)[0] ?? person.displayName;
   const intent = intentLine(person.intents, viewerOpenToDating);
   const hook = commonality({
@@ -127,12 +132,14 @@ export function ClickWithSomeoneUserCard({
       {/* Stacks under the tags in BOTH layouts. Rendered as a sibling of the
           columns it became a third flex item once the action returned a
           message, collapsing the identity column and clipping TagRow. */}
-      <Status state={state} />
+      {/* "We'll only show you if it's mutual" has been answered once the reveal played. */}
+      {mutualId ? null : <Status state={state} />}
     </div>
   );
 
   // The action pair. ONE footprint across states: only the fill and the label
-  // change - "click with [name]" → the muted, unresolved "clicked" (no spark).
+  // change - "click with [name]" → the muted, unresolved "clicked" (no spark) → the
+  // Sage "clicked" + spark, once the reveal host has played this person's mutual.
   const actions = (
     <form action={formAction} className={layout === "row" ? "contents sm:block" : "contents"}>
       <input type="hidden" name="profile_id" value={person.id} />
@@ -140,7 +147,9 @@ export function ClickWithSomeoneUserCard({
         ref={actionsRef}
         className={layout === "row" ? "flex flex-col gap-2 sm:gap-2.5" : "flex flex-wrap items-center gap-2"}
       >
-        {sent ? (
+        {mutualId ? (
+          <MutualClickLink mutualId={mutualId} firstName={firstName} full />
+        ) : sent ? (
           /* .rise-soft only when it just happened - on a reload the pill is
              simply the resting state and has nothing to announce. */
           <span

@@ -743,8 +743,8 @@ body:has([data-home-hero]) .site-header--marketing .ck-btn {
 /* ---------- Aura field (home light sections) ----------
    Partiful-style colour-field dissolve for the light stretch of the home page:
    large soft radial washes that bloom and fade back into the cream ground, now
-   slowly DRIFTING (two pseudo-layers on offset clocks, same technique as
-   .aura-soft) so the light band breathes. Strictly the lavender/purple family -
+   slowly DRIFTING (two pseudo-layers on offset clocks) so the light band
+   breathes. Strictly the lavender/purple family -
    status colours stay on badges, the primary CTA stays flat. Decorative only;
    content floats on top unchanged.
    NB: no `isolation`/transform on the wrapper - this band contains the quiz's
@@ -778,42 +778,9 @@ body:has([data-home-hero]) .site-header--marketing .ck-btn {
   animation: aura-drift-b 32s ease-in-out infinite alternate;
 }
 
-/* .aura-soft - the How-it-works band's LIVING colour-field. Two layers of soft
-   blobs drift in opposite directions so their overlaps slide and the wash reads
-   as slowly *changing* colour (Partiful-style), while every tint stays in the
-   sanctioned lavender/purple/peach family - no hue-rotate off-brand, no CTA
-   gradient. Pseudo-elements are GPU-composited transforms; the global
-   reduced-motion block collapses them to a valid static wash. The band itself
-   becomes the clip container (overflow-hidden) so the blobs never spill. */
-.aura-soft {
-  position: relative;
-  isolation: isolate;
-  overflow: hidden;
-}
-.aura-soft::before,
-.aura-soft::after {
-  content: "";
-  position: absolute;
-  inset: -25%;
-  z-index: -1;
-  pointer-events: none;
-  will-change: transform;
-}
-.aura-soft::before {
-  background:
-    radial-gradient(38rem 24rem at 22% 18%, color-mix(in srgb, var(--lavender) 52%, transparent), transparent 62%),
-    radial-gradient(34rem 22rem at 82% 34%, color-mix(in srgb, var(--purple-100) 95%, transparent), transparent 60%);
-  animation: aura-drift-a 24s ease-in-out infinite alternate;
-}
-.aura-soft::after {
-  background:
-    radial-gradient(36rem 24rem at 74% 82%, color-mix(in srgb, var(--lavender) 44%, transparent), transparent 62%),
-    radial-gradient(32rem 20rem at 10% 92%, color-mix(in srgb, var(--peach-soft) 90%, transparent), transparent 60%);
-  animation: aura-drift-b 30s ease-in-out infinite alternate;
-}
 /* Transform drifts the blobs AND opacity trades between the two layers, so the
    overlaps slide and the dominant tint waxes/wanes - that swap is what reads as
-   the colour slowly *changing*. Two different durations (24s/30s) keep the two
+   the colour slowly *changing*. Two different durations (26s/32s) keep the two
    layers out of phase so the field never visibly loops. */
 @keyframes aura-drift-a {
   from { transform: translate3d(-4%, -2%, 0) scale(1.05); opacity: 1; }
@@ -824,31 +791,29 @@ body:has([data-home-hero]) .site-header--marketing .ck-btn {
   to   { transform: translate3d(-5%, -3%, 0) scale(1.02); opacity: 1; }
 }
 
-/* ---------- Party polaroid (home hero collage + photo wall) ----------
+/* ---------- Print (home pinboard) ----------
    A white print frame that reads as a photo tossed on the cream/lavender
-   ground. The WRAPPER element carries position + rotation (via .pop-in's
-   --pop-rot or a .tilt-* class); .polaroid itself only lifts on hover so
-   the tilt is preserved while it rises. Shadows stay the DS soft purple
-   elevation - never a glow. */
+   ground. It fills its wrapper; the WRAPPER carries the rotation
+   (.home-lane__tilt), so .polaroid itself only lifts on hover and the tilt
+   survives the rise. Shadows stay the DS soft purple elevation -
+   never a glow. */
 .polaroid {
   display: block;
-  width: fit-content;
-  /* Un-layered, so this rule beats Tailwind's layered w-full: never let a
-     nowrap caption inflate the frame past its wrapper (hero prints size by
-     wrapper width; the caption ellipsizes instead). */
-  max-width: 100%;
   margin: 0;
   background: var(--paper);
   border: 1px solid var(--line-soft);
-  /* Partiful-soft: outer radius minus the 8px padding = the photo's radius,
-     so the frame and print stay geometrically parallel. */
-  border-radius: 18px;
-  padding: 8px;
+  /* Outer radius minus the 7px padding = the photo's radius, so the frame and
+     print stay geometrically parallel. */
+  border-radius: 16px;
+  padding: 7px;
   box-shadow: var(--shadow-md);
   transition: transform 220ms cubic-bezier(.2,.7,.2,1), box-shadow 220ms ease;
 }
-.polaroid:hover { transform: translateY(-5px); box-shadow: var(--shadow-lg); }
-.polaroid img { border-radius: 10px; display: block; }
+/* Only a print that IS a link lifts - a hover lift on a decorative photo would
+   promise a tap that goes nowhere. */
+.home-lane:hover .polaroid,
+.home-lane:focus-visible .polaroid { transform: translateY(-4px); box-shadow: var(--shadow-lg); }
+.polaroid img { border-radius: 9px; display: block; }
 
 /* ---------- Tilt / wiggle ---------- */
 .tilt-l-2 { transform: rotate(-2deg); }
@@ -924,32 +889,6 @@ body:has([data-home-hero]) .site-header--marketing .ck-btn {
 @keyframes spin-slow { to { transform: rotate(360deg); } }
 .spin-slow { animation: spin-slow 22s linear infinite; }
 
-/* ---------- Marquee ---------- */
-.marquee {
-  display: flex;
-  overflow: hidden;
-  gap: 2.5rem;
-  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
-}
-.marquee__track {
-  display: flex;
-  gap: 2.5rem;
-  flex-shrink: 0;
-  min-width: 100%;
-  /* Finite, not infinite (WCAG 2.2.2). `:hover` pause is a mouse-only escape
-     hatch - on a phone there was no way at all to stop it, and it ran forever.
-     The track is duplicated and min-width:100%, so translateX(-100%) lands on
-     exactly the frame translateX(0) started from: after the last pass it simply
-     settles, with no visible jump. */
-  animation: marquee-scroll 38s linear 4 both;
-}
-.marquee:hover .marquee__track,
-.marquee:focus-within .marquee__track { animation-play-state: paused; }
-@keyframes marquee-scroll {
-  from { transform: translateX(0); }
-  to { transform: translateX(-100%); }
-}
-
 /* ---------- Reveal on load ----------
    Both keyframes END on `transform: none` (not translateY(0)): with fill-mode
    `both` the final keyframe persists, and any retained transform would make the
@@ -1008,12 +947,12 @@ body:has([data-home-hero]) .site-header--marketing .ck-btn {
 }
 .click-settle { animation: click-settle 1100ms cubic-bezier(.2,.7,.2,1) both; }
 
-/* ---------- Home discovery motion ----------
-   Motion on the public home page has one job per treatment: establish the
-   social scene, make interactive surfaces feel tactile, and reveal browse
-   choices in reading order. All movement is transform/opacity only, so it
-   stays compositor-friendly and the global reduced-motion block near EOF
-   collapses every treatment to its resting state. */
+/* ---------- Home hero motion ----------
+   Motion in the full-bleed hero has one job per treatment: establish the
+   social scene and make the search form feel tactile. All movement is
+   transform/opacity only, so it stays compositor-friendly and the global
+   reduced-motion block near EOF collapses every treatment to its resting
+   state. */
 @keyframes home-hero-photo-enter {
   from { opacity: 0.72; transform: scale(1.045); }
   to { opacity: 1; transform: none; }
@@ -1026,15 +965,53 @@ body:has([data-home-hero]) .site-header--marketing .ck-btn {
   animation-duration: 580ms;
   animation-timing-function: cubic-bezier(.22,1,.36,1);
 }
+/* ---------- Hero photo cycle ----------
+   The courtyard stays the LCP image and the only photo a reduced-motion
+   visitor ever gets: the slides are display:none until no-preference, and as
+   lazy images a hidden slide is never even fetched. The slides stack above
+   the courtyard in DOM order. Each dissolves in over the one before and only
+   drops out once the next has fully covered it, so every change is a clean
+   two-photo crossfade with no third photo ghosting through. The last slide
+   fades itself out instead, back to the courtyard underneath. */
+.home-hero-slide { display: none; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .home-hero-slide {
+    display: block;
+    opacity: 0;
+    animation: hero-slide 32s ease-in-out infinite;
+    animation-delay: calc(var(--slide-i, 1) * 8s);
+  }
+  .home-hero-slide--last { animation-name: hero-slide-last; }
+}
+
+/* A 32s loop of four photos: 8s slots (25%), each change a 2.4s dissolve
+   (7.5%). Cut for exactly three slides - add one and re-cut both, and
+   `word-cycle-slot` with them: the headline word runs on this same clock. */
+@keyframes hero-slide {
+  0%    { opacity: 0; }
+  7.5%  { opacity: 1; }
+  32.5% { opacity: 1; }
+  32.6% { opacity: 0; }
+  100%  { opacity: 0; }
+}
+@keyframes hero-slide-last {
+  0%    { opacity: 0; }
+  7.5%  { opacity: 1; }
+  25%   { opacity: 1; }
+  32.5% { opacity: 0; }
+  100%  { opacity: 0; }
+}
 /* ---------- Hero word cycle ----------
-   The last word of the hero headline rolls through five plans and lands on the
-   brand payoff ("click."). The ANCHOR word sits in normal flow: it sizes the
-   box and it is the only copy a crawler, a screen reader or a no-JS visitor
-   sees. The alternates are aria-hidden absolute overlays, each owning one slice
-   of the loop; between slices the anchor is simply back on screen.
+   The last word of the hero headline changes with the photo behind it, one
+   word per photo, so the hero moves on a single beat. The ANCHOR word
+   ("obsession.") sits in normal flow: it sizes the box and it is the only copy
+   a crawler, a screen reader or a no-JS visitor sees. It plays once, over the
+   courtyard on arrival. The alternates are aria-hidden absolute overlays, one
+   per slide, plus "click." for every later pass back to the courtyard.
 
    Every rule that hides anything lives inside no-preference, so a
-   reduced-motion visitor gets the plain anchor word - never a stack of five
+   reduced-motion visitor gets the plain anchor word - never a stack of
    words, never a frozen mid-fade frame from the global
    `animation-duration: 0.01ms` collapse near EOF.
 
@@ -1052,25 +1029,51 @@ body:has([data-home-hero]) .site-header--marketing .ck-btn {
     inset-inline-start: 0;
     white-space: nowrap;
     user-select: none; /* the anchor is the copy-pasteable word */
+    /* The photo clock: `hero-slide`'s 32s loop and 8s slots, 0.8s late so each
+       word swaps in the middle of its photo's 2.4s dissolve. */
+    animation: word-cycle-slot 32s cubic-bezier(.22,1,.36,1) infinite both;
+    animation-delay: calc(var(--cycle-i, 1) * 8s + 0.8s);
   }
-  /* One keyframe, five items, each delayed by one 20% slot. The 2% overlap at
-     each handoff is the crossfade: the outgoing word lifts away as the incoming
-     one rises into place. ponytail: slot maths is hard-coded for 5 words - add
-     a sixth and these percentages need re-cutting. */
-  .word-cycle__anchor,
-  .word-cycle__alt {
-    animation: word-cycle-slot 12.5s cubic-bezier(.22,1,.36,1) infinite both;
-    animation-delay: calc(var(--cycle-i, 0) * 2.5s);
+  .word-cycle__anchor {
+    animation: word-cycle-anchor 9.6s cubic-bezier(.22,1,.36,1) both;
   }
 }
 
+/* One 8s slot (25%) on screen, with a 0.8s (2.5%) handoff: the outgoing word
+   lifts away as the incoming one rises into place. */
 @keyframes word-cycle-slot {
-  0%   { opacity: 0; transform: translateY(0.18em); }
-  4%   { opacity: 1; transform: none; }
-  18%  { opacity: 1; transform: none; }
-  22%  { opacity: 0; transform: translateY(-0.18em); }
-  100% { opacity: 0; transform: translateY(0.18em); }
+  0%    { opacity: 0; transform: translateY(0.18em); }
+  2.5%  { opacity: 1; transform: none; }
+  25%   { opacity: 1; transform: none; }
+  27.5% { opacity: 0; transform: translateY(-0.18em); }
+  100%  { opacity: 0; transform: translateY(0.18em); }
 }
+/* The same slot played once from page load, then gone for good: it hands off
+   at 8.8s to the first slide's word. */
+@keyframes word-cycle-anchor {
+  0%      { opacity: 0; transform: translateY(0.18em); }
+  8.333%  { opacity: 1; transform: none; }
+  91.667% { opacity: 1; transform: none; }
+  100%    { opacity: 0; transform: translateY(-0.18em); }
+}
+
+/* ---------- Hero pause ----------
+   A plain checkbox (HeroMotionToggle in page.tsx), so it works with no JS.
+   Checked, the hero drops to the still frame a reduced-motion visitor gets:
+   the courtyard and "obsession.". Unchecked, both cycles restart together from
+   the top, since leaving display:none restarts an animation. Reduced motion
+   has nothing to pause, so the toggle isn't shown there. */
+.hero-motion-toggle { display: none; }
+.hero-motion-toggle__play { display: none; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .hero-motion-toggle { display: grid; }
+  .home-hero:has(.hero-motion-toggle :checked) :is(.home-hero-slide, .word-cycle__alt) { display: none; }
+  .home-hero:has(.hero-motion-toggle :checked) .word-cycle__anchor { animation: none; }
+}
+.hero-motion-toggle:has(:checked) .hero-motion-toggle__pause { display: none; }
+.hero-motion-toggle:has(:checked) .hero-motion-toggle__play { display: block; }
+.hero-motion-toggle:has(:focus-visible) { outline: 2px solid var(--on-deep); outline-offset: 3px; }
 
 .home-explore-form {
   transition:
@@ -1087,47 +1090,65 @@ body:has([data-home-hero]) .site-header--marketing .ck-btn {
   outline-offset: 3px;
 }
 
-.activity-lane {
-  transition:
-    transform 360ms cubic-bezier(.22,1,.36,1),
-    box-shadow 360ms ease;
-}
-.activity-lane__image {
-  transition: transform 700ms cubic-bezier(.22,1,.36,1), filter 360ms ease;
-}
-.activity-lane__arrow {
-  transition: transform 280ms cubic-bezier(.22,1,.36,1), background-color 180ms ease;
-}
-.activity-lane:hover {
-  transform: translateY(-5px);
-  box-shadow: var(--shadow-lg);
-}
-.activity-lane:hover .activity-lane__image { transform: scale(1.045); }
-.activity-lane:hover .activity-lane__arrow { transform: translateX(3px); }
-.activity-lane:active { transform: translateY(-1px) scale(0.992); }
+/* ---------- Home: the social page ----------
+   The photos set into the "how it usually goes" sentence, the pinboard tilt
+   and the one hand-drawn underline. Transform/opacity only; the global
+   reduced-motion block near EOF collapses every entrance to its resting
+   state. */
 
-@keyframes home-step-enter {
-  from { opacity: 0; transform: translateX(14px); }
-  to { opacity: 1; transform: none; }
+/* The pinboard tilt lives on a wrapper, not on .polaroid, so the hover lift
+   and the tilt compose. */
+.home-lane__tilt { transform: rotate(var(--rot, 0deg)); }
+.home-lane { outline-offset: 6px; }
+
+/* A photo set into a line of display type: sized in em so it tracks the fluid
+   heading, with a thin white frame so it reads as a print, not a sticker. */
+.home-inline-pic {
+  display: inline-block;
+  width: 1.7em;
+  height: 1.1em;
+  margin-inline: 0.06em;
+  vertical-align: -0.16em;
+  padding: 0.06em;
+  border-radius: 0.22em;
+  background: var(--paper);
+  box-shadow: var(--shadow-sm);
+  transform: rotate(var(--rot, 0deg));
+}
+.home-inline-pic img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 0.16em;
 }
 
-@media (scripting: enabled) and (prefers-reduced-motion: no-preference) {
-  .reveal.home-reveal {
-    transform: translateY(18px);
-    transition-duration: 520ms;
-    transition-timing-function: cubic-bezier(.22,1,.36,1);
-  }
-  .reveal.home-reveal.is-in { transform: none; }
-  .reveal.home-reveal.reveal--fade { transform: none; }
-  .reveal.home-story-visual .home-story-image {
-    transform: scale(1.04);
-    transition: transform 900ms cubic-bezier(.22,1,.36,1) var(--reveal-delay, 0ms);
-  }
-  .reveal.home-story-visual.is-in .home-story-image { transform: none; }
-  .reveal.is-in .home-step {
-    animation: home-step-enter 520ms cubic-bezier(.22,1,.36,1) both;
-    animation-delay: var(--step-delay, 0ms);
-  }
+/* The one hand-drawn mark: a lavender underline under "fun?" that draws itself
+   in when its Reveal lands. The resting state is fully drawn, so no-JS and
+   reduced-motion visitors simply see the line. pathLength=1 on the path makes
+   a dash of 1 the whole stroke. */
+.home-scribble {
+  position: absolute;
+  left: -4%;
+  bottom: -0.14em;
+  width: 108%;
+  height: 0.34em;
+  overflow: visible;
+  pointer-events: none;
+}
+.home-scribble path {
+  fill: none;
+  stroke: var(--lavender-400);
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+}
+@keyframes home-scribble-draw {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+.reveal.is-in .home-scribble path {
+  animation: home-scribble-draw 520ms cubic-bezier(.22,1,.36,1) 180ms both;
 }
 
 /* ---------- Reveal on scroll (progressive enhancement) ----------
@@ -1433,7 +1454,6 @@ button:focus-visible, a:focus-visible, select:focus-visible, textarea:focus-visi
     animation-delay: 0.01ms !important;
     transition-delay: 0.01ms !important;
   }
-  .marquee__track { animation: none !important; }
   /* Freeze the loading shimmer to a calm flat surface rather than a stuck mid-sweep frame. */
   .skeleton, .skeleton--deep { animation: none !important; background-image: none !important; }
 }
