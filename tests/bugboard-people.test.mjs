@@ -88,14 +88,24 @@ test("#234: a post-event click flips on the tap, and a refusal still explains it
   const row = card.slice(card.indexOf("function CoAttendeeRow("));
   assert.match(row, /const sent = submitting \|\| state\?\.ok === true \|\| person\.alreadyClicked;/);
   assert.doesNotMatch(row, /loading=\{submitting\}/);
-  assert.match(row, /\{state\?\.message && !mutualId && !submitting \? \(/);
-  assert.match(row, /if \(state\?\.ok\) announceClickSent\(\);/, "the reveal host still hears about the send");
+  // The refusal line is the People Card's footer now (bug board #293/#297).
+  assert.match(row, /footer=\{\s*state\?\.message && !mutualId && !submitting \? \(/);
+  assert.match(
+    row,
+    /if \(state\?\.ok\) announceClickSent\(person\.id\);/,
+    "the reveal host still hears about the send - and who it went to",
+  );
 });
 
 test("#266: the mutual reveal is the celebration - a soft pop, never particles", () => {
   const reveal = read("src/components/mutual-reveal.tsx");
-  assert.match(reveal, /className="pop-in grid h-\[74px\] w-\[74px\]/);
+  assert.match(reveal, /className="ck-coord-pop grid h-\[74px\] w-\[74px\]/);
   assert.doesNotMatch(code(reveal), /confetti/i);
+  // Scale, never fade (COORDINATION_MODAL_SYSTEM §5): the disc is visible on frame one.
+  const css = read("src/app/globals.css");
+  const pop = css.slice(css.indexOf("@keyframes ck-coord-pop"), css.indexOf(".ck-coord-pop {"));
+  assert.ok(pop.length > 0, "the pop keyframes exist");
+  assert.doesNotMatch(pop, /opacity/);
 });
 
 test("#225: a pair already seated together reach both-going when the mutual forms", () => {
@@ -117,7 +127,12 @@ test("#224/#225: the seated-together night outranks a suggestion nobody accepted
     /\(!row\.event_slug \|\| \(row\.coord_state === "confirmed_together" && row\.status === "pending"\)\)/,
   );
   assert.match(mapper, /suggestedEventSlug: independentPlan \? row\.both_going_slug : row\.event_slug,/);
-  assert.match(mapper, /suggestedEventStarted: !independentPlan && Boolean\(row\.event_started\),/);
+  // The SUGGESTED event's flags never describe an independent plan - its night has
+  // its own started flag, off the both_going lateral (S11/S12 read it once the doors open).
+  assert.match(
+    mapper,
+    /suggestedEventStarted: independentPlan\s*\?\s*Boolean\(row\.both_going_started\)\s*:\s*Boolean\(row\.event_started\),/,
+  );
   // The list row mirrors the drawer's projectStep, which already reads the win state
   // off coord_state.
   const list = read("src/components/clicks-list.tsx");

@@ -1,13 +1,11 @@
 import Image, { type StaticImageData } from "next/image";
 import Link from "next/link";
 import type { CSSProperties } from "react";
-import { auth } from "@/auth";
 import { ButtonLink, Icon, Logo } from "@/components/ds";
 import { EventCard } from "@/components/event-card";
-import { HomeQuiz } from "@/components/home-quiz";
 import { MutualToast } from "@/components/mutual-toast";
 import { Reveal } from "@/components/reveal";
-import { getEventsForExplore, getLatestPersonaForSession } from "@/lib/event-repository";
+import { getEventsForExplore } from "@/lib/event-repository";
 import heroCourtyard from "../../public/home/hero-courtyard.jpg";
 import heroDinner from "../../public/home/hero-dinner.jpg";
 import heroPickleball from "../../public/home/hero-pickleball.jpg";
@@ -199,12 +197,7 @@ function HeroMotionToggle() {
 }
 
 export default async function Home() {
-  const session = await auth();
-  const isLoggedIn = Boolean(session?.user);
-  const [events, persona] = await Promise.all([
-    getEventsForExplore(),
-    isLoggedIn ? getLatestPersonaForSession(session) : Promise.resolve(null),
-  ]);
+  const events = await getEventsForExplore();
   const upcoming = [...events]
     .sort((left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime())
     .slice(0, 3);
@@ -316,14 +309,11 @@ export default async function Home() {
           <div className="rounded-[var(--radius-2xl)] bg-[color:var(--lav-bg)] px-6 py-12 text-center">
             <Icon name="calendar" size={30} className="mx-auto text-[color:var(--purple)]" />
             <h2 className="font-display mt-4 text-2xl font-semibold">Fresh plans are landing soon</h2>
+            {/* No quiz pitch here: the Click persona is off the landing page
+                (bug board #308), in this empty state as much as below it. */}
             <p className="mx-auto mt-2 max-w-[440px] text-sm leading-6 text-[color:var(--slate)]">
-              Take the vibe quiz now and we&apos;ll point you toward the right rooms as events go live.
+              New events show up here as hosts publish them.
             </p>
-            <div className="mt-5 flex justify-center">
-              <Link href="/quiz/personality" className="ck-btn ck-btn--md ck-btn--primary">
-                <span className="ck-btn__label">Pick your vibe</span>
-              </Link>
-            </div>
           </div>
         </section>
       )}
@@ -420,10 +410,6 @@ export default async function Home() {
           </ul>
         </div>
       </section>
-
-      <Reveal className="reveal--fade">
-        <HomeQuiz isLoggedIn={isLoggedIn} persona={persona} />
-      </Reveal>
 
       {/* ============ The bookend: the hero's verb, past tense ============ */}
       <section className="bg-[color:var(--surface-deep)] text-[color:var(--on-deep)]">

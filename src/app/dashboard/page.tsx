@@ -49,6 +49,17 @@ const weekday = new Intl.DateTimeFormat("en-AU", { weekday: "long", timeZone: AP
 // en-CA formats as YYYY-MM-DD, so these keys compare as calendar days.
 const sydneyDay = new Intl.DateTimeFormat("en-CA", { timeZone: APP_TIME_ZONE });
 
+// The plan's night on a coordination banner (S7/S9: "[Event] · Sat 2:00pm"), on
+// Sydney's clock for the same reason as everything above.
+const planWhen = new Intl.DateTimeFormat("en-AU", {
+  weekday: "short",
+  hour: "numeric",
+  minute: "2-digit",
+  timeZone: APP_TIME_ZONE,
+});
+const planLine = (title: string | null, startsAt: string | null) =>
+  title ? (startsAt ? `${title} · ${planWhen.format(new Date(startsAt))}` : title) : undefined;
+
 // Stage 0.5 locks the post-event eyebrow as `Yesterday · [Event]`, but the prompt
 // opens 2 hours after the event ends (POST_EVENT_PROMPT_DELAY_HOURS, §6.8), so it
 // can land the same night. Name the day it actually was rather than printing a
@@ -218,27 +229,34 @@ export default async function DashboardPage() {
                 title={`${coord.suggestedEventTitle ?? "That plan"} is off the table`}
                 sub={`Pick something else with ${coord.otherDisplayName.split(" ")[0]} and you're back on.`}
                 actionLabel="Pick another plan →"
-                actionHref="/proposals"
+                actionHref={`/proposals?open=${coord.mutualId}`}
               />
             ) : coord.planAccepted && coord.suggestedEventSlug ? (
+              // Into the drawer, not straight to the event: its RSVP carries the plan
+              // context and brings the booking back to "You're both going" (Stage 6).
+              // S9's `agreed` banner, in its locked words (CLICK_COORDINATION_SCREENS
+              // S9). The plan is agreed either way this shows - the other person
+              // accepted it or proposed it - so "[Name]'s in" is true for both sides.
               <MomentBanner
                 icon="calendar"
-                eyebrow={`with ${coord.otherDisplayName.split(" ")[0]}`}
-                title="You agreed on a plan - grab your seat"
-                sub={coord.suggestedEventTitle ?? undefined}
-                actionLabel="RSVP now →"
-                actionHref={`/events/${coord.suggestedEventSlug}`}
+                eyebrow={`your plan with ${coord.otherDisplayName.split(" ")[0]}`}
+                title={`${coord.otherDisplayName.split(" ")[0]}'s in - RSVP to lock it in`}
+                sub={planLine(coord.suggestedEventTitle, coord.suggestedEventStartsAt)}
+                actionLabel="RSVP →"
+                actionHref={`/proposals?open=${coord.mutualId}`}
               />
             ) : coord.suggestedEventSlug && coord.suggestedByOther ? (
               <MomentBanner
                 icon="calendar"
                 eyebrow={`from ${coord.otherDisplayName.split(" ")[0]}`}
                 title={`${coord.otherDisplayName.split(" ")[0]} suggested a plan`}
-                sub={coord.suggestedEventTitle ?? undefined}
+                sub={planLine(coord.suggestedEventTitle, coord.suggestedEventStartsAt)}
                 actionLabel="See their plan →"
-                actionHref="/proposals"
+                actionHref={`/proposals?open=${coord.mutualId}`}
               />
             ) : (
+              // §4: opening this moment plays the person's one-time reveal if they
+              // haven't seen it (the drawer owns that), then their current step.
               <MomentBanner
                 icon="users"
                 eyebrow="it's mutual"
@@ -249,7 +267,7 @@ export default async function DashboardPage() {
                 }
                 sub="Find something you'd both enjoy and meet there."
                 actionLabel="Suggest a plan →"
-                actionHref="/proposals"
+                actionHref={`/proposals?open=${coord.mutualId}`}
               />
             )}
           </div>
@@ -297,16 +315,9 @@ export default async function DashboardPage() {
         >
           {rotatedPeople.length > 0 ? (
             <Reveal delay={60}>
-              {rotatedPeople.map((person) => (
-                <ClickWithSomeoneUserCard
-                  key={person.id}
-                  person={person}
-                  viewerOpenToDating={profileStatus.datingVisible}
-                />
-              ))}
-              {/* The anonymity reassurance shows ONCE per section - never under
-                  each card. */}
-              <p className="mt-3.5 flex items-start gap-[7px] px-0.5 text-[13px] leading-relaxed text-[color:var(--slate)]">
+              {/* The anonymity reassurance shows ONCE, at the TOP of the click
+                  surface (COORDINATION_MODAL_SYSTEM §6) - never under each card. */}
+              <p className="mb-3.5 flex items-start gap-[7px] px-0.5 text-[13px] leading-relaxed text-[color:var(--slate)]">
                 <Icon name="lock" size={14} className="mt-0.5" />
                 <span>
                   Clicking is anonymous - we&apos;ll only show you if it&apos;s mutual.{" "}
@@ -315,6 +326,13 @@ export default async function DashboardPage() {
                   </Link>
                 </span>
               </p>
+              {rotatedPeople.map((person) => (
+                <ClickWithSomeoneUserCard
+                  key={person.id}
+                  person={person}
+                  viewerOpenToDating={profileStatus.datingVisible}
+                />
+              ))}
             </Reveal>
           ) : (
             <Reveal delay={60}>
@@ -354,7 +372,9 @@ export default async function DashboardPage() {
         {activePrompts.length > 0 ? (
           <div id="who-was-there" className="scroll-mt-24">
             <Section title="Who was there" sub="Only the people who were actually there. It stays private unless it is mutual.">
-              <div className="grid gap-5 lg:grid-cols-2">
+              {/* One night per row: each card lays its people out as the People Card
+                  grid (2-up from md), which two nights side by side would crush. */}
+              <div className="grid gap-5">
                 {activePrompts.map((prompt, i) => (
                   <Reveal key={prompt.eventSlug} delay={i * 80} className="min-w-0">
                     <PostEventClickCard prompt={prompt} />

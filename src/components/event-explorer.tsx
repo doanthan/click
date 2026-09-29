@@ -20,7 +20,7 @@ const MAX_DISTANCE_KM = 50;
 const DISTANCE_OPTIONS = [2, 5, 10, 25, MAX_DISTANCE_KM] as const;
 
 type DateWindow = "today" | "tomorrow" | "weekend" | "7" | "30" | "all";
-type SortMode = "soonest" | "nearest" | "popular";
+type SortMode = "soonest" | "nearest" | "popular" | "price";
 type TimeOfDay = "all" | "day" | "night";
 type LocationStatus = "idle" | "requesting" | "shared" | "denied" | "unsupported";
 
@@ -43,6 +43,8 @@ const SORT_OPTIONS: Array<[SortMode, string]> = [
   ["nearest", "Nearest"],
   ["soonest", "Soonest"],
   ["popular", "Trending"],
+  // Bug board #307. Free first, then cheapest; ties go to the sooner night.
+  ["price", "Lowest price"],
 ];
 
 // Bucket by CALENDAR DAY in the venue timezone - the same wall date the card
@@ -107,6 +109,14 @@ function slugifyTag(value: string) {
 
 function isFreeEvent(event: EventItem) {
   return !event.price || event.price.trim().toLowerCase() === "free";
+}
+
+// The card's label ("Free" / "$25.00", formatPriceLabel) is the only price the
+// client has, so the price sort reads it back into cents.
+function priceCentsOf(event: EventItem) {
+  if (isFreeEvent(event)) return 0;
+  const amount = Number(event.price.replace(/[^0-9.]/g, ""));
+  return Number.isFinite(amount) ? Math.round(amount * 100) : 0;
 }
 
 /** The DS filter pill: white + Mist hairline, and Deep Purple + a tick when on. */
@@ -301,6 +311,11 @@ export function EventExplorer({
       .sort((left, right) => {
         if (sortMode === "popular") {
           if (right.attendees !== left.attendees) return right.attendees - left.attendees;
+          return new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime();
+        }
+        if (sortMode === "price") {
+          const priceDelta = priceCentsOf(left) - priceCentsOf(right);
+          if (priceDelta !== 0) return priceDelta;
           return new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime();
         }
         // Events with no distance sort LAST rather than first - as 0 km they

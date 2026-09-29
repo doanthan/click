@@ -29,6 +29,7 @@ Every template listed here is wired through `logEmailEvent` and fires today, wit
 | `waitlist-promoted-attendee.html` | When a freed seat is offered to the next person in the queue. Time-sensitive - the hold is already ticking. | `A spot opened - {{eventTitle}}` |
 | `reengagement-click-attendee.html` | Someone clicked with a member who has not opened the app in 30 days (B7.4b liveness test). Sent post-commit from `sendClickInner`, once per dormancy spell, and only when the click did NOT form a mutual. **Carries no sender variable at all** - a click is anonymous until mutual, so nothing in this template may narrow down who sent it. | `Someone clicked with you on Click` |
 | `plan-suggested-attendee.html` | A mutual click suggested an event, or re-pointed a plan at a different one (`suggestPlanForMutual`, `proposeAlternativeForProposal`, via `logPlanSuggestedEmail`). Goes to the other person only, post-commit via `afterResponse`. Skipped when they muted the suggester or turned off the Mutual clicks toggle (`notification_prefs.mutualClick`). | `{{otherName}} suggested {{eventTitle}}` |
+| `guest-spot-confirmed.html` | A +1 claims the seat a friend saved for them (`claimGuestSpotForProfile`, post-response). Their own confirmation, with the venue. | `You're in - {{eventTitle}}, {{eventShortDate}}` |
 
 ### Auth and security
 
@@ -62,6 +63,24 @@ No `unsubscribeUrl` on any of these - security mail is transactional and exempt 
 ## Variables
 
 Variables are typed `{{likeThis}}`. Strings unless noted.
+
+### `guest-spot-confirmed.html`
+
+A +1's own confirmation once they claim the seat a friend saved (`claimGuestSpotForProfile`). Subject: `You're in - {{eventTitle}}, {{eventShortDate}}`. Sent with `escapeVars: true`.
+
+| Variable | Notes |
+| --- | --- |
+| `guestFirstName` | The claimer's first name from their profile, falling back to the name the purchaser typed. |
+| `purchaserFirstName` | First name of the member who bought the seat. |
+| `eventTitle` |  |
+| `eventShortDate` | Subject only, e.g. `2 Oct`. |
+| `eventLongDate` | e.g. `Thursday 2 October 2026`. |
+| `eventTimeLabel` | `7:00 pm to 9:00 pm`, or the start time alone when the event has no end. |
+| `eventVenue` | `events.location_name`. |
+| `eventAddressLine` | Street address and city, comma-joined. The claim is what shows the guest the venue. |
+| `eventUrl` | `/events/[slug]`. |
+| `profileUrl` | `/profile/edit` - a photo is what lets them click with people afterwards. |
+| `releaseUrl` | `/claim/[token]?action=release` - still works on a claimed seat. |
 
 ### `account-welcome.html`
 

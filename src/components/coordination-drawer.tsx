@@ -12,9 +12,13 @@ import {
 import { useFormStatus } from "react-dom";
 import { createPortal } from "react-dom";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { SubmitButton } from "@/components/ds-client";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { PAIR_SUPPRESSION_DAYS } from "@/lib/clicks/constants";
+import { APP_TIME_ZONE } from "@/lib/datetime";
+import { Icon, TagRow } from "./ds";
+import { EventImage } from "./event-image";
 import {
   confirmProposalAction,
   declineProposalAction,
@@ -34,12 +38,14 @@ import { RevealStep, revealedThisSession } from "./mutual-reveal";
 // waiting → both going, plus recovery/terminal states - is ONE stepped modal over the
 // current page (§1). Steps advance IN PLACE, never a route change (§5 QA). The drawer is
 // a PURE projection of the live entry's coord_state/proposal (§2): a successful action
-// revalidates /proposals, the fresh entry flows back in from ClicksList, and the step
-// re-projects - so revalidation DRIVES the advance instead of a fragile local override.
-// §5 freeze-safety: ClicksList keys the drawer on the mutual id, so the panel mounts once
-// per open and its opacity-0 step-enter-fwd entrance runs to completion exactly once;
-// inner steps swap via plain conditional render off a visible base (no per-step opacity
-// gate to stick). Reduced-motion is the global handler.
+// revalidates /proposals and the fresh entry flows back in from ClicksList - or, over
+// any other page, MutualRevealHost re-reads the mutual when `onChanged` fires - and the
+// step re-projects, so fresh server state DRIVES the advance instead of a local override.
+// §5 freeze-safety: every entrance here is transform-only (.ck-coord-enter on the card,
+// .ck-coord-step on each step's body, .ck-coord-pop on the reveal disc), so the resting
+// state is visible at every frame and nothing is gated on an animation finishing. The
+// panel still mounts once per open - both hosts key it on the mutual id. Reduced-motion
+// is the global handler.
 
 const INITIAL: ProposalActionState = { ok: false, error: null };
 
@@ -47,6 +53,18 @@ const longDate = new Intl.DateTimeFormat("en-AU", {
   weekday: "short",
   day: "numeric",
   month: "short",
+});
+
+// The card mini's date line (S5/S7), in the zone every event is authored in - the
+// canonical card formats on the server in Sydney time, so this must not drift to
+// whatever zone the device happens to be in.
+const cardWhen = new Intl.DateTimeFormat("en-AU", {
+  weekday: "short",
+  day: "numeric",
+  month: "short",
+  hour: "numeric",
+  minute: "2-digit",
+  timeZone: APP_TIME_ZONE,
 });
 
 // Google Calendar template link (§8: confirmed_together → Add to calendar). We only
@@ -183,6 +201,9 @@ type CoordinationDrawerProps = {
   entry: ProposalEntry;
   catalogue: ProposalCatalogueEvent[];
   onClose: () => void;
+  // Fired when any action lands. Only a drawer opened OFF /proposals needs it: every
+  // action revalidates that one path, so anywhere else the host has to re-read.
+  onChanged?: () => void;
 };
 
 // Never emits: "is this the client" does not change once hydration is over.
@@ -210,6 +231,7 @@ function CoordinationDrawerPanel({
   entry,
   catalogue,
   onClose,
+  onChanged,
 }: CoordinationDrawerProps) {
   const [confirmState, confirmAction] = useActionState(confirmProposalAction, INITIAL);
   const [declineState, declineAction] = useActionState(declineProposalAction, INITIAL);
@@ -224,10 +246,77 @@ function CoordinationDrawerPanel({
   // mounts once per mutual (ClicksList keys it), so S14w holds until it closes.
   const [waitlistState, waitlistAction] = useActionState(joinWaitlistTogetherAction, INITIAL);
 
-  const [picking, setPicking] = useState(false);
-  const [revealDismissed, setRevealDismissed] = useState(() =>
-    revealedThisSession.has(entry.mutualId),
-  );
+  // Off /proposals nothing revalidates this entry, so the host is told when any action
+  // lands and re-reads the mutual. Through a ref, so a fresh callback on every host
+  // render can never re-fire the effect on its own.
+  const onChangedRef = useRef(onChanged);
+  useEffect(() => {
+    onChangedRef.current = onChanged;
+  });
+  useEffect(() => {
+    const landed = [
+      confirmState,
+      declineState,
+      proposeState,
+      suggestState,
+      releaseState,
+      softReleaseState,
+      connectedState,
+      waitlistState,
+    ].some((state) => state.ok);
+    if (landed) onChangedRef.current?.();
+  }, [
+    confirmState,
+    declineState,
+    proposeState,
+    suggestState,
+    releaseState,
+    softReleaseState,
+    connectedState,
+    waitlistState,
+  ]);
+
+  // S5 as a sub-flow: "Suggest something else" (S7), "Find another together" (S14,
+  // S18) and "Suggest another plan" drop into the suggest card in place of the face
+  // they came from. On `open` the card IS the step, so it needs no flag.
+  const [planning, setPlanning] = useState(false);
+
+  // S7's one tap (CLICK_COORDINATION_SCREENS S7 -> S8): "I'm in · RSVP" agrees the plan
+  // AND carries on to the real event page to book - the RSVP is half the label, so it
+  // must not wait behind a second tap. Only when THIS tap agreed it (a plan that
+  // lapsed as it waited agrees nothing) and only for someone still without a seat:
+  // "I'm in" on a ticket they already hold goes nowhere. Both hosts close the drawer
+  // on the way out (ClicksList unmounts, MutualRevealHost resets on the new path).
+  const router = useRouter();
+  const rsvpHandled = useRef<ProposalActionState | null>(null);
+  useEffect(() => {
+    if (!confirmState.confirmed || rsvpHandled.current === confirmState) return;
+    rsvpHandled.current = confirmState;
+    if (!entry.viewerHasSeat && entry.suggestedEventSlug) router.push(planBookingHref(entry));
+  }, [confirmState, entry, router]);
+
+  // §4: the reveal is decided ONCE, as the drawer opens, and then held until the person
+  // moves on from it. Latched rather than re-derived from entry.revealSeen: the stamp
+  // below lands while the reveal is on screen, and a revalidation carrying it must not
+  // yank the moment out from under them mid-read. Never on a terminal mutual.
+  const [revealOpen, setRevealOpen] = useState(() => {
+    const opening = projectStep(entry);
+    return (
+      !entry.revealSeen &&
+      !revealedThisSession.has(entry.mutualId) &&
+      opening !== "released" &&
+      opening !== "connected"
+    );
+  });
+  // Seen the moment it SHOWS, not when it closes. Stamping on the way out left one
+  // hole: a reload, a closed tab or a dropped connection with the reveal up played it
+  // all over again. markMutualSeen is idempotent (its WHERE only matches while the
+  // viewer's seen_at is null), so Strict Mode's double effect is a no-op.
+  useEffect(() => {
+    if (!revealOpen) return;
+    revealedThisSession.add(entry.mutualId);
+    void markMutualSeenAction(entry.mutualId); // persist for reload / other devices
+  }, [revealOpen, entry.mutualId]);
 
   const [confirmRelease, setConfirmRelease] = useState(false);
   // The Escape/Tab handler below is document-level and mount-scoped, so it would
@@ -249,11 +338,11 @@ function CoordinationDrawerPanel({
   // handler reads the current close from a ref instead of closing over it.
   const closeStepRef = useRef<() => void>(() => {});
 
-  // When a successful action revalidates /proposals, close the picker after the
+  // When a successful action revalidates /proposals, close the suggest card after the
   // fresh server state renders so local UI never fights the server truth.
   const sig = `${entry.status}|${entry.coordState}|${entry.suggestedEventSlug ?? ""}|${entry.suggestedEventJoinable}`;
   useEffect(() => {
-    const frame = window.requestAnimationFrame(() => setPicking(false));
+    const frame = window.requestAnimationFrame(() => setPlanning(false));
     return () => window.cancelAnimationFrame(frame);
   }, [sig]);
 
@@ -317,30 +406,16 @@ function CoordinationDrawerPanel({
 
   const base = projectStep(entry);
   // Reveal fires once per user per mutual (§4). Skip on a dead/terminal mutual.
-  const step: Step =
-    !entry.revealSeen && !revealDismissed && base !== "released" && base !== "connected"
-      ? "reveal"
-      : base;
+  const step: Step = revealOpen && base !== "released" && base !== "connected" ? "reveal" : base;
 
-  const dismissReveal = useCallback(() => {
-    revealedThisSession.add(entry.mutualId);
-    setRevealDismissed(true);
-    void markMutualSeenAction(entry.mutualId); // persist for reload / other devices
-  }, [entry.mutualId]);
+  // "Suggest a plan" on the reveal carries on to the suggest step, in place (§1).
+  const dismissReveal = useCallback(() => setRevealOpen(false), []);
 
-  // THE #1 behaviour bug class (COORDINATION_MODAL_SYSTEM §4): the reveal is
-  // dismissed by "Maybe later" AND by ✕ AND by the scrim AND by Escape, and every
-  // one of those has to write reveal_seen. Only the primary CTA used to, so anyone
-  // who closed the reveal instead of acting on it got it fired at them again on
-  // every entry point, on every device, forever.
-  //
-  // markMutualSeen is idempotent server-side (its WHERE matches only while the
-  // viewer's seen_at is still null), so the double call from the CTA path is a
-  // no-op. Order matters: stamp before onClose, which unmounts the panel.
-  const closeStep = useCallback(() => {
-    if (step === "reveal") dismissReveal();
-    onClose();
-  }, [step, dismissReveal, onClose]);
+  // THE #1 behaviour bug class (§4) was a reveal that only its primary CTA persisted,
+  // so anyone who closed it instead - "Maybe later", ✕, the scrim, Escape - had it
+  // fired at them again on every entry point, on every device. The stamp now lands as
+  // the reveal shows (above), so every way out is simply the close.
+  const closeStep = onClose;
   // In an effect, not during render: a ref write during render is a lint error and
   // genuinely unsafe under concurrent rendering. The keydown listener only ever
   // fires after paint, so an effect is early enough for it.
@@ -359,22 +434,31 @@ function CoordinationDrawerPanel({
   // proposeAlternative would just fail.
   const freshSuggest = (step === "open" && !entry.id) || step === "partner-cancelled";
 
-  const picker = picking ? (
-    <PlanPicker
-      catalogue={catalogue}
-      firstName={firstName}
-      formAction={freshSuggest ? suggestAction : proposeAction}
-      hidden={
-        freshSuggest ? (
-          <input type="hidden" name="mutual_id" value={entry.mutualId} />
-        ) : (
-          <input type="hidden" name="proposal_id" value={entry.id} />
-        )
-      }
-      error={(freshSuggest ? suggestState : proposeState).error}
-      onBack={() => setPicking(false)}
-    />
-  ) : null;
+  // What the suggest card opens on. On `open` that is Click's pick for the pair, while
+  // it can still be joined; from any other step the plan on the table is the one being
+  // replaced, so the card opens on Click's matched picks instead.
+  const suggestIsStep = step === "open" && !entry.suggestionUnavailable;
+  const planner =
+    suggestIsStep || planning ? (
+      <SuggestPlan
+        entry={entry}
+        catalogue={catalogue}
+        titleId={titleId}
+        firstName={firstName}
+        initial={suggestIsStep && entry.suggestedEventJoinable ? entry.suggestedEventCard : null}
+        leadIn={suggestIsStep && entry.planLapsed}
+        formAction={freshSuggest ? suggestAction : proposeAction}
+        hidden={
+          freshSuggest ? (
+            <input type="hidden" name="mutual_id" value={entry.mutualId} />
+          ) : (
+            <input type="hidden" name="proposal_id" value={entry.id} />
+          )
+        }
+        error={(freshSuggest ? suggestState : proposeState).error}
+        onBack={suggestIsStep ? undefined : () => setPlanning(false)}
+      />
+    ) : null;
 
   // z-110, not 130. The drawer is the BASE surface here, and its own safety confirm
   // goes through ModalShell at 120 - as siblings under body, a drawer at 130 painted
@@ -400,7 +484,7 @@ function CoordinationDrawerPanel({
       <div
         ref={cardRef}
         tabIndex={-1}
-        className="step-enter-fwd relative z-10 max-h-[92dvh] w-full max-w-[540px] overflow-y-auto rounded-t-[24px] bg-[color:var(--paper)] p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-[var(--shadow-lg)] outline-none sm:rounded-[24px] sm:p-7"
+        className="ck-coord-enter relative z-10 max-h-[92dvh] w-full max-w-[540px] overflow-y-auto rounded-t-[24px] bg-[color:var(--paper)] p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-[var(--shadow-lg)] outline-none sm:rounded-[24px] sm:p-7"
       >
         <button
           type="button"
@@ -413,12 +497,12 @@ function CoordinationDrawerPanel({
           </span>
         </button>
 
-        {/* key={step} remounts the body on every advance so .rise-soft replays -
-            the one flow in this surface that genuinely steps was the one that
-            never felt like it was stepping. Safe against the freeze the header
-            comment warns about: rise-soft is pure CSS with fill `both` settling
-            at opacity 1, not a JS-applied class that can stick invisible. */}
-        <div key={step} className="rise-soft">
+        {/* key={step} gives each step its own body, so every advance arrives with a
+            small rise - the one flow in this surface that genuinely steps was the
+            one that never felt like it was stepping. It is that step's MOUNT, not
+            a replay on a re-render, and .ck-coord-step moves it without ever
+            touching opacity, so no step can be caught invisible (§5). */}
+        <div key={step} className="ck-coord-step">
           {step === "reveal" ? (
             <RevealStep
               entry={entry}
@@ -436,9 +520,9 @@ function CoordinationDrawerPanel({
               declineAction={declineAction}
               confirmError={confirmState.error}
               declineError={declineState.error}
-              onTogglePicker={() => setPicking((v) => !v)}
+              onPlan={() => setPlanning(true)}
               onDone={closeStep}
-              picker={picker}
+              planner={planner}
               waitlistAction={waitlistAction}
               waitlistError={waitlistState.error}
               waitlistJoined={waitlistState.ok}
@@ -451,56 +535,69 @@ function CoordinationDrawerPanel({
             left to release there, releaseMutualForSession matches status='active'
             only, and the confirm had already promised a 90-day suppression that
             the throw meant was never written. Report or block stays, and is the
-            control that actually does something on a click that has run out. */}
-        <div className="mt-6 border-t border-[color:var(--line-soft)] pt-4">
-          {/* §B7.1: the closure ritual sits beside the two exits, and it is the
-              only one of the three that is a WIN - so it leads, and it is a real
-              button rather than a quiet link. There is deliberately no "it didn't
-              work" counterpart: Click never shows a verdict. */}
-          {step !== "released" && step !== "connected" ? (
-            <form action={connectedAction} className="mb-4">
-              <input type="hidden" name="mutual_id" value={entry.mutualId} />
-              <SubmitButton variant="secondary" size="sm" pendingLabel="Saving…">
-                We clicked 👍
-              </SubmitButton>
-              {connectedState.error ? (
-                <p role="alert" className="mt-2 text-xs font-medium text-[color:var(--danger)]">
-                  {connectedState.error}
-                </p>
-              ) : null}
-            </form>
-          ) : null}
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            {step !== "released" && step !== "connected" ? (
-              // Two doors out, deliberately unequal in weight and both quiet: the
-              // 90-day removal, and the neutral rest that leaves the pair
-              // re-clickable. Same gate as the release - there is nothing left to
-              // set down on either terminal step, and softReleaseMutualForSession
-              // matches status='active' only.
-              <div className="flex flex-wrap items-center gap-4">
-                <form ref={releaseFormRef} action={releaseAction}>
-                  <input type="hidden" name="mutual_id" value={entry.mutualId} />
-                  <ReleaseControl onRequest={() => openReleaseConfirm(true)} />
-                </form>
-                <form action={softReleaseAction}>
-                  <input type="hidden" name="mutual_id" value={entry.mutualId} />
-                  <SoftReleaseControl />
-                </form>
-              </div>
+            control that actually does something on a click that has run out.
+
+            And not under the REVEAL: it is the one-time moment, not the click detail
+            view §B7.1 puts these controls in, and §4 gives it one action - "Suggest a
+            plan" - plus the quiet "Maybe later" / "How clicking works". Every one of
+            these is a step away, and the reveal reads the same wherever it plays. */}
+        {step !== "reveal" ? (
+          <div className="mt-6 border-t border-[color:var(--line-soft)] pt-4">
+            {/* §B7.1: the closure ritual sits beside the two exits, and it is the
+                only one of the three that is a WIN - so it leads, and it is a real
+                button rather than a quiet link. There is deliberately no "it didn't
+                work" counterpart: Click never shows a verdict.
+
+                S12: it is the AFTER-the-night affordance for a pair who had a plan
+                (CLICK_COORDINATION_SCREENS S12; state table row "post-event"). Offered
+                from the first step, it let either of them close a live mutual as
+                "connected" before the two had ever met - so it waits until the
+                plan's night has started. */}
+            {step === "confirmed" && entry.suggestedEventStarted ? (
+              <form action={connectedAction} className="mb-4">
+                <input type="hidden" name="mutual_id" value={entry.mutualId} />
+                <SubmitButton variant="secondary" size="sm" pendingLabel="Saving…">
+                  We clicked 👍
+                </SubmitButton>
+                {connectedState.error ? (
+                  <p role="alert" className="mt-2 text-xs font-medium text-[color:var(--danger)]">
+                    {connectedState.error}
+                  </p>
+                ) : null}
+              </form>
             ) : null}
-            <Link
-              href={`/profile/${entry.otherId}#safety`}
-              className="ck-taplink text-[13px] font-semibold text-[color:var(--slate)] underline decoration-dotted underline-offset-2 hover:text-[color:var(--ink)]"
-            >
-              Report or block {firstName}
-            </Link>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              {step !== "released" && step !== "connected" ? (
+                // Two doors out, deliberately unequal in weight and both quiet: the
+                // 90-day removal, and the neutral rest that leaves the pair
+                // re-clickable. Same gate as the release - there is nothing left to
+                // set down on either terminal step, and softReleaseMutualForSession
+                // matches status='active' only.
+                <div className="flex flex-wrap items-center gap-4">
+                  <form ref={releaseFormRef} action={releaseAction}>
+                    <input type="hidden" name="mutual_id" value={entry.mutualId} />
+                    <ReleaseControl onRequest={() => openReleaseConfirm(true)} />
+                  </form>
+                  <form action={softReleaseAction}>
+                    <input type="hidden" name="mutual_id" value={entry.mutualId} />
+                    <SoftReleaseControl />
+                  </form>
+                </div>
+              ) : null}
+              <Link
+                href={`/profile/${entry.otherId}#safety`}
+                className="ck-taplink text-[13px] font-semibold text-[color:var(--slate)] underline decoration-dotted underline-offset-2 hover:text-[color:var(--ink)]"
+              >
+                Report or block {firstName}
+              </Link>
+            </div>
+            {releaseState.error || softReleaseState.error ? (
+              <p role="alert" className="mt-2 text-xs font-medium text-[color:var(--danger)]">
+                {releaseState.error ?? softReleaseState.error}
+              </p>
+            ) : null}
           </div>
-          {releaseState.error || softReleaseState.error ? (
-            <p role="alert" className="mt-2 text-xs font-medium text-[color:var(--danger)]">
-              {releaseState.error ?? softReleaseState.error}
-            </p>
-          ) : null}
-        </div>
+        ) : null}
 
         {/* A native window.confirm used to land an OS-chrome grey box on top of
             this card, in a font the DS does not own, inside an active focus
@@ -552,16 +649,14 @@ const CURATED_SECTIONS = ["Events you're going to", "Saved", "You'd both like"] 
 function PlanPicker({
   catalogue,
   firstName,
-  formAction,
-  hidden,
-  error,
+  titleId,
+  onPick,
   onBack,
 }: {
   catalogue: ProposalCatalogueEvent[];
   firstName: string;
-  formAction: (payload: FormData) => void;
-  hidden: React.ReactNode;
-  error: string | null;
+  titleId: string;
+  onPick: (event: ProposalCatalogueEvent) => void;
   onBack: () => void;
 }) {
   const [query, setQuery] = useState("");
@@ -608,21 +703,17 @@ function PlanPicker({
           .slice(0, label === "You'd both like" ? 4 : undefined),
       })).filter((section) => section.rows.length > 0);
 
-  // A radio, not a <select>: the row has to carry the suburb and the date too, and
-  // the native control still submits `event_slug` with the form and still enforces
-  // `required` - no state to keep in sync, no listbox to rebuild.
+  // A row is a CHOICE, not a send (S5b: "Picking a row returns to S5 with that event
+  // in the card"). The card is where a plan gets looked at - photo, price, the full
+  // details one tap away - before "Suggest this to [Name]" sends it; sending straight
+  // out of a list of titles skipped the one look the spec builds S5 around.
   const row = (event: ProposalCatalogueEvent) => (
-    <label
+    <button
       key={event.slug}
-      className="flex cursor-pointer items-start gap-3 rounded-[var(--radius-md)] px-3 py-2 hover:bg-[color:var(--cream)] has-[:checked]:bg-[color:var(--lav-bg)]"
+      type="button"
+      onClick={() => onPick(event)}
+      className="flex w-full min-w-0 items-start gap-3 rounded-[var(--radius-md)] px-3 py-2 text-left hover:bg-[color:var(--cream)] focus-visible:bg-[color:var(--lav-bg)]"
     >
-      <input
-        type="radio"
-        name="event_slug"
-        value={event.slug}
-        required
-        className="mt-1 accent-[var(--purple)]"
-      />
       <span className="min-w-0">
         <span className="block truncate text-sm font-semibold text-[color:var(--ink)]">
           {event.title}
@@ -631,15 +722,11 @@ function PlanPicker({
           {event.suburb} · {longDate.format(new Date(event.startsAt))}
         </span>
       </span>
-    </label>
+    </button>
   );
 
   return (
-    <form
-      action={formAction}
-      className="rise-soft mt-4 rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-4"
-    >
-      {hidden}
+    <div className="ck-coord-step">
       {/* S5b's back link - this is a sub-step of the suggest card, not a modal of
           its own, so the way out is back rather than cancel. */}
       <button
@@ -649,9 +736,10 @@ function PlanPicker({
       >
         ‹ Back
       </button>
-      <p className="font-display mt-2 text-base font-semibold tracking-[-0.02em] text-[color:var(--ink)]">
+      <span className="eyebrow mt-2 block">Suggest a plan</span>
+      <h2 id={titleId} className={headingClass}>
         Choose an event for {firstName}
-      </p>
+      </h2>
       <label htmlFor={searchId} className="eyebrow mt-3 block">
         Search events
       </label>
@@ -699,19 +787,248 @@ function PlanPicker({
           </p>
         ) : null}
       </div>
+    </div>
+  );
+}
 
-      <div className="mt-4">
-        {/* S5's primary. Naming the person is the point: it says plainly that
-            this goes TO them and that they get to answer, which is exactly the
-            step the old open-step "Confirm this plan" skipped past. */}
-        <SubmitButton size="sm" pendingLabel="Sending…">
-          Suggest this to {firstName}
-        </SubmitButton>
-      </div>
-      {error ? (
-        <p className="mt-3 text-xs font-medium text-[color:var(--danger)]">{error}</p>
+// S5 - Suggest a plan (CLICK_COORDINATION_SCREENS S5 / S5b). The card IS the preview:
+// one event at a time, drawn the way the canonical Event Card draws it, and sent with
+// "Suggest this to [Name]". "Show another" cycles Click's matched picks for the pair -
+// read once, from the same ranking the mutual's first pick came from - and "Suggest
+// your own →" opens S5b, which comes BACK here with the chosen event in the card. With
+// nothing to show, the same card stays actionable ("Pick something you'd both enjoy"),
+// never an empty "nothing fits" screen (S17).
+function SuggestPlan({
+  entry,
+  catalogue,
+  titleId,
+  firstName,
+  initial,
+  leadIn,
+  formAction,
+  hidden,
+  error,
+  onBack,
+}: {
+  entry: ProposalEntry;
+  catalogue: ProposalCatalogueEvent[];
+  titleId: string;
+  firstName: string;
+  initial: ProposalCatalogueEvent | null;
+  leadIn: boolean;
+  formAction: (payload: FormData) => void;
+  hidden: React.ReactNode;
+  error: string | null;
+  onBack?: () => void;
+}) {
+  const [choosing, setChoosing] = useState(false);
+  // The S5b choice, shown until "Show another" hands the card back to Click's picks.
+  const [chosen, setChosen] = useState<ProposalCatalogueEvent | null>(null);
+  // Click's matched picks: null until the one read lands.
+  const [picks, setPicks] = useState<ProposalCatalogueEvent[] | null>(null);
+  const [turn, setTurn] = useState(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(`/api/clicks/picks?mutual=${encodeURIComponent(entry.mutualId)}`, {
+      signal: controller.signal,
+      cache: "no-store",
+    })
+      .then((res) => (res.ok ? res.json() : { events: [] }))
+      .then((body: { events?: ProposalCatalogueEvent[] }) =>
+        setPicks(Array.isArray(body.events) ? body.events : []),
+      )
+      // A dropped read means no more picks, not an error: the card still sends what it
+      // has, and "Suggest your own →" is always there.
+      .catch(() => {
+        if (!controller.signal.aborted) setPicks([]);
+      });
+    return () => controller.abort();
+  }, [entry.mutualId]);
+
+  // Click's pick first, then the rest of its matched picks - each night once.
+  const pool = [initial, ...(picks ?? [])].filter(
+    (event, index, all): event is ProposalCatalogueEvent =>
+      event != null && all.findIndex((other) => other?.slug === event.slug) === index,
+  );
+  const current = chosen ?? (pool.length > 0 ? pool[turn % pool.length] : null);
+  const loading = !current && picks === null;
+  // Only when there IS another: from an S5b choice, any of Click's picks is one.
+  const canShowAnother = chosen ? pool.length > 0 : pool.length > 1;
+
+  function showAnother() {
+    if (chosen) {
+      setChosen(null);
+      return;
+    }
+    setTurn((value) => (value + 1) % pool.length);
+  }
+
+  if (choosing) {
+    return (
+      <PlanPicker
+        catalogue={catalogue}
+        firstName={firstName}
+        titleId={titleId}
+        onPick={(event) => {
+          setChosen(event);
+          setChoosing(false);
+        }}
+        onBack={() => setChoosing(false)}
+      />
+    );
+  }
+
+  return (
+    <div>
+      {onBack ? (
+        <button
+          type="button"
+          onClick={onBack}
+          className="ck-taplink text-[13px] font-semibold text-[color:var(--slate)] hover:text-[color:var(--ink)]"
+        >
+          ‹ Back
+        </button>
       ) : null}
-    </form>
+      <span className={`eyebrow block${onBack ? " mt-2" : ""}`}>Suggest a plan</span>
+      {leadIn ? (
+        // S15's soft lead-in, from §B4.2's own no-response nudge: the last plan ran
+        // out unanswered, and this says so without saying so - no "expired", no
+        // "missed", nothing about who didn't answer.
+        <p className="mt-2 text-sm font-semibold text-[color:var(--ink-soft)]">
+          Still keen to meet {firstName}? Here&apos;s what&apos;s on.
+        </p>
+      ) : null}
+      {/* The suggest-STEP header (locked, S5) - a different element from the reveal's
+          CTA, which is "Suggest a plan". */}
+      <h2 id={titleId} className={headingClass}>
+        Suggest something to do with {firstName}
+      </h2>
+      <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--ink-soft)]">
+        Pick something you&apos;d both enjoy - no back-and-forth, just a plan.
+      </p>
+
+      {current ? (
+        <div className="mt-4">
+          <PlanEventCard event={current} />
+          {/* The reason line. Only ever what is true: "You're going to this" off the
+              viewer's own seat, "You're both into this" only when the event carries
+              an interest tag EACH of them holds - never on a pick of their own that
+              Click knows nothing about. A plain dot, not a ✨ (peaks only). */}
+          {current.viewerGoing ? (
+            <p className="mt-3 flex items-start gap-1.5 text-sm font-semibold text-[color:var(--sage-ink)]">
+              <Icon name="check" size={14} stroke={2.6} className="mt-[3px] shrink-0" />
+              You&apos;re going to this - once {firstName}&apos;s in, only they need to RSVP.
+            </p>
+          ) : current.bothInto ? (
+            <p className="mt-3 flex items-center gap-2 text-sm font-semibold text-[color:var(--ink-soft)]">
+              <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-[color:var(--sage)]" />
+              You&apos;re both into this - and it&apos;s nearby.
+            </p>
+          ) : null}
+          {/* Previewable (S5): the real event page, with the way back to this drawer. */}
+          <Link
+            href={`/events/${current.slug}?planWith=${entry.otherId}&return=${encodeURIComponent(
+              `/proposals?open=${entry.mutualId}`,
+            )}`}
+            className="ck-taplink mt-2 inline-flex text-[13px] font-semibold text-[color:var(--purple)] underline decoration-dotted underline-offset-2"
+          >
+            See full details →
+          </Link>
+          <form action={formAction} className="mt-5">
+            {hidden}
+            <input type="hidden" name="event_slug" value={current.slug} />
+            {/* S5's primary. Naming the person is the point: it says plainly that
+                this goes TO them and that they get to answer. */}
+            <SubmitButton full pendingLabel="Sending…">
+              Suggest this to {firstName}
+            </SubmitButton>
+          </form>
+        </div>
+      ) : loading ? (
+        // The picks are one read away: hold the card's place, never a spinner.
+        <div aria-hidden className="skeleton mt-4 h-[210px] rounded-[var(--radius-lg)]" />
+      ) : (
+        // S17 - nothing Click can pick yet, and still no dead end: the SAME card,
+        // actionable, straight into S5b.
+        <div className="mt-4 rounded-[var(--radius-lg)] border border-dashed border-[color:var(--mist)] bg-[color:var(--cream)] p-5">
+          <p className="font-display text-base font-semibold tracking-[-0.01em] text-[color:var(--ink)]">
+            Pick something you&apos;d both enjoy
+          </p>
+          <button
+            type="button"
+            onClick={() => setChoosing(true)}
+            className="ck-btn ck-btn--md ck-btn--primary mt-3"
+          >
+            Suggest a plan →
+          </button>
+        </div>
+      )}
+
+      {current ? (
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+          {canShowAnother ? (
+            <button type="button" onClick={showAnother} className="ck-btn ck-btn--md ck-btn--secondary">
+              Show another
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => setChoosing(true)}
+            className="ck-taplink text-[13px] font-semibold text-[color:var(--purple)] hover:text-[color:var(--ink)]"
+          >
+            Suggest your own →
+          </button>
+        </div>
+      ) : null}
+      {error ? (
+        <p role="alert" className="mt-3 text-xs font-medium text-[color:var(--danger)]">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+// The canonical Event Card, mini (S5/S7): the real photo, date, title, suburb and
+// distance, price and tags - the same facts in the same form as every other card
+// (the repository resolves them the way eventFromRow does), so a plan never looks
+// unlike the event it points at.
+function PlanEventCard({ event }: { event: ProposalCatalogueEvent }) {
+  return (
+    <div className="overflow-hidden rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] shadow-[var(--shadow-sm)]">
+      <div className="relative h-[110px] w-full bg-[color:var(--champagne-deep)]">
+        <EventImage
+          src={event.image}
+          alt={event.imageAlt}
+          category={event.category}
+          fill
+          sizes="(min-width: 640px) 480px, 100vw"
+          className="object-cover"
+        />
+      </div>
+      <div className="p-4">
+        <p className="flex items-center gap-1.5 text-[13px] font-semibold text-[color:var(--slate)]">
+          <Icon name="calendar" size={13} stroke={2.1} />
+          {cardWhen.format(new Date(event.startsAt))}
+        </p>
+        <p className="font-display mt-1 text-[1.05rem] font-semibold leading-snug tracking-[-0.01em] text-[color:var(--ink)]">
+          {event.title}
+        </p>
+        <p className="mt-1 flex min-w-0 items-center gap-1.5 text-[13.5px] font-medium text-[color:var(--slate)]">
+          <Icon name="pin" size={13} stroke={2.1} />
+          <span className="truncate">
+            {event.suburb}
+            {event.distanceKm != null ? ` · ${event.distanceKm}km` : ""} · {event.price}
+          </span>
+        </p>
+        {event.tags.length > 0 ? (
+          <div className="mt-2.5">
+            <TagRow tags={event.tags} max={3} />
+          </div>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
@@ -724,9 +1041,9 @@ function CoordinationBody({
   declineAction,
   confirmError,
   declineError,
-  onTogglePicker,
+  onPlan,
   onDone,
-  picker,
+  planner,
   waitlistAction,
   waitlistError,
   waitlistJoined,
@@ -739,13 +1056,17 @@ function CoordinationBody({
   declineAction: (payload: FormData) => void;
   confirmError: string | null;
   declineError: string | null;
-  onTogglePicker: () => void;
+  onPlan: () => void;
   onDone: () => void;
-  picker: React.ReactNode;
+  planner: React.ReactNode;
   waitlistAction: (payload: FormData) => void;
   waitlistError: string | null;
   waitlistJoined: boolean;
 }) {
+  // S5: on `open` the suggest card IS the step, and every "find another" route
+  // (S7, S14, S18, a dead plan) drops into it in place of the face it came from.
+  if (planner) return <div>{planner}</div>;
+
   const eventTitle = entry.suggestedEventTitle ?? "the event";
   const cal = step === "confirmed" ? gcalUrl(eventTitle, entry.suggestedEventStartsAt) : null;
   // Mirrors proposeAlternativeForProposal exactly: the budget is joint, and a plan
@@ -764,10 +1085,12 @@ function CoordinationBody({
   // S6 - the proposer's waiting face. Never while a seat race is on: that arm owns
   // the screen and has its own disc and lead line.
   const waitingAsProposer = step === "proposed" && entry.proposedByMe && !entry.suggestionUnavailable;
+  // S7 - the other side of the same state: asked, not reassured.
+  const deciding = step === "proposed" && !entry.proposedByMe && !entry.suggestionUnavailable;
 
   return (
     <div>
-      <span className="eyebrow">You + {entry.otherName}</span>
+      <span className="eyebrow">{deciding ? `From ${firstName}` : `You + ${entry.otherName}`}</span>
 
       {step === "confirmed" ? (
         entry.viewerHasSeat ? (
@@ -905,7 +1228,7 @@ function CoordinationBody({
             <div className="mt-5 flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                onClick={onTogglePicker}
+                onClick={onPlan}
                 className="ck-btn ck-btn--md ck-btn--primary"
               >
                 Suggest another plan
@@ -919,7 +1242,6 @@ function CoordinationBody({
                 </Link>
               ) : null}
             </div>
-            {picker}
           </>
         )
       ) : step === "gone" ? (
@@ -935,13 +1257,12 @@ function CoordinationBody({
           <div className="mt-5">
             <button
               type="button"
-              onClick={onTogglePicker}
+              onClick={onPlan}
               className="ck-btn ck-btn--md ck-btn--primary"
             >
               Suggest another plan
             </button>
           </div>
-          {picker}
         </>
       ) : step === "partner-cancelled" ? (
         // S18 (§B5.6, Cindy-signed 2026-07-05). Neutral disc, NO ✨: this is neither
@@ -964,7 +1285,7 @@ function CoordinationBody({
           <div className="mt-5 flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={onTogglePicker}
+              onClick={onPlan}
               className="ck-btn ck-btn--md ck-btn--primary"
             >
               Find another together
@@ -973,7 +1294,6 @@ function CoordinationBody({
               Keep my spot - all good
             </button>
           </div>
-          {picker}
         </>
       ) : step === "connected" ? (
         // S13 - the closure peak. This is the SUCCESS terminal: these two
@@ -1000,7 +1320,9 @@ function CoordinationBody({
         </>
       ) : step === "released" ? (
         // S16 - soft release. NOT a peak: no ✨, no verdict, no loss frame. Copy is
-        // the CLICK_LANGUAGE §5 lock verbatim.
+        // the CLICK_LANGUAGE §5 lock verbatim - "Still out there - if you cross paths
+        // again, you can pick it back up." - set as headline + line, and nothing
+        // added to it (§8: do not paraphrase).
         <>
           <div
             aria-hidden
@@ -1012,8 +1334,7 @@ function CoordinationBody({
             Still out there
           </h2>
           <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--ink-soft)]">
-            If you cross paths again, you can pick it back up. No rush - these things have their
-            own timing.
+            If you cross paths again, you can pick it back up.
           </p>
           <button type="button" onClick={onDone} className="ck-btn ck-btn--md ck-btn--secondary mt-5">
             Back to your clicks
@@ -1083,14 +1404,12 @@ function CoordinationBody({
               // waiting on [Name]", which asserts a booking against a cell that
               // ends "nobody has paid yet".
               <>Suggested to {firstName}</>
-            ) : step === "proposed" ? (
+            ) : (
+              // S7. `open` never reaches this arm with a live plan - the suggest card
+              // is that step - so what is left here is the one being asked.
               <>
                 {firstName}&apos;s keen for {eventTitle} - you in?
               </>
-            ) : entry.suggestedEventTitle ? (
-              <>Here&apos;s a plan: {eventTitle}</>
-            ) : (
-              <>Pick something to do with {firstName}.</>
             )}
           </h2>
           {seatRace ? (
@@ -1105,7 +1424,19 @@ function CoordinationBody({
               rush.
             </p>
           ) : null}
-          {entry.suggestedEventStartsAt ? (
+          {deciding && entry.suggestedEventCard ? (
+            // S7 - the plan as the card mini (the same one S5 sent), with the full
+            // event page one tap away and the way back to this drawer.
+            <div className="mt-4">
+              <PlanEventCard event={entry.suggestedEventCard} />
+              <Link
+                href={planBookingHref(entry)}
+                className="ck-taplink mt-2 inline-flex text-[13px] font-semibold text-[color:var(--purple)] underline decoration-dotted underline-offset-2"
+              >
+                See full details →
+              </Link>
+            </div>
+          ) : entry.suggestedEventStartsAt ? (
             <p className="mt-2 text-xs font-semibold tracking-[0.04em] text-[color:var(--slate)]">
               {longDate.format(new Date(entry.suggestedEventStartsAt))}
               {entry.suggestedEventSlug ? (
@@ -1137,7 +1468,8 @@ function CoordinationBody({
                 they're in.
 
                 The label branches on the viewer's OWN booking state (C11 / §B4.1
-                step 7): "Save my spot" books, "I'm in" does not re-book. */}
+                step 7): "I'm in · RSVP" agrees and goes straight on to book (S8,
+                the panel's one-tap), "I'm in" agrees and never re-books. */}
             {step === "proposed" &&
             !entry.proposedByMe &&
             (entry.viewerHasSeat || entry.suggestedEventJoinable) ? (
@@ -1146,54 +1478,50 @@ function CoordinationBody({
                 {/* Confirming a plan is agreeing to a night out, not sending a
                     message - the old shared "Sending…" label said otherwise. */}
                 <SubmitButton pendingLabel="Confirming…">
-                  {entry.viewerHasSeat ? "I'm in" : "Save my spot"}
+                  {entry.viewerHasSeat ? "I'm in" : "I'm in · RSVP"}
                 </SubmitButton>
               </form>
             ) : null}
-            <div className="grid gap-1">
-              {/* Out of alternatives = out of alternatives, for BOTH of them. The
-                  budget is joint and proposeAlternativeForProposal has never cared
-                  who proposed, so leaving the proposer's button live only ever
-                  bought them a 400. The exception is a plan that can no longer be
-                  joined: recovering from one doesn't spend the budget, so the way
-                  back has to stay open even at the cap - otherwise a pair whose
-                  venue cancelled after three alternatives had no move left at
-                  all. */}
-              <button
-                type="button"
-                onClick={onTogglePicker}
-                disabled={capReached}
-                aria-describedby={capReached ? "suggest-cap-note" : undefined}
-                className="ck-btn ck-btn--md ck-btn--secondary disabled:cursor-not-allowed"
-              >
-                {seatRace
-                  ? // S14's locked exit label.
-                    "Find another together"
-                  : entry.suggestedEventSlug
-                    ? "Suggest alternative"
-                    : "Suggest a plan"}
-              </button>
-              {/* Explain the dead button WITHOUT counting anything. Invariant 9
-                  bans a visible cap outright, and a remaining-suggestions counter
-                  is the depleting-budget copy the DS bans by name - it just
-                  slipped the literal CI grep, which only looks for the click one.
-                  So the note says only what is true and actionable now, and splits
-                  on who proposed: at the joint cap neither button is live, and both
-                  sides used to be told it was the other's turn to pick. The
-                  proposer is genuinely waiting; the recipient still holds the two
-                  live controls beside this note, and passing drops the proposal
-                  row so the pair starts fresh. */}
-              {capReached && entry.suggestedEventSlug ? (
-                <p
-                  id="suggest-cap-note"
-                  className="text-[11.5px] font-medium text-[color:var(--slate)]"
+            {/* S6 has no second control at all: the proposer is waiting, and the
+                locked face is the mini row and "Back to your clicks". Offering them
+                a re-pick there spent the pair's joint budget on a plan the other
+                person had not even answered yet. */}
+            {!waitingAsProposer ? (
+              <div className="grid gap-1">
+                {/* The exception to the cap is a plan that can no longer be joined:
+                    recovering from one doesn't spend the budget, so the way back has
+                    to stay open even at the cap - otherwise a pair whose venue
+                    cancelled after three alternatives had no move left at all. */}
+                <button
+                  type="button"
+                  onClick={onPlan}
+                  disabled={capReached}
+                  aria-describedby={capReached ? "suggest-cap-note" : undefined}
+                  className="ck-btn ck-btn--md ck-btn--secondary disabled:cursor-not-allowed"
                 >
-                  {entry.proposedByMe
-                    ? `It's with ${firstName} to confirm or pass.`
-                    : "Confirm it, or pass and you two can start fresh."}
-                </p>
-              ) : null}
-            </div>
+                  {entry.suggestionUnavailable
+                    ? // S14's locked exit label, and the way out of a night that was
+                      // called off or has started.
+                      "Find another together"
+                    : // S7: "drops her into S5 as the proposer" - Ava sees a new
+                      // plan, never a rejection.
+                      "Suggest something else"}
+                </button>
+                {/* Explain the dead button WITHOUT counting anything. Invariant 9
+                    bans a visible cap outright, and a remaining-suggestions counter
+                    is the depleting-budget copy the DS bans by name. Only the one
+                    being asked ever sees it now, and they still hold two live
+                    controls: passing drops the plan so the pair start fresh. */}
+                {capReached && entry.suggestedEventSlug ? (
+                  <p
+                    id="suggest-cap-note"
+                    className="text-[11.5px] font-medium text-[color:var(--slate)]"
+                  >
+                    Confirm it, or pass and you two can start fresh.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
             {/* S14's SECOND exit (runbook off-path table). Not a state change and
                 not a booking: it puts BOTH of them on that event's waitlist, and if
                 a seat frees up the normal promotion hands them the 30-minute claim.
@@ -1255,8 +1583,6 @@ function CoordinationBody({
               {waitlistError}
             </p>
           ) : null}
-
-          {picker}
         </>
       )}
     </div>

@@ -47,6 +47,31 @@ export default async function AdminOverviewPage() {
         description="Platform health at a glance - members, events, merchants, and revenue."
       />
 
+      {/* When Postgres is unreachable these reads fall back to zeroes, and the
+          money banner below vanishes with them - an outage that looks like a
+          quiet day. Say so instead. */}
+      {metrics.unavailable || money.unavailable ? (
+        <div
+          role="alert"
+          className="rounded-2xl border border-[color:var(--mist)] bg-[color:var(--paper)] p-5 shadow-[var(--shadow-sm)]"
+        >
+          <div className="flex flex-wrap items-center gap-3">
+            <span
+              aria-hidden
+              className="inline-block size-2 shrink-0 rounded-full bg-[color:var(--coral)]"
+            />
+            <p className="eyebrow">Live data unavailable</p>
+          </div>
+          <h2 className="font-display mt-2 text-2xl font-semibold leading-tight text-[color:var(--ink)]">
+            Couldn&apos;t load live numbers
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-[color:var(--slate)]">
+            The database didn&apos;t answer, so the numbers on this page may be wrong and failed
+            refunds or open disputes may be missing. Reload in a minute.
+          </p>
+        </div>
+      ) : null}
+
       {/* Only rendered when there is something to act on, so a clear platform
           shows a clean dashboard rather than a permanent zero. The two things
           it counts - refunds that never reached Stripe, and disputes with a

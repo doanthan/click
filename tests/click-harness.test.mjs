@@ -240,17 +240,22 @@ test("the send result never claims to know whether a mutual formed", () => {
 test("a harness send reaches the reveal the way a product send does - through the host's read", () => {
   // The reply stays silent (the test above), so a mutual completed from the board only
   // reaches the modal if the button tells the reveal host a send landed - the announce
-  // the product's click forms make. Without it the reveal waited for the next page,
-  // which on this board reads as "the modal is broken".
+  // the product's click forms make, naming the person clicked. The host only ever plays
+  // the COMPLETER's reveal, for a mutual with exactly that person (§4); the side that
+  // was waiting meets theirs by opening it, on the board as in the product.
   const button = read("src/app/test-click/harness-button.tsx");
   assert.match(button, /import \{ announceClickSent \} from "@\/components\/mutual-reveal";/);
   const sends = button.match(/const SENDS = new Set\(\[([^\]]*)\]\)/)?.[1] ?? "";
-  for (const step of ["send_discovery", "send_post_event", "spend_post_event_budget"]) {
-    assert.ok(sends.includes(`"${step}"`), `${step} can form a mutual, so it must announce`);
+  for (const step of ["send_discovery", "send_post_event"]) {
+    assert.ok(sends.includes(`"${step}"`), `${step} can form a mutual with one person, so it must announce`);
     assert.match(actions, new RegExp(`case "${step}"`), `${step} must still be a harness step`);
   }
+  // The budget spend clicks several people to test the cap - there is no one person to
+  // name, so it announces nothing rather than a reveal for whoever happened to be newest.
+  assert.ok(!sends.includes('"spend_post_event_budget"'));
   // Only an accepted send - a refusal wrote nothing, so there is nothing to read.
-  assert.match(button, /if \(sends && state\.ok && state\.message\) announceClickSent\(\);/);
+  assert.match(button, /const clicked = SENDS\.has\(fields\.step\) \? fields\.target_id : undefined;/);
+  assert.match(button, /if \(clicked && state\.ok && state\.message\) announceClickSent\(clicked\);/);
 });
 
 test("the fixture builder never upserts a live event by slug", () => {

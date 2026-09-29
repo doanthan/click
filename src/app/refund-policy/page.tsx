@@ -1,5 +1,5 @@
 import { LegalPage } from "@/components/legal-page";
-import { LEGAL_LAST_UPDATED_LABEL } from "@/lib/legal-versions";
+import { REFUND_POLICY_LAST_UPDATED_LABEL } from "@/lib/legal-versions";
 
 export const metadata = {
   title: "Refund & Cancellation Policy",
@@ -11,16 +11,16 @@ export default function RefundPolicyPage() {
     <LegalPage
       eyebrow="Legal"
       title="Refund & Cancellation Policy"
-      lastUpdated={LEGAL_LAST_UPDATED_LABEL}
-      intro="This policy explains when you can cancel a booking, when you are entitled to a refund, and how refunds are processed. It operates alongside your rights under the Australian Consumer Law, which cannot be excluded. Events are run by independent hosts, who may set their own cancellation terms - these are shown on the event before you book."
+      lastUpdated={REFUND_POLICY_LAST_UPDATED_LABEL}
+      intro="This policy explains when you can cancel a booking, when you are entitled to a refund, and how refunds are processed. It operates alongside your rights under the Australian Consumer Law, which cannot be excluded. The same timeframes apply to every paid event on Click, whichever host runs it."
       sections={[
         {
           heading: "Cancelling your booking",
           body: (
             <>
               <p>
-                You can cancel a booking from your dashboard. Unless the host has set different terms
-                shown at checkout, our standard timeframes for paid events are:
+                You can cancel a booking from your dashboard. For every paid event, the timeframes
+                are:
               </p>
               <ul className="ml-5 list-disc space-y-1.5">
                 <li><strong>48 hours or more before the event starts:</strong> full refund of everything you paid, booking fee included.</li>

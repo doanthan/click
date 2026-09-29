@@ -266,7 +266,7 @@ export function EventRegistrationButton({
     const payload = (await response.json().catch(() => ({}))) as {
       error?: string;
       promotedWaitlist?: boolean;
-      refund?: { refundCents?: number } | null;
+      refund?: { refundCents?: number; failed?: boolean } | null;
     };
     if (!response.ok) {
       setState("error");
@@ -275,6 +275,10 @@ export function EventRegistrationButton({
     }
     const promoted = payload.promotedWaitlist === true;
     const refunded = (payload.refund?.refundCents ?? 0) > 0;
+    // When Stripe refuses the refund, cancelRegistration keeps the cancel and
+    // queues the refund for an operator (refund_failures). "3 to 5 business
+    // days" would then be a promise nobody is keeping.
+    const refundDelayed = refunded && payload.refund?.failed === true;
 
     setState("cancelled");
     // After cancelling, the page re-renders into the locked/pre-RSVP state and
@@ -293,7 +297,7 @@ export function EventRegistrationButton({
       // cancelled database state instead of lingering client props.
       const params = new URLSearchParams({ cancelled: "1" });
       if (promoted) params.set("promoted", "1");
-      if (refunded) params.set("refunded", "1");
+      if (refunded) params.set("refunded", refundDelayed ? "delayed" : "1");
       window.location.replace(
         `${pathname ?? `/events/${encodeURIComponent(eventId)}`}?${params.toString()}`,
       );

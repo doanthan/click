@@ -17,7 +17,10 @@ import {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export type ProposalActionState = { ok: boolean; error: string | null };
+// `confirmed` rides on the confirm action alone: `ok` says the tap landed (so the
+// drawer re-reads its mutual), `confirmed` says it AGREED the plan - S7's one tap
+// only goes on to the RSVP when it did, never for a plan that lapsed as it waited.
+export type ProposalActionState = { ok: boolean; error: string | null; confirmed?: boolean };
 
 function errorMessage(error: unknown): string {
   if (error && typeof error === "object" && "message" in error) {
@@ -39,8 +42,9 @@ export async function confirmProposalAction(
     return { ok: false, error: "Couldn't find that plan." };
   }
 
+  let outcome: Awaited<ReturnType<typeof confirmProposal>>;
   try {
-    await confirmProposal(session, id);
+    outcome = await confirmProposal(session, id);
   } catch (error) {
     // S14 / §B5.5: the commonest failure here is "that event just filled up", which
     // the spec insists is NOT an error state - never red, never a dead end. It only
@@ -53,7 +57,9 @@ export async function confirmProposalAction(
     return { ok: false, error: errorMessage(error) };
   }
   revalidatePath("/proposals");
-  return { ok: true, error: null };
+  // S15: a plan that lapsed while it waited lands too - the drawer re-reads and moves
+  // to the suggest card - but it agreed nothing, so there is no RSVP to go on to.
+  return { ok: true, error: null, confirmed: outcome === "confirmed" };
 }
 
 // §4: mark the one-time mutual reveal as seen for the current user. Best-effort -

@@ -226,14 +226,17 @@ test("a plan that died under a pair can always be re-picked", () => {
   // or sold-out event is not a counter-proposal, and a pair who had spent their
   // three alternatives had no move left at all: the recovery button posted straight
   // into "You've reached the limit of 3".
-  const propose = repo.slice(
-    repo.indexOf("export async function proposeAlternativeForProposal("),
-    repo.indexOf("export async function proposeAlternativeForProposal(") + 6000,
-  );
+  // To the function's end, not a fixed character count - a longer comment in the
+  // middle pushed the budget line off the end of the old 6000-char window.
+  const proposeStart = repo.indexOf("export async function proposeAlternativeForProposal(");
+  const propose = repo.slice(proposeStart, repo.indexOf("\n}\n", proposeStart));
   assert.match(propose, /const planStillLive = Boolean\(stillLive\.rows\[0\]\?\.ok\);/);
   assert.match(propose, /const recovering = !planStillLive;/);
   assert.match(propose, /if \(\s*\n?\s*!recovering &&/);
-  assert.match(propose, /alternatives_count \+ \$\{recovering \? 0 : 1\}/);
+  assert.match(propose, /alternatives_count \+ \$\{recovering \|\| firstPersonPick \? 0 : 1\}/);
+  // S5's "Suggest this to [Name]" on the plan a mutual opens on turns Click's pick
+  // (proposed_by NULL) into the pair's FIRST suggestion - not a counter, so it is free.
+  assert.match(propose, /const firstPersonPick = !row\.proposed_by;/);
   // The UI must agree with the server, or the button lies in one direction or the
   // other. The count itself no longer crosses the boundary (invariant 9 bans a
   // rendered "N left"): the server hands over `canSuggestAlternative` as a bare
@@ -357,10 +360,17 @@ test("the system never suggests an event that starts in the next two days", () =
   // doors shut. The floor binds only what the system offers unprompted; the catalogue
   // picker still lets either of them propose tonight's thing by hand.
   assert.match(constants, /export const SUGGESTION_LEADTIME_FLOOR_HOURS = 48;/);
+  // One ranking for the pick a mutual opens on AND the ones S5's "Show another"
+  // cycles to, so the floor lives in the shared builder and the send must use it.
+  const picks = repo.slice(
+    repo.indexOf("function pairPicksSql("),
+    repo.indexOf("export async function getMatchedPicksForMutual("),
+  );
   assert.match(
-    sendClickInner,
+    picks,
     /event\.starts_at > now\(\) \+ interval '\$\{SUGGESTION_LEADTIME_FLOOR_HOURS\} hours'/,
   );
+  assert.match(sendClickInner, /pairPicksSql\("event\.id::text, event\.slug, event\.title", 1\)/);
 });
 
 const teardown = read("src/lib/clicks/teardown.ts");

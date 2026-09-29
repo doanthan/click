@@ -1,12 +1,7 @@
 /**
- * The one draft slot the personality quiz uses, shared by the homepage teaser
- * (src/components/home-quiz.tsx) and the full 5-step wizard on this route.
- *
- * Why it is shared: the teaser asks a logged-out visitor for four taps and then
- * sends them to log in. Those four answers are the same four the wizard's first
- * four steps collect, so writing them here means the visitor comes back to a
- * wizard that already has them - instead of an empty form, which is the exact
- * inverse of endowed progress.
+ * The one draft slot the personality quiz uses - the full 5-step wizard on this
+ * route. It was shared with a four-tap teaser on the homepage until the Click
+ * persona came off the landing page (bug board #308).
  *
  * Why "local" and not "session": sign-in is a magic link, so the round trip can
  * land in a different tab. sessionStorage is per-tab and would lose the answers

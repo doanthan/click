@@ -159,3 +159,18 @@ test("the Security tab says plainly there is no password to change", () => {
   const settings = read("src/app/account-settings/page.tsx");
   assert.match(settings, /Click doesn&apos;t use passwords, so there&apos;s none to change\./);
 });
+
+test("each onboarding step says what can be changed later, and only that", () => {
+  // Bug board #303: "add you can edit this later". Intent and photo already
+  // said so; basics and interests did not. The basics line names the name and
+  // postcode only - the birth date is the age check and has no edit path.
+  assert.match(form, /sub: "Just enough to show you what's on near you\. You can change your name and postcode later\.",/);
+  assert.match(form, /Three or more and your suggestions get sharp, and you can change them any time\./);
+  assert.match(form, /you can change it whenever/);
+  assert.match(form, /leave both for later/);
+  // What the copy promises is what profile edit actually offers.
+  assert.match(editForm, /displayName: string;/);
+  assert.match(editForm, /postcode: string;/);
+  assert.match(editForm, /interests: string\[\];/);
+  assert.doesNotMatch(editForm, /birthDate|birth_date/);
+});

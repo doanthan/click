@@ -23,7 +23,7 @@
 //           mutual-toast.tsx is the worked example - it re-pops a single ✦
 //           spark glyph (.pop-in) rather than firing particles.
 //   ALLOWED on a genuine personal completion the user themselves just
-//           finished: finishing the quiz (home-quiz.tsx), a confirmed RSVP
+//           finished: a confirmed RSVP
 //           (event-rsvp-success-overlay.tsx), completing onboarding
 //           (onboarding-form.tsx).
 // Check any further call site against that line before adding it.

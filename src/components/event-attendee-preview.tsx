@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { attendeeFomoSignals } from "@/lib/attendee-fomo";
 import type { EventAttendeePreviewData } from "@/lib/event-repository";
-import { Avatar, AvatarStack, Icon, TagRow } from "./ds";
+import { AvatarStack, Icon } from "./ds";
+import { PeopleCard } from "./people-card";
 
 /**
  * "Who's going" - the DS event-detail attendee surface.
@@ -142,68 +143,52 @@ export function EventAttendeePreview({
     <section>
       {heading}
       {signalList}
+      {/* The canonical People Card in its attendee-list form (bug board #293/#297):
+          the same photo, name and shared interests as every other surface you meet
+          people on, the WHOLE card opening the profile. Interests only - no intent,
+          no commonality line and no click, which is post-event only. */}
       <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
         {viewer ? (
-          <Link
+          <PeopleCard
+            person={{ ...viewer, id: viewer.profileId, sharedInterests: [] }}
+            layout="grid"
+            interestsOnly
             href="/profile"
-            className="relative flex items-start gap-3 rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-4 pr-9 transition-colors hover:bg-[color:var(--lavender-100)]"
-          >
-            <Icon name="chevR" size={16} stroke={2} className="absolute top-4 right-3 text-[color:var(--ink-faint)]" />
-            <Avatar name={viewer.displayName} src={viewer.photoUrl} size={44} />
-            <div className="min-w-0 flex-1">
-              <span className="flex items-baseline gap-2">
-                <span className="font-display truncate text-[15px] font-semibold text-[color:var(--ink)]">
-                  {viewer.displayName.split(" ")[0]}
-                </span>
-                <span className="shrink-0 text-[12.5px] font-medium text-[color:var(--slate)]">You</span>
-              </span>
-              {viewer.hiddenFromOthers ? (
-                <span className="mt-1 block text-[12.5px] leading-snug text-[color:var(--slate)]">
+            nameAside={<span className="shrink-0 text-[12.5px] font-medium text-[color:var(--slate)]">You</span>}
+            footer={
+              viewer.hiddenFromOthers ? (
+                <span className="block text-[12.5px] leading-snug text-[color:var(--slate)]">
                   Hidden from this list - only you see yourself here.
                 </span>
-              ) : null}
-            </div>
-          </Link>
+              ) : null
+            }
+          />
         ) : null}
         {items.map((p) => (
-          <Link
+          <PeopleCard
             key={p.profileId}
+            person={{ ...p, id: p.profileId }}
+            layout="grid"
+            interestsOnly
             href={`/profile/${p.profileId}`}
-            className="relative flex items-start gap-3 rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-4 pr-9 transition-colors hover:bg-[color:var(--lavender-100)]"
-          >
-            <Icon name="chevR" size={16} stroke={2} className="absolute top-4 right-3 text-[color:var(--ink-faint)]" />
-            <Avatar name={p.displayName} src={p.photoUrl} size={44} />
-            <div className="min-w-0 flex-1">
-              <span className="font-display block truncate text-[15px] font-semibold text-[color:var(--ink)]">
-                {p.displayName.split(" ")[0]}
-              </span>
-              {p.sharedInterests.length > 0 ? (
-                <div className="mt-1.5">
-                  <TagRow tags={p.sharedInterests} max={3} budget={200} />
-                </div>
-              ) : null}
-            </div>
-          </Link>
+          />
         ))}
         {/* A named +1 with no account yet: nothing to open, so no link and no
             chevron. It becomes a real card once they sign up via their invite. */}
         {guests.map((g) => (
-          <div
+          <PeopleCard
             key={g.id}
-            className="flex items-start gap-3 rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-4"
-          >
-            <Avatar name={g.firstName} size={44} />
-            <div className="min-w-0 flex-1">
-              <span className="font-display block truncate text-[15px] font-semibold text-[color:var(--ink)]">
-                {g.firstName}
-              </span>
-              <span className="mt-1 block text-[12.5px] leading-snug text-[color:var(--slate)]">
+            person={{ id: g.id, displayName: g.firstName, photoUrl: null, sharedInterests: [] }}
+            layout="grid"
+            interestsOnly
+            footer={
+              <span className="block text-[12.5px] leading-snug text-[color:var(--slate)]">
                 {g.isViewersGuest
                   ? "Your guest - their card fills in once they sign up"
                   : `Guest of ${g.hostFirstName}`}
               </span>
-            </div>
-          </div>
+            }
+          />
         ))}
       </div>
       {remaining > 0 ? (

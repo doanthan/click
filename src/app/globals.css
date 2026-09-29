@@ -1440,6 +1440,31 @@ button:focus-visible, a:focus-visible, select:focus-visible, textarea:focus-visi
 .step-enter-fwd  { animation: step-slide-in-fwd  220ms ease-out both; }
 .step-enter-back { animation: step-slide-in-back 220ms ease-out both; }
 
+/* ---------- Coordination drawer + mutual reveal (COORDINATION_MODAL_SYSTEM §5) ----------
+   TRANSFORM ONLY, never opacity, and no fill-mode. The 2 Jul audit caught the live
+   drawer and reveal frozen at opacity 0 on frame one of an opacity-gated entrance,
+   with only the scrim painted. Here the resting state is the visible one at EVERY
+   frame: an entrance that restarts, stalls or never runs can nudge the card a few
+   pixels, but it can never hide it. The global reduced-motion block below collapses
+   all three. Both keyframes end on `transform: none`, and without a fill nothing
+   lingers as a containing block once the move is over. */
+@keyframes ck-coord-rise {
+  from { transform: translateY(8px); }
+  to { transform: none; }
+}
+/* The card, once per open (the drawer mounts once per mutual), and each step's body
+   as it arrives - the step is a new element, so this is its mount, not a replay. */
+.ck-coord-enter { animation: ck-coord-rise 240ms cubic-bezier(.2,.7,.2,1); }
+.ck-coord-step { animation: ck-coord-rise 200ms cubic-bezier(.2,.7,.2,1); }
+/* The reveal's soft pop on the ✨ disc - scale, never fade. Inside the doc's
+   ~400-600ms budget for the one-time peak. */
+@keyframes ck-coord-pop {
+  0% { transform: scale(0.4) rotate(-12deg); }
+  60% { transform: scale(1.05) rotate(2deg); }
+  100% { transform: none; }
+}
+.ck-coord-pop { animation: ck-coord-pop 480ms cubic-bezier(.22,1,.36,1); }
+
 /* Fixed support chrome must not cover controls in a modal or bottom sheet.
    ModalShell owns the stack marker so this also stays correct when dialogs are
    layered (booking -> Stripe checkout) and only returns after the last closes. */

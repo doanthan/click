@@ -3,10 +3,12 @@
 import Link from "next/link";
 import { useActionState, useEffect, useState, useSyncExternalStore } from "react";
 import { answerPostEventWindowAction, clickCoAttendeeAction } from "@/app/dashboard/actions";
+import type { ClickResult } from "@/app/people/actions";
 import type { PostEventClickPrompt, PostEventCoAttendee } from "@/lib/event-repository";
 import { MomentBanner } from "./dashboard-ds";
-import { Avatar, Button, Spark, ckBtn } from "./ds";
+import { Button, Spark, ckBtn } from "./ds";
 import { MutualClickLink, announceClickSent, useRevealedMutual } from "./mutual-reveal";
+import { PeopleCard } from "./people-card";
 
 const shortDate = new Intl.DateTimeFormat("en-AU", { day: "numeric", month: "short" });
 
@@ -93,7 +95,9 @@ export function PostEventClickCard({ prompt }: { prompt: PostEventClickPrompt })
         )
       ) : (
         <>
-          <ul className="mt-4 grid gap-2.5 sm:grid-cols-2">
+          {/* The canonical People Card grid: 1-up on a phone, 2-up once a card
+              has room for its photo, name, intent and tags side by side. */}
+          <ul className="mt-4 grid gap-3 md:grid-cols-2 md:gap-4">
             {rows.map((person) => (
               <CoAttendeeRow key={person.id} person={person} eventSlug={prompt.eventSlug} />
             ))}
@@ -208,13 +212,19 @@ export function PostEventMomentBanner({ eyebrow, eventSlug }: { eyebrow: string;
   );
 }
 
+// A swap spends the click on someone new, so it can complete a mutual too. The person
+// comes from a <select> whose options the revalidation redraws (the one just clicked
+// drops out of it), so the id is taken from the submitted form, never read back later.
+async function swapClickAction(prev: ClickResult | null, formData: FormData) {
+  const result = await clickCoAttendeeAction(prev, formData);
+  const clicked = formData.get("profile_id");
+  if (result.ok && typeof clicked === "string") announceClickSent(clicked);
+  return result;
+}
+
 // The swap picker. One form: who to let go of, who to spend it on.
 function SwapForm({ prompt }: { prompt: PostEventClickPrompt }) {
-  const [state, formAction, submitting] = useActionState(clickCoAttendeeAction, null);
-  // A swap spends the click on someone new, so it can complete a mutual too.
-  useEffect(() => {
-    if (state?.ok) announceClickSent();
-  }, [state]);
+  const [state, formAction, submitting] = useActionState(swapClickAction, null);
   const swappable = prompt.coAttendees.filter((p) => p.swappable);
   const clickable = prompt.coAttendees.filter(canClick);
 
@@ -274,8 +284,8 @@ function CoAttendeeRow({
   // moves to the mutual state under the modal. A mutual that already existed comes
   // from the roster instead, so it survives a reload.
   useEffect(() => {
-    if (state?.ok) announceClickSent();
-  }, [state]);
+    if (state?.ok) announceClickSent(person.id);
+  }, [state, person.id]);
   const revealedMutualId = useRevealedMutual(person.id);
   const mutualId = person.mutualId ?? revealedMutualId;
   const firstName = firstNameOf(person.displayName);
@@ -284,45 +294,52 @@ function CoAttendeeRow({
   // whole send, and a refused send drops back to the button with its reason below.
   const sent = submitting || state?.ok === true || person.alreadyClicked;
 
+  // The canonical People Card in its narrow layout (bug board #293/#297): the same
+  // photo, intent, commonality line and shared interests as the discovery card,
+  // with the stateful click PAIRED with the "View profile" ghost in a bottom row.
+  // It used to be a bare 40px avatar + name + button - a different card from
+  // every other place you click with someone, with nothing on what you share.
   return (
-    <li className="rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] p-3">
-      <div className="flex items-center gap-3">
-        <Avatar name={person.displayName} src={person.photoUrl} size={40} />
-        {/* The name is the only route to this person's profile from here, and
-            at 14px it was a ~20px-tall target beside a 44px button. Padding
-            grows the hit box; the negative margin keeps the row height. */}
-        <Link
-          href={`/profile/${person.id}`}
-          className="font-display -my-3 min-w-0 flex-1 truncate py-3 text-sm font-semibold text-[color:var(--ink)] hover:underline"
-        >
-          {firstName}
-        </Link>
-        <form action={formAction}>
-          <input type="hidden" name="profile_id" value={person.id} />
-          <input type="hidden" name="source_event" value={eventSlug} />
-          {mutualId ? (
-            // The same footprint in its mutual state - Sage, and the one spark (§5).
-            <MutualClickLink mutualId={mutualId} firstName={firstName} className="shrink-0" />
-          ) : sent ? (
-            <span className={ckBtn("pending", "sm", { className: "shrink-0" })} aria-live="polite">
-              <span className="ck-btn__label">clicked</span>
-            </span>
-          ) : (
-            <Button type="submit" variant="primary" size="sm">
-              click with {firstName}
-            </Button>
-          )}
-        </form>
-      </div>
-      {/* The outcome the action used to swallow: a closed post-event window, a
-          spent per-event cap, or the kill switch being off all land here. Once the
-          reveal has played, "we'll only show you if it's mutual" has been answered,
-          and a retry in flight must not carry the previous refusal. */}
-      {state?.message && !mutualId && !submitting ? (
-        <p role="status" className="mt-2 text-xs leading-5 text-[color:var(--slate)]">
-          {state.message}
-        </p>
-      ) : null}
+    <li className="min-w-0">
+      <PeopleCard
+        person={person}
+        layout="grid"
+        // Gated server-side: a dating intent only reaches a dating-visible viewer.
+        intent={person.intentLabel}
+        profileHref={`/profile/${person.id}`}
+        actions={
+          <form action={formAction} className="flex flex-wrap items-center gap-2">
+            <input type="hidden" name="profile_id" value={person.id} />
+            <input type="hidden" name="source_event" value={eventSlug} />
+            {mutualId ? (
+              // The same footprint in its mutual state - Sage, and the one spark (§5).
+              <MutualClickLink mutualId={mutualId} firstName={firstName} className="shrink-0" />
+            ) : sent ? (
+              <span className={ckBtn("pending", "sm", { className: "shrink-0" })} aria-live="polite">
+                <span className="ck-btn__label">clicked</span>
+              </span>
+            ) : (
+              <Button type="submit" variant="primary" size="sm">
+                click with {firstName}
+              </Button>
+            )}
+            <Link href={`/profile/${person.id}`} className={ckBtn("ghost", "sm")}>
+              <span className="ck-btn__label">View profile</span>
+            </Link>
+          </form>
+        }
+        // The outcome the action used to swallow: a closed post-event window, a
+        // spent per-event cap, or the kill switch being off all land here. Once the
+        // reveal has played, "we'll only show you if it's mutual" has been answered,
+        // and a retry in flight must not carry the previous refusal.
+        footer={
+          state?.message && !mutualId && !submitting ? (
+            <p role="status" className="text-xs leading-5 text-[color:var(--slate)]">
+              {state.message}
+            </p>
+          ) : null
+        }
+      />
     </li>
   );
 }

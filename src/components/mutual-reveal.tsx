@@ -5,32 +5,34 @@ import { useEffect, useState } from "react";
 import type { ProposalEntry } from "@/lib/event-repository";
 import { Spark, ckBtn } from "./ds";
 
-// The mutual reveal (S3), shared by the two places it can play: the coordination
-// drawer on /proposals, and MutualRevealHost on every other page. One component,
-// so the locked strings below exist once rather than as two copies that drift.
+// The mutual reveal (S3): the coordination drawer's first step, wherever the drawer
+// opens - over /proposals from Your clicks, or over the click surface the completer
+// is on (MutualRevealHost). One component, so the locked strings below exist once
+// rather than as two copies that drift.
 
-// What the reveal reads. A ProposalEntry satisfies it, and so does the narrower
-// MutualReveal that api/clicks/reveal hands the host.
+// What the reveal reads - a slice of the drawer's ProposalEntry.
 export type RevealContent = Pick<
   ProposalEntry,
   "otherName" | "sourceEventTitle" | "intentLine" | "bothDating" | "sharedTags"
 >;
 
-// Reveals dismissed in THIS page session. Re-opening a mutual (list, bell, dashboard)
+// Reveals shown in THIS page session. Re-opening a mutual (list, bell, dashboard)
 // must never re-fire the reveal even before the list's revealSeen snapshot catches up.
-// The server seen_at (markMutualSeen) covers reload / other devices; this covers
-// same-session re-entry - together they kill the §4 re-fire regression. Shared with
-// the host, so its hand-off to /proposals?open= cannot play the same moment twice
-// while the stamp is still in flight.
+// The server seen_at (markMutualSeen, stamped the moment the reveal shows) covers
+// reload / other devices; this covers same-session re-entry - together they kill the
+// §4 re-fire regression.
 export const revealedThisSession = new Set<string>();
 
-// A click form fires this after any send the server accepted. It carries nothing on
-// purpose: the send's reply is identical whether or not it formed a mutual (§6.1), so
-// there is nothing to pass on. The host answers it with its own read, after commit.
+// A click form fires this after any send the server accepted, naming the person it
+// clicked - which the form already knows; it says nothing about the outcome, because
+// the send's reply is identical whether or not it formed a mutual (§6.1). The host
+// answers with its own read, after commit, for a mutual with exactly that person.
 export const CLICK_SENT_EVENT = "click:sent";
 
-export function announceClickSent() {
-  window.dispatchEvent(new Event(CLICK_SENT_EVENT));
+export type ClickSent = { profileId: string };
+
+export function announceClickSent(profileId: string) {
+  window.dispatchEvent(new CustomEvent<ClickSent>(CLICK_SENT_EVENT, { detail: { profileId } }));
 }
 
 // The host fires this as a reveal opens, so a card still showing that person can
@@ -111,11 +113,11 @@ export function RevealStep({
     <div aria-live="polite">
       {/* The one celebration a mutual gets (bug board #266): the DS's "soft pop
           animation, prefers-reduced-motion safe" on the ✨ disc - never confetti on
-          a mutual surface (brand-confetti.ts). Decorative only, so no content waits
-          on the animation. */}
+          a mutual surface (brand-confetti.ts). Scale only (.ck-coord-pop, §5): the
+          disc is visible from the first frame, so nothing waits on the animation. */}
       <div
         aria-hidden
-        className="pop-in grid h-[74px] w-[74px] place-items-center rounded-full bg-[color:var(--lav-bg)] text-[28px] leading-none text-[color:var(--purple)]"
+        className="ck-coord-pop grid h-[74px] w-[74px] place-items-center rounded-full bg-[color:var(--lav-bg)] text-[28px] leading-none text-[color:var(--purple)]"
       >
         ✨
       </div>
@@ -166,9 +168,8 @@ export function RevealStep({
         Suggest a plan
       </button>
       <div className="mt-4 flex flex-wrap items-center gap-4">
-        {/* The quiet exit. It is a real exit, not decoration: dismissing the reveal
-            ANY way persists reveal_seen, so this can never become the one route
-            that leaves it firing forever. */}
+        {/* The quiet exit. reveal_seen is already stamped - the drawer writes it the
+            moment the reveal shows - so no way out can leave it firing again. */}
         <button
           type="button"
           onClick={onLater}
@@ -177,8 +178,8 @@ export function RevealStep({
           Maybe later
         </button>
         {/* Leaving to read how clicking works is an exit too, so it takes the same
-            way out. Without it the drawer's reveal fired again on the way back, and
-            the host's modal rode along onto /how-it-works over the page it opened. */}
+            way out - otherwise the drawer would ride along onto /how-it-works over
+            the page it opened. */}
         <Link
           href="/how-it-works"
           onClick={onLater}

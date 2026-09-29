@@ -392,6 +392,12 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
   // count here printed "9 of 10 going" beside a button that waitlisted you, and
   // "Fully booked" beside a bar drawn at 40%.
   const seatsTaken = Math.min(event.attendees, event.capacity);
+  // Of those, the seats nobody is going on yet - a checkout in progress or a
+  // seat offered down the waitlist. They still fill the event, so the bar and
+  // "Fully booked" keep them, but the words only count people going (bug board
+  // #302/#304: "1 of 2 going" after the only booking was cancelled).
+  const seatsHeld = Math.min(event.seatsHeld, seatsTaken);
+  const seatsGoing = seatsTaken - seatsHeld;
   const capacityPct = event.capacity > 0 ? Math.min(100, Math.round((seatsTaken / event.capacity) * 100)) : 0;
   const seatsLeft = Math.max(0, event.capacity - seatsTaken);
   // The badge stamped on the hero photo used to be the DATABASE publishing
@@ -425,7 +431,13 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
     ? "Checkout was cancelled. Your seat hold was released - you can try again any time."
     : search?.cancelled
       ? `Your RSVP was cancelled.${
-          search?.refunded ? " Your refund will appear in 3 to 5 business days." : ""
+          // "delayed": Stripe refused the refund and it is queued for an
+          // operator - same words as the cancellation email in that case.
+          search?.refunded === "delayed"
+            ? ` We're processing your refund - if you don't see it within 7 days, contact ${SUPPORT_EMAIL_DEFAULT}.`
+            : search?.refunded
+              ? " Your refund will appear in 3 to 5 business days."
+              : ""
         }${
           search?.promoted
             ? " Your seat has gone to the next person on the waitlist."
@@ -458,9 +470,12 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
   return (
     <main className="min-h-screen bg-[color:var(--champagne)] pb-24 text-[color:var(--ink)]">
       <div className="ck-page max-w-[1180px] pt-4">
-        {/* Canonical quiet back link on its own row - same form on every sub-page. */}
+        {/* Canonical quiet back link on its own row - same form on every sub-page.
+            Opened from the coordination drawer (S5/S7 "See full details →"), Back
+            goes back INTO that drawer: a Click pick nobody has suggested yet has no
+            plan banner to carry the way back, and "previewable" means a clear one. */}
         <Link
-          href="/discover"
+          href={search?.return ? planReturn : "/discover"}
           className="ck-taplink font-display inline-flex items-center gap-1 text-[13.5px] font-semibold text-[color:var(--slate)] hover:text-[color:var(--ink)]"
         >
           <Icon name="chevL" size={16} stroke={2.2} /> Back
@@ -729,7 +744,10 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
               {/* Capacity meter */}
               <div className="mt-4 border-t border-[color:var(--mist)] pt-4">
                 <div className="mb-1.5 flex items-center justify-between text-[13px] font-medium text-[color:var(--slate)]">
-                  <span>{isFull ? "Fully booked" : `${seatsTaken} of ${event.capacity} going`}</span>
+                  <span>
+                    {isFull ? "Fully booked" : `${seatsGoing} of ${event.capacity} going`}
+                    {seatsHeld > 0 ? ` · ${seatsHeld} ${seatsHeld === 1 ? "spot" : "spots"} held` : ""}
+                  </span>
                   {countdownLabel !== "Ended" ? <span>{countdownLabel}</span> : null}
                 </div>
                 <div className="h-2 overflow-hidden rounded-full bg-[color:var(--lavender-100)]">

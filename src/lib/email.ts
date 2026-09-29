@@ -150,6 +150,7 @@ export type EmailTemplate =
   | "plan-suggested-attendee"
   | "guest-invite"
   | "guest-spot-existing-user"
+  | "guest-spot-confirmed"
   | "guest-spot-cancelled"
   | "booking-refunded-attendee";
 
@@ -221,10 +222,14 @@ const SUBJECTS: Record<EmailTemplate, (vars: Record<string, string>) => string> 
   "reengagement-click-attendee": () => "Someone clicked with you on Click",
   "plan-suggested-attendee": (v) =>
     `${v.otherName ?? "Someone"} suggested ${v.eventTitle ?? "an event"}`,
+  // Names the night (Cindy 2026-09-29): "saved you a spot" alone is a subject
+  // line from a stranger's inbox, and the guest may not know Click yet.
   "guest-invite": (v) =>
-    `${v.purchaserFirstName ?? "A friend"} saved you a spot`,
+    `${v.purchaserFirstName ?? "A friend"} saved you a spot at ${v.eventTitle ?? "an event"}`,
   "guest-spot-existing-user": (v) =>
     `${v.purchaserFirstName ?? "A friend"} saved you a spot at ${v.eventTitle ?? "an event"}`,
+  "guest-spot-confirmed": (v) =>
+    `You're in - ${v.eventTitle ?? "your event"}${v.eventShortDate ? `, ${v.eventShortDate}` : ""}`,
   "guest-spot-cancelled": (v) =>
     `Your spot at ${v.eventTitle ?? "an event"} is no longer held`,
 };

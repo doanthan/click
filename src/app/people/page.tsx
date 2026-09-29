@@ -3,7 +3,8 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { ClickRadar } from "@/components/click-radar";
 import { ClickWithSomeoneUserCard } from "@/components/click-with-someone-user-card";
-import { Avatar, Icon, ckBtn } from "@/components/ds";
+import { Icon, ckBtn } from "@/components/ds";
+import { PeopleCard } from "@/components/people-card";
 import { resolveAvatarImage } from "@/lib/avatar-images";
 import {
   getMutualClicksForSession,
@@ -12,6 +13,7 @@ import {
   getProfileStatus,
   getRadarSignals,
   getSuggestedPeople,
+  type MutualClickEntry,
 } from "@/lib/event-repository";
 
 export const metadata = {
@@ -169,6 +171,12 @@ export default async function PeoplePage() {
 
           {dailySet.length > 0 ? (
             <>
+              {/* The anonymity reassurance shows ONCE at the top of the section
+                  (COORDINATION_MODAL_SYSTEM §6), never under each card. */}
+              <p className="mb-4 flex items-start gap-[7px] px-0.5 text-[13px] leading-relaxed text-[color:var(--slate)]">
+                <Icon name="lock" size={14} className="mt-0.5" />
+                <span>Clicking is anonymous - we&apos;ll only show you if it&apos;s mutual.</span>
+              </p>
               {/* The set arrives in reading order rather than all at once - the
                   DS-calm 8px .rise-soft on the .rise-d* ladder, pure CSS so it
                   plays before hydration and the global reduced-motion block
@@ -185,12 +193,6 @@ export default async function PeoplePage() {
                   </div>
                 ))}
               </div>
-              {/* The anonymity reassurance shows ONCE at the top of the section,
-                  never under each card. */}
-              <p className="mt-4 flex items-start gap-[7px] px-0.5 text-[13px] leading-relaxed text-[color:var(--slate)]">
-                <Icon name="lock" size={14} className="mt-0.5" />
-                <span>Clicking is anonymous - we&apos;ll only show you if it&apos;s mutual.</span>
-              </p>
             </>
           ) : setExhausted ? (
             // The end of the drip is a STATE, not an absence. Say the clicks are
@@ -265,14 +267,24 @@ export default async function PeoplePage() {
                   Live mutuals
                 </p>
                 <div className="grid gap-3">
-                  {liveMutuals.map((m) => (
+                  {liveMutuals.map((m) => {
+                    // Whose turn it is (DS "whose-turn clarity"): the ball is with
+                    // them once you hold your seat, or once the plan on the table is
+                    // one YOU suggested and they have not answered. Everything else
+                    // is yours - and only your move earns the lavender-wash fill and
+                    // a purple verb; waiting is the muted "Waiting on [Name]".
+                    const theirMove =
+                      Boolean(m.suggestedEventSlug) &&
+                      (viewerHasSeat(m.suggestedEventSlug) ||
+                        (m.suggestedEventJoinable &&
+                          !m.planAccepted &&
+                          !m.suggestedByOther &&
+                          m.suggestedBySomeone));
+                    return (
                     <YourClickRow
                       key={m.otherProfileId}
-                      name={m.otherDisplayName}
-                      profileId={m.otherProfileId}
-                      // A live mutual is the your-move card - it earns the soft
-                      // lavender-wash fill; the action is always a purple verb.
-                      yourMove
+                      mutual={m}
+                      yourMove={!theirMove}
                       // A dead suggestion is not "no suggestion": say it's off and
                       // point at the fix, rather than silently reverting to the
                       // never-suggested copy.
@@ -299,22 +311,21 @@ export default async function PeoplePage() {
                                     : "Here's a plan for you two"
                       }
                       actionLabel={
-                        !m.suggestedEventSlug
-                          ? "Suggest a plan →"
-                          : viewerHasSeat(m.suggestedEventSlug)
-                            ? "See your plan →"
+                        theirMove
+                          ? `Waiting on ${m.otherDisplayName.split(" ")[0]}`
+                          : !m.suggestedEventSlug
+                            ? "Suggest a plan →"
                             : !m.suggestedEventJoinable
                               ? "Pick another plan →"
                               : m.planAccepted
                                 ? "See your plan →"
                                 : m.suggestedByOther
                                   ? "See their plan →"
-                                  : m.suggestedBySomeone
-                                    ? "See your plan →"
-                                    : "See the plan →"
+                                  : "See the plan →"
                       }
                     />
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             ) : null}
@@ -326,8 +337,7 @@ export default async function PeoplePage() {
                   {plans.map((m) => (
                     <YourClickRow
                       key={m.otherProfileId}
-                      name={m.otherDisplayName}
-                      profileId={m.otherProfileId}
+                      mutual={m}
                       line={`Going to ${m.bothGoingEventTitle ?? "an event"} together`}
                       actionLabel="See the plan →"
                       going
@@ -344,61 +354,72 @@ export default async function PeoplePage() {
 }
 
 /**
- * Your-clicks outcome card - the ONE list row for Live mutuals · Plans · Past.
+ * Your-clicks outcome card - the ONE list row for Live mutuals · Plans · Past,
+ * built on the same People Card as the daily set above it (bug board #293): the
+ * photo, the name with the pair's intent line, the night you met and the
+ * interests you share. It used to be an initial-only avatar (the photo was
+ * never passed) beside a name and a status line - a different card from every
+ * other place you meet people, with nothing on what you have in common.
+ *
  * State is carried by three things only: the section header, an earned card
  * accent (the soft lavender-wash fill on YOUR-MOVE cards), and the action verb.
- * NO name-adjacent state pill, and NO spark on a list row (the spark is reserved
- * for the three peaks). Sage is reserved for success - a confirmed plan's
- * "going" marker - never the intent line.
+ * NO spark on a list row (the spark is reserved for the three peaks). Sage is
+ * reserved for success - a confirmed plan's "going" marker - never the intent line.
  */
 function YourClickRow({
-  name,
-  profileId,
+  mutual,
   line,
   actionLabel,
   yourMove,
   going,
 }: {
-  name: string;
-  profileId: string;
+  mutual: MutualClickEntry;
   line: string;
   actionLabel: string;
   yourMove?: boolean;
   going?: boolean;
 }) {
-  // The row wraps rather than squeezing the identity column: the CTA is nowrap and
-  // shrink-0, so at 375px it would otherwise crush the name - the only thing telling
-  // one mutual click from another - to a couple of glyphs. basis-40 is the floor that
-  // pushes the CTA onto its own line on a phone; the row still fits one line from sm up.
   return (
-    <article
-      className={`flex flex-wrap items-center gap-3.5 rounded-[var(--radius-lg)] border p-4 ${
-        yourMove
-          ? "border-transparent bg-[color:var(--lav-bg)]"
-          : "border-[color:var(--line-soft)] bg-[color:var(--paper)]"
-      }`}
-    >
-      <Avatar name={name} size={52} />
-      <div className="min-w-0 flex-1 basis-40">
-        <div className="flex items-center gap-2">
-          <Link
-            href={`/profile/${profileId}`}
-            className="font-display truncate text-[17px] font-semibold text-[color:var(--ink)] hover:underline"
-          >
-            {name}
-          </Link>
-          {going ? (
-            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[color-mix(in_srgb,var(--sage)_14%,var(--paper))] px-2 py-0.5 text-[11px] font-semibold text-[color:var(--sage)]">
-              <Icon name="check" size={11} stroke={3} />
-              going
-            </span>
-          ) : null}
-        </div>
-        <p className="mt-0.5 truncate text-[13px] text-[color:var(--slate)]">{line}</p>
-      </div>
-      <Link href="/proposals" className="ck-btn ck-btn--sm ck-btn--primary shrink-0">
-        <span className="ck-btn__label">{actionLabel}</span>
-      </Link>
-    </article>
+    <PeopleCard
+      person={{
+        id: mutual.otherProfileId,
+        displayName: mutual.otherDisplayName,
+        photoUrl: mutual.otherPhotoUrl,
+        sharedInterests: mutual.sharedInterests,
+        sharedEvent: mutual.sourceEventTitle,
+      }}
+      intent={mutual.intentLabel}
+      // No "View profile" ghost on this card, so the name is the labelled route.
+      profileHref={`/profile/${mutual.otherProfileId}`}
+      linkName
+      yourMove={yourMove}
+      nameAside={
+        going ? (
+          <span className="inline-flex shrink-0 items-center gap-1 self-center rounded-full bg-[color-mix(in_srgb,var(--sage)_14%,var(--paper))] px-2 py-0.5 text-[11px] font-semibold text-[color:var(--sage)]">
+            <Icon name="check" size={11} stroke={3} />
+            going
+          </span>
+        ) : null
+      }
+      detail={<p className="text-[13.5px] font-semibold leading-snug text-[color:var(--ink)]">{line}</p>}
+      actions={
+        // Straight into the drawer AT this mutual (§4) - its one-time reveal first if
+        // it hasn't played, else its current step - never the bare list to search.
+        // Purple only for your move; a settled plan is the quiet secondary, and
+        // waiting on them is the muted pending footprint, still a way in.
+        <Link
+          href={`/proposals?open=${mutual.mutualId}`}
+          className={
+            yourMove
+              ? ckBtn("primary", "sm", { full: true })
+              : going
+                ? ckBtn("secondary", "sm", { full: true })
+                : ckBtn("pending", "sm", { full: true, className: "cursor-pointer" })
+          }
+        >
+          <span className="ck-btn__label">{actionLabel}</span>
+        </Link>
+      }
+    />
   );
 }

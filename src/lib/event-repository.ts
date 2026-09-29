@@ -113,6 +113,7 @@ import { isDerivedFromEmail } from "./display-name";
 import { lookupPostcode, placeForSuburb } from "./postcode";
 import { getPostgresPool, mapWithConcurrency } from "./postgres";
 import { attendeeFomoSignals } from "./attendee-fomo";
+import { soloIntentLabel } from "./intent-label";
 import { getSupabaseAdmin } from "@/utils/supabase/admin";
 import { toTitleCase } from "./text-format";
 import { parseEventStart } from "./datetime";
@@ -581,6 +582,9 @@ export type AdminMetrics = {
   pendingEvents: number;
   confirmedRsvps: number;
   mutualClicks: number;
+  /** Set when these are fallback numbers, not live counts - Postgres was
+   *  unreachable or a query failed - so /admin can say so. */
+  unavailable?: true;
 };
 
 export type DashboardData = {
@@ -3875,6 +3879,10 @@ export type EventDetail = EventItem & {
   heldSeatCount: number | null;
   /** ISO expiry of that same hold, so the panel can count it down. */
   heldSeatExpiresAt: string | null;
+  /** Seats in `attendees` nobody is going on yet - live checkout holds (and
+   *  their +1s) and freed seats offered down the waitlist - so the meter can
+   *  count them as taken without calling them "going". */
+  seatsHeld: number;
   // 1-based queue position when the viewer is on the waitlist (e.g. "#3"),
   // counting only people still ahead of them. Null when not waitlisted.
   waitlistPosition: number | null;
@@ -3945,6 +3953,7 @@ export async function getEventBySlug(
       waitlistPosition: null,
       heldSeatCount: null,
       heldSeatExpiresAt: null,
+      seatsHeld: 0,
       merchantProfileId: null,
       viewerClashEventTitle: null,
       media: buildEventMediaGallery({
@@ -3955,7 +3964,7 @@ export async function getEventBySlug(
   }
 
   try {
-    const result = await pool.query<EventRow & { price_cents: number; address: string | null; city: string | null; ends_at: Date | null; merchant_profile_id: string | null; image_urls: string[] | null }>(
+    const result = await pool.query<EventRow & { price_cents: number; address: string | null; city: string | null; ends_at: Date | null; merchant_profile_id: string | null; image_urls: string[] | null; held_seats: string }>(
       `
         select
           event.slug,
@@ -4015,6 +4024,36 @@ export async function getEventBySlug(
                 and w.offered_until > now()
             ), 0)
           ) as confirmed_attendees,
+          -- The part of that headcount nobody is going on yet (bug board
+          -- #302/#304): a live checkout hold, the +1 seats riding on one, and a
+          -- freed seat offered down the waitlist. They still fill the event -
+          -- the gates count them - but the meter called them "going", so it
+          -- read "1 of 2 going" with nobody in Who's going.
+          (
+            count(distinct attendee.id) filter (where attendee.status = 'pending_payment' and attendee.hold_expires_at > now())
+            + coalesce((
+              select count(*)
+              from guest_spots gs
+              where gs.event_id = event.id
+                and gs.status <> 'cancelled'
+                and exists (
+                  select 1 from event_attendees ga
+                  where ga.payment_transaction_id = gs.payment_transaction_id
+                    and ga.status = 'pending_payment' and ga.hold_expires_at > now()
+                )
+            ), 0)
+            + coalesce((
+              select count(*)
+              from event_waitlists w
+              join event_attendees wa
+                on wa.event_id = w.event_id
+               and wa.profile_id = w.profile_id
+               and wa.status = 'waitlisted'
+              where w.event_id = event.id
+                and w.accepted_at is null
+                and w.offered_until > now()
+            ), 0)
+          )::text as held_seats,
           coalesce(
             -- See the tag.label note on the sibling aggregate above.
             array_agg(distinct tag.label)
@@ -4058,6 +4097,7 @@ export async function getEventBySlug(
         waitlistPosition: null,
         heldSeatCount: null,
       heldSeatExpiresAt: null,
+      seatsHeld: 0,
         merchantProfileId: null,
         viewerClashEventTitle: null,
         media: buildEventMediaGallery({
@@ -4227,6 +4267,7 @@ export async function getEventBySlug(
       waitlistPosition,
       heldSeatCount,
       heldSeatExpiresAt,
+      seatsHeld: Number(row.held_seats) || 0,
       merchantProfileId: row.merchant_profile_id ?? null,
       media: buildEventMediaGallery({
         // Real uploads only: the image_urls[] array when set, else the single
@@ -4257,6 +4298,7 @@ export async function getEventBySlug(
         waitlistPosition: null,
         heldSeatCount: null,
       heldSeatExpiresAt: null,
+      seatsHeld: 0,
         merchantProfileId: null,
         viewerClashEventTitle: null,
         media: buildEventMediaGallery({
@@ -6174,6 +6216,7 @@ function fallbackAdminMetrics(eventCount: number, pendingCount: number): AdminMe
     pendingEvents: pendingCount,
     confirmedRsvps: fallbackAdminMembers.reduce((sum, m) => sum + m.registrations, 0),
     mutualClicks: 0,
+    unavailable: true,
   };
 }
 
@@ -8115,9 +8158,8 @@ export async function getAdminMetrics(events: AdminEventRow[]): Promise<AdminMet
       mutualClicks: Number(mutualResult.rows[0]?.mutual ?? 0),
     };
   } catch (error) {
-    if (process.env.CLICK_DB_DEBUG === "true") {
-      console.warn("Falling back to static admin metrics.", error);
-    }
+    // Always logged: on a live console this is an outage, not debug noise.
+    console.error("getAdminMetrics failed - /admin is showing fallback numbers.", error);
     return fallbackAdminMetrics(events.length, pendingCount);
   }
 }
@@ -10640,62 +10682,14 @@ async function sendClickInner(
       }
 
       if (!suggestedEvent) {
+        // The same ranking S5's "Show another" cycles through (pairPicksSql), so the
+        // plan a mutual opens on is always the first of Click's matched picks.
         const suggestedResult = await client.query<{
           id: string;
           slug: string;
           title: string;
         }>(
-          `
-            select event.id::text, event.slug, event.title
-            from events event
-            -- INNER joins: only suggest events that share at least one INTEREST
-            -- tag with one of the two members (per bug report: "only suggest
-            -- future events with similar interest tags").
-            join event_tags event_tag on event_tag.event_id = event.id
-            join tags tag on tag.id = event_tag.tag_id and tag.tag_type = 'interest'
-            join user_tags user_tag
-              on user_tag.tag_id = tag.id
-             and user_tag.profile_id in ($1::uuid, $2::uuid)
-            where event.status in ('live', 'featured')
-              -- §B3.2 lead-time floor. A bare starts_at > now() handed a pair who
-              -- had just clicked a plan for an event starting in forty minutes -
-              -- two seats they would have to agree on, book and travel to before
-              -- the doors shut. The floor only binds what the SYSTEM offers
-              -- unprompted; either of them can still propose tonight's thing by
-              -- hand through the catalogue picker.
-              and event.starts_at > now() + interval '${SUGGESTION_LEADTIME_FLOOR_HOURS} hours'
-              -- ...and the §B3.2 ceiling that closes the same window. Not inert
-              -- despite the starts_at-asc tiebreak: the sort puts BOTH-members'-tags
-              -- above soonest, so an event six months out that matches them both
-              -- outranked a fortnight-away one that matched only one. B7.2 leans on
-              -- this window ("8 plans over 30 days is a full but human social
-              -- calendar") - a suggestion outside it isn't a plan, it's a someday.
-              and event.starts_at < now() + interval '${SUGGESTION_WINDOW_DAYS} days'
-              -- §B3.4 / CAP-1/2/4: two free seats for the pair (guest +1s + live holds
-              -- netted via event_capacity_v); full/waitlist excluded by status.
-              and exists (
-                select 1 from event_capacity_v cap
-                where cap.event_id = event.id and cap.available >= 2
-              )
-            group by event.id
-            order by
-              -- Prefer a genuinely new shared plan: rank events that neither of
-              -- them has already RSVP'd to ahead of ones one of them is on, then
-              -- events that align with BOTH members' interests (bug board: a
-              -- mutual-click suggestion should hit shared interests where it
-              -- can - falls back to a single-member match when none align with
-              -- both), then by interest overlap, then soonest.
-              (exists (
-                 select 1 from event_attendees ea
-                 where ea.event_id = event.id
-                   and ea.profile_id in ($1::uuid, $2::uuid)
-                   and ea.status in ('confirmed', 'waitlisted', 'pending_payment')
-               )) asc,
-              (count(distinct user_tag.profile_id) = 2) desc,
-              count(distinct user_tag.tag_id) desc,
-              event.starts_at asc
-            limit 1
-          `,
+          pairPicksSql("event.id::text, event.slug, event.title", 1),
           [profile.id, clickedProfile.id],
         );
         suggestedEvent = suggestedResult.rows[0] ?? null;
@@ -14153,6 +14147,86 @@ function maskEmailForClaim(email: string): string {
   return `${head}${"•".repeat(Math.max(local.length - 1, 1))}@${domain}`;
 }
 
+// The +1's own "you're in" once they claim (Cindy 2026-09-29): the invite held
+// the venue back until they joined, and claiming then told only the purchaser.
+// Goes to whoever claimed - on a forwarded link that is not the invited address.
+// The release link still works on a claimed seat (/claim treats `claimed` as
+// terminal only when no action is given). After the response, so a Resend
+// round-trip never sits inside the claim tap. escapeVars: the purchaser's name
+// and the event copy are other people's free text landing in this inbox.
+function logGuestSpotConfirmedEmail(
+  pool: NonNullable<ReturnType<typeof getPostgresPool>>,
+  guestSpotId: string,
+  token: string,
+) {
+  const origin = emailOrigin();
+  afterResponse(async () => {
+    try {
+      const result = await pool.query<{
+        profile_id: string;
+        email: string;
+        display_name: string | null;
+        guest_first_name: string | null;
+        purchaser_name: string | null;
+        title: string;
+        slug: string;
+        starts_at: Date;
+        ends_at: Date | null;
+        timezone: string;
+        location_name: string | null;
+        address: string | null;
+        city: string | null;
+      }>(
+        `
+          select claimer.id::text as profile_id,
+                 claimer.email::text as email,
+                 claimer.display_name,
+                 gs.guest_first_name,
+                 purchaser.display_name as purchaser_name,
+                 e.title, e.slug, e.starts_at, e.ends_at, e.timezone,
+                 e.location_name, e.address, e.city
+          from guest_spots gs
+          join profiles claimer on claimer.id = gs.claimed_profile_id
+          join profiles purchaser on purchaser.id = gs.purchaser_profile_id
+          join events e on e.id = gs.event_id
+          where gs.id = $1::uuid
+            and gs.status = 'claimed'
+            and claimer.email is not null
+        `,
+        [guestSpotId],
+      );
+      const row = result.rows[0];
+      if (!row) return;
+      const dates = formatEmailDates(row.starts_at, row.ends_at, row.timezone);
+      await logEmailEvent({
+        template: "guest-spot-confirmed",
+        toEmail: row.email,
+        toProfileId: row.profile_id,
+        escapeVars: true,
+        vars: {
+          guestFirstName:
+            (row.display_name || row.guest_first_name || "").trim().split(/\s+/)[0] || "there",
+          purchaserFirstName: (row.purchaser_name || "").trim().split(/\s+/)[0] || "A friend",
+          eventTitle: row.title,
+          eventShortDate: dates.eventShortDate,
+          eventLongDate: dates.eventLongDate,
+          // "to", not a dash - the DS writes ranges out.
+          eventTimeLabel: dates.eventEndTime
+            ? `${dates.eventStartTime} to ${dates.eventEndTime}`
+            : dates.eventStartTime,
+          eventVenue: row.location_name ?? "",
+          eventAddressLine: [row.address, row.city].filter(Boolean).join(", "),
+          eventUrl: `${origin}/events/${row.slug}`,
+          profileUrl: `${origin}/profile/edit`,
+          releaseUrl: `${origin}/claim/${token}?action=release`,
+        },
+      });
+    } catch (error) {
+      console.warn("logGuestSpotConfirmedEmail failed", error);
+    }
+  });
+}
+
 // Atomic claim (spec §7). Links the token's seat to the signed-in profile. The
 // WHERE clause is the race guard: a second tab / a release in between yields 0
 // rows. Notifies the purchaser (8.4) on success.
@@ -14259,6 +14333,8 @@ export async function claimGuestSpotForProfile(
       ],
     )
     .catch(() => {});
+
+  logGuestSpotConfirmedEmail(pool, row.id, token);
 
   // §B5.3 counts a CLAIMED GUEST SPOT as a seat ("confirmed booking (or claimed
   // guest spot)"), and event_participants_v agrees - so claiming a +1 can be the
@@ -16019,11 +16095,16 @@ export async function getSuggestedPeople(session: Session | null): Promise<Sugge
 }
 
 export type MutualClickEntry = {
+  // Every re-entry opens the drawer AT this mutual (COORDINATION_MODAL_SYSTEM §4):
+  // /proposals?open=<mutualId>, never the bare list the person then has to search.
+  mutualId: string;
   otherProfileId: string;
   otherDisplayName: string;
   otherPhotoUrl: string | null;
   suggestedEventSlug: string | null;
   suggestedEventTitle: string | null;
+  // The dashboard moment names the night beside the event (S7/S9: "[Event] · Sat 2:00pm").
+  suggestedEventStartsAt: string | null;
   // Can a seat still be taken on it? Separate from the slug, which only names the
   // event - a plan you can no longer join is still a plan you made.
   suggestedEventJoinable: boolean;
@@ -16044,6 +16125,14 @@ export type MutualClickEntry = {
   bothGoingEventSlug: string | null;
   bothGoingEventTitle: string | null;
   createdAt: string;
+  // The Your-clicks card's People Card inputs (bug board #293). The intent line is
+  // the reveal's own (same snapshot, same wording, same dating opt-in), so the
+  // card never tells a pair something the reveal didn't.
+  intentLabel: string;
+  // INTEREST tags both share - never life tags (see getProposalsForSession).
+  sharedInterests: string[];
+  // The night this mutual came out of; null on a discovery mutual.
+  sourceEventTitle: string | null;
 };
 
 export async function getMutualClicksForSession(session: Session | null): Promise<MutualClickEntry[]> {
@@ -16054,25 +16143,34 @@ export async function getMutualClicksForSession(session: Session | null): Promis
   try {
     const profile = await ensureProfileForSession(session);
     const result = await pool.query<{
+      mutual_id: string;
       other_id: string;
       other_name: string;
       other_photo: string | null;
       event_slug: string | null;
       event_title: string | null;
+      event_starts_at: Date | null;
       event_joinable: boolean;
       plan_accepted: boolean;
       proposed_by: string | null;
       both_going_slug: string | null;
       both_going_title: string | null;
       created_at: Date;
+      viewer_intent: string | null;
+      other_intent: string | null;
+      both_dating: boolean | null;
+      source_event_title: string | null;
+      shared_interests: string[] | null;
     }>(
       `
         select
+          m.id::text as mutual_id,
           case when m.user_a_id = $1::uuid then m.user_b_id::text else m.user_a_id::text end as other_id,
           other.display_name as other_name,
           other.photo_url as other_photo,
           event.slug as event_slug,
           event.title as event_title,
+          event.starts_at as event_starts_at,
           -- Joinable is an ACTION gate, never an existence test - see the note on the
           -- events join below.
           (
@@ -16088,7 +16186,27 @@ export async function getMutualClicksForSession(session: Session | null): Promis
           p.proposed_by::text as proposed_by,
           both_going.slug as both_going_slug,
           both_going.title as both_going_title,
-          m.created_at
+          m.created_at,
+          -- The Your-clicks card (bug board #293) reads what the reveal reads: the
+          -- sided intent snapshot, and "both have dating on" as the live opt-in
+          -- toggle both users control (see getProposalsForSession).
+          case when m.user_a_id = $1::uuid then m.intent_a else m.intent_b end as viewer_intent,
+          case when m.user_a_id = $1::uuid then m.intent_b else m.intent_a end as other_intent,
+          ((select me.dating_visible from profiles me where me.id = $1::uuid) and other.dating_visible)
+            as both_dating,
+          (select source_event.title from events source_event where source_event.id = m.source_event_id)
+            as source_event_title,
+          -- INTEREST tags only - a sensitivity gate: life-quiz answers share user_tags
+          -- as tag_type 'life' and must never reach the wire.
+          array(
+            select tag.label
+            from user_tags mine_tag
+            join user_tags theirs_tag
+              on theirs_tag.tag_id = mine_tag.tag_id and theirs_tag.profile_id = other.id
+            join tags tag on tag.id = mine_tag.tag_id
+            where mine_tag.profile_id = $1::uuid and tag.tag_type = 'interest'
+            order by tag.label
+          ) as shared_interests
         from mutual_clicks m
         join profiles other on other.id = (
           case when m.user_a_id = $1::uuid then m.user_b_id else m.user_a_id end
@@ -16103,6 +16221,9 @@ export async function getMutualClicksForSession(session: Session | null): Promis
           select cp.*
           from click_proposals cp
           where cp.mutual_click_id = m.id and cp.status in ('pending', 'accepted')
+            -- S15: "the dashboard banner quietly stops surfacing it as urgent" - a plan
+            -- past its deadline is not "[Name] suggested a plan", sweep or no sweep.
+            and not (cp.status = 'pending' and cp.expires_at <= now())
           order by cp.updated_at desc
           limit 1
         ) p on true
@@ -16166,11 +16287,13 @@ export async function getMutualClicksForSession(session: Session | null): Promis
     );
 
     return result.rows.map((row) => ({
+      mutualId: row.mutual_id,
       otherProfileId: row.other_id,
       otherDisplayName: row.other_name,
       otherPhotoUrl: row.other_photo,
       suggestedEventSlug: row.event_slug,
       suggestedEventTitle: row.event_title,
+      suggestedEventStartsAt: row.event_starts_at ? row.event_starts_at.toISOString() : null,
       suggestedEventJoinable: Boolean(row.event_joinable),
       planAccepted: Boolean(row.plan_accepted),
       suggestedByOther: row.proposed_by != null && row.proposed_by === row.other_id,
@@ -16178,6 +16301,12 @@ export async function getMutualClicksForSession(session: Session | null): Promis
       bothGoingEventSlug: row.both_going_slug,
       bothGoingEventTitle: row.both_going_title,
       createdAt: row.created_at.toISOString(),
+      intentLabel: pairIntentLabel(
+        intentLine(row.viewer_intent, row.other_intent),
+        Boolean(row.both_dating),
+      ),
+      sharedInterests: row.shared_interests ?? [],
+      sourceEventTitle: row.source_event_title,
     }));
   } catch {
     return [];
@@ -16553,6 +16682,16 @@ export type PostEventCoAttendee = {
    *  "taps through to the mutual, never starts a new click". Both sides already know
    *  about a mutual, so it discloses nothing the one-way fields would. */
   mutualId: string | null;
+  /** The People Card's inputs (bug board #293/#297) - the same axes the discovery
+   *  card gets. The intent is ONE label, gated on the viewer server-side, so a
+   *  dating intent never reaches a viewer who isn't dating-visible. */
+  intentLabel: string | null;
+  /** INTEREST tags both share - never life tags, which stay private until mutual. */
+  sharedInterests: string[];
+  /** ANOTHER past night you were both at - this one is already the heading. */
+  sharedEvent: string | null;
+  sharedMusic: string | null;
+  nearby: boolean;
 };
 
 export type PostEventClickPrompt = {
@@ -16633,6 +16772,67 @@ const POST_EVENT_ROSTER_MUTUAL = `
             limit 1
           ) as mutual_id`;
 
+// The People Card's inputs for one co-attendee (bug board #293/#297): the same
+// axes getSuggestedPeople hands the discovery card, so who-was-there shows the
+// same card. Both post-event queries alias the night `e` and the co-attendee
+// `other`, and bind the viewer to $1. `other` is LEFT-joined in the single-event
+// query (an empty roster still returns the night), so every expression here has
+// to tolerate a null co-attendee - array() and the scalar subqueries do.
+const POST_EVENT_ROSTER_OVERLAP = `
+          -- INTEREST tags only. That is a SENSITIVITY gate, not a taste one: the life
+          -- quiz writes its answers into the same user_tags table as tag_type 'life',
+          -- and life tags stay private until a mutual forms. Filtered here so no
+          -- component is the last thing between a life answer and the wire.
+          array(
+            select tag.label
+            from user_tags theirs_tag
+            join user_tags mine_tag
+              on mine_tag.tag_id = theirs_tag.tag_id and mine_tag.profile_id = $1::uuid
+            join tags tag on tag.id = theirs_tag.tag_id
+            where theirs_tag.profile_id = other.id and tag.tag_type = 'interest'
+            order by tag.label
+          ) as other_shared_interests,
+          -- The commonality line's axes, NON-interest by design so it never restates
+          -- the tags. Axis 1 is ANOTHER night you were both at: this one is already
+          -- the card's heading, so naming it again would say nothing.
+          (
+            select past_event.title
+            from event_participants_v mine_past
+            join event_participants_v theirs_past
+              on theirs_past.event_id = mine_past.event_id
+             and theirs_past.profile_id = other.id
+            join events past_event on past_event.id = mine_past.event_id
+            where mine_past.profile_id = $1::uuid
+              and past_event.id <> e.id
+              and past_event.starts_at < now()
+            order by past_event.starts_at desc
+            limit 1
+          ) as other_shared_event,
+          -- Axis 2: up to two shared music genres, lowercased ("house & techno").
+          nullif(
+            array_to_string(
+              array(
+                select distinct lower(tag.label) as genre
+                from user_tags theirs_tag
+                join user_tags mine_tag
+                  on mine_tag.tag_id = theirs_tag.tag_id and mine_tag.profile_id = $1::uuid
+                join tags tag on tag.id = theirs_tag.tag_id
+                where theirs_tag.profile_id = other.id and tag.tag_type = 'music'
+                order by genre
+                limit 2
+              ),
+              ' & '
+            ),
+            ''
+          ) as other_shared_music,
+          -- Axis 3: proximity as a range ("you're both nearby"), never a named suburb.
+          coalesce(other.suburb = (select me.suburb from profiles me where me.id = $1::uuid), false)
+            as other_nearby,
+          -- Raw intents stay on the server: the mapper turns them into ONE label,
+          -- gated on the viewer's dating_visible (soloIntentLabel).
+          other.connection_intents::text[] as other_intents,
+          (select me.dating_visible from profiles me where me.id = $1::uuid) as viewer_dating_visible`;
+
 // Events the viewer attended that ended between 12 hours and 14 days ago, with
 // the co-attendees they can still Click. Powers the dashboard "who did you
 // click with?" card (business plan §4.3). Blocked pairs are excluded.
@@ -16664,6 +16864,12 @@ export async function getPostEventClickPrompts(
       already_clicked: boolean;
       swappable: boolean;
       mutual_id: string | null;
+      other_shared_interests: string[] | null;
+      other_shared_event: string | null;
+      other_shared_music: string | null;
+      other_nearby: boolean | null;
+      other_intents: string[] | null;
+      viewer_dating_visible: boolean | null;
       budget_spent: boolean;
       swap_used: boolean;
     }>(
@@ -16704,6 +16910,7 @@ export async function getPostEventClickPrompts(
               and c.status = 'pending'
           ) as swappable,
           ${POST_EVENT_ROSTER_MUTUAL},
+          ${POST_EVENT_ROSTER_OVERLAP},
           -- The budget, so the surface can say it is out BEFORE the viewer spends
           -- attention on it (§6.9.1) instead of only refusing the fourth tap.
           -- Compared server-side and sent as a boolean: B5.1 keeps a remaining-count
@@ -16797,6 +17004,11 @@ export async function getPostEventClickPrompts(
         alreadyClicked: row.already_clicked,
         swappable: row.swappable,
         mutualId: row.mutual_id,
+        intentLabel: soloIntentLabel(row.other_intents ?? [], Boolean(row.viewer_dating_visible)),
+        sharedInterests: row.other_shared_interests ?? [],
+        sharedEvent: row.other_shared_event,
+        sharedMusic: row.other_shared_music,
+        nearby: Boolean(row.other_nearby),
       });
     }
     // Someone you're already mutual with shows as that mutual, never a new click, so
@@ -16846,6 +17058,12 @@ export async function getPostEventClickPromptForEvent(
       already_clicked: boolean;
       swappable: boolean;
       mutual_id: string | null;
+      other_shared_interests: string[] | null;
+      other_shared_event: string | null;
+      other_shared_music: string | null;
+      other_nearby: boolean | null;
+      other_intents: string[] | null;
+      viewer_dating_visible: boolean | null;
       budget_spent: boolean;
       swap_used: boolean;
     }>(
@@ -16888,6 +17106,7 @@ export async function getPostEventClickPromptForEvent(
           -- Null on the empty pool's one co-attendee-less row: least/greatest skip
           -- the null and compare the viewer with themselves, which no pair is.
           ${POST_EVENT_ROSTER_MUTUAL},
+          ${POST_EVENT_ROSTER_OVERLAP},
           -- The budget, so the surface can say it is out BEFORE the viewer spends
           -- attention on it (§6.9.1) instead of only refusing the fourth tap.
           -- Compared server-side and sent as a boolean: B5.1 keeps a remaining-count
@@ -16992,6 +17211,11 @@ export async function getPostEventClickPromptForEvent(
           alreadyClicked: row.already_clicked,
           swappable: row.swappable,
           mutualId: row.mutual_id,
+          intentLabel: soloIntentLabel(row.other_intents ?? [], Boolean(row.viewer_dating_visible)),
+          sharedInterests: row.other_shared_interests ?? [],
+          sharedEvent: row.other_shared_event,
+          sharedMusic: row.other_shared_music,
+          nearby: Boolean(row.other_nearby),
         })),
     };
   } catch {
@@ -17137,6 +17361,9 @@ export type ProposalEntry = {
   isExpired: boolean;
   otherId: string;
   otherName: string;
+  // The Your-clicks outcome card is the People Card (§7: the same card on every
+  // surface), so the list needs the face the discovery card shows.
+  otherPhotoUrl: string | null;
   suggestedEventSlug: string | null;
   suggestedEventTitle: string | null;
   suggestedEventStartsAt: string | null;
@@ -17153,6 +17380,10 @@ export type ProposalEntry = {
   // through. Started = the night has begun, which is a success, not a failure.
   suggestedEventCancelled: boolean;
   suggestedEventStarted: boolean;
+  // S5/S7's card: the proposal's event as the canonical Event Card mini draws it.
+  // Null with no proposal event, and on an independently-both-booked plan - that
+  // is S11's face, which names the night and needs no card.
+  suggestedEventCard: ProposalCatalogueEvent | null;
   // Whether "suggest a different one" is still on the table. A boolean, never the
   // count behind it: B5.1 puts keeping a remaining-attempts number off the wire on
   // the server, and a pair told they have "1 alternative left" is being shown a
@@ -17192,6 +17423,9 @@ export type ProposalEntry = {
   // here for ___" - that wrapper is only correct for the equal-intent case.
   intentLine: string;
   bothDating: boolean;
+  // The same line worn as the outcome card's inline label (pairIntentLabel) - the
+  // exact label MutualClickEntry gives /people's card, so the two lists agree.
+  intentLabel: string;
   proposedByMe: boolean;
   // §B5.6: the agreed plan ended because the OTHER side cancelled their booking.
   // Drives S18 - the survivor must never be left on the "you're both going" peak
@@ -17205,6 +17439,10 @@ export type ProposalEntry = {
   // reveal. INTEREST tags only, and that is a privacy gate rather than a taste
   // one - see the query, which is where the filtering has to live.
   sharedTags: string[];
+  // S15: the pair's latest plan ran out unanswered. The drawer opens the suggest
+  // card with a soft lead-in instead - nobody is told they were ignored, and
+  // nothing "expired".
+  planLapsed: boolean;
 };
 
 // The reveal's intent line (§4): a desire, never a status. Shared only when both
@@ -17233,6 +17471,13 @@ function intentLine(viewer: string | null, other: string | null): string {
   return "You're both here to meet new people.";
 }
 
+// The reveal's sentence, worn as a Your-clicks card's inline label: no full stop,
+// and the dating opt-in appended the way the reveal appends it. One definition for
+// both projections, so /people's card and /proposals' card never drift apart.
+function pairIntentLabel(line: string, bothDating: boolean): string {
+  return `${line.replace(/\.$/, "")}${bothDating ? " · both open to dating" : ""}`;
+}
+
 export async function getProposalsForSession(session: Session | null): Promise<ProposalEntry[]> {
   const pool = getPostgresPool();
   if (!getSessionEmail(session) || !pool) return [];
@@ -17249,6 +17494,7 @@ export async function getProposalsForSession(session: Session | null): Promise<P
       expired: boolean;
       other_id: string;
       other_name: string;
+      other_photo: string | null;
       event_slug: string | null;
       event_title: string | null;
       event_starts_at: Date | null;
@@ -17277,6 +17523,18 @@ export async function getProposalsForSession(session: Session | null): Promise<P
       both_going_starts_at: Date | null;
       source_event_title: string | null;
       shared_tags: string[];
+      // S5/S7's card mini - the proposal's event, read the way the canonical card reads it.
+      event_image_url: string | null;
+      event_image_alt: string | null;
+      event_category: string | null;
+      event_suburb: string | null;
+      event_price_cents: number | null;
+      event_latitude: string | null;
+      event_longitude: string | null;
+      event_tags: string[] | null;
+      event_both_into: boolean;
+      both_going_started: boolean;
+      plan_lapsed: boolean;
     }>(
       `
         select
@@ -17306,6 +17564,7 @@ export async function getProposalsForSession(session: Session | null): Promise<P
           ) as expired,
           case when m.user_a_id = $1::uuid then m.user_b_id::text else m.user_a_id::text end as other_id,
           other.display_name as other_name,
+          other.photo_url as other_photo,
           e.slug as event_slug,
           e.title as event_title,
           e.starts_at as event_starts_at,
@@ -17411,7 +17670,49 @@ export async function getProposalsForSession(session: Session | null): Promise<P
               ) shared
             ),
             '{}'
-          ) as shared_tags
+          ) as shared_tags,
+          -- S5/S7's card mini: the facts the canonical Event Card shows, for the
+          -- proposal's event only - an independent plan is S11's face, which needs
+          -- no card. Same tag types as the canonical card (never 'life').
+          e.image_url as event_image_url,
+          e.image_alt as event_image_alt,
+          e.category as event_category,
+          e.suburb as event_suburb,
+          e.price_cents as event_price_cents,
+          e.latitude as event_latitude,
+          e.longitude as event_longitude,
+          array(
+            select tag.label
+            from event_tags et
+            join tags tag on tag.id = et.tag_id
+            where et.event_id = e.id and tag.tag_type in ('interest', 'vibe', 'music')
+            order by tag.label
+          ) as event_tags,
+          -- S5's "You're both into this" is a claim about BOTH people, so it needs an
+          -- interest tag on the event that each of them holds - never one side's taste.
+          (
+            e.id is not null
+            and exists (
+              select 1 from event_tags et
+              join tags tag on tag.id = et.tag_id and tag.tag_type = 'interest'
+              join user_tags ut on ut.tag_id = et.tag_id and ut.profile_id = $1::uuid
+              where et.event_id = e.id
+            )
+            and exists (
+              select 1 from event_tags et
+              join tags tag on tag.id = et.tag_id and tag.tag_type = 'interest'
+              join user_tags ut on ut.tag_id = et.tag_id and ut.profile_id = other.id
+              where et.event_id = e.id
+            )
+          ) as event_both_into,
+          coalesce(both_going.starts_at <= now(), false) as both_going_started,
+          -- S15: the pair's latest plan ran out unanswered - persisted by the sweep,
+          -- or still pending past its deadline in the hour before the sweep runs.
+          coalesce(
+            last_plan.status = 'expired'
+              or (last_plan.status = 'pending' and last_plan.expires_at <= now()),
+            false
+          ) as plan_lapsed
         -- Mutual-centric (2.5b-iv): every ACTIVE mutual for the viewer, its live
         -- plan LEFT-joined. An open mutual whose only proposal was declined has no
         -- plan row (p.* null) and still shows - the drawer's suggest step re-fills it.
@@ -17432,21 +17733,50 @@ export async function getProposalsForSession(session: Session | null): Promise<P
             -- survivor string gets its event name for free). It is terminal, so it
             -- can never be mistaken for a live plan - projectStep reads the flag.
             and cp.status in ('pending', 'accepted', 'partner_cancelled')
+            -- S15: a plan past its deadline is not live, sweep or no sweep. Left in,
+            -- it lent the pair its dead clock and put an ACTIVE mutual on the
+            -- read-only ending screen for up to an hour (/test-click's proposal-lapse
+            -- row). Out, the pair are simply back on the suggest step.
+            and not (cp.status = 'pending' and cp.expires_at <= now())
           order by cp.updated_at desc
           limit 1
         ) p on true
+        -- S15's lead-in reads the latest plan of ANY status: only the newest one says
+        -- whether the last thing that happened here was a plan running out.
+        left join lateral (
+          select lp.status, lp.expires_at
+          from click_proposals lp
+          where lp.mutual_click_id = m.id
+          order by lp.updated_at desc
+          limit 1
+        ) last_plan on true
         -- §B5.3: "both going" is a fact about SEATS, not about a proposal. The pair
         -- reach confirmed_together "however they both got there - through the
         -- proposal handshake OR independently", so the drawer needs the shared event
         -- even when no proposal row exists (two people who each booked the same
-        -- night on their own). Scoped to upcoming events and read through
-        -- event_participants_v, the same canonical roster the seat flags above use,
-        -- so a claimed guest +1 counts as the seat it is.
+        -- night on their own). Scoped to the plan's night (see the where) and read
+        -- through event_participants_v, the same canonical roster the seat flags
+        -- above use, so a claimed guest +1 counts as the seat it is.
         left join lateral (
           select e2.slug, e2.title, e2.starts_at
           from events e2
-          where e2.starts_at > now()
-            and e2.status in ('live', 'featured')
+          -- Upcoming - or, once it has started, still THIS plan's night through its
+          -- post-event window, sold out or not. Upcoming-and-live only dropped the
+          -- event the moment the doors opened, and an independent pair at the venue
+          -- together read "That plan fell through", with S12's "We clicked 👍" never
+          -- reachable. The started arm is confirmed_together only, and only a night
+          -- that ended after the mutual formed: the night that INTRODUCED a post-event
+          -- pair is one they both hold seats on too, and it is not their plan.
+          where (
+              e2.starts_at > now()
+              or (
+                m.coord_state = 'confirmed_together'
+                and coalesce(e2.ends_at, e2.starts_at) >= m.mutual_at
+                and coalesce(e2.ends_at, e2.starts_at)
+                  > now() - interval '${POST_EVENT_CLICK_WINDOW_HOURS} hours'
+              )
+            )
+            and e2.status in ('live', 'featured', 'waitlist', 'locked')
             and exists (
               select 1 from event_participants_v pv
               where pv.event_id = e2.id and pv.profile_id = $1::uuid
@@ -17525,6 +17855,7 @@ export async function getProposalsForSession(session: Session | null): Promise<P
       isExpired: Boolean(row.expired),
       otherId: row.other_id,
       otherName: row.other_name,
+      otherPhotoUrl: row.other_photo,
       suggestedEventSlug: independentPlan ? row.both_going_slug : row.event_slug,
       suggestedEventTitle: independentPlan ? row.both_going_title : row.event_title,
       suggestedEventStartsAt: eventStartsAt ? eventStartsAt.toISOString() : null,
@@ -17545,7 +17876,29 @@ export async function getProposalsForSession(session: Session | null): Promise<P
         row.had_suggestion && !row.event_joinable && !row.viewer_has_seat && row.status === "pending",
       suggestedEventJoinable: !independentPlan && Boolean(row.event_joinable),
       suggestedEventCancelled: !independentPlan && Boolean(row.event_cancelled),
-      suggestedEventStarted: !independentPlan && Boolean(row.event_started),
+      // An independent plan's night starts too - S11 drops "Add to calendar" and
+      // S12's "We clicked 👍" appears off this, whichever way the pair got there.
+      suggestedEventStarted: independentPlan
+        ? Boolean(row.both_going_started)
+        : Boolean(row.event_started),
+      suggestedEventCard:
+        !independentPlan && row.event_slug && row.event_title && row.event_starts_at
+          ? planEventCard({
+              slug: row.event_slug,
+              title: row.event_title,
+              startsAt: row.event_starts_at,
+              suburb: row.event_suburb,
+              imageUrl: row.event_image_url,
+              imageAlt: row.event_image_alt,
+              category: row.event_category,
+              priceCents: row.event_price_cents,
+              latitude: row.event_latitude,
+              longitude: row.event_longitude,
+              tags: row.event_tags,
+              viewerGoing: Boolean(row.viewer_has_seat),
+              bothInto: Boolean(row.event_both_into),
+            })
+          : null,
       canSuggestAlternative: row.alternatives_count < PROPOSAL_ALTERNATIVES_CAP,
       confirmedAt: row.confirmed_at ? row.confirmed_at.toISOString() : null,
       confirmedByMe: Boolean(row.confirmed_by_me),
@@ -17553,10 +17906,17 @@ export async function getProposalsForSession(session: Session | null): Promise<P
       otherHasSeat: independentPlan ? true : Boolean(row.other_has_seat),
       mutualId: row.mutual_id,
       mutualStatus: row.mutual_status,
-      coordState: row.coord_state,
+      // 'proposed' with no live plan left is the hour between a plan lapsing and the
+      // sweep parking the pair at 'dormant' (S15). Read it as the sweep will write
+      // it, or the drawer asks "you in?" about a plan that is no longer there.
+      coordState: row.coord_state === "proposed" && !row.id ? "dormant" : row.coord_state,
       revealSeen: Boolean(row.reveal_seen),
       intentLine: intentLine(row.viewer_intent, row.other_intent),
       bothDating: Boolean(row.both_dating),
+      intentLabel: pairIntentLabel(
+        intentLine(row.viewer_intent, row.other_intent),
+        Boolean(row.both_dating),
+      ),
       proposedByMe: Boolean(row.proposed_by_me),
       // §B5.6 is a two-sided fact and the row records only one side of it. Keyed on
       // the row alone, the person who CANCELLED was served the survivor's card -
@@ -17578,6 +17938,7 @@ export async function getProposalsForSession(session: Session | null): Promise<P
         !row.other_has_seat,
       sourceEventTitle: row.source_event_title,
       sharedTags: row.shared_tags ?? [],
+      planLapsed: Boolean(row.plan_lapsed),
       };
     });
   } catch {
@@ -17649,15 +18010,13 @@ export async function markMutualSeen(
   return result.rows.length > 0;
 }
 
-export type MutualReveal = Pick<
-  ProposalEntry,
-  "mutualId" | "otherId" | "otherName" | "sourceEventTitle" | "intentLine" | "bothDating" | "sharedTags"
->;
-
-// What MutualRevealHost plays: the viewer's newest mutual whose one-time reveal (§4,
-// the seen_at columns above) they have not seen yet. One read, two moments - the
-// next page after the other person clicks back, and straight after the viewer's own
-// send when that send is what completed the mutual.
+// What MutualRevealHost opens: the viewer's unseen mutual (§4, the seen_at columns
+// above) WITH the person they just clicked - i.e. the one their own send completed.
+// Only the completer's reveal plays live, over the click surface they're on; the
+// person who was waiting meets theirs when they open it (the notification, the
+// dashboard moment, Your clicks or the email all land on the drawer, which plays it).
+// Scoping to the clicked person is what keeps an older unseen mutual - one the viewer
+// was the WAITING side of - from popping up after an unrelated send.
 //
 // A READ after the send has committed, never part of it. §6.1 keeps the send's reply
 // byte-identical whether or not it formed a mutual and reveals the mutual "only via
@@ -17665,11 +18024,15 @@ export type MutualReveal = Pick<
 // written in the same transaction and already readable through the bell by the
 // time the send returns. Playing it at once tells the viewer nothing the bell did not.
 //
-// The gate below runs on every navigation, so it is one indexed row lookup; the full
-// projection is built only on the rare page that has a reveal to show. It mirrors the
-// projection's own filter (active, clock running, pair not blocked) plus the mutual
-// notification's mute rule - a mute silences the ping, and a modal is one.
-export async function getUnseenMutualReveal(session: Session | null): Promise<MutualReveal | null> {
+// The gate is one indexed row lookup; the full projection is built only when it
+// finds something. It mirrors the projection's own filter (active, clock running,
+// pair not blocked) plus the mutual notification's mute rule - a mute silences the
+// ping, and a modal is one. Returns the whole entry: the reveal is the drawer's
+// first step, so the drawer opens on the spot and advances in place from there.
+export async function getUnseenMutualReveal(
+  session: Session | null,
+  otherProfileId: string,
+): Promise<ProposalEntry | null> {
   const pool = getPostgresPool();
   if (!getSessionEmail(session) || !pool) return null;
   try {
@@ -17684,6 +18047,7 @@ export async function getUnseenMutualReveal(session: Session | null): Promise<Mu
             (m.user_a_id = $1::uuid and m.seen_at_a is null)
             or (m.user_b_id = $1::uuid and m.seen_at_b is null)
           )
+          and (case when m.user_a_id = $1::uuid then m.user_b_id else m.user_a_id end) = $2::uuid
           and not exists (
             select 1 from user_blocks b
             where (b.blocker_profile_id = m.user_a_id and b.blocked_profile_id = m.user_b_id)
@@ -17697,24 +18061,27 @@ export async function getUnseenMutualReveal(session: Session | null): Promise<Mu
         order by m.mutual_at desc
         limit 1
       `,
-      [profile.id],
+      [profile.id, otherProfileId],
     );
     const mutualId = unseen.rows[0]?.id;
     if (!mutualId) return null;
     const entry = (await getProposalsForSession(session)).find((e) => e.mutualId === mutualId);
-    if (!entry || entry.revealSeen) return null;
-    return {
-      mutualId: entry.mutualId,
-      otherId: entry.otherId,
-      otherName: entry.otherName,
-      sourceEventTitle: entry.sourceEventTitle,
-      intentLine: entry.intentLine,
-      bothDating: entry.bothDating,
-      sharedTags: entry.sharedTags,
-    };
+    return entry && !entry.revealSeen ? entry : null;
   } catch {
     return null;
   }
+}
+
+// The drawer's re-read once an action lands, for a drawer opened over some page other
+// than /proposals: nothing revalidates it there, so it asks for its mutual again and
+// re-projects its step in place. The same projection /proposals renders, so the step
+// can never disagree with the list; null once the mutual has left it (not feeling it,
+// a block), which closes the drawer.
+export async function getCoordinationEntry(
+  session: Session | null,
+  mutualId: string,
+): Promise<ProposalEntry | null> {
+  return (await getProposalsForSession(session)).find((e) => e.mutualId === mutualId) ?? null;
 }
 
 // Verifies the session profile participates in the proposal's mutual click.
@@ -17761,7 +18128,15 @@ async function assertProposalParticipant(
   return row;
 }
 
-export async function confirmProposal(session: Session | null, proposalId: string) {
+// What a confirm tap came to: "confirmed" (this tap, or an earlier one, agreed the
+// plan), "lapsed" (S15 - it ran out while it waited, and the pair are back on the
+// suggest step), or "unchanged" (it was settled some other way first).
+export type ConfirmOutcome = "confirmed" | "lapsed" | "unchanged";
+
+export async function confirmProposal(
+  session: Session | null,
+  proposalId: string,
+): Promise<ConfirmOutcome> {
   const pool = getPostgresPool();
   if (!getSessionEmail(session)) throw authError();
   if (!pool) throw databaseUnavailableError();
@@ -17773,7 +18148,8 @@ export async function confirmProposal(session: Session | null, proposalId: strin
     const row = await assertProposalParticipant(client, proposalId, profile.id);
     if (row.status !== "pending") {
       await client.query("rollback");
-      return;
+      // A second tap on a plan the first one already agreed is the same answer.
+      return row.status === "accepted" ? "confirmed" : "unchanged";
     }
     // B1 authorisation: "Only the receiver may accept or decline (proposed_by !=
     // caller); a proposer cannot accept their own proposal." Enforced here for the
@@ -17789,13 +18165,31 @@ export async function confirmProposal(session: Session | null, proposalId: strin
       await client.query("rollback");
       throw validationError("This is your suggestion - wait for them to answer.");
     }
+    // S15: a plan that ran out while it waited is a transition back to the suggest
+    // step, never an error. It threw "This proposal has expired." into a red alert -
+    // the banned word, in the banned colour, telling the person they had missed
+    // something. Now it does what the sweep would (the plan lapses, a pair left at
+    // 'proposed' with nothing live rests at 'dormant') and the drawer re-projects to
+    // the suggest card with its soft lead-in. Nobody is told they were ignored.
     if (new Date(row.expires_at).getTime() <= Date.now()) {
       await client.query(
-        `update click_proposals set status = 'expired', updated_at = now() where id = $1::uuid`,
+        `update click_proposals set status = 'expired', updated_at = now()
+         where id = $1::uuid and status = 'pending'`,
+        [proposalId],
+      );
+      await client.query(
+        `update mutual_clicks m
+            set coord_state = 'dormant', updated_at = now()
+          where m.id = (select mutual_click_id from click_proposals where id = $1::uuid)
+            and m.status = 'active' and m.coord_state = 'proposed'
+            and not exists (
+              select 1 from click_proposals p
+              where p.mutual_click_id = m.id and p.status in ('pending', 'accepted')
+            )`,
         [proposalId],
       );
       await client.query("commit");
-      throw validationError("This proposal has expired.");
+      return "lapsed";
     }
 
     // SAFE-02: re-check block/ban/suspend at mutation time. Membership + status/expiry
@@ -17864,7 +18258,7 @@ export async function confirmProposal(session: Session | null, proposalId: strin
     // first wins; the loser leaves in a legal state and never 500s.
     if (accepted.rowCount !== 1) {
       await client.query("commit");
-      return;
+      return "unchanged";
     }
 
     // NOT confirmed_together. Stage 7's trigger is "**any** detection that both users
@@ -17915,6 +18309,7 @@ export async function confirmProposal(session: Session | null, proposalId: strin
     );
 
     await client.query("commit");
+    return "confirmed";
   } catch (error) {
     await client.query("rollback").catch(() => {});
     throw error;
@@ -18053,6 +18448,11 @@ export async function proposeAlternativeForProposal(
     // posted straight into "You've reached the limit of 3 alternative suggestions",
     // and the mutual then sat there until its clock ran out.
     const recovering = !planStillLive;
+    // A system pick (proposed_by NULL) was nobody's suggestion, so making it one - S5's
+    // "Suggest this to [Name]" on the plan a mutual opens on - is the pair's FIRST
+    // suggestion, not a counter to one. Charging it left the pair two alternatives
+    // down before either of them had said a word.
+    const firstPersonPick = !row.proposed_by;
 
     // SAFE-03: re-check block/ban/suspend before mutating the shared proposal, so a
     // since-blocked party can't keep re-proposing into the other person's surface.
@@ -18067,6 +18467,7 @@ export async function proposeAlternativeForProposal(
     );
     if (
       !recovering &&
+      !firstPersonPick &&
       (countResult.rows[0]?.alternatives_count ?? 0) >= PROPOSAL_ALTERNATIVES_CAP
     ) {
       await client.query("rollback");
@@ -18116,7 +18517,7 @@ export async function proposeAlternativeForProposal(
         set suggested_event_id = $2::uuid, proposed_by = $3::uuid,
             status = 'pending', confirmed_by = null, confirmed_at = null,
             expires_at = now() + interval '${MUTUAL_CLOCK_DAYS} days',
-            alternatives_count = alternatives_count + ${recovering ? 0 : 1},
+            alternatives_count = alternatives_count + ${recovering || firstPersonPick ? 0 : 1},
             updated_at = now()
         where id = $1::uuid
         returning mutual_click_id::text
@@ -18701,10 +19102,103 @@ export type ProposalCatalogueEvent = {
   /** Which curated section this row came from, on the no-query read. Empty on a
    *  search result - a search is one flat list of what was asked for. */
   section: "" | "Events you're going to" | "Saved" | "You'd both like";
+  // S5's card mini: the canonical Event Card's own facts, resolved the same way
+  // (eventFromRow) so a plan never looks different from the event it points at.
+  image: string;
+  imageAlt: string;
+  category: string;
+  price: string;
+  distanceKm: number | null;
+  tags: string[];
+  // The viewer already holds a seat: S5's reason line says "You're going to this".
+  viewerGoing: boolean;
+  // The event carries an interest tag EACH of them holds - the only time S5 may
+  // say "You're both into this". Always false off the pair-blind catalogue.
+  bothInto: boolean;
 };
 
 /** B1 `GET /events/suggestions?q=`: "<=20 rows". Both arms, search and curated. */
 const PROPOSAL_CATALOGUE_LIMIT = 20;
+
+// The card fields every S5 row carries, whichever read produced it.
+const PLAN_CARD_COLUMNS = `
+  event.image_url, event.image_alt, event.category, event.price_cents,
+  event.latitude, event.longitude,
+  array(
+    select tag.label
+    from event_tags et
+    join tags tag on tag.id = et.tag_id
+    where et.event_id = event.id and tag.tag_type in ('interest', 'vibe', 'music')
+    order by tag.label
+  ) as tags
+`;
+
+type PlanCardRow = {
+  image_url: string | null;
+  image_alt: string | null;
+  category: string | null;
+  price_cents: number | null;
+  latitude: string | null;
+  longitude: string | null;
+  tags: string[] | null;
+};
+
+function planEventCard(input: {
+  slug: string;
+  title: string;
+  startsAt: Date;
+  suburb: string | null;
+  imageUrl: string | null;
+  imageAlt: string | null;
+  category: string | null;
+  priceCents: number | null;
+  latitude: string | null;
+  longitude: string | null;
+  tags: string[] | null;
+  viewerGoing: boolean;
+  bothInto: boolean;
+  section?: ProposalCatalogueEvent["section"];
+}): ProposalCatalogueEvent {
+  // No pinned address, no distance - the canonical card's rule (eventFromRow).
+  const hasCoords = input.latitude != null && input.longitude != null;
+  return {
+    slug: input.slug,
+    title: input.title,
+    startsAt: input.startsAt.toISOString(),
+    suburb: input.suburb ?? "",
+    section: input.section ?? "",
+    image: resolveEventImage(input.imageUrl, input.category, input.title),
+    imageAlt: input.imageAlt ?? input.title,
+    category: input.category ?? "",
+    price: formatPriceLabel(input.priceCents ?? 0),
+    distanceKm: hasCoords
+      ? distanceKmFromSydney(Number(input.latitude), Number(input.longitude))
+      : null,
+    tags: input.tags ?? [],
+    viewerGoing: input.viewerGoing,
+    bothInto: input.bothInto,
+  };
+}
+
+function planEventCardFromRow(
+  row: PlanCardRow & { slug: string; title: string; starts_at: Date; suburb: string | null },
+  extra: { viewerGoing: boolean; bothInto: boolean; section?: ProposalCatalogueEvent["section"] },
+): ProposalCatalogueEvent {
+  return planEventCard({
+    slug: row.slug,
+    title: row.title,
+    startsAt: row.starts_at,
+    suburb: row.suburb,
+    imageUrl: row.image_url,
+    imageAlt: row.image_alt,
+    category: row.category,
+    priceCents: row.price_cents,
+    latitude: row.latitude,
+    longitude: row.longitude,
+    tags: row.tags,
+    ...extra,
+  });
+}
 
 // The picker behind "suggest something else" (B1 `GET /events/suggestions?q=`,
 // Stage 4). Two arms, and the split is binding:
@@ -18740,17 +19234,25 @@ export async function getProposalCatalogue(
       ? (await ensureProfileForSession(session)).id
       : null;
 
-    const result = await pool.query<{
-      slug: string;
-      title: string;
-      starts_at: Date;
-      suburb: string;
-      // '' on the search arm, a 0/1/2 section rank on the curated one.
-      section: string;
-    }>(
+    const result = await pool.query<
+      PlanCardRow & {
+        slug: string;
+        title: string;
+        starts_at: Date;
+        suburb: string;
+        // '' on the search arm, a 0/1/2 section rank on the curated one.
+        section: string;
+        viewer_going: boolean;
+      }
+    >(
       query
         ? `
-        select event.slug, event.title, event.starts_at, event.suburb, '' as section
+        select event.slug, event.title, event.starts_at, event.suburb, '' as section,
+          ${PLAN_CARD_COLUMNS},
+          exists (
+            select 1 from event_participants_v pv
+            where pv.event_id = event.id and pv.profile_id = $2::uuid
+          ) as viewer_going
         from events event
         join event_capacity_v cap on cap.event_id = event.id
         where event.status in ('live', 'featured')
@@ -18766,9 +19268,14 @@ export async function getProposalCatalogue(
         -- Three sections, one query. The section column is an int here and gets
         -- its label below - as a rank it is also the sort key, so the picker opens
         -- on the events the viewer is already going to.
-        select slug, title, starts_at, suburb, section
+        select *
         from (
           select event.slug, event.title, event.starts_at, event.suburb,
+            ${PLAN_CARD_COLUMNS},
+            exists (
+              select 1 from event_participants_v pv
+              where pv.event_id = event.id and pv.profile_id = $1::uuid
+            ) as viewer_going,
             case
               when $1::uuid is null then 2
               when exists (
@@ -18794,7 +19301,7 @@ export async function getProposalCatalogue(
         order by section asc, starts_at asc
         limit ${PROPOSAL_CATALOGUE_LIMIT}
       `,
-      query ? [`%${query}%`] : [profileId],
+      query ? [`%${query}%`, profileId] : [profileId],
     );
 
     const SECTION_LABELS: ProposalCatalogueEvent["section"][] = [
@@ -18802,13 +19309,136 @@ export async function getProposalCatalogue(
       "Saved",
       "You'd both like",
     ];
-    return result.rows.map((row) => ({
-      slug: row.slug,
-      title: row.title,
-      startsAt: row.starts_at.toISOString(),
-      suburb: row.suburb,
-      section: query ? "" : (SECTION_LABELS[Number(row.section)] ?? "You'd both like"),
-    }));
+    return result.rows.map((row) =>
+      planEventCardFromRow(row, {
+        viewerGoing: Boolean(row.viewer_going),
+        // The catalogue knows nothing about the other person, so it never claims
+        // what they are into.
+        bothInto: false,
+        section: query ? "" : (SECTION_LABELS[Number(row.section)] ?? "You'd both like"),
+      }),
+    );
+  } catch {
+    return [];
+  }
+}
+
+// S5's "Show another" cycles Click's matched picks, so the pool is capped small:
+// a handful of good fits, never a feed.
+const MATCHED_PICKS_LIMIT = 6;
+
+// Click's matched picks for a pair (§B3), in the order the system suggests them:
+// inside the §B3.2 window, room for both, sharing an INTEREST tag with at least one
+// of them. One ranking, shared by the pick a mutual opens on (sendClickInner) and
+// the ones "Show another" cycles to, so the two can never disagree about what fits.
+// $1/$2 are the pair. `select` may use aggregates over user_tag (grouped by event).
+function pairPicksSql(select: string, limit: number, excludeBooked = false): string {
+  return `
+    select ${select}
+    from events event
+    -- INNER joins: only suggest events that share at least one INTEREST
+    -- tag with one of the two members (per bug report: "only suggest
+    -- future events with similar interest tags").
+    join event_tags event_tag on event_tag.event_id = event.id
+    join tags tag on tag.id = event_tag.tag_id and tag.tag_type = 'interest'
+    join user_tags user_tag
+      on user_tag.tag_id = tag.id
+     and user_tag.profile_id in ($1::uuid, $2::uuid)
+    where event.status in ('live', 'featured')
+      -- §B3.2 lead-time floor. A bare starts_at > now() handed a pair who
+      -- had just clicked a plan for an event starting in forty minutes -
+      -- two seats they would have to agree on, book and travel to before
+      -- the doors shut. The floor only binds what the SYSTEM offers
+      -- unprompted; either of them can still propose tonight's thing by
+      -- hand through the catalogue picker.
+      and event.starts_at > now() + interval '${SUGGESTION_LEADTIME_FLOOR_HOURS} hours'
+      -- ...and the §B3.2 ceiling that closes the same window. Not inert
+      -- despite the starts_at-asc tiebreak: the sort puts BOTH-members'-tags
+      -- above soonest, so an event six months out that matches them both
+      -- outranked a fortnight-away one that matched only one. B7.2 leans on
+      -- this window ("8 plans over 30 days is a full but human social
+      -- calendar") - a suggestion outside it isn't a plan, it's a someday.
+      and event.starts_at < now() + interval '${SUGGESTION_WINDOW_DAYS} days'
+      -- §B3.4 / CAP-1/2/4: two free seats for the pair (guest +1s + live holds
+      -- netted via event_capacity_v); full/waitlist excluded by status.
+      and exists (
+        select 1 from event_capacity_v cap
+        where cap.event_id = event.id and cap.available >= 2
+      )
+      ${
+        excludeBooked
+          ? `-- §B3.4: "Show another" never offers a night either of them already
+      -- holds a seat on - that is a plan to book, not one to suggest.
+      and not exists (
+        select 1 from event_participants_v pv
+        where pv.event_id = event.id and pv.profile_id in ($1::uuid, $2::uuid)
+      )`
+          : ""
+      }
+    group by event.id
+    order by
+      -- Prefer a genuinely new shared plan: rank events that neither of
+      -- them has already RSVP'd to ahead of ones one of them is on, then
+      -- events that align with BOTH members' interests (bug board: a
+      -- mutual-click suggestion should hit shared interests where it
+      -- can - falls back to a single-member match when none align with
+      -- both), then by interest overlap, then soonest.
+      (exists (
+         select 1 from event_attendees ea
+         where ea.event_id = event.id
+           and ea.profile_id in ($1::uuid, $2::uuid)
+           and ea.status in ('confirmed', 'waitlisted', 'pending_payment')
+       )) asc,
+      (count(distinct user_tag.profile_id) = 2) desc,
+      count(distinct user_tag.tag_id) desc,
+      event.starts_at asc
+    limit ${limit}
+  `;
+}
+
+// B1 `GET /clicks/picks?mutual=` - the pool behind S5's "Show another". The viewer
+// must be one of the pair (an absence otherwise, never "not yours"), and the rows
+// carry what the card draws: no score, no rank, no count (invariant 2 keeps the
+// ordering in SQL).
+export async function getMatchedPicksForMutual(
+  session: Session | null,
+  mutualId: string,
+): Promise<ProposalCatalogueEvent[]> {
+  const pool = getPostgresPool();
+  if (!getSessionEmail(session) || !pool) return [];
+  try {
+    const profile = await ensureProfileForSession(session);
+    const mutual = await pool.query<{ other_id: string }>(
+      `
+        select case when user_a_id = $2::uuid then user_b_id::text else user_a_id::text end as other_id
+        from mutual_clicks
+        where id = $1::uuid and status = 'active'
+          and (user_a_id = $2::uuid or user_b_id = $2::uuid)
+      `,
+      [mutualId, profile.id],
+    );
+    const otherId = mutual.rows[0]?.other_id;
+    if (!otherId) return [];
+    const result = await pool.query<
+      PlanCardRow & {
+        slug: string;
+        title: string;
+        starts_at: Date;
+        suburb: string | null;
+        both_into: boolean;
+      }
+    >(
+      pairPicksSql(
+        `event.slug, event.title, event.starts_at, event.suburb, ${PLAN_CARD_COLUMNS},
+         (count(distinct user_tag.profile_id) = 2) as both_into`,
+        MATCHED_PICKS_LIMIT,
+        true,
+      ),
+      [profile.id, otherId],
+    );
+    return result.rows.map((row) =>
+      planEventCardFromRow(row, { viewerGoing: false, bothInto: Boolean(row.both_into) }),
+    );
   } catch {
     return [];
   }
@@ -21129,14 +21759,20 @@ export async function markPaymentFailed(
     }
 
     // Free the held seat. Only cancel rows that are still in the hold state -
-    // never overwrite an already-confirmed attendee row.
+    // never overwrite an already-confirmed attendee row - and only while the
+    // seat still rides on THIS transaction. A buyer whose hold lapsed can open
+    // a new checkout before Stripe's checkout.session.expired for the old one
+    // lands; createPaymentHold re-points the same attendee row at the new
+    // transaction, so matching on event + person alone cancelled the NEW hold
+    // mid-payment - charged, force-refunded, no seat.
     await client.query(
       `
         update event_attendees
         set status = 'cancelled', hold_expires_at = null, updated_at = now()
         where event_id = $1::uuid and profile_id = $2::uuid and status = 'pending_payment'
+          and payment_transaction_id = $3::uuid
       `,
-      [payment.event_id, payment.profile_id],
+      [payment.event_id, payment.profile_id, payment.id],
     );
 
     // ...and the friends' seats riding on the same hold. Every sibling release
@@ -21904,14 +22540,17 @@ export async function listAdminDisputes(
  * difference between "there is a screen for it" and "someone will notice".
  *
  * Returns zeroes rather than throwing when Postgres is unavailable: a badge is
- * never worth failing the console shell over.
+ * never worth failing the console shell over. But those zeroes are flagged
+ * `unavailable`, because a silent zero here reads as "no failed refunds, no
+ * disputes" - exactly the all-clear an outage must not give.
  */
 export async function countAdminMoneyAlerts(): Promise<{
   refundFailures: number;
   openDisputes: number;
   total: number;
+  unavailable?: true;
 }> {
-  const empty = { refundFailures: 0, openDisputes: 0, total: 0 };
+  const empty = { refundFailures: 0, openDisputes: 0, total: 0, unavailable: true as const };
   const pool = getPostgresPool();
   if (!pool) return empty;
 
@@ -21927,9 +22566,8 @@ export async function countAdminMoneyAlerts(): Promise<{
     const openDisputes = Number(result.rows[0]?.open_disputes ?? 0);
     return { refundFailures, openDisputes, total: refundFailures + openDisputes };
   } catch (error) {
-    if (process.env.CLICK_DB_DEBUG === "true") {
-      console.warn("countAdminMoneyAlerts failed", error);
-    }
+    // Always logged: on a live console this is an outage, not debug noise.
+    console.error("countAdminMoneyAlerts failed - failed refunds and disputes are unchecked.", error);
     return empty;
   }
 }

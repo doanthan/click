@@ -1,0 +1,102 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="x-apple-disable-message-reformatting">
+    <title>You're in - {{eventTitle}}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700&display=swap" rel="stylesheet">
+    <style>
+      body { margin: 0; padding: 0; width: 100% !important; background: #F9F6F0; -webkit-text-size-adjust: 100%; }
+      table { border-collapse: collapse; mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+      a { color: #3B2F81; }
+      .serif { font-family: 'Poppins',-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; }
+      .sans { font-family: -apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; }
+      @media only screen and (max-width: 600px) {
+        .container { width: 100% !important; }
+        .px-gutter { padding-left: 24px !important; padding-right: 24px !important; }
+        .hero-title { font-size: 26px !important; line-height: 1.15 !important; }
+      }
+    </style>
+  </head>
+  <body style="margin:0;padding:0;background:#F9F6F0;">
+    <div style="display:none;font-size:1px;color:#F9F6F0;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden;">
+      Your spot at {{eventTitle}} is confirmed - {{eventLongDate}} at {{eventVenue}}.
+    </div>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#F9F6F0;">
+      <tr>
+        <td align="center" style="padding:32px 16px;">
+          <table role="presentation" class="container" width="600" cellspacing="0" cellpadding="0" border="0" style="width:600px;max-width:600px;background:#FFFFFF;border:1px solid #ECEAF0;">
+            <tr>
+              <td class="px-gutter" style="padding:28px 40px 20px 40px;border-bottom:1px solid #ECEAF0;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                  <tr>
+                    <td class="serif" style="font-family:'Poppins',-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:22px;font-weight:600;color:#3B2F81;letter-spacing:-0.01em;">Click</td>
+                    <td align="right" class="sans" style="font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:#6B6580;">Spot confirmed</td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td class="px-gutter" style="padding:40px 40px 8px 40px;">
+                <h1 class="serif hero-title" style="margin:0 0 16px 0;font-family:'Poppins',-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:30px;font-weight:600;color:#1C1830;line-height:1.2;">
+                  You're in, {{guestFirstName}}.
+                </h1>
+                <p class="sans" style="margin:0 0 24px 0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:16px;color:#1C1830;line-height:1.6;">
+                  Your spot at <strong>{{eventTitle}}</strong> is confirmed. {{purchaserFirstName}} saved it for you, and it's in your Upcoming Events now.
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td class="px-gutter" style="padding:0 40px 8px 40px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-top:1px solid #ECEAF0;">
+                  <tr>
+                    <td style="padding:20px 0 16px 0;">
+                      <p class="sans" style="margin:0 0 4px 0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:11px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:#6B6580;">When</p>
+                      <p class="sans" style="margin:0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:16px;font-weight:600;color:#1C1830;line-height:1.4;">{{eventLongDate}}</p>
+                      <p class="sans" style="margin:2px 0 0 0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:16px;color:#1C1830;line-height:1.4;">{{eventTimeLabel}}</p>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="padding:0 0 24px 0;">
+                      <p class="sans" style="margin:0 0 4px 0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:11px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:#6B6580;">Where</p>
+                      <p class="sans" style="margin:0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:16px;font-weight:600;color:#1C1830;line-height:1.4;">{{eventVenue}}</p>
+                      <p class="sans" style="margin:2px 0 0 0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:16px;color:#1C1830;line-height:1.4;">{{eventAddressLine}}</p>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td class="px-gutter" style="padding:0 40px 28px 40px;">
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                  <tr>
+                    <td style="background:#3B2F81;border-radius:12px;">
+                      <a href="{{eventUrl}}" class="serif" style="display:inline-block;padding:14px 28px;font-family:'Poppins',-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:16px;font-weight:600;color:#FFFFFF;text-decoration:none;">View the event &rarr;</a>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td class="px-gutter" style="padding:0 40px 28px 40px;">
+                <p class="sans" style="margin:0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:16px;color:#1C1830;line-height:1.6;">
+                  <a href="{{profileUrl}}" style="color:#3B2F81;font-weight:600;">Add a photo to your profile</a> and, after the night, you can click with people you met there.
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td class="px-gutter" style="padding:0 40px 36px 40px;border-top:1px solid #ECEAF0;">
+                <p class="sans" style="margin:20px 0 0 0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;color:#6B6580;line-height:1.6;">
+                  Can't make it? <a href="{{releaseUrl}}" style="color:#3B2F81;">Let {{purchaserFirstName}} know</a> - it hands the seat back to them.
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

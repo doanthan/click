@@ -107,3 +107,20 @@ test("a renamed tag still attaches when a host picks it", () => {
   const create = fnBody(repo, "export async function createEventForMerchant");
   assert.match(create, /or lower\(tag\.label\) = input\.label/);
 });
+
+test("the capacity meter only calls people going 'going'", () => {
+  // Bug board #302/#304: the meter's number counts every seat the booking gates
+  // count - live checkout holds and waitlist offers included - and labelled all
+  // of it "going", so it read "1 of 2 going" (and "Fully booked" beside one
+  // person) with nobody else in Who's going. Held seats are named separately.
+  const detail = fnBody(repo, "export async function getEventBySlug");
+  assert.match(detail, /\)::text as held_seats,/);
+  assert.match(detail, /seatsHeld: Number\(row\.held_seats\) \|\| 0,/);
+
+  const page = read("src/app/events/[slug]/page.tsx");
+  assert.match(page, /const seatsHeld = Math\.min\(event\.seatsHeld, seatsTaken\);/);
+  assert.match(page, /const seatsGoing = seatsTaken - seatsHeld;/);
+  assert.match(page, /`\$\{seatsGoing\} of \$\{event\.capacity\} going`/);
+  assert.doesNotMatch(page, /`\$\{seatsTaken\} of \$\{event\.capacity\} going`/);
+  assert.match(page, /seatsHeld > 0 \? ` · \$\{seatsHeld\} \$\{seatsHeld === 1 \? "spot" : "spots"\} held`/);
+});

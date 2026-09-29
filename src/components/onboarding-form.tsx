@@ -113,7 +113,9 @@ const STEPS: StepDef[] = [
     key: "basics",
     eyebrow: "The basics",
     title: () => "First, the basics",
-    sub: "Just enough to show you what's on near you.",
+    // Name and postcode only: the birth date is the age check and has no edit
+    // path, so "you can change this later" would be untrue of it (bug board #303).
+    sub: "Just enough to show you what's on near you. You can change your name and postcode later.",
     icon: "user",
     pct: 22,
   },
@@ -130,7 +132,7 @@ const STEPS: StepDef[] = [
     key: "interests",
     eyebrow: "What you're into",
     title: () => "What do you like doing?",
-    sub: "Tap what sounds like a good night out. Three or more and your suggestions get sharp.",
+    sub: "Tap what sounds like a good night out. Three or more and your suggestions get sharp, and you can change them any time.",
     cat: "arts",
     optional: true,
     pct: 72,
