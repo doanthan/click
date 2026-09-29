@@ -20,6 +20,16 @@ test("dead BSC cleanup cron stays removed", () => {
   assert.doesNotMatch(config, /api\/bsc\/cleanup/);
 });
 
+// The database is in Singapore (the aws-1-ap-southeast-1 pooler), so the
+// functions must be too. ad69310 moved them to syd1 for "Sydney-first" and left
+// the database behind: measured from production on 2026-09-29, every query then
+// cost ~160ms and the first request after a 10s idle ~1.1s extra to reconnect,
+// on pages that run several query waves in a row. Move both or neither.
+test("functions run in the database's region", () => {
+  const config = JSON.parse(readFileSync(path.join(root, "vercel.json"), "utf8"));
+  assert.deepEqual(config.regions, ["sin1"]);
+});
+
 test("production metadata endpoints exist", () => {
   for (const file of ["robots.ts", "sitemap.ts", "manifest.ts", "opengraph-image.tsx"]) {
     assert.ok(existsSync(path.join(root, "src/app", file)), `missing ${file}`);

@@ -20,6 +20,7 @@ Frameworks and deps are in `package.json`. The non-obvious bits:
 
 - **No ORM** - Postgres via `pg` directly.
 - Hosted on Supabase - **use the pooler host**; direct `db.*.supabase.co` is IPv6-only and won't resolve.
+- **Vercel functions run in `sin1` because the database is in Singapore** (`ap-southeast-1`). Never move one without the other: from `syd1` every query costs ~160ms and a reconnect ~1.1s, which is what made the site laggy after go-live. `tests/release-config.test.mjs` pins it.
 - Supabase Storage for user-uploaded media. See **File storage** below.
 
 ## Design system (binding)
