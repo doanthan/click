@@ -53,6 +53,21 @@ const nextConfig: NextConfig = {
     // ~18 MB from having to ship to all 134 route bundles.
     "/post-login": [LIBVIPS],
   },
+  // URLs that only forward somewhere else. As page-level redirect() calls they
+  // ran after the root loading.tsx had started streaming, so production could no
+  // longer answer 307: it sent a 200 page with a 1-second meta refresh and a
+  // client-side redirect that waits for the JS. Here they redirect before any
+  // page runs. Query strings pass through, which keeps /events?tag= deep links
+  // and /signup?callbackUrl= working (/register checks the callback itself).
+  // tests/perceived-speed.test.mjs pins these.
+  async redirects() {
+    return [
+      { source: "/events", destination: "/discover", permanent: false },
+      { source: "/signup", destination: "/register", permanent: false },
+      { source: "/saved-events", destination: "/bookmarks", permanent: false },
+      { source: "/quiz/life", destination: "/quiz/life/life-stage", permanent: false },
+    ];
+  },
   // Server Actions validate the request Origin against Host/X-Forwarded-Host to
   // block CSRF. Behind our proxy/CDN (letsclick.app served via www + apex) those
   // headers can disagree, so Next aborts the action POST with an opaque server

@@ -24,27 +24,37 @@ export function EventBookmarkButton({
   const router = useRouter();
 
   async function toggle() {
+    // One request at a time. The control stays live and undimmed while it
+    // runs, so a tap reads as done; a second tap in that window is dropped
+    // rather than racing the first.
+    if (state === "submitting") return;
+    const previous = saved;
+    const next = !saved;
+    // Show the answer now and let the request confirm it or put it back. The
+    // icon used to sit dimmed through the whole round trip before it changed.
+    setSaved(next);
     setState("submitting");
     setMessage("");
-    const optimisticNext = !saved;
 
     let response: Response;
     try {
       response = await fetch(
         `/api/events/${encodeURIComponent(eventId)}/bookmark`,
-        { method: optimisticNext ? "POST" : "DELETE" },
+        { method: next ? "POST" : "DELETE" },
       );
     } catch {
-      // Never strand the control on "Saving…" - it renders `disabled` while
-      // submitting, so a rejected fetch used to brick it until a page reload.
+      // Never strand the control in "submitting" - taps are dropped while it
+      // is, so a rejected fetch would brick it until a page reload.
+      setSaved(previous);
       setState("error");
       setMessage("We couldn't reach Click. Try again.");
       return;
     }
 
     if (response.status === 401) {
+      setSaved(previous);
       setState("idle");
-      openLoginModal({ callbackUrl: pathname || "/events" });
+      openLoginModal({ callbackUrl: pathname || "/discover" });
       return;
     }
 
@@ -54,15 +64,17 @@ export function EventBookmarkButton({
     };
 
     if (!response.ok) {
+      setSaved(previous);
       setState("error");
       setMessage(payload.error ?? "Could not save.");
       return;
     }
 
-    setSaved(typeof payload.saved === "boolean" ? payload.saved : optimisticNext);
+    setSaved(typeof payload.saved === "boolean" ? payload.saved : next);
     setState("idle");
     // /bookmarks is a server-rendered list: without this, unsaving from that
-    // page left the card sitting there as though nothing happened.
+    // page left the card sitting there as though nothing happened. The icon
+    // has already changed by now, so the tap never waits on it.
     router.refresh();
   }
 
@@ -75,11 +87,11 @@ export function EventBookmarkButton({
       <button
         type="button"
         onClick={toggle}
-        disabled={state === "submitting"}
+        aria-busy={state === "submitting" || undefined}
         aria-pressed={saved}
         aria-label={saved ? "Saved to bookmarks" : "Save event"}
         title={state === "error" && message ? message : saved ? "Saved" : "Save"}
-        className="flex size-11 shrink-0 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--champagne)_92%,transparent)] text-[color:var(--ink)] shadow-[var(--shadow-xs)] transition hover:bg-[color:var(--paper)] disabled:cursor-not-allowed disabled:opacity-60 lg:size-9"
+        className="flex size-11 shrink-0 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--champagne)_92%,transparent)] text-[color:var(--ink)] shadow-[var(--shadow-xs)] transition hover:bg-[color:var(--paper)] lg:size-9"
       >
         <svg
           viewBox="0 0 24 24"
@@ -118,13 +130,13 @@ export function EventBookmarkButton({
       <button
         type="button"
         onClick={toggle}
-        disabled={state === "submitting"}
+        aria-busy={state === "submitting" || undefined}
         aria-pressed={saved}
         className={`ck-btn ${compact ? "ck-btn--sm" : "ck-btn--md ck-btn--full"} ${
           saved ? "ck-btn--primary" : "ck-btn--secondary"
         }`}
       >
-        {state === "submitting" ? "Saving..." : saved ? "Saved" : "Save"}
+        {saved ? "Saved" : "Save"}
       </button>
       {message && !compact ? (
         <p className="text-xs font-semibold text-[color:var(--danger)]">{message}</p>

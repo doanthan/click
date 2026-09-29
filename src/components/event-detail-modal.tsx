@@ -309,7 +309,7 @@ export function EventDetailModal({
             {data.tags.length > 0 ? (
               <div className="mt-4 flex flex-wrap gap-1.5">
                 {data.tags.map((tag) => (
-                  <Pill key={tag} href={`/events?tag=${encodeURIComponent(tag)}`}>
+                  <Pill key={tag} href={`/discover?tag=${encodeURIComponent(tag)}`}>
                     #{tag}
                   </Pill>
                 ))}

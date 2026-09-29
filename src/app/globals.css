@@ -932,12 +932,15 @@ body:has([data-home-hero]) .site-header--marketing .ck-btn {
 }
 .draw-line { animation: draw-line 240ms cubic-bezier(.2,.7,.2,1) both; transform-origin: left; }
 
-.rise-d1 { animation-delay: 80ms; }
-.rise-d2 { animation-delay: 180ms; }
-.rise-d3 { animation-delay: 280ms; }
-.rise-d4 { animation-delay: 380ms; }
-.rise-d5 { animation-delay: 480ms; }
-.rise-d6 { animation-delay: 580ms; }
+/* 40ms steps, so the last block (d6) is fully in 480ms after the page lands.
+   The ladder used to step 100ms up to 580ms, which held content back ~0.8s on
+   every visit - enough to read as a slow site. */
+.rise-d1 { animation-delay: 40ms; }
+.rise-d2 { animation-delay: 80ms; }
+.rise-d3 { animation-delay: 120ms; }
+.rise-d4 { animation-delay: 160ms; }
+.rise-d5 { animation-delay: 200ms; }
+.rise-d6 { animation-delay: 240ms; }
 
 /* The overshoot is choreographed IN the keyframes (scale 1.05 at 60%), so the
    timing curve stays a smooth exponential ease-out - no elastic bounce. */
@@ -1491,7 +1494,7 @@ button:focus-visible, a:focus-visible, select:focus-visible, textarea:focus-visi
        fill-mode `both`, so a surviving delay holds the element at the keyframe's
        0% - opacity 0 - for the whole delay and then snaps it in. That is exactly
        the flash reduced motion is meant to prevent, and it was reaching the
-       .rise-d* ladder (up to 580ms) and MutualToast's inline 560ms. */
+       .rise-d* ladder (up to 240ms) and MutualToast's inline 560ms. */
     animation-delay: 0.01ms !important;
     transition-delay: 0.01ms !important;
   }

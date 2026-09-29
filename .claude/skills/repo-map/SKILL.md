@@ -16,7 +16,7 @@ Every route in `src/app`. URI on the left, source file on the right. Use this to
 | `/discover` | `src/app/discover/page.tsx` (canonical event browse: personalized rail + `EventExplorer`) |
 | `/categories` | `src/app/categories/page.tsx` |
 | `/categories/[slug]` | `src/app/categories/[slug]/page.tsx` |
-| `/events` | `src/app/events/page.tsx` (redirect → `/discover`, preserving query string) |
+| `/events` | no page - `redirects()` in `next.config.ts` → `/discover`, query string passed through. Forwarding-only URLs live there, not in a page: a page-level `redirect()` runs after the root `loading.tsx` has started streaming, so it answers 200 + a meta refresh instead of a 307 |
 | `/events/[slug]` | `src/app/events/[slug]/page.tsx` |
 | `/people` | `src/app/people/page.tsx` |
 | `/profile/[userId]` | `src/app/profile/[userId]/page.tsx` |
@@ -32,15 +32,15 @@ Every route in `src/app`. URI on the left, source file on the right. Use this to
 | URI | File |
 | --- | --- |
 | `/login` | `src/app/login/page.tsx` |
-| `/signup` | `src/app/signup/page.tsx` |
+| `/signup` | no page - `next.config.ts` redirect → `/register` (`callbackUrl` passes through; `/register` sanitizes it) |
 | `/register` | `src/app/register/page.tsx` |
 | `/auth` | `src/app/auth/page.tsx` |
 | `/forgot-password` | `src/app/forgot-password/page.tsx` |
 | `/post-login` | `src/app/post-login/page.tsx` |
 | `/onboarding` | `src/app/onboarding/page.tsx` - the attendee profile form, and a REQUIRED step: it collects the postcode + birth date that make up `onboardingComplete`. One route, four steps: `src/components/onboarding-form.tsx` holds the whole flow (basics → intent → interests → photo → done - the old "value preview" step was dropped, bug board #249/#265) in client state and marks each step with a hash (`#intent`, `#interests`, …) so browser Back walks the wizard. It POSTs to `api/onboarding` twice: when step 1 is done (so stopping early still leaves a bookable profile) and again on Finish. The save answers with the profile's `photoUrl`, so a Google/Facebook photo rehosted behind `/post-login` shows up on the photo step. The first save adds `?resume=1` to the URL, which stops the page redirecting a now-finished profile away mid-flow (the photo uploader and Finish both `router.refresh()`). When `?next=` is an event page or a `/claim/` invite, step 1's main button is "Back to the event" / "Back to your invite" (save, done screen, then `next`), with "Personalise my profile first" for the full flow. Rendered **chromeless** (`ChromeGate` in `src/components/chrome-gate.tsx` drops the global header, mobile bottom nav, and footer here and on the auth routes) so the app nav can't be used to walk out of it. The real enforcement is server-side - `assertBookingEligible` in `event-repository.ts` refuses an RSVP or a checkout hold to a profile missing either field, and `saveOnboarding` rejects a missing/under-18 birth date. |
 | `/qa-unlock` | `src/app/qa-unlock/route.ts` - GET only. `?key=<TEST_SWITCHER_KEY>` sets the httpOnly cookie that reveals the top-right QA persona switcher on a deployed environment; `?lock=1` clears it. 404s on a wrong/absent key or an unconfigured deployment. Gate lives in `src/lib/test-switcher.ts` and is re-checked by the `test-login` provider and every switcher server action. |
-| `/quiz` | `src/app/quiz/page.tsx` |
-| `/quiz/life` | `src/app/quiz/life/page.tsx` (auth gate in `layout.tsx`; redirects → `/quiz/life/life-stage`). The same four steps also open as a MODAL over `/dashboard` and `/profile/edit` (`LifeQuizModalLink`, `src/components/life-quiz-modal.tsx`; saves through `saveLifeQuizInPlaceAction`, no redirect) - these routes are its no-JS / new-tab fallback |
+| `/quiz` | `src/app/quiz/(index)/page.tsx` - in a route group so its `loading.tsx` wraps only this page, not the two quiz takeovers below |
+| `/quiz/life` | no page - `next.config.ts` redirect → `/quiz/life/life-stage` (auth gate + takeover chrome in `src/app/quiz/life/layout.tsx`). The same four steps also open as a MODAL over `/dashboard` and `/profile/edit` (`LifeQuizModalLink`, `src/components/life-quiz-modal.tsx`; saves through `saveLifeQuizInPlaceAction`, no redirect) - these routes are its no-JS / new-tab fallback |
 | `/quiz/life/life-stage` | `src/app/quiz/life/life-stage/page.tsx` (wizard step 1/4) |
 | `/quiz/life/availability` | `src/app/quiz/life/availability/page.tsx` (wizard step 2/4) |
 | `/quiz/life/event-style` | `src/app/quiz/life/event-style/page.tsx` (wizard step 3/4) |
@@ -59,7 +59,7 @@ Every route in `src/app`. URI on the left, source file on the right. Use this to
 | `/account-settings` | `src/app/account-settings/page.tsx` |
 | `/notifications` | `src/app/notifications/page.tsx` |
 | `/bookmarks` | `src/app/bookmarks/page.tsx` |
-| `/saved-events` | `src/app/saved-events/page.tsx` (redirect → `/bookmarks`) |
+| `/saved-events` | no page - `next.config.ts` redirect → `/bookmarks` |
 | `/confirmed-events` | `src/app/confirmed-events/page.tsx` |
 | `/proposals` | `src/app/proposals/page.tsx` (post-mutual-click coordination UI; no free text). "Your clicks": `ClicksList` groups Live mutuals · Plans · Past clicks on the People Card, and hosts `CoordinationDrawer`; `?open=<mutualId>` opens the drawer at that mutual's step (its one-time reveal first if unseen) - the target of every re-entry: notifications, the mutual email, dashboard banners, `/people`'s Your clicks rows |
 

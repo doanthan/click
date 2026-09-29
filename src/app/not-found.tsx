@@ -21,7 +21,7 @@ export default function NotFoundPage() {
           <Link href="/" className="ck-btn ck-btn--primary ck-btn--md">
             Home
           </Link>
-          <Link href="/events" className="ck-btn ck-btn--secondary ck-btn--md">
+          <Link href="/discover" className="ck-btn ck-btn--secondary ck-btn--md">
             Browse events
           </Link>
           <Link href="/dashboard" className="ck-btn ck-btn--secondary ck-btn--md">

@@ -17,6 +17,7 @@ import { TOKEN_TTL_MINUTES } from "@/lib/magic-link-ttl";
 import Link from "next/link";
 import type { ComponentProps, ReactNode } from "react";
 import { Icon, Logo, ckBtn, type IconName } from "@/components/ds";
+import { Skeleton } from "@/components/skeleton";
 
 /* ---------------------------------------------------------------- brand marks */
 /* Third-party marks keep their own brand colours - that is the one place our
@@ -367,6 +368,66 @@ export function AuthShell({
         ) : null}
         <div className="mt-6">{children}</div>
         {footer ? <div className="mt-6">{footer}</div> : null}
+      </div>
+    </main>
+  );
+}
+
+/**
+ * AuthShell's loading state, for the loading.tsx of /login and /register. The
+ * same frame and the real wordmark (still the way out, so still a link), then
+ * shimmer in the controls' real sizes - 52px buttons, the 50px field - so
+ * nothing moves when the form lands. `ssoButtons` and `roleChoice` follow
+ * what each page draws.
+ */
+export function AuthShellSkeleton({
+  ssoButtons,
+  roleChoice = false,
+  footerLines = 1,
+}: {
+  ssoButtons: number;
+  roleChoice?: boolean;
+  footerLines?: number;
+}) {
+  return (
+    <main className="flex min-h-screen justify-center bg-[color:var(--champagne)] px-5 py-10 text-[color:var(--ink)] sm:py-14">
+      <div className="w-full max-w-[412px]">
+        <Link href="/" aria-label="Click home" className="inline-flex">
+          <Logo size={28} />
+        </Link>
+        <Skeleton className="mt-7 h-[30px] w-56 max-w-full rounded-lg" />
+        <Skeleton className="mt-2.5 h-3.5 w-72 max-w-full rounded-full" />
+        <div className="mt-6 grid gap-5">
+          {roleChoice ? (
+            <div className="grid grid-cols-2 gap-2.5">
+              <Skeleton className="h-[66px] rounded-xl" />
+              <Skeleton className="h-[66px] rounded-xl" />
+            </div>
+          ) : null}
+          <div className="grid gap-2.5">
+            {Array.from({ length: ssoButtons }).map((_, i) => (
+              <Skeleton key={i} className="h-[52px] w-full rounded-xl" />
+            ))}
+          </div>
+          <div className="flex items-center gap-3.5">
+            <span className="h-px flex-1 bg-[color:var(--mist)]" />
+            <Skeleton className="h-3 w-5 rounded-full" />
+            <span className="h-px flex-1 bg-[color:var(--mist)]" />
+          </div>
+          <div className="grid gap-4">
+            <div className="grid gap-1.5">
+              <Skeleton className="h-3.5 w-12 rounded-full" />
+              <Skeleton className="h-[50px] w-full rounded-xl" />
+            </div>
+            <Skeleton className="h-[52px] w-full rounded-xl" />
+          </div>
+          <Skeleton className="mx-auto h-3 w-64 max-w-full rounded-full" />
+        </div>
+        <div className="mt-6 grid justify-items-center gap-2.5">
+          {Array.from({ length: footerLines }).map((_, i) => (
+            <Skeleton key={i} className="h-3.5 w-52 max-w-full rounded-full" />
+          ))}
+        </div>
       </div>
     </main>
   );
