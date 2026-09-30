@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { AccountSettingToggle } from "@/components/account-setting-toggle";
 import { ButtonLink, Icon, type IconName } from "@/components/ds";
 import { EmptyState } from "@/components/empty-state";
+import { LifeQuizModalLink } from "@/components/life-quiz-modal";
 import { signOutOfClick } from "@/app/login/actions";
 import { getOwnProfile, type AccountSettings } from "@/lib/event-repository";
 import { SettingsTabs } from "./settings-tabs";
@@ -64,6 +65,7 @@ export default async function AccountSettingsPage({ searchParams }: AccountSetti
         email={profile?.email ?? session.user.email ?? "-"}
         suburb={profile?.suburb ?? "-"}
         profileId={profile?.id ?? null}
+        quizDone={profile?.lifeQuizCompleted ?? false}
       />
     ),
     notifications: <NotificationsTab settings={settings} />,
@@ -90,12 +92,14 @@ function AccountTab({
   email,
   suburb,
   profileId,
+  quizDone,
 }: {
   displayName: string;
   email: string;
   suburb: string;
   /** For the public-profile preview link. Null while the profile read failed. */
   profileId: string | null;
+  quizDone: boolean;
 }) {
   return (
     <>
@@ -121,6 +125,25 @@ function AccountTab({
             </ButtonLink>
           ) : null}
         </div>
+      </Group>
+
+      <Group>
+        <SectionHead>Your suggestions</SectionHead>
+        {/* The spec's Settings row - "The Click quiz / Edit your answers" - and
+            the place the quiz's finish screen points to ("Change your answers
+            anytime in Settings"). Opens the same modal as the dashboard task. */}
+        <LifeQuizModalLink className="-mx-3 flex w-[calc(100%+1.5rem)] items-center gap-3.5 rounded-[12px] px-3 py-3 text-left transition-colors hover:bg-[color:var(--lavender-100)] sm:w-auto sm:min-w-[340px]">
+          <span className="grid size-10 shrink-0 place-items-center rounded-[12px] bg-[color:var(--lavender-100)] text-[color:var(--purple)]">
+            <Icon name="compass" size={20} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[14.5px] font-semibold text-[color:var(--ink)]">The Click quiz</span>
+            <span className="mt-0.5 block text-[13px] leading-[1.45] text-[color:var(--slate)]">
+              {quizDone ? "Edit your answers" : "About two minutes - it sharpens your suggestions."}
+            </span>
+          </span>
+          <Icon name="chevR" size={18} className="text-[color:var(--ink-faint)]" />
+        </LifeQuizModalLink>
       </Group>
 
       <Group last>

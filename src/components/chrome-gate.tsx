@@ -35,12 +35,10 @@ const CHROMELESS_ROUTES = [
   "/signup",
   "/onboarding",
   "/auth/email/verify",
-  // The two quiz takeovers. Both draw the wordmark + a "Quizzes" back link in
-  // their own chrome, so with the global bar up they showed the wordmark twice
-  // and the sticky app nav sat over a one-question-at-a-time screen. /quiz
-  // itself is a normal page and keeps the bar.
+  // The Click quiz's page is a takeover that draws its own wordmark, so with
+  // the global bar up the wordmark showed twice and the sticky app nav sat over
+  // the quiz. (/quiz and /quiz/personality redirect to it in next.config.ts.)
   "/quiz/life",
-  "/quiz/personality",
 ];
 
 export function ChromeGate({ children }: { children: React.ReactNode }) {

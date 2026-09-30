@@ -65,7 +65,11 @@ const nextConfig: NextConfig = {
       { source: "/events", destination: "/discover", permanent: false },
       { source: "/signup", destination: "/register", permanent: false },
       { source: "/saved-events", destination: "/bookmarks", permanent: false },
-      { source: "/quiz/life", destination: "/quiz/life/life-stage", permanent: false },
+      // The Click quiz is one page. The two-quiz hub, the Life quiz's old step
+      // URLs and the Personality quiz all land on it.
+      { source: "/quiz", destination: "/quiz/life", permanent: false },
+      { source: "/quiz/life/:step", destination: "/quiz/life", permanent: false },
+      { source: "/quiz/personality", destination: "/quiz/life", permanent: false },
     ];
   },
   // Server Actions validate the request Origin against Host/X-Forwarded-Host to

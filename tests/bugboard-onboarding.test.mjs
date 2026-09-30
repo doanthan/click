@@ -132,26 +132,36 @@ test("the Click quiz opens as a modal over the page it was opened from", () => {
   const modal = read("src/components/life-quiz-modal.tsx");
   assert.match(modal, /data-opens-overlay=""/);
   assert.match(modal, /event\.preventDefault\(\);\s*setOpen\(true\);/);
-  // The steps only mount once the profile's answers have loaded - a retake is
-  // authoritative, and a blank board would clear what the member never saw.
-  assert.match(modal, /\) : initial === null \? \(/);
-  assert.match(modal, /<LifeQuizStep\s+key=\{step\}\s+step=\{step\}\s+onStep=\{setStep\}/);
+  // The steps only mount once the member's answers have loaded - Finish is
+  // authoritative over every quiz life tag, and a blank board would clear what
+  // the member never saw.
+  assert.match(modal, /\{initial \? \(\s*<ClickQuiz/);
 
   // The edit page's leave-without-saving guard lets that link through.
   assert.match(read("src/lib/use-unsaved-guard.ts"), /if \(anchor\.hasAttribute\("data-opens-overlay"\)\) return;/);
   assert.match(editForm, /<LifeQuizModalLink\s+className=/);
   assert.doesNotMatch(editForm, /href="\/quiz\/life"/);
   assert.match(read("src/app/dashboard/page.tsx"), /const Row = item\.key === "quiz" \? LifeQuizModalLink : Link;/);
+  // The spec's Settings row opens the same modal - and is where the finish
+  // screen's "Change your answers anytime in Settings" points.
+  const settings = read("src/app/account-settings/page.tsx");
+  assert.match(settings, /<LifeQuizModalLink[\s\S]*?The Click quiz[\s\S]*?Edit your answers/);
 
-  // The modal's save is the route's save without the hub redirect.
+  // No save redirects or revalidates: on /dashboard the quiz row the modal hangs
+  // off disappears once the quiz counts as done, and a revalidating save would
+  // take the finish screen with it. Closing refreshes the page instead - and
+  // only when something was saved.
   const actions = read("src/app/quiz/life/actions.ts");
-  const inPlace = actions.slice(actions.indexOf("export async function saveLifeQuizInPlaceAction"));
-  assert.doesNotMatch(inPlace.slice(0, inPlace.indexOf("\n}")), /redirect\(/);
-  assert.match(actions, /revalidatePath\("\/dashboard"\);/);
-  assert.match(actions, /revalidatePath\("\/profile\/edit"\);/);
-  const wizard = read("src/components/life-quiz-wizard.tsx");
-  assert.match(wizard, /if \(onStep\) onStep\(step \+ 1\);/);
-  assert.match(wizard, /await saveLifeQuizInPlaceAction\(fd\);\s*clearDraft\(\);\s*onSaved\(\);/);
+  assert.doesNotMatch(actions, /redirect\(|revalidatePath\(/);
+  assert.match(modal, /function close\(\) \{\s*if \(saved\.current\) router\.refresh\(\);\s*onClose\(\);/);
+
+  // Every forward move autosaves; Finish is the save that can fail out loud.
+  const quiz = read("src/components/click-quiz.tsx");
+  assert.match(quiz, /save\(step \+ 1, false\)\.catch\(\(\) => \{\}\);\s*go\(step \+ 1\);/);
+  assert.match(quiz, /await save\(TOTAL, true\);/);
+  // Cindy, 1 Jul: the primary always advances - never a purple "Skip section".
+  assert.doesNotMatch(quiz, /Skip section/);
+  assert.match(quiz, /\{step === TOTAL \? "Finish" : "Next"\}/);
 });
 
 test("the Security tab says plainly there is no password to change", () => {

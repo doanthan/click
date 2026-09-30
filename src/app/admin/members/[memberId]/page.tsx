@@ -162,16 +162,22 @@ export default async function AdminMemberDetailPage({
           </Card>
         </div>
 
-        <Card title="Personality quiz">
+        <Card title="Click quiz">
           {member.persona ? (
             <div className="space-y-4">
               <div>
-                <p className="text-[12.5px] font-semibold text-[color:var(--slate)]">
-                  Click persona
-                </p>
-                <p className="mt-1 font-display text-3xl font-semibold leading-tight tracking-tight text-[color:var(--ink)]">
-                  {member.persona.personaName}
-                </p>
+                {/* Only the old Personality quiz named personas; the Click
+                    quiz's result is never named back to anyone. */}
+                {member.persona.personaName ? (
+                  <>
+                    <p className="text-[12.5px] font-semibold text-[color:var(--slate)]">
+                      Click persona
+                    </p>
+                    <p className="mt-1 font-display text-3xl font-semibold leading-tight tracking-tight text-[color:var(--ink)]">
+                      {member.persona.personaName}
+                    </p>
+                  </>
+                ) : null}
                 <p className="mt-1 text-xs text-[color:var(--slate)]">
                   Taken{" "}
                   {dateTimeFormatter.format(new Date(member.persona.generatedAt))}
@@ -402,13 +408,14 @@ function Stat({ label, value }: { label: string; value: string | null | undefine
   );
 }
 
-function PersonaTrait({ label, value }: { label: string; value: string }) {
+function PersonaTrait({ label, value }: { label: string; value: string | null }) {
   return (
     <div>
       <dt className="text-[12.5px] font-semibold text-[color:var(--slate)]">
         {label}
       </dt>
-      <dd className="mt-0.5 font-semibold text-[color:var(--ink)]">{titleCase(value)}</dd>
+      {/* null = skipped in the Click quiz, or never asked (engagement). */}
+      <dd className="mt-0.5 font-semibold text-[color:var(--ink)]">{value ? titleCase(value) : "-"}</dd>
     </div>
   );
 }

@@ -21,7 +21,15 @@ import {
   type EventItem,
   type EventStatus,
 } from "./click-data";
-import { LIFE_QUIZ_SECTION_OPTIONS } from "./life-quiz-sections";
+import {
+  CLICK_QUIZ_STEPS,
+  answersFromExisting,
+  lifeTagsFor,
+  personaFor,
+  sanitizeAnswers,
+  type ClickQuizAnswers,
+  type ClickQuizState,
+} from "./click-quiz";
 import {
   DEFAULT_MATCHING_WEIGHTS,
   type MatchingWeights,
@@ -38,7 +46,7 @@ import {
   resolveEventImage,
   resolveEventImages,
 } from "./event-images";
-import { deriveEventSubTagsBySlug } from "./matching/feature-store";
+import { deriveEventSubTagsBySlug, refreshUserFeatures } from "./matching/feature-store";
 import {
   generateEventCandidates,
   generatePeopleCandidates,
@@ -425,12 +433,15 @@ export type AdminMemberDetailTransaction = {
   createdAt: string;
 };
 
+// A persona the Click quiz wrote carries only what was answered: no name, no
+// engagement frequency (it never asks), and nulls for skipped questions. Rows
+// the old Personality quiz wrote have every field.
 export type AdminMemberDetailPersona = {
-  personaName: string;
-  socialEnergy: string;
-  pace: string;
-  openness: string;
-  engagementFrequency: string;
+  personaName: string | null;
+  socialEnergy: string | null;
+  pace: string | null;
+  openness: string | null;
+  engagementFrequency: string | null;
   intentMix: Record<string, number>;
   generatedAt: string;
 };
@@ -3667,7 +3678,7 @@ export async function getPersonalizedDiscovery(
         `select connection_intents::text[] as intents from profiles where id = $1::uuid`,
         [profile.id],
       ),
-      pool.query<{ openness: string; social_energy: string }>(
+      pool.query<{ openness: string | null; social_energy: string | null }>(
         `select openness, social_energy from click_personas where profile_id = $1::uuid order by generated_at desc limit 1`,
         [profile.id],
       ),
@@ -3694,9 +3705,11 @@ export async function getPersonalizedDiscovery(
     const ctx: UserMatchContext = {
       tagSlugs: tagsResult.rows.map((r) => r.slug),
       intents: profileResult.rows[0]?.intents ?? [],
-      persona: personaRow
+      // The Click quiz writes a persona with no social energy when recharge and
+      // strangers were both skipped. That is no persona, not an outgoing one.
+      persona: personaRow?.social_energy
         ? {
-            openness: personaRow.openness as "cautious" | "curious" | "ready",
+            openness: personaRow.openness as "cautious" | "curious" | "ready" | null,
             socialEnergy: personaRow.social_energy as "introvert" | "ambivert" | "extrovert",
           }
         : null,
@@ -6657,11 +6670,11 @@ export async function getAdminMemberDetail(
           [memberId],
         ),
         pool.query<{
-          persona_name: string;
-          social_energy: string;
-          pace: string;
-          openness: string;
-          engagement_frequency: string;
+          persona_name: string | null;
+          social_energy: string | null;
+          pace: string | null;
+          openness: string | null;
+          engagement_frequency: string | null;
           intent_mix: Record<string, number> | null;
           generated_at: Date;
         }>(
@@ -8713,20 +8726,20 @@ export async function getProfileCompletion(
           where ut.profile_id = $1::uuid and t.tag_type = 'interest'`,
         [profile.id],
       ),
-      // The dashboard "Take the Click quiz" card links to the Life Quiz
-      // (/quiz/life), which writes tags with source='quiz' via saveLifeQuizTags
-      // - it does NOT write to click_personas (that's the separate personality
-      // quiz). Detect completion from the same signal the Life Quiz produces so
-      // the prompt clears once the user finishes it.
-      pool.query<{ count: string }>(
-        `select count(*)::text as count from user_tags where profile_id = $1::uuid and source = 'quiz'`,
+      // Done = the Click quiz was finished, or - for someone who has not saved
+      // it since it replaced the Life quiz - they carry the Life quiz's tags.
+      // Not "has quiz tags" alone: a Click quiz finished with only room or
+      // timing answers writes none.
+      pool.query<{ done: boolean }>(
+        `select exists(select 1 from click_quiz_answers where profile_id = $1::uuid and completed_at is not null)
+             or exists(select 1 from user_tags where profile_id = $1::uuid and source = 'quiz') as done`,
         [profile.id],
       ),
     ]);
 
     const row = fieldsResult.rows[0];
     const tagCount = Number(tagCountResult.rows[0]?.count ?? 0);
-    const quizComplete = Number(quizResult.rows[0]?.count ?? 0) > 0;
+    const quizComplete = quizResult.rows[0]?.done === true;
 
     const items: ProfileCompletionItem[] = [
       // Counts the avatar OR any "More photos" gallery image - a user who filled
@@ -15335,6 +15348,7 @@ export async function getOwnProfile(session: Session | null): Promise<OwnProfile
         gallery_photos: string[];
         prompts: unknown;
         photo_verified_at: Date | null;
+        click_quiz_completed: boolean;
       }>(
         `
           select id::text, display_name, email::text, role::text, city, suburb, bio, photo_url, age,
@@ -15342,7 +15356,11 @@ export async function getOwnProfile(session: Session | null): Promise<OwnProfile
                  dating_visible, flexible_discovery,
                  notification_prefs, show_suburb, show_attendance_count, allow_merchant_messages,
                  default_attend_visibility,
-                 gallery_photos, prompts, photo_verified_at
+                 gallery_photos, prompts, photo_verified_at,
+                 exists(
+                   select 1 from click_quiz_answers quiz
+                   where quiz.profile_id = profiles.id and quiz.completed_at is not null
+                 ) as click_quiz_completed
           from profiles
           where id = $1::uuid
         `,
@@ -15395,7 +15413,9 @@ export async function getOwnProfile(session: Session | null): Promise<OwnProfile
       verified: !!row.photo_verified_at,
       datingVisible: row.dating_visible,
       flexibleDiscovery: row.flexible_discovery,
-      lifeQuizCompleted: tagsResult.rows.some((t) => t.source === "quiz"),
+      // Same rule as getProfileCompletion's quiz item: the Click quiz finished,
+      // or the Life quiz's tags from before it.
+      lifeQuizCompleted: row.click_quiz_completed || tagsResult.rows.some((t) => t.source === "quiz"),
       settings: {
         notifications: coerceNotificationPrefs(row.notification_prefs),
         showSuburb: row.show_suburb,
@@ -19926,242 +19946,202 @@ export async function getMatchedPicksForMutual(
   }
 }
 
-export type PersonalityQuizInput = {
-  personaName: string;
-  socialEnergy: "introvert" | "ambivert" | "extrovert";
-  pace: "relaxed" | "balanced" | "fast_moving";
-  openness: "cautious" | "curious" | "ready";
-  engagementFrequency: "occasional" | "active" | "enthusiastic";
-  intentMix: Record<string, number>;
-};
+// The Click quiz. src/lib/click-quiz.ts holds the taxonomy and every
+// derivation; this is its storage. One row of raw answers per member in
+// click_quiz_answers, and the life tags and persona that matching reads are
+// derived from it on save.
 
-export async function savePersonalityQuiz(
-  session: Session | null,
-  input: PersonalityQuizInput,
-) {
+// What the quiz opens on. Throws rather than returning a blank board: Finish is
+// authoritative over every quiz life tag, so a quiz that opened empty because a
+// read failed would clear answers the member never saw.
+export async function getClickQuizForSession(session: Session | null): Promise<ClickQuizState> {
   const pool = getPostgresPool();
   if (!pool) throw databaseUnavailableError();
-  const email = getSessionEmail(session);
-  if (!email) throw authError();
-
+  if (!getSessionEmail(session)) throw authError();
   const profile = await ensureProfileForSession(session);
-  await pool.query(
-    `
-      insert into click_personas
-        (profile_id, persona_name, social_energy, pace, openness, engagement_frequency, intent_mix)
-      values ($1::uuid, $2, $3, $4, $5, $6, $7::jsonb)
-    `,
-    [
-      profile.id,
-      input.personaName,
-      input.socialEnergy,
-      input.pace,
-      input.openness,
-      input.engagementFrequency,
-      JSON.stringify(input.intentMix),
-    ],
+
+  const saved = await pool.query<{ answers: unknown; step: number; completed: boolean }>(
+    `select answers, step, completed_at is not null as completed
+       from click_quiz_answers
+      where profile_id = $1::uuid`,
+    [profile.id],
   );
-}
+  const row = saved.rows[0];
+  if (row) {
+    // Finished once: reopening is "edit your answers", so it skips the intro.
+    // Unfinished: back on the step they left.
+    return {
+      answers: sanitizeAnswers(row.answers),
+      step: row.completed ? 1 : row.step,
+      completed: row.completed,
+    };
+  }
 
-export async function getLatestPersonaForSession(
-  session: Session | null,
-): Promise<{
-  personaName: string;
-  socialEnergy: string;
-  pace: string;
-  openness: string;
-  engagementFrequency: string;
-  generatedAt: string;
-} | null> {
-  const pool = getPostgresPool();
-  const email = getSessionEmail(session);
-  if (!pool || !email) return null;
-
-  try {
-    const profile = await ensureProfileForSession(session);
-    const result = await pool.query<{
-      persona_name: string;
-      social_energy: string;
-      pace: string;
-      openness: string;
-      engagement_frequency: string;
-      generated_at: Date;
-    }>(
-      `
-        select persona_name, social_energy, pace, openness, engagement_frequency, generated_at
-        from click_personas
+  // Never saved the Click quiz. Open on what the Life and Personality quizzes
+  // already recorded, so the first save starts from the member's own answers.
+  const [tags, persona] = await Promise.all([
+    pool.query<{ slug: string }>(
+      `select t.slug
+         from user_tags ut
+         join tags t on t.id = ut.tag_id
+        where ut.profile_id = $1::uuid and ut.source = 'quiz' and t.tag_type = 'life'`,
+      [profile.id],
+    ),
+    pool.query<{ social_energy: string | null; pace: string | null; openness: string | null }>(
+      `select social_energy, pace, openness
+         from click_personas
         where profile_id = $1::uuid
         order by generated_at desc
-        limit 1
-      `,
+        limit 1`,
       [profile.id],
-    );
-    const row = result.rows[0];
-    if (!row) return null;
-    return {
-      personaName: row.persona_name,
-      socialEnergy: row.social_energy,
-      pace: row.pace,
-      openness: row.openness,
-      engagementFrequency: row.engagement_frequency,
-      generatedAt: row.generated_at.toISOString(),
-    };
-  } catch {
-    return null;
-  }
+    ),
+  ]);
+  const latest = persona.rows[0];
+  return {
+    answers: answersFromExisting(
+      tags.rows.map((r) => r.slug),
+      latest ? { socialEnergy: latest.social_energy, pace: latest.pace, openness: latest.openness } : null,
+    ),
+    step: 0,
+    completed: false,
+  };
 }
 
-// The Life Quiz taxonomy - which option slugs each section owns, and therefore
-// the entire blast radius of the retake DELETE below.
-//
-// Imported from src/lib/life-quiz-sections.ts, which the wizard imports too. It
-// used to be a hand-synced copy of SECTIONS in life-quiz-wizard.tsx, because a
-// server module cannot import an array out of a "use client" file - it gets a
-// client-reference proxy. Moving the taxonomy into a JSX-free lib module both
-// sides import removes that hazard: adding a wizard option without updating the
-// server copy used to silently make that answer impossible to deselect, since a
-// slug this map does not know is never deletable.
-
-// The slugs this profile currently carries FROM the Life Quiz, so a retake can
-// pre-populate instead of opening on an empty board. This getter is what makes
-// the authoritative save below honest: the user sees the answers they already
-// have and deselects the ones they no longer identify with, rather than the
-// server quietly deciding on their behalf.
-//
-// Read-only, and returns [] rather than throwing so a quiz page still renders
-// when the pool is down or the visitor is signed out.
-export async function getLifeQuizSelections(
+// Every step's autosave and the Finish share this. Until the first Finish only
+// the answers and the step are kept; from then on every save also re-derives the
+// life tags and persona, so matching never reads an answer the member has since
+// changed. Returns whether the quiz counts as done.
+export async function saveClickQuiz(
   session: Session | null,
-): Promise<string[]> {
-  const pool = getPostgresPool();
-  if (!pool || !getSessionEmail(session)) return [];
-
-  try {
-    const profile = await ensureProfileForSession(session);
-    const result = await pool.query<{ slug: string }>(
-      `
-        select t.slug
-        from user_tags ut
-        join tags t on t.id = ut.tag_id
-        where ut.profile_id = $1::uuid
-          and ut.source = 'quiz'
-          and t.tag_type = 'life'
-      `,
-      [profile.id],
-    );
-    return result.rows.map((r) => r.slug);
-  } catch {
-    return [];
-  }
-}
-
-export async function saveLifeQuizTags(
-  session: Session | null,
-  tagSlugs: string[],
-  // Section slugs (keys of LIFE_QUIZ_SECTION_OPTIONS) the user was actually
-  // shown this sitting. Omitted, we infer them from the submitted slugs, which
-  // is strictly narrower and provably safe: a slug can only reach here if its
-  // section was on screen and tapped. Pass it explicitly to let someone clear a
-  // section outright - under inference alone, deselecting every option in a
-  // section leaves that section's old tags in place, because nothing in the
-  // payload proves the section was ever visited.
-  shownSections?: string[],
-) {
+  input: { answers: unknown; step: number; finish: boolean },
+): Promise<{ completed: boolean }> {
   const pool = getPostgresPool();
   if (!pool) throw databaseUnavailableError();
-  const email = getSessionEmail(session);
-  if (!email) throw authError();
-
-  const slugs = Array.from(
-    new Set(tagSlugs.map((s) => s.trim().toLowerCase()).filter(Boolean)),
-  ).slice(0, 64);
-
-  // The delete's blast radius, resolved before any SQL runs: only sections this
-  // map knows AND that we can show the user was shown, expanded to exactly the
-  // option slugs those sections own. An unknown section slug is dropped here.
-  const sections = (
-    shownSections ??
-    Object.keys(LIFE_QUIZ_SECTION_OPTIONS).filter((section) =>
-      LIFE_QUIZ_SECTION_OPTIONS[section].some((option) => slugs.includes(option)),
-    )
-  ).filter((section) => section in LIFE_QUIZ_SECTION_OPTIONS);
-  const deletable = sections.flatMap((section) => LIFE_QUIZ_SECTION_OPTIONS[section]);
-
-  // Nothing to write and nothing we are allowed to clear - leave the profile be.
-  if (slugs.length === 0 && deletable.length === 0) return;
-
+  if (!getSessionEmail(session)) throw authError();
   const profile = await ensureProfileForSession(session);
 
-  // One transaction end to end: a partial apply here would be a profile with
-  // neither the old answers nor the new ones.
+  const answers = sanitizeAnswers(input.answers);
+  const step = Math.min(Math.max(Math.trunc(Number(input.step)) || 0, 0), CLICK_QUIZ_STEPS.length);
+
+  let completed = false;
   const client = await pool.connect();
   try {
     await client.query("begin");
-
-    // The Life Quiz defines its own taxonomy (life-stage / availability /
-    // event-style / energy). Historically those slugs were NOT seeded into
-    // `tags`, so the old "link by existing slug" insert matched nothing and the
-    // quiz never registered as completed. Create any missing slugs first (as
-    // 'life' tags, label titleised from the slug), then link - so every answer
-    // persists and `lifeQuizCompleted` flips true. Separate statements because a
-    // data-modifying CTE's inserts aren't visible to a SELECT in the same query.
-    if (slugs.length > 0) {
-      await client.query(
-        `
-          insert into tags (label, slug, tag_type, admin_managed)
-          select initcap(replace(slug, '-', ' ')), slug, 'life', false
-          from unnest($1::text[]) as slug
-          on conflict (slug) do nothing
-        `,
-        [slugs],
-      );
-    }
-
-    // Retaking the quiz is authoritative, so a life stage you no longer identify
-    // with can actually come off - it used to be permanent, since this function
-    // only ever inserted. Four independent guards keep that from reaching one row
-    // more than the user just decided about:
-    //   source = 'quiz'        - never an onboarding, admin or music-picker tag
-    //   tag_type = 'life'      - never an interest or vibe tag that shares a slug
-    //   slug = any($2)         - only options of a section they were shown
-    //   not slug = any($3)     - and never something still selected
-    // An empty $3 is not null-ish here: `slug = any('{}')` is false, so a section
-    // deliberately cleared clears, which is the whole point.
-    if (deletable.length > 0) {
-      await client.query(
-        `
-          delete from user_tags ut
-          using tags t
-          where ut.tag_id = t.id
-            and ut.profile_id = $1::uuid
-            and ut.source = 'quiz'
-            and t.tag_type = 'life'
-            and t.slug = any($2::text[])
-            and not (t.slug = any($3::text[]))
-        `,
-        [profile.id, deletable, slugs],
-      );
-    }
-
-    if (slugs.length > 0) {
-      await client.query(
-        `
-          insert into user_tags (profile_id, tag_id, source)
-          select $1::uuid, t.id, 'quiz'
-          from tags t
-          where t.slug = any($2::text[])
-          on conflict (profile_id, tag_id) do update set source = 'quiz'
-        `,
-        [profile.id, slugs],
-      );
-    }
-
+    const saved = await client.query<{ completed: boolean }>(
+      `
+        insert into click_quiz_answers (profile_id, answers, step, completed_at)
+        values ($1::uuid, $2::jsonb, $3, case when $4::boolean then now() end)
+        on conflict (profile_id) do update set
+          answers = excluded.answers,
+          step = excluded.step,
+          completed_at = coalesce(excluded.completed_at, click_quiz_answers.completed_at),
+          updated_at = now()
+        returning completed_at is not null as completed
+      `,
+      [profile.id, JSON.stringify(answers), step, input.finish === true],
+    );
+    completed = saved.rows[0]?.completed ?? false;
+    if (completed) await applyClickQuizToMatching(client, profile.id, answers);
     await client.query("commit");
   } catch (error) {
-    await client.query("rollback");
+    await client.query("rollback").catch(() => {});
     throw error;
   } finally {
     client.release();
+  }
+
+  // Matching v2 reads user_features, which a scheduled job rebuilds. This is
+  // its one-profile path (feature-store.ts, "the on-change refresh"), so the
+  // finish screen's "we'll start leaning toward your kind of thing" is true on
+  // the next page rather than after the next run. Best-effort: the answers are
+  // saved either way.
+  if (completed) await refreshUserFeatures(pool, profile.id).catch(() => false);
+  return { completed };
+}
+
+async function applyClickQuizToMatching(
+  client: PoolClient,
+  profileId: string,
+  answers: ClickQuizAnswers,
+) {
+  const tags = lifeTagsFor(answers);
+  const slugs = tags.map((tag) => tag.slug);
+
+  if (tags.length > 0) {
+    // Create any life tag the quiz writes that the taxonomy does not hold yet.
+    // ON CONFLICT leaves an existing row - and its type - alone, and the link
+    // below only joins tag_type 'life', so an answer can never attach someone to
+    // an interest tag that shares a slug (the bug migration 057 cleaned up).
+    await client.query(
+      `
+        insert into tags (label, slug, tag_type, admin_managed)
+        select tag.label, tag.slug, 'life', false
+        from unnest($1::text[], $2::text[]) as tag(slug, label)
+        on conflict (slug) do nothing
+      `,
+      [slugs, tags.map((tag) => tag.label)],
+    );
+  }
+
+  // Authoritative over EVERY quiz life tag, the old Life quiz's included: the
+  // quiz opened on all of them (answersFromExisting), so anything not in this
+  // set is an answer the member turned off, or one to a question the quiz no
+  // longer asks. Guards: source 'quiz' (never an onboarding or admin tag) and
+  // tag_type 'life' (never an interest tag).
+  await client.query(
+    `
+      delete from user_tags ut
+      using tags t
+      where ut.tag_id = t.id
+        and ut.profile_id = $1::uuid
+        and ut.source = 'quiz'
+        and t.tag_type = 'life'
+        and not (t.slug = any($2::text[]))
+    `,
+    [profileId, slugs],
+  );
+
+  if (slugs.length > 0) {
+    await client.query(
+      `
+        insert into user_tags (profile_id, tag_id, source)
+        select $1::uuid, t.id, 'quiz'
+        from tags t
+        where t.slug = any($2::text[]) and t.tag_type = 'life'
+        on conflict (profile_id, tag_id) do update set source = 'quiz'
+      `,
+      [profileId, slugs],
+    );
+  }
+
+  // click_personas is append-only history and every reader takes the newest
+  // row, so a row goes in only when what the quiz says has changed - including
+  // to "skipped", which readers treat as no persona.
+  const persona = personaFor(answers);
+  const latest = await client.query<{
+    social_energy: string | null;
+    pace: string | null;
+    openness: string | null;
+  }>(
+    `select social_energy, pace, openness
+       from click_personas
+      where profile_id = $1::uuid
+      order by generated_at desc
+      limit 1`,
+    [profileId],
+  );
+  const last = latest.rows[0];
+  const changed = last
+    ? last.social_energy !== persona.socialEnergy ||
+      last.pace !== persona.pace ||
+      last.openness !== persona.openness
+    : persona.socialEnergy !== null || persona.pace !== null || persona.openness !== null;
+  if (changed) {
+    await client.query(
+      `insert into click_personas (profile_id, social_energy, pace, openness)
+       values ($1::uuid, $2, $3, $4)`,
+      [profileId, persona.socialEnergy, persona.pace, persona.openness],
+    );
   }
 }
 
@@ -21102,6 +21082,8 @@ export async function banMemberAsAdmin(
  * tears it down, so nobody is left holding a mutual click with a ghost. The
  * address and rendered body of every email we sent them is scrubbed too - the
  * email_events row stays as an audit record of "we sent template X on date Y".
+ * The Click quiz goes whole: its raw answers (LGBTQ+ self-identification among
+ * them), every persona it wrote, and the life tags derived from it.
  *
  * WHAT STAYS, deliberately: bookings, payments, refunds and their amounts, all
  * still linked to this now-anonymous id. That is the retention obligation.
@@ -21211,6 +21193,22 @@ export async function anonymiseMemberAsAdmin(
             html = null,
             vars = '{}'::jsonb
         where to_profile_id = $1::uuid
+      `,
+      [targetProfileId],
+    );
+
+    // The most sensitive things a member tells Click, and none of it is a
+    // retention record.
+    await client.query(`delete from click_quiz_answers where profile_id = $1::uuid`, [targetProfileId]);
+    await client.query(`delete from click_personas where profile_id = $1::uuid`, [targetProfileId]);
+    await client.query(
+      `
+        delete from user_tags ut
+        using tags t
+        where ut.tag_id = t.id
+          and ut.profile_id = $1::uuid
+          and ut.source = 'quiz'
+          and t.tag_type = 'life'
       `,
       [targetProfileId],
     );

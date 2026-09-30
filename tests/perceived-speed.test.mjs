@@ -22,7 +22,12 @@ test("forwarding-only URLs redirect in next.config.ts, not in a page", () => {
     ["/events", "/discover"],
     ["/signup", "/register"],
     ["/saved-events", "/bookmarks"],
-    ["/quiz/life", "/quiz/life/life-stage"],
+    // The Click quiz is one page: the two-quiz hub and the Personality quiz
+    // forward to it.
+    ["/quiz", "/quiz/life"],
+    ["/quiz/personality", "/quiz/life"],
+    // and so do the Life quiz's old per-section URLs
+    ["/quiz/life/:step", "/quiz/life"],
   ]) {
     assert.match(
       config,
@@ -69,12 +74,12 @@ test("the busiest routes that fell back to the root loading card have their own"
     "src/app/register/loading.tsx",
     "src/app/onboarding/loading.tsx",
     "src/app/how-it-works/loading.tsx",
-    "src/app/quiz/(index)/loading.tsx",
   ]) {
     assert.ok(existsSync(path.join(root, file)), `${file} is missing`);
   }
-  // Beside quiz/page.tsx it would also wrap /quiz/personality and /quiz/life,
-  // flashing the list shape before both takeovers.
+  // The /quiz hub is gone (it redirects to the Click quiz), and a loading.tsx
+  // at quiz/ would still wrap /quiz/life, flashing a list shape before the
+  // takeover.
   assert.equal(existsSync(path.join(root, "src/app/quiz/loading.tsx")), false);
 });
 

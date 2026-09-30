@@ -1139,14 +1139,25 @@ test("post-event and onboarding surfaces stop swallowing outcomes", () => {
   assert.match(form, /for \(let i = 1; i <= draft\.step; i \+= 1\)/);
 });
 
-test("a life-quiz answer can never collide with a seeded interest tag", () => {
-  // `creative` is an admin-managed interest tag in 002_seed.sql. The quiz linked
-  // the user to THAT row, so an interest they never picked appeared on their
-  // profile - and the retake's delete is guarded on tag_type='life', so it could
-  // never be removed.
-  const sections = readFileSync(path.join(root, "src/lib/life-quiz-sections.ts"), "utf8");
-  assert.doesNotMatch(sections, /slug: "creative"/);
-  assert.match(sections, /slug: "creative-hands-on"/);
+test("a Click quiz answer can never land on a seeded non-life tag", async () => {
+  // `creative` is an admin-managed interest tag in 002_seed.sql. The old Life
+  // quiz linked members to THAT row (migration 057 undid it): an interest they
+  // never picked, which a tag_type='life' retake delete could never remove. The
+  // Click quiz's save only ever links tag_type 'life', so a collision now would
+  // silently drop the answer instead - still wrong, so no life tag it writes
+  // may be seeded as another type.
+  const { CLICK_QUIZ_LIFE_TAGS } = await import("../src/lib/click-quiz.ts");
+  const seededAsOther = new Map();
+  for (const file of readdirSync(path.join(root, "database")).filter((name) => name.endsWith(".sql"))) {
+    const sql = readFileSync(path.join(root, "database", file), "utf8");
+    for (const [, slug, type] of sql.matchAll(/'([a-z0-9-]+)',\s*'(interest|life|music|vibe)'/g)) {
+      if (type !== "life") seededAsOther.set(slug, `${type} (${file})`);
+    }
+  }
+  assert.ok(seededAsOther.has("creative"), "this test's premise: the seeded tags were parsed");
+  for (const { slug } of CLICK_QUIZ_LIFE_TAGS) {
+    assert.equal(seededAsOther.get(slug), undefined, `the quiz's "${slug}" is seeded as ${seededAsOther.get(slug)}`);
+  }
 });
 
 test("retiring a checkout session cannot cancel the seat the buyer is paying for", () => {

@@ -33,8 +33,10 @@ test("the landing page carries no Click persona", () => {
   assert.doesNotMatch(home, /HomeQuiz|home-quiz|getLatestPersonaForSession/);
   assert.doesNotMatch(home, /\/quiz\/personality|vibe quiz|Pick your vibe/);
   assert.equal(existsSync(path.join(root, "src/components/home-quiz.tsx")), false);
-  // The full quiz still lives at /quiz/personality.
-  assert.ok(existsSync(path.join(root, "src/app/quiz/personality/page.tsx")));
+  // The Personality quiz itself became part of the Click quiz, and its old URL
+  // forwards there (tests/perceived-speed.test.mjs pins the redirect).
+  assert.equal(existsSync(path.join(root, "src/app/quiz/personality/page.tsx")), false);
+  assert.ok(existsSync(path.join(root, "src/app/quiz/life/page.tsx")));
 });
 
 test("a member's distances on Discover are measured from their postcode", () => {

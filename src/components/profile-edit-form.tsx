@@ -763,7 +763,7 @@ export function ProfileEditForm({
               </span>
               <span className="mt-0.5 block text-[12.5px] leading-[1.45] text-[color:var(--slate)]">
                 {profile.lifeQuizCompleted
-                  ? "Life stage, energy, availability - it keeps your suggestions sharp."
+                  ? "Edit your answers - they keep your suggestions sharp."
                   : "It makes your suggestions a lot more relevant. About two minutes."}
               </span>
             </span>

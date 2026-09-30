@@ -24,7 +24,8 @@ export const DEFAULT_MATCHING_WEIGHTS: MatchingWeights = {
 };
 
 export type MatchPersona = {
-  openness: "cautious" | "curious" | "ready";
+  // null when the Click quiz's "room of strangers" question was skipped.
+  openness: "cautious" | "curious" | "ready" | null;
   socialEnergy: "introvert" | "ambivert" | "extrovert";
 } | null;
 
@@ -87,7 +88,8 @@ export function scorePersonalizedEvent(
     reasons.push(`fits your ${ctx.intents.join("/")} intent`);
   }
 
-  // Persona nudge: ready/curious + extro/ambivert lean toward fuller rooms.
+  // Persona nudge: ready/curious + extro/ambivert lean toward fuller rooms. An
+  // unanswered openness is not "cautious", so social energy decides alone.
   if (ctx.persona) {
     const fill = event.capacity > 0 ? event.attendees / event.capacity : 0;
     const outgoing =
