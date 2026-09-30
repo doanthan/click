@@ -1,7 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useEffect, useState, useSyncExternalStore } from "react";
+import {
+  useActionState,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type MouseEvent,
+} from "react";
 import { answerPostEventWindowAction, clickCoAttendeeAction } from "@/app/dashboard/actions";
 import type { ClickResult } from "@/app/people/actions";
 import type { PostEventClickPrompt, PostEventCoAttendee } from "@/lib/event-repository";
@@ -9,6 +16,7 @@ import { MomentBanner } from "./dashboard-ds";
 import { Button, Spark, ckBtn } from "./ds";
 import { MutualClickLink, announceClickSent, useRevealedMutual } from "./mutual-reveal";
 import { PeopleCard } from "./people-card";
+import { ProfileModal, opensInPlace } from "./profile-modal";
 
 const shortDate = new Intl.DateTimeFormat("en-AU", { day: "numeric", month: "short" });
 
@@ -278,6 +286,8 @@ function CoAttendeeRow({
   eventSlug: string;
 }) {
   const [state, formAction, submitting] = useActionState(clickCoAttendeeAction, null);
+  const formRef = useRef<HTMLFormElement>(null);
+  const [profileOpen, setProfileOpen] = useState(false);
   // The send's reply is the same whether or not this click completed a mutual
   // (§6.1), so the row never learns it from its own action. It tells the reveal host
   // a send landed; the host reads, and if it plays this person's reveal the button
@@ -294,6 +304,45 @@ function CoAttendeeRow({
   // whole send, and a refused send drops back to the button with its reason below.
   const sent = submitting || state?.ok === true || person.alreadyClicked;
 
+  // "View profile" opens the profile over the grid, with this row's click at its
+  // foot (CHANGE BRIEF 2026-09-30 §2.4) - a modified click still gets the page.
+  const openProfile = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (opensInPlace(event)) setProfileOpen(true);
+  };
+
+  // The action in its three states, on the row and pinned under the profile alike.
+  const control = (inProfile: boolean) => (
+    <>
+      {mutualId ? (
+        // The same footprint in its mutual state - Sage, and the one spark (§5).
+        <MutualClickLink mutualId={mutualId} firstName={firstName} className="shrink-0" full={inProfile} />
+      ) : sent ? (
+        <span className={ckBtn("pending", "sm", { className: "shrink-0", full: inProfile })} aria-live="polite">
+          <span className="ck-btn__label">clicked</span>
+        </span>
+      ) : inProfile ? (
+        // Portalled out of this row's form, so it submits the form by hand - the
+        // same action, profile_id AND source_event - then closes over "clicked".
+        <Button
+          type="button"
+          variant="primary"
+          size="sm"
+          full
+          onClick={() => {
+            formRef.current?.requestSubmit();
+            setProfileOpen(false);
+          }}
+        >
+          click with {firstName}
+        </Button>
+      ) : (
+        <Button type="submit" variant="primary" size="sm">
+          click with {firstName}
+        </Button>
+      )}
+    </>
+  );
+
   // The canonical People Card in its narrow layout (bug board #293/#297): the same
   // photo, intent, commonality line and shared interests as the discovery card,
   // with the stateful click PAIRED with the "View profile" ghost in a bottom row.
@@ -307,23 +356,18 @@ function CoAttendeeRow({
         // Gated server-side: a dating intent only reaches a dating-visible viewer.
         intent={person.intentLabel}
         profileHref={`/profile/${person.id}`}
+        onOpenProfile={openProfile}
         actions={
-          <form action={formAction} className="flex flex-wrap items-center gap-2">
+          <form ref={formRef} action={formAction} className="flex flex-wrap items-center gap-2">
             <input type="hidden" name="profile_id" value={person.id} />
             <input type="hidden" name="source_event" value={eventSlug} />
-            {mutualId ? (
-              // The same footprint in its mutual state - Sage, and the one spark (§5).
-              <MutualClickLink mutualId={mutualId} firstName={firstName} className="shrink-0" />
-            ) : sent ? (
-              <span className={ckBtn("pending", "sm", { className: "shrink-0" })} aria-live="polite">
-                <span className="ck-btn__label">clicked</span>
-              </span>
-            ) : (
-              <Button type="submit" variant="primary" size="sm">
-                click with {firstName}
-              </Button>
-            )}
-            <Link href={`/profile/${person.id}`} className={ckBtn("ghost", "sm")}>
+            {control(false)}
+            <Link
+              href={`/profile/${person.id}`}
+              onClick={openProfile}
+              aria-haspopup="dialog"
+              className={ckBtn("ghost", "sm")}
+            >
               <span className="ck-btn__label">View profile</span>
             </Link>
           </form>
@@ -340,6 +384,15 @@ function CoAttendeeRow({
           ) : null
         }
       />
+      {/* Inside the <li> for the list's sake, but a sibling of the card and the
+          link that opened it - a React event still bubbles through the portal. */}
+      {profileOpen ? (
+        <ProfileModal
+          profileId={person.id}
+          onClose={() => setProfileOpen(false)}
+          footer={control(true)}
+        />
+      ) : null}
     </li>
   );
 }

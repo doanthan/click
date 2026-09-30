@@ -164,7 +164,8 @@ export function RevealStep({
       <p className="mt-4 text-base font-medium leading-6 text-[color:var(--ink-soft)]">
         Find a thing you&apos;d both enjoy, and just show up.
       </p>
-      <button type="button" onClick={onSuggest} className="ck-btn ck-btn--md ck-btn--primary mt-6">
+      {/* Full width on a phone, like every other step's primary in the sheet. */}
+      <button type="button" onClick={onSuggest} className="ck-btn ck-btn--md ck-btn--primary mt-6 max-sm:w-full">
         Suggest a plan
       </button>
       <div className="mt-4 flex flex-wrap items-center gap-4">

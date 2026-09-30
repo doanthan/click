@@ -3,6 +3,7 @@ import {
   SkeletonPageHeader,
   SkeletonTable,
 } from "@/components/skeleton";
+import { RouteSkeleton } from "@/components/route-transition";
 
 /**
  * Content-column skeleton for /admin/events. Rendered inside the admin layout's
@@ -11,10 +12,12 @@ import {
  */
 export default function AdminEventsLoading() {
   return (
-    <div className="space-y-8 py-10">
-      <SkeletonPageHeader />
-      <SkeletonFilterBar />
-      <SkeletonTable rows={8} />
-    </div>
+    <RouteSkeleton>
+      <div className="space-y-8 py-10">
+        <SkeletonPageHeader />
+        <SkeletonFilterBar />
+        <SkeletonTable rows={8} />
+      </div>
+    </RouteSkeleton>
   );
 }

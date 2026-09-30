@@ -253,7 +253,8 @@ export function TestAccountSwitcher({
   }
 
   return (
-    <div ref={ref} className="fixed right-3 top-3 z-[70]">
+    // ck-qa-switcher holds the pill still through a page transition (globals.css).
+    <div ref={ref} className="ck-qa-switcher fixed right-3 top-3 z-[70]">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}

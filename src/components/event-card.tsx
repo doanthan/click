@@ -84,8 +84,13 @@ export function EventCard({
   const goingCount = event.attendees;
   const goingFaces = (event.attendeeAvatars ?? []).map((src) => ({ src }));
 
+  // Press = the DS press: the card settles flush and gives a hair (.985), fast
+  // in, eased back out. Keyed to the cover/title links only. The Save star and
+  // the CTA are buttons with presses of their own, and a tap on either must not
+  // read as "open this event". On a phone (no hover lift) this is the one
+  // acknowledgement a tap gets before the route transition takes over.
   return (
-    <article className="group flex min-w-0 flex-col self-start overflow-hidden rounded-[var(--radius-xl)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] shadow-[var(--shadow-sm)] transition duration-200 hover:-translate-y-[3px] hover:shadow-[var(--shadow-lg)]">
+    <article className="group flex min-w-0 flex-col self-start overflow-hidden rounded-[var(--radius-xl)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] shadow-[var(--shadow-sm)] transition duration-200 hover:-translate-y-[3px] hover:shadow-[var(--shadow-lg)] has-[a:active]:translate-y-0 has-[a:active]:scale-[0.985] has-[a:active]:shadow-[var(--shadow-sm)] has-[a:active]:duration-100">
       {/* Cover - 16:9 everywhere, so cards in a row are equal height */}
       <div className="relative aspect-[16/9] w-full shrink-0 overflow-hidden bg-[color:var(--champagne-deep)]">
         <Link href={`/events/${event.id}`} aria-label={event.title} className="relative block h-full w-full">

@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import test from "node:test";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import ts from "typescript";
 
 const root = process.cwd();
 const read = (file) => readFileSync(path.join(root, file), "utf8");
@@ -72,4 +76,40 @@ test("the busiest routes that fell back to the root loading card have their own"
   // Beside quiz/page.tsx it would also wrap /quiz/personality and /quiz/life,
   // flashing the list shape before both takeovers.
   assert.equal(existsSync(path.join(root, "src/app/quiz/loading.tsx")), false);
+});
+
+test("these loading screens are their page's own frame, so nothing moves when it lands", () => {
+  // They used bars sized to the copy, and on a phone the copy wraps differently
+  // at every width: content landed 50-260px below where the loading screen had
+  // drawn it. With the frame shared, the copy is the same text in both states.
+  for (const [dir, frame] of [
+    ["login", "LoginFrame"],
+    ["register", "RegisterFrame"],
+    ["how-it-works", "HowItWorksIntro"],
+  ]) {
+    for (const file of ["page.tsx", "loading.tsx"]) {
+      assert.match(read(`src/app/${dir}/${file}`), new RegExp(`<${frame}\\b`), `src/app/${dir}/${file}`);
+    }
+  }
+});
+
+test("a rounded-* passed to Skeleton replaces its default corner", () => {
+  // Tailwind emits .rounded-full and .rounded-lg ahead of .rounded-md, so with
+  // the default also on the element it won, and every placeholder disc drew as
+  // a rounded square.
+  const source = ts.transpileModule(read("src/components/skeleton.tsx"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
+  }).outputText;
+  const loaded = { exports: {} };
+  new Function("require", "module", "exports", source)(createRequire(import.meta.url), loaded, loaded.exports);
+  const classes = (className) =>
+    renderToStaticMarkup(createElement(loaded.exports.Skeleton, { className })).match(/class="([^"]*)"/)[1].split(" ");
+
+  assert.ok(classes("size-12").includes("rounded-md"), "no corner passed: the default");
+  for (const corner of ["rounded-full", "rounded-lg", "rounded-t-md", "rounded-none", "rounded-[12px]"]) {
+    const list = classes(`size-12 ${corner}`);
+    assert.ok(list.includes(corner) && !list.includes("rounded-md"), `${corner} should replace the default`);
+  }
+  // A breakpoint variant only takes over from its breakpoint up.
+  assert.ok(classes("h-8 sm:rounded-lg").includes("rounded-md"));
 });

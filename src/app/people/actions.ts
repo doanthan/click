@@ -28,7 +28,9 @@ export async function clickPersonAction(
   }
 
   try {
-    await createUserClickForSession({ clickedProfileId: id }, session);
+    // The daily picks card, on the Click page and the dashboard alike - the explore
+    // source, which only reaches someone in the sender's picks for today.
+    await createUserClickForSession({ clickedProfileId: id, source: "explore" }, session);
   } catch (error) {
     const message =
       error instanceof Error && error.message

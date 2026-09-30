@@ -1,35 +1,34 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useEffect, useRef } from "react";
+import { useActionState, useEffect, useRef, useState, type MouseEvent } from "react";
 import { clickPersonAction } from "@/app/people/actions";
-import type { SuggestedPerson } from "@/lib/event-repository";
-import { soloIntentLabel } from "@/lib/intent-label";
+import type { DailyPick } from "@/lib/event-repository";
 import { Button, Spark, ckBtn } from "./ds";
 import { MutualClickLink, announceClickSent, useRevealedMutual } from "./mutual-reveal";
 import { PeopleCard } from "./people-card";
+import { ProfileModal, opensInPlace } from "./profile-modal";
 
 /**
- * The discovery People Card - the daily set on /people and the dashboard's
- * rotated person. The anatomy is the shared shell in people-card.tsx; this
- * file owns the part that differs per surface: the discovery click, with the
- * stateful button PAIRED with a quiet "View profile" ghost.
+ * The daily picks People Card - the three on the Click page and the dashboard's
+ * one-at-a-time person, which are the same three people (CHANGE BRIEF 2026-09-30).
+ * The anatomy is the shared shell in people-card.tsx; this file owns the part that
+ * differs per surface: the explore click, with the stateful button PAIRED with a
+ * quiet "View profile" ghost that opens the profile over the card, carrying the
+ * same click.
  */
 export function ClickWithSomeoneUserCard({
   person,
   layout = "row",
-  viewerOpenToDating = false,
 }: {
-  person: SuggestedPerson;
+  person: DailyPick;
   // "row"  - wide list rows: actions in a RIGHT column (discovery / people page)
   // "grid" - narrow cards: actions PAIRED in a bottom row (who-was-there 2-up)
   layout?: "row" | "grid";
-  // "Open to dating" may be shown ONLY when the viewer is also open to dating.
-  // A friends-only viewer never sees a dating label anywhere - so this defaults
-  // to false and the label simply doesn't render.
-  viewerOpenToDating?: boolean;
 }) {
   const [state, formAction, submitting] = useActionState(clickPersonAction, null);
+  const formRef = useRef<HTMLFormElement>(null);
+  const [profileOpen, setProfileOpen] = useState(false);
 
   // The reply cannot say whether this completed a mutual (§6.1); the reveal host
   // finds out with its own read for this person, and plays the reveal if it did. A
@@ -49,62 +48,112 @@ export function ClickWithSomeoneUserCard({
   // brand-confetti.ts). `flipped` is this session's own send, in flight or landed;
   // a refused one drops back to the button, with the reason under the tags.
   const flipped = submitting || state?.ok === true;
-  // "sent" also persists across reloads via person.alreadyClicked (a pending click
-  // already recorded server-side).
+  // "sent" also persists across reloads and across surfaces via
+  // person.alreadyClicked - the viewer's live click at this pick, from either
+  // source, so a tap on the dashboard shows as "clicked" on the Click page too.
   const sent = flipped || person.alreadyClicked;
-  const mutualId = useRevealedMutual(person.id);
+  // A mutual this page just revealed, else the one the pick already had when the
+  // page loaded - picks stay in the day's set once clicked, so a pick that went
+  // mutual this morning still shows its Sage state this afternoon.
+  const mutualId = useRevealedMutual(person.id) ?? person.mutualId;
   const firstName = person.displayName.split(/\s+/)[0] ?? person.displayName;
 
-  // The action pair. ONE footprint across states: only the fill and the label
-  // change - "click with [name]" → the muted, unresolved "clicked" (no spark) → the
-  // Sage "clicked" + spark, once the reveal host has played this person's mutual.
+  const openProfile = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (opensInPlace(event)) setProfileOpen(true);
+  };
+
+  // The action, in its three states. ONE footprint across them: only the fill and
+  // the label change - "click with [name]" → the muted, unresolved "clicked" (no
+  // spark) → the Sage "clicked" + spark, once there is a mutual to open. The same
+  // control sits on the card and at the foot of the profile modal.
+  const control = (inProfile: boolean) => (
+    <>
+      {mutualId ? (
+        <MutualClickLink mutualId={mutualId} firstName={firstName} full />
+      ) : sent ? (
+        /* .rise-soft only when it just happened - on a reload the pill is
+           simply the resting state and has nothing to announce. The class holds
+           from the tap through the reply, so the landing never replays it. */
+        <span
+          className={ckBtn("pending", "sm", { full: true, className: flipped ? "rise-soft" : "" })}
+          aria-live="polite"
+        >
+          <span className="ck-btn__label">clicked</span>
+        </span>
+      ) : inProfile ? (
+        /* The modal is portalled out of this card's form, so its button submits
+           the form by hand - the same action with the same profile_id - and
+           closes, leaving the card behind showing "clicked". */
+        <Button
+          type="button"
+          variant="primary"
+          size="sm"
+          full
+          onClick={() => {
+            formRef.current?.requestSubmit();
+            setProfileOpen(false);
+          }}
+        >
+          click with {firstName}
+        </Button>
+      ) : (
+        <Button type="submit" variant="primary" size="sm" full>
+          click with {firstName}
+        </Button>
+      )}
+    </>
+  );
+
   const actions = (
-    <form action={formAction} className={layout === "row" ? "contents sm:block" : "contents"}>
+    <form ref={formRef} action={formAction} className={layout === "row" ? "contents sm:block" : "contents"}>
       <input type="hidden" name="profile_id" value={person.id} />
       <div
         className={layout === "row" ? "flex flex-col gap-2 sm:gap-2.5" : "flex flex-wrap items-center gap-2"}
       >
-        {mutualId ? (
-          <MutualClickLink mutualId={mutualId} firstName={firstName} full />
-        ) : sent ? (
-          /* .rise-soft only when it just happened - on a reload the pill is
-             simply the resting state and has nothing to announce. The class holds
-             from the tap through the reply, so the landing never replays it. */
-          <span
-            className={ckBtn("pending", "sm", { full: true, className: flipped ? "rise-soft" : "" })}
-            aria-live="polite"
-          >
-            <span className="ck-btn__label">clicked</span>
-          </span>
-        ) : (
-          <Button type="submit" variant="primary" size="sm" full>
-            click with {firstName}
-          </Button>
-        )}
-        <Link href={`/profile/${person.id}`} className={ckBtn("ghost", "sm", { full: layout === "row" })}>
+        {control(false)}
+        {/* Still a real link to the page: a new tab or no JavaScript gets it. */}
+        <Link
+          href={`/profile/${person.id}`}
+          onClick={openProfile}
+          aria-haspopup="dialog"
+          className={ckBtn("ghost", "sm", { full: layout === "row" })}
+        >
           <span className="ck-btn__label">View profile</span>
         </Link>
       </div>
     </form>
   );
 
-  /* The photo is also a pointer-only route to the profile (the shell makes it
-     aria-hidden + untabbable): the "View profile" ghost above is the labelled
-     way there. `click-settle` is the lavender wash a landed click drains out of. */
+  /* The photo opens the same modal, pointer-only (the shell makes it aria-hidden
+     and untabbable): the "View profile" ghost above is the labelled way there.
+     `click-settle` is the lavender wash a landed click drains out of. */
   return (
-    <PeopleCard
-      person={person}
-      layout={layout}
-      intent={soloIntentLabel(person.intents, viewerOpenToDating)}
-      profileHref={`/profile/${person.id}`}
-      actions={actions}
-      className={flipped ? "click-settle" : ""}
-      // "We'll only show you if it's mutual" has been answered once the reveal
-      // played, and a retry must not carry the previous refusal under its
-      // fresh "clicked". Under the tags in BOTH layouts - as a sibling of the
-      // columns it became a third flex item and clipped the tag row.
-      footer={mutualId || submitting ? null : <Status state={state} />}
-    />
+    <>
+      <PeopleCard
+        person={person}
+        layout={layout}
+        // Gated server-side: a dating intent only reaches a dating-visible viewer.
+        intent={person.intentLabel}
+        profileHref={`/profile/${person.id}`}
+        onOpenProfile={openProfile}
+        actions={actions}
+        className={flipped ? "click-settle" : ""}
+        // "We'll only show you if it's mutual" has been answered once the reveal
+        // played, and a retry must not carry the previous refusal under its
+        // fresh "clicked". Under the tags in BOTH layouts - as a sibling of the
+        // columns it became a third flex item and clipped the tag row.
+        footer={mutualId || submitting ? null : <Status state={state} />}
+      />
+      {/* A sibling of the card, never inside the link that opened it: the modal
+          is portalled, but a React event still bubbles through the tree. */}
+      {profileOpen ? (
+        <ProfileModal
+          profileId={person.id}
+          onClose={() => setProfileOpen(false)}
+          footer={control(true)}
+        />
+      ) : null}
+    </>
   );
 }
 

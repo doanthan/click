@@ -45,3 +45,38 @@ test("claiming a +1 seat sends the guest their own confirmation", () => {
   // DS: hyphens, never em- or en-dashes.
   assert.doesNotMatch(html, /—|–|&mdash;|&ndash;/);
 });
+
+test("every path that takes a claimed +1's seat away tells them", () => {
+  // Only the one-seat cancel used to. The whole-booking cancel, an admin's full
+  // refund and the event cancel flipped the +1's guest_spots row and said
+  // nothing, so a friend who had been told they were in turned up for nothing.
+  assert.match(body("async function claimedGuestsOn("), /where gs\.status = 'claimed'/);
+  const notice = body("async function notifyReleasedGuests(");
+  assert.match(notice, /"A spot changed"/);
+  assert.match(notice, /template: "guest-spot-cancelled"/);
+  assert.match(notice, /escapeVars: true/);
+
+  const one = body("export async function cancelGuestSeatForPurchaser(");
+  assert.match(one, /if \(claimed\) await notifyReleasedGuests\(pool, \[claimed\]\);/);
+
+  // Read before the seats flip: after it, nobody on the booking is 'claimed'.
+  for (const [fn, txn] of [
+    ["export async function cancelRegistration(", "row.txn_id"],
+    ["export async function settleRefundedBooking(", "input.paymentTransactionId"],
+  ]) {
+    const src = body(fn);
+    const readAt = src.indexOf("releasedGuests = await claimedGuestsOn(client");
+    const flipAt = src.indexOf(`await cancelGuestSeatsForTransaction(client, ${txn})`);
+    assert.ok(readAt > -1 && flipAt > readAt, `${fn} reads the claimed +1s before cancelling their seats`);
+    // The same §B5.6 teardown the one-seat cancel gives a released guest.
+    assert.match(src, /severConfirmedTogetherForCancel\(client, guest\.profileId, row\.event_id\)/);
+    assert.match(src, /await notifyReleasedGuests\(pool, releasedGuests\);/);
+  }
+
+  const eventCancel = body("async function cancelEvent(");
+  const readAt = eventCancel.indexOf("await claimedGuestsOn(client, { eventId: event.id })");
+  const flipAt = eventCancel.indexOf("update guest_spots set status = 'cancelled'");
+  assert.ok(readAt > -1 && flipAt > readAt, "cancelEvent reads the claimed +1s before cancelling their seats");
+  assert.match(eventCancel, /\.\.\.releasedGuests\.map\(\(guest\) => guest\.profileId\)/);
+  assert.match(eventCancel, /vars: cancelledEmailVars\(guest\.firstName \|\| "there", "You were not charged\."\)/);
+});

@@ -39,6 +39,7 @@ export function EventRegistrationButton({
   // so the buyer can re-book a different party size instead of waiting 31 minutes.
   isHold = false,
   heldSeatCount = null,
+  guestSeatCount = 0,
   successDetails,
 }: {
   eventId: string;
@@ -58,6 +59,10 @@ export function EventRegistrationButton({
   cancelRefundIsPositive?: boolean;
   isHold?: boolean;
   heldSeatCount?: number | null;
+  /** +1 seats on this booking. Cancelling the booking cancels them too
+   *  (cancelRegistration → cancelGuestSeatsForTransaction), and the confirm
+   *  panel never said so (bug board #301). */
+  guestSeatCount?: number;
   // When present, a confirmed (non-waitlist) RSVP pops the confetti overlay.
   successDetails?: EventSuccessDetails;
 }) {
@@ -365,6 +370,13 @@ export function EventRegistrationButton({
             "Your seat goes to the next person on the waitlist, and you cannot take it back."
           )}
         </p>
+        {confirmKind === "booking" && guestSeatCount > 0 ? (
+          <p className="text-xs font-medium text-[color:var(--slate)]">
+            {guestSeatCount === 1
+              ? "This also cancels your +1's seat. To hand back just that seat, use Cancel seat under Your +1s."
+              : `This also cancels your ${guestSeatCount} +1 seats. To hand back just one, use Cancel seat under Your +1s.`}
+          </p>
+        ) : null}
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"

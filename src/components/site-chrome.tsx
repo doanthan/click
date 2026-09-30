@@ -10,8 +10,10 @@ import { HeaderRoleSwitcher, type PortalRole } from "./header-role-switcher";
 import { LoginTrigger } from "./login-trigger";
 import { MobileBottomNav, type BottomNavTab } from "./mobile-bottom-nav";
 
+// site-header pins the bar in place while a page transitions (globals.css,
+// "Route transitions").
 const HEADER_SHELL =
-  "sticky top-0 z-50 border-b border-[color:var(--line-soft)] bg-[color:var(--champagne)]";
+  "site-header sticky top-0 z-50 border-b border-[color:var(--line-soft)] bg-[color:var(--champagne)]";
 // px-[max(20px,env(safe-area-inset-left))]: the root layout sets
 // viewport-fit=cover, so on a notched phone held sideways the page paints
 // under the sensor housing and a flat px-5 would tuck the wordmark beneath

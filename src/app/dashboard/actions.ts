@@ -34,6 +34,9 @@ export async function clickCoAttendeeAction(
   if (typeof id !== "string" || !UUID_RE.test(id)) {
     return { ok: false, message: "That person could not be found." };
   }
+  if (typeof sourceEvent !== "string" || !sourceEvent) {
+    return { ok: false, message: "That event could not be found." };
+  }
 
   // §6.9 swap: present only from the spent state, where the picker asks which of the
   // viewer's own pending clicks to release. Absent on every ordinary send, and the
@@ -47,7 +50,8 @@ export async function clickCoAttendeeAction(
     await createUserClickForSession(
       {
         clickedProfileId: id,
-        sourceEventId: typeof sourceEvent === "string" ? sourceEvent : undefined,
+        source: "post_event",
+        sourceEventId: sourceEvent,
         releaseReceiverId,
       },
       session,

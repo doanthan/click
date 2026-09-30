@@ -477,18 +477,31 @@ test("only the recipient can pass on a plan", () => {
   );
 });
 
-test("the two send processes never cross-match on the discovery surfaces", () => {
-  // Rule 3: a discovery click and a post-event click between the same pair do not
-  // form a mutual together. So a pending post-event click is not a discovery click
-  // "waiting on them" - counting it dropped the person out of the daily set and
-  // greyed out the profile button for the whole 48h window, which is exactly the
-  // send that could have paired with their discovery click.
+test("one person is one click, from either source, on every read of 'clicked'", () => {
+  // CHANGE BRIEF 2026-09-30 reversed rule 3: a click from the daily picks and one
+  // from who was there DO pair up now, so a live click from either source is the
+  // one click at that person. Every read of "have I clicked them" says so.
   const viewerState = repo.slice(
     repo.indexOf("export async function getViewerClickState("),
     repo.indexOf("export async function getSafetyState("),
   );
-  assert.match(viewerState, /and c\.event_id is null\s*\n\s*\) as clicked,/);
-  assert.match(suggestedPeople, /and uc\.event_id is null/);
+  const clickedExpr = viewerState.slice(0, viewerState.indexOf(") as clicked,"));
+  assert.match(clickedExpr, /c\.status = 'pending' and c\.expires_at > now\(\)/);
+  assert.doesNotMatch(clickedExpr, /event_id is null/, "the viewer's click state must not be surface-scoped");
+
+  // The picks pool drops anyone the viewer has a live click at - from either source.
+  assert.match(
+    suggestedPeople,
+    /and not exists \(\s*select 1 from clicks uc\s*where uc\.sender_id = \$1::uuid\s*and uc\.receiver_id = p\.id\s*and uc\.status = 'pending'\s*and uc\.expires_at > now\(\)\s*\)/,
+  );
+  assert.doesNotMatch(suggestedPeople, /uc\.event_id is null/);
+
+  // Who was there: a live click from anywhere, or any click at THIS event.
+  assert.equal(
+    (repo.match(/and \(c\.event_id = e\.id\s*or \(c\.status = 'pending' and c\.expires_at > now\(\)\)\)/g) ?? []).length,
+    2,
+    "both post-event rosters count a live explore click as 'already clicked'",
+  );
 });
 
 const postEventCard = read("src/components/post-event-click-card.tsx");

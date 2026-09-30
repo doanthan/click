@@ -2,9 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
+import { visibleIntentsFor, type ProfileDetailsData } from "@/components/profile-details";
 import {
   REPORT_REASONS,
   blockUser,
+  getOwnProfile,
+  getPublicProfileById,
   muteUser,
   reportUser,
   unblockUser,
@@ -38,6 +41,37 @@ function requireTarget(formData: FormData) {
     throw new Error("We could not tell which profile that was. Reload the page and try again.");
   }
   return id;
+}
+
+/**
+ * The profile modal's read (CHANGE BRIEF 2026-09-30 §2.4) - the same profile this
+ * route's page renders, shaped the way the page shows it: the dating intent is
+ * already gated on the viewer, and the owner's dating toggle is left behind on the
+ * server, because this one crosses to the browser as data rather than as markup.
+ * null for anything that doesn't resolve; the modal then offers the full page.
+ */
+export async function loadProfilePreviewAction(profileId: string): Promise<ProfileDetailsData | null> {
+  const session = await auth();
+  if (!session?.user || typeof profileId !== "string" || !UUID_RE.test(profileId)) return null;
+  const [profile, own] = await Promise.all([getPublicProfileById(profileId), getOwnProfile(session)]);
+  if (!profile) return null;
+  // Field by field, not a spread: whatever PublicProfile grows next stays on the
+  // server until someone decides it belongs in the browser.
+  return {
+    id: profile.id,
+    displayName: profile.displayName,
+    city: profile.city,
+    suburb: profile.suburb,
+    bio: profile.bio,
+    photoUrl: profile.photoUrl,
+    age: profile.age,
+    intents: visibleIntentsFor(profile, own?.datingVisible === true),
+    interests: profile.interests,
+    attendedCount: profile.attendedCount,
+    galleryPhotos: profile.galleryPhotos,
+    prompts: profile.prompts,
+    verified: profile.verified,
+  };
 }
 
 export async function blockUserAction(formData: FormData) {

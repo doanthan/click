@@ -15,6 +15,7 @@ import { SiteNotices } from "@/components/site-notices";
 import { QaSessionBanner } from "@/components/qa-session-banner";
 import { QaFreshStateClearer } from "@/components/qa-fresh-state-clearer";
 import { QaTestingDrawer } from "@/components/qa-testing-drawer";
+import { RouteTransitionGuard } from "@/components/route-transition-guard";
 import { auth, isAdminEmail } from "@/auth";
 import { getSystemSettings } from "@/lib/event-repository";
 import { AccountScopeProvider } from "@/lib/account-scope";
@@ -133,6 +134,9 @@ export default async function RootLayout({
             never hands the next person the last one's half-filled form. */}
         <AccountScopeProvider key={session?.sessionVersion ?? session?.user?.email ?? "anon"} scope={session?.user?.email}>
         <QaFreshStateClearer />
+        {/* Stills the route transition after a native swipe back/forward, which
+            the browser has already animated (see app/template.tsx). */}
+        <RouteTransitionGuard />
         {/* First tab stop everywhere: jump past the sticky header straight to
             the page content. */}
         <a href="#main-content" className="skip-link">

@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { categories, type EventItem } from "@/lib/click-data";
-import { haversineKm, roundKm, type LatLng } from "@/lib/geo";
 import { Button, CategoryCircle, Icon, categoryGlyphKey } from "./ds";
 import { EmptyState } from "./empty-state";
 import { EventCard } from "./event-card";
-import { MapboxAutocomplete } from "./mapbox-autocomplete";
+import { openLoginModal } from "./login-modal-host";
 import { ModalShell } from "./modal-shell";
 import { Reveal } from "./reveal";
 
@@ -22,7 +22,6 @@ const DISTANCE_OPTIONS = [2, 5, 10, 25, MAX_DISTANCE_KM] as const;
 type DateWindow = "today" | "tomorrow" | "weekend" | "7" | "30" | "all";
 type SortMode = "soonest" | "nearest" | "popular" | "price";
 type TimeOfDay = "all" | "day" | "night";
-type LocationStatus = "idle" | "requesting" | "shared" | "denied" | "unsupported";
 
 const DATE_OPTIONS: Array<[DateWindow, string]> = [
   ["all", "Any"],
@@ -163,10 +162,16 @@ export function EventExplorer({
   bookmarkedEventIds = [],
   registeredEventIds = [],
   waitlistedEventIds = [],
+  distanceFrom = null,
+  signedIn = false,
 }: {
   events: EventItem[];
   /** We could not read the catalogue - distinct from "the catalogue is empty". */
   degraded?: boolean;
+  /** The member's suburb or postcode when the server measured every distance
+   *  from it (measureExploreFrom); null means they are from Sydney CBD. */
+  distanceFrom?: string | null;
+  signedIn?: boolean;
   bookmarkedEventIds?: string[];
   registeredEventIds?: string[];
   waitlistedEventIds?: string[];
@@ -194,7 +199,7 @@ export function EventExplorer({
     : "all";
   // Every filter round-trips through the URL, not just these four. Browsing is
   // the most repeated thing anyone does here, and Back used to drop free /
-  // time-of-day / distance / suburb / sort on the floor: you tapped one event,
+  // time-of-day / distance / sort on the floor: you tapped one event,
   // came back, and re-narrowed the list by hand every time.
   const requestedTime = urlParams?.get("time") ?? "all";
   const initialTime = TIME_OPTIONS.some(([value]) => value === requestedTime)
@@ -205,28 +210,20 @@ export function EventExplorer({
     ? (requestedSort as SortMode)
     : "soonest";
   const initialFree = urlParams?.get("free") === "1";
-  const initialSuburb = urlParams?.get("suburb") ?? "All Sydney";
   const requestedDistance = Number(urlParams?.get("km"));
   const initialDistance =
     Number.isFinite(requestedDistance) && requestedDistance > 0 && requestedDistance <= MAX_DISTANCE_KM
       ? requestedDistance
       : MAX_DISTANCE_KM;
 
-  const [locationStatus, setLocationStatus] = useState<LocationStatus>("idle");
-  // The user's real coordinates once they share location. When set, every
-  // event's distance is recomputed from here instead of from Sydney CBD.
-  const [userCoords, setUserCoords] = useState<LatLng | null>(null);
-  const [locationQuery, setLocationQuery] = useState("Sydney CBD");
   const [searchQuery, setSearchQuery] = useState(initialSearch);
-  const [selectedSuburb, setSelectedSuburb] = useState(initialSuburb);
   const [dateWindow, setDateWindow] = useState<DateWindow>(initialDate);
   const [timeOfDay, setTimeOfDay] = useState<TimeOfDay>(initialTime);
   const [freeOnly, setFreeOnly] = useState(initialFree);
   const [distanceKm, setDistanceKm] = useState<number>(initialDistance);
-  // Default to "soonest", not "nearest": until someone shares a location we
-  // measure from Sydney CBD, so "Nearest" would silently rank an event on a
-  // guess about where they are. Sharing a location switches it (see below) -
-  // that's the point of tapping it.
+  // Default to "soonest", not "nearest": a visitor's distances are from Sydney
+  // CBD and a member's from the middle of their postcode, so "Nearest" would
+  // rank on a guess about where they are.
   const [sortMode, setSortMode] = useState<SortMode>(initialSort);
   const [tagFilter, setTagFilter] = useState(initialTag);
   const [categoryFilter, setCategoryFilter] = useState(initialCategory);
@@ -238,43 +235,23 @@ export function EventExplorer({
 
   const todayIndex = useMemo(() => sydneyDayIndex(new Date()), []);
 
-  const suburbs = useMemo(
-    () => ["All Sydney", ...Array.from(new Set(events.map((event) => event.suburb))).sort()],
-    [events],
-  );
-
-  // Recompute each event's distance from the user's shared location. Without a
-  // location we keep the server's distance-from-CBD value.
-  const locatedEvents = useMemo(() => {
-    if (!userCoords) return events;
-    return events.map((event) => ({
-      ...event,
-      // An event with no pinned coordinates has no distance from anywhere -
-      // recomputing it from the CBD fallback would just move the wrong number.
-      // Coordinates are also withheld on this surface for anyone who has not
-      // booked (B5 item 5 - suburb only), so when they are null we keep the
-      // server's distance rather than measuring to (0, 0). It is measured from
-      // the CBD instead of from here, which is coarser than the user asked for
-      // but never wrong by more than the CBD offset.
-      distanceKm:
-        event.distanceKm == null || event.lat == null || event.lng == null
-          ? event.distanceKm
-          : roundKm(haversineKm(userCoords, { lat: event.lat, lng: event.lng })),
-    }));
-  }, [events, userCoords]);
-
+  // No location controls here, and no suburb list (bug board #305/#306). Every
+  // distance is measured on the server - from the member's postcode, or Sydney
+  // CBD - because the venue coordinates never reach this component (B5 item 5).
+  // "Use my location" and the Where box could only relabel those numbers "from
+  // you", and a list of every suburb with an event grew with the catalogue.
+  // Search still matches suburbs.
   const filteredEvents = useMemo(() => {
     const normalizedTag = slugifyTag(tagFilter);
     const normalizedSearch = searchQuery.trim().toLowerCase();
 
-    return locatedEvents
+    return events
       .filter((event) => {
         const matchesDate = matchesDateWindow(event.startsAt, dateWindow, todayIndex);
         const matchesTime =
           timeOfDay === "all" ||
           (timeOfDay === "night" ? isNightEvent(event.startsAt) : !isNightEvent(event.startsAt));
         const matchesFree = !freeOnly || isFreeEvent(event);
-        const matchesSuburb = selectedSuburb === "All Sydney" || event.suburb === selectedSuburb;
         // An unpinned event cannot satisfy "within 2 km". It used to pass every
         // distance filter by reading as 0 km.
         const matchesDistance =
@@ -301,7 +278,6 @@ export function EventExplorer({
           matchesDate &&
           matchesTime &&
           matchesFree &&
-          matchesSuburb &&
           matchesDistance &&
           matchesTag &&
           matchesCategory &&
@@ -338,9 +314,8 @@ export function EventExplorer({
     timeOfDay,
     freeOnly,
     distanceKm,
-    locatedEvents,
+    events,
     searchQuery,
-    selectedSuburb,
     sortMode,
     tagFilter,
     todayIndex,
@@ -377,7 +352,6 @@ export function EventExplorer({
       if (dateWindow !== "all") next.set("date", dateWindow);
       if (timeOfDay !== "all") next.set("time", timeOfDay);
       if (freeOnly) next.set("free", "1");
-      if (selectedSuburb !== "All Sydney") next.set("suburb", selectedSuburb);
       if (distanceKm !== MAX_DISTANCE_KM) next.set("km", String(distanceKm));
       if (sortMode !== "soonest") next.set("sort", sortMode);
       const queryString = next.toString();
@@ -392,7 +366,6 @@ export function EventExplorer({
     dateWindow,
     timeOfDay,
     freeOnly,
-    selectedSuburb,
     distanceKm,
     sortMode,
     router,
@@ -425,7 +398,6 @@ export function EventExplorer({
       SORT_OPTIONS.some(([value]) => value === incomingSort) ? (incomingSort as SortMode) : "soonest",
     );
     setFreeOnly(urlParams?.get("free") === "1");
-    setSelectedSuburb(urlParams?.get("suburb") ?? "All Sydney");
     const incomingKm = Number(urlParams?.get("km"));
     setDistanceKm(
       Number.isFinite(incomingKm) && incomingKm > 0 && incomingKm <= MAX_DISTANCE_KM
@@ -435,29 +407,7 @@ export function EventExplorer({
     lastWritten.current = current;
   }, [urlParams, incomingTag, incomingCategory, incomingSearch, incomingDate]);
 
-  function requestLocation() {
-    if (!("geolocation" in navigator)) {
-      setLocationStatus("unsupported");
-      return;
-    }
-
-    setLocationStatus("requesting");
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setUserCoords({ lat: position.coords.latitude, lng: position.coords.longitude });
-        setLocationStatus("shared");
-        setLocationQuery("Your current location");
-        setSelectedSuburb("All Sydney");
-        // Now that distance means something real, rank by it.
-        setSortMode("nearest");
-      },
-      () => setLocationStatus("denied"),
-      { enableHighAccuracy: true, timeout: 8000, maximumAge: 60_000 },
-    );
-  }
-
   function resetFilters() {
-    setSelectedSuburb("All Sydney");
     setDateWindow("all");
     setTimeOfDay("all");
     setFreeOnly(false);
@@ -472,22 +422,18 @@ export function EventExplorer({
   }
 
   const totalCount = filteredEvents.length;
-  const locationLabel = userCoords ? "from you" : "from Sydney CBD";
+  const distanceLabel = distanceFrom ?? "Sydney CBD";
 
   const filterCount =
     (freeOnly ? 1 : 0) +
     (timeOfDay !== "all" ? 1 : 0) +
     (dateWindow !== "all" ? 1 : 0) +
     (distanceKm < MAX_DISTANCE_KM ? 1 : 0) +
-    (selectedSuburb !== "All Sydney" ? 1 : 0) +
     (tagFilter.trim() ? 1 : 0);
   const anyFilter = filterCount > 0 || !!searchQuery.trim() || !!categoryFilter;
 
   // Applied-filter chips - the removable summary of what's narrowing the results.
   const chips: Array<{ key: string; label: string; clear: () => void }> = [];
-  if (selectedSuburb !== "All Sydney") {
-    chips.push({ key: "suburb", label: selectedSuburb, clear: () => setSelectedSuburb("All Sydney") });
-  }
   if (dateWindow !== "all") {
     chips.push({
       key: "date",
@@ -554,7 +500,7 @@ export function EventExplorer({
         </div>
       </FilterGroup>
 
-      <FilterGroup label={`Distance ${locationLabel}`}>
+      <FilterGroup label={`Distance from ${distanceLabel}`}>
         <div className="flex flex-wrap gap-2">
           {DISTANCE_OPTIONS.map((option) => (
             <FilterPill key={option} active={distanceKm === option} onClick={() => setDistanceKm(option)}>
@@ -562,56 +508,39 @@ export function EventExplorer({
             </FilterPill>
           ))}
         </div>
-      </FilterGroup>
-
-      <FilterGroup label="Where">
-        <MapboxAutocomplete
-          value={locationQuery}
-          onValueChange={setLocationQuery}
-          onSelect={(place) => {
-            // Picking a place mirrors GPS sharing - we centre the radius on the
-            // selected address so every distance is relative to it.
-            setUserCoords({ lat: place.lat, lng: place.lng });
-            setLocationStatus("shared");
-            setLocationQuery(place.suburb || place.name || place.address);
-            setSelectedSuburb("All Sydney");
-            setSortMode("nearest");
-          }}
-          placeholder="Bondi, Parramatta, Sydney CBD"
-        />
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={requestLocation}
-            className="font-display inline-flex items-center gap-1.5 text-[13px] font-semibold text-[color:var(--purple)] hover:underline"
-          >
-            <Icon name="pin" size={14} stroke={2} />
-            {locationStatus === "requesting" ? "Locating…" : userCoords ? "Update location" : "Use my location"}
-          </button>
-        </div>
-        {/* Both of these states were computed and never rendered, so tapping
-            "Use my location" and declining the browser prompt left a button
-            that simply did nothing, with no way to tell a refusal from a
-            failure. The typed suburb above is the real fallback - say so. */}
-        {locationStatus === "denied" || locationStatus === "unsupported" ? (
-          <p role="status" className="mt-2 text-[12.5px] leading-[1.5] text-[color:var(--slate)]">
-            {locationStatus === "denied"
-              ? "We don't have location permission, so distances are measured from Sydney CBD. Type a suburb above to measure from there instead."
-              : "This browser can't share a location, so distances are measured from Sydney CBD. Type a suburb above to measure from there instead."}
-          </p>
-        ) : null}
-        <select
-          aria-label="Filter by suburb"
-          value={selectedSuburb}
-          onChange={(e) => setSelectedSuburb(e.target.value)}
-          className="mt-3 h-11 w-full rounded-xl border border-[color:var(--line)] bg-[color:var(--paper)] px-3 text-sm text-[color:var(--ink)]"
-        >
-          {suburbs.map((suburb) => (
-            <option key={suburb} value={suburb}>
-              {suburb}
-            </option>
-          ))}
-        </select>
+        <p className="mt-2 text-[12.5px] leading-[1.5] text-[color:var(--slate)]">
+          {distanceFrom ? (
+            <>
+              Measured from the middle of your postcode.{" "}
+              <Link href="/profile/edit" className="font-semibold text-[color:var(--purple)] hover:underline">
+                Change it
+              </Link>
+            </>
+          ) : signedIn ? (
+            <>
+              <Link href="/profile/edit" className="font-semibold text-[color:var(--purple)] hover:underline">
+                Add your postcode
+              </Link>{" "}
+              to measure from home instead.
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  // The filter body also renders inside the phone sheet; close
+                  // it so the sign-in modal is not stacked on top of it.
+                  setSheetOpen(false);
+                  openLoginModal({ callbackUrl: pathname || "/discover" });
+                }}
+                className="font-semibold text-[color:var(--purple)] hover:underline"
+              >
+                Sign in
+              </button>{" "}
+              to measure from your own postcode.
+            </>
+          )}
+        </p>
       </FilterGroup>
     </div>
   );
@@ -641,7 +570,7 @@ export function EventExplorer({
               bookmarked={bookmarkedSet.has(event.id)}
               registered={registeredSet.has(event.id)}
               bookingStatus={bookingStatusFor(event.id)}
-              distanceOrigin={userCoords ? undefined : "CBD"}
+              distanceOrigin={distanceFrom ? undefined : "CBD"}
               // The first row is above the fold at every breakpoint and holds the
               // LCP image. EventCard already took the prop; nothing ever passed it,
               // so the largest thing on the page was lazy-loaded.

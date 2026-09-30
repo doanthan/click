@@ -9,7 +9,6 @@ import {
   AuthConsent,
   AuthNote,
   MagicLinkSentNote,
-  AuthShell,
   SsoButton,
 } from "@/components/auth-ui";
 import { SubmitButton } from "@/components/ds-client";
@@ -19,6 +18,7 @@ import {
   signInWithGoogle,
   signInWithMeta,
 } from "./actions";
+import { LoginFrame } from "./login-frame";
 
 export const metadata = {
   title: "Log in",
@@ -77,37 +77,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const showDemoCredentials = isLocalDevelopment();
 
   return (
-    <AuthShell
-      title="Welcome back"
-      sub="Sign in to pick up where you left off."
-      footer={
-        <>
-          <p className="text-center text-sm text-[color:var(--slate)]">
-            New to Click?{" "}
-            <Link href="/register" className="font-semibold text-[color:var(--purple)] hover:underline">
-              Create your account
-            </Link>
-          </p>
-          {/* The host path used to exist only inside the login MODAL, so anyone
-              who landed on this full page had no way to find it. */}
-          <p className="mt-2 text-center text-sm text-[color:var(--slate)]">
-            Want to run events?{" "}
-            <Link
-              href="/merchant/signup"
-              className="font-semibold text-[color:var(--purple)] hover:underline"
-            >
-              Host on Click
-            </Link>
-          </p>
-          <p className="mt-2 text-center text-sm text-[color:var(--slate)]">
-            Want a look around first?{" "}
-            <Link href="/discover" className="font-semibold text-[color:var(--purple)] hover:underline">
-              See what&apos;s on
-            </Link>
-          </p>
-        </>
-      }
-    >
+    <LoginFrame>
       <AuthedRedirect />
 
       {params?.emailSent === "1" ? (
@@ -196,6 +166,6 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           </AuthNote>
         </div>
       ) : null}
-    </AuthShell>
+    </LoginFrame>
   );
 }

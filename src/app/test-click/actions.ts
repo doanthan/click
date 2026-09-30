@@ -27,6 +27,7 @@ import {
   otherPeopleFor,
   pickOutsider,
   resetPair,
+  seedDailyPick,
   windBackClock,
   type ClockTarget,
 } from "@/lib/click-test-harness";
@@ -202,7 +203,13 @@ async function runStep(step: string, form: FormData): Promise<string> {
 
     // --- the send layer ------------------------------------------------------
     case "send_discovery": {
-      await createUserClickForSession({ clickedProfileId: targetId }, await harnessSession(actorEmail));
+      // An explore send only reaches the sender's picks for today, so put the target
+      // there first. The gate itself still runs, untouched, on the send.
+      await seedDailyPick(actorEmail, targetId);
+      await createUserClickForSession(
+        { clickedProfileId: targetId, source: "explore" },
+        await harnessSession(actorEmail),
+      );
       // NOTE the deliberate silence. §6.1 makes this response byte-identical
       // whether or not it completed a mutual click, so the harness cannot report
       // one here either - watch the log's row diff for that, exactly like the real
@@ -211,7 +218,7 @@ async function runStep(step: string, form: FormData): Promise<string> {
     }
     case "send_post_event": {
       await createUserClickForSession(
-        { clickedProfileId: targetId, sourceEventId: eventSlug },
+        { clickedProfileId: targetId, source: "post_event", sourceEventId: eventSlug },
         await harnessSession(actorEmail),
       );
       // Deliberately does not claim a row was written. A pair who are ALREADY
@@ -220,7 +227,10 @@ async function runStep(step: string, form: FormData): Promise<string> {
       return "Post-event send accepted. The log says whether a row landed - an already-mutual pair is a deliberate no-op.";
     }
     case "send_self": {
-      await createUserClickForSession({ clickedProfileId: targetId }, await harnessSession(actorEmail));
+      await createUserClickForSession(
+        { clickedProfileId: targetId, source: "explore" },
+        await harnessSession(actorEmail),
+      );
       return "A self-click was accepted, which it never should be.";
     }
     case "spend_post_event_budget": {
@@ -235,7 +245,7 @@ async function runStep(step: string, form: FormData): Promise<string> {
       }
       for (const person of others) {
         await createUserClickForSession(
-          { clickedProfileId: person.id, sourceEventId: eventSlug },
+          { clickedProfileId: person.id, source: "post_event", sourceEventId: eventSlug },
           session,
         );
       }

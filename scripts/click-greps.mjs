@@ -50,12 +50,14 @@ function walk(dir, out = []) {
 
 const ALL = walk(path.join(root, "src")).map((p) => p.split(path.sep).join("/"));
 
-// The two surfaces that may send a click (Part A invariant 1) plus the pages that
-// mount them. This IS the runbook's src/components/discovery/, spelled the way this
-// repo actually lays it out.
+// The daily picks click surface (Part A invariant 1, CHANGE BRIEF 2026-09-30) plus
+// the pages that mount it and the profile modal it opens. This IS the runbook's
+// src/components/discovery/, spelled the way this repo actually lays it out.
 const DISCOVERY = [
   "src/components/click-with-someone-user-card.tsx",
+  "src/components/profile-modal.tsx",
   "src/components/click-radar.tsx",
+  "src/lib/clicks/daily-picks.ts",
   "src/app/people/page.tsx",
   "src/app/people/actions.ts",
 ];
@@ -99,7 +101,7 @@ const stripComments = (src) =>
 const CHECKS = [
   {
     id: 1,
-    what: "the click button lives only on the two click surfaces - never a profile or an attendee list",
+    what: "the click button lives only on the click surfaces - never the profile page or an attendee list",
     scope: ALL,
     strip: false,
     re: /ClickBtn|click with/gi,

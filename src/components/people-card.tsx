@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import { Avatar, CommonalityLine, Icon, TagRow, commonality } from "./ds";
 
 /**
@@ -57,6 +57,7 @@ export function PeopleCard({
   detail,
   interestsOnly = false,
   profileHref,
+  onOpenProfile,
   linkName = false,
   actions,
   href,
@@ -80,6 +81,9 @@ export function PeopleCard({
   // (aria-hidden, untabbable), so a surface that sets it must ALSO give a
   // labelled route: the "View profile" ghost in `actions`, or `linkName`.
   profileHref?: string;
+  // A click surface's own way to open that profile - the modal over the card - so
+  // the photo does what its "View profile" ghost does. Client surfaces only.
+  onOpenProfile?: (event: MouseEvent<HTMLAnchorElement>) => void;
   // Render the name as that labelled link (your clicks, which has no ghost).
   linkName?: boolean;
   actions?: ReactNode;
@@ -123,7 +127,13 @@ export function PeopleCard({
   );
   const avatar =
     profileHref && !href ? (
-      <Link href={profileHref} aria-hidden tabIndex={-1} className="shrink-0 rounded-full focus:outline-none">
+      <Link
+        href={profileHref}
+        onClick={onOpenProfile}
+        aria-hidden
+        tabIndex={-1}
+        className="shrink-0 rounded-full focus:outline-none"
+      >
         {photo}
       </Link>
     ) : (

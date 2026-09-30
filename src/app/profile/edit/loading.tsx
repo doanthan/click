@@ -1,4 +1,5 @@
 import { Skeleton } from "@/components/skeleton";
+import { RouteSkeleton } from "@/components/route-transition";
 
 /**
  * Loading shell for /profile/edit.
@@ -10,35 +11,37 @@ import { Skeleton } from "@/components/skeleton";
  */
 export default function ProfileEditLoading() {
   return (
-    <main className="min-h-screen bg-[color:var(--champagne)] pb-8 text-[color:var(--ink)]">
-      <div className="ck-page pt-6">
-        <div className="max-w-[720px]">
-          <Skeleton className="h-3 w-16 rounded-full" />
-          <Skeleton className="mt-2.5 h-9 w-56 max-w-full rounded-lg sm:h-11 sm:w-64" />
-          <Skeleton className="mt-2.5 h-3.5 w-72 max-w-full rounded-full" />
+    <RouteSkeleton>
+      <main className="min-h-screen bg-[color:var(--champagne)] pb-8 text-[color:var(--ink)]">
+        <div className="ck-page pt-6">
+          <div className="max-w-[720px]">
+            <Skeleton className="h-3 w-16 rounded-full" />
+            <Skeleton className="mt-2.5 h-9 w-56 max-w-full rounded-lg sm:h-11 sm:w-64" />
+            <Skeleton className="mt-2.5 h-3.5 w-72 max-w-full rounded-full" />
 
-          {/* Avatar row */}
-          <div className="mt-7 flex items-center gap-5">
-            <Skeleton className="size-20 shrink-0 rounded-full" />
-            <div className="min-w-0 flex-1">
-              <Skeleton className="h-9 w-32 rounded-xl" />
-              <Skeleton className="mt-2.5 h-3 w-48 max-w-full rounded-full" />
-            </div>
-          </div>
-
-          {/* Field stack */}
-          <div className="mt-8 space-y-6">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i}>
-                <Skeleton className="h-3.5 w-28 rounded-full" />
-                <Skeleton className={`mt-2 w-full rounded-xl ${i === 1 ? "h-28" : "h-12"}`} />
+            {/* Avatar row */}
+            <div className="mt-7 flex items-center gap-5">
+              <Skeleton className="size-20 shrink-0 rounded-full" />
+              <div className="min-w-0 flex-1">
+                <Skeleton className="h-9 w-32 rounded-xl" />
+                <Skeleton className="mt-2.5 h-3 w-48 max-w-full rounded-full" />
               </div>
-            ))}
-          </div>
+            </div>
 
-          <Skeleton className="mt-8 h-12 w-40 rounded-xl" />
+            {/* Field stack */}
+            <div className="mt-8 space-y-6">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i}>
+                  <Skeleton className="h-3.5 w-28 rounded-full" />
+                  <Skeleton className={`mt-2 w-full rounded-xl ${i === 1 ? "h-28" : "h-12"}`} />
+                </div>
+              ))}
+            </div>
+
+            <Skeleton className="mt-8 h-12 w-40 rounded-xl" />
+          </div>
         </div>
-      </div>
-    </main>
+      </main>
+    </RouteSkeleton>
   );
 }

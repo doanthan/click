@@ -79,12 +79,15 @@ export function MetricCard({
   value,
   tone = "peach",
   href,
+  hint,
 }: {
   label: string;
   value: string;
   tone?: MetricTone;
   /** When set, the whole tile links through to the page behind the number. */
   href?: string;
+  /** One line under the number saying what it counts, when the label alone can't. */
+  hint?: string;
 }) {
   // legacy aliases → new palette (purple fills take cream text - never dark-on-purple)
   const t = tone === "aqua" ? "peach" : tone === "pink" ? "rose" : tone === "white" ? "cream" : tone;
@@ -97,10 +100,13 @@ export function MetricCard({
           ? "bg-[color:var(--surface-deep)] text-[color:var(--on-deep)]"
           : "bg-[color:var(--lavender-100)] text-[color:var(--ink)]";
 
+  // h-full: a hint makes one tile taller than its row, and a linked tile's card
+  // sits inside the Link, so it has to fill it to keep the row even.
   const card = (
-    <article className={`rounded-2xl ${palette} p-5 shadow-[var(--shadow-sm)] ${href ? "transition-shadow hover:shadow-[var(--shadow-md)]" : ""}`}>
+    <article className={`h-full rounded-2xl ${palette} p-5 shadow-[var(--shadow-sm)] ${href ? "transition-shadow hover:shadow-[var(--shadow-md)]" : ""}`}>
       <p className="text-[12.5px] font-semibold opacity-70">{label}</p>
       <p className="font-display mt-2 text-5xl font-semibold leading-none tracking-[-0.03em] tabular-nums">{value}</p>
+      {hint ? <p className="mt-3 text-[12.5px] leading-5 opacity-70">{hint}</p> : null}
     </article>
   );
 

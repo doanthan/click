@@ -810,9 +810,13 @@ export function Avatar({
     return (
       <span className={className} style={{ ...base, background: "var(--champagne-deep)" }}>
         {/* Avatars are remote (Supabase / OAuth) and tiny; next/image buys
-            nothing here and its loader chokes on the arbitrary provider hosts. */}
+            nothing here and its loader chokes on the arbitrary provider hosts.
+            Lazy on purpose: an eager plain img tag inside the route
+            transition holds the page change until it loads (React's
+            suspensey images - see RouteTransition), and a people list is
+            dozens of them. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={avatarSrc} alt={name} width={size} height={size} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+        <img src={avatarSrc} alt={name} width={size} height={size} loading="lazy" decoding="async" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
       </span>
     );
   }

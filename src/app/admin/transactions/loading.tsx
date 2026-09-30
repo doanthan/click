@@ -3,6 +3,7 @@ import {
   SkeletonPageHeader,
   SkeletonTable,
 } from "@/components/skeleton";
+import { RouteSkeleton } from "@/components/route-transition";
 
 /**
  * Content-column skeleton for /admin/transactions. Rendered inside the admin
@@ -13,10 +14,12 @@ import {
  */
 export default function AdminTransactionsLoading() {
   return (
-    <div className="space-y-8 py-10">
-      <SkeletonPageHeader />
-      <SkeletonFilterBar />
-      <SkeletonTable rows={8} />
-    </div>
+    <RouteSkeleton>
+      <div className="space-y-8 py-10">
+        <SkeletonPageHeader />
+        <SkeletonFilterBar />
+        <SkeletonTable rows={8} />
+      </div>
+    </RouteSkeleton>
   );
 }

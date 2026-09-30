@@ -124,3 +124,19 @@ test("the capacity meter only calls people going 'going'", () => {
   assert.doesNotMatch(page, /`\$\{seatsTaken\} of \$\{event\.capacity\} going`/);
   assert.match(page, /seatsHeld > 0 \? ` · \$\{seatsHeld\} \$\{seatsHeld === 1 \? "spot" : "spots"\} held`/);
 });
+
+test("cancelling a booking with +1s says the +1 seats go too", () => {
+  // Bug board #301: a +1 seat hangs off the buyer's booking, so cancelling the
+  // booking cancels every +1 on it - and the confirm panel only showed the
+  // refund. It now says so, and points at the per-seat cancel instead.
+  const cancel = fnBody(repo, "export async function cancelRegistration");
+  assert.match(cancel, /cancelGuestSeatsForTransaction\(client, row\.txn_id\)/);
+
+  const page = read("src/app/events/[slug]/page.tsx");
+  assert.match(page, /guestSeatCount=\{isRegistered \? myGuestSeats\.length : 0\}/);
+
+  const button = read("src/components/event-registration-button.tsx");
+  assert.match(button, /confirmKind === "booking" && guestSeatCount > 0/);
+  assert.match(button, /This also cancels your \+1's seat\./);
+  assert.match(button, /This also cancels your \$\{guestSeatCount\} \+1 seats\./);
+});

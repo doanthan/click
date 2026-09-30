@@ -24,11 +24,16 @@ export function Skeleton({
   /** Use on near-black "deep" surfaces so the sweep doesn't glare. */
   deep?: boolean;
 }) {
+  // A rounded-* passed in replaces the default corner rather than competing
+  // with it: Tailwind emits .rounded-full and .rounded-lg ahead of .rounded-md,
+  // so with both on the element the default won and every disc drew as a
+  // rounded square. A breakpoint variant (sm:rounded-lg) keeps the default below it.
+  const corner = /(^|\s)rounded(-|\s|$)/.test(className) ? "" : " rounded-md";
   return (
     <span
       aria-hidden
       style={style}
-      className={`${deep ? "skeleton--deep" : "skeleton"} block rounded-md ${className}`}
+      className={`${deep ? "skeleton--deep" : "skeleton"} block${corner} ${className}`}
     />
   );
 }

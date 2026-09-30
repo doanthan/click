@@ -32,7 +32,8 @@ export function MobileBottomNav({ tabs }: { tabs: BottomNavTab[] }) {
   return (
     <nav
       aria-label="Primary"
-      className="fixed inset-x-0 bottom-0 z-50 border-t border-[color:var(--line)] bg-[color:var(--champagne)] pb-[env(safe-area-inset-bottom)] lg:hidden"
+      // ck-bottom-nav holds the bar still through a page transition (globals.css).
+      className="ck-bottom-nav fixed inset-x-0 bottom-0 z-50 border-t border-[color:var(--line)] bg-[color:var(--champagne)] pb-[env(safe-area-inset-bottom)] lg:hidden"
     >
       <ul className="mx-auto flex max-w-md items-stretch justify-around">
         {tabs.map((tab) => {

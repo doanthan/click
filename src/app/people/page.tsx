@@ -6,13 +6,14 @@ import { ClickWithSomeoneUserCard } from "@/components/click-with-someone-user-c
 import { Icon, ckBtn } from "@/components/ds";
 import { PeopleCard } from "@/components/people-card";
 import { resolveAvatarImage } from "@/lib/avatar-images";
+import { DAILY_PICK_COUNT } from "@/lib/clicks/daily-picks";
 import {
+  getDailyPicks,
   getMutualClicksForSession,
   getPersonalizedDiscovery,
   getProfileCompletion,
   getProfileStatus,
   getRadarSignals,
-  getSuggestedPeople,
   type MutualClickEntry,
 } from "@/lib/event-repository";
 
@@ -28,8 +29,13 @@ export default async function PeoplePage() {
     redirect("/login?callbackUrl=/people");
   }
 
-  const [suggested, mutuals, personalized, profileStatus, completion] = await Promise.all([
-    getSuggestedPeople(session),
+  const [picks, mutuals, personalized, profileStatus, completion] = await Promise.all([
+    // Today's picks (CHANGE BRIEF 2026-09-30): written once a day to daily_picks,
+    // so this list, the dashboard's one-at-a-time card and GET /api/people/daily are
+    // the same people in the same click state all day. A pick you click stays in
+    // the set as "clicked" rather than dropping out - "new people every day" is the
+    // job's promise (least recently picked first), not a reshuffle on every tap.
+    getDailyPicks(session),
     getMutualClicksForSession(session),
     getPersonalizedDiscovery(session),
     getProfileStatus(session),
@@ -37,8 +43,8 @@ export default async function PeoplePage() {
   ]);
 
   // Same bar the matcher cares about, same test the dashboard already makes
-  // (dashboard/page.tsx:119). getSuggestedPeople filters on the CANDIDATES'
-  // tags, never on the viewer's, so an empty set says nothing about whether the
+  // (dashboard/page.tsx:119). The picks are filtered on the CANDIDATES' profiles,
+  // never on the viewer's tags, so an empty set says nothing about whether the
   // viewer has interests - and telling someone who just picked five of them to
   // go and pick some is the first thing this page said to a new member.
   const hasInterests = completion.items.find((i) => i.key === "tags")?.done ?? false;
@@ -47,31 +53,14 @@ export default async function PeoplePage() {
   // path uses; the gallery alone is not a face on the card.
   const viewerHasPhoto = resolveAvatarImage(profileStatus.photoUrl) !== null;
 
-  // The daily set is a small, curated pool - a drip, not an endless feed. People
-  // you've already clicked drop OUT of it (same rule the dashboard uses): the set
-  // was a hard stop at three, so once you'd clicked all three the page showed the
-  // same three muted "clicked" cards forever with nothing left to do and no word
-  // on what happens next.
-  const clickable = suggested.filter((p) => !p.alreadyClicked);
-  // Rotated by the Sydney date, so the set moves on its own. It used to be a flat
-  // slice(0, 3): sit on your hands and the same three faces greeted you every
-  // morning, which teaches people the page is not worth reopening. Rotating the
-  // window costs no extra query and suits a drip - the people you skipped come
-  // back around. The rotation is never NAMED in the copy (invariant 9 bans showing
-  // a refresh cadence); it just quietly happens.
-  const dayKey = Number(
-    new Intl.DateTimeFormat("en-CA", { timeZone: "Australia/Sydney" })
-      .format(new Date())
-      .replace(/-/g, ""),
-  );
-  const start = clickable.length > 0 ? dayKey % clickable.length : 0;
-  const dailySet = clickable.length > 0
-    ? Array.from({ length: Math.min(3, clickable.length) }, (_unused, i) =>
-        clickable[(start + i) % clickable.length],
-      )
-    : [];
-  // You've worked through everyone we had, rather than never having had anyone.
-  const setExhausted = dailySet.length === 0 && suggested.length > 0;
+  // The brief's heading, with the set's real size in it: a thin pool must not
+  // promise three people it doesn't have.
+  const picksHeading =
+    picks.length > 1
+      ? `${picks.length} people you might click with today`
+      : picks.length === 1
+        ? "Someone you might click with today"
+        : "People you might click with";
 
   // Your clicks, grouped by state. A plan exists once both are going; everything
   // else is a live mutual, which is ALWAYS the actionable "suggest a plan" card
@@ -105,60 +94,23 @@ export default async function PeoplePage() {
           A small, intentional set - no endless feed.
         </p>
 
-        {/* The rules, where the question actually gets asked. /how-it-works is the
-            MARKETING page and teases the mechanic on purpose, so the link that used
-            to sit here answered "how does this work" with a pitch. A native
-            <details> costs no client JS. NO NUMBERS BELOW, ever: the click window,
-            the mutual clock, the post-event prompt delay and the per-event budget
-            are back-end concepts and invariant 9 bans showing a timer, a cap or a
-            cadence anywhere. The bullets carry the reassurance, not the tuning. */}
-        <details className="group mt-3 rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] px-4 py-3">
-          <summary className="cursor-pointer list-none text-[13.5px] font-semibold text-[color:var(--purple)] marker:content-none">
-            How clicking works
-            <span aria-hidden className="ml-1 inline-block transition-transform group-open:rotate-90">
-              →
-            </span>
-          </summary>
-          <ul className="mt-3 grid gap-2 text-[13.5px] leading-6 text-[color:var(--ink-soft)]">
-            <li>
-              <strong className="font-semibold text-[color:var(--ink)]">It stays private.</strong>{" "}
-              They are never told. Nothing shows up on their side unless they click you too.
-            </li>
-            <li>
-              <strong className="font-semibold text-[color:var(--ink)]">Nothing is a chat.</strong>{" "}
-              When it is mutual you both see it at the same moment, and what opens is a plan -
-              there is no messaging anywhere in Click.
-            </li>
-            <li>
-              <strong className="font-semibold text-[color:var(--ink)]">
-                A click keeps its own time.
-              </strong>{" "}
-              It stays open for them to click back, and after that it&apos;s still out there - if
-              you cross paths again, you can pick it back up. No rush.
-            </li>
-            <li>
-              <strong className="font-semibold text-[color:var(--ink)]">
-                After an event, it opens up.
-              </strong>{" "}
-              Who was there appears shortly after it ends, while the night is still fresh. Tap
-              anyone worth a second hang - we&apos;ll do the rest.
-            </li>
-          </ul>
-        </details>
-
-        {/* ---- The daily set ---- */}
+        {/* ---- Today's picks ---- */}
         <section className="mt-7">
-          {/* One flat heading, no count and no cadence badge. Invariant 9 bans
-              showing a refresh cadence, and the old counted heading plus its
-              sibling badge were the daily rotation announcing itself. The
-              rotation stays - the runbook bans SHOWING a cadence, not having
-              one. */}
-          <h2 className="font-display mb-4 text-[1.075rem] font-semibold tracking-[-0.01em] text-[color:var(--ink)] sm:text-[1.3rem]">
-            People for you
+          {/* CHANGE BRIEF 2026-09-30 §2.1. What the brief bans (§2.6) is a refresh
+              time, an "N left today" or a countdown to tomorrow's set - saying the
+              set is a daily one is the point of it. The sub-line only runs when
+              today really did bring three. */}
+          <h2 className="font-display text-[1.075rem] font-semibold tracking-[-0.01em] text-[color:var(--ink)] sm:text-[1.3rem]">
+            {picksHeading}
           </h2>
+          {picks.length === DAILY_PICK_COUNT ? (
+            <p className="mt-1 text-[13.5px] font-medium text-[color:var(--slate)]">
+              Three new people, every day.
+            </p>
+          ) : null}
 
           {viewerHasPhoto ? null : (
-            <p className="mb-4 flex items-start gap-[7px] rounded-[var(--radius-lg)] bg-[color:var(--lav-bg)] px-4 py-3 text-[13.5px] leading-relaxed text-[color:var(--ink-soft)]">
+            <p className="mt-4 flex items-start gap-[7px] rounded-[var(--radius-lg)] bg-[color:var(--lav-bg)] px-4 py-3 text-[13.5px] leading-relaxed text-[color:var(--ink-soft)]">
               <Icon name="camera" size={15} className="mt-0.5 shrink-0" />
               <span>
                 Add a photo to click with people - it&apos;s the first thing they see.{" "}
@@ -169,46 +121,68 @@ export default async function PeoplePage() {
             </p>
           )}
 
-          {dailySet.length > 0 ? (
-            <>
-              {/* The anonymity reassurance shows ONCE at the top of the section
-                  (COORDINATION_MODAL_SYSTEM §6), never under each card. */}
-              <p className="mb-4 flex items-start gap-[7px] px-0.5 text-[13px] leading-relaxed text-[color:var(--slate)]">
-                <Icon name="lock" size={14} className="mt-0.5" />
-                <span>Clicking is anonymous - we&apos;ll only show you if it&apos;s mutual.</span>
-              </p>
-              {/* The set arrives in reading order rather than all at once - the
-                  DS-calm 8px .rise-soft on the .rise-d* ladder, pure CSS so it
-                  plays before hydration and the global reduced-motion block
-                  collapses it. The wrapper exists only to carry the animation:
-                  both keyframes end on `transform: none`, so it never lingers as
-                  a containing block over the card's own hover lift. */}
-              <div className="grid gap-4">
-                {dailySet.map((person, i) => (
-                  <div key={person.id} className={`rise-soft rise-d${i + 1}`}>
-                    <ClickWithSomeoneUserCard
-                      person={person}
-                      viewerOpenToDating={profileStatus.datingVisible}
-                    />
-                  </div>
-                ))}
-              </div>
-            </>
-          ) : setExhausted ? (
-            // The end of the drip is a STATE, not an absence. Say the clicks are
-            // sent, say they're private, and point at the thing that actually
-            // refills the set - going to more events.
-            <div className="rounded-[var(--radius-xl)] bg-[color:var(--lav-bg)] px-6 py-8 text-center">
-              <p className="font-display text-[15px] font-semibold text-[color:var(--ink)]">
-                That&apos;s everyone for now.
-              </p>
-              <p className="mx-auto mt-1.5 max-w-[420px] text-sm leading-relaxed text-[color:var(--ink-soft)]">
-                Your clicks are sent and stay private - we&apos;ll tell you the moment one is
-                mutual. New people show up as you go to more events.
-              </p>
-              <Link href="/discover" className={`${ckBtn("primary", "sm")} mt-4`}>
-                <span className="ck-btn__label">Find an event →</span>
-              </Link>
+          {/* The anonymity reassurance, ONCE at the top of the set (COORDINATION_
+              MODAL_SYSTEM §6) and never under each card, with "How clicking works"
+              opening the rules right beneath it. /how-it-works is the MARKETING
+              page and teases the mechanic on purpose, so a link there would answer
+              "how does this work" with a pitch; a native <details> costs no client
+              JS. NO NUMBERS in the rules, ever: the click window, the mutual clock,
+              the post-event prompt delay and the per-event budget are back-end
+              concepts and invariant 9 bans showing a timer, a cap or a cadence
+              anywhere. The bullets carry the reassurance, not the tuning. */}
+          <details className="group mt-4 mb-4">
+            <summary className="flex cursor-pointer list-none items-start gap-[7px] px-0.5 text-[13px] leading-relaxed text-[color:var(--slate)] marker:content-none [&::-webkit-details-marker]:hidden">
+              <Icon name="lock" size={14} className="mt-0.5 shrink-0" />
+              <span>
+                Clicking is anonymous - we&apos;ll only show you if it&apos;s mutual.{" "}
+                <span className="font-semibold whitespace-nowrap text-[color:var(--purple)]">
+                  How clicking works{" "}
+                  <span aria-hidden className="inline-block transition-transform group-open:rotate-90">
+                    →
+                  </span>
+                </span>
+              </span>
+            </summary>
+            <ul className="mt-3 grid gap-2 rounded-[var(--radius-lg)] border border-[color:var(--line-soft)] bg-[color:var(--paper)] px-4 py-3 text-[13.5px] leading-6 text-[color:var(--ink-soft)]">
+              <li>
+                <strong className="font-semibold text-[color:var(--ink)]">It stays private.</strong>{" "}
+                They are never told. Nothing shows up on their side unless they click you too.
+              </li>
+              <li>
+                <strong className="font-semibold text-[color:var(--ink)]">Nothing is a chat.</strong>{" "}
+                When it is mutual you both see it at the same moment, and what opens is a plan -
+                there is no messaging anywhere in Click.
+              </li>
+              <li>
+                <strong className="font-semibold text-[color:var(--ink)]">
+                  A click keeps its own time.
+                </strong>{" "}
+                It stays open for them to click back, and after that it&apos;s still out there - if
+                you cross paths again, you can pick it back up. No rush.
+              </li>
+              <li>
+                <strong className="font-semibold text-[color:var(--ink)]">
+                  After an event, it opens up.
+                </strong>{" "}
+                Who was there appears shortly after it ends, while the night is still fresh. Tap
+                anyone worth a second hang - we&apos;ll do the rest.
+              </li>
+            </ul>
+          </details>
+
+          {picks.length > 0 ? (
+            /* The set arrives in reading order rather than all at once - the
+               DS-calm 8px .rise-soft on the .rise-d* ladder, pure CSS so it
+               plays before hydration and the global reduced-motion block
+               collapses it. The wrapper exists only to carry the animation:
+               both keyframes end on `transform: none`, so it never lingers as
+               a containing block over the card's own hover lift. */
+            <div className="grid gap-4">
+              {picks.map((person, i) => (
+                <div key={person.id} className={`rise-soft rise-d${i + 1}`}>
+                  <ClickWithSomeoneUserCard person={person} />
+                </div>
+              ))}
             </div>
           ) : (
             <div className="rounded-[var(--radius-xl)] bg-[color:var(--lav-bg)] px-6 py-8 text-center">
@@ -218,9 +192,9 @@ export default async function PeoplePage() {
                     No one to show you just yet.
                   </p>
                   {/* Says what the set is actually drawn from. It used to claim "we only
-                      suggest people with real overlap", which getSuggestedPeople has
-                      never filtered on - the gate is a finished profile with a photo
-                      (bug board #255). */}
+                      suggest people with real overlap", which the picks have never
+                      filtered on - the gate is a finished profile with a photo (bug
+                      board #255). */}
                   <p className="mx-auto mt-1.5 max-w-[420px] text-sm leading-relaxed text-[color:var(--ink-soft)]">
                     Suggestions come from members with a photo and a finished profile, and
                     there&apos;s no one new to show you yet. Going to an event is the fastest

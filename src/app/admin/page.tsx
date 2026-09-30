@@ -119,7 +119,16 @@ export default async function AdminOverviewPage() {
         <MetricCard label="Pending events" value={metrics.pendingEvents.toLocaleString()} tone="rose" href="/admin/events" />
         <MetricCard label="Pending merchants" value={metrics.pendingMerchants.toLocaleString()} tone="ink" href="/admin/merchants?status=pending" />
         <MetricCard label="Total events" value={metrics.totalEvents.toLocaleString()} tone="peach" href="/admin/events?status=all&when=all" />
-        <MetricCard label="Confirmed RSVPs" value={metrics.confirmedRsvps.toLocaleString()} tone="cream" />
+        {/* Bug board #309: "confirmed, but what if they cancelled?" Every path
+            that ends a booking (the member cancelling, the host or Click
+            cancelling the event, an admin's full refund) moves its row to
+            'cancelled', so the count already leaves it out - the card now says so. */}
+        <MetricCard
+          label="Confirmed RSVPs"
+          value={metrics.confirmedRsvps.toLocaleString()}
+          tone="cream"
+          hint="All-time bookings, minus any that were cancelled. Doesn't include +1s."
+        />
         <MetricCard label="Merchants" value={metrics.totalMerchants.toLocaleString()} tone="rose" href="/admin/merchants" />
         <MetricCard label="Mutual Clicks" value={metrics.mutualClicks.toLocaleString()} tone="ink" />
       </div>

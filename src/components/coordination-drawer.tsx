@@ -958,7 +958,7 @@ function SuggestPlan({
           <button
             type="button"
             onClick={() => setChoosing(true)}
-            className="ck-btn ck-btn--md ck-btn--primary mt-3"
+            className="ck-btn ck-btn--md ck-btn--primary mt-3 max-sm:w-full"
           >
             Suggest a plan →
           </button>
@@ -1090,7 +1090,10 @@ function CoordinationBody({
 
   return (
     <div>
-      <span className="eyebrow">{deciding ? `From ${firstName}` : `You + ${entry.otherName}`}</span>
+      {/* pr-10 keeps a long name's first line out from under the corner ✕. */}
+      <span className="eyebrow block pr-10">
+        {deciding ? `From ${firstName}` : `You + ${entry.otherName}`}
+      </span>
 
       {step === "confirmed" ? (
         entry.viewerHasSeat ? (
@@ -1121,7 +1124,7 @@ function CoordinationBody({
                 </>
               )}
             </p>
-            <div className="mt-5 flex flex-wrap gap-2">
+            <div className={`mt-5 flex flex-wrap gap-2 ${stackOnPhone}`}>
               {cal && !entry.suggestedEventStarted ? (
                 <a
                   href={cal}
@@ -1180,7 +1183,7 @@ function CoordinationBody({
               </p>
             ) : null}
             {entry.suggestedEventSlug ? (
-              <div className="mt-5 flex flex-wrap items-center gap-2">
+              <div className={`mt-5 flex flex-wrap items-center gap-2 ${stackOnPhone}`}>
                 {/* Stage 6: the booking control deep-links to the REAL event page
                     carrying the plan context, and hands it the drawer to come back
                     to - a confirmed RSVP belongs at S11, not on a receipt page. */}
@@ -1225,7 +1228,7 @@ function CoordinationBody({
                 <>Neither of you got a seat. Pick something else together and you&apos;re back on.</>
               )}
             </p>
-            <div className="mt-5 flex flex-wrap items-center gap-2">
+            <div className={`mt-5 flex flex-wrap items-center gap-2 ${stackOnPhone}`}>
               <button
                 type="button"
                 onClick={onPlan}
@@ -1234,11 +1237,13 @@ function CoordinationBody({
                 Suggest another plan
               </button>
               {entry.suggestedEventSlug ? (
+                // The title truncates: .ck-btn never wraps, so a long one pushed the
+                // button out past the card and the whole sheet scrolled sideways.
                 <Link
                   href={`/events/${entry.suggestedEventSlug}`}
-                  className="ck-btn ck-btn--md ck-btn--secondary"
+                  className="ck-btn ck-btn--md ck-btn--secondary max-w-full"
                 >
-                  View {eventTitle} →
+                  <span className="min-w-0 truncate">View {eventTitle}</span>→
                 </Link>
               ) : null}
             </div>
@@ -1258,7 +1263,7 @@ function CoordinationBody({
             <button
               type="button"
               onClick={onPlan}
-              className="ck-btn ck-btn--md ck-btn--primary"
+              className="ck-btn ck-btn--md ck-btn--primary max-sm:w-full"
             >
               Suggest another plan
             </button>
@@ -1269,9 +1274,12 @@ function CoordinationBody({
         // a peak nor a failure. It never says WHY - a refund, an emergency and cold
         // feet all read identically, by design - and it routes forward.
         <>
+          {/* --cream is white paper here, so a cream disc vanished into the card and
+              left the glyph floating. --lavender-100 is the palest tint, the one the
+              DS keeps for icon circles (its mockup's neutral disc). */}
           <div
             aria-hidden
-            className="grid h-16 w-16 place-items-center rounded-full bg-[color:var(--cream)] text-2xl leading-none text-[color:var(--mauve)]"
+            className="grid h-16 w-16 place-items-center rounded-full bg-[color:var(--lavender-100)] text-2xl leading-none text-[color:var(--mauve)]"
           >
             📍
           </div>
@@ -1282,7 +1290,7 @@ function CoordinationBody({
             {firstName}&apos;s plans changed - they won&apos;t make {eventTitle} this time. Your
             spot&apos;s still yours. Want to line up something else together?
           </p>
-          <div className="mt-5 flex flex-wrap items-center gap-2">
+          <div className={`mt-5 flex flex-wrap items-center gap-2 ${stackOnPhone}`}>
             <button
               type="button"
               onClick={onPlan}
@@ -1314,7 +1322,7 @@ function CoordinationBody({
             That&apos;s what Click&apos;s for. This one rests in your past clicks - pick it back up
             anytime.
           </p>
-          <button type="button" onClick={onDone} className="ck-btn ck-btn--md ck-btn--primary mt-5">
+          <button type="button" onClick={onDone} className="ck-btn ck-btn--md ck-btn--primary mt-5 max-sm:w-full">
             Back to your clicks
           </button>
         </>
@@ -1326,7 +1334,7 @@ function CoordinationBody({
         <>
           <div
             aria-hidden
-            className="grid h-16 w-16 place-items-center rounded-full bg-[color:var(--cream)] text-2xl leading-none text-[color:var(--mauve)]"
+            className="grid h-16 w-16 place-items-center rounded-full bg-[color:var(--lavender-100)] text-2xl leading-none text-[color:var(--mauve)]"
           >
             🕐
           </div>
@@ -1336,7 +1344,7 @@ function CoordinationBody({
           <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--ink-soft)]">
             If you cross paths again, you can pick it back up.
           </p>
-          <button type="button" onClick={onDone} className="ck-btn ck-btn--md ck-btn--secondary mt-5">
+          <button type="button" onClick={onDone} className="ck-btn ck-btn--md ck-btn--secondary mt-5 max-sm:w-full">
             Back to your clicks
           </button>
         </>
@@ -1361,7 +1369,7 @@ function CoordinationBody({
             If a spot opens at {eventTitle}, you&apos;re first in line - together. We&apos;ll let
             you both know.
           </p>
-          <div className="mt-5 flex flex-wrap items-center gap-3">
+          <div className={`mt-5 flex flex-wrap items-center gap-3 ${stackOnPhone}`}>
             <button type="button" onClick={onDone} className="ck-btn ck-btn--md ck-btn--secondary">
               Back to your clicks
             </button>
@@ -1453,7 +1461,7 @@ function CoordinationBody({
             </p>
           ) : null}
 
-          <div className="mt-5 flex flex-wrap items-center gap-2">
+          <div className={`mt-5 flex flex-wrap items-center gap-2 ${stackOnPhone}`}>
             {/* S7 - and ONLY S7. Confirming is the recipient's move (§B4.2); the
                 proposer is waiting (S6, which the spec says carries no booking
                 control at all). This used to render on the `open` step too, for
@@ -1591,3 +1599,9 @@ function CoordinationBody({
 
 const headingClass =
   "font-display mt-2 text-2xl font-semibold leading-tight tracking-[-0.025em] text-[color:var(--ink)]";
+
+// Every step's button row. On a phone the drawer is a full-width sheet, where a
+// wrapping row left its buttons ragged - three widths down the left edge, the ghost's
+// label indented - so below sm they stack full-width, the way the DS mockup draws
+// every step. From sm up the row is unchanged.
+const stackOnPhone = "max-sm:flex-col max-sm:items-stretch max-sm:[&_.ck-btn]:w-full";

@@ -11,6 +11,7 @@ import { ClickRadar } from "@/components/click-radar";
 import { ClickWithSomeoneUserCard } from "@/components/click-with-someone-user-card";
 import { LifeQuizModalLink } from "@/components/life-quiz-modal";
 import {
+  getDailyPicks,
   getDashboardData,
   getGoingWithNames,
   getMutualClicksForSession,
@@ -19,8 +20,8 @@ import {
   getProfileCompletion,
   getProfileStatus,
   getRadarSignals,
-  getSuggestedPeople,
 } from "@/lib/event-repository";
+import { dashboardPickIndex } from "@/lib/clicks/daily-picks";
 import { APP_TIME_ZONE } from "@/lib/datetime";
 
 export const metadata = {
@@ -90,13 +91,13 @@ export default async function DashboardPage() {
     redirect("/login?callbackUrl=/dashboard");
   }
 
-  const [dashboard, profileStatus, postEventPrompts, completion, suggestedPeople, personalized, mutualClicks] =
+  const [dashboard, profileStatus, postEventPrompts, completion, picks, personalized, mutualClicks] =
     await Promise.all([
       getDashboardData(session),
       getProfileStatus(session),
       getPostEventClickPrompts(session),
       getProfileCompletion(session),
-      getSuggestedPeople(session),
+      getDailyPicks(session),
       getPersonalizedDiscovery(session),
       getMutualClicksForSession(session),
     ]);
@@ -114,19 +115,20 @@ export default async function DashboardPage() {
 
   // Dashboard suggestions are deliberately rationed + rotated so the page stays
   // a focused "one thing to act on" rather than an endless list:
-  //  • one person to click with, rotating 4×/day (every 6 hours)
+  //  • one person to click with - one of TODAY'S picks, the same three the Click
+  //    page lists, moving on every 3 hours (CHANGE BRIEF 2026-09-30 §2.2)
   //  • one radar event, rotating hourly
   // Deterministic index off the clock so it's stable within each window.
   // eslint-disable-next-line react-hooks/purity -- server component, evaluated once per request
   const nowForRotation = Date.now();
-  const sixHourIndex = Math.floor(nowForRotation / (6 * 3_600_000));
   const hourIndex = Math.floor(nowForRotation / 3_600_000);
   const hourOfDay = Number(sydneyHour.format(new Date()));
 
-  // Drop anyone the viewer has already clicked: an active click shouldn't keep
-  // resurfacing as a "click with X" suggestion.
-  const clickablePeople = suggestedPeople.filter((p) => !p.alreadyClicked);
-  const rotatedPeople = clickablePeople.length > 0 ? [clickablePeople[sixHourIndex % clickablePeople.length]] : [];
+  // pick[floor(hoursSinceMidnight / 3) % n] on Sydney's clock. A pick the viewer
+  // has already clicked keeps its turn and shows as "clicked" - it is the same
+  // person, in the same state, as on the Click page, not a slot to refill.
+  const pickIndex = dashboardPickIndex(hourOfDay, picks.length);
+  const pick = pickIndex === null ? null : picks[pickIndex];
   // Rotate through the events people are actually going to whenever there are
   // any. The rotation used to land on empty rooms too, and an empty room can
   // only ever get the fallback line - so the radar sat on "Trending in Sydney"
@@ -304,8 +306,8 @@ export default async function DashboardPage() {
           </Section>
         ) : null}
 
-        {/* ---- click with someone: EXACTLY ONE rotated person. The wall lives on
-                the people page; this is a drip, not a feed. ---- */}
+        {/* ---- click with someone: EXACTLY ONE of today's picks. The three live
+                on the Click page; this is a drip, not a feed. ---- */}
         <Section
           title="click with someone"
           sub="Someone you might just click with - quietly picked, no pressure."
@@ -313,7 +315,7 @@ export default async function DashboardPage() {
           actionHref="/people"
           narrow
         >
-          {rotatedPeople.length > 0 ? (
+          {pick ? (
             <Reveal delay={60}>
               {/* The anonymity reassurance shows ONCE, at the TOP of the click
                   surface (COORDINATION_MODAL_SYSTEM §6) - never under each card. */}
@@ -326,13 +328,7 @@ export default async function DashboardPage() {
                   </Link>
                 </span>
               </p>
-              {rotatedPeople.map((person) => (
-                <ClickWithSomeoneUserCard
-                  key={person.id}
-                  person={person}
-                  viewerOpenToDating={profileStatus.datingVisible}
-                />
-              ))}
+              <ClickWithSomeoneUserCard key={pick.id} person={pick} />
             </Reveal>
           ) : (
             <Reveal delay={60}>

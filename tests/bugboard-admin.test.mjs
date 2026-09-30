@@ -139,3 +139,28 @@ test("a night out together is counted the way the mutual sweep counts it", () =>
   const page = read("src/app/admin/page.tsx");
   assert.match(page, /getAdminClickOutcomes\(\)/);
 });
+
+/* ---------------- #309: what "Confirmed RSVPs" counts ---------------- */
+
+test("the Confirmed RSVPs card says a cancelled booking is not in it", () => {
+  // Bug board #309: "confirmed, but what if they cancelled?". It is not counted:
+  // the card reads status = 'confirmed', and each way a booking ends moves the
+  // row to 'cancelled'. The card now says what it counts.
+  const repo = read("src/lib/event-repository.ts");
+  const metrics = slice(repo, "export async function getAdminMetrics", "\n}\n");
+  assert.match(metrics, /from event_attendees\s+where status = 'confirmed'/);
+  for (const fn of [
+    "export async function cancelRegistration(",
+    "async function cancelEvent(",
+    "export async function settleRefundedBooking(",
+  ]) {
+    assert.match(slice(repo, fn, "\n}\n"), /update event_attendees\s+set status = 'cancelled'/, fn);
+  }
+
+  const page = read("src/app/admin/page.tsx");
+  assert.match(
+    page,
+    /label="Confirmed RSVPs"[\s\S]{0,120}hint="All-time bookings, minus any that were cancelled\. Doesn't include \+1s\."/,
+  );
+  assert.match(read("src/components/click-ui.tsx"), /\{hint \? <p className=/);
+});

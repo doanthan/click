@@ -865,6 +865,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                           offerExpiresAt={waitlistOfferExpiresAt}
                           cancelRefundLabel={cancelRefundLabel}
                           cancelRefundIsPositive={cancelRefundIsPositive}
+                          guestSeatCount={isRegistered ? myGuestSeats.length : 0}
                           successDetails={successDetailsForViewer}
                         />
                       )

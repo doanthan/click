@@ -555,6 +555,33 @@ export async function resetPair(aEmail: string, bEmail: string): Promise<string[
   return cleared.length > 0 ? cleared : ["nothing to clear - the pair was already fresh"];
 }
 
+/**
+ * Put `receiverId` in `senderEmail`'s daily picks for today, so the harness's
+ * discovery send can reach them. An explore click is refused unless its receiver is
+ * one of the sender's picks (CHANGE BRIEF 2026-09-30), and which three people the
+ * matching hands a QA persona on a given day is not something a test can steer.
+ *
+ * A fixture write like fill_event or wind_clock, never the click itself: the gate
+ * still runs for real on the send that follows. QA personas only, both sides.
+ */
+export async function seedDailyPick(senderEmail: string, receiverId: string): Promise<void> {
+  await assertHarnessAllowed();
+  const people = await listHarnessPeople();
+  const sender = people.find((p) => p.email === senderEmail.trim().toLowerCase());
+  const receiver = people.find((p) => p.id === receiverId);
+  if (!sender || !receiver) throw new HarnessRefusedError("Both people must be QA personas.");
+
+  const pool = getPostgresPool();
+  if (!pool) throw new HarnessRefusedError("No database connection.");
+  // Sydney's day, cut exactly as the repository cuts it (DAILY_PICK_DAY_SQL).
+  await pool.query(
+    `insert into daily_picks (profile_id, picked_profile_id, pool_date, reason)
+     values ($1::uuid, $2::uuid, (now() at time zone 'Australia/Sydney')::date, 'qa_harness')
+     on conflict do nothing`,
+    [sender.id, receiver.id],
+  );
+}
+
 export type ClockTarget = "clicks" | "mutual" | "proposal";
 
 /**

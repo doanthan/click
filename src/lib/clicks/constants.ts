@@ -85,6 +85,15 @@ export const MIN_CLICK_AGE = 18;
 /** A click send's outcome, byte-identical across receiver states by design (§6.1). */
 export type SendClickOutcome = "ok" | "not_eligible" | "cap" | "photo";
 
+// ── Two click sources (CHANGE BRIEF 2026-09-30) ──────────────────────────────────────
+/**
+ * Where a click was sent from. `explore` is one of the sender's daily picks (the Click
+ * page and the dashboard card); `post_event` is who was there, and names its event.
+ * These are the brief's words and live at the send boundary only - the row stores
+ * the same fact as clicks.surface ('discovery' | 'who_was_there', migration 049).
+ */
+export type ClickSource = "explore" | "post_event";
+
 // ── Anonymity copy (CLICK_LANGUAGE §5 + §5b) ────────────────────────────────────────
 //
 // §5b bans the "if they click you back" construction on sight: it plants the

@@ -1,5 +1,10 @@
 import { LoadingScreen } from "@/components/loading-spinner";
+import { RouteSkeleton } from "@/components/route-transition";
 
 export default function RootLoading() {
-  return <LoadingScreen label="Loading Click…" />;
+  return (
+    <RouteSkeleton>
+      <LoadingScreen label="Loading Click…" />
+    </RouteSkeleton>
+  );
 }

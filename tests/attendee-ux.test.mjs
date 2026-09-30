@@ -275,8 +275,9 @@ test("day-vs-night buckets in Sydney time, like the card beside it", () => {
 test("every Discover filter survives a Back navigation", () => {
   // Only tag/category/q/date used to reach the URL, so free, time-of-day,
   // distance, suburb and sort were dropped on the most repeated action here.
+  // (The suburb filter itself is gone - bug board #306.)
   const explorer = read("src/components/event-explorer.tsx");
-  for (const key of ['"time"', '"free"', '"suburb"', '"km"', '"sort"']) {
+  for (const key of ['"time"', '"free"', '"km"', '"sort"']) {
     assert.match(explorer, new RegExp(`next\\.set\\(${key}`), `${key} never reaches the URL`);
   }
   // And is adopted back when the URL changes from outside.
@@ -383,10 +384,18 @@ test("fixed support chrome gets out of the way of modal controls", () => {
 });
 
 test("the daily set is actually daily", () => {
+  // CHANGE BRIEF 2026-09-30: the set is written once a day to daily_picks and read
+  // back, where it used to be a window rotated over a live query on every request -
+  // which reshuffled the moment you clicked someone and could never agree with the
+  // dashboard. It still moves on each day: least recently picked goes first.
   const people = read("src/app/people/page.tsx");
-  assert.match(people, /Australia\/Sydney/);
-  assert.match(people, /clickable\[\(start \+ i\) % clickable\.length\]/);
-  assert.doesNotMatch(people, /const dailySet = clickable\.slice\(0, 3\);/);
+  assert.match(people, /getDailyPicks\(session\)/);
+  assert.doesNotMatch(people, /getSuggestedPeople/);
+  const repo = read("src/lib/event-repository.ts");
+  const ensure = repo.slice(repo.indexOf("async function ensureDailyPicks("));
+  assert.match(ensure, /max\(pool_date\)::text as last_day/);
+  assert.match(ensure, /\.slice\(0, DAILY_PICK_COUNT\)/);
+  assert.match(repo, /const DAILY_PICK_DAY_SQL = `\(now\(\) at time zone '\$\{APP_TIME_ZONE\}'\)::date`;/);
 });
 
 test("the bug widget is on the design system, not Tailwind's default palette", () => {
@@ -475,7 +484,9 @@ test("a plan nobody chose is attributed to nobody", () => {
   // then hid Confirm AND "Not this one" from them for an event they never picked
   // (coordination-drawer.tsx), while the other side was told they had picked it.
   const send = repo.slice(repo.indexOf("async function sendClickInner("));
-  const insert = send.slice(0, send.indexOf("Mark both clicks of THIS process"));
+  const end = send.indexOf("Mark both clicks as mutual");
+  assert.ok(end > -1, "failed to find the end of the proposal insert");
+  const insert = send.slice(0, end);
   assert.match(insert, /insert into click_proposals/);
   assert.match(insert, /\$1::uuid, \$2::uuid, null, 'pending'/, "proposed_by must stay null");
   assert.doesNotMatch(

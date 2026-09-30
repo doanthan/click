@@ -167,6 +167,11 @@ export const HOST_SIGNUP_CALLBACK_URL = "/merchant/signup";
 
 export type SignupRole = "attendee" | "host";
 
+const SIGNUP_ROLES = [
+  { value: "attendee", title: "Attend", body: "RSVP and meet people" },
+  { value: "host", title: "Host", body: "List and run events" },
+] as const;
+
 export function SignupRoleChoice({
   value,
   onChange,
@@ -178,12 +183,7 @@ export function SignupRoleChoice({
 }) {
   return (
     <fieldset aria-label="What kind of account?" className={`grid grid-cols-2 gap-2.5 ${className}`}>
-      {(
-        [
-          { value: "attendee", title: "Attend", body: "RSVP and meet people" },
-          { value: "host", title: "Host", body: "List and run events" },
-        ] as const
-      ).map((option) => {
+      {SIGNUP_ROLES.map((option) => {
         const active = value === option.value;
         return (
           <label
@@ -373,62 +373,56 @@ export function AuthShell({
   );
 }
 
-/**
- * AuthShell's loading state, for the loading.tsx of /login and /register. The
- * same frame and the real wordmark (still the way out, so still a link), then
- * shimmer in the controls' real sizes - 52px buttons, the 50px field - so
- * nothing moves when the form lands. `ssoButtons` and `roleChoice` follow
- * what each page draws.
- */
-export function AuthShellSkeleton({
-  ssoButtons,
-  roleChoice = false,
-  footerLines = 1,
-}: {
-  ssoButtons: number;
-  roleChoice?: boolean;
-  footerLines?: number;
-}) {
+/* ------------------------------------------------------------ loading states */
+/* Stand-ins for the controls while a /login or /register render is on its way,
+   for their loading.tsx. Only the controls shimmer. The frame, the copy, the
+   divider and the consent line render for real, because text wraps the same in
+   both states and a bar of a guessed size doesn't: on a phone the form landed
+   up to ~200px lower than the loading screen had drawn it. */
+
+/** A full-width lg button, SSO or submit: 52px, the button radius. */
+export function AuthButtonSkeleton() {
+  return <Skeleton className="h-[52px] w-full rounded-md" />;
+}
+
+/** <Field>: its real label over the 50px input. */
+export function FieldSkeleton({ label }: { label: string }) {
   return (
-    <main className="flex min-h-screen justify-center bg-[color:var(--champagne)] px-5 py-10 text-[color:var(--ink)] sm:py-14">
-      <div className="w-full max-w-[412px]">
-        <Link href="/" aria-label="Click home" className="inline-flex">
-          <Logo size={28} />
-        </Link>
-        <Skeleton className="mt-7 h-[30px] w-56 max-w-full rounded-lg" />
-        <Skeleton className="mt-2.5 h-3.5 w-72 max-w-full rounded-full" />
-        <div className="mt-6 grid gap-5">
-          {roleChoice ? (
-            <div className="grid grid-cols-2 gap-2.5">
-              <Skeleton className="h-[66px] rounded-xl" />
-              <Skeleton className="h-[66px] rounded-xl" />
-            </div>
-          ) : null}
-          <div className="grid gap-2.5">
-            {Array.from({ length: ssoButtons }).map((_, i) => (
-              <Skeleton key={i} className="h-[52px] w-full rounded-xl" />
-            ))}
-          </div>
-          <div className="flex items-center gap-3.5">
-            <span className="h-px flex-1 bg-[color:var(--mist)]" />
-            <Skeleton className="h-3 w-5 rounded-full" />
-            <span className="h-px flex-1 bg-[color:var(--mist)]" />
-          </div>
-          <div className="grid gap-4">
-            <div className="grid gap-1.5">
-              <Skeleton className="h-3.5 w-12 rounded-full" />
-              <Skeleton className="h-[50px] w-full rounded-xl" />
-            </div>
-            <Skeleton className="h-[52px] w-full rounded-xl" />
-          </div>
-          <Skeleton className="mx-auto h-3 w-64 max-w-full rounded-full" />
-        </div>
-        <div className="mt-6 grid justify-items-center gap-2.5">
-          {Array.from({ length: footerLines }).map((_, i) => (
-            <Skeleton key={i} className="h-3.5 w-52 max-w-full rounded-full" />
-          ))}
-        </div>
-      </div>
-    </main>
+    <div className="grid gap-1.5">
+      <span className="text-[13.5px] font-semibold text-[color:var(--ink)]">{label}</span>
+      <Skeleton className="h-[50px] w-full rounded-xl" />
+    </div>
+  );
+}
+
+/**
+ * <SignupRoleChoice>: each card with its real padding and text, the text
+ * invisible. A narrow phone wraps "RSVP and meet people" and the real card
+ * grows a line, so this one does too.
+ */
+export function SignupRoleChoiceSkeleton() {
+  return (
+    <div className="grid grid-cols-2 gap-2.5">
+      {SIGNUP_ROLES.map((option) => (
+        <span
+          key={option.value}
+          aria-hidden
+          className="skeleton rounded-xl border-[1.5px] border-transparent px-3.5 py-3"
+        >
+          <span className="invisible block text-[15px] font-semibold">{option.title}</span>
+          <span className="invisible mt-0.5 block text-[12.5px]">{option.body}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/** The out-of-area aside under the attendee signup, on /register and its loading screen. */
+export function AuthPilotNote() {
+  return (
+    <AuthNote>
+      Click is piloting in inner Sydney. Somewhere else? Sign up anyway - we&apos;ll tell you the
+      moment Click reaches you.
+    </AuthNote>
   );
 }

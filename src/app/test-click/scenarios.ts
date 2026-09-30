@@ -110,26 +110,26 @@ export function buildScenarios(pair: PairState): Scenario[] {
         : `${sender.displayName} → ${receiver.displayName} is pending, and ${receiver.displayName}'s view is clean.`,
   });
 
-  // Two pending rows in the same direction on the same surface and event is the
-  // duplicate guard having missed. Keyed on surface + event because the guard is
-  // surface-scoped: a pending discovery click alongside a pending who_was_there
-  // one is two different processes, not a duplicate.
-  const twinPending = (["a_to_b", "b_to_a"] as const).some((direction) => {
-    const pending = clicks.filter((c) => c.direction === direction && c.status === "pending");
-    return new Set(pending.map((c) => `${c.surface}:${c.eventTitle ?? ""}`)).size < pending.length;
-  });
+  // Two pending rows in the same direction is the duplicate guard having missed. One
+  // person is one click, whichever surface sent it (CHANGE BRIEF 2026-09-30), so the
+  // key is the direction alone - a pending discovery click alongside a pending
+  // who_was_there one at the same person is a duplicate too.
+  const twinPending = (["a_to_b", "b_to_a"] as const).some(
+    (direction) => clicks.filter((c) => c.direction === direction && c.status === "pending").length > 1,
+  );
   rows.push({
     id: "duplicate-send",
     stage: "1 · Private send",
     title: "Re-sending the same click is a quiet no-op",
-    expectation: "A second click at the same person on the same surface spends no budget and errors on nothing.",
+    expectation:
+      "A second click at the same person - from the same surface or the other one - spends no budget and errors on nothing.",
     // Still 'drive' - no row records that the second press was made, so a clean
     // board cannot tell a working guard from a button nobody pressed. The added
     // arm only catches the guard having actually failed, which a row CAN prove.
     state: twinPending ? "broken" : "drive",
     detail: twinPending
-      ? "LEAK: two pending clicks in the same direction on the same surface and event - the second send wrote a row and spent a second budget slot."
-      : "Press the same send button twice - the second must succeed and add no second row.",
+      ? "LEAK: two pending clicks in the same direction - the second send wrote a row and spent a second budget slot."
+      : "Press the same send button twice, or the discovery send and then the post-event one - the second must succeed and add no second row.",
   });
 
   rows.push({
@@ -239,11 +239,8 @@ export function buildScenarios(pair: PairState): Scenario[] {
           : `seen ${a.displayName}: ${mutual.seenAtA ?? "no"} · ${b.displayName}: ${mutual.seenAtB ?? "no"}. Open this mutual on /proposals as one side, tap "How clicking works", come back and re-open it - the reveal must not fire again, and that side's seen_at must be set.`,
   });
 
-  // Every send between a pair inside a live mutual is a duplicate - the guard is
-  // pair-wide, not surface-scoped like the one above - so NO click row may be
-  // created after mutual_at. A pending row OLDER than mutual_at is legitimate:
-  // the flip to 'mutual' at formation IS surface-scoped, so a discovery click can
-  // survive a post-event mutual. Strict `>` because the mutual-forming send
+  // Every send between a pair inside a live mutual is a duplicate, so NO click row
+  // may be created after mutual_at. Strict `>` because the mutual-forming send
   // inserts its own row in the same transaction, sharing the timestamp exactly.
   const postMutualPending = mutualActive
     ? clicks.filter((c) => c.status === "pending" && ts(c.createdAt) > ts(mutual.mutualAt))
@@ -756,7 +753,7 @@ export function buildScenarios(pair: PairState): Scenario[] {
   rows.push({
     id: "post-event",
     stage: "Process 2",
-    title: "The post-event surface is a separate process",
+    title: "The post-event surface is event-bound",
     expectation:
       "A who_was_there click is event-bound and can only be sent inside the event's 48-hour window.",
     state: postEvent.length > 0 ? "done" : "waiting",
@@ -776,20 +773,31 @@ export function buildScenarios(pair: PairState): Scenario[] {
     detail: "Send on the fixture that ended 4 days ago and read the refusal.",
   });
 
+  // CHANGE BRIEF 2026-09-30 reversed the old "never cross-match" rule: a click is a
+  // click, whichever surface sent it. Once the pair forms both rows read 'mutual',
+  // so the evidence is which surface each direction's click came from.
+  const sentOn = (direction: "a_to_b" | "b_to_a", surface: string, status: string) =>
+    clicks.some((c) => c.direction === direction && c.surface === surface && c.status === status);
+  const mixedOn = (status: string) =>
+    (sentOn("a_to_b", "discovery", status) && sentOn("b_to_a", "who_was_there", status)) ||
+    (sentOn("b_to_a", "discovery", status) && sentOn("a_to_b", "who_was_there", status));
   rows.push({
-    id: "no-cross-process",
+    id: "mixed-source-mutual",
     stage: "Process 2",
-    title: "The two processes never cross-match",
+    title: "A daily-picks click and a who-was-there click make one mutual",
     expectation:
-      "A discovery click and a post-event click at the same person do NOT form a mutual with each other.",
+      "A discovery click one way and a post-event click the other form exactly one mutual, and its reveal names the night the two of them were at - for both sides.",
     state:
-      pendingAtoB && postEvent.some((c) => c.direction === "b_to_a" && c.status === "pending")
-        ? mutual?.status === "active"
-          ? "broken"
-          : "done"
-        : "waiting",
-    detail:
-      "Send a discovery click one way and a post-event click the other way; no mutual may form.",
+      mixedOn("pending")
+        ? "broken"
+        : mixedOn("mutual") && mutual?.status === "active"
+          ? "done"
+          : "waiting",
+    detail: mixedOn("pending")
+      ? "LEAK: a live click on each surface and no mutual - the reciprocal lookup is still scoped to one surface."
+      : mixedOn("mutual")
+        ? "One mutual, from one click on each surface."
+        : "Reset the pair, send a discovery click one way and a post-event click the other way.",
   });
 
   rows.push({

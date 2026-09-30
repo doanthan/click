@@ -2,7 +2,13 @@ import Link from "next/link";
 import { auth } from "@/auth";
 import { EventExplorer } from "@/components/event-explorer";
 import { EventCard } from "@/components/event-card";
-import { getEventsForExplore, getPersonalizedDiscovery, getProfileStatus } from "@/lib/event-repository";
+import {
+  getEventsForExplore,
+  getPersonalizedDiscovery,
+  getProfileStatus,
+  measureExploreFrom,
+} from "@/lib/event-repository";
+import { distanceOriginForSuburb } from "@/lib/postcode";
 
 export const metadata = {
   title: "Discover",
@@ -17,6 +23,12 @@ export default async function DiscoverPage() {
     session?.user ? getPersonalizedDiscovery(session) : null,
   ]);
 
+  // A member's distances are measured from their postcode, everyone else's from
+  // Sydney CBD (bug board #305). Only the server can do it - the venue
+  // coordinates never reach the browser.
+  const origin = distanceOriginForSuburb(profileStatus?.suburb);
+  const railEvents = measureExploreFrom(personalized?.events ?? [], origin);
+
   const bookmarkedSet = new Set(profileStatus?.bookmarkedEventIds ?? []);
   const registeredSet = new Set(profileStatus?.registeredEventIds ?? []);
   const waitlistedSet = new Set(profileStatus?.waitlistedEventIds ?? []);
@@ -27,7 +39,7 @@ export default async function DiscoverPage() {
 
   return (
     <main className="min-h-screen bg-[color:var(--champagne)] pb-24 text-[color:var(--ink)]">
-      {personalized && personalized.events.length > 0 ? (
+      {personalized && railEvents.length > 0 ? (
         <section className="ck-page pt-6 pb-2">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
@@ -46,7 +58,7 @@ export default async function DiscoverPage() {
             ) : null}
           </div>
           <div className="ckRail mt-4 flex snap-x snap-mandatory gap-5 overflow-x-auto pb-2">
-            {personalized.events.map((event, index) => (
+            {railEvents.map((event, index) => (
               <div key={event.id} className="w-[19rem] shrink-0 snap-start sm:w-[21rem]">
                 <EventCard
                   event={event}
@@ -56,10 +68,9 @@ export default async function DiscoverPage() {
                   // This rail sits ABOVE the grid, so its first cover is the LCP
                   // on a signed-in load.
                   priority={index === 0}
-                  // Server-rendered, so there is never a shared location here -
-                  // the distance is always from the CBD and has to say so, the
-                  // same way the grid's cards do.
-                  distanceOrigin="CBD"
+                  // From the member's postcode, which needs no label; from the
+                  // CBD it has to say so, the same way the grid's cards do.
+                  distanceOrigin={origin ? undefined : "CBD"}
                 />
               </div>
             ))}
@@ -69,8 +80,10 @@ export default async function DiscoverPage() {
 
       <section className="ck-page pt-6">
         <EventExplorer
-          events={events}
+          events={measureExploreFrom(events, origin)}
           degraded={Boolean(events.degraded)}
+          distanceFrom={origin?.label ?? null}
+          signedIn={Boolean(session?.user)}
           bookmarkedEventIds={profileStatus?.bookmarkedEventIds ?? []}
           registeredEventIds={profileStatus?.registeredEventIds ?? []}
           waitlistedEventIds={profileStatus?.waitlistedEventIds ?? []}

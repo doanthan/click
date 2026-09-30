@@ -35,6 +35,8 @@
                 confirm/prompt -> components/confirm-dialog.tsx (focus-trapped).
    Motion     : prefers-reduced-motion is handled GLOBALLY (block near EOF) -
                 no per-element guard needed; don't rely on motion for meaning.
+                Route changes animate via app/template.tsx (RouteTransition);
+                a new loading.tsx wraps its shell in <RouteSkeleton>.
    ============================================================================ */
 
 :root {
@@ -1468,6 +1470,92 @@ button:focus-visible, a:focus-visible, select:focus-visible, textarea:focus-visi
 }
 .ck-coord-pop { animation: ck-coord-pop 480ms cubic-bezier(.22,1,.36,1); }
 
+/* ---------- Route transitions (React <ViewTransition>) ----------
+   On a route change the old page fades out quickly and the new one arrives
+   with the same short fade and 6px rise as .rise-soft. Never a slide, never a
+   zoom. RouteTransition (components/route-transition.tsx) runs it from the
+   app's templates, so it only plays on a client-side route change. A first
+   load keeps each page's own cascade. A search-param change (filters, tabs) or
+   a refresh after a server action doesn't replay it. Browsers without
+   same-document View Transitions simply swap pages instantly.
+
+   The old snapshot is taken wherever the reader had scrolled, so it fades out
+   in place while the new page arrives at the top. The exit is faster than the
+   entrance, and the entrance waits a beat, so the two pages never blur
+   together. */
+::view-transition-old(.ck-page) {
+  animation: ck-page-out 140ms cubic-bezier(.4, 0, 1, 1) both;
+}
+::view-transition-new(.ck-page) {
+  animation: ck-page-in 240ms cubic-bezier(.2, .7, .2, 1) 60ms both;
+}
+/* A route's loading shell (RouteSkeleton) dissolves as the data lands. The
+   page is already painted underneath, so this reads as the shimmer clearing
+   rather than one screen swapping for another. */
+::view-transition-old(.ck-skeleton) {
+  animation: ck-page-out 200ms cubic-bezier(.2, .7, .2, 1) both;
+}
+@keyframes ck-page-out { to { opacity: 0; } }
+@keyframes ck-page-in { from { opacity: 0; transform: translateY(6px); } }
+
+/* The chrome stays still while a page changes. A snapshot group paints above
+   the live document, so anything left in the document gets covered. The
+   header would sink under the outgoing page (captured mid-scroll, running up
+   behind it), and the tab bar, the bug button, the QA tools, a toast or the
+   maintenance curtain would blink out for the length of the fade. So each one gets a
+   group of its own that doesn't animate, painted on top. A name must be
+   unique on the page, or the browser skips the whole transition. Hence the
+   narrow selectors: the desktop nav also carries aria-label="Primary", and two
+   buttons share .ck-fab. */
+.site-header { view-transition-name: ck-header; }
+.ck-bottom-nav { view-transition-name: ck-bottom-nav; }
+.ck-curtain { view-transition-name: ck-curtain; }
+[data-support-widget] > button[aria-label="Report a bug"] { view-transition-name: ck-support-fab; }
+button.ck-fab[aria-label^="Open test recorder"] { view-transition-name: ck-qa-fab; }
+.ck-qa-switcher { view-transition-name: ck-qa-switcher; }
+[data-sonner-toaster][data-y-position="top"][data-x-position="right"] { view-transition-name: ck-toasts; }
+::view-transition-group(ck-header),
+::view-transition-group(ck-bottom-nav),
+::view-transition-group(ck-curtain),
+::view-transition-group(ck-support-fab),
+::view-transition-group(ck-qa-fab),
+::view-transition-group(ck-qa-switcher),
+::view-transition-group(ck-toasts) {
+  animation: none;
+  z-index: 100;
+}
+::view-transition-old(ck-header),
+::view-transition-old(ck-bottom-nav),
+::view-transition-old(ck-curtain),
+::view-transition-old(ck-support-fab),
+::view-transition-old(ck-qa-fab),
+::view-transition-old(ck-qa-switcher),
+::view-transition-old(ck-toasts) {
+  display: none;
+}
+::view-transition-new(ck-header),
+::view-transition-new(ck-bottom-nav),
+::view-transition-new(ck-curtain),
+::view-transition-new(ck-support-fab),
+::view-transition-new(ck-qa-fab),
+::view-transition-new(ck-qa-switcher),
+::view-transition-new(ck-toasts) {
+  animation: none;
+}
+
+/* A tap during the fade lands on the live page instead of being swallowed by
+   the transition overlay. */
+::view-transition { pointer-events: none; }
+
+/* After a swipe back or forward, Safari and Chrome on Android have already
+   animated the change themselves. A second fade on top would flash the page
+   you just swiped away. RouteTransitionGuard marks those navigations. */
+:root[data-ua-transition]::view-transition-group(*),
+:root[data-ua-transition]::view-transition-old(*),
+:root[data-ua-transition]::view-transition-new(*) {
+  animation: none !important;
+}
+
 /* Fixed support chrome must not cover controls in a modal or bottom sheet.
    ModalShell owns the stack marker so this also stays correct when dialogs are
    layered (booking -> Stripe checkout) and only returns after the last closes. */
@@ -1500,4 +1588,12 @@ button:focus-visible, a:focus-visible, select:focus-visible, textarea:focus-visi
   }
   /* Freeze the loading shimmer to a calm flat surface rather than a stuck mid-sweep frame. */
   .skeleton, .skeleton--deep { animation: none !important; background-image: none !important; }
+  /* `*` above doesn't reach the view-transition pseudo-elements. At zero
+     time, a route change or a skeleton hand-off is a plain instant swap. */
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation-duration: 0s !important;
+    animation-delay: 0s !important;
+  }
 }

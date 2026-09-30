@@ -372,13 +372,15 @@ const sourceFiles = [];
 const rel = (full) => path.relative(root, full).split(path.sep).join("/");
 
 test("the click send lives on the two click surfaces and nowhere else", () => {
-  // Part A invariant 1, and the C6 checkbox that gates the ship: "No click button
-  // lives on a profile, ever, nor on an event's attendee list - a profile you open
-  // is read-only." It shipped on /profile/[userId] anyway, behind a component whose
-  // own docblock argued the case for it, and no test noticed - the C4 grep for it
-  // ran nowhere. This is that grep, written as the assertion it should always have
-  // been: the two server actions that SEND a click may be imported by exactly the
-  // discovery card and the post-event card.
+  // Part A invariant 1, and the C6 checkbox that gates the ship, as CHANGE BRIEF
+  // 2026-09-30 restates it: the click lives on the daily picks card (Click page and
+  // dashboard) and on who was there - and on the profile modal those two open, where
+  // the button is the CARD's own control handed in, never a send of the modal's.
+  // The /profile/[userId] page and an event's attendee list never carry one. It
+  // shipped on /profile/[userId] once anyway, behind a component whose own docblock
+  // argued the case for it, and no test noticed. This is that grep, written as the
+  // assertion it should always have been: the two server actions that SEND a click
+  // may be imported by exactly the daily picks card and the post-event card.
   //
   // Asserted on the import, not on the copy. "click with" is a phrase the product
   // says in prose all over the place (and must keep saying); what makes a surface
@@ -938,40 +940,46 @@ test("only one of the two dismissals answers the window", () => {
   assert.match(send, /values \(\$1::uuid, \$2::uuid, 'clicked'\)/);
 });
 
-// ── C4.8 - the two processes never cross-match ──────────────────────────────────
+// ── C4.8, reversed - a click from either source pairs with the other ─────────────
 
-test("a discovery click and a post-event click between the same pair never pair up", () => {
-  // C4.8, a ship-gate checkbox of its own. Rule 3: the two processes are separate
-  // mechanics that happen to share a table, so a mutual may only form between two
-  // clicks on the SAME surface - discovery with discovery (both event_id null), or
-  // post-event with post-event on the SAME event.
+test("an explore click and a post-event click between the same pair make one mutual", () => {
+  // CHANGE BRIEF 2026-09-30 §3.5 reverses the old C4.8 rule. There are two SOURCES
+  // now, not two mechanics: Ava clicking Mia from her daily picks and Mia clicking
+  // Ava from who was there is one mutual, whichever sent first.
   const send = sliceFn(
     repo,
     "async function sendClickInner(",
     "export async function createUserClickForSession(",
   );
-  // One predicate, built once, used by BOTH the duplicate check and the reciprocal
-  // lookup - so the two can never drift into disagreeing about what a pair is.
+  // The duplicate check and the reciprocal lookup are both pair-wide - no surface
+  // or event predicate left in either.
+  assert.doesNotMatch(send, /surfaceMatch|updateSurfaceCond/);
+  const duplicate = send.slice(send.indexOf("const existing = await client.query"));
   assert.match(
-    send,
-    /const surfaceMatch = surface === "discovery" \? "event_id is null" : "event_id = \$3::uuid";/,
+    duplicate.slice(0, duplicate.indexOf(");")),
+    /where sender_id = \$1::uuid and receiver_id = \$2::uuid\s*and status = 'pending'\s*limit 1/,
   );
   const reciprocal = send.slice(send.indexOf("const reciprocalResult = await client.query"));
+  const reciprocalSql = reciprocal.slice(0, reciprocal.indexOf("for update"));
+  assert.doesNotMatch(reciprocalSql, /event_id is null|event_id = \$/, "the reciprocal lookup matches any source");
+  assert.match(reciprocal, /\[clickedProfile\.id, profile\.id\],/);
+  // Both clicks flip to 'mutual' whatever surface each came from.
+  const flip = send.slice(send.indexOf("set status = 'mutual', mutual_click_id = $3::uuid"));
+  assert.match(flip.slice(0, flip.indexOf("`")), /or \(sender_id = \$2::uuid and receiver_id = \$1::uuid\)\)\s*$/);
+
+  // The night the pair share, if either click came from one - a post-event click
+  // proves BOTH were there, so the explore side gets the event line too (§2.5).
+  assert.match(send, /const sharedEventId = eventId \?\? reciprocalClick\.event_id;/);
+  assert.match(send, /\[profile\.id, clickedProfile\.id, intentA, intentB, sharedEventId, surface\]/);
+
+  // One live click per ordered pair at the database, too (migration 070).
+  const migration = read("database/070_two_click_sources.sql");
   assert.match(
-    reciprocal.slice(0, reciprocal.indexOf("for update")),
-    /and \$\{surfaceMatch\}/,
-    "the reciprocal lookup must be scoped to the sending surface",
+    migration,
+    /create unique index if not exists uq_click_live_pair on clicks \(sender_id, receiver_id\)\s*where status = 'pending';/,
   );
-  // A bare event-agnostic reciprocal read is the shape of the bug - it would pair a
-  // discovery click with a post-event one and mint a mutual neither person made.
-  assert.doesNotMatch(
-    reciprocal.slice(0, reciprocal.indexOf("for update")),
-    /event_id is not null|coalesce\(event_id/,
-    "the reciprocal lookup must not widen across surfaces",
-  );
-  // And the post-event arm carries the event id, so "same surface" means "same
-  // night" rather than "any night".
-  assert.match(send, /\? \[clickedProfile\.id, profile\.id, eventId\]/);
+  assert.match(migration, /drop index if exists uq_click_discovery;/);
+  assert.doesNotMatch(migration, /drop index if exists uq_click_post_event/, "one click per person per event stays");
 });
 
 // ── CLICK_COORDINATION_SCREENS v2.1 - the gaps closed after the audit ────────────

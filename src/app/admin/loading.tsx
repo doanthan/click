@@ -4,6 +4,7 @@ import {
   SkeletonMetricGrid,
   SkeletonPageHeader,
 } from "@/components/skeleton";
+import { RouteSkeleton } from "@/components/route-transition";
 
 /**
  * Content-column skeleton for the admin dashboard home.
@@ -14,11 +15,13 @@ import {
  */
 export default function AdminOverviewLoading() {
   return (
-    <div className="space-y-12 py-10">
-      <SkeletonPageHeader />
-      <SkeletonMetricGrid count={8} />
-      <SkeletonChart />
-      <SkeletonInfoCardGrid count={6} />
-    </div>
+    <RouteSkeleton>
+      <div className="space-y-12 py-10">
+        <SkeletonPageHeader />
+        <SkeletonMetricGrid count={8} />
+        <SkeletonChart />
+        <SkeletonInfoCardGrid count={6} />
+      </div>
+    </RouteSkeleton>
   );
 }

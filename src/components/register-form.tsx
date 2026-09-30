@@ -8,6 +8,7 @@ import {
   Field,
   AuthConsent,
   AuthNote,
+  AuthPilotNote,
   HOST_SIGNUP_CALLBACK_URL,
   SignupRoleChoice,
   SsoButton,
@@ -105,10 +106,7 @@ export function RegisterForm({
           verification documents are optional. Free events cost nothing to host.
         </AuthNote>
       ) : (
-        <AuthNote>
-          Click is piloting in inner Sydney. Somewhere else? Sign up anyway - we&apos;ll tell you the
-          moment Click reaches you.
-        </AuthNote>
+        <AuthPilotNote />
       )}
     </div>
   );

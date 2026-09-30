@@ -73,7 +73,8 @@ export function SiteNotices({
 
 function MaintenanceCurtain() {
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-[color:var(--champagne)] px-4 py-16">
+    // ck-curtain keeps a page transition from painting over the curtain (globals.css).
+    <div className="ck-curtain fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-[color:var(--champagne)] px-4 py-16">
       <section
         role="status"
         className="w-full max-w-lg rounded-2xl bg-[color:var(--paper)] p-8 text-center shadow-[var(--shadow-sm)] sm:p-10"

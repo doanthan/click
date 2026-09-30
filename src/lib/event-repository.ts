@@ -56,7 +56,7 @@ import {
   sanitizeProfilePrompts,
   type ProfilePromptAnswer,
 } from "./profile-prompts";
-import { regionForEvent, type Region } from "./geo";
+import { haversineKm, regionForEvent, type LatLng, type Region } from "./geo";
 import {
   DISCOVERY_CLICK_WINDOW_DAYS,
   POST_EVENT_CLICK_WINDOW_HOURS,
@@ -78,8 +78,10 @@ import {
   REENGAGEMENT_GRACE_DAYS,
   SEND_CLICK_FLOOR_MS,
   SEND_CLICK_HOURLY_LIMIT,
+  type ClickSource,
   type SendClickOutcome,
 } from "./clicks/constants";
+import { DAILY_PICK_COUNT } from "./clicks/daily-picks";
 import {
   severConfirmedTogetherForCancel,
   severPairCoordination,
@@ -116,7 +118,7 @@ import { attendeeFomoSignals } from "./attendee-fomo";
 import { soloIntentLabel } from "./intent-label";
 import { getSupabaseAdmin } from "@/utils/supabase/admin";
 import { toTitleCase } from "./text-format";
-import { parseEventStart } from "./datetime";
+import { APP_TIME_ZONE, parseEventStart } from "./datetime";
 import {
   quoteCancellationRefund,
   type RefundTier,
@@ -1340,6 +1342,8 @@ export async function settleRefundedBooking(input: {
     let seatWasReleased = false;
     // §B5.6 survivors, collected inside the seat-release txn, notified after it.
     let settledSurvivors: PartnerCancelSurvivor[] = [];
+    // Claimed +1s refunded along with the booking, told after commit.
+    let releasedGuests: ReleasedGuest[] = [];
 
     if (input.releaseSeat) {
       const client = await pool.connect();
@@ -1360,6 +1364,9 @@ export async function settleRefundedBooking(input: {
         // refund finds the row already cancelled and must not promote again.
         if ((cancelled.rowCount ?? 0) > 0) {
           seatWasReleased = true;
+          releasedGuests = await claimedGuestsOn(client, {
+            paymentTransactionId: input.paymentTransactionId,
+          });
           await cancelGuestSeatsForTransaction(client, input.paymentTransactionId);
           // The seat and every +1 refunded with it go to the queue.
           promotions = await offerFreeSeatsToWaitlist(
@@ -1391,6 +1398,11 @@ export async function settleRefundedBooking(input: {
             row.profile_id,
             row.event_id,
           );
+          for (const guest of releasedGuests) {
+            settledSurvivors.push(
+              ...(await severConfirmedTogetherForCancel(client, guest.profileId, row.event_id)),
+            );
+          }
         }
         await client.query("commit");
       } catch (error) {
@@ -1403,6 +1415,7 @@ export async function settleRefundedBooking(input: {
 
     for (const promoted of promotions) await logWaitlistPromotedEmail(pool, promoted);
     await notifyPartnerCancelled(pool, settledSurvivors);
+    await notifyReleasedGuests(pool, releasedGuests);
 
     const shouldNotify =
       input.notify === "if-released" ? seatWasReleased : input.notify;
@@ -3437,6 +3450,34 @@ async function degradedExplore(): Promise<ExploreEvents> {
 // in the app twice for one page. `cache` collapses that to one.
 export const getEventsForExplore = cache(getEventsForExploreUncached);
 
+// The venue coordinates behind each explore event, kept on the server for
+// measureExploreFrom. Keyed on the event object, which the rail's ranking
+// (getPersonalizedDiscovery) passes through without copying.
+const exploreVenues = new WeakMap<EventItem, LatLng>();
+
+/**
+ * The explore catalogue measured from a member's postcode instead of Sydney CBD
+ * (bug board #305). The venue coordinates never reach the browser, so this is
+ * the only place that measuring can happen. Takes anything getEventsForExplore
+ * returned in this request, the Picked-for-you rail included.
+ *
+ * Whole km, at least 1: a postcode centre is not where anyone is, and a member
+ * can move it (their profile suburb), so a finer number taken from three
+ * suburbs would pin down the venue the card is withholding.
+ */
+export function measureExploreFrom(events: EventItem[], origin: LatLng | null): EventItem[] {
+  if (!origin) return events;
+  return events.map((event) => {
+    const venue =
+      exploreVenues.get(event) ??
+      // The static fallback catalogue (local dev) keeps its coordinates.
+      (event.distanceKm != null && event.lat != null && event.lng != null
+        ? { lat: event.lat, lng: event.lng }
+        : null);
+    return venue ? { ...event, distanceKm: Math.max(1, Math.round(haversineKm(origin, venue))) } : event;
+  });
+}
+
 async function getEventsForExploreUncached(): Promise<ExploreEvents> {
   const pool = getPostgresPool();
 
@@ -3553,13 +3594,17 @@ async function getEventsForExploreUncached(): Promise<ExploreEvents> {
     // seat gets both from /api/events/[eventId], which knows the session.
     //
     // distanceKm survives on purpose: it is computed here from the coordinates,
-    // rounded to a suburb-scale number, and the Nearest sort needs it.
-    return result.rows.map((row) => ({
-      ...eventFromRow(row),
-      location: "",
-      lat: null,
-      lng: null,
-    }));
+    // rounded to a suburb-scale number, and the Nearest sort needs it. The
+    // coordinates stay behind in exploreVenues, server-side, so a member's
+    // distances can be re-measured from their postcode (measureExploreFrom).
+    return result.rows.map((row) => {
+      const event = eventFromRow(row);
+      const listed: EventItem = { ...event, location: "", lat: null, lng: null };
+      if (event.distanceKm != null && event.lat != null && event.lng != null) {
+        exploreVenues.set(listed, { lat: event.lat, lng: event.lng });
+      }
+      return listed;
+    });
   } catch (error) {
     if (process.env.CLICK_DB_DEBUG === "true") {
       console.warn("Falling back to static Click events because Postgres is unavailable.", error);
@@ -10079,8 +10124,19 @@ function notEligibleError(auditReason: string) {
   // the server can read it, so /admin/audit can name the gate that closed without
   // the response ever separating them. Required, so a new refusal must name itself.
   (error as Error & { auditReason?: string }).auditReason = auditReason;
+  // One status for the lot, for the same reason as the one string: POST /api/clicks
+  // answers 403 (brief §3.5) whether the receiver is not in today's picks, was not
+  // at the event, or is blocked, banned, paused or hidden.
+  (error as Error & { httpStatus?: number }).httpStatus = 403;
   return error;
 }
+
+/**
+ * Today, as a daily_picks.pool_date: the calendar day on Sydney's clock, cut by the
+ * database's own now() so the send gate, the read and the job can never disagree
+ * about which day it is. There is no per-member time zone to use instead.
+ */
+const DAILY_PICK_DAY_SQL = `(now() at time zone '${APP_TIME_ZONE}')::date`;
 
 /**
  * Run work AFTER the response has been handed back, so how long it takes can never
@@ -10129,6 +10185,13 @@ function recordClickAudit(
 async function sendClickInner(
   input: {
     clickedProfileId: string;
+    /**
+     * Where the tap came from (CHANGE BRIEF 2026-09-30). `explore` must name one of
+     * the sender's daily picks for today; `post_event` must carry the event slug in
+     * sourceEventId, and is gated on both having been there. Named by the caller and
+     * never inferred, so neither gate can be reached the wrong way round.
+     */
+    source: ClickSource;
     sourceEventId?: string;
     /**
      * §6.9 post-event swap: the receiver of a still-pending post-event click at this
@@ -10148,6 +10211,20 @@ async function sendClickInner(
 
   if (!email) throw authError();
   if (!pool) throw databaseUnavailableError();
+
+  // The request's own shape, before anything is read: a post-event tap names its
+  // event and an explore tap never does. Says nothing about the receiver, so it may
+  // be specific.
+  if (input.source !== "explore" && input.source !== "post_event") {
+    throw validationError("Say where this click came from.");
+  }
+  if ((input.source === "post_event") !== Boolean(input.sourceEventId)) {
+    throw validationError(
+      input.source === "post_event"
+        ? "A click from an event needs the event it came from."
+        : "A click from your daily picks doesn't take an event.",
+    );
+  }
 
   const profile = await ensureProfileForSession(session);
   const client = await pool.connect();
@@ -10330,22 +10407,23 @@ async function sendClickInner(
       throw notEligibleError("Pair is inside a 'not feeling it' suppression window.");
     }
 
-    // Two click processes, two surfaces (§1, §2). The surface is decided by whether a
-    // source event is supplied - never by anything the receiver can influence:
-    //  • Process 1 - discovery "Click with someone" (no source event): anonymous,
-    //    person-bound (event_id NULL), live 7 days from creation (§5).
-    //  • Process 2 - post-event "Who was there" (a source event slug arrives): event-
-    //    bound, attendance-gated, live from event_end until event_end + 48h (§5, §7B).
-    //    Supersedes the old +12h gate (TW-3/TW-4).
+    // Two click sources, two surfaces (CHANGE BRIEF 2026-09-30). The surface is the
+    // source the caller named - never anything the receiver can influence:
+    //  • explore -> 'discovery': one of the sender's three daily picks, person-bound
+    //    (event_id NULL), live 7 days from creation (§5).
+    //  • post_event -> 'who_was_there': event-bound, attendance-gated, live from
+    //    event_end until event_end + 48h (§5, §7B). Supersedes the old +12h gate.
+    // The sources differ only in how a click gets IN. From the insert on, a click is
+    // a click: either can pair with either (see the reciprocal lookup below).
     let surface: "discovery" | "who_was_there";
     let eventId: string | null = null;
     let expiresAt: Date;
-    // Set before the branch, not inside it: the post-event arm has its own refusals
-    // and they should still say which surface and which event they refused.
-    audit.surface = input.sourceEventId ? "who_was_there" : "discovery";
+    // Set before the branch, not inside it: each arm has its own refusals and they
+    // should still say which surface (and which event) they refused.
+    audit.surface = input.source === "post_event" ? "who_was_there" : "discovery";
     if (input.sourceEventId) audit.event = input.sourceEventId;
 
-    if (input.sourceEventId) {
+    if (input.source === "post_event" && input.sourceEventId) {
       surface = "who_was_there";
       // §B7.3: repeated free-event no-shows cost you the post-event surface for 30
       // days. Payment is the commitment, so this is the only lever a free booking
@@ -10395,6 +10473,9 @@ async function sendClickInner(
           "That event is wrapped up now - your next one is where it happens.",
         );
         error.name = "ValidationError";
+        // 409, not the neutral 403: the event's clock is public, so a closed window
+        // is safe to tell apart from every receiver-state refusal (brief §3.5).
+        (error as Error & { httpStatus?: number }).httpStatus = 409;
         throw error;
       }
 
@@ -10431,6 +10512,26 @@ async function sendClickInner(
       );
     } else {
       surface = "discovery";
+      // Explore reaches only the people Click picked for the sender TODAY (brief
+      // §3.5). Everyone else is refused with the same neutral string as a blocked or
+      // paused receiver: which ids are in someone's picks is the sender's own
+      // knowledge, but "not a pick" and "not available" must still be one answer,
+      // or walking ids would sort them. A card left open across midnight refuses
+      // too - the set it came from is yesterday's.
+      const pickResult = await client.query<{ picked: boolean }>(
+        `
+          select exists (
+            select 1 from daily_picks
+            where profile_id = $1::uuid
+              and pool_date = ${DAILY_PICK_DAY_SQL}
+              and picked_profile_id = $2::uuid
+          ) as picked
+        `,
+        [profile.id, clickedProfile.id],
+      );
+      if (!pickResult.rows[0]?.picked) {
+        throw notEligibleError("Receiver is not one of the sender's daily picks for today.");
+      }
       expiresAt = new Date(Date.now() + DISCOVERY_CLICK_WINDOW_DAYS * 86400_000);
     }
 
@@ -10445,27 +10546,37 @@ async function sendClickInner(
       throw validationError("Add a profile photo before you can click with anyone.");
     }
 
-    // A still-pending click to this person on this surface = a duplicate send: quiet
-    // success, budget not re-spent (§6.1 P4). Detected before the cap check so a
-    // re-click never trips "you're at your cap".
-    const surfaceMatch = surface === "discovery" ? "event_id is null" : "event_id = $3::uuid";
-    const matchParams =
-      surface === "discovery"
-        ? [profile.id, clickedProfile.id]
-        : [profile.id, clickedProfile.id, eventId];
+    // A pending click of the sender's that has run past expires_at but not been swept
+    // yet (the lifecycle cron is hourly) still holds the pair's one live slot in
+    // uq_click_live_pair, so a fresh tap would land on it as a duplicate and add
+    // nothing. It could never have paired - the reciprocal lookup below ignores
+    // anything past its time - so it is retired here first, exactly as the sweep
+    // would retire it.
+    await client.query(
+      `update clicks set status = 'expired', updated_at = now()
+        where sender_id = $1::uuid and receiver_id = $2::uuid
+          and status = 'pending' and expires_at <= now()`,
+      [profile.id, clickedProfile.id],
+    );
+
+    // A still-pending click to this person = a duplicate send: quiet success, budget
+    // not re-spent (§6.1 P4). From EITHER source (brief §3.2 - one person is one
+    // click): tapping someone on the dashboard and then on the Click page, or from
+    // explore and then from who was there, sends one click, not two. Detected before
+    // the cap check so a re-click never trips "you're at your cap".
     const existing = await client.query(
       `select 1 from clicks
         where sender_id = $1::uuid and receiver_id = $2::uuid
-          and status = 'pending' and ${surfaceMatch}
+          and status = 'pending'
         limit 1`,
-      matchParams,
+      [profile.id, clickedProfile.id],
     );
 
     // ...and so is a click at someone this pair is ALREADY mutual with (§2 rule 6:
     // reciprocal-while-active is a no-op). The pending check above cannot see it -
-    // both rows flipped to 'mutual' when the pair formed - and uq_click_discovery
+    // both rows flipped to 'mutual' when the pair formed - and uq_click_live_pair
     // is scoped to `status = 'pending'`, so without this a replayed POST /clicks
-    // inserts a second pending discovery row and spends a budget slot for nothing.
+    // inserts a second pending row and spends a budget slot for nothing.
     // Deliberately NOT fixed by widening the index: the runbook requires the pair to
     // be re-clickable after a suppression lapses (§B7.8) and after a soft release,
     // which an unconditional unique would forbid forever.
@@ -10501,8 +10612,9 @@ async function sendClickInner(
         throw validationError("Pick a different person to swap out.");
       }
       if (isDuplicate) {
-        // Nothing to swap INTO - they already hold a click at this person here.
-        throw validationError("You've already clicked with them at this event.");
+        // Nothing to swap INTO - they already hold a click at this person, from this
+        // event or from their daily picks.
+        throw validationError("You've already clicked with them.");
       }
       const priorSwap = await client.query(
         `select 1 from click_swaps where sender_id = $1::uuid and event_id = $2::uuid limit 1`,
@@ -10561,10 +10673,10 @@ async function sendClickInner(
       }
     }
 
-    // Skipped outright on a duplicate. For a still-pending twin the per-surface
-    // unique swallowed it anyway; for an already-mutual pair nothing would have
-    // conflicted (both rows are 'mutual', and uq_click_discovery only covers
-    // 'pending'), so the insert IS the duplicate row this guard exists to refuse.
+    // Skipped outright on a duplicate. For a still-pending twin uq_click_live_pair
+    // swallowed it anyway; for an already-mutual pair nothing would have conflicted
+    // (both rows are 'mutual', and uq_click_live_pair only covers 'pending'), so the
+    // insert IS the duplicate row this guard exists to refuse.
     const inserted = isDuplicate
       ? { rows: [] as { id: string }[] }
       : await client.query<{ id: string }>(
@@ -10608,25 +10720,27 @@ async function sendClickInner(
       );
     }
 
-    // §4 mutual detection - lock the reciprocal pending row FOR UPDATE, matching WITHIN
-    // the same process (discovery↔discovery, or post-event on the SAME event). Two
-    // concurrent reciprocal clicks each block on the other's row → exactly one mutual.
-    const reciprocalResult = await client.query<{ id: string; intent_mode: string }>(
+    // §4 mutual detection - lock the reciprocal pending row FOR UPDATE. From ANY
+    // source (brief §3.5): Ava tapping Mia from her daily picks and Mia tapping Ava
+    // from who was there is one mutual, whichever of them sent first. Two concurrent
+    // reciprocal clicks each block on the other's row → exactly one mutual.
+    const reciprocalResult = await client.query<{
+      id: string;
+      intent_mode: string;
+      event_id: string | null;
+    }>(
       `
-        select id::text, intent_mode
+        select id::text, intent_mode, event_id::text
         from clicks
         where sender_id = $1::uuid
           and receiver_id = $2::uuid
           and status = 'pending'
           and expires_at > now()
-          and ${surfaceMatch}
         order by created_at
         limit 1
         for update
       `,
-      matchParams.length === 3
-        ? [clickedProfile.id, profile.id, eventId]
-        : [clickedProfile.id, profile.id],
+      [clickedProfile.id, profile.id],
     );
 
     const reciprocalClick = reciprocalResult.rows[0] ?? null;
@@ -10645,10 +10759,16 @@ async function sendClickInner(
       | null = null;
 
     if (reciprocalClick) {
-      // The post-event source event is always in the past (you click after it ends), so
-      // the preferred-event reuse below almost always falls through to the shared-interest
-      // future-event query - kept only for the rare still-future case.
-      const preferredEventId = eventId;
+      // The night the two of them share, if either click came from one. A post-event
+      // click only ever lands when BOTH were on that event's participant list, so in
+      // a mixed pair - one from explore, one from who was there - it is just as true
+      // for the explore side, and the reveal may say so to both (brief §2.5). Null
+      // only when both clicks came from explore.
+      const sharedEventId = eventId ?? reciprocalClick.event_id;
+      // That night is always in the past (you click after it ends), so the preferred-
+      // event reuse below almost always falls through to the shared-interest future-
+      // event query - kept only for the rare still-future case.
+      const preferredEventId = sharedEventId;
       if (preferredEventId) {
         // The "preferred" event is the one they both attended that unlocked the
         // Click - which is ALWAYS in the past (clicking is gated to 12h after an
@@ -10705,19 +10825,22 @@ async function sendClickInner(
         `
           insert into mutual_clicks
             (user_a_id, user_b_id, intent_a, intent_b, status, coord_state, mutual_at,
-             expires_at, source_event_id)
+             expires_at, source_event_id, source)
           values (
             least($1::uuid, $2::uuid), greatest($1::uuid, $2::uuid),
             $3, $4, 'active', 'open', now(), now() + interval '${MUTUAL_CLOCK_DAYS} days',
-            -- §B0 source_event_id: the night they were both at, NULL for a discovery
-            -- mutual. Stage 3's reveal carries "shared context (the event, for a
-            -- post-event mutual)" and this is the only place that fact is in hand.
-            $5::uuid
+            -- §B0 source_event_id: the night they were both at, NULL when both
+            -- clicks came from explore. Stage 3's reveal carries "shared context (the
+            -- event, for a post-event mutual)" and this is the only place that fact
+            -- is in hand.
+            $5::uuid,
+            -- The surface of the click that formed it (migration 070).
+            $6
           )
           on conflict (user_a_id, user_b_id) where status = 'active' do nothing
           returning id::text
         `,
-        [profile.id, clickedProfile.id, intentA, intentB, eventId],
+        [profile.id, clickedProfile.id, intentA, intentB, sharedEventId, surface],
       );
 
       // No row back from the partial-unique conflict ⇒ a live mutual already exists for
@@ -10764,9 +10887,9 @@ async function sendClickInner(
           // On 'open' the drawer renders the neutral "Here's a plan: {event}"
           // with Confirm live for both sides, which is what this always was.
         }
-        // Mark both clicks of THIS process as mutual + link them to the relationship row.
-        const updateSurfaceCond =
-          surface === "discovery" ? "event_id is null" : "event_id = $4::uuid";
+        // Mark both clicks as mutual + link them to the relationship row, whichever
+        // surface each came from. uq_click_live_pair leaves at most one pending row
+        // each way, and the reciprocal one is the row locked above.
         await client.query(
           `
             update clicks
@@ -10774,11 +10897,8 @@ async function sendClickInner(
             where status = 'pending'
               and ((sender_id = $1::uuid and receiver_id = $2::uuid)
                 or (sender_id = $2::uuid and receiver_id = $1::uuid))
-              and ${updateSurfaceCond}
           `,
-          surface === "discovery"
-            ? [profile.id, clickedProfile.id, mutualClickId]
-            : [profile.id, clickedProfile.id, mutualClickId, eventId],
+          [profile.id, clickedProfile.id, mutualClickId],
         );
       }
 
@@ -10995,7 +11115,7 @@ async function sendClickInner(
             ? "They had already clicked - this one closed it into a mutual."
             : surface === "who_was_there"
               ? "Both attended the event and its 48h post-event window is open."
-              : "Discovery roster send, inside the live-click budget.") +
+              : "One of the sender's daily picks, inside the live-click budget.") +
         (releasedClickId ? " Swapped out an earlier pending click for this event." : ""),
       receiverId,
     });
@@ -11032,6 +11152,8 @@ async function sendClickInner(
 export async function createUserClickForSession(
   input: {
     clickedProfileId: string;
+    /** explore = one of today's daily picks; post_event = who was there, with its event. */
+    source: ClickSource;
     sourceEventId?: string;
     /** §6.9 swap: release this pending post-event click's budget slot first. */
     releaseReceiverId?: string;
@@ -11580,6 +11702,8 @@ export async function cancelRegistration(eventId: string, session: Session | nul
 
   // §B5.6: survivors of this cancel, collected inside the txn, notified after it.
   let partnerCancelSurvivors: PartnerCancelSurvivor[] = [];
+  // Claimed +1s whose seats go with this booking, told after commit.
+  let releasedGuests: ReleasedGuest[] = [];
   // Every seat this cancellation frees gets its own offer - see
   // offerFreeSeatsToWaitlist below.
   const promotions: WaitlistPromotion[] = [];
@@ -11686,6 +11810,7 @@ export async function cancelRegistration(eventId: string, session: Session | nul
       // together with their own. The refund computed below is on the full
       // payment_transactions.amount_cents (all seats), so the money reconciles.
       if (row.txn_id) {
+        releasedGuests = await claimedGuestsOn(client, { paymentTransactionId: row.txn_id });
         await cancelGuestSeatsForTransaction(client, row.txn_id);
       }
     }
@@ -11786,6 +11911,13 @@ export async function cancelRegistration(eventId: string, session: Session | nul
       profile.id,
       row.event_id,
     );
+    // Each claimed +1 on the booking stops going too - the same teardown the
+    // one-seat cancel gives a released guest.
+    for (const guest of releasedGuests) {
+      partnerCancelSurvivors.push(
+        ...(await severConfirmedTogetherForCancel(client, guest.profileId, row.event_id)),
+      );
+    }
 
     await client.query("commit");
   } catch (error) {
@@ -11895,6 +12027,8 @@ export async function cancelRegistration(eventId: string, session: Session | nul
   // helper catches its own failures, and awaiting it prevents Vercel from
   // freezing the detached work before email_events is written.
   await logRsvpCancelledEmails(pool, cancelledEventId, profile.id, refundLine);
+
+  await notifyReleasedGuests(pool, releasedGuests);
 
   for (const promoted of promotions) {
     await logWaitlistPromotedEmail(pool, promoted);
@@ -12213,6 +12347,106 @@ export async function nameGuestSeatForPurchaser(
   return seat;
 }
 
+// A +1 who claimed their seat was told they're in, so every path that takes the
+// seat away has to tell them - not only the one-seat cancel below. The
+// whole-booking cancel, an admin's full refund and the event cancel used to flip
+// their guest_spots row and say nothing, and the friend would turn up for a seat
+// that was gone. Read inside the transaction, BEFORE the seats flip, and notify
+// after commit. Invited-but-unclaimed guests are left out, as in the one-seat
+// cancel (spec §10.1): their claim link already lands on "gone".
+type ReleasedGuest = {
+  profileId: string;
+  email: string | null;
+  firstName: string | null;
+  eventTitle: string;
+  eventSlug: string;
+  eventStartsAt: Date;
+};
+
+async function claimedGuestsOn(
+  client: PoolClient,
+  scope: { paymentTransactionId: string } | { eventId: string },
+): Promise<ReleasedGuest[]> {
+  const byBooking = "paymentTransactionId" in scope;
+  const result = await client.query<{
+    profile_id: string;
+    email: string | null;
+    display_name: string | null;
+    guest_first_name: string | null;
+    title: string;
+    slug: string;
+    starts_at: Date;
+  }>(
+    `
+      select gs.claimed_profile_id::text as profile_id,
+             claimer.email::text as email,
+             claimer.display_name,
+             gs.guest_first_name,
+             event.title,
+             event.slug,
+             event.starts_at
+      from guest_spots gs
+      join profiles claimer on claimer.id = gs.claimed_profile_id
+      join events event on event.id = gs.event_id
+      where gs.status = 'claimed'
+        and ${byBooking ? "gs.payment_transaction_id" : "gs.event_id"} = $1::uuid
+    `,
+    [byBooking ? scope.paymentTransactionId : scope.eventId],
+  );
+  return result.rows.map((row) => ({
+    profileId: row.profile_id,
+    email: row.email,
+    firstName: row.display_name?.split(/\s+/)[0] ?? row.guest_first_name,
+    eventTitle: row.title,
+    eventSlug: row.slug,
+    eventStartsAt: row.starts_at,
+  }));
+}
+
+// Post-commit: tell each released +1 their spot is no longer held (spec §10.1 +
+// §8.6). In-app notification + an email_events row (CLAUDE.md: every
+// notification flow logs one). The friend is never told why or by whom.
+async function notifyReleasedGuests(
+  pool: NonNullable<ReturnType<typeof getPostgresPool>>,
+  guests: ReleasedGuest[],
+): Promise<void> {
+  for (const guest of guests) {
+    await pool
+      .query(
+        `insert into notifications (profile_id, title, body, action_url) values ($1::uuid, $2, $3, $4)`,
+        [
+          guest.profileId,
+          "A spot changed",
+          `Your spot at ${guest.eventTitle} is no longer held - no charge, nothing needed.`,
+          `/events/${guest.eventSlug}`,
+        ],
+      )
+      .catch(() => {});
+    if (guest.email && guest.email !== "[removed]") {
+      const dateClause = ` on ${new Intl.DateTimeFormat("en-AU", {
+        weekday: "long",
+        month: "short",
+        day: "numeric",
+        timeZone: "Australia/Sydney",
+      }).format(guest.eventStartsAt)}`;
+      await logEmailEvent({
+        template: "guest-spot-cancelled",
+        toEmail: guest.email,
+        toProfileId: guest.profileId,
+        vars: {
+          guestFirstName: guest.firstName || "there",
+          eventTitle: guest.eventTitle,
+          eventLongDateClause: dateClause,
+          eventUrl: `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3001"}/events/${guest.eventSlug}`,
+        },
+        // The name can be the one the purchaser typed, and the title is the
+        // host's free text.
+        escapeVars: true,
+      });
+    }
+  }
+}
+
 // Purchaser cancels ONE +1 seat without cancelling their whole booking (spec 19
 // §10.1). Money belongs to the purchaser: the refund follows the standard policy
 // window on the per-seat amount they paid (ticket + booking fee), uses
@@ -12249,12 +12483,10 @@ export async function cancelGuestSeatForPurchaser(
     | null = null;
   let paidZeroRefund = false;
   let eventId = "";
-  let eventSlug = "";
   let eventTitle = "";
-  let eventStartsAt = new Date(0);
   let purchaserBookingId = "";
   let merchantId: string | null = null;
-  let claimed: { profileId: string; email: string | null; firstName: string | null } | null = null;
+  let claimed: ReleasedGuest | null = null;
 
   try {
     await client.query("begin");
@@ -12327,9 +12559,7 @@ export async function cancelGuestSeatForPurchaser(
     }
 
     eventId = row.event_id;
-    eventSlug = row.slug;
     eventTitle = row.title;
-    eventStartsAt = row.starts_at;
     purchaserBookingId = row.purchaser_booking_id;
     merchantId = row.merchant_profile_id;
     if (row.claimed_profile_id) {
@@ -12337,6 +12567,9 @@ export async function cancelGuestSeatForPurchaser(
         profileId: row.claimed_profile_id,
         email: row.claimed_email,
         firstName: row.claimed_name?.split(/\s+/)[0] ?? row.guest_first_name,
+        eventTitle: row.title,
+        eventSlug: row.slug,
+        eventStartsAt: row.starts_at,
       };
     }
 
@@ -12470,41 +12703,8 @@ export async function cancelGuestSeatForPurchaser(
     }).catch(() => {});
   }
 
-  // If the seat was claimed, the friend thought they were going - tell them
-  // (spec §10.1 + §8.6). In-app notification + an email_events row (CLAUDE.md:
-  // every notification flow logs one). The friend is never told why or by whom.
-  if (claimed) {
-    await pool
-      .query(
-        `insert into notifications (profile_id, title, body, action_url) values ($1::uuid, $2, $3, $4)`,
-        [
-          claimed.profileId,
-          "A spot changed",
-          `Your spot at ${eventTitle} is no longer held - no charge, nothing needed.`,
-          `/events/${eventSlug}`,
-        ],
-      )
-      .catch(() => {});
-    if (claimed.email && claimed.email !== "[removed]") {
-      const dateClause = ` on ${new Intl.DateTimeFormat("en-AU", {
-        weekday: "long",
-        month: "short",
-        day: "numeric",
-        timeZone: "Australia/Sydney",
-      }).format(eventStartsAt)}`;
-      await logEmailEvent({
-        template: "guest-spot-cancelled",
-        toEmail: claimed.email,
-        toProfileId: claimed.profileId,
-        vars: {
-          guestFirstName: claimed.firstName || "there",
-          eventTitle,
-          eventLongDateClause: dateClause,
-          eventUrl: `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3001"}/events/${eventSlug}`,
-        },
-      });
-    }
-  }
+  // If the seat was claimed, the friend thought they were going - tell them.
+  if (claimed) await notifyReleasedGuests(pool, [claimed]);
 
   for (const promoted of promotions) {
     await logWaitlistPromotedEmail(pool, promoted);
@@ -13071,6 +13271,17 @@ async function cancelEvent(eventId: string, actor: EventCancellationActor) {
       });
     }
 
+    // A claimed +1 holds no event_attendees row, so the notices below would miss
+    // them - read them before their seats flip. Anyone who also holds their own
+    // booking here already hears about it as an attendee.
+    const noticed = new Set(affectedProfiles.map((profile) => profile.profileId));
+    const releasedGuests: ReleasedGuest[] = [];
+    for (const guest of await claimedGuestsOn(client, { eventId: event.id })) {
+      if (noticed.has(guest.profileId)) continue;
+      noticed.add(guest.profileId);
+      releasedGuests.push(guest);
+    }
+
     // Cancel every guest seat for this event (spec 19 §10.5) so claim links
     // dead-end and the seats stop holding capacity. The purchasers' full-amount
     // refunds (which already cover the guest seats they paid for) run below.
@@ -13083,7 +13294,7 @@ async function cancelEvent(eventId: string, actor: EventCancellationActor) {
     const profilesNeedingNotice = affectedProfiles.filter(
       (profile) => profile.needsCancellationNotice,
     );
-    if (profilesNeedingNotice.length > 0) {
+    if (profilesNeedingNotice.length > 0 || releasedGuests.length > 0) {
       await client.query(
         `
           insert into notifications (profile_id, title, body, action_url)
@@ -13091,7 +13302,10 @@ async function cancelEvent(eventId: string, actor: EventCancellationActor) {
           from unnest($1::uuid[]) as profile_id
         `,
         [
-          profilesNeedingNotice.map((profile) => profile.profileId),
+          [
+            ...profilesNeedingNotice.map((profile) => profile.profileId),
+            ...releasedGuests.map((guest) => guest.profileId),
+          ],
           "Event cancelled",
           actor.kind === "admin"
             ? `${event.title} has been cancelled by Click. Reason: ${actor.reason}`
@@ -13175,6 +13389,19 @@ async function cancelEvent(eventId: string, actor: EventCancellationActor) {
       };
     });
     const suggestedEventsHtml = renderSuggestedEventsBlock(suggestions);
+    const cancelledEmailVars = (firstName: string, refundLabel: string) => ({
+      firstName,
+      eventTitle: event.title,
+      eventLongDate: dates.eventLongDate,
+      eventStartTime: dates.eventStartTime,
+      eventHostName: actor.kind === "admin" ? "Click" : event.host_name,
+      cancellationReason: actor.reason,
+      refundLabel,
+      suggestedEvents: suggestedEventsHtml,
+      discoverUrl: `${origin}/discover`,
+      supportEmail: SUPPORT_EMAIL,
+      unsubscribeUrl: `${origin}/account-settings`,
+    });
 
     // Per attendee: issue the 100% refund (full remaining balance), then email.
     // Each refund is isolated - a Stripe failure logs to refund_failures and the
@@ -13243,22 +13470,25 @@ async function cancelEvent(eventId: string, actor: EventCancellationActor) {
           template: "event-cancelled-attendee",
           toEmail: attendee.email,
           toProfileId: attendee.profileId,
-          vars: {
-            firstName: (attendee.displayName || "").split(/\s+/)[0] || "there",
-            eventTitle: event.title,
-            eventLongDate: dates.eventLongDate,
-            eventStartTime: dates.eventStartTime,
-            eventHostName: actor.kind === "admin" ? "Click" : event.host_name,
-            cancellationReason: actor.reason,
+          vars: cancelledEmailVars(
+            (attendee.displayName || "").split(/\s+/)[0] || "there",
             refundLabel,
-            suggestedEvents: suggestedEventsHtml,
-            discoverUrl: `${origin}/discover`,
-            supportEmail: SUPPORT_EMAIL,
-            unsubscribeUrl: `${origin}/account-settings`,
-          },
+          ),
         });
       },
     );
+
+    // The claimed +1s get the same email. Nothing of theirs to refund: the seat
+    // was the purchaser's to pay for, and the purchaser's refund above covers it.
+    for (const guest of releasedGuests) {
+      if (!guest.email || guest.email === "[removed]") continue;
+      await logEmailEvent({
+        template: "event-cancelled-attendee",
+        toEmail: guest.email,
+        toProfileId: guest.profileId,
+        vars: cancelledEmailVars(guest.firstName || "there", "You were not charged."),
+      });
+    }
 
     if (
       actor.kind === "admin" &&
@@ -15769,12 +15999,22 @@ export async function getNotificationEmailForSession(
   };
 }
 
-export type SuggestedPerson = {
+/**
+ * One of the viewer's daily picks, as the People Card on the Click page and the
+ * dashboard renders it - and exactly what GET /api/people/daily returns (CHANGE
+ * BRIEF 2026-09-30). The card's inputs plus the viewer's OWN click state, nothing
+ * else: never why the person was picked (daily_picks.reason stays on the server,
+ * invariant 2) and never whether they have clicked the viewer, which nobody learns
+ * until it is mutual.
+ */
+export type DailyPick = {
   id: string;
   displayName: string;
-  suburb: string | null;
   photoUrl: string | null;
-  age: number | null;
+  // ONE label, gated on the viewer here (soloIntentLabel), so a dating intent never
+  // reaches a viewer who isn't open to dating - not even inside the payload.
+  intentLabel: string | null;
+  // INTEREST tags both share - never life tags, which stay private until mutual.
   sharedInterests: string[];
   // Inputs for the People Card's commonality line - deliberately NON-interest
   // axes, so the line can never duplicate the interest tags rendered beneath it.
@@ -15784,12 +16024,16 @@ export type SuggestedPerson = {
   // A separate tag_type from interests, so it is a genuinely different axis.
   sharedMusic: string | null;
   nearby: boolean;
-  intents: string[];
-  // True when the viewer has already sent this person a (still-active) Click
-  // that hasn't gone mutual yet. Lets the card show a persistent "Click sent -
-  // waiting" state instead of resetting to "Click privately" on every reload.
+  /** The viewer has a live click out to this person, from either source. The card
+   *  shows the muted "clicked" on every surface the pick appears on. */
   alreadyClicked: boolean;
+  /** The pair's live mutual - the Sage "clicked ✨" that opens it. Both sides
+   *  already know about a mutual, so it discloses nothing. */
+  mutualId: string | null;
 };
+
+/** Someone Click could pick for a viewer, best first. `reason` never leaves the server. */
+type PickCandidate = { id: string; reason: string };
 
 /* ---- QA namespace isolation -------------------------------------------------
    @click.local personas live in the PRODUCTION database on purpose: the persona
@@ -15821,89 +16065,44 @@ function qaNamespaceScope(candidateAlias: string, viewerEmailSql: string) {
 /** Every pull-based roster passes the viewer's profile id as $1. */
 const QA_VIEWER_EMAIL_BY_ID = "select qa_viewer.email from profiles qa_viewer where qa_viewer.id = $1::uuid";
 
-export async function getSuggestedPeople(session: Session | null): Promise<SuggestedPerson[]> {
+/**
+ * Everyone Click could pick for this viewer today, best first - the pool the daily
+ * picks are drawn from (CHANGE BRIEF 2026-09-30 §3.3). The brief's exclusions, each on
+ * the rule the runbook already gives it: a live click from the viewer (either source),
+ * a live mutual, a block either way, an opted-out, paused or banned profile, a "not
+ * feeling it" (pair_suppressions, 90 days) and a released mutual inside its 30-day
+ * cooldown (B7.9).
+ *
+ * NEVER a signal from the other direction. Whether a candidate has clicked the viewer
+ * must not move them in, out, up or down: picks that followed incoming clicks would
+ * tell the viewer who likes them without a mutual ever forming (§6.1).
+ */
+export async function getSuggestedPeople(viewerId: string): Promise<PickCandidate[]> {
   const pool = getPostgresPool();
-  const email = getSessionEmail(session);
 
-  if (!pool || !email || !isClickMechanicEnabled()) return [];
+  if (!pool || !isClickMechanicEnabled()) return [];
 
   try {
-    const profile = await ensureProfileForSession(session);
     const result = await pool.query<{
       id: string;
-      display_name: string;
-      suburb: string | null;
       photo_url: string | null;
-      age: number | null;
-      shared: string[];
-      shared_event: string | null;
-      shared_music: string | null;
-      nearby: boolean;
-      intents: string[];
-      already_clicked: boolean;
+      shared_count: number;
       actionable_mutuals: number;
       inactive: boolean;
     }>(
       `
-        select p.id::text, p.display_name, p.suburb, p.photo_url, p.age,
-               -- INTEREST tags only. Unfiltered, this aggregate also carried the
-               -- shared 'life' tags the quiz writes - which are private until a
-               -- mutual forms - straight onto a pre-mutual discovery card, plus
-               -- 'music', which belongs on the commonality line below, not here.
+        select p.id::text, p.photo_url,
+               -- Interest + music overlap, the order below and the pick's reason when
+               -- matching v2 has nothing to say. Never the 'life' tags the quiz
+               -- writes: those stay private until a mutual forms.
                coalesce(
-                 array_agg(distinct shared_tag.label)
-                   filter (where shared_tag.tag_type = 'interest'),
-                 '{}'
-               ) as shared,
-               -- The People Card's commonality line needs a NON-interest axis,
-               -- so it can never just restate the interest tags under it. Axis 1
-               -- is a past event you both actually attended; axis 2 is shared
-               -- music taste; axis 3 (fallback) is proximity, expressed as a
-               -- range ("you're both nearby") and never as a named suburb, so it
-               -- stays city-agnostic.
-               (
-                 select e.title
-                 from event_attendees a_me
-                 join event_attendees a_them
-                   on a_them.event_id = a_me.event_id
-                  and a_them.profile_id = p.id
-                  and a_them.status = 'confirmed'
-                 join events e on e.id = a_me.event_id
-                 where a_me.profile_id = $1::uuid
-                   and a_me.status = 'confirmed'
-                   and e.starts_at < now()
-                 order by e.starts_at desc
-                 limit 1
-               ) as shared_event,
-               nullif(
-                 array_to_string(
-                   (array_agg(distinct lower(shared_tag.label))
-                      filter (where shared_tag.tag_type = 'music'))[1:2],
-                   ' & '
+                 array_length(
+                   array_agg(distinct shared_tag.label)
+                     filter (where shared_tag.tag_type in ('interest', 'music')),
+                   1
                  ),
-                 ''
-               ) as shared_music,
-               (p.suburb is not distinct from (select suburb from profiles where id = $1::uuid)) as nearby,
-               p.connection_intents::text[] as intents,
-               exists (
-                 select 1 from clicks uc
-                 where uc.sender_id = $1::uuid
-                   and uc.receiver_id = p.id
-                   and uc.expires_at > now()
-                   -- Only a still-pending one-way click means "waiting on them".
-                   -- Once it goes mutual the row stays (status='mutual', same
-                   -- 30-day expiry), so without this guard the card kept showing
-                   -- "pending their Click" after a match (bug board #214/#215).
-                   and uc.status = 'pending'
-                   -- ...and only a DISCOVERY one. Rule 3: the two processes never
-                   -- cross-match, so a post-event click at this person is not a
-                   -- click waiting on them HERE. Unscoped, it dropped them out of
-                   -- the daily set for the whole 48h post-event window, and the
-                   -- discovery click that would have paired with theirs could not
-                   -- be sent. Same correction the post-event roster already carries
-                   -- in the other direction (it scopes to THIS event on purpose).
-                   and uc.event_id is null
-               ) as already_clicked,
+                 0
+               ) as shared_count,
                -- B7.2 coordination load. Counts ACTIONABLE mutuals only - active and
                -- open/proposed. 'dormant' is resting and auto-revived, so it demands
                -- nothing; 'confirmed_together' is a plan already locked; every other
@@ -16004,6 +16203,16 @@ export async function getSuggestedPeople(session: Session | null): Promise<Sugge
               and ((rc.user_a_id = $1::uuid and rc.user_b_id = p.id)
                 or (rc.user_a_id = p.id and rc.user_b_id = $1::uuid))
           )
+          -- Already clicked, from either source (brief §3.3): a pick is someone to
+          -- click, and the one live click at them is already out. Live only - once
+          -- it has lapsed they may come round again, like a released pair.
+          and not exists (
+            select 1 from clicks uc
+            where uc.sender_id = $1::uuid
+              and uc.receiver_id = p.id
+              and uc.status = 'pending'
+              and uc.expires_at > now()
+          )
         group by p.id
         order by
           -- B7.4b row 23: quiet for 30 days is a DOWN-RANK, never a removal - events
@@ -16037,7 +16246,7 @@ export async function getSuggestedPeople(session: Session | null): Promise<Sugge
               and (am.user_a_id = p.id or am.user_b_id = p.id)) asc
         limit 24
       `,
-      [profile.id],
+      [viewerId],
     );
 
     // "Has a photo" must mean the SAME thing here as it does at render time
@@ -16050,17 +16259,21 @@ export async function getSuggestedPeople(session: Session | null): Promise<Sugge
 
     // Matching v2 (flagged): keep this surface's candidate selection + profile-
     // completeness rules, but re-rank by the cohort-aware pair model instead of
-    // raw shared-tag count. Falls back to the original order when the viewer or
-    // candidates aren't in the feature store yet.
+    // raw shared-tag count - intent, interests, the life quiz, the viewer's cohort
+    // and proximity all feed it (score.ts). Falls back to the original order when
+    // the viewer or candidates aren't in the feature store yet.
+    const reasons = new Map<string, string>();
     const { matchingV2Enabled } = await getSystemSettings();
     if (matchingV2Enabled) {
-      const viewer = await loadUserFeatures(pool, profile.id);
+      const viewer = await loadUserFeatures(pool, viewerId);
       if (viewer) {
         const features = await loadManyUserFeatures(pool, rows.map((r) => r.id));
         rows = [...rows]
           .map((row) => {
             const cand = features.get(row.id);
-            return { row, score: cand ? scorePair(viewer, cand).score : -1 };
+            const scored = cand ? scorePair(viewer, cand) : null;
+            if (scored) reasons.set(row.id, strongestPickSignal(scored.contributions));
+            return { row, score: scored ? scored.score : -1 };
           })
           .sort((a, b) => b.score - a.score)
           .map((s) => s.row);
@@ -16078,20 +16291,292 @@ export async function getSuggestedPeople(session: Session | null): Promise<Sugge
 
     return rows.map((row) => ({
       id: row.id,
-      displayName: row.display_name,
-      suburb: row.suburb,
-      photoUrl: row.photo_url,
-      age: row.age,
-      sharedInterests: row.shared ?? [],
-      sharedEvent: row.shared_event ?? null,
-      sharedMusic: row.shared_music ?? null,
-      nearby: Boolean(row.nearby),
-      intents: row.intents ?? [],
-      alreadyClicked: Boolean(row.already_clicked),
+      reason:
+        reasons.get(row.id) ?? (Number(row.shared_count) > 0 ? "shared_tags" : "open_pool"),
     }));
   } catch {
     return [];
   }
+}
+
+/** The pair-model feature that added the most to a pick - its daily_picks.reason. */
+function strongestPickSignal(contributions: Partial<Record<string, number>>): string {
+  let strongest = "open_pool";
+  let best = 0;
+  for (const [feature, value] of Object.entries(contributions)) {
+    if (value !== undefined && value > best) {
+      strongest = feature;
+      best = value;
+    }
+  }
+  return strongest;
+}
+
+/**
+ * Today's picks for one viewer, written once (brief §3.3). The daily-picks cron writes
+ * them in the Sydney morning; someone who arrives before it ran, or signed up since,
+ * gets theirs on first view instead. Either way the set is written once per day and
+ * never reshuffled, which is what lets the dashboard and the Click page show the
+ * same people, in the same click state, all day.
+ *
+ * Least recently picked first, then Click's own order: someone picked lately waits
+ * behind anyone who wasn't, so "three new people, every day" holds whenever the pool
+ * is deeper than three, and the set cycles back round when it isn't. Writes nothing
+ * when there is nobody to pick - the next view simply asks again.
+ */
+async function ensureDailyPicks(pool: Pool, viewerId: string): Promise<void> {
+  const today = await pool.query(
+    `select 1 from daily_picks where profile_id = $1::uuid and pool_date = ${DAILY_PICK_DAY_SQL} limit 1`,
+    [viewerId],
+  );
+  if (today.rows.length > 0) return;
+
+  // All of the reading happens BEFORE the transaction, on the pool: the lock below
+  // must never be held while waiting on another connection from the same pool.
+  const candidates = await getSuggestedPeople(viewerId);
+  if (candidates.length === 0) return;
+  const history = await pool.query<{ picked: string; last_day: string }>(
+    `select picked_profile_id::text as picked, max(pool_date)::text as last_day
+       from daily_picks
+      where profile_id = $1::uuid
+      group by picked_profile_id`,
+    [viewerId],
+  );
+  const lastPicked = new Map(history.rows.map((row) => [row.picked, row.last_day]));
+  // ISO dates compare as strings and never-picked ("") sorts first. Array.prototype
+  // .sort is stable, so people picked on the same day keep Click's order.
+  const chosen = [...candidates]
+    .sort((a, b) => (lastPicked.get(a.id) ?? "").localeCompare(lastPicked.get(b.id) ?? ""))
+    .slice(0, DAILY_PICK_COUNT);
+
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    // One writer per viewer. Two tabs opening at once must not each write their own
+    // three: the second waits here, then its insert sees the first one's rows.
+    await client.query(`select pg_advisory_xact_lock(hashtext($1)::bigint)`, [
+      `daily-picks:${viewerId}`,
+    ]);
+    await client.query(
+      `
+        insert into daily_picks (profile_id, picked_profile_id, pool_date, reason)
+        select $1::uuid, pick.picked, ${DAILY_PICK_DAY_SQL}, pick.reason
+        from unnest($2::uuid[], $3::text[]) as pick(picked, reason)
+        where not exists (
+          select 1 from daily_picks
+          where profile_id = $1::uuid and pool_date = ${DAILY_PICK_DAY_SQL}
+        )
+        on conflict do nothing
+      `,
+      [viewerId, chosen.map((pick) => pick.id), chosen.map((pick) => pick.reason)],
+    );
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * The viewer's picks for today (brief §3.4), for the Click page, the dashboard card
+ * and GET /api/people/daily - one read, so all three always agree on who and on the
+ * click state. Writes today's set first if the job hasn't reached this viewer yet.
+ *
+ * Re-checked on every read, not just at pick time: someone who has since blocked (or
+ * been blocked), been banned or suspended, gone invisible, paused, lost their photo
+ * or said "not feeling it" drops out for the rest of the day. The set is never topped
+ * back up - it is the day's set, not a feed.
+ */
+export async function getDailyPicks(session: Session | null): Promise<DailyPick[]> {
+  const pool = getPostgresPool();
+  const email = getSessionEmail(session);
+  if (!pool || !email || !isClickMechanicEnabled()) return [];
+
+  try {
+    const profile = await ensureProfileForSession(session);
+    await ensureDailyPicks(pool, profile.id);
+    const result = await pool.query<{
+      id: string;
+      display_name: string;
+      photo_url: string | null;
+      intents: string[] | null;
+      viewer_dating_visible: boolean | null;
+      shared_interests: string[] | null;
+      shared_event: string | null;
+      shared_music: string | null;
+      nearby: boolean | null;
+      already_clicked: boolean;
+      mutual_id: string | null;
+    }>(
+      `
+        select
+          p.id::text,
+          p.display_name,
+          p.photo_url,
+          -- Raw intents stay on the server: the mapper turns them into ONE label,
+          -- gated on the viewer's dating_visible (soloIntentLabel).
+          p.connection_intents::text[] as intents,
+          (select me.dating_visible from profiles me where me.id = $1::uuid) as viewer_dating_visible,
+          -- INTEREST tags only. That is a SENSITIVITY gate, not a taste one: the
+          -- life quiz writes its answers into user_tags as tag_type 'life', and
+          -- life tags stay private until a mutual forms.
+          array(
+            select tag.label
+            from user_tags theirs_tag
+            join user_tags mine_tag
+              on mine_tag.tag_id = theirs_tag.tag_id and mine_tag.profile_id = $1::uuid
+            join tags tag on tag.id = theirs_tag.tag_id
+            where theirs_tag.profile_id = p.id and tag.tag_type = 'interest'
+            order by tag.label
+          ) as shared_interests,
+          -- The commonality line's axes, NON-interest by design so it never
+          -- restates the tags. Axis 1: a past night you were both at.
+          (
+            select past_event.title
+            from event_participants_v mine_past
+            join event_participants_v theirs_past
+              on theirs_past.event_id = mine_past.event_id
+             and theirs_past.profile_id = p.id
+            join events past_event on past_event.id = mine_past.event_id
+            where mine_past.profile_id = $1::uuid
+              and past_event.starts_at < now()
+            order by past_event.starts_at desc
+            limit 1
+          ) as shared_event,
+          -- Axis 2: up to two shared music genres, lowercased ("house & techno").
+          nullif(
+            array_to_string(
+              array(
+                select distinct lower(tag.label) as genre
+                from user_tags theirs_tag
+                join user_tags mine_tag
+                  on mine_tag.tag_id = theirs_tag.tag_id and mine_tag.profile_id = $1::uuid
+                join tags tag on tag.id = theirs_tag.tag_id
+                where theirs_tag.profile_id = p.id and tag.tag_type = 'music'
+                order by genre
+                limit 2
+              ),
+              ' & '
+            ),
+            ''
+          ) as shared_music,
+          -- Axis 3: proximity as a range ("you're both nearby"), never a named suburb.
+          coalesce(p.suburb = (select me.suburb from profiles me where me.id = $1::uuid), false)
+            as nearby,
+          -- The viewer's OWN live click at them, from either source. Never theirs
+          -- at the viewer: that is only ever learned as a mutual.
+          exists (
+            select 1 from clicks c
+            where c.sender_id = $1::uuid
+              and c.receiver_id = p.id
+              and c.status = 'pending'
+              and c.expires_at > now()
+          ) as already_clicked,
+          (
+            select m.id::text from mutual_clicks m
+            where m.user_a_id = least($1::uuid, p.id)
+              and m.user_b_id = greatest($1::uuid, p.id)
+              and m.status = 'active'
+              and m.expires_at > now()
+            limit 1
+          ) as mutual_id
+        from daily_picks dp
+        join profiles p on p.id = dp.picked_profile_id
+        where dp.profile_id = $1::uuid
+          and dp.pool_date = ${DAILY_PICK_DAY_SQL}
+          and p.suspended_at is null
+          and p.is_banned = false
+          and p.social_visible = true
+          and (p.paused_until is null or p.paused_until <= now())
+          and not exists (
+            select 1 from user_blocks b
+            where (b.blocker_profile_id = $1::uuid and b.blocked_profile_id = p.id)
+               or (b.blocker_profile_id = p.id and b.blocked_profile_id = $1::uuid)
+          )
+          and not exists (
+            select 1 from pair_suppressions ps
+            where ps.expires_at > now()
+              and ps.user_a_id = least($1::uuid, p.id)
+              and ps.user_b_id = greatest($1::uuid, p.id)
+          )
+        -- One stable order for the day, so the dashboard's rotation walks the same
+        -- three people the Click page lists.
+        order by dp.created_at, dp.id
+      `,
+      [profile.id],
+    );
+
+    // The render-time face test the send path refuses on (#190).
+    return result.rows
+      .filter((row) => resolveAvatarImage(row.photo_url))
+      .map((row) => ({
+        id: row.id,
+        displayName: row.display_name,
+        photoUrl: row.photo_url,
+        intentLabel: soloIntentLabel(row.intents ?? [], Boolean(row.viewer_dating_visible)),
+        sharedInterests: row.shared_interests ?? [],
+        sharedEvent: row.shared_event,
+        sharedMusic: row.shared_music,
+        nearby: Boolean(row.nearby),
+        alreadyClicked: row.already_clicked,
+        mutualId: row.mutual_id,
+      }));
+  } catch (error) {
+    console.warn("[daily-picks] could not read today's picks", error);
+    return [];
+  }
+}
+
+/**
+ * The daily picks job (brief §3.3), run by the daily-picks cron in the Sydney
+ * morning: today's picks for everyone who has been around in the last month, so the
+ * set is already there when they open the app. Emits no notification of any kind.
+ *
+ * The activity cutoff only bounds the work, never who gets picks - anyone it skips
+ * gets theirs from getDailyPicks on first view.
+ */
+export async function generateDailyPicksForAll(): Promise<{ members: number; failed: number }> {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+  if (!isClickMechanicEnabled()) return { members: 0, failed: 0 };
+
+  // The VIEWERS who get picks, not the people who can be picked - that pool, and its
+  // one social-graph definition, is getSuggestedPeople's.
+  const members = await pool.query<{ id: string }>(
+    `
+      select p.id::text
+      from profiles p
+      where p.deleted_at is null
+        and p.suspended_at is null
+        and p.is_banned = false
+        and coalesce(p.last_active_at, p.created_at) > now() - interval '${INACTIVE_DOWNRANK_DAYS} days'
+        and not exists (
+          select 1 from daily_picks dp
+          where dp.profile_id = p.id and dp.pool_date = ${DAILY_PICK_DAY_SQL}
+        )
+    `,
+  );
+
+  let failed = 0;
+  // Two at a time: each member holds one pooled connection for its write and
+  // borrows others for its reads, and the pool is five wide. One candidate query
+  // per member is fine into the low thousands; past that, batch it before the cron
+  // nears its time limit.
+  await mapWithConcurrency(
+    members.rows,
+    async (member) => {
+      try {
+        await ensureDailyPicks(pool, member.id);
+      } catch (error) {
+        failed += 1;
+        console.warn("[daily-picks] could not pick for a member", member.id, error);
+      }
+    },
+    2,
+  );
+  return { members: members.rows.length, failed };
 }
 
 export type MutualClickEntry = {
@@ -16510,14 +16995,9 @@ export async function getViewerClickState(
             select 1 from clicks c
             where c.sender_id = $1::uuid and c.receiver_id = $2::uuid
               and c.status = 'pending' and c.expires_at > now()
-              -- Discovery only. This button sends a Process-1 click, and rule 3 is
-              -- that the two processes NEVER cross-match: a post-event click at this
-              -- person cannot pair with their discovery click at you. Counting it
-              -- here greyed the button out to "clicked" for the 48h post-event
-              -- window, which hid the only control that could form the discovery
-              -- mutual - and this page is deliberately the one surface that always
-              -- offers the send.
-              and c.event_id is null
+              -- From either source. One person is one click (CHANGE BRIEF
+              -- 2026-09-30): a click from the daily picks and one from who was
+              -- there pair with each other now, so either one means "clicked".
           ) as clicked,
           exists (
             select 1 from mutual_clicks m
@@ -16755,8 +17235,8 @@ const POST_EVENT_ROSTER_RANK = `
 // The pair's live mutual, for PostEventCoAttendee.mutualId. Shared by both roster
 // queries, with the same reading of `$1` and `other` as the rank above.
 //
-// From ANY source on purpose - post-event detection only pairs clicks at one event,
-// but "already mutual" is about the two people. Without it, someone you were mutual
+// From ANY source on purpose - "already mutual" is about the two people, not the
+// night or the surface that made them mutual. Without it, someone you were mutual
 // with from another night came back on this roster as "click with [name]", and the
 // tap was sendClickInner's reciprocal-while-active no-op: it still said "we'll only
 // show you if it's mutual" to a pair who already were, and answered this event's
@@ -16773,7 +17253,7 @@ const POST_EVENT_ROSTER_MUTUAL = `
           ) as mutual_id`;
 
 // The People Card's inputs for one co-attendee (bug board #293/#297): the same
-// axes getSuggestedPeople hands the discovery card, so who-was-there shows the
+// axes getDailyPicks hands the daily picks card, so who-was-there shows the
 // same card. Both post-event queries alias the night `e` and the co-attendee
 // `other`, and bind the viewer to $1. `other` is LEFT-joined in the single-event
 // query (an empty roster still returns the night), so every expression here has
@@ -16884,20 +17364,21 @@ export async function getPostEventClickPrompts(
           -- pool hard-requires a photo), so the roster carries the face too.
           other.photo_url as other_photo_url,
           other.suburb as other_suburb,
-          -- Scoped to THIS event on purpose: the constraint this mirrors is
-          -- uq_click_post_event (sender_id, receiver_id, event_id), so a click
-          -- sent at some other event must not hide the person here. Unscoped,
-          -- one long-expired discovery click removed someone from every future
-          -- roster permanently - and because mutual detection only pairs clicks
-          -- on the same surface, the hidden send was the one that would have
-          -- formed the mutual. No status filter: the unique index ignores
-          -- status, so any existing row (even invalidated) still blocks a
-          -- re-send, and showing them as clickable would just 500 on insert.
+          -- Two ways to have clicked someone here. (1) Any click at them at THIS
+          -- event, whatever its status: uq_click_post_event (sender_id,
+          -- receiver_id, event_id) ignores status, so even an invalidated row
+          -- blocks a re-send, and offering one would only no-op on insert.
+          -- (2) A LIVE click at them from anywhere - one person is one click
+          -- (CHANGE BRIEF 2026-09-30), so a pending click from the daily picks
+          -- already covers them, and pairs with theirs if they send one. Only a
+          -- live one: a long-expired click elsewhere must not hide them from
+          -- every future roster.
           exists (
             select 1 from clicks c
             where c.sender_id = $1::uuid
               and c.receiver_id = other.id
-              and c.event_id = e.id
+              and (c.event_id = e.id
+                or (c.status = 'pending' and c.expires_at > now()))
           ) as already_clicked,
           -- §6.9(a): only a still-PENDING post-event click is releasable. One that
           -- went mutual never is, and one that lapsed with the window has no budget
@@ -17078,20 +17559,21 @@ export async function getPostEventClickPromptForEvent(
           -- pool hard-requires a photo), so the roster carries the face too.
           other.photo_url as other_photo_url,
           other.suburb as other_suburb,
-          -- Scoped to THIS event on purpose: the constraint this mirrors is
-          -- uq_click_post_event (sender_id, receiver_id, event_id), so a click
-          -- sent at some other event must not hide the person here. Unscoped,
-          -- one long-expired discovery click removed someone from every future
-          -- roster permanently - and because mutual detection only pairs clicks
-          -- on the same surface, the hidden send was the one that would have
-          -- formed the mutual. No status filter: the unique index ignores
-          -- status, so any existing row (even invalidated) still blocks a
-          -- re-send, and showing them as clickable would just 500 on insert.
+          -- Two ways to have clicked someone here. (1) Any click at them at THIS
+          -- event, whatever its status: uq_click_post_event (sender_id,
+          -- receiver_id, event_id) ignores status, so even an invalidated row
+          -- blocks a re-send, and offering one would only no-op on insert.
+          -- (2) A LIVE click at them from anywhere - one person is one click
+          -- (CHANGE BRIEF 2026-09-30), so a pending click from the daily picks
+          -- already covers them, and pairs with theirs if they send one. Only a
+          -- live one: a long-expired click elsewhere must not hide them from
+          -- every future roster.
           exists (
             select 1 from clicks c
             where c.sender_id = $1::uuid
               and c.receiver_id = other.id
-              and c.event_id = e.id
+              and (c.event_id = e.id
+                or (c.status = 'pending' and c.expires_at > now()))
           ) as already_clicked,
           -- §6.9(a): only a still-PENDING post-event click is releasable. One that
           -- went mutual never is, and one that lapsed with the window has no budget

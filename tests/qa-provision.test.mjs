@@ -325,17 +325,28 @@ test("discovery never leaks private life tags as shared interests", () => {
   // shared-tag aggregate joins `tags` unfiltered, so without a tag_type guard
   // they land on a pre-mutual discovery card next to the public interests.
   const repo = readFileSync(path.join(root, "src/lib/event-repository.ts"), "utf8");
-  const query = repo.slice(repo.indexOf("export async function getSuggestedPeople"));
-  const body = query.slice(0, query.indexOf("\n}"));
+  // The card's shared interests come from the daily picks read (CHANGE BRIEF
+  // 2026-09-30); the pool behind the picks only counts overlap to rank by.
+  const picksRead = repo.slice(repo.indexOf("export async function getDailyPicks"));
+  const body = picksRead.slice(0, picksRead.indexOf("\n}"));
   assert.match(
     body,
-    /array_agg\(distinct shared_tag\.label\)\s*\n?\s*filter \(where shared_tag\.tag_type = 'interest'\)/,
+    /where theirs_tag\.profile_id = p\.id and tag\.tag_type = 'interest'\s*\n\s*order by tag\.label\s*\n\s*\) as shared_interests,/,
     "sharedInterests must be restricted to tag_type = 'interest'",
   );
-  assert.match(body, /shared_tag\.tag_type = 'music'/, "the music commonality axis must be selected");
-  assert.doesNotMatch(
-    body,
-    /filter \(where shared_tag\.label is not null\)/,
-    "an unfiltered shared-tag aggregate leaks life tags into discovery",
+  assert.match(body, /tag\.tag_type = 'music'/, "the music commonality axis must be selected");
+  const pool = repo.slice(repo.indexOf("export async function getSuggestedPeople"));
+  const poolBody = pool.slice(0, pool.indexOf("\n}"));
+  assert.match(
+    poolBody,
+    /array_agg\(distinct shared_tag\.label\)\s*\n?\s*filter \(where shared_tag\.tag_type in \('interest', 'music'\)\)/,
+    "the pool's overlap count must never include the private life tags",
   );
+  for (const src of [body, poolBody]) {
+    assert.doesNotMatch(
+      src,
+      /filter \(where shared_tag\.label is not null\)/,
+      "an unfiltered shared-tag aggregate leaks life tags into discovery",
+    );
+  }
 });

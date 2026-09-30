@@ -1,9 +1,9 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { AuthedRedirect } from "@/components/authed-redirect";
-import { AuthShell, MagicLinkSentNote } from "@/components/auth-ui";
+import { MagicLinkSentNote } from "@/components/auth-ui";
 import { RegisterForm } from "@/components/register-form";
+import { RegisterFrame } from "./register-frame";
 
 export const metadata = {
   title: "Create your account",
@@ -57,18 +57,7 @@ export default async function RegisterPage({ searchParams }: RegisterPageProps) 
   const metaConfigured = !!(process.env.AUTH_FACEBOOK_ID && process.env.AUTH_FACEBOOK_SECRET);
 
   return (
-    <AuthShell
-      title="Create your account"
-      sub="Real-life events near you - come along, or host your own."
-      footer={
-        <p className="text-center text-sm text-[color:var(--slate)]">
-          Already on Click?{" "}
-          <Link href="/login" className="font-semibold text-[color:var(--purple)] hover:underline">
-            Log in instead
-          </Link>
-        </p>
-      }
-    >
+    <RegisterFrame>
       <AuthedRedirect />
 
       {/* The signup is answered HERE now, in signup language - it used to hand
@@ -85,6 +74,6 @@ export default async function RegisterPage({ searchParams }: RegisterPageProps) 
         googleConfigured={googleConfigured}
         metaConfigured={metaConfigured}
       />
-    </AuthShell>
+    </RegisterFrame>
   );
 }
