@@ -3,6 +3,7 @@
 import { useActionState, useSyncExternalStore, type ReactNode } from "react";
 import { useFormStatus } from "react-dom";
 import type { AccountSwitchResult } from "@/lib/account-switch-result";
+import { signOutOfClick } from "@/app/login/actions";
 
 // One lock for the picker and return banner, even when both forms are visible.
 let switchingAccount = false;
@@ -36,13 +37,24 @@ export function AccountSwitchForm({ action, children }: {
     return result;
   }, {});
   return (
-    <form action={submit} onSubmitCapture={(event) => {
-      if (switchingAccount) event.preventDefault();
-      else setSwitching(true);
-    }}>
-      {state.error ? <p role="alert" className="mb-3 rounded-xl bg-[color:var(--lavender-100)] p-3 text-sm text-[color:var(--ink)]">{state.error}</p> : null}
-      {children}
-    </form>
+    <>
+      <form action={submit} onSubmitCapture={(event) => {
+        if (switchingAccount) event.preventDefault();
+        else setSwitching(true);
+      }}>
+        {state.error ? <p role="alert" className="mb-3 rounded-xl bg-[color:var(--lavender-100)] p-3 text-sm text-[color:var(--ink)]">{state.error}</p> : null}
+        {children}
+      </form>
+      {/* Only after a failed Return (the server decides): a viewing admin is
+          otherwise never offered a sign-out, which would end their own session too. */}
+      {state.offerSignOut ? (
+        <form action={signOutOfClick}>
+          <button type="submit" className="inline-flex min-h-9 items-center rounded-xl bg-[color:var(--lavender-100)] px-3 text-[12.5px] font-semibold text-[color:var(--ink)]">
+            Sign out
+          </button>
+        </form>
+      ) : null}
+    </>
   );
 }
 

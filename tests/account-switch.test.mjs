@@ -243,3 +243,54 @@ test("Auth.js ignores client update claims, rejects expired viewing and creates 
   await provider.authorize({ targetId: target.id, intent: "switch", actorEmail: actor.email });
   assert.deepEqual(authorizeCalls, [[target.id, false]]);
 });
+
+test("a failed Return offers a sign-out, so a viewing admin is never stuck; a failed switch does not", async () => {
+  let session = { ...adminSession(), user: target, impersonation: { actor, expiresAt: Date.now() + 60000 } };
+  const actions = load("../src/app/account-switch/actions.ts", {
+    "@/auth": {
+      auth: async () => session,
+      isAdminEmail: isAdmin,
+      signIn: async () => { throw new Error("CredentialsSignin"); },
+      signOut: async () => {},
+    },
+    "@/lib/account-switch-policy": policy,
+    "@/lib/test-switcher": {},
+    "@/lib/qa-personas": {},
+    "@/lib/qa-provision": {},
+    "@/lib/qa-sign-in": {},
+  });
+  const form = (fields) => {
+    const data = new FormData();
+    for (const [key, value] of Object.entries(fields)) data.set(key, value);
+    return data;
+  };
+  const back = await actions.switchAdminAccount({}, form({ intent: "return" }));
+  assert.equal(back.offerSignOut, true);
+  assert.match(back.error, /return you to your admin account/);
+  const other = await actions.switchAdminAccount({}, form({ targetId: target.id }));
+  assert.equal(other.offerSignOut, undefined);
+  // The viewing window ran out while the page stayed open: auth.ts has ended the session.
+  session = null;
+  assert.equal((await actions.switchAdminAccount({}, form({ intent: "return" }))).offerSignOut, true);
+  assert.equal((await actions.switchAdminAccount({}, form({ targetId: target.id }))).offerSignOut, false);
+
+  const component = readFileSync(new URL("../src/components/account-switch-form.tsx", import.meta.url), "utf8");
+  assert.match(component, /state\.offerSignOut \? \(\s*<form action=\{signOutOfClick\}>/);
+});
+
+test("a refused switch says which check refused it", async () => {
+  const warned = [];
+  const warn = console.warn;
+  console.warn = (message) => warned.push(message);
+  try {
+    const viewing = { ...adminSession(), user: target, impersonation: { actor, expiresAt: Date.now() + 30000 } };
+    assert.equal(await harness(viewing, { suspended: true }).service.authorizeAccountSwitch("", true), null);
+    assert.equal(await harness(adminSession()).service.authorizeAccountSwitch("", true), null);
+  } finally {
+    console.warn = warn;
+  }
+  assert.deepEqual(warned, [
+    "[account-switch] return refused: the admin's own profile is missing, suspended or banned",
+    "[account-switch] return refused: not viewing another account",
+  ]);
+});

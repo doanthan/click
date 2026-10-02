@@ -23,10 +23,16 @@ export async function searchSwitchAccounts(search: string): Promise<SwitchAccoun
 
 /** Runs inside the credentials provider too, so direct callback POSTs are gated. */
 export async function authorizeAccountSwitch(targetId: string, returning: boolean) {
+  // Auth.js logs every refusal as a bare CredentialsSignin, so say which check it was.
+  const refuse = (reason: string) => {
+    console.warn(`[account-switch] ${returning ? "return" : "switch"} refused: ${reason}`);
+    return null;
+  };
   const session = await auth();
   const actor = accountSwitchActor(session, isAdminEmail);
-  if (!actor || (returning && !session?.impersonation)) return null;
-  if (!returning && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetId)) return null;
+  if (!actor) return refuse("no admin behind this session, or viewing access ran out");
+  if (returning && !session?.impersonation) return refuse("not viewing another account");
+  if (!returning && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetId)) return refuse("target id is not a uuid");
   const pool = getPostgresPool();
   if (!pool) throw new Error("Account switching requires a database connection.");
   const client = await pool.connect();
@@ -36,14 +42,14 @@ export async function authorizeAccountSwitch(targetId: string, returning: boolea
       `select id::text from profiles where email = $1::citext
        and suspended_at is null and not coalesce(is_banned, false) for share`, [actor.email],
     );
-    if (!owner.rows[0]) { await client.query("rollback"); return null; }
+    if (!owner.rows[0]) { await client.query("rollback"); return refuse("the admin's own profile is missing, suspended or banned"); }
     const target = await client.query<SwitchAccount & { image: string | null }>(
       `select id::text, email::text, display_name as name, role::text, photo_url as image
        from profiles where ${returning ? "email = $1::citext" : "id = $1::uuid"} for share`,
       [returning ? actor.email : targetId],
     );
     const user = target.rows[0];
-    if (!user?.email) { await client.query("rollback"); return null; }
+    if (!user?.email) { await client.query("rollback"); return refuse("target profile not found"); }
     const backToSelf = user.email.toLowerCase() === actor.email;
     const runningUntil = session?.impersonation?.expiresAt ?? Date.parse(session!.expires);
     const expiresAt = backToSelf ? runningUntil : viewingExpiresAt(user.email, runningUntil);

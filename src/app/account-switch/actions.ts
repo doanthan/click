@@ -13,7 +13,9 @@ export async function switchAdminAccount(
 ): Promise<AccountSwitchResult> {
   const session = await auth();
   if (!accountSwitchActor(session, isAdminEmail)) {
-    return { error: "Sign in with your own admin account to switch accounts." };
+    // A page left open past the viewing window still shows Return (auth.ts has
+    // already ended that session), so it needs the same way out.
+    return { error: "Sign in with your own admin account to switch accounts.", offerSignOut: data.get("intent") === "return" };
   }
   const returning = data.get("intent") === "return";
   try {
@@ -24,6 +26,11 @@ export async function switchAdminAccount(
     });
     return { destination: returning ? "/admin" : "/post-login" };
   } catch {
+    // Return is the only exit a viewing admin is shown, so when it fails they
+    // need another one, or they are stuck in the account they were viewing.
+    if (returning) {
+      return { error: "Couldn’t return you to your admin account. Sign out, then sign in again as yourself.", offerSignOut: true };
+    }
     return { error: "Couldn’t switch accounts. Your current session is unchanged. Refresh the list and try again." };
   }
 }
