@@ -13,7 +13,20 @@ import { EmptyState } from "@/components/empty-state";
 // That is the corruption migration 057 exists to undo, re-applied by hand.
 const tagTypeOptions = ["interest", "life", "music", "vibe"] as const;
 
-export function AdminTagManager({ tags }: { tags: AdminTagRow[] }) {
+const sortOptions = [
+  ["category", "By category"],
+  ["az", "A-Z"],
+  ["usage", "Most used"],
+] as const;
+
+export function AdminTagManager({
+  tags,
+  categories: categoryOptions,
+}: {
+  tags: AdminTagRow[];
+  /** The public categories hosts pick events from (getMerchantCategoryOptions). */
+  categories: string[];
+}) {
   const [rows, setRows] = useState(tags);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [label, setLabel] = useState("");
@@ -26,18 +39,29 @@ export function AdminTagManager({ tags }: { tags: AdminTagRow[] }) {
   // Make a long list manageable: free-text search + a type filter.
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<"all" | (typeof tagTypeOptions)[number]>("all");
+  // Bug board #314: alphabetical and by-usage orders as well as grouped.
+  const [sortBy, setSortBy] = useState<(typeof sortOptions)[number][0]>("category");
 
+  // Bug board #313: Category is a pick from the existing list, not free text.
+  // Typing used to create the category on save (createTagForAdmin upserts it),
+  // so a typo became a new public category and "fitness" renamed "Fitness" for
+  // every event matched on the name. The hosts' list leaves out the internal
+  // Life and Music categories, so the categories already on tags are merged in -
+  // otherwise editing one of those tags would show a blank pick.
   const categories = useMemo(
     () =>
-      Array.from(new Set(rows.map((tag) => tag.categoryName).filter(Boolean) as string[]))
-        .sort((a, b) => a.localeCompare(b))
-        .slice(0, 20),
-    [rows],
+      Array.from(
+        new Set([
+          ...categoryOptions,
+          ...(rows.map((tag) => tag.categoryName).filter(Boolean) as string[]),
+        ]),
+      ).sort((a, b) => a.localeCompare(b)),
+    [categoryOptions, rows],
   );
 
-  // Filter by search (label / slug / category) + type, then group by category
-  // (then label) so related tags sit together - much easier to scan than the
-  // previous unsorted, silently-capped-at-80 list.
+  // Filter by search (label / slug / category) + type, then order: grouped by
+  // category (then label) by default so related tags sit together, or A-Z, or
+  // most used first.
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return rows
@@ -50,12 +74,15 @@ export function AdminTagManager({ tags }: { tags: AdminTagRow[] }) {
           (tag.categoryName ?? "").toLowerCase().includes(q)
         );
       })
-      .sort(
-        (a, b) =>
-          (a.categoryName ?? "Uncategorised").localeCompare(b.categoryName ?? "Uncategorised") ||
-          a.label.localeCompare(b.label),
+      .sort((a, b) =>
+        sortBy === "usage"
+          ? b.usageCount - a.usageCount || a.label.localeCompare(b.label)
+          : sortBy === "az"
+            ? a.label.localeCompare(b.label)
+            : (a.categoryName ?? "Uncategorised").localeCompare(b.categoryName ?? "Uncategorised") ||
+              a.label.localeCompare(b.label),
       );
-  }, [rows, query, typeFilter]);
+  }, [rows, query, typeFilter, sortBy]);
 
   function resetForm() {
     setEditingId(null);
@@ -184,19 +211,21 @@ export function AdminTagManager({ tags }: { tags: AdminTagRow[] }) {
 
           <label className="grid gap-2 text-sm text-[color:var(--ink)]">
             <span className="eyebrow">Category</span>
-            <input
+            <select
               value={categoryName}
               onChange={(event) => setCategoryName(event.target.value)}
               required
-              placeholder="Fitness"
-              list="admin-tag-categories"
               className="rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] px-4 py-3 text-sm text-[color:var(--ink)] focus:border-[color:var(--purple)] focus:outline-none focus:ring-2 focus:ring-[color:var(--lavender-100)]"
-            />
-            <datalist id="admin-tag-categories">
+            >
+              <option value="" disabled>
+                Pick a category…
+              </option>
               {categories.map((category) => (
-                <option key={category} value={category} />
+                <option key={category} value={category}>
+                  {category}
+                </option>
               ))}
-            </datalist>
+            </select>
           </label>
 
           <label className="grid gap-2 text-sm text-[color:var(--ink)]">
@@ -265,6 +294,19 @@ export function AdminTagManager({ tags }: { tags: AdminTagRow[] }) {
                 className={`ck-tag ck-tag--select ${typeFilter === type ? "ck-tag--selected" : ""}`}
               >
                 {type}
+              </button>
+            ))}
+          </div>
+          <div role="group" aria-label="Sort tags" className="flex flex-wrap gap-1.5">
+            {sortOptions.map(([value, text]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setSortBy(value)}
+                aria-pressed={sortBy === value}
+                className={`ck-tag ck-tag--select ${sortBy === value ? "ck-tag--selected" : ""}`}
+              >
+                {text}
               </button>
             ))}
           </div>

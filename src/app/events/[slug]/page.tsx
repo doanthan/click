@@ -335,6 +335,13 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
       : null;
 
   const paidSeatCount = 1 + myGuestSeats.length;
+  // The +1s with a name on them, which the booking-cancel confirm lists (spec
+  // 19 §10.3). A handed-back or removed seat is an unnamed +1 again.
+  const guestNames = myGuestSeats.flatMap((seat) =>
+    (seat.status === "invited" || seat.status === "claimed") && seat.firstName?.trim()
+      ? [seat.firstName.trim()]
+      : [],
+  );
   const cancelRefundQuote =
     isPaid && isRegistered
       ? quoteCancellationRefund(totalCents * paidSeatCount, event.startsAt)
@@ -409,7 +416,9 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
   // that are not the modal's job: an event that has finished says so rather
   // than advertising spots, and an operator previewing their own not-yet-public
   // listing keeps the publishing status - on this page it is the only thing
-  // telling them the event isn't out yet.
+  // telling them the event isn't out yet. The seat rungs are the card's own
+  // (event-card.tsx): a card that said "Almost full" used to open onto a page
+  // that said nothing about it.
   const heroBadge = !PUBLIC_EVENT_STATUSES.has(event.status)
     ? event.status
     : hasEnded
@@ -422,11 +431,13 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
             ? "Waitlist"
             : seatsLeft <= 3
               ? `${seatsLeft} ${seatsLeft === 1 ? "spot" : "spots"} left`
-              : event.status === "Featured"
-                ? "Trending"
-                : !isPaid
-                  ? "Free"
-                  : undefined;
+              : seatsLeft <= 8
+                ? "Almost full"
+                : event.status === "Featured"
+                  ? "Trending"
+                  : !isPaid
+                    ? "Free"
+                    : undefined;
   const notice = search?.canceled
     ? "Checkout was cancelled. Your seat hold was released - you can try again any time."
     : search?.cancelled
@@ -750,9 +761,11 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                   </span>
                   {countdownLabel !== "Ended" ? <span>{countdownLabel}</span> : null}
                 </div>
+                {/* DS CapacityMeter: the fill turns Coral above 85% full, otherwise
+                    Purple - the one place a status hue sits outside a badge. */}
                 <div className="h-2 overflow-hidden rounded-full bg-[color:var(--lavender-100)]">
                   <div
-                    className={`h-full rounded-full ${capacityPct >= 85 ? "bg-[color:var(--ink)]" : "bg-[color:var(--purple)]"}`}
+                    className={`h-full rounded-full ${capacityPct >= 85 ? "bg-[color:var(--coral)]" : "bg-[color:var(--purple)]"}`}
                     style={{ width: `${Math.max(4, capacityPct)}%` }}
                   />
                 </div>
@@ -866,6 +879,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                           cancelRefundLabel={cancelRefundLabel}
                           cancelRefundIsPositive={cancelRefundIsPositive}
                           guestSeatCount={isRegistered ? myGuestSeats.length : 0}
+                          guestNames={isRegistered ? guestNames : []}
                           successDetails={successDetailsForViewer}
                         />
                       )

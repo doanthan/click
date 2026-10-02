@@ -76,6 +76,8 @@ export function EventAttendeePreview({
     topSharedInterest: preview.topSharedInterest,
     datingCount: preview.datingCount,
     viewerOpenToDating,
+    crowdDecade: preview.crowdDecade,
+    viewerDecade: preview.viewerDecade,
   });
   const signalList =
     signals.length > 0 ? (
@@ -117,6 +119,12 @@ export function EventAttendeePreview({
             </p>
           ) : null}
           {signalList}
+          {/* The DS sign-off under the aggregate - once there is a room to talk about. */}
+          {totalConfirmed > 0 ? (
+            <p className="mt-3 text-[12.5px] leading-relaxed text-[color:var(--slate)]">
+              Same room, same reason - that&apos;s where you click.
+            </p>
+          ) : null}
         </div>
       </section>
     );

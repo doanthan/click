@@ -91,6 +91,11 @@ const selectClass =
 const HEAD_GRID = "grid grid-cols-[2.2fr_1.6fr_1fr_0.8fr_0.9fr]";
 const ROW_GRID = "grid md:grid-cols-[2.2fr_1.6fr_1fr_0.8fr_0.9fr]";
 
+// Bug board #317: past 20 rows the list pages. Kept in local state, not ?page -
+// a search-param change re-renders the whole /merchant page and re-reads every
+// event on each flip.
+const PAGE_SIZE = 20;
+
 export function MerchantEventsPanel({
   events,
   filterable = false,
@@ -107,6 +112,8 @@ export function MerchantEventsPanel({
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("upcoming");
   const [sort, setSort] = useState<SortKey>("date-asc");
   const [monthFilter, setMonthFilter] = useState<string>("all");
+  // Every filter change below goes back to page 1.
+  const [page, setPage] = useState(1);
 
   // Distinct YYYY-MM keys actually present in the events, newest first, so the
   // dropdown only ever offers months the merchant really has events in.
@@ -146,6 +153,11 @@ export function MerchantEventsPanel({
     return list;
   }, [events, query, statusFilter, sort, monthFilter]);
 
+  // Clamped, so a list that shrank under the current page shows its last page.
+  const pageCount = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount);
+  const pageRows = visible.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
   if (events.length === 0) {
     return (
       <div className={`${mCard} p-6`}>
@@ -184,7 +196,10 @@ export function MerchantEventsPanel({
             <input
               type="search"
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setPage(1);
+              }}
               placeholder="Search events"
               className="min-w-0 flex-1 border-none bg-transparent text-[13.5px] text-[color:var(--ink)] outline-none placeholder:text-[color:var(--slate)]"
             />
@@ -196,7 +211,10 @@ export function MerchantEventsPanel({
               <button
                 key={t.key}
                 type="button"
-                onClick={() => setStatusFilter(t.key)}
+                onClick={() => {
+                  setStatusFilter(t.key);
+                  setPage(1);
+                }}
                 aria-pressed={statusFilter === t.key}
                 // The pill stays the DS's 30px tag; the BUTTON around it is
                 // 44px tall, so the thumb target meets the floor without
@@ -217,7 +235,10 @@ export function MerchantEventsPanel({
             id="merchant-events-month"
             aria-label="Filter by month"
             value={monthFilter}
-            onChange={(e) => setMonthFilter(e.target.value)}
+            onChange={(e) => {
+              setMonthFilter(e.target.value);
+              setPage(1);
+            }}
             className={selectClass}
           >
             <option value="all">All months</option>
@@ -230,7 +251,10 @@ export function MerchantEventsPanel({
 
           <button
             type="button"
-            onClick={() => setSort((s) => (s === "date-asc" ? "date-desc" : "date-asc"))}
+            onClick={() => {
+              setSort((s) => (s === "date-asc" ? "date-desc" : "date-asc"));
+              setPage(1);
+            }}
             className={`${selectClass} inline-flex items-center gap-1.5 hover:bg-[color:var(--lavender-100)]`}
           >
             Date {sort === "date-asc" ? "↑" : "↓"}
@@ -254,7 +278,7 @@ export function MerchantEventsPanel({
             No events match - clear the search or filters.
           </p>
         ) : (
-          visible.map((event, i) => (
+          pageRows.map((event, i) => (
             <Link
               key={event.slug}
               href={`/merchant/events/${event.slug}`}
@@ -306,6 +330,41 @@ export function MerchantEventsPanel({
             </Link>
           ))
         )}
+
+        {visible.length > PAGE_SIZE ? (
+          <nav
+            aria-label="Pagination"
+            className="flex flex-wrap items-center justify-between gap-3 border-t border-[color:var(--mist)] px-5 py-3"
+          >
+            <p className="text-xs font-medium text-[color:var(--slate)]">
+              Showing {(safePage - 1) * PAGE_SIZE + 1}-{Math.min(safePage * PAGE_SIZE, visible.length)}{" "}
+              of {visible.length}
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPage(safePage - 1)}
+                disabled={safePage <= 1}
+                className="ck-btn ck-btn--secondary ck-btn--sm"
+                aria-label="Previous page"
+              >
+                ← Prev
+              </button>
+              <span className="text-xs font-semibold tabular-nums text-[color:var(--ink)]">
+                {safePage} / {pageCount}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPage(safePage + 1)}
+                disabled={safePage >= pageCount}
+                className="ck-btn ck-btn--secondary ck-btn--sm"
+                aria-label="Next page"
+              >
+                Next →
+              </button>
+            </div>
+          </nav>
+        ) : null}
       </div>
     </div>
   );

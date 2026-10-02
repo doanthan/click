@@ -1416,12 +1416,46 @@ test("the Finances tiles report settled money, not gross charges", () => {
   const repo = readFileSync(path.join(root, "src/lib/event-repository.ts"), "utf8");
   const start = repo.indexOf("export async function getMerchantFinancesSummary");
   assert.ok(start > -1, "getMerchantFinancesSummary not found");
-  const summary = repo.slice(start, start + 6000);
+  const summary = repo.slice(start, start + 8000);
 
   assert.match(
     summary,
     /status in \('paid', 'partially_refunded'\)/,
     "revenue must count settled rows only - never 'pending' or 'failed'",
+  );
+  // "Your net $0" beside a real Collected: net was summed from
+  // transfer_amount_cents, which only syncTransactionFromStripe writes (a paid
+  // checkout never does), and which holds the FULL charge anyway - with
+  // application_fee_amount Stripe transfers everything, then takes the fee back.
+  assert.doesNotMatch(
+    summary,
+    /(?:sum|coalesce)\(\s*transfer_amount_cents/,
+    "net must not be summed from the Stripe transfer column",
+  );
+  assert.match(
+    summary,
+    /netCents: collectedCents - platformFeeCents/,
+    "net must be collected minus Click's fee, so the tiles reconcile",
+  );
+  const ledger = readFileSync(
+    path.join(root, "src/components/admin-transactions-table.tsx"),
+    "utf8",
+  );
+  assert.doesNotMatch(
+    ledger,
+    /\?\s*t\.transferAmountCents\b/,
+    "the admin ledger's per-row net must not be the gross Stripe transfer",
+  );
+  // The tab renders on the server - UTC on Vercel - so an unpinned formatter
+  // listed every transaction 10 hours early, against a Sydney CSV and chart.
+  const shared = readFileSync(
+    path.join(root, "src/components/merchant-portal-shared.tsx"),
+    "utf8",
+  );
+  assert.match(
+    shared,
+    /timeZone: "Australia\/Sydney"/,
+    "portal times must render in Sydney, not the server's UTC",
   );
   assert.doesNotMatch(
     summary,

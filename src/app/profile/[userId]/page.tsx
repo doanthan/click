@@ -88,7 +88,7 @@ export default async function PublicProfilePage({ params }: PublicProfilePagePro
 
           {!session?.user ? (
             <p className="mt-5 text-[13px] leading-6 text-[color:var(--slate)]">
-              Sign in to click with people at the events you both go to.
+              Sign in to see who you might click with.
             </p>
           ) : null}
 

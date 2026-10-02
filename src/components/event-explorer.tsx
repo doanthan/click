@@ -19,6 +19,10 @@ const MAX_DISTANCE_KM = 50;
 // on touch. The last entry maps to MAX_DISTANCE_KM ("any distance").
 const DISTANCE_OPTIONS = [2, 5, 10, 25, MAX_DISTANCE_KM] as const;
 
+// Cards per "Show more" step. 12 fills whole rows at one, two and three
+// columns, so the last row before the button is never a lone card.
+const SHOWN_STEP = 12;
+
 type DateWindow = "today" | "tomorrow" | "weekend" | "7" | "30" | "all";
 type SortMode = "soonest" | "nearest" | "popular" | "price";
 type TimeOfDay = "all" | "day" | "night";
@@ -228,6 +232,9 @@ export function EventExplorer({
   const [tagFilter, setTagFilter] = useState(initialTag);
   const [categoryFilter, setCategoryFilter] = useState(initialCategory);
   const [sheetOpen, setSheetOpen] = useState(false);
+  // Bug board #324: the grid shows the first SHOWN_STEP results and a "Show
+  // more" for the next lot, instead of every event at once.
+  const [shownCount, setShownCount] = useState(SHOWN_STEP);
   const skipFirstSync = useRef(true);
   // What we last wrote to the URL ourselves. A change that does NOT match this
   // came from outside (a tag link, Back/Forward) and must be adopted.
@@ -552,8 +559,9 @@ export function EventExplorer({
 
   const results =
     totalCount > 0 ? (
+      <>
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
-        {filteredEvents.map((event, index) => (
+        {filteredEvents.slice(0, shownCount).map((event, index) => (
           /* Keyed on the event, not the index, so a filter change re-keys the
              row: cards that survive keep their .is-in and stay put, cards that
              are new to the result set mount hidden and fade up as the observer
@@ -579,6 +587,14 @@ export function EventExplorer({
           </Reveal>
         ))}
       </div>
+      {filteredEvents.length > shownCount ? (
+        <div className="mt-8 flex justify-center">
+          <Button variant="secondary" size="sm" onClick={() => setShownCount((n) => n + SHOWN_STEP)}>
+            Show more
+          </Button>
+        </div>
+      ) : null}
+      </>
     ) : degraded ? (
       // A Supabase blip used to render as "Click has no events", which is the
       // single most trust-destroying thing this page can say to a first-time
@@ -654,7 +670,9 @@ export function EventExplorer({
           Hidden while the catalogue is empty - sixteen category discs above a
           "no events yet" panel are sixteen taps that all lead nowhere. */}
       {!nothingToShow && availableCategories.length > 0 ? (
-        <nav aria-label="Browse by category" className="ckRail mt-5 -mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1 lg:flex-wrap lg:overflow-visible">
+        // Bug board #318: the discs wrap onto further rows at every width - on a
+        // phone the sideways scroller hid most of the categories off-screen.
+        <nav aria-label="Browse by category" className="mt-5 -mx-1 flex flex-wrap gap-1.5 px-1 pb-1">
           <button
             type="button"
             aria-pressed={categoryFilter === ""}

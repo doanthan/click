@@ -21,6 +21,19 @@ type RegistrationState =
   | "cancelled"
   | "error";
 
+// Spec 19 §10.3: when the booking being cancelled has named guests, the confirm
+// panel lists them. Seats without a name yet go on the end as a count.
+function namedGuestsCancelLine(seatCount: number, names: string[]): string {
+  if (seatCount === 1) {
+    return `This also cancels ${names[0]}'s seat. To hand back just that seat, use Cancel seat under Your +1s.`;
+  }
+  const unnamed = seatCount - names.length;
+  const who = new Intl.ListFormat("en-AU").format(
+    unnamed > 0 ? [...names, `${unnamed} unnamed +1${unnamed === 1 ? "" : "s"}`] : names,
+  );
+  return `This also cancels the seats for ${who}. To hand back just one, use Cancel seat under Your +1s.`;
+}
+
 export function EventRegistrationButton({
   eventId,
   initiallyRegistered = false,
@@ -40,6 +53,7 @@ export function EventRegistrationButton({
   isHold = false,
   heldSeatCount = null,
   guestSeatCount = 0,
+  guestNames = [],
   successDetails,
 }: {
   eventId: string;
@@ -63,6 +77,9 @@ export function EventRegistrationButton({
    *  (cancelRegistration → cancelGuestSeatsForTransaction), and the confirm
    *  panel never said so (bug board #301). */
   guestSeatCount?: number;
+  /** First names on the named ones (invited or claimed), for the confirm panel
+   *  to list. Any other +1 seat is unnamed. */
+  guestNames?: string[];
   // When present, a confirmed (non-waitlist) RSVP pops the confetti overlay.
   successDetails?: EventSuccessDetails;
 }) {
@@ -372,9 +389,11 @@ export function EventRegistrationButton({
         </p>
         {confirmKind === "booking" && guestSeatCount > 0 ? (
           <p className="text-xs font-medium text-[color:var(--slate)]">
-            {guestSeatCount === 1
-              ? "This also cancels your +1's seat. To hand back just that seat, use Cancel seat under Your +1s."
-              : `This also cancels your ${guestSeatCount} +1 seats. To hand back just one, use Cancel seat under Your +1s.`}
+            {guestNames.length > 0
+              ? namedGuestsCancelLine(guestSeatCount, guestNames)
+              : guestSeatCount === 1
+                ? "This also cancels your +1's seat. To hand back just that seat, use Cancel seat under Your +1s."
+                : `This also cancels your ${guestSeatCount} +1 seats. To hand back just one, use Cancel seat under Your +1s.`}
           </p>
         ) : null}
         <div className="grid grid-cols-2 gap-2">

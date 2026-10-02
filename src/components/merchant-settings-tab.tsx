@@ -6,6 +6,7 @@ import {
   type MerchantProfileRow,
 } from "@/lib/event-repository";
 import { MerchantBusinessDetailsForm } from "@/components/merchant-business-details-form";
+import { TagRequestForm } from "@/components/tag-request-form";
 import { Button, ButtonLink, Icon } from "@/components/ds";
 import { InfoNote, SectionLabel, StatusPill, mCard } from "@/components/merchant-ds";
 import { TabHeader } from "./merchant-portal-shared";
@@ -145,7 +146,20 @@ export async function SettingsTab({
         </div>
       </section>
 
+      {/* Bug board #315: a host can ask for a tag here as well as from the event
+          wizard's tag picker - the same request, reviewed on /admin/tags. */}
       <section className="space-y-3 rise-soft rise-d3">
+        <SectionLabel>Tags</SectionLabel>
+        <div className={`${mCard} grid gap-2.5 p-4`}>
+          <p className="text-[13.5px] leading-relaxed text-[color:var(--slate)]">
+            Tags are how members find your events. Missing one that fits? Ask for it here and an
+            admin will review it.
+          </p>
+          <TagRequestForm context="settings" />
+        </div>
+      </section>
+
+      <section className="space-y-3 rise-soft rise-d4">
         <SectionLabel>Support</SectionLabel>
         <p className="text-[13.5px] leading-relaxed text-[color:var(--slate)]">
           Need a human? Email{" "}

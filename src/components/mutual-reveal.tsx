@@ -13,7 +13,7 @@ import { Spark, ckBtn } from "./ds";
 // What the reveal reads - a slice of the drawer's ProposalEntry.
 export type RevealContent = Pick<
   ProposalEntry,
-  "otherName" | "sourceEventTitle" | "intentLine" | "bothDating" | "sharedTags"
+  "otherName" | "sourceEventTitle" | "sourceEventDay" | "intentLine" | "bothDating" | "sharedTags"
 >;
 
 // Reveals shown in THIS page session. Re-opening a mutual (list, bell, dashboard)
@@ -128,12 +128,14 @@ export function RevealStep({
         You clicked with {firstName}.
       </h2>
       {/* Stage 3's shared context, above the pill: a post-event mutual names the
-          night the two of them were actually at, which is the reason the reveal
-          means anything. Null on a discovery mutual - there is no shared night, so
-          the line is simply absent rather than invented. */}
+          night the two of them were actually at, and the day it was (S3: "You were
+          both at [Event] on [Day]"), which is the reason the reveal means anything.
+          Null when both clicked from explore - there is no shared night, so the line
+          is simply absent rather than invented, and the pill and tags carry it. */}
       {entry.sourceEventTitle ? (
         <p className="mt-2 text-sm font-medium leading-6 text-[color:var(--ink-soft)]">
-          You were both at {entry.sourceEventTitle}.
+          You were both at {entry.sourceEventTitle}
+          {entry.sourceEventDay ? ` on ${entry.sourceEventDay}` : null}.
         </p>
       ) : null}
       {/* A desire, never a status - and a MIXED pair reads as two sides. The line

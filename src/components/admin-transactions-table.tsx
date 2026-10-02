@@ -219,18 +219,21 @@ export function AdminTransactionsTable({
   const displayRows = useMemo(() => {
     return transactions.map((t) => {
       const created = new Date(t.createdAt);
-      // `transfer_amount_cents` is the transfer as it was CREATED at checkout -
-      // Stripe reverses it on refund (issueRefund sends reverse_transfer) but
-      // nothing writes the reversal back to that column. So a fully refunded
-      // charge kept showing the merchant's whole cut as "net", which is money
-      // they no longer have. Take the refunds off the derived figure and clamp
-      // at 0; refundedAmountCents only counts refunds that actually succeeded,
-      // so this is what is left with the merchant, not what was once sent.
-      const gross =
-        t.transferAmountCents != null
-          ? t.transferAmountCents
-          : t.amountCents - (t.applicationFeeCents ?? 0);
-      const net = Math.max(gross - t.refundedAmountCents, 0);
+      // The merchant's share: the charge less Click's fee, pro-rated by what
+      // survived refunds - the same math as the host's Finances tab, so the two
+      // never disagree. Not `transfer_amount_cents`: with application_fee_amount
+      // Stripe transfers the FULL charge and then takes the fee back, so that
+      // column is the gross, and it is only filled in once a row is synced. A
+      // refund reverses the transfer and the fee proportionally (issueRefund
+      // sends reverse_transfer + refund_application_fee), and
+      // refundedAmountCents only counts refunds that actually succeeded, so this
+      // is what is left with the merchant, not what was once sent.
+      const keptShare =
+        t.amountCents > 0 ? (t.amountCents - t.refundedAmountCents) / t.amountCents : 0;
+      const net = Math.max(
+        Math.round((t.amountCents - (t.applicationFeeCents ?? 0)) * keptShare),
+        0,
+      );
       return {
         row: t,
         net,
@@ -280,7 +283,14 @@ export function AdminTransactionsTable({
       if (t.status === "paid" || t.status === "partially_refunded" || t.status === "refunded") {
         gross += t.amountCents;
         refunded += t.refundedAmountCents;
-        if (t.applicationFeeCents != null) fees += t.applicationFeeCents;
+        // Pro-rated like the host's Click fee tile: a refund hands the fee
+        // back (issueRefund sends refund_application_fee), so a fully refunded
+        // charge earned the platform nothing.
+        if (t.applicationFeeCents != null && t.amountCents > 0) {
+          fees += Math.round(
+            (t.applicationFeeCents * (t.amountCents - t.refundedAmountCents)) / t.amountCents,
+          );
+        }
         paidCount += 1;
       }
       net = gross - refunded;
@@ -966,11 +976,14 @@ function TransactionDetail({
             mono
           />
           <Detail k="Payment intent" v={row.stripePaymentIntentId ?? "-"} mono />
+          {/* Stripe's transfer as the Stripe dashboard shows it: the FULL
+              charge, with the fee taken back afterwards. Saying only "to
+              merchant" read as the merchant's share, which is "net" on the row. */}
           <Detail
             k="Transfer"
             v={
               row.transferAmountCents != null
-                ? `${formatMoney(row.transferAmountCents, row.currency)} to merchant`
+                ? `${formatMoney(row.transferAmountCents, row.currency)} to merchant, ${formatMoney(row.applicationFeeCents ?? 0, row.currency)} fee taken back`
                 : "-"
             }
           />

@@ -40,8 +40,8 @@ test("from three going, the shared interest leads, with the verb agreeing", () =
   assert.deepEqual(radar({ confirmed: 5, topSharedInterest: hiking(2) }), ["2 going also like Hiking"]);
 });
 
-test("the dating count only reaches a dating-visible viewer, and only from three", () => {
-  assert.deepEqual(radar({ confirmed: 4, datingCount: 3, viewerOpenToDating: true }), ["3 open to dating"]);
+test("the singles line only reaches a dating-visible viewer, and only from three", () => {
+  assert.deepEqual(radar({ confirmed: 4, datingCount: 3, viewerOpenToDating: true }), ["A few singles are going"]);
   assert.deepEqual(radar({ confirmed: 4, datingCount: 3, viewerOpenToDating: false }), ["4 going so far"]);
   assert.deepEqual(radar({ confirmed: 4, datingCount: 2, viewerOpenToDating: true }), ["4 going so far"]);
 });

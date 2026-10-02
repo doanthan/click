@@ -11,7 +11,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -263,31 +263,34 @@ test("the bookings door list counts +1 seats, not just ticket-holders", () => {
     "the limit must come after the union and the ordering",
   );
 
-  // And the truncation has to be visible rather than silent.
+  // And the truncation has to be visible rather than silent: the Bookings tab
+  // counts each event from these rows.
   const tab = read("src/components/merchant-bookings-tab.tsx");
   assert.match(
     tab,
     /attendees\.length >= MERCHANT_DOOR_LIST_CAP/,
-    "a truncated door list must say so - it gets exported and taken to a door",
+    "a count taken from a truncated list must say so",
   );
+});
+
+test("the Bookings tab has no all-events attendee table", () => {
+  // Bug board #316: "remove all attendees table. it should only be shown in the
+  // specific event pages". Who is coming, and check-in, live on the event page.
+  const tab = read("src/components/merchant-bookings-tab.tsx");
+  assert.doesNotMatch(tab, /MerchantAttendeesPanel|All attendees/);
+  assert.equal(existsSync(path.join(root, "src/components/merchant-attendees-panel.tsx")), false);
+  const eventPage = read("src/app/merchant/events/[eventId]/page.tsx");
+  assert.match(eventPage, /<AttendeeCheckInToggle/);
+  assert.match(eventPage, /<GuestCheckInToggle/);
 });
 
 test("check-in routes to the table that matches the seat kind", () => {
-  const panel = read("src/components/merchant-attendees-panel.tsx");
-  assert.match(panel, /row\.kind === "guest"/, "the row's kind must pick the action");
-  assert.match(panel, /toggleGuestCheckInAction/, "+1 seats write guest_spots.attended");
-  assert.match(panel, /toggleAttendeeCheckInAction/, "tickets write event_attendees.checked_in_at");
-});
-
-test("the attendee CSV keeps its blob alive until the browser accepts it", () => {
-  const panel = read("src/components/merchant-attendees-panel.tsx");
-  assert.match(panel, /document\.body\.appendChild\(a\)/, "the link must enter the document");
-  assert.match(panel, /a\.remove\(\)/, "the temporary link must be removed after the click");
-  assert.match(
-    panel,
-    /window\.setTimeout\(\(\) => URL\.revokeObjectURL\(url\), 1_000\)/,
-    "the blob URL must not be revoked in the same task as the click",
-  );
+  // The event page's toggles, one per seat kind.
+  const toggles = read("src/components/check-in-toggle.tsx");
+  const guest = toggles.slice(toggles.indexOf("export function GuestCheckInToggle"), toggles.indexOf("export function AttendeeCheckInToggle"));
+  const ticket = toggles.slice(toggles.indexOf("export function AttendeeCheckInToggle"));
+  assert.match(guest, /toggleGuestCheckInAction\(form\)/, "+1 seats write guest_spots.attended");
+  assert.match(ticket, /toggleAttendeeCheckInAction\(form\)/, "tickets write event_attendees.checked_in_at");
 });
 
 /* ---------------- one status derivation for the whole portal ---------------- */
@@ -336,7 +339,6 @@ test("no em-dashes or en-dashes anywhere on the host surfaces", () => {
     "src/components/merchant-settings-tab.tsx",
     "src/components/merchant-calendar.tsx",
     "src/components/merchant-events-panel.tsx",
-    "src/components/merchant-attendees-panel.tsx",
     "src/components/merchant-bookings-tab.tsx",
     "src/components/merchant-finances-tab.tsx",
     "src/components/check-in-toggle.tsx",

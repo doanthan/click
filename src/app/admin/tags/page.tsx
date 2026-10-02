@@ -36,7 +36,11 @@ export default async function AdminTagsPage() {
       />
       {/* Keyed on the count so an approved request's new tag shows up after the
           refresh - the manager seeds its own list state once, from props. */}
-      <AdminTagManager key={tags.length} tags={tags} />
+      <AdminTagManager
+        key={tags.length}
+        tags={tags}
+        categories={categories.map((category) => category.name)}
+      />
     </div>
   );
 }

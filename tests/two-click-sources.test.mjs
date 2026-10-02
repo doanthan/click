@@ -143,7 +143,18 @@ test("5. an explore click and a who-was-there click form one mutual, and the rev
   assert.match(send, /source_event_id, source\)/);
   const reveal = read("src/components/mutual-reveal.tsx");
   assert.match(reveal, /\{entry\.sourceEventTitle \? \(/);
-  assert.match(reveal, /You were both at \{entry\.sourceEventTitle\}\./);
+  // S3's "You were both at [Event] on [Day]": the day is that same night's, on
+  // Sydney's clock (formatted on the server, never in the browser's zone).
+  assert.match(
+    reveal,
+    /You were both at \{entry\.sourceEventTitle\}\s*\{entry\.sourceEventDay \? ` on \$\{entry\.sourceEventDay\}` : null\}\./,
+  );
+  assert.match(repo, /source_event\.title as source_event_title,\s*source_event\.starts_at as source_event_starts_at,/);
+  assert.match(repo, /const SOURCE_EVENT_WEEKDAY = new Intl\.DateTimeFormat\("en-AU", \{\s*weekday: "long",\s*timeZone: APP_TIME_ZONE,\s*\}\);/);
+  assert.match(
+    repo,
+    /sourceEventDay:\s*row\.source_event_title && row\.source_event_starts_at\s*\? SOURCE_EVENT_WEEKDAY\.format\(new Date\(row\.source_event_starts_at\)\)\s*: null,/,
+  );
   // Two explore clicks leave no event: the intent pill and shared tags carry it.
   assert.match(reveal, /\{entry\.intentLine\}/);
   assert.match(reveal, /entry\.sharedTags\.map/);
@@ -164,8 +175,8 @@ test("6. the daily pick pool excludes everyone the brief lists", () => {
   ]) {
     assert.match(pool, re, rule);
   }
-  // Never a signal from the other direction: the pool reads only the viewer's OWN
-  // clicks, so who has clicked the viewer can't steer who gets picked.
+  // The pool itself reads only the viewer's OWN clicks. The one place an incoming
+  // click counts is the bounded click-back slot below, never the pool's order.
   assert.doesNotMatch(pool, /receiver_id = \$1::uuid/);
   // Picks come only from that pool, three a day, written once under a per-viewer lock.
   assert.match(ensure, /const candidates = await getSuggestedPeople\(viewerId\);/);
@@ -181,6 +192,32 @@ test("6. the daily pick pool excludes everyone the brief lists", () => {
   assert.match(route, /generateDailyPicksForAll\(\)/);
   const crons = JSON.parse(read("vercel.json")).crons;
   assert.ok(crons.some((c) => c.path === "/api/cron/daily-picks" && c.schedule === "0 19 * * *"));
+});
+
+test("6b. a live click at you earns its sender ONE unmarked daily pick, once", () => {
+  // Doan, 2026-09-30 (click-mechanic Loom): after Ava clicks Mia, Mia meets Ava's
+  // card on her Click page or dashboard so she can click back.
+  const clickBack = slice(repo, "async function clickBackPick(", "async function ensureDailyPicks(");
+  // Live clicks aimed at the viewer, closest to lapsing first...
+  assert.match(clickBack, /where c\.receiver_id = \$1::uuid\s*and c\.status = 'pending'\s*and c\.expires_at > now\(\)/);
+  assert.match(clickBack, /order by c\.expires_at asc/);
+  // ...once per click: not if the viewer has been picked them since it went out.
+  assert.match(
+    clickBack,
+    /dp\.picked_profile_id = c\.sender_id\s*and dp\.pool_date >= \(c\.created_at at time zone '\$\{APP_TIME_ZONE\}'\)::date/,
+  );
+  // ...through every gate the pool has, and tagged on the server only.
+  assert.match(clickBack, /await getSuggestedPeople\(viewerId, senders\)/);
+  assert.match(clickBack, /reason: "click_back"/);
+  // The pool narrows to those people without losing a gate.
+  assert.match(pool, /and \(\$2::uuid\[\] is null or p\.id = any\(\$2::uuid\[\]\)\)/);
+  // At most one of the three, never twice (it is filtered out of the ranked rest).
+  assert.match(ensure, /const clickBack = await clickBackPick\(pool, viewerId\);/);
+  assert.match(ensure, /\.filter\(\(pick\) => pick\.id !== clickBack\?\.id\)/);
+  assert.match(ensure, /\(clickBack \? \[clickBack, \.\.\.ranked\] : ranked\)\.slice\(0, DAILY_PICK_COUNT\)/);
+  // No position tells: the read orders the day's set by its random ids.
+  assert.match(dailyRead, /order by dp\.created_at, dp\.id/);
+  assert.doesNotMatch(clickBack, /insert into notifications|logEmailEvent\(|sendTransactionalEmail\(/);
 });
 
 test("7. GET /api/people/daily never reveals whether a pick clicked the caller", () => {

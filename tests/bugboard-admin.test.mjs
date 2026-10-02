@@ -164,3 +164,31 @@ test("the Confirmed RSVPs card says a cancelled booking is not in it", () => {
   );
   assert.match(read("src/components/click-ui.tsx"), /\{hint \? <p className=/);
 });
+
+/* ---------------- #313/#314: the tag manager ---------------- */
+
+test("a tag's category is picked from the existing list, never typed", () => {
+  // Bug board #313. A typed category was created on save (the tag upsert writes
+  // tag_categories), so a typo became a new public category and "fitness"
+  // renamed "Fitness" for every event matched on the name.
+  const manager = read("src/components/admin-tag-manager.tsx");
+  const field = slice(manager, '<span className="eyebrow">Category</span>', "</label>");
+  assert.match(field, /<select/);
+  assert.doesNotMatch(field, /<input|<datalist/);
+  assert.match(field, /<option value="" disabled>/);
+  // The hosts' list plus the categories already on tags (internal Life, Music),
+  // uncapped.
+  assert.match(manager, /\.\.\.categoryOptions,/);
+  assert.doesNotMatch(manager, /\.slice\(0, 20\)/);
+  const page = read("src/app/admin/tags/page.tsx");
+  assert.match(page, /<AdminTagManager[\s\S]*?categories=\{categories\.map\(\(category\) => category\.name\)\}/);
+});
+
+test("tags sort by category, A-Z or most used", () => {
+  // Bug board #314.
+  const manager = read("src/components/admin-tag-manager.tsx");
+  assert.match(manager, /\["az", "A-Z"\]/);
+  assert.match(manager, /\["usage", "Most used"\]/);
+  assert.match(manager, /sortBy === "usage"\s*\? b\.usageCount - a\.usageCount/);
+  assert.match(manager, /\}, \[rows, query, typeFilter, sortBy\]\);/);
+});

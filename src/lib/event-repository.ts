@@ -122,7 +122,7 @@ import {
 import { isDerivedFromEmail } from "./display-name";
 import { lookupPostcode, placeForSuburb } from "./postcode";
 import { getPostgresPool, mapWithConcurrency } from "./postgres";
-import { attendeeFomoSignals } from "./attendee-fomo";
+import { attendeeFomoSignals, decadeOf, majorityDecade } from "./attendee-fomo";
 import { soloIntentLabel } from "./intent-label";
 import { getSupabaseAdmin } from "@/utils/supabase/admin";
 import { toTitleCase } from "./text-format";
@@ -3555,7 +3555,8 @@ async function getEventsForExploreUncached(): Promise<ExploreEvents> {
               and profile.is_banned = false
               and ea.visible_to_attendees
             order by ea.created_at asc
-            limit 3
+            -- Four: the card's face stack shows four circles (bug board #310).
+            limit 4
           ) preview
         ) as attendee_avatars,
         coalesce(
@@ -8300,7 +8301,8 @@ const eventSelectColumns = `
               and profile.is_banned = false
               and ea.visible_to_attendees
             order by ea.created_at asc
-            limit 3
+            -- Four: the card's face stack shows four circles (bug board #310).
+            limit 4
           ) preview
         ) as attendee_avatars,
         coalesce(
@@ -16093,11 +16095,18 @@ const QA_VIEWER_EMAIL_BY_ID = "select qa_viewer.email from profiles qa_viewer wh
  * feeling it" (pair_suppressions, 90 days) and a released mutual inside its 30-day
  * cooldown (B7.9).
  *
- * NEVER a signal from the other direction. Whether a candidate has clicked the viewer
- * must not move them in, out, up or down: picks that followed incoming clicks would
- * tell the viewer who likes them without a mutual ever forming (§6.1).
+ * The pool itself never reads the other direction: whether a candidate has clicked
+ * the viewer does not move them in, out, up or down here (§6.1). The one place an
+ * incoming click counts is ensureDailyPicks' click-back slot - bounded there, and
+ * it still goes through these gates via `onlyIds`.
+ *
+ * `onlyIds` narrows the pool to those people and nothing else changes: the same
+ * gates and order, so "would Click pick them for this viewer" has one answer.
  */
-export async function getSuggestedPeople(viewerId: string): Promise<PickCandidate[]> {
+export async function getSuggestedPeople(
+  viewerId: string,
+  onlyIds: string[] | null = null,
+): Promise<PickCandidate[]> {
   const pool = getPostgresPool();
 
   if (!pool || !isClickMechanicEnabled()) return [];
@@ -16143,6 +16152,7 @@ export async function getSuggestedPeople(viewerId: string): Promise<PickCandidat
             select tag_id from user_tags where profile_id = $1::uuid
           )
         where p.id <> $1::uuid
+          and ($2::uuid[] is null or p.id = any($2::uuid[]))
           -- Merchant accounts are the portal side of the product and never enter
           -- a click surface. Everyone else does, and the deny-list is deliberate:
           -- role = attendee silently excluded every ADMIN_EMAILS account from
@@ -16266,7 +16276,7 @@ export async function getSuggestedPeople(viewerId: string): Promise<PickCandidat
               and (am.user_a_id = p.id or am.user_b_id = p.id)) asc
         limit 24
       `,
-      [viewerId],
+      [viewerId, onlyIds],
     );
 
     // "Has a photo" must mean the SAME thing here as it does at render time
@@ -16333,6 +16343,46 @@ function strongestPickSignal(contributions: Partial<Record<string, number>>): st
 }
 
 /**
+ * The click-back slot (Doan, 2026-09-30, from the click-mechanic Loom: after Ava
+ * clicks Mia, Mia should meet Ava's card - anonymously - on her Click page or
+ * dashboard, so she can click back). An explore click can only become mutual if the
+ * other person gets the chance to click too, and nothing else guarantees it inside
+ * the click's 7 days.
+ *
+ * Bounded so it never reads as "this person likes you": at most one of the day's
+ * three, unmarked, in the set's random order (daily_picks.id), and once per click -
+ * someone the viewer has already been picked since their click went out gets no
+ * second push. The person still has to clear every gate the pool has (a block, a
+ * pause, no photo...), and daily_picks.reason = 'click_back' stays on the server
+ * like every reason does.
+ */
+async function clickBackPick(pool: Pool, viewerId: string): Promise<PickCandidate | null> {
+  const incoming = await pool.query<{ sender_id: string }>(
+    `
+      select c.sender_id::text as sender_id
+      from clicks c
+      where c.receiver_id = $1::uuid
+        and c.status = 'pending'
+        and c.expires_at > now()
+        and not exists (
+          select 1 from daily_picks dp
+          where dp.profile_id = $1::uuid
+            and dp.picked_profile_id = c.sender_id
+            and dp.pool_date >= (c.created_at at time zone '${APP_TIME_ZONE}')::date
+        )
+      -- The click closest to lapsing goes first.
+      order by c.expires_at asc
+    `,
+    [viewerId],
+  );
+  if (incoming.rows.length === 0) return null;
+  const senders = incoming.rows.map((row) => row.sender_id);
+  const pickable = new Set((await getSuggestedPeople(viewerId, senders)).map((pick) => pick.id));
+  const sender = senders.find((id) => pickable.has(id));
+  return sender ? { id: sender, reason: "click_back" } : null;
+}
+
+/**
  * Today's picks for one viewer, written once (brief §3.3). The daily-picks cron writes
  * them in the Sydney morning; someone who arrives before it ran, or signed up since,
  * gets theirs on first view instead. Either way the set is written once per day and
@@ -16341,8 +16391,9 @@ function strongestPickSignal(contributions: Partial<Record<string, number>>): st
  *
  * Least recently picked first, then Click's own order: someone picked lately waits
  * behind anyone who wasn't, so "three new people, every day" holds whenever the pool
- * is deeper than three, and the set cycles back round when it isn't. Writes nothing
- * when there is nobody to pick - the next view simply asks again.
+ * is deeper than three, and the set cycles back round when it isn't. One slot can go
+ * to a click-back pick first (clickBackPick). Writes nothing when there is nobody to
+ * pick - the next view simply asks again.
  */
 async function ensureDailyPicks(pool: Pool, viewerId: string): Promise<void> {
   const today = await pool.query(
@@ -16354,7 +16405,9 @@ async function ensureDailyPicks(pool: Pool, viewerId: string): Promise<void> {
   // All of the reading happens BEFORE the transaction, on the pool: the lock below
   // must never be held while waiting on another connection from the same pool.
   const candidates = await getSuggestedPeople(viewerId);
+  // An empty pool leaves nobody for the click-back slot either - it runs the same gates.
   if (candidates.length === 0) return;
+  const clickBack = await clickBackPick(pool, viewerId);
   const history = await pool.query<{ picked: string; last_day: string }>(
     `select picked_profile_id::text as picked, max(pool_date)::text as last_day
        from daily_picks
@@ -16365,9 +16418,10 @@ async function ensureDailyPicks(pool: Pool, viewerId: string): Promise<void> {
   const lastPicked = new Map(history.rows.map((row) => [row.picked, row.last_day]));
   // ISO dates compare as strings and never-picked ("") sorts first. Array.prototype
   // .sort is stable, so people picked on the same day keep Click's order.
-  const chosen = [...candidates]
-    .sort((a, b) => (lastPicked.get(a.id) ?? "").localeCompare(lastPicked.get(b.id) ?? ""))
-    .slice(0, DAILY_PICK_COUNT);
+  const ranked = candidates
+    .filter((pick) => pick.id !== clickBack?.id)
+    .sort((a, b) => (lastPicked.get(a.id) ?? "").localeCompare(lastPicked.get(b.id) ?? ""));
+  const chosen = (clickBack ? [clickBack, ...ranked] : ranked).slice(0, DAILY_PICK_COUNT);
 
   const client = await pool.connect();
   try {
@@ -17934,9 +17988,12 @@ export type ProposalEntry = {
   // pointing at somebody who isn't coming.
   partnerCancelled: boolean;
   // Stage 3 shared context: the event both sides were at when this mutual formed.
-  // Null on a discovery mutual, which is exactly the distinction S3 needs - a
-  // post-event reveal names the night, a discovery one has no night to name.
+  // Null when both clicks came from explore, which is exactly the distinction S3
+  // needs - a post-event reveal names the night, an explore one has none to name.
   sourceEventTitle: string | null;
+  // That night's weekday on Sydney's clock ("Saturday"), for the reveal's "You were
+  // both at [Event] on [Day]". Null exactly when sourceEventTitle is.
+  sourceEventDay: string | null;
   // Stage 3's other half: at most TWO tags the pair genuinely share, for the
   // reveal. INTEREST tags only, and that is a privacy gate rather than a taste
   // one - see the query, which is where the filtering has to live.
@@ -17979,6 +18036,13 @@ function intentLine(viewer: string | null, other: string | null): string {
 function pairIntentLabel(line: string, bothDating: boolean): string {
   return `${line.replace(/\.$/, "")}${bothDating ? " · both open to dating" : ""}`;
 }
+
+// The [Day] in the reveal's "You were both at [Event] on [Day]" - the night's
+// weekday on Sydney's clock, formatted here so it can't follow the browser's zone.
+const SOURCE_EVENT_WEEKDAY = new Intl.DateTimeFormat("en-AU", {
+  weekday: "long",
+  timeZone: APP_TIME_ZONE,
+});
 
 export async function getProposalsForSession(session: Session | null): Promise<ProposalEntry[]> {
   const pool = getPostgresPool();
@@ -18024,6 +18088,7 @@ export async function getProposalsForSession(session: Session | null): Promise<P
       both_going_title: string | null;
       both_going_starts_at: Date | null;
       source_event_title: string | null;
+      source_event_starts_at: Date | null;
       shared_tags: string[];
       // S5/S7's card mini - the proposal's event, read the way the canonical card reads it.
       event_image_url: string | null;
@@ -18145,9 +18210,10 @@ export async function getProposalsForSession(session: Session | null): Promise<P
           both_going.title as both_going_title,
           both_going.starts_at as both_going_starts_at,
           -- Stage 3 shared context: the event this mutual came out of, so the reveal
-          -- can name the night instead of reading the same for every pair. NULL on a
-          -- discovery mutual, which has no night to name.
+          -- can name the night instead of reading the same for every pair. NULL when
+          -- both clicks came from explore, which leaves no night to name.
           source_event.title as source_event_title,
+          source_event.starts_at as source_event_starts_at,
           -- Stage 3's "<=2 shared tags", beside the shared night. The
           -- tag_type = 'interest' test is a SENSITIVITY gate, not a taste one: B5 item 6
           -- bans sending "sensitive life tags, even when shared", and the life quiz
@@ -18439,6 +18505,10 @@ export async function getProposalsForSession(session: Session | null): Promise<P
         Boolean(row.viewer_has_seat) &&
         !row.other_has_seat,
       sourceEventTitle: row.source_event_title,
+      sourceEventDay:
+        row.source_event_title && row.source_event_starts_at
+          ? SOURCE_EVENT_WEEKDAY.format(new Date(row.source_event_starts_at))
+          : null,
       sharedTags: row.shared_tags ?? [],
       planLapsed: Boolean(row.plan_lapsed),
       };
@@ -20350,10 +20420,10 @@ export async function toggleGuestCheckIn(
 }
 
 export type MerchantFinancesSummary = {
-  // The four numbers reconcile: collected = platformFee + net (to the cent,
-  // modulo rounding). Deliberately renamed off "total/paid/pending revenue",
-  // which is what let the tab label a gross buyer charge "Paid out - to your
-  // bank" and sum abandoned checkouts into an all-time revenue figure.
+  // The numbers reconcile: collected = platformFee + net, to the cent (net is
+  // derived from the other two). Deliberately renamed off "total/paid/pending
+  // revenue", which is what let the tab label a gross buyer charge "Paid out -
+  // to your bank" and sum abandoned checkouts into an all-time revenue figure.
   //
   // collected  - what buyers were actually charged, less anything refunded
   // platformFee- Click's commission + booking fee, taken as the Stripe
@@ -20432,7 +20502,6 @@ export async function getMerchantFinancesSummary(
       pool.query<{
         collected: string;
         platform_fee: string;
-        net: string;
         refunded: string;
       }>(
         // Only SETTLED money counts as revenue. 'pending' rows are checkout
@@ -20444,14 +20513,22 @@ export async function getMerchantFinancesSummary(
         // PROPORTIONALLY (issueRefund in src/lib/stripe-sync.ts sets
         // reverse_transfer + refund_application_fee), but the charge-time
         // columns are never rewritten - only refunded_amount_cents moves. So
-        // the surviving share of each has to be derived rather than summed.
+        // the surviving share of the fee has to be derived rather than summed.
+        //
+        // Net is deliberately NOT summed from transfer_amount_cents. With
+        // application_fee_amount, Stripe transfers the FULL charge to the host
+        // and then takes the fee back, so that column holds the gross, not
+        // the host's share. And only syncTransactionFromStripe writes it
+        // (refund webhooks, the admin "Sync from Stripe" button) - a normal
+        // paid checkout never does - so summing it showed "Your net $0" beside
+        // a non-zero Collected for every host whose bookings were never
+        // refunded. Net is collected minus the fee, derived below.
         `
           with settled as (
             select
               amount_cents,
               refunded_amount_cents,
               coalesce(application_fee_cents, 0) as application_fee_cents,
-              coalesce(transfer_amount_cents, 0) as transfer_amount_cents,
               case
                 when amount_cents > 0
                   then (amount_cents - refunded_amount_cents)::numeric / amount_cents
@@ -20466,8 +20543,6 @@ export async function getMerchantFinancesSummary(
               as collected,
             coalesce((select round(sum(application_fee_cents * kept_share)) from settled), 0)::text
               as platform_fee,
-            coalesce((select round(sum(transfer_amount_cents * kept_share)) from settled), 0)::text
-              as net,
             -- Refunds are counted across every row, including the fully
             -- refunded ones the settled CTE deliberately excludes.
             coalesce((
@@ -20544,10 +20619,15 @@ export async function getMerchantFinancesSummary(
     ]);
 
     const row = aggResult.rows[0];
+    const collectedCents = Number(row?.collected ?? 0);
+    const platformFeeCents = Number(row?.platform_fee ?? 0);
     return {
-      collectedCents: Number(row?.collected ?? 0),
-      platformFeeCents: Number(row?.platform_fee ?? 0),
-      netCents: Number(row?.net ?? 0),
+      collectedCents,
+      platformFeeCents,
+      // What reaches the connected account: Stripe takes its own processing
+      // fee from Click's side of a destination charge, not the host's.
+      // Derived rather than queried, so the tiles reconcile to the cent.
+      netCents: collectedCents - platformFeeCents,
       refundedCents: Number(row?.refunded ?? 0),
       recentTransactions: recentResult.rows.map((r) => ({
         id: r.id,
@@ -21745,6 +21825,10 @@ export type EventAttendeePreviewData = {
   // FOMO line reflects the room rather than its first eight arrivals.
   topSharedInterest: { label: string; count: number } | null;
   datingCount: number;
+  // The decade most of that room is in (majorityDecade), and the viewer's own -
+  // attendeeFomoSignals prints the age line only when the two match.
+  crowdDecade: number | null;
+  viewerDecade: number | null;
 };
 
 export async function sendEventReminders() {
@@ -21901,6 +21985,8 @@ export async function getEventAttendeePreview(
     guests: [],
     topSharedInterest: null,
     datingCount: 0,
+    crowdDecade: null,
+    viewerDecade: null,
   };
   const pool = getPostgresPool();
   if (!pool) return empty;
@@ -21924,6 +22010,8 @@ export async function getEventAttendeePreview(
         photo_url: string | null;
         suburb: string | null;
         dating_minded: boolean;
+        age: number | null;
+        viewer_age: number | null;
         shared: string[];
       }>(
         `
@@ -21934,6 +22022,16 @@ export async function getEventAttendeePreview(
                  profile.suburb,
                  (profile.dating_visible
                     and 'dating' = any(profile.connection_intents::text[])) as dating_minded,
+                 -- Age today from the birth date (profiles.age is a snapshot taken
+                 -- at onboarding). Feeds only the room's decade, never a card.
+                 coalesce(extract(year from age(profile.birth_date))::int, profile.age) as age,
+                 -- The viewer's own, for the same line. Uncorrelated, so it is
+                 -- computed once, not per row.
+                 (
+                   select coalesce(extract(year from age(me.birth_date))::int, me.age)
+                   from profiles me
+                   where me.id = $3::uuid
+                 ) as viewer_age,
                  coalesce(
                    array_agg(distinct shared_tag.label)
                      filter (where shared_tag.label is not null),
@@ -22144,6 +22242,8 @@ export async function getEventAttendeePreview(
       })),
       topSharedInterest: topLabel ? { label: topLabel, count: topCount ?? 0 } : null,
       datingCount: rows.filter((row) => row.dating_minded).length,
+      crowdDecade: majorityDecade(rows.map((row) => row.age)),
+      viewerDecade: decadeOf(rows[0]?.viewer_age),
     };
   } catch {
     return empty;
@@ -22173,6 +22273,8 @@ export async function getRadarSignals(
         topSharedInterest: preview.topSharedInterest,
         datingCount: preview.datingCount,
         viewerOpenToDating: datingVisible,
+        crowdDecade: preview.crowdDecade,
+        viewerDecade: preview.viewerDecade,
         countFallback: true,
       });
       return signals.length > 0 ? signals.join(" · ") : null;

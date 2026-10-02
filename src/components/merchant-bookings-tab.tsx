@@ -2,7 +2,6 @@ import Link from "next/link";
 import type { Session } from "next-auth";
 import { Badge } from "@/components/ds";
 import { MerchantEmpty, SectionLabel, StatusPill, mCard } from "@/components/merchant-ds";
-import { MerchantAttendeesPanel } from "@/components/merchant-attendees-panel";
 import {
   MERCHANT_DOOR_LIST_CAP,
   getMerchantAllAttendees,
@@ -30,19 +29,33 @@ export async function BookingsTabAsync({
 
   return (
     <div className="space-y-7 py-8">
+      {/* Bug board #316: no all-events attendee table here any more - who is
+          coming, and checking them in, lives on each event's own page. */}
       <TabHeader
         eyebrow="Bookings"
         title="Everyone booked across your events."
-        body="Per-event counts up top; search, check in, or export the full door list below."
+        body="How each event is filling. Open one to see who's coming and check people in at the door."
       />
 
       {attendees.length === 0 ? (
         <MerchantEmpty
           icon="users"
           title="No one's booked in yet."
-          body="As people RSVP, they appear here - grouped by event up top, with a full door list to check in and export below."
+          body="As people RSVP, their events appear here with a count. Open an event for its door list."
           action={<CreateEventButton />}
         />
+      ) : null}
+
+      {/* The counts below come from the most recent seats only. A count that is
+          short and says nothing is worse than one that says so. */}
+      {attendees.length >= MERCHANT_DOOR_LIST_CAP ? (
+        <p
+          role="status"
+          className="rounded-xl border border-[color-mix(in_srgb,var(--amber)_38%,transparent)] bg-[color-mix(in_srgb,var(--amber)_9%,var(--paper))] px-4 py-3 text-[13px] leading-relaxed text-[color:var(--ink-soft)]"
+        >
+          Counting your most recent {MERCHANT_DOOR_LIST_CAP} seats, so older events may be
+          missing here. Open an event from the Events tab for its full door list.
+        </p>
       ) : null}
 
       {grouped.size > 0 ? (
@@ -89,30 +102,6 @@ export async function BookingsTabAsync({
               );
             })}
           </ul>
-        </section>
-      ) : null}
-
-      {attendees.length > 0 ? (
-        <section className="space-y-3 rise-soft rise-d2">
-          <SectionLabel>All attendees</SectionLabel>
-          <p className="text-[13.5px] leading-relaxed text-[color:var(--slate)]">
-            Ticket-holders and their +1s, together. Check people in on the day, or
-            export the door list to CSV.
-          </p>
-          {/* A truncated door list that says nothing is worse than a slow one:
-              it exports to CSV and goes to a door short of the people at the
-              end of it. Say so, and say which end got cut. */}
-          {attendees.length >= MERCHANT_DOOR_LIST_CAP ? (
-            <p
-              role="status"
-              className="rounded-xl border border-[color-mix(in_srgb,var(--amber)_38%,transparent)] bg-[color-mix(in_srgb,var(--amber)_9%,var(--paper))] px-4 py-3 text-[13px] leading-relaxed text-[color:var(--ink-soft)]"
-            >
-              Showing your most recent {MERCHANT_DOOR_LIST_CAP} seats. Older events
-              are not in this list or its CSV - open an event from the Events tab
-              for its own full door list.
-            </p>
-          ) : null}
-          <MerchantAttendeesPanel rows={attendees} />
         </section>
       ) : null}
     </div>

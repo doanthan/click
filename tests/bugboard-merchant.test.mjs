@@ -161,7 +161,11 @@ test("a host can request a tag without holding up their event", () => {
 
   const wizard = read("src/components/event-create-wizard.tsx");
   assert.match(wizard, /<TagRequestForm \/>/);
-  assert.match(wizard, /fetch\("\/api\/merchant\/tag-requests"/);
+  const form = read("src/components/tag-request-form.tsx");
+  assert.match(form, /fetch\("\/api\/merchant\/tag-requests"/);
+  // Bug board #315: the same request from the portal's Settings tab.
+  const settings = read("src/components/merchant-settings-tab.tsx");
+  assert.match(settings, /<TagRequestForm context="settings" \/>/);
 
   const repo = read("src/lib/event-repository.ts");
   const request = fnBody(repo, "export async function requestTagForMerchant");
@@ -192,4 +196,16 @@ test("the admin queue approves through the tag upsert and reads fail-soft", () =
   assert.match(page, /<AdminTagRequests/);
   assert.match(read("src/app/api/admin/tag-requests/[requestId]/route.ts"), /decideTagRequestForAdmin/);
   assert.match(read("src/app/api/merchant/tag-requests/route.ts"), /requestTagForMerchant/);
+});
+
+test("the host's events list pages past 20 rows", () => {
+  // Bug board #317: "pagination if there are more than 20 rows?".
+  const panel = read("src/components/merchant-events-panel.tsx");
+  assert.match(panel, /const PAGE_SIZE = 20;/);
+  assert.match(panel, /const pageRows = visible\.slice\(\(safePage - 1\) \* PAGE_SIZE, safePage \* PAGE_SIZE\);/);
+  assert.match(panel, /pageRows\.map\(\(event, i\) =>/);
+  assert.doesNotMatch(panel, /visible\.map\(/);
+  // Each filter starts the list again from page 1.
+  assert.equal(panel.match(/setPage\(1\);/g)?.length, 4);
+  assert.match(panel, /\{visible\.length > PAGE_SIZE \? \(\s*<nav\s+aria-label="Pagination"/);
 });

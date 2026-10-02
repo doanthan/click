@@ -82,7 +82,14 @@ export function EventCard({
               : null;
 
   const goingCount = event.attendees;
-  const goingFaces = (event.attendeeAvatars ?? []).map((src) => ({ src }));
+  // Bug board #310/#332: one circle per person going - their photo where they
+  // share one, the "no photo yet" silhouette otherwise - so the stack ends in
+  // "+N" once more are going than it shows. It used to be only the (at most 3)
+  // photos, so the "+N" could never appear and a room of people without photos
+  // showed no faces at all.
+  const goingFaces = Array.from({ length: goingCount }, (_, i) => ({
+    src: event.attendeeAvatars?.[i] ?? null,
+  }));
 
   // Press = the DS press: the card settles flush and gives a hair (.985), fast
   // in, eased back out. Keyed to the cover/title links only. The Save star and
@@ -175,7 +182,7 @@ export function EventCard({
               (sm+, or inside a rail); a lone card on a phone has nothing to
               line up with. */}
           <div className="mt-2 sm:min-h-8 [.ckRail_&]:min-h-8">
-            {goingCount >= 3 && goingFaces.length > 0 ? (
+            {goingCount >= 3 ? (
               <AvatarStack people={goingFaces} max={4} size={26} label={`${goingCount} going`} />
             ) : (
               <span className="text-[13px] font-medium text-[color:var(--slate)]">Be one of the first</span>

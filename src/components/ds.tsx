@@ -806,9 +806,26 @@ export function Avatar({
     boxShadow: ring ? "0 0 0 2.5px var(--paper), 0 0 0 4px var(--lavender)" : undefined,
   };
 
+  const silhouette = (
+    <svg width={size * 0.62} height={size * 0.62} viewBox="0 0 24 24" fill={fg} aria-hidden>
+      <circle cx="12" cy="8.6" r="4" />
+      <path d="M4 20c0-4.2 3.6-7 8-7s8 2.8 8 7z" />
+    </svg>
+  );
+
   if (avatarSrc) {
+    // Bug board #319: the photo sits over the silhouette, so one that fails to
+    // load - a dead link, or Storage refusing it - leaves the "no photo yet"
+    // disc rather than a broken-image glyph. alt="" is what stops the browser
+    // drawing that glyph; the name rides on the wrapper instead.
     return (
-      <span className={className} style={{ ...base, background: "var(--champagne-deep)" }}>
+      <span
+        className={className}
+        style={{ ...base, position: "relative", background: bg }}
+        role="img"
+        aria-label={name || "Profile photo"}
+      >
+        {silhouette}
         {/* Avatars are remote (Supabase / OAuth) and tiny; next/image buys
             nothing here and its loader chokes on the arbitrary provider hosts.
             Lazy on purpose: an eager plain img tag inside the route
@@ -816,7 +833,7 @@ export function Avatar({
             suspensey images - see RouteTransition), and a people list is
             dozens of them. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={avatarSrc} alt={name} width={size} height={size} loading="lazy" decoding="async" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+        <img src={avatarSrc} alt="" width={size} height={size} loading="lazy" decoding="async" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
       </span>
     );
   }
@@ -828,10 +845,7 @@ export function Avatar({
       role="img"
       aria-label={name ? `${name} - no photo yet` : "No photo yet"}
     >
-      <svg width={size * 0.62} height={size * 0.62} viewBox="0 0 24 24" fill={fg} aria-hidden>
-        <circle cx="12" cy="8.6" r="4" />
-        <path d="M4 20c0-4.2 3.6-7 8-7s8 2.8 8 7z" />
-      </svg>
+      {silhouette}
     </span>
   );
 }

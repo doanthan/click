@@ -157,11 +157,13 @@ export function EventDetailModal({
         ? "Waitlist"
         : seatsLeft <= 3
           ? `${seatsLeft} ${seatsLeft === 1 ? "spot" : "spots"} left`
-          : data.status === "Featured"
-            ? "Trending"
-            : !isPaid
-              ? "Free"
-              : null;
+          : seatsLeft <= 8
+            ? "Almost full"
+            : data.status === "Featured"
+              ? "Trending"
+              : !isPaid
+                ? "Free"
+                : null;
 
   // Handed to the RSVP button so a Discover-surface RSVP celebrates IN PLACE
   // rather than hard-navigating to /events/<id>?booked=1. Without it, someone who
@@ -198,18 +200,22 @@ export function EventDetailModal({
   // details + venue) rather than back into the booking modal - they've already
   // RSVP'd. Waitlisted/unregistered viewers still open the modal.
   const isConfirmedBooking = fallbackStatus === "confirmed";
+  // Bug board #333: "Joined waitlist" only while the event is still full. Once
+  // the card shows room, a waitlisted member reads "RSVP" like anyone else - the
+  // quick view it opens offers them the open seat, or their live offer.
+  const waitingOnFullEvent = registered && fallbackStatus === "waitlisted" && isWaitlistMode;
   const triggerLabel = registered
     ? fallbackStatus === "waitlisted"
-      ? "Joined waitlist"
+      ? waitingOnFullEvent
+        ? "Joined waitlist"
+        : "RSVP"
       : "You're going"
     : isWaitlistMode
       ? "Join waitlist"
       : "RSVP";
   // The DS Button - radius 12, flat Deep Purple, one footprint everywhere. A
   // joined-waitlist seat wears the muted "pending" fill at the same size.
-  const triggerClassName =
-    className ??
-    ckBtn(registered && fallbackStatus === "waitlisted" ? "pending" : "primary", "sm");
+  const triggerClassName = className ?? ckBtn(waitingOnFullEvent ? "pending" : "primary", "sm");
 
   if (isConfirmedBooking) {
     return (

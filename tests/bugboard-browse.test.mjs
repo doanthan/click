@@ -91,3 +91,46 @@ test("Discover has no suburb list, and no location control it cannot honour", ()
   assert.match(explorer, /label=\{`Distance from \$\{distanceLabel\}`\}/);
   assert.match(explorer, /distanceOrigin=\{distanceFrom \? undefined : "CBD"\}/);
 });
+
+test("event cards show a circle per person going, ending in +N", () => {
+  // Bug board #310/#332: the stack held only the (at most 3) photos, so its "+N"
+  // could never appear, and people without a photo were left out of it.
+  const card = read("src/components/event-card.tsx");
+  assert.match(
+    card,
+    /const goingFaces = Array\.from\(\{ length: goingCount \}, \(_, i\) => \(\{\s*src: event\.attendeeAvatars\?\.\[i\] \?\? null,\s*\}\)\);/,
+  );
+  // The privacy floor stays: no faces until three are going.
+  assert.match(card, /\{goingCount >= 3 \? \(\s*<AvatarStack people=\{goingFaces\} max=\{4\}/);
+  const repo = read("src/lib/event-repository.ts");
+  assert.equal(repo.match(/-- Four: the card's face stack shows four circles \(bug board #310\)\.\s*limit 4/g)?.length, 2);
+});
+
+test("a photo that fails to load shows the no-photo disc, not a broken image", () => {
+  // Bug board #319: photos broken on the event page (Storage was refusing them).
+  const avatar = read("src/components/ds.tsx").split("export function Avatar(")[1].split("export function AvatarStack(")[0];
+  assert.match(avatar, /\{silhouette\}[\s\S]*?<img src=\{avatarSrc\} alt=""/);
+  assert.match(avatar, /position: "absolute", inset: 0/);
+});
+
+test("Discover's category discs wrap instead of scrolling sideways", () => {
+  // Bug board #318: "Don't scroll the category icons / Move to next row".
+  const explorer = read("src/components/event-explorer.tsx");
+  assert.match(explorer, /<nav aria-label="Browse by category" className="mt-5 -mx-1 flex flex-wrap gap-1\.5 px-1 pb-1">/);
+});
+
+test("Discover shows results a dozen at a time", () => {
+  // Bug board #324: "apply pagination for >5 rows?".
+  const explorer = read("src/components/event-explorer.tsx");
+  assert.match(explorer, /const SHOWN_STEP = 12;/);
+  assert.match(explorer, /filteredEvents\.slice\(0, shownCount\)\.map\(/);
+  assert.match(explorer, /setShownCount\(\(n\) => n \+ SHOWN_STEP\)/);
+});
+
+test("a waitlisted member sees RSVP on a card that has room again", () => {
+  // Bug board #333: "joined waitlist" with 2 spots open.
+  const modal = read("src/components/event-detail-modal.tsx");
+  assert.match(modal, /const waitingOnFullEvent = registered && fallbackStatus === "waitlisted" && isWaitlistMode;/);
+  assert.match(modal, /\? waitingOnFullEvent\s*\? "Joined waitlist"\s*: "RSVP"/);
+  assert.match(modal, /ckBtn\(waitingOnFullEvent \? "pending" : "primary", "sm"\)/);
+});

@@ -225,8 +225,14 @@ export function ClicksList({
       {live.length === 0 && plans.length === 0 ? (
         <div className="mt-7 rounded-[var(--radius-xl)] bg-[color:var(--lav-bg)] px-6 py-8 text-center">
           <p className="font-display text-[1.05rem] font-semibold text-[color:var(--ink)]">No live clicks yet.</p>
+          {/* Both click sources (CHANGE BRIEF 2026-09-30): the day's three on the
+              Click page, and who was there after an event. */}
           <p className="mx-auto mt-2 max-w-[380px] text-sm leading-relaxed text-[color:var(--ink-soft)]">
-            Show up to an event, then click with someone afterwards. Clicking is anonymous - we&apos;ll
+            Click with someone from{" "}
+            <Link href="/people" className="font-semibold text-[color:var(--purple)]">
+              today&apos;s three
+            </Link>
+            , or with someone after an event you both go to. Clicking is anonymous - we&apos;ll
             only show you if it&apos;s mutual, and your first plan opens here.
           </p>
           <div className="mt-4 flex justify-center">

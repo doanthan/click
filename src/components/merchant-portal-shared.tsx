@@ -5,11 +5,15 @@ import { getMerchantEvents } from "@/lib/event-repository";
 
 export type MerchantEvent = Awaited<ReturnType<typeof getMerchantEvents>>[number];
 
+// Sydney, pinned. These tabs render on the server, which runs in UTC on
+// Vercel, so with no timeZone a 4:39 pm booking was listed at 6:39 am - and
+// disagreed with the CSV export and the revenue chart, which are both Sydney.
 export const dateTimeFormatter = new Intl.DateTimeFormat("en-AU", {
   day: "numeric",
   month: "short",
   hour: "numeric",
   minute: "2-digit",
+  timeZone: "Australia/Sydney",
 });
 
 // Money lives in @/lib/amounts now - `formatMoney` for revenue, payouts and
