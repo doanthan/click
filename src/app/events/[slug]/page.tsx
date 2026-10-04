@@ -31,6 +31,7 @@ import {
   getUnfulfilledPaymentNotice,
   isEventOperator,
 } from "@/lib/event-repository";
+import { redirectIfNotOnboarded } from "@/lib/onboarding-gate";
 import { SUPPORT_EMAIL_DEFAULT } from "@/lib/email-templates/tokens";
 import { reconcileCheckoutSession } from "@/lib/stripe-sync";
 import { quoteCancellationRefund, refundQuoteLabel } from "@/lib/refund-policy";
@@ -176,6 +177,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
   ]);
 
   if (!event) notFound();
+  redirectIfNotOnboarded(profileStatus, `/events/${slug}`);
 
   // Hide not-yet-public events (pending review, rejected, cancelled) from
   // everyone except the owning merchant and admins. Without this, a direct slug

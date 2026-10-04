@@ -5,10 +5,12 @@ import { ProfileDetails, visibleIntentsFor } from "@/components/profile-details"
 import { ProfileSafetyControls } from "@/components/profile-safety-controls";
 import {
   getOwnProfile,
+  getProfileStatus,
   getPublicProfileById,
   getSafetyState,
   getViewerClickState,
 } from "@/lib/event-repository";
+import { redirectIfNotOnboarded } from "@/lib/onboarding-gate";
 
 export const metadata = {
   title: "Profile",
@@ -32,14 +34,16 @@ export default async function PublicProfilePage({ params }: PublicProfilePagePro
   }
 
   const session = await auth();
-  const [profile, ownProfile] = await Promise.all([
+  const [profile, ownProfile, profileStatus] = await Promise.all([
     getPublicProfileById(userId),
     session?.user ? getOwnProfile(session) : Promise.resolve(null),
+    session?.user ? getProfileStatus(session) : null,
   ]);
 
   if (!profile) {
     notFound();
   }
+  redirectIfNotOnboarded(profileStatus, `/profile/${userId}`);
 
   const isOwnProfile = ownProfile?.id === userId;
   const [safetyState, clickState] =

@@ -6,6 +6,7 @@ import { Icon } from "@/components/ds";
 import { EventCard } from "@/components/event-card";
 import { categories, categoryFromSlug, categorySlug } from "@/lib/click-data";
 import { getEventsForExplore, getProfileStatus } from "@/lib/event-repository";
+import { redirectIfNotOnboarded } from "@/lib/onboarding-gate";
 
 // Pre-render the known category landing pages; unknown slugs still resolve at
 // request time and 404 via notFound().
@@ -43,6 +44,7 @@ export default async function CategoryPage({
     getEventsForExplore(),
     session?.user ? getProfileStatus(session) : null,
   ]);
+  redirectIfNotOnboarded(profileStatus, `/categories/${slug}`);
 
   const categoryEvents = events.filter((event) => event.category === category);
   const bookmarkedSet = new Set(profileStatus?.bookmarkedEventIds ?? []);

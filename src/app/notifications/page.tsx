@@ -2,7 +2,12 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { Icon } from "@/components/ds";
 import { SubmitButton } from "@/components/ds-client";
-import { getNotificationsForSession, getUnreadNotificationCount } from "@/lib/event-repository";
+import {
+  getNotificationsForSession,
+  getProfileStatus,
+  getUnreadNotificationCount,
+} from "@/lib/event-repository";
+import { redirectIfNotOnboarded } from "@/lib/onboarding-gate";
 import { markAllReadAction } from "./actions";
 import { NotificationItem } from "./notification-item";
 
@@ -32,10 +37,12 @@ export default async function NotificationsPage() {
   // request). The list stops at the newest 50, so an inbox with 1058 unread
   // showed 50 under a bell that said 99+, and nothing said why (bug board
   // #222). The band now carries the real total and says when it lists fewer.
-  const [notifications, unreadTotal] = await Promise.all([
+  const [notifications, unreadTotal, profileStatus] = await Promise.all([
     getNotificationsForSession(session),
     getUnreadNotificationCount(session),
+    getProfileStatus(session),
   ]);
+  redirectIfNotOnboarded(profileStatus, "/notifications");
   const unread = notifications.filter((n) => !n.readAt);
   const read = notifications.filter((n) => n.readAt);
   // Two reads, so one can land between them; never print fewer than we list.

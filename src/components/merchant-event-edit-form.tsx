@@ -9,6 +9,7 @@ import { useFormDraft } from "@/lib/use-form-draft";
 import { DURATION_OPTIONS, nearestDurationValue } from "@/lib/event-duration";
 import { CAPACITY_PATTERN, PRICE_PATTERN, sanitizeAmount } from "@/lib/amounts";
 import { MERCHANT_EVENT_EDIT_SECTION_ID } from "@/lib/merchant-event-edit";
+import { EVENT_TITLE_MAX_LENGTH } from "@/lib/text-format";
 import { useUnsavedGuard } from "@/lib/use-unsaved-guard";
 
 type Tag = { slug: string; label: string };
@@ -331,7 +332,15 @@ export function MerchantEventEditForm({
     setTags((prev) => prev.filter((t) => t.slug !== slug));
   }
 
-  const titleError = title.trim() === "" ? "Give the event a title." : undefined;
+  // The cap (bug board #334) bites only on a NEW title, the same rule
+  // updateMerchantEventDetails holds: an event listed before it existed keeps
+  // its title and can still have its photos or description fixed.
+  const titleError =
+    title.trim() === ""
+      ? "Give the event a title."
+      : title.trim().length > EVENT_TITLE_MAX_LENGTH && title.trim() !== initialTitle.trim()
+        ? `Keep the title to ${EVENT_TITLE_MAX_LENGTH} characters so it fits on the event card.`
+        : undefined;
 
   /* The terms fields need the same guard the create wizard puts on them, and for
      the same reason - they are the only two values here that go through
@@ -499,6 +508,12 @@ export function MerchantEventEditForm({
               required
               value={title}
               error={titleError}
+              maxLength={EVENT_TITLE_MAX_LENGTH}
+              action={
+                <span className="text-[11.5px] tabular-nums text-[color:var(--ink-faint)]">
+                  {title.length}/{EVENT_TITLE_MAX_LENGTH}
+                </span>
+              }
               onChange={(e: ChangeEvent<HTMLInputElement>) => {
                 setMessage(null);
                 setTitle(e.target.value);

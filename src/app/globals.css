@@ -728,8 +728,12 @@ a:focus-visible .nudge-arrow { transform: translateX(3px); }
    header floats transparent over the full-bleed hero, Partiful-style: cream
    wordmark and Log in, Sign up flips to cream-on-photo. Scoped to the
    marketing header only - the signed-in app header keeps its cream bar.
-   No :has() support -> the header simply stays a cream sticky bar. */
-body:has([data-home-hero]) .site-header--marketing {
+   No :has() support -> the header simply stays a cream sticky bar.
+   #main-content, not anywhere in body: on a hard load React streams the page
+   into a hidden <div> at the end of <body> before it swaps it in, and a bare
+   [data-home-hero] matched that copy - the bar went cream-on-cream (wordmark
+   and Log in gone) over the loading card until the hero landed. */
+body:has(#main-content [data-home-hero]) .site-header--marketing {
   position: absolute;
   background: transparent;
   border-color: transparent;
@@ -737,7 +741,7 @@ body:has([data-home-hero]) .site-header--marketing {
   -webkit-backdrop-filter: none;
 }
 /* The wordmark's colour is an inline style - the one sanctioned !important. */
-body:has([data-home-hero]) .site-header--marketing a[aria-label="Click home"] > span {
+body:has(#main-content [data-home-hero]) .site-header--marketing a[aria-label="Click home"] > span {
   color: var(--champagne) !important;
 }
 /* The overlay repaints the bar's controls cream, and `button` alone missed the
@@ -749,11 +753,11 @@ body:has([data-home-hero]) .site-header--marketing a[aria-label="Click home"] > 
    colour-contrast audit skips the node and scores a clean 100.
    :not(.ck-btn) leaves the Sign up pill to its own rule below, which needs
    purple ON cream - matching here would paint it cream on cream. */
-body:has([data-home-hero]) .site-header--marketing button,
-body:has([data-home-hero]) .site-header--marketing a:not(.ck-btn) {
+body:has(#main-content [data-home-hero]) .site-header--marketing button,
+body:has(#main-content [data-home-hero]) .site-header--marketing a:not(.ck-btn) {
   color: var(--champagne);
 }
-body:has([data-home-hero]) .site-header--marketing .ck-btn {
+body:has(#main-content [data-home-hero]) .site-header--marketing .ck-btn {
   background: var(--champagne);
   color: var(--purple);
 }

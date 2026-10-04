@@ -17,6 +17,12 @@ import {
   isValidAuPhone,
   normalizeAuPhone,
 } from "../src/lib/au-phone.ts";
+import {
+  financesPeriodFileTag,
+  financesPeriodRange,
+  parseFinancesPeriod,
+} from "../src/lib/finances-period.ts";
+import { EVENT_TITLE_MAX_LENGTH } from "../src/lib/text-format.ts";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (rel) => readFileSync(path.join(root, rel), "utf8");
@@ -208,4 +214,108 @@ test("the host's events list pages past 20 rows", () => {
   // Each filter starts the list again from page 1.
   assert.equal(panel.match(/setPage\(1\);/g)?.length, 4);
   assert.match(panel, /\{visible\.length > PAGE_SIZE \? \(\s*<nav\s+aria-label="Pagination"/);
+});
+
+/* ---------------- #334 event title cap ---------------- */
+
+test("an event title is capped at the 60 characters the card's two lines hold", () => {
+  // Bug board #334: "Max character limit ... when creating a title". The DS
+  // Event Card clamps the title at two lines and assumes a ~60-char cap; nothing
+  // enforced it, so long titles lost their tail to the ellipsis.
+  assert.equal(EVENT_TITLE_MAX_LENGTH, 60);
+
+  const wizard = read("src/components/event-create-wizard.tsx");
+  assert.match(wizard, /maxLength=\{EVENT_TITLE_MAX_LENGTH\}/);
+  assert.match(wizard, /\{values\.title\.length\}\/\{EVENT_TITLE_MAX_LENGTH\}/);
+  // A draft saved before the cap can hold more than maxLength lets you type.
+  assert.match(wizard, /else if \(v\.title\.trim\(\)\.length > EVENT_TITLE_MAX_LENGTH\)/);
+
+  const edit = read("src/components/merchant-event-edit-form.tsx");
+  assert.match(edit, /maxLength=\{EVENT_TITLE_MAX_LENGTH\}/);
+  assert.match(edit, /title\.trim\(\)\.length > EVENT_TITLE_MAX_LENGTH && title\.trim\(\) !== initialTitle\.trim\(\)/);
+
+  // The server holds the line for a bypassed client...
+  const repo = read("src/lib/event-repository.ts");
+  const create = fnBody(repo, "export async function createEventForMerchant");
+  assert.match(create, /if \(title\.length > EVENT_TITLE_MAX_LENGTH\) \{/);
+  // ...and an edit refuses only a NEW long title, so an event listed before the
+  // cap can still have its photos or description fixed.
+  const update = fnBody(repo, "export async function updateMerchantEventDetails");
+  assert.match(update, /event\.title,\n\s+event\.address,/);
+  assert.match(update, /if \(title\.length > EVENT_TITLE_MAX_LENGTH && title !== event\.title\.trim\(\)\) \{\s*await client\.query\("rollback"\);/);
+});
+
+/* ---------------- #331 finances period ---------------- */
+
+test("the finances period is read in Sydney time, financial year from 1 July", () => {
+  // 00:30 on 1 October in Sydney is still 30 September in UTC, which is where
+  // the server runs. "This month" has to mean October.
+  const oct1 = new Date("2026-09-30T14:30:00Z");
+  assert.deepEqual(financesPeriodRange("month", oct1), { from: "2026-10-01", to: "2026-11-01" });
+  assert.deepEqual(financesPeriodRange("last-month", oct1), { from: "2026-09-01", to: "2026-10-01" });
+  assert.deepEqual(financesPeriodRange("year", oct1), { from: "2026-01-01", to: "2027-01-01" });
+  assert.deepEqual(financesPeriodRange("fy", oct1), { from: "2026-07-01", to: "2027-07-01" });
+  assert.equal(financesPeriodRange("all", oct1), null);
+
+  // Daylight saving: 23:30 UTC on 31 Oct is 10:30 on 1 November at +11.
+  assert.deepEqual(financesPeriodRange("month", new Date("2026-10-31T13:30:00Z")), {
+    from: "2026-11-01",
+    to: "2026-12-01",
+  });
+  // January's last month is the previous December; its financial year began
+  // the July before.
+  const jan = new Date("2026-01-15T00:00:00Z");
+  assert.deepEqual(financesPeriodRange("last-month", jan), { from: "2025-12-01", to: "2026-01-01" });
+  assert.deepEqual(financesPeriodRange("fy", jan), { from: "2025-07-01", to: "2026-07-01" });
+  // The financial year turns at Sydney midnight on 1 July (UTC+10 in winter).
+  assert.equal(financesPeriodRange("fy", new Date("2026-06-30T13:59:00Z")).from, "2025-07-01");
+  assert.equal(financesPeriodRange("fy", new Date("2026-06-30T14:00:00Z")).from, "2026-07-01");
+
+  assert.equal(parseFinancesPeriod("fy"), "fy");
+  assert.equal(parseFinancesPeriod("last-month"), "last-month");
+  assert.equal(parseFinancesPeriod("'; drop table"), "all");
+  assert.equal(parseFinancesPeriod(null), "all");
+
+  assert.equal(financesPeriodFileTag("fy", oct1), "FY2026-27");
+  assert.equal(financesPeriodFileTag("month", oct1), "2026-10");
+  assert.equal(financesPeriodFileTag("last-month", oct1), "2026-09");
+  assert.equal(financesPeriodFileTag("year", oct1), "2026");
+  assert.equal(financesPeriodFileTag("all", oct1), "all");
+});
+
+test("the period scopes the finances tiles, the list and the export alike", () => {
+  // Bug board #331: picking "This month" scoped only the CSV, so every figure
+  // on screen stayed all-time. It is the page's ?period= now.
+  const repo = read("src/lib/event-repository.ts");
+  const summary = fnBody(repo, "export async function getMerchantFinancesSummary");
+  assert.match(summary, /period: FinancesPeriod = "all",/);
+  assert.match(summary, /const range = financesPeriodRange\(period\);/);
+  assert.match(summary, /and \$\{inFinancesPeriodSql\("created_at"\)\}\n\s+\)/, "the settled CTE");
+  assert.match(summary, /where merchant_profile_id = \$1::uuid\n\s+and \$\{inFinancesPeriodSql\("created_at"\)\}\n\s+\), 0\)::text as refunded/);
+  assert.match(summary, /and \$\{inFinancesPeriodSql\("pt\.created_at"\)\}\n\s+order by pt\.created_at desc\n\s+limit 20/);
+  assert.equal(summary.match(/periodParams,/g)?.length, 2, "the tiles and the list take the period");
+
+  const exportRows = fnBody(repo, "export async function getMerchantTransactionsForExport");
+  assert.match(exportRows, /and \$\{inFinancesPeriodSql\("pt\.created_at"\)\}/);
+  assert.doesNotMatch(exportRows, /extract\(year|extract\(month/);
+  // Sydney midnight, not the server's.
+  assert.match(repo, /\$\{column\} >= \(\$2::date::timestamp at time zone 'Australia\/Sydney'\)/);
+  assert.match(repo, /\$\{column\} < \(\$3::date::timestamp at time zone 'Australia\/Sydney'\)/);
+
+  const route = read("src/app/api/merchant/finances/export/route.ts");
+  assert.match(route, /parseFinancesPeriod\(new URL\(request\.url\)\.searchParams\.get\("period"\)\)/);
+  assert.match(route, /getMerchantTransactionsForExport\(session, period\)/);
+
+  const page = read("src/app/merchant/page.tsx");
+  assert.match(page, /<FinancesTabAsync session=\{session\} period=\{parseFinancesPeriod\(params\.period\)\} \/>/);
+  const tab = read("src/components/merchant-finances-tab.tsx");
+  assert.match(tab, /getMerchantFinancesSummary\(session, period\)/);
+  assert.match(tab, /<MerchantFinancesExport key=\{period\} period=\{period\} \/>/);
+  assert.doesNotMatch(tab, /note="all time"/, "the Refunded tile names the period it shows");
+
+  const picker = read("src/components/merchant-finances-export.tsx");
+  assert.match(picker, /`\/merchant\?tab=finances&period=\$\{next\}`/);
+  assert.match(picker, /`\/api\/merchant\/finances\/export\?period=\$\{period\}`/);
+  assert.match(picker, /FINANCES_PERIODS\.map\(/);
+  assert.doesNotMatch(picker, /getFullYear|getMonth\(\)/, "the browser's clock never picks the period");
 });

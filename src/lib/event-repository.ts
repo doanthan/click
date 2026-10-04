@@ -125,7 +125,8 @@ import { getPostgresPool, mapWithConcurrency } from "./postgres";
 import { attendeeFomoSignals, decadeOf, majorityDecade } from "./attendee-fomo";
 import { soloIntentLabel } from "./intent-label";
 import { getSupabaseAdmin } from "@/utils/supabase/admin";
-import { toTitleCase } from "./text-format";
+import { EVENT_TITLE_MAX_LENGTH, toTitleCase } from "./text-format";
+import { financesPeriodRange, type FinancesPeriod } from "./finances-period";
 import { APP_TIME_ZONE, parseEventStart } from "./datetime";
 import {
   quoteCancellationRefund,
@@ -2902,6 +2903,7 @@ export async function updateMerchantEventDetails(
 
     const eventResult = await client.query<{
       id: string;
+      title: string;
       address: string | null;
       status: string;
       attendee_count: string;
@@ -2909,6 +2911,7 @@ export async function updateMerchantEventDetails(
       `
         select
           event.id::text,
+          event.title,
           event.address,
           event.status::text as status,
           count(attendee.id) filter (
@@ -2928,6 +2931,17 @@ export async function updateMerchantEventDetails(
       await client.query("rollback");
       const error = new Error("Event not found.");
       error.name = "NotFoundError";
+      throw error;
+    }
+    // Bug board #334: the title cap applies to a NEW title only. An event
+    // listed before the cap existed keeps its title through an edit that is
+    // about its photos or description.
+    if (title.length > EVENT_TITLE_MAX_LENGTH && title !== event.title.trim()) {
+      await client.query("rollback");
+      const error = new Error(
+        `Keep the event title to ${EVENT_TITLE_MAX_LENGTH} characters so it fits on the event card.`,
+      );
+      error.name = "ValidationError";
       throw error;
     }
 
@@ -5129,6 +5143,15 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
 
     if (!title || !description || Number.isNaN(startsAt.getTime())) {
       const error = new Error("Title, description, and valid start date are required.");
+      error.name = "ValidationError";
+      throw error;
+    }
+    // Bug board #334: the wizard caps the field, this holds the line for a
+    // bypassed client.
+    if (title.length > EVENT_TITLE_MAX_LENGTH) {
+      const error = new Error(
+        `Keep the event title to ${EVENT_TITLE_MAX_LENGTH} characters so it fits on the event card.`,
+      );
       error.name = "ValidationError";
       throw error;
     }
@@ -20470,8 +20493,18 @@ export type MerchantFinancesSummary = {
   }[];
 };
 
+// Bug board #331: `column` falls inside the Finances period whose Sydney dates
+// are $2 (from, inclusive) and $3 (to, exclusive) - financesPeriodRange. Both
+// null is all time. Scoped by when the charge was made, as the revenue chart
+// already is, so a refund counts against the period its charge sits in.
+function inFinancesPeriodSql(column: string) {
+  return `($2::date is null or ${column} >= ($2::date::timestamp at time zone 'Australia/Sydney'))
+    and ($3::date is null or ${column} < ($3::date::timestamp at time zone 'Australia/Sydney'))`;
+}
+
 export async function getMerchantFinancesSummary(
   session: Session | null,
+  period: FinancesPeriod = "all",
 ): Promise<MerchantFinancesSummary> {
   const empty: MerchantFinancesSummary = {
     collectedCents: 0,
@@ -20497,6 +20530,8 @@ export async function getMerchantFinancesSummary(
     const profile = await ensureProfileForSession(session);
     const merchant = await getMerchantProfile(pool, profile.id);
     if (!merchant) return empty;
+    const range = financesPeriodRange(period);
+    const periodParams = [merchant.id, range?.from ?? null, range?.to ?? null];
 
     const [aggResult, recentResult, payoutsResult, monthlyResult] = await Promise.all([
       pool.query<{
@@ -20537,6 +20572,7 @@ export async function getMerchantFinancesSummary(
             from payment_transactions
             where merchant_profile_id = $1::uuid
               and status in ('paid', 'partially_refunded')
+              and ${inFinancesPeriodSql("created_at")}
           )
           select
             coalesce((select sum(amount_cents - refunded_amount_cents) from settled), 0)::text
@@ -20549,9 +20585,10 @@ export async function getMerchantFinancesSummary(
               select sum(refunded_amount_cents)
               from payment_transactions
               where merchant_profile_id = $1::uuid
+                and ${inFinancesPeriodSql("created_at")}
             ), 0)::text as refunded
         `,
-        [merchant.id],
+        periodParams,
       ),
       pool.query<{
         id: string;
@@ -20565,10 +20602,11 @@ export async function getMerchantFinancesSummary(
           from payment_transactions pt
           join events event on event.id = pt.event_id
           where pt.merchant_profile_id = $1::uuid
+            and ${inFinancesPeriodSql("pt.created_at")}
           order by pt.created_at desc
           limit 20
         `,
-        [merchant.id],
+        periodParams,
       ),
       // Recent Stripe payouts on this merchant's connected account. Populated
       // by the `payout.*` webhook in src/lib/stripe-sync.ts. Cap at 6 so the
@@ -20674,13 +20712,13 @@ export type MerchantTransactionExportRow = {
   amountCents: number;
 };
 
-// Full transaction list for CSV export, optionally narrowed to a calendar year
-// or a specific month (Australia/Sydney). Unlike the dashboard summary's
-// 20-row preview, this returns every matching transaction so the exported CSV
-// is complete. Returns [] when signed out / not a merchant.
+// Full transaction list for CSV export, narrowed to the same Finances period
+// the tab is showing (Australia/Sydney). Unlike the dashboard summary's 20-row
+// preview, this returns every matching transaction so the exported CSV is
+// complete. Returns [] when signed out / not a merchant.
 export async function getMerchantTransactionsForExport(
   session: Session | null,
-  opts: { year?: number; month?: number } = {},
+  period: FinancesPeriod = "all",
 ): Promise<MerchantTransactionExportRow[]> {
   const pool = getPostgresPool();
   const email = getSessionEmail(session);
@@ -20691,20 +20729,7 @@ export async function getMerchantTransactionsForExport(
     const merchant = await getMerchantProfile(pool, profile.id);
     if (!merchant) return [];
 
-    const conditions = ["pt.merchant_profile_id = $1::uuid"];
-    const params: unknown[] = [merchant.id];
-    if (opts.year && Number.isFinite(opts.year)) {
-      params.push(opts.year);
-      conditions.push(
-        `extract(year from pt.created_at at time zone 'Australia/Sydney') = $${params.length}`,
-      );
-    }
-    if (opts.month && opts.month >= 1 && opts.month <= 12) {
-      params.push(opts.month);
-      conditions.push(
-        `extract(month from pt.created_at at time zone 'Australia/Sydney') = $${params.length}`,
-      );
-    }
+    const range = financesPeriodRange(period);
 
     const result = await pool.query<{
       title: string;
@@ -20716,10 +20741,11 @@ export async function getMerchantTransactionsForExport(
         select event.title, pt.created_at, pt.status::text, pt.amount_cents
         from payment_transactions pt
         join events event on event.id = pt.event_id
-        where ${conditions.join(" and ")}
+        where pt.merchant_profile_id = $1::uuid
+          and ${inFinancesPeriodSql("pt.created_at")}
         order by pt.created_at desc
       `,
-      params,
+      [merchant.id, range?.from ?? null, range?.to ?? null],
     );
 
     return result.rows.map((r) => ({

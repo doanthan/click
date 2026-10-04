@@ -24,7 +24,7 @@ import { InfoNote, WizardStepper } from "./merchant-ds";
 import { TagRequestForm } from "./tag-request-form";
 import { ConfirmDialog } from "./confirm-dialog";
 import { MapboxAutocomplete, type MapboxPlace } from "./mapbox-autocomplete";
-import { toTitleCase } from "@/lib/text-format";
+import { EVENT_TITLE_MAX_LENGTH, toTitleCase } from "@/lib/text-format";
 import {
   EVENT_CREATE_DRAFT_STORAGE,
   EVENT_CREATE_DRAFT_VERSION,
@@ -153,6 +153,11 @@ function validateStep(step: StepIndex, v: WizardValues): FieldErrors {
 
   if (step === 0) {
     if (!v.title.trim()) errors.title = "Give the event a title.";
+    // maxLength stops typing past the cap, but a draft saved before it existed
+    // can still hold a longer title.
+    else if (v.title.trim().length > EVENT_TITLE_MAX_LENGTH) {
+      errors.title = `Keep the title to ${EVENT_TITLE_MAX_LENGTH} characters so it fits on the event card.`;
+    }
     if (!v.groupName.trim()) errors.groupName = "Add the group or host name.";
     // Category used to be seeded to categoryOptions[0] - alphabetically first,
     // so every event nobody touched published as "Career". It starts empty now,
@@ -1777,6 +1782,12 @@ export function BasicsSection() {
           value={values.title}
           onChange={(e) => set("title", toTitleCase(e.target.value))}
           placeholder="Restaurant Meetup: Table for Eight"
+          maxLength={EVENT_TITLE_MAX_LENGTH}
+          action={
+            <span className="text-[11.5px] tabular-nums text-[color:var(--ink-faint)]">
+              {values.title.length}/{EVENT_TITLE_MAX_LENGTH}
+            </span>
+          }
         />
         <FormField
           label="Group / host name"

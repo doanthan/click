@@ -1,10 +1,11 @@
 /**
  * Merchant finances CSV export.
  *
- * GET /api/merchant/finances/export?year=YYYY&month=MM
- *   - no params   → every transaction
- *   - year only   → that calendar year (Australia/Sydney)
- *   - year+month  → that month
+ * GET /api/merchant/finances/export?period=month|last-month|fy|year
+ *   - no period → every transaction
+ *   - otherwise → the Finances tab's period of that name (Australia/Sydney),
+ *     resolved by src/lib/finances-period.ts on the server, so the file
+ *     matches the tiles on screen whatever clock the browser keeps
  *
  * Streams a `text/csv` attachment of the FULL matching transaction set (unlike
  * the Finances tab summary, which previews only the last 20). Merchant-scoped:
@@ -15,6 +16,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getMerchantTransactionsForExport } from "@/lib/event-repository";
+import { financesPeriodFileTag, parseFinancesPeriod } from "@/lib/finances-period";
 
 export const runtime = "nodejs";
 
@@ -31,16 +33,11 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Sign in required." }, { status: 401 });
   }
 
-  const { searchParams } = new URL(request.url);
-  const yearRaw = Number(searchParams.get("year"));
-  const monthRaw = Number(searchParams.get("month"));
-  const year = Number.isFinite(yearRaw) && yearRaw > 0 ? yearRaw : undefined;
-  const month =
-    Number.isFinite(monthRaw) && monthRaw >= 1 && monthRaw <= 12 ? monthRaw : undefined;
+  const period = parseFinancesPeriod(new URL(request.url).searchParams.get("period"));
 
-  const rows = await getMerchantTransactionsForExport(session, { year, month });
+  const rows = await getMerchantTransactionsForExport(session, period);
 
-  // Sydney, not UTC. getMerchantTransactionsForExport filters the year/month
+  // Sydney, not UTC. getMerchantTransactionsForExport filters the period
   // with `at time zone 'Australia/Sydney'`, so printing .toISOString() put rows
   // in the file under a DIFFERENT date than the one they were selected by: a
   // 9am-Sydney charge on 1 August exported as 2026-07-31T23:00:00Z, and an
@@ -72,8 +69,7 @@ export async function GET(request: Request) {
   );
   const csv = [header, ...lines].join("\n");
 
-  const scope = year ? (month ? `${year}-${String(month).padStart(2, "0")}` : `${year}`) : "all";
-  const filename = `click-transactions-${scope}.csv`;
+  const filename = `click-transactions-${financesPeriodFileTag(period)}.csv`;
 
   return new NextResponse(csv, {
     status: 200,

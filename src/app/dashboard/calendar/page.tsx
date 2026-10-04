@@ -5,6 +5,7 @@ import { Reveal } from "@/components/reveal";
 import { UserCalendar } from "@/components/user-calendar";
 import { EventAgendaList } from "@/components/event-agenda-list";
 import { getConfirmedEvents, getProfileStatus } from "@/lib/event-repository";
+import { redirectIfNotOnboarded } from "@/lib/onboarding-gate";
 import { reconcileCheckoutSession } from "@/lib/stripe-sync";
 
 export const metadata = {
@@ -46,6 +47,7 @@ export default async function CalendarPage({ searchParams }: PageProps) {
     getConfirmedEvents(session),
     getProfileStatus(session),
   ]);
+  redirectIfNotOnboarded(profileStatus, "/dashboard/calendar");
   const calendarEvents = [...confirmed.upcoming, ...confirmed.past];
   const waitlistedSet = new Set(profileStatus.waitlistedEventIds);
 

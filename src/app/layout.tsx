@@ -3,7 +3,7 @@ import { Suspense } from "react";
 import { IBM_Plex_Mono, Poppins } from "next/font/google";
 import { Toaster } from "sonner";
 import DevSupabaseDrawer from "@/components/dev-supabase-drawer";
-import SupportWidget from "@/components/support/support-widget";
+import SupportWidget from "@/components/support/support-widget-lazy";
 import { TestAccountSwitcher } from "@/components/test-account-switcher";
 import { SessionFreshness } from "@/components/session-freshness";
 import { AccountViewingBanner } from "@/components/account-viewing-banner";
@@ -40,6 +40,10 @@ const plexMono = IBM_Plex_Mono({
   subsets: ["latin"],
   weight: ["400", "500", "700"],
   display: "swap",
+  // Only admin, QA and internal tools set anything in mono, so it loads when
+  // one of them uses it. Preloaded, its three files queued beside the
+  // stylesheet on every public page and held a phone's first paint back.
+  preload: false,
 });
 
 export const metadata: Metadata = {

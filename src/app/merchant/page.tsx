@@ -11,6 +11,7 @@ import { EventsTab } from "@/components/merchant-events-tab";
 import { BookingsTabAsync } from "@/components/merchant-bookings-tab";
 import { FinancesTabAsync } from "@/components/merchant-finances-tab";
 import { SettingsTab } from "@/components/merchant-settings-tab";
+import { parseFinancesPeriod } from "@/lib/finances-period";
 import {
   assertProfileStatusUsable,
   getMerchantEvents,
@@ -35,7 +36,7 @@ const TAB_KEYS: MerchantTabKey[] = [
 ];
 
 type MerchantPageProps = {
-  searchParams?: Promise<{ month?: string; tab?: string }>;
+  searchParams?: Promise<{ month?: string; tab?: string; period?: string }>;
 };
 
 export default async function MerchantPage({ searchParams }: MerchantPageProps) {
@@ -108,7 +109,7 @@ export default async function MerchantPage({ searchParams }: MerchantPageProps) 
           ) : null}
           {tab === "finances" ? (
             <Suspense fallback={<FinancesTabSkeleton />}>
-              <FinancesTabAsync session={session} />
+              <FinancesTabAsync session={session} period={parseFinancesPeriod(params.period)} />
             </Suspense>
           ) : null}
           {tab === "settings" ? (

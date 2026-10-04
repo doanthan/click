@@ -1,43 +1,47 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import {
+  FINANCES_PERIODS,
+  FINANCES_PERIOD_LABEL,
+  FINANCES_PERIOD_PHRASE,
+  type FinancesPeriod,
+} from "@/lib/finances-period";
 
-// CSV export of the merchant's transactions with a period filter. The actual
-// query + CSV is built server-side by /api/merchant/finances/export (so the
-// export is the FULL set, not just the 20-row preview the Finances tab shows);
-// this control just picks the period and triggers the download.
-type Period = "all" | "year" | "month";
-
-// Used in the "nothing in this period" line, so it has to read as the tail of a
-// sentence rather than as the option label.
-const PERIOD_PHRASE: Record<Period, string> = {
-  all: "yet",
-  year: "this year",
-  month: "this month",
-};
-
-export function MerchantFinancesExport() {
-  // "All time", NOT "This month". Every figure on this tab is all-time -
-  // Collected, Click fee, your net, and a Refunded tile that says "all time" on
-  // its face - so a host who reads $4,200 collected and taps Export got a file
-  // holding whatever happened since the 1st, with no hint that the two numbers
-  // were scoped differently. The default now matches what is on screen above it.
-  const [period, setPeriod] = useState<Period>("all");
+// The Finances tab's period picker and its CSV export. The period is the
+// page's `?period=` (bug board #331): it used to scope only the export, so a
+// host who picked "This month" watched every figure stay all-time. Picking one
+// now re-renders the tiles and the transaction list on the server, and the
+// export asks for the same period, so the file matches the screen. The CSV is
+// built server-side by /api/merchant/finances/export (the FULL set, not the
+// 20-row preview the tab shows).
+export function MerchantFinancesExport({ period: shown }: { period: FinancesPeriod }) {
+  const router = useRouter();
+  // The tab renders this with key={period}, so a new server render resets it.
+  // Local state only covers the beat before that render lands.
+  const [period, setPeriod] = useState<FinancesPeriod>(shown);
+  const [switching, startSwitch] = useTransition();
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
+  function choose(next: FinancesPeriod) {
+    setNote(null);
+    setPeriod(next);
+    startSwitch(() => {
+      router.replace(
+        next === "all" ? "/merchant?tab=finances" : `/merchant?tab=finances&period=${next}`,
+        { scroll: false },
+      );
+    });
+  }
+
   async function exportCsv() {
     if (busy) return;
-    const now = new Date();
-    const params = new URLSearchParams();
-    if (period === "year") {
-      params.set("year", String(now.getFullYear()));
-    } else if (period === "month") {
-      params.set("year", String(now.getFullYear()));
-      params.set("month", String(now.getMonth() + 1));
-    }
-    const qs = params.toString();
-    const url = `/api/merchant/finances/export${qs ? `?${qs}` : ""}`;
+    const url =
+      period === "all"
+        ? "/api/merchant/finances/export"
+        : `/api/merchant/finances/export?period=${period}`;
 
     /* This used to be a bare `window.location.href = url`, which hands the
        browser whatever comes back and says nothing either way. Two things came
@@ -58,7 +62,9 @@ export function MerchantFinancesExport() {
       // The route always writes a header line; rows follow it. One line means
       // no transactions matched.
       if (csv.split("\n").filter((line) => line.trim()).length <= 1) {
-        setNote(`No paid bookings ${PERIOD_PHRASE[period]} - so there's nothing to export.`);
+        setNote(
+          `No paid bookings ${period === "all" ? "yet" : FINANCES_PERIOD_PHRASE[period]} - so there's nothing to export.`,
+        );
         return;
       }
       const filename =
@@ -86,21 +92,21 @@ export function MerchantFinancesExport() {
   return (
     <div className="shrink-0">
       <div className="flex items-center gap-2">
-        <label className="sr-only" htmlFor="finances-export-period">
-          Export period
+        <label className="sr-only" htmlFor="finances-period">
+          Show figures for
         </label>
         <select
-          id="finances-export-period"
+          id="finances-period"
           value={period}
-          onChange={(e) => {
-            setNote(null);
-            setPeriod(e.target.value as Period);
-          }}
+          aria-busy={switching || undefined}
+          onChange={(e) => choose(e.target.value as FinancesPeriod)}
           className="h-9 rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] px-3 text-[13px] text-[color:var(--ink)] focus:border-[color:var(--purple)] focus:outline-none"
         >
-          <option value="all">All time</option>
-          <option value="year">This year</option>
-          <option value="month">This month</option>
+          {FINANCES_PERIODS.map((p) => (
+            <option key={p} value={p}>
+              {FINANCES_PERIOD_LABEL[p]}
+            </option>
+          ))}
         </select>
         <button
           type="button"

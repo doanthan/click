@@ -3,7 +3,8 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { ClickQuiz } from "@/components/click-quiz";
 import { Logo } from "@/components/ds";
-import { getClickQuizForSession } from "@/lib/event-repository";
+import { getClickQuizForSession, getProfileStatus } from "@/lib/event-repository";
+import { redirectIfNotOnboarded } from "@/lib/onboarding-gate";
 
 export const metadata = {
   title: "The Click quiz",
@@ -19,6 +20,10 @@ export default async function ClickQuizPage() {
   if (!session?.user) {
     redirect("/login?callbackUrl=/quiz/life");
   }
+
+  // Ahead of the quiz read, which throws into the error boundary - a member
+  // with no profile yet belongs on the onboarding form, not an error page.
+  redirectIfNotOnboarded(await getProfileStatus(session), "/quiz/life");
 
   // Throws into the route's error boundary rather than rendering a blank board
   // a Finish would save over - see getClickQuizForSession.

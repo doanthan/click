@@ -16,6 +16,7 @@ import {
   getRadarSignals,
   type MutualClickEntry,
 } from "@/lib/event-repository";
+import { redirectIfNotOnboarded } from "@/lib/onboarding-gate";
 
 export const metadata = {
   title: "click with someone",
@@ -41,6 +42,7 @@ export default async function PeoplePage() {
     getProfileStatus(session),
     getProfileCompletion(session),
   ]);
+  redirectIfNotOnboarded(profileStatus, "/people");
 
   // Same bar the matcher cares about, same test the dashboard already makes
   // (dashboard/page.tsx:119). The picks are filtered on the CANDIDATES' profiles,

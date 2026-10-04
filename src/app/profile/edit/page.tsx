@@ -6,8 +6,10 @@ import { ProfileEditForm } from "@/components/profile-edit-form";
 import {
   getOwnProfile,
   getProfileCompletion,
+  getProfileStatus,
   getProfileTagOptions,
 } from "@/lib/event-repository";
+import { redirectIfNotOnboarded } from "@/lib/onboarding-gate";
 
 export const metadata = {
   title: "Edit profile",
@@ -24,10 +26,14 @@ export default async function EditProfilePage({
     redirect("/login?callbackUrl=/profile/edit");
   }
 
-  const profile = await getOwnProfile(session);
+  const [profile, profileStatus] = await Promise.all([
+    getOwnProfile(session),
+    getProfileStatus(session),
+  ]);
   if (!profile) {
     redirect("/onboarding");
   }
+  redirectIfNotOnboarded(profileStatus, "/profile/edit");
 
   // The same checklist the dashboard shows. Four of its five items are edited on
   // this page, so it belongs here too - the form re-answers those four against

@@ -8,6 +8,7 @@ import {
   getProfileStatus,
   measureExploreFrom,
 } from "@/lib/event-repository";
+import { redirectIfNotOnboarded } from "@/lib/onboarding-gate";
 import { distanceOriginForSuburb } from "@/lib/postcode";
 
 export const metadata = {
@@ -22,6 +23,7 @@ export default async function DiscoverPage() {
     session?.user ? getProfileStatus(session) : null,
     session?.user ? getPersonalizedDiscovery(session) : null,
   ]);
+  redirectIfNotOnboarded(profileStatus, "/discover");
 
   // A member's distances are measured from their postcode, everyone else's from
   // Sydney CBD (bug board #305). Only the server can do it - the venue

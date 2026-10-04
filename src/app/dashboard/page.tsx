@@ -21,6 +21,7 @@ import {
   getProfileStatus,
   getRadarSignals,
 } from "@/lib/event-repository";
+import { redirectIfNotOnboarded } from "@/lib/onboarding-gate";
 import { dashboardPickIndex } from "@/lib/clicks/daily-picks";
 import { APP_TIME_ZONE } from "@/lib/datetime";
 
@@ -101,6 +102,7 @@ export default async function DashboardPage() {
       getPersonalizedDiscovery(session),
       getMutualClicksForSession(session),
     ]);
+  redirectIfNotOnboarded(profileStatus, "/dashboard");
 
   // No client-side filter any more. Stage 0.5's "answered" rule is persisted now
   // (post_event_click_answers), so the repository already drops any event this

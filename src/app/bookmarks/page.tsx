@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { EventCard } from "@/components/event-card";
 import { ButtonLink } from "@/components/ds";
 import { getBookmarkedEvents, getProfileStatus } from "@/lib/event-repository";
+import { redirectIfNotOnboarded } from "@/lib/onboarding-gate";
 
 export const metadata = {
   title: "Saved",
@@ -20,6 +21,7 @@ export default async function BookmarksPage() {
     getBookmarkedEvents(session),
     getProfileStatus(session),
   ]);
+  redirectIfNotOnboarded(profileStatus, "/bookmarks");
   const registeredSet = new Set(profileStatus.registeredEventIds);
   const waitlistedSet = new Set(profileStatus.waitlistedEventIds);
   // Real seat state for the booking modal - without it a confirmed attendee

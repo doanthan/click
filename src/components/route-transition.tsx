@@ -1,5 +1,6 @@
+"use client";
 /// <reference types="react/canary" />
-import { ViewTransition, type ReactNode } from "react";
+import { ViewTransition, useSyncExternalStore, type ReactNode } from "react";
 
 /**
  * The route transition - the one piece of motion every page shares. It is the
@@ -27,14 +28,27 @@ export function RouteTransition({ children }: { children: ReactNode }) {
   );
 }
 
+const noSubscribe = () => () => {};
+
 /**
  * Wraps a route's loading.tsx so the skeleton dissolves into the page when its
  * data lands, instead of snapping. It wraps the whole shell, one snapshot per
  * page, rather than each Skeleton block. A snapshot ignores its parents'
  * overflow, so per-block snapshots would paint every rail- and card-clipped
  * block uncropped for the length of the fade.
+ *
+ * Client navigations only. A server-rendered shell is revealed by React's
+ * streaming script, and the vt-exit this transition stamps on it sends that
+ * reveal through document.startViewTransition, which first waits up to 500ms
+ * for fonts and every in-view image and then plays the fade. React streams a
+ * big page's content BEHIND its loading shell even when it's ready (every page
+ * with the site header), so on a hard load a phone sat on "Loading Click…" or
+ * a skeleton for all of that with the page already downloaded. Rendered bare
+ * on the server and through hydration, the shell swaps out on the next frame.
  */
 export function RouteSkeleton({ children }: { children: ReactNode }) {
+  const clientRender = useSyncExternalStore(noSubscribe, () => true, () => false);
+  if (!clientRender) return children;
   return (
     <ViewTransition exit="ck-skeleton" default="none">
       {children}

@@ -720,15 +720,20 @@ export function EventExplorer({
         ) : null}
 
         <div className="min-w-0 flex-1">
-          <div className={`mb-4 flex items-center justify-between gap-3 ${nothingToShow ? "hidden" : ""}`}>
+          {/* The select is as wide as its longest option ("Sort · Lowest
+              price"), so under ~360px the row can't hold all three: it broke
+              the count over two lines and pushed Sort past the screen edge.
+              Now the controls wrap under the count, and the select may give up
+              the few pixels its longest label needs but the chosen one doesn't. */}
+          <div className={`mb-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 ${nothingToShow ? "hidden" : ""}`}>
             <span
               role="status"
               aria-live="polite"
-              className="text-sm font-semibold text-[color:var(--ink)]"
+              className="text-sm font-semibold whitespace-nowrap text-[color:var(--ink)]"
             >
               {totalCount} {totalCount === 1 ? "event" : "events"}
             </span>
-            <div className="flex items-center gap-2">
+            <div className="ml-auto flex min-w-0 items-center gap-2">
               <button
                 type="button"
                 onClick={() => setSheetOpen(true)}
@@ -742,12 +747,12 @@ export function EventExplorer({
                 <Icon name="filter" size={16} stroke={2} />
                 Filters{filterCount ? ` · ${filterCount}` : ""}
               </button>
-              <div className="relative inline-flex items-center">
+              <div className="relative inline-flex min-w-0 items-center">
                 <select
                   aria-label="Sort events"
                   value={sortMode}
                   onChange={(e) => setSortMode(e.target.value as SortMode)}
-                  className="font-display h-11 appearance-none rounded-xl border border-[color:var(--line)] bg-[color:var(--paper)] pr-8 pl-3.5 text-[13px] font-semibold text-[color:var(--ink)] lg:h-9"
+                  className="font-display h-11 min-w-0 appearance-none rounded-xl border border-[color:var(--line)] bg-[color:var(--paper)] pr-8 pl-3.5 text-[13px] font-semibold text-[color:var(--ink)] lg:h-9"
                 >
                   {SORT_OPTIONS.map(([value, label]) => (
                     <option key={value} value={value}>

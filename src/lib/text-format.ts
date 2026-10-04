@@ -2,6 +2,13 @@
 // server repository. Keep this file dependency-free so it can be imported from
 // both the browser bundle (event-create wizard) and Node (event-repository).
 
+// Bug board #334. The Event Card clamps its title at two lines and reserves
+// both (DS README, Event Card: "assume a ~60-char title cap so titles never
+// exceed ~2 lines"), but nothing enforced the cap, so a long title lost its
+// tail to the ellipsis on every card. The wizard, the edit form and both
+// repository writers read this one number.
+export const EVENT_TITLE_MAX_LENGTH = 60;
+
 // Words that stay lowercase in title case unless they're the first or last word
 // of the title. Deliberately short - the goal is "Restaurant Meetup: Table for
 // Eight", not a copy-editor's full style guide.

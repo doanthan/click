@@ -11,6 +11,7 @@ import {
 } from "@/lib/event-repository";
 import { reconcilePendingTransactionsForMerchant } from "@/lib/stripe-sync";
 import { formatMoney } from "@/lib/amounts";
+import { FINANCES_PERIOD_PHRASE, type FinancesPeriod } from "@/lib/finances-period";
 import {
   TabHeader,
   dateTimeFormatter,
@@ -145,8 +146,12 @@ function RecentPayoutsCard({
 
 export async function FinancesTabAsync({
   session,
+  period,
 }: {
   session: Session | null;
+  // Scopes the four tiles and the transaction list (bug board #331). The
+  // revenue chart and the payouts card keep their own spans.
+  period: FinancesPeriod;
 }) {
   // Self-heal any pending rows whose Stripe session is actually paid/expired.
   // Deferred with after() so the Stripe round-trip never blocks first paint -
@@ -155,9 +160,10 @@ export async function FinancesTabAsync({
   // anchored to the request on serverless so it's guaranteed to run). The
   // webhook + api/cron/reconcile-payments sweep remain the primary paths.
   after(() => reconcilePendingTransactionsForMerchant(session).catch(() => {}));
-  const finances = await getMerchantFinancesSummary(session);
+  const finances = await getMerchantFinancesSummary(session, period);
 
   const hasRevenue = finances.collectedCents > 0;
+  const scope = FINANCES_PERIOD_PHRASE[period];
 
   return (
     <div className="space-y-6 py-8">
@@ -165,7 +171,7 @@ export async function FinancesTabAsync({
         eyebrow="Finances"
         title="Payouts + revenue."
         body="Paid events route through Stripe; free events never appear here."
-        action={<MerchantFinancesExport />}
+        action={<MerchantFinancesExport key={period} period={period} />}
       />
 
       <div className="rise-soft rise-d1">
@@ -182,7 +188,13 @@ export async function FinancesTabAsync({
           hero
           label="Collected"
           value={formatMoney(finances.collectedCents)}
-          note={hasRevenue ? "buyers paid, after refunds" : "free events so far"}
+          note={
+            hasRevenue
+              ? "buyers paid, after refunds"
+              : period === "all"
+                ? "free events so far"
+                : `no paid bookings ${scope}`
+          }
         />
         <StatCard
           label="Click fee"
@@ -197,7 +209,7 @@ export async function FinancesTabAsync({
         <StatCard
           label="Refunded"
           value={formatMoney(finances.refundedCents)}
-          note="all time"
+          note={scope}
         />
       </div>
 
@@ -206,7 +218,13 @@ export async function FinancesTabAsync({
         <RecentPayoutsCard payouts={finances.recentPayouts} />
       </div>
 
-      {finances.recentTransactions.length === 0 ? (
+      {finances.recentTransactions.length === 0 && period !== "all" ? (
+        <MerchantEmpty
+          icon="ticket"
+          title={`No paid bookings ${scope}.`}
+          body="Pick another period above, or All time, to see the rest of your charges."
+        />
+      ) : finances.recentTransactions.length === 0 ? (
         <MerchantEmpty
           icon="ticket"
           title="Paid bookings will land here."

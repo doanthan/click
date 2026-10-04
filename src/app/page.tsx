@@ -1,10 +1,11 @@
 import Image, { type StaticImageData } from "next/image";
 import Link from "next/link";
-import type { CSSProperties } from "react";
+import { Suspense, type CSSProperties } from "react";
 import { ButtonLink, Icon, Logo } from "@/components/ds";
 import { EventCard } from "@/components/event-card";
 import { MutualToast } from "@/components/mutual-toast";
 import { Reveal } from "@/components/reveal";
+import { Skeleton, SkeletonEventCard } from "@/components/skeleton";
 import { getEventsForExplore } from "@/lib/event-repository";
 import heroCourtyard from "../../public/home/hero-courtyard.jpg";
 import heroDinner from "../../public/home/hero-dinner.jpg";
@@ -128,11 +129,13 @@ const LANES: Array<{
 ];
 
 /* A photo set into a line of display type. Decorative - the sentence carries
-   the meaning - so the alt is empty. */
+   the meaning - so the alt is empty. It is 1.7em of --text-display (32-64px),
+   so 51-101px across; sizes says so, or a phone fetches a 384-640w file to
+   draw a 51px print. */
 function InlinePic({ src, rot }: { src: StaticImageData; rot: string }) {
   return (
     <span className="home-inline-pic" style={{ "--rot": rot } as CSSProperties}>
-      <Image src={src} alt="" sizes="160px" />
+      <Image src={src} alt="" sizes="(min-width: 1024px) 104px, (min-width: 640px) 88px, 56px" />
     </span>
   );
 }
@@ -196,12 +199,87 @@ function HeroMotionToggle() {
   );
 }
 
-export default async function Home() {
+/* The hero is static, so it never waits on the events query - only this strip
+   does. Awaited in Home, the query decided when the hero could stream: when it
+   lost the race with the shell, the hero sat behind the root "Loading Click…"
+   card and the courtyard's preload missed <head>, so the LCP photo was found
+   only once the query landed. */
+async function ComingUp() {
   const events = await getEventsForExplore();
   const upcoming = [...events]
     .sort((left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime())
     .slice(0, 3);
 
+  return upcoming.length > 0 ? (
+    <section className="ck-page pb-16 pt-12 lg:pb-24 lg:pt-16">
+      <Reveal>
+        <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
+          <h2 className="font-display text-[length:var(--text-h1)] leading-tight font-semibold tracking-[-0.025em]">
+            Coming up
+          </h2>
+          <Link
+            href="/discover"
+            className="ck-taplink font-display text-sm font-semibold text-[color:var(--purple)] hover:underline"
+          >
+            See what&apos;s on <span className="nudge-arrow" aria-hidden>→</span>
+          </Link>
+        </div>
+      </Reveal>
+
+      {/* Two columns from sm to lg would strand the third card on a row of
+          its own, so it sits out that range; the rail and lg show all three. */}
+      <div className={COMING_UP_RAIL}>
+        {upcoming.map((event, index) => (
+          <Reveal
+            key={event.id}
+            delay={index * 70}
+            // reveal--rail: the peek is the affordance that says the row scrolls,
+            // and at 26px into the viewport the observer never fires, so the
+            // next card sat at opacity 0 until you had already swiped.
+            className={`reveal--rail ${COMING_UP_SLOT}`}
+          >
+            <EventCard event={event} />
+          </Reveal>
+        ))}
+      </div>
+    </section>
+  ) : (
+    <section className="ck-page pb-16 pt-12 lg:pb-24 lg:pt-16">
+      <div className="rounded-[var(--radius-2xl)] bg-[color:var(--lav-bg)] px-6 py-12 text-center">
+        <Icon name="calendar" size={30} className="mx-auto text-[color:var(--purple)]" />
+        <h2 className="font-display mt-4 text-2xl font-semibold">Fresh plans are landing soon</h2>
+        {/* No quiz pitch here: the Click persona is off the landing page
+            (bug board #308), in this empty state as much as below it. */}
+        <p className="mx-auto mt-2 max-w-[440px] text-sm leading-6 text-[color:var(--slate)]">
+          New events show up here as hosts publish them.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+const COMING_UP_RAIL =
+  "ckRail -mx-5 flex snap-x snap-mandatory gap-4 overflow-x-auto px-5 pb-4 sm:mx-0 sm:grid sm:grid-cols-2 sm:gap-5 sm:overflow-visible sm:px-0 sm:pb-0 lg:grid-cols-3 sm:[&>*:nth-child(3)]:hidden lg:[&>*:nth-child(3)]:block";
+const COMING_UP_SLOT = "w-[84vw] max-w-[340px] shrink-0 snap-center sm:w-auto sm:max-w-none sm:min-w-0";
+
+/* Holds the strip's place while the query runs, in the same rail and card
+   shape, so the sections under it don't jump when it lands. */
+function ComingUpPlaceholder() {
+  return (
+    <section aria-hidden className="ck-page pb-16 pt-12 lg:pb-24 lg:pt-16">
+      <Skeleton className="mb-7 h-9 w-48 rounded-lg" />
+      <div className={COMING_UP_RAIL}>
+        {Array.from({ length: 3 }).map((_, index) => (
+          <div key={index} className={COMING_UP_SLOT}>
+            <SkeletonEventCard />
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+export default function Home() {
   return (
     <main data-home-hero className="min-h-[100dvh] bg-[color:var(--champagne)] text-[color:var(--ink)]">
       <section className="home-hero relative isolate flex min-h-[100dvh] items-end overflow-hidden bg-[color:var(--surface-deep)] lg:items-center">
@@ -271,52 +349,9 @@ export default async function Home() {
       </section>
 
       {/* ============ Real plans - the canonical Event Card, untouched ============ */}
-      {upcoming.length > 0 ? (
-        <section className="ck-page pb-16 pt-12 lg:pb-24 lg:pt-16">
-          <Reveal>
-            <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
-              <h2 className="font-display text-[length:var(--text-h1)] leading-tight font-semibold tracking-[-0.025em]">
-                Coming up
-              </h2>
-              <Link
-                href="/discover"
-                className="ck-taplink font-display text-sm font-semibold text-[color:var(--purple)] hover:underline"
-              >
-                See what&apos;s on <span className="nudge-arrow" aria-hidden>→</span>
-              </Link>
-            </div>
-          </Reveal>
-
-          {/* Two columns from sm to lg would strand the third card on a row of
-              its own, so it sits out that range; the rail and lg show all three. */}
-          <div className="ckRail -mx-5 flex snap-x snap-mandatory gap-4 overflow-x-auto px-5 pb-4 sm:mx-0 sm:grid sm:grid-cols-2 sm:gap-5 sm:overflow-visible sm:px-0 sm:pb-0 lg:grid-cols-3 sm:[&>*:nth-child(3)]:hidden lg:[&>*:nth-child(3)]:block">
-            {upcoming.map((event, index) => (
-              <Reveal
-                key={event.id}
-                delay={index * 70}
-                // reveal--rail: the peek is the affordance that says the row scrolls,
-                // and at 26px into the viewport the observer never fires, so the
-                // next card sat at opacity 0 until you had already swiped.
-                className="reveal--rail w-[84vw] max-w-[340px] shrink-0 snap-center sm:w-auto sm:max-w-none sm:min-w-0"
-              >
-                <EventCard event={event} />
-              </Reveal>
-            ))}
-          </div>
-        </section>
-      ) : (
-        <section className="ck-page pb-16 pt-12 lg:pb-24 lg:pt-16">
-          <div className="rounded-[var(--radius-2xl)] bg-[color:var(--lav-bg)] px-6 py-12 text-center">
-            <Icon name="calendar" size={30} className="mx-auto text-[color:var(--purple)]" />
-            <h2 className="font-display mt-4 text-2xl font-semibold">Fresh plans are landing soon</h2>
-            {/* No quiz pitch here: the Click persona is off the landing page
-                (bug board #308), in this empty state as much as below it. */}
-            <p className="mx-auto mt-2 max-w-[440px] text-sm leading-6 text-[color:var(--slate)]">
-              New events show up here as hosts publish them.
-            </p>
-          </div>
-        </section>
-      )}
+      <Suspense fallback={<ComingUpPlaceholder />}>
+        <ComingUp />
+      </Suspense>
 
       {/* ============ The mechanic, told as one sentence ============ */}
       <section className="ck-page pb-20 lg:pb-28">

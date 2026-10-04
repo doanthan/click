@@ -4,7 +4,8 @@ import { auth } from "@/auth";
 import { Avatar, Badge, ButtonLink, Icon, Tag } from "@/components/ds";
 import { VerifiedTick } from "@/components/verified-tick";
 import { formatIntent } from "@/lib/click-data";
-import { getConfirmedEvents, getOwnProfile } from "@/lib/event-repository";
+import { getConfirmedEvents, getOwnProfile, getProfileStatus } from "@/lib/event-repository";
+import { redirectIfNotOnboarded } from "@/lib/onboarding-gate";
 
 export const metadata = {
   title: "Your profile",
@@ -17,14 +18,16 @@ export default async function OwnProfilePage() {
     redirect("/login?callbackUrl=/profile");
   }
 
-  const [profile, confirmed] = await Promise.all([
+  const [profile, confirmed, profileStatus] = await Promise.all([
     getOwnProfile(session),
     getConfirmedEvents(session),
+    getProfileStatus(session),
   ]);
 
   if (!profile) {
     redirect("/onboarding");
   }
+  redirectIfNotOnboarded(profileStatus, "/profile");
 
   const pastEvents = confirmed.past;
 

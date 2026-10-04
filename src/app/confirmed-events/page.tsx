@@ -10,6 +10,7 @@ import {
   getGoingWithNames,
   getProfileStatus,
 } from "@/lib/event-repository";
+import { redirectIfNotOnboarded } from "@/lib/onboarding-gate";
 
 export const metadata = {
   title: "Your events",
@@ -61,6 +62,7 @@ export default async function ConfirmedEventsPage({ searchParams }: ConfirmedEve
     getBookmarkedEvents(session),
     getProfileStatus(session),
   ]);
+  redirectIfNotOnboarded(profileStatus, "/confirmed-events");
   const bookmarkSet = new Set(profileStatus.bookmarkedEventIds);
   const registeredSet = new Set(profileStatus.registeredEventIds);
   const waitlistedSet = new Set(profileStatus.waitlistedEventIds);

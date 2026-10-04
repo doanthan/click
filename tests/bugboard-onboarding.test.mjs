@@ -184,3 +184,48 @@ test("each onboarding step says what can be changed later, and only that", () =>
   assert.match(editForm, /interests: string\[\];/);
   assert.doesNotMatch(editForm, /birthDate|birth_date/);
 });
+
+test("a member who leaves onboarding unfinished is sent back to it from every member page", () => {
+  // Bug board #328: "lets me skip the onboarding process if i signed in via
+  // google, and didnt complete". /post-login sent them to the form once; no
+  // member page checked again, so Back or a reload landed them in the app.
+  const gate = read("src/lib/onboarding-gate.ts");
+  // /post-login's exemptions: a failed read is not "not onboarded", and a host
+  // account is never pushed into the attendee profile.
+  assert.match(
+    gate,
+    /if \(!status\?\.exists \|\| status\.onboardingComplete \|\| status\.degraded \|\| status\.merchantProfile\) \{\s*return;\s*\}/,
+  );
+  assert.match(gate, /redirect\(`\/onboarding\?next=\$\{encodeURIComponent\(here\)\}`\);/);
+
+  const gated = {
+    "src/app/discover/page.tsx": '"/discover"',
+    "src/app/dashboard/page.tsx": '"/dashboard"',
+    "src/app/dashboard/calendar/page.tsx": '"/dashboard/calendar"',
+    "src/app/confirmed-events/page.tsx": '"/confirmed-events"',
+    "src/app/bookmarks/page.tsx": '"/bookmarks"',
+    "src/app/people/page.tsx": '"/people"',
+    "src/app/notifications/page.tsx": '"/notifications"',
+    "src/app/proposals/page.tsx": '"/proposals"',
+    "src/app/profile/page.tsx": '"/profile"',
+    "src/app/profile/edit/page.tsx": '"/profile/edit"',
+    "src/app/quiz/life/page.tsx": '"/quiz/life"',
+    "src/app/events/[slug]/page.tsx": "`/events/${slug}`",
+    "src/app/categories/[slug]/page.tsx": "`/categories/${slug}`",
+    "src/app/profile/[userId]/page.tsx": "`/profile/${userId}`",
+  };
+  for (const [file, here] of Object.entries(gated)) {
+    const source = read(file);
+    assert.ok(
+      source.includes(`import { redirectIfNotOnboarded } from "@/lib/onboarding-gate";`),
+      `${file} must import the onboarding gate`,
+    );
+    assert.ok(source.includes(`, ${here});`), `${file} must run the gate with its own path ${here}`);
+  }
+
+  // Never on the form itself (a loop), and never where a member must still be
+  // able to sign out or delete the account.
+  for (const file of ["src/app/onboarding/page.tsx", "src/app/account-settings/page.tsx"]) {
+    assert.doesNotMatch(read(file), /redirectIfNotOnboarded/, `${file} must stay reachable`);
+  }
+});

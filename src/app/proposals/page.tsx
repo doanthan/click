@@ -1,7 +1,12 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { ClicksList } from "@/components/clicks-list";
-import { getProposalCatalogue, getProposalsForSession } from "@/lib/event-repository";
+import {
+  getProfileStatus,
+  getProposalCatalogue,
+  getProposalsForSession,
+} from "@/lib/event-repository";
+import { redirectIfNotOnboarded } from "@/lib/onboarding-gate";
 
 export const metadata = {
   title: "Your clicks",
@@ -18,7 +23,7 @@ export default async function ProposalsPage({
     redirect("/login?callbackUrl=/proposals");
   }
 
-  const [{ open }, entries, catalogue] = await Promise.all([
+  const [{ open }, entries, catalogue, profileStatus] = await Promise.all([
     searchParams,
     getProposalsForSession(session),
     // WITH the session, always. The curated arm's first two sections - "Events
@@ -26,7 +31,9 @@ export default async function ProposalsPage({
     // bookmarks, so a bare getProposalCatalogue() collapsed every row to "You'd
     // both like" and those two sections could never be produced at all.
     getProposalCatalogue(session),
+    getProfileStatus(session),
   ]);
+  redirectIfNotOnboarded(profileStatus, "/proposals");
 
   return (
     <main className="min-h-screen bg-[color:var(--champagne)] pb-24 text-[color:var(--ink)]">
