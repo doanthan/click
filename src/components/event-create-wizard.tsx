@@ -34,6 +34,11 @@ import { CAPACITY_PATTERN, PRICE_PATTERN, sanitizeAmount } from "@/lib/amounts";
 import { useFormDraft } from "@/lib/use-form-draft";
 import { DURATION_OPTIONS } from "@/lib/event-duration";
 import { scopedKey, useAccountScope } from "@/lib/account-scope";
+import {
+  PHOTO_TOO_BIG_MESSAGE,
+  UPLOAD_BODY_LIMIT_BYTES,
+  shrinkPhotoForUpload,
+} from "@/lib/photo-upload";
 
 // Create-event - multi-step wizard. Each step has its own URL so users can
 // bookmark, link to, and browser-back through them:
@@ -2852,9 +2857,14 @@ export function MediaSection() {
 
   const uploadOne = useCallback(
     async (file: File, id: string) => {
-      const form = new FormData();
-      form.set("file", file);
       try {
+        // The 10 MB limit above is ours; Vercel refuses anything over 4.5 MB
+        // before our route runs, so a big phone photo is re-encoded first
+        // (bug board #321).
+        const upload = await shrinkPhotoForUpload(file);
+        if (upload.size > UPLOAD_BODY_LIMIT_BYTES) throw new Error(PHOTO_TOO_BIG_MESSAGE);
+        const form = new FormData();
+        form.set("file", upload);
         const res = await fetch("/api/upload/event-image", {
           method: "POST",
           body: form,
@@ -2864,7 +2874,9 @@ export function MediaSection() {
           error?: string;
         };
         if (!res.ok || !payload.url) {
-          throw new Error(payload.error || "Upload failed.");
+          throw new Error(
+            res.status === 413 ? PHOTO_TOO_BIG_MESSAGE : payload.error || "Upload failed.",
+          );
         }
         setPending((prev) =>
           prev.map((p) =>

@@ -69,6 +69,16 @@ test("#190/#255: /people warns a photoless viewer up front and describes its poo
   assert.match(code(people), /Suggestions come from members with a photo and a finished profile/);
 });
 
+test("#329: the dashboard asks a photoless viewer for a photo instead of offering a pick", () => {
+  const dashboard = read("src/app/dashboard/page.tsx");
+  assert.match(dashboard, /const viewerHasPhoto = resolveAvatarImage\(profileStatus\.photoUrl\) !== null;/);
+  // The photo state comes BEFORE the pick, so a pick never renders without one.
+  const photoBranch = dashboard.indexOf("{!viewerHasPhoto ? (");
+  const pickBranch = dashboard.indexOf(") : pick ? (");
+  assert.ok(photoBranch > -1 && pickBranch > photoBranch, "photo check must gate the pick");
+  assert.match(dashboard.slice(photoBranch, pickBranch), /actionHref="\/profile\/edit"/);
+});
+
 test("#266/#230/#231: the People Card flips on the tap - no spinner, no confetti", () => {
   const card = read("src/components/click-with-someone-user-card.tsx");
   assert.doesNotMatch(code(card), /fireBrandConfetti|CLICK_PUFF|brand-confetti/);

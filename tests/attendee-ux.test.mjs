@@ -350,7 +350,9 @@ test("a name we invented from an email is never published as one they chose", ()
   // Onboarding must not prefill it - a prefilled field is a field nobody reads,
   // and this one lands on their profile and every event roster.
   const onboarding = read("src/app/onboarding/page.tsx");
-  assert.match(onboarding, /isDerivedFromEmail\(session\.user\.name, session\.user\.email\)/);
+  assert.match(onboarding, /isDerivedFromEmail\(knownName, session\.user\.email\)/);
+  // Bug board #112: the name they saved beats the provider's on a return trip.
+  assert.match(onboarding, /const knownName = status\.displayName \?\? session\.user\.name;/);
   // And the one email that goes out BEFORE onboarding must not greet by it.
   assert.match(repo, /isDerivedFromEmail\(row\.display_name, row\.email\)/);
 });

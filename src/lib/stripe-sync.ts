@@ -794,7 +794,15 @@ export async function syncPayoutsForAllMerchants(
 // Reuses `getConnectedAccountStatus` from stripe-connect (v2 accounts API) and
 // `updateMerchantConnectStatus` from event-repository (the same writer the
 // `account.updated` webhook calls), so the source of truth is consistent.
-export async function syncAllConnectAccounts(): Promise<{
+//
+// `onlyHeldEvents` narrows it to trusted hosts with an upcoming paid event still
+// parked in 'pending' - the only accounts whose sync can publish anything. The
+// reconcile cron uses it as the safety net for a missed account.updated webhook
+// (bug board #270): without one, a host whose payouts came on after they left
+// the Stripe return page kept a "pending" event until an admin pressed Sync.
+export async function syncAllConnectAccounts(
+  options: { onlyHeldEvents?: boolean } = {},
+): Promise<{
   accountsScanned: number;
   accountsUpdated: number;
 }> {
@@ -803,12 +811,30 @@ export async function syncAllConnectAccounts(): Promise<{
   const pool = getPostgresPool();
   if (!pool) databaseUnavailable();
 
+  // Mirrors publishEventsHeldForPayouts' own guards, minus the capability flags
+  // the Stripe read is about to refresh.
   const merchants = await pool.query<{ stripe_connect_account_id: string }>(
-    `
-      select stripe_connect_account_id
-      from merchant_profiles
-      where stripe_connect_account_id is not null
-    `,
+    options.onlyHeldEvents
+      ? `
+          select m.stripe_connect_account_id
+          from merchant_profiles m
+          where m.stripe_connect_account_id is not null
+            and m.verification_status = 'approved'
+            and m.auto_approve_events = true
+            and exists (
+              select 1
+              from events e
+              where e.merchant_profile_id = m.id
+                and e.status = 'pending'
+                and e.price_cents > 0
+                and coalesce(e.ends_at, e.starts_at) >= now()
+            )
+        `
+      : `
+          select stripe_connect_account_id
+          from merchant_profiles
+          where stripe_connect_account_id is not null
+        `,
   );
 
   let accountsUpdated = 0;

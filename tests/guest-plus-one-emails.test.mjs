@@ -80,3 +80,15 @@ test("every path that takes a claimed +1's seat away tells them", () => {
   assert.match(eventCancel, /\.\.\.releasedGuests\.map\(\(guest\) => guest\.profileId\)/);
   assert.match(eventCancel, /vars: cancelledEmailVars\(guest\.firstName \|\| "there", "You were not charged\."\)/);
 });
+
+test("+1 emails escape what the purchaser typed before it reaches the HTML", () => {
+  // The purchaser types the guest's name AND picks the address it goes to, so an
+  // unescaped var would let anyone with a ticket send Click-branded markup.
+  const announce = body("async function announceNamedGuests(");
+  for (const template of ["guest-invite", "guest-spot-existing-user"]) {
+    const call = announce.slice(announce.indexOf(`template: "${template}"`));
+    const end = call.indexOf("vars: {");
+    assert.ok(end > -1, `${template} call not found`);
+    assert.match(call.slice(0, end), /escapeVars: true/, `${template} must escape its vars`);
+  }
+});

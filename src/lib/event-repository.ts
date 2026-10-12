@@ -5128,9 +5128,10 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
       error.name = "MerchantApprovalRequiredError";
       throw error;
     }
-    // Trusted merchants (an admin has approved at least one of their events, see
-    // approveEventForAdmin) skip the pending queue - their events publish straight
-    // to 'live'. New/untrusted merchants still land in 'pending' for manual review.
+    // Trusted merchants (approving the merchant trusts them, and admins can switch
+    // it either way - see setMerchantAutoApproveForAdmin) skip the pending queue -
+    // their events publish straight to 'live'. Untrusted merchants still land in
+    // 'pending' for manual review.
     const autoApprove = merchantProfile.auto_approve_events === true;
     // Event titles are always title-cased ("table for eight" → "Table for
     // Eight"). The wizard does this live as the merchant types; we redo it here
@@ -5734,25 +5735,11 @@ export async function approveEventForAdmin(eventId: string, session: Session | n
       [profile.id, JSON.stringify({ slug: event.slug, title: event.title })],
     );
 
-    // Trust the merchant going forward: this manual approval is the one-time QA
-    // pass, so the owning merchant's future events auto-publish without review.
-    // Admins can revoke this from the merchant detail page. Best-effort - a
-    // failure here must not fail the approval the admin just made.
-    void pool
-      .query(
-        `
-          update merchant_profiles
-          set auto_approve_events = true, updated_at = now()
-          from events
-          where events.slug = $1
-            and events.merchant_profile_id = merchant_profiles.id
-            and merchant_profiles.auto_approve_events = false
-        `,
-        [event.slug],
-      )
-      .catch((error) => {
-        console.warn("Failed to mark merchant as auto-approve after event approval.", error);
-      });
+    // No trust grant here. Approving an event used to switch the host to
+    // trusted, so an admin's "Review every event" lasted exactly one approval
+    // (bug board #259). Trust now comes only from approving the merchant
+    // (updateMerchantVerificationForAdmin) or the admin's own toggle
+    // (setMerchantAutoApproveForAdmin).
 
     // Notify the owning merchant their event is live. Fire-and-forget - never
     // bubbles into the approve response (see helper for the merchant lookup).
@@ -6058,8 +6045,9 @@ export async function updateMerchantVerificationForAdmin(
 
 // Grant or revoke a merchant's "trusted" status. When on, their new events skip
 // the pending review queue and publish straight to 'live'. Approving the
-// merchant (or one of their events) flips this on automatically; admins use
-// this to send a merchant back to reviewing every event, or to trust them again.
+// merchant flips this on automatically; admins use this to send a merchant back
+// to reviewing every event, or to trust them again. Approving one of their
+// events never changes it (bug board #259), so "Review every event" sticks.
 export async function setMerchantAutoApproveForAdmin(
   merchantId: string,
   autoApprove: boolean,
@@ -14141,6 +14129,11 @@ async function announceNamedGuests(
       await logEmailEvent({
         template: "guest-invite",
         toEmail: o.email,
+        // The guest's name is typed by the purchaser and goes to an address the
+        // purchaser chose, so it must never reach the body as markup - unescaped,
+        // anyone with a ticket could send Click-branded HTML to anyone. The
+        // purchaser's name and the host's title are member free text too.
+        escapeVars: true,
         vars: {
           guestFirstName: o.firstName,
           purchaserFirstName: purchaserFirst,
@@ -14171,6 +14164,8 @@ async function announceNamedGuests(
         template: "guest-spot-existing-user",
         toEmail: o.email,
         toProfileId: o.claimedProfileId,
+        // Same reason as the invite above: member free text, chosen recipient.
+        escapeVars: true,
         vars: {
           purchaserFirstName: purchaserFirst,
           eventTitle: booking.title,

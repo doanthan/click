@@ -15,6 +15,11 @@ import { useRouter } from "next/navigation";
 import { ErrorNote } from "@/components/avatar-uploader";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Icon } from "@/components/ds";
+import {
+  PHOTO_TOO_BIG_MESSAGE,
+  UPLOAD_BODY_LIMIT_BYTES,
+  shrinkPhotoForUpload,
+} from "@/lib/photo-upload";
 
 const ACCEPT = "image/jpeg,image/png,image/webp";
 const MAX_BYTES = 5 * 1024 * 1024;
@@ -55,10 +60,18 @@ export function ProfileGalleryUploader({ initialUrls }: { initialUrls: string[] 
       return;
     }
 
-    const body = new FormData();
-    body.set("file", file);
-
     setPending(true);
+    // Over Vercel's 4.5 MB body limit the request never reaches our route
+    // (bug board #335), so a big phone photo is re-encoded first.
+    const upload = await shrinkPhotoForUpload(file);
+    if (upload.size > UPLOAD_BODY_LIMIT_BYTES) {
+      setError(PHOTO_TOO_BIG_MESSAGE);
+      setPending(false);
+      return;
+    }
+    const body = new FormData();
+    body.set("file", upload);
+
     // Guard against a silent hang: a stalled upload used to leave the spinner
     // spinning forever with no feedback (bug board: "pending icon and nothing
     // happened"). Abort after 30s so the user gets a retry-able error instead.
@@ -77,7 +90,9 @@ export function ProfileGalleryUploader({ initialUrls }: { initialUrls: string[] 
         setError(
           response.status === 503
             ? "Photo uploads aren’t available right now - your other changes will still save."
-            : payload?.error ?? "Upload failed. Try again.",
+            : response.status === 413
+              ? PHOTO_TOO_BIG_MESSAGE
+              : payload?.error ?? "Upload failed. Try again.",
         );
         return;
       }

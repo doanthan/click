@@ -11,6 +11,11 @@ import { CAPACITY_PATTERN, PRICE_PATTERN, sanitizeAmount } from "@/lib/amounts";
 import { MERCHANT_EVENT_EDIT_SECTION_ID } from "@/lib/merchant-event-edit";
 import { EVENT_TITLE_MAX_LENGTH } from "@/lib/text-format";
 import { useUnsavedGuard } from "@/lib/use-unsaved-guard";
+import {
+  PHOTO_TOO_BIG_MESSAGE,
+  UPLOAD_BODY_LIMIT_BYTES,
+  shrinkPhotoForUpload,
+} from "@/lib/photo-upload";
 
 type Tag = { slug: string; label: string };
 
@@ -270,13 +275,24 @@ export function MerchantEventEditForm({
     setUploading(true);
     try {
       for (const file of toUpload) {
+        // Vercel refuses a body over 4.5 MB before our route runs, so a big
+        // phone photo is re-encoded first (bug board #321).
+        const upload = await shrinkPhotoForUpload(file);
+        if (upload.size > UPLOAD_BODY_LIMIT_BYTES) {
+          setUploadError(PHOTO_TOO_BIG_MESSAGE);
+          break;
+        }
         const form = new FormData();
-        form.set("file", file);
+        form.set("file", upload);
         const res = await fetch("/api/upload/event-image", { method: "POST", body: form });
-        const payload = (await res.json()) as { url?: string; error?: string };
+        // Vercel's 413 page is not JSON; parsing it threw into the catch below
+        // and blamed the member's connection.
+        const payload = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
         const uploadedUrl = payload.url;
         if (!res.ok || !uploadedUrl) {
-          setUploadError(payload.error ?? "Upload failed.");
+          setUploadError(
+            res.status === 413 ? PHOTO_TOO_BIG_MESSAGE : (payload.error ?? "Upload failed."),
+          );
           break;
         }
         setImages((prev) => (prev.length < MAX_PHOTOS ? [...prev, uploadedUrl] : prev));

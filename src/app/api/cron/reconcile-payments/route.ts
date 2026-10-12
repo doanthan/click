@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { reconcilePendingPayments } from "@/lib/stripe-sync";
+import { reconcilePendingPayments, syncAllConnectAccounts } from "@/lib/stripe-sync";
 
 export const runtime = "nodejs";
 // Never cache - this mutates state every run.
@@ -35,7 +35,17 @@ async function handle(request: Request) {
 
   try {
     const result = await reconcilePendingPayments({ sinceHours: 72 });
-    return NextResponse.json({ ok: true, ...result });
+    // Same safety net for Connect (bug board #270): re-read Stripe for trusted
+    // hosts whose paid events are still held for payouts, so a missed
+    // account.updated can't leave them pending. Its own try - a Stripe error
+    // here must not fail the checkout reconcile above.
+    let heldEventHosts: Awaited<ReturnType<typeof syncAllConnectAccounts>> | { error: string };
+    try {
+      heldEventHosts = await syncAllConnectAccounts({ onlyHeldEvents: true });
+    } catch (error) {
+      heldEventHosts = { error: error instanceof Error ? error.message : "Connect sync failed." };
+    }
+    return NextResponse.json({ ok: true, ...result, heldEventHosts });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Payment reconcile failed.";
     return NextResponse.json({ error: message }, { status: 500 });

@@ -22,6 +22,7 @@ import {
   getRadarSignals,
 } from "@/lib/event-repository";
 import { redirectIfNotOnboarded } from "@/lib/onboarding-gate";
+import { resolveAvatarImage } from "@/lib/avatar-images";
 import { dashboardPickIndex } from "@/lib/clicks/daily-picks";
 import { APP_TIME_ZONE } from "@/lib/datetime";
 
@@ -131,6 +132,10 @@ export default async function DashboardPage() {
   // person, in the same state, as on the Click page, not a slot to refill.
   const pickIndex = dashboardPickIndex(hourOfDay, picks.length);
   const pick = pickIndex === null ? null : picks[pickIndex];
+  // Clicking needs your own photo (sendClickInner's R_PHOTO gate), so a member
+  // without one gets the reason up front instead of a pick whose button only
+  // refuses after the tap (bug board #329). Same test as /people and the send.
+  const viewerHasPhoto = resolveAvatarImage(profileStatus.photoUrl) !== null;
   // Rotate through the events people are actually going to whenever there are
   // any. The rotation used to land on empty rooms too, and an empty room can
   // only ever get the fallback line - so the radar sat on "Trending in Sydney"
@@ -317,7 +322,18 @@ export default async function DashboardPage() {
           actionHref="/people"
           narrow
         >
-          {pick ? (
+          {!viewerHasPhoto ? (
+            <Reveal delay={60}>
+              <EmptyState
+                eyebrow="One step first"
+                icon={<Icon name="camera" size={24} stroke={1.7} />}
+                title="Add a photo to click with people."
+                body="It's the first thing people see, and clicking needs one. Your picks show up here once it's in."
+                actionHref="/profile/edit"
+                actionLabel="Add a photo"
+              />
+            </Reveal>
+          ) : pick ? (
             <Reveal delay={60}>
               {/* The anonymity reassurance shows ONCE, at the TOP of the click
                   surface (COORDINATION_MODAL_SYSTEM §6) - never under each card. */}

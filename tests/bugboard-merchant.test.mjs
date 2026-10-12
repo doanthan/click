@@ -130,6 +130,35 @@ test("approving a merchant shows them as trusted without a reload", () => {
   assert.match(table, /"Review every event" : "Trust merchant"/);
 });
 
+test("approving one event leaves a host on 'Review every event' (#259)", () => {
+  const repo = read("src/lib/event-repository.ts");
+  const approve = fnBody(repo, "export async function approveEventForAdmin");
+  // Code only, comments stripped: the fix's own comment names the column.
+  const code = approve.replace(/\/\/.*$/gm, "");
+  assert.doesNotMatch(code, /auto_approve_events/);
+});
+
+test("the 15-minute cron re-reads Stripe for hosts with held paid events (#270)", () => {
+  const cron = read("src/app/api/cron/reconcile-payments/route.ts");
+  // Its own try, so a Stripe error can't fail the checkout reconcile.
+  assert.match(
+    cron,
+    /try \{\s*heldEventHosts = await syncAllConnectAccounts\(\{ onlyHeldEvents: true \}\);\s*\} catch/,
+  );
+  const sync = read("src/lib/stripe-sync.ts");
+  const fn = sync.slice(sync.indexOf("export async function syncAllConnectAccounts("));
+  const held = fn.slice(fn.indexOf("options.onlyHeldEvents"), fn.indexOf(": `"));
+  for (const guard of [
+    /m\.verification_status = 'approved'/,
+    /m\.auto_approve_events = true/,
+    /e\.status = 'pending'/,
+    /e\.price_cents > 0/,
+    /coalesce\(e\.ends_at, e\.starts_at\) >= now\(\)/,
+  ]) {
+    assert.match(held, guard, `held-event host filter lost ${guard}`);
+  }
+});
+
 /* ---------------- #261 / #262 / #263 shorter wizard copy ---------------- */
 
 test("the schedule and review steps stop re-explaining the host terms", () => {

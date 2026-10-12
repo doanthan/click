@@ -43,6 +43,12 @@ export default async function OnboardingPage({
   const savedPostcode = /^\d{4}$/.test(status.suburb?.trim() ?? "")
     ? status.suburb!.trim()
     : "";
+  // Same for the name: the one they saved wins over the sign-in provider's.
+  // Someone sent back through the form was shown their Google name again, and
+  // saving step 1 wrote it over the name they had chosen ("I said call me
+  // Jenny but it populated as Ellen", bug board #112). On a first sign-up the
+  // saved name IS the provider's, so nothing changes there.
+  const knownName = status.displayName ?? session.user.name;
 
   // One calm column on the cream ground. The form owns its own chrome (wordmark
   // header, progress bar, scrolling step body, sticky Continue bar), so the page
@@ -54,9 +60,7 @@ export default async function OnboardingPage({
         // built from their address. A prefilled field is a field nobody reads,
         // and this one is published on their profile and every event roster.
         initialName={
-          isDerivedFromEmail(session.user.name, session.user.email)
-            ? ""
-            : (session.user.name ?? "")
+          isDerivedFromEmail(knownName, session.user.email) ? "" : (knownName ?? "")
         }
         initialPostcode={savedPostcode}
         initialPhotoUrl={status.photoUrl}
