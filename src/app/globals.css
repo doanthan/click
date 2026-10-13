@@ -408,6 +408,11 @@ body {
 /* disabled - Mist fill + Slate text, still legible (never an opacity fade) */
 .ck-btn[disabled] { cursor: not-allowed; background: var(--mist); color: var(--slate); border-color: transparent; box-shadow: none; transform: none; }
 .ck-btn--ghost[disabled] { background: transparent; }
+/* View-only browsing (HOTFIX 2026-10-12 H4.1): a disabled fieldset makes its
+   buttons :disabled without the attribute the rules above key on. Same look,
+   and no pointer events, so the hover lifts can't fire either. */
+fieldset:disabled .ck-btn { background: var(--mist); color: var(--slate); border-color: transparent; box-shadow: none; transform: none; pointer-events: none; }
+fieldset:disabled .ck-btn--ghost { background: transparent; }
 
 /* loading - spinner replaces the label, width held, interaction blocked */
 .ck-btn--loading { cursor: progress; pointer-events: none; }

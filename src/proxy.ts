@@ -1,4 +1,5 @@
 import { auth } from "@/auth";
+import { isViewOnlySession } from "@/lib/account-switch-policy";
 import { updateSession } from "@/utils/supabase/middleware";
 import { isInternalRoute, isProductionDeployment } from "@/lib/runtime-mode";
 import { TEST_SWITCHER_COOKIE, testSwitcherCookieHolds } from "@/lib/test-switcher";
@@ -20,6 +21,14 @@ function redirectToLogin(request: NextRequest, target: "customer" | "merchant" =
     request.nextUrl.pathname + request.nextUrl.search,
   );
   return NextResponse.redirect(loginUrl);
+}
+
+// HOTFIX 2026-10-12 H4.1: what a view-only session may still send. Reads, and
+// the two ways out: /account-switch (Return, or switching to another account -
+// its Server Actions POST to that path) and Auth.js's own endpoints.
+const VIEW_ONLY_SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+function isViewOnlyExit(pathname: string) {
+  return pathname === "/account-switch" || pathname.startsWith("/api/auth/");
 }
 
 // The second parameter selects Auth.js's middleware overload instead of its
@@ -53,6 +62,23 @@ const authenticatedProxy = auth((request, _event: NextFetchEvent) => {
         headers: { "Cache-Control": "private, no-store" },
       });
     }
+  }
+
+  // HOTFIX 2026-10-12 H4.1: an admin viewing a REAL member can look, never act.
+  // Every write is refused here - API routes, and Server Actions, which reach
+  // the proxy as POSTs to the page that uses them. This is the one place every
+  // route passes through (see config.matcher, which only skips static files);
+  // tests/view-as-read-only.test.mjs pins the matcher and the exits so a
+  // refactor can't quietly open a gap.
+  if (
+    isViewOnlySession(session) &&
+    !VIEW_ONLY_SAFE_METHODS.has(nextRequest.method) &&
+    !isViewOnlyExit(pathname)
+  ) {
+    return Response.json(
+      { error: "You're viewing this account, so nothing can be changed from here." },
+      { status: 403, headers: { "Cache-Control": "private, no-store" } },
+    );
   }
 
   // /dashboard and /admin only require a signed-in session here. Admin-specific

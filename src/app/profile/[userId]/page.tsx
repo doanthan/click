@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { auth } from "@/auth";
 import { ButtonLink } from "@/components/ds";
-import { ProfileDetails, visibleIntentsFor } from "@/components/profile-details";
+import { ProfileDetails, visibleAgeFor, visibleIntentsFor } from "@/components/profile-details";
 import { ProfileSafetyControls } from "@/components/profile-safety-controls";
 import {
   getOwnProfile,
@@ -35,7 +35,7 @@ export default async function PublicProfilePage({ params }: PublicProfilePagePro
 
   const session = await auth();
   const [profile, ownProfile, profileStatus] = await Promise.all([
-    getPublicProfileById(userId),
+    getPublicProfileById(userId, session),
     session?.user ? getOwnProfile(session) : Promise.resolve(null),
     session?.user ? getProfileStatus(session) : null,
   ]);
@@ -51,11 +51,13 @@ export default async function PublicProfilePage({ params }: PublicProfilePagePro
       ? await Promise.all([getSafetyState(session, userId), getViewerClickState(session, userId)])
       : [null, null];
 
-  // "Open to dating" is mutual opt-in (CLICK_LANGUAGE v14): the dating intent
-  // renders only when the owner has dating mode on AND the viewer is also open
-  // to dating. A friends-only or signed-out viewer never sees a dating label.
-  const viewerOpenToDating = ownProfile?.datingVisible === true;
-  const visibleIntents = visibleIntentsFor(profile, viewerOpenToDating);
+  // "Open to dating" renders only for a romantically compatible viewer (the one
+  // dating rule, HOTFIX 2026-10-12 H1 - getPublicProfileById computes it for
+  // this session). A signed-out viewer never sees a dating label.
+  const visibleIntents = visibleIntentsFor(profile);
+  // "Show my age" (bug board #339): same exception; the owner always sees their
+  // own.
+  const visibleAge = isOwnProfile ? profile.age : visibleAgeFor(profile);
 
   return (
     <main className="min-h-screen bg-[color:var(--champagne)] pb-24 text-[color:var(--ink)]">
@@ -63,7 +65,7 @@ export default async function PublicProfilePage({ params }: PublicProfilePagePro
         <div className="max-w-[660px]">
           <article className="rounded-[18px] bg-[color:var(--paper)] p-6 shadow-[var(--shadow-sm)] sm:p-8">
             <ProfileDetails
-              profile={{ ...profile, intents: visibleIntents }}
+              profile={{ ...profile, intents: visibleIntents, age: visibleAge }}
               headerAction={
                 isOwnProfile ? (
                   <ButtonLink href="/profile/edit" size="sm" className="shrink-0">

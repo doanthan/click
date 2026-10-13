@@ -7,6 +7,7 @@ import {
 } from "@/lib/event-repository";
 import {
   getConnectedAccountStatus,
+  isRealConnectAccountId,
   isStripeConnectConfigured,
 } from "@/lib/stripe-connect";
 import {
@@ -69,6 +70,10 @@ export default async function OnboardingPayoutsPage({ searchParams }: PageProps)
   }
 
   const connected = Boolean(accountId);
+  // Signup no longer asks how the business is set up, so the first connect
+  // does - and only then: once a real account exists its entity type is set.
+  // Same test the connect route uses to decide it must create one.
+  const askBusinessType = !merchant.business_type && !isRealConnectAccountId(accountId);
 
   // Stripe hands EVERY host back here, whichever surface they started from - the
   // connect route pins its return_url to this step precisely because the refresh
@@ -93,7 +98,8 @@ export default async function OnboardingPayoutsPage({ searchParams }: PageProps)
         <p className="mt-3 text-sm font-medium leading-6 text-[color:var(--slate)]">
           Paid events run through Stripe. Connect your business and bank details
           once - Stripe collects them securely (we never see your bank
-          numbers), and your event earnings pay out automatically.
+          numbers), and each event&apos;s earnings go to your bank a couple of
+          days after it ends.
         </p>
 
         {!stripeConfigured ? (
@@ -142,16 +148,22 @@ export default async function OnboardingPayoutsPage({ searchParams }: PageProps)
               their part - showing the button made it look like more action was
               required while Stripe verified asynchronously (bug board #206).
             */}
-            {!detailsSubmitted ? <ConnectPayoutsButton label="Continue on Stripe →" returnTo={returnTo} /> : null}
+            {!detailsSubmitted ? (
+              <ConnectPayoutsButton
+                label="Continue on Stripe →"
+                returnTo={returnTo}
+                askBusinessType={askBusinessType}
+              />
+            ) : null}
           </div>
         ) : (
           <div className="mt-6 grid gap-4">
             <ul className="grid gap-2 text-sm font-medium leading-6 text-[color:var(--slate)]">
               <li>• Business + bank details, collected securely by Stripe</li>
-              <li>• Stripe pays out to your bank on its own schedule</li>
+              <li>• Each event&apos;s earnings go to your bank a couple of days after it ends</li>
               <li>• Takes about 5 minutes - you can skip and do it later</li>
             </ul>
-            <ConnectPayoutsButton returnTo={returnTo} />
+            <ConnectPayoutsButton returnTo={returnTo} askBusinessType={askBusinessType} />
           </div>
         )}
       </div>

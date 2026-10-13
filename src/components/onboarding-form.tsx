@@ -158,7 +158,6 @@ type Draft = {
   postcode: string;
   birthDate: string;
   intents: Intent[];
-  datingVisible: boolean;
   flexibleDiscovery: boolean;
   tags: string[];
   bio: string;
@@ -237,9 +236,8 @@ export function OnboardingForm({
   // on screen when they tap Continue. Cleared the moment a date commits.
   const [birthDateRejection, setBirthDateRejection] = useState("");
   const [intents, setIntents] = useState<Set<Intent>>(new Set(["friendship"]));
-  // Dating visibility default OFF - opt-in is the safer default on a
-  // dating-adjacent product. Flexible discovery stays opt-out (true).
-  const [datingVisible, setDatingVisible] = useState(false);
+  // No dating-visibility toggle until the dating build (HOTFIX 2026-10-12 H1):
+  // nobody can be dating-visible yet. Flexible discovery stays opt-out (true).
   const [flexibleDiscovery, setFlexibleDiscovery] = useState(true);
   const [tags, setTags] = useState<Set<string>>(new Set());
   const [bio, setBio] = useState("");
@@ -298,7 +296,6 @@ export function OnboardingForm({
           if (Array.isArray(draft.intents) && draft.intents.length) {
             setIntents(new Set(draft.intents));
           }
-          if (typeof draft.datingVisible === "boolean") setDatingVisible(draft.datingVisible);
           if (typeof draft.flexibleDiscovery === "boolean") setFlexibleDiscovery(draft.flexibleDiscovery);
           // Interests ARE restored. This used to be skipped on the theory that a
           // pre-filled picker reads as "I haven't touched anything" on a fresh
@@ -350,7 +347,6 @@ export function OnboardingForm({
         postcode,
         birthDate,
         intents: Array.from(intents),
-        datingVisible,
         flexibleDiscovery,
         tags: Array.from(tags),
         bio,
@@ -359,7 +355,7 @@ export function OnboardingForm({
     } catch {
       // localStorage can fail (quota, private mode) - ignore.
     }
-  }, [storageKey, step, displayName, postcode, birthDate, intents, datingVisible, flexibleDiscovery, tags, bio]);
+  }, [storageKey, step, displayName, postcode, birthDate, intents, flexibleDiscovery, tags, bio]);
 
   // Browser Back walks the wizard instead of leaving it: every forward move
   // pushes a hash entry, so a pop just reads the step back off the hash. The
@@ -541,9 +537,6 @@ export function OnboardingForm({
           intents: Array.from(intents),
           tags: Array.from(tags),
           birthDate: birthDate || undefined,
-          // Only persist dating visibility for people who actually picked Dating;
-          // the toggle is hidden for everyone else, so its state is meaningless.
-          datingVisible: intents.has("dating") ? datingVisible : false,
           flexibleDiscovery,
         }),
       });
@@ -821,19 +814,6 @@ export function OnboardingForm({
                     })}
                   </div>
 
-                  {/* Dating visibility is only meaningful to people who picked
-                      Dating - it appears inline the moment they do, and stays
-                      hidden otherwise. */}
-                  {intents.has("dating") ? (
-                    <div className="rise-soft">
-                      <Toggle
-                        label="Show I'm open to dating"
-                        description="Only people also open to dating ever see this."
-                        checked={datingVisible}
-                        onChange={setDatingVisible}
-                      />
-                    </div>
-                  ) : null}
                   <Toggle
                     label="Flexible discovery"
                     description="Show me events across intents, not only the one I lead with."

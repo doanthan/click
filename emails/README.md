@@ -31,6 +31,12 @@ Every template listed here is wired through `logEmailEvent` and fires today, wit
 | `plan-suggested-attendee.html` | A mutual click suggested an event, or re-pointed a plan at a different one (`suggestPlanForMutual`, `proposeAlternativeForProposal`, via `logPlanSuggestedEmail`). Goes to the other person only, post-commit via `afterResponse`. Skipped when they muted the suggester or turned off the Mutual clicks toggle (`notification_prefs.mutualClick`). | `{{otherName}} suggested {{eventTitle}}` |
 | `guest-spot-confirmed.html` | A +1 claims the seat a friend saved for them (`claimGuestSpotForProfile`, post-response). Their own confirmation, with the venue. | `You're in - {{eventTitle}}, {{eventShortDate}}` |
 
+### Pre-launch
+
+| File | When to send | Subject suggestion |
+| --- | --- | --- |
+| `launch-waitlist-joined.html` | Someone requests an invite on `/waitlist` (`requestInvite` in `src/app/waitlist/actions.ts`). First request per address only, post-response via `after()`. The recipient has no profile, so `to_profile_id` is null. | `You're on the list for Click` |
+
 ### Auth and security
 
 No `unsubscribeUrl` on any of these - security mail is transactional and exempt from preference lists.
@@ -46,8 +52,9 @@ No `unsubscribeUrl` on any of these - security mail is transactional and exempt 
 
 | File | When to send | Subject suggestion |
 | --- | --- | --- |
-| `merchant-application-received.html` | After the `/merchant/signup/documents` wizard step submits (venue inside the pilot area). | `We've got your application - {{businessName}}` |
-| `merchant-waitlisted-merchant.html` | Same step, when the venue is outside the launch pilot (Greater Sydney) - parked on the host waitlist. | `You're on the Click waitlist - {{suburb}} is coming soon` |
+| `merchant-welcome-merchant.html` | A new host submits the one-page `/merchant/signup` with a venue inside the pilot area - instant access, so "you're in", with their first event still reviewed before it goes live. | `{{businessName}} is set up - post your first event` |
+| `merchant-application-received.html` | A rejected host resubmits `/merchant/signup` (venue inside the pilot area) - it goes back to admin review. | `We've got your application - {{businessName}}` |
+| `merchant-waitlisted-merchant.html` | Same form, when the venue is outside the launch pilot (Greater Sydney) - parked on the host waitlist. | `You're on the Click waitlist - {{suburb}} is coming soon` |
 | `merchant-verified-merchant.html` | After `POST /api/admin/merchants/[merchantId]/verification` approves. | `{{businessName}} is verified - post your first event` |
 | `merchant-rejected-merchant.html` | Same route, declined. | `{{businessName}} application - one small change` |
 | `merchant-suspended-merchant.html` | Same route, suspended. Their live events are hidden from Discover until an admin reinstates them. | `{{businessName}} has been suspended on Click` |
@@ -285,6 +292,17 @@ Day-before nudge. Variables overlap heavily with `rsvp-attendee.html` so the sam
 | `eventDashboardUrl` | Absolute merchant event-record URL. |
 | `supportEmail` | Monitored Click support address. |
 
+### `merchant-welcome-merchant.html`
+
+| Variable | Notes |
+| --- | --- |
+| `merchantFirstName` |  |
+| `businessName` |  |
+| `createEventUrl` | `/merchant/events/create` (the create layout sends a host who hasn't done the walkthrough through `/merchant/onboarding` first). |
+| `merchantDashboardUrl` | `/merchant`. |
+| `supportEmail` |  |
+| `unsubscribeUrl` |  |
+
 ### `merchant-application-received.html`
 
 | Variable | Notes |
@@ -327,7 +345,7 @@ Sent instead of `merchant-application-received` when the signup venue is outside
 | `merchantFirstName` |  |
 | `businessName` |  |
 | `rejectionReason` | Free-text from the admin. |
-| `resubmitUrl` | Where to fix it - typically `/merchant/signup/documents`. |
+| `resubmitUrl` | Where to fix it - `/merchant/signup` (one page; the old step URLs redirect there). |
 | `supportEmail` |  |
 | `unsubscribeUrl` |  |
 
@@ -466,6 +484,18 @@ Logged with `escapeVars: true`, so every variable arrives HTML-escaped - `otherN
 | `proposalsUrl` | `/proposals?open=<mutualClickId>`, the same deep link as the in-app notification. |
 | `supportEmail` |  |
 | `unsubscribeUrl` |  |
+
+### `launch-waitlist-joined.html`
+
+The `/waitlist` confirmation. Sent once per address - a repeat request gets the same screen and no second email, so the page never reveals who is already on the list. No `unsubscribeUrl`: the recipient is not a member and has no preferences page; the footer asks them to reply, and removal is deleting their `launch_waitlist` row.
+
+| Variable | Notes |
+| --- | --- |
+| `areaLine` | "We'll be in touch when your suburb opens." inside the attendee pilot, else "We'll tell you the moment Click reaches you." Our copy, never their text. |
+| `shareUrl` | Their own invite link, `https://www.letsclick.app/i/<code>`. |
+| `shareLabel` | The same link without `https://www.`, as shown. |
+| `howItWorksUrl` |  |
+| `supportEmail` |  |
 
 ## Dev log: viewing sends in Supabase
 

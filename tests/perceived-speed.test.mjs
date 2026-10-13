@@ -28,6 +28,8 @@ test("forwarding-only URLs redirect in next.config.ts, not in a page", () => {
     ["/quiz/personality", "/quiz/life"],
     // and so do the Life quiz's old per-section URLs
     ["/quiz/life/:step", "/quiz/life"],
+    // Host signup is one page too; its old step URLs land on it.
+    ["/merchant/signup/:step", "/merchant/signup"],
   ]) {
     assert.match(
       config,

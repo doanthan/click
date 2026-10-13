@@ -30,7 +30,6 @@ export async function POST(request: Request) {
     intents?: string[];
     tags?: string[];
     birthDate?: string;
-    datingVisible?: boolean;
     flexibleDiscovery?: boolean;
   };
 
@@ -51,8 +50,7 @@ export async function POST(request: Request) {
         // Required - saveOnboarding rejects a missing/underage date. The 18+
         // gate is not the client's to enforce.
         birthDate: payload.birthDate ?? "",
-        datingVisible:
-          typeof payload.datingVisible === "boolean" ? payload.datingVisible : undefined,
+        // No datingVisible: a client can't turn dating on (HOTFIX 2026-10-12 H1).
         flexibleDiscovery:
           typeof payload.flexibleDiscovery === "boolean" ? payload.flexibleDiscovery : undefined,
       },

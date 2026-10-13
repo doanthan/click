@@ -24,7 +24,8 @@ function identityHash(scope: string, identity: string) {
     .digest("hex");
 }
 
-export function getClientIp(request: Request) {
+// A Request, or `{ headers: await headers() }` from a server action.
+export function getClientIp(request: { headers: Pick<Headers, "get"> }) {
   return (
     request.headers.get("x-vercel-forwarded-for")?.split(",")[0]?.trim() ||
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||

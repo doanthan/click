@@ -12,6 +12,7 @@ import {
   validateOptionalAcn,
 } from "./abn";
 import { normalizeAuPhone, validateAuPhone } from "./au-phone";
+import type { BusinessType } from "./business-type";
 import { normalizeWebsiteUrl } from "./website-url";
 import { HOST_TERMS_VERSION, REFUND_POLICY_VERSION } from "./legal-versions";
 import {
@@ -177,24 +178,26 @@ export type OnboardingInput = {
   // Required: the 18+ gate is enforced from this, server-side. `age` is derived
   // from it and is no longer accepted from the client.
   birthDate: string;
-  datingVisible?: boolean;
+  // No datingVisible: dating visibility is never written here (HOTFIX
+  // 2026-10-12 H1). set_romantic_visible() is the only way to turn it on.
   flexibleDiscovery?: boolean;
 };
 
-// Full payload from the 4-step wizard - the only shape /api/merchant accepts.
-// (The legacy short form and its MerchantSignupInput are gone: the non-wizard
-// fallback route was removed, which skipped this payload's server-side
-// validation.) Document uploads land separately via /api/merchant/documents
-// (matched by profile_id) before this submit.
+// Full payload from the one-page host signup form - the only shape /api/merchant
+// accepts. (The legacy short form and its MerchantSignupInput are gone: the
+// non-wizard fallback route was removed, which skipped this payload's
+// server-side validation.) Document uploads land separately via
+// /api/merchant/documents (matched by profile_id) before this submit.
 export type MerchantWizardInput = {
   businessName: string;
   tradingName: string;
   abn: string;
   acn: string;
-  // Optional - the signup wizard no longer collects business type. Kept on the
-  // type (nullable) so the Stripe Connect entity-type mapping still reads it for
-  // merchants that have one, and older callers keep compiling.
+  // Optional - the signup form no longer asks. The payout step collects it the
+  // first time a host connects Stripe, which is the only thing that reads it
+  // (the Connect entity type); free-event hosts are never asked at all.
   businessType?: "sole_trader" | "company" | "partnership" | "trust" | null;
+  // May be empty - see registerMerchantWizardSubmit.
   eventCategoryIds: string[];
   contactEmail: string;
   phone: string;
@@ -2125,6 +2128,18 @@ async function ensureProfileForSessionUncached(session: Session | null) {
   if (!email) throw authError();
   if (!pool) throw databaseUnavailableError();
 
+  // An admin viewing someone is not that person being active (HOTFIX 2026-10-12
+  // H4.1). The upsert below stamps last_active_at, which the inactivity rules
+  // read - so a viewing session reads the row and writes nothing.
+  if (session?.impersonation) {
+    const viewed = await pool.query<ProfileRow>(
+      `select id::text, role::text as role, email::text, display_name from profiles where email = $1`,
+      [email],
+    );
+    if (!viewed.rows[0]) throw authError();
+    return viewed.rows[0];
+  }
+
   const displayName = getSessionName(session);
   const initialRole: ProfileRow["role"] = isConfiguredAdminEmail(email) ? "admin" : "attendee";
 
@@ -3969,6 +3984,10 @@ export type EventDetail = EventItem & {
   // RSVP CTA. Null when there's no clash (or the viewer isn't signed in / is
   // already on this event).
   viewerClashEventTitle: string | null;
+  // True when that clash is a CONFIRMED seat, which refuses the booking
+  // (bug board #323, confirmedClashTitle). A waitlist place or an unpaid hold
+  // only warns.
+  viewerClashBlocks: boolean;
 };
 
 // Statuses an event must be in to be visible to the public. Pending (awaiting
@@ -4029,6 +4048,7 @@ export async function getEventBySlug(
       seatsHeld: 0,
       merchantProfileId: null,
       viewerClashEventTitle: null,
+      viewerClashBlocks: false,
       media: buildEventMediaGallery({
         images: [fallback.image],
         primaryAlt: fallback.imageAlt,
@@ -4173,6 +4193,7 @@ export async function getEventBySlug(
       seatsHeld: 0,
         merchantProfileId: null,
         viewerClashEventTitle: null,
+        viewerClashBlocks: false,
         media: buildEventMediaGallery({
           images: [fallback.image],
           primaryAlt: fallback.imageAlt,
@@ -4191,6 +4212,7 @@ export async function getEventBySlug(
     let heldSeatCount: number | null = null;
     let heldSeatExpiresAt: string | null = null;
     let viewerClashEventTitle: string | null = null;
+    let viewerClashBlocks = false;
     const email = getSessionEmail(session);
 
     if (email) {
@@ -4301,12 +4323,14 @@ export async function getEventBySlug(
       // start_a < end_b AND start_b < end_a. A null ends_at is the 2-hour block
       // the .ics route and the create wizard both assume - it used to collapse
       // to its start, a zero-length window that overlaps nothing, so two events
-      // starting at the same minute never clashed (bug board #51). Non-blocking -
-      // just surfaces a heads-up on the RSVP CTA and inside the booking dialog.
+      // starting at the same minute never clashed (bug board #51). A confirmed
+      // seat there now refuses the booking (#323, enforced by
+      // confirmedClashTitle on every booking path), so it is listed first and
+      // the copy says so; a waitlist place or an unpaid hold still only warns.
       if (status !== "confirmed" && status !== "waitlisted" && status !== "pending_payment") {
-        const clashResult = await pool.query<{ title: string }>(
+        const clashResult = await pool.query<{ title: string; blocks: boolean }>(
           `
-            select other_event.title
+            select other_event.title, attendee.status = 'confirmed' as blocks
             -- A claimed +1 at the other event is a seat too.
             from ${seatRowsSql} attendee
             join profiles profile on profile.id = attendee.profile_id
@@ -4319,12 +4343,13 @@ export async function getEventBySlug(
                   < coalesce(($4)::timestamptz, ($3)::timestamptz + interval '2 hours')
               and coalesce(other_event.ends_at, other_event.starts_at + interval '2 hours')
                   > ($3)::timestamptz
-            order by other_event.starts_at asc
+            order by (attendee.status = 'confirmed') desc, other_event.starts_at asc
             limit 1
           `,
           [email, slug, eventStartsAt, eventEndsAt],
         );
         viewerClashEventTitle = clashResult.rows[0]?.title ?? null;
+        viewerClashBlocks = clashResult.rows[0]?.blocks === true;
       }
     }
 
@@ -4332,6 +4357,7 @@ export async function getEventBySlug(
       ...base,
       priceCents: row.price_cents,
       viewerClashEventTitle,
+      viewerClashBlocks,
       address: row.address,
       city: row.city ?? null,
       endsAt: row.ends_at ? row.ends_at.toISOString() : null,
@@ -4374,6 +4400,7 @@ export async function getEventBySlug(
       seatsHeld: 0,
         merchantProfileId: null,
         viewerClashEventTitle: null,
+        viewerClashBlocks: false,
         media: buildEventMediaGallery({
           images: [fallback.image],
           primaryAlt: fallback.imageAlt,
@@ -4540,6 +4567,13 @@ export async function registerForEvent(eventId: string, session: Session | null)
             : "confirmed";
       const rsvpChanged = existingRsvp?.status !== status;
       let rsvpId = existingRsvp?.id ?? "";
+
+      // A NEW confirmed seat only (#323). A replay of one they already hold, or
+      // joining the waitlist, is never refused for a clash.
+      if (rsvpChanged && status === "confirmed") {
+        const clash = await confirmedClashTitle(client, profile.id, event.id);
+        if (clash) throw bookingClashError(clash);
+      }
 
       if (rsvpChanged) {
         const rsvpRow = await client.query<{ id: string }>(
@@ -5042,6 +5076,11 @@ export async function acceptWaitlistOffer(eventId: string, session: Session | nu
       (error as Error & { eventSlug?: string }).eventSlug = event.slug;
       throw error;
     }
+
+    // Taking the offered seat is a new confirmed seat (#323). Refused, the
+    // offer stays open for its window, so they can cancel the other one first.
+    const clash = await confirmedClashTitle(client, profile.id, event.id);
+    if (clash) throw bookingClashError(clash);
 
     await client.query(
       `
@@ -5735,11 +5774,18 @@ export async function approveEventForAdmin(eventId: string, session: Session | n
       [profile.id, JSON.stringify({ slug: event.slug, title: event.title })],
     );
 
-    // No trust grant here. Approving an event used to switch the host to
-    // trusted, so an admin's "Review every event" lasted exactly one approval
-    // (bug board #259). Trust now comes only from approving the merchant
-    // (updateMerchantVerificationForAdmin) or the admin's own toggle
-    // (setMerchantAutoApproveForAdmin).
+    // No general trust grant here. Approving an event used to switch the host
+    // to trusted, so an admin's "Review every event" lasted exactly one
+    // approval (bug board #259). Trust comes from approving the merchant
+    // (updateMerchantVerificationForAdmin), the admin's own toggle
+    // (setMerchantAutoApproveForAdmin), and one narrow case: a host who joined
+    // with instant access was never reviewed as a business, so the approval of
+    // their FIRST event is that review. The helper only acts on the one-shot
+    // flag, which every explicit admin decision clears - so a host an admin
+    // has put on "Review every event" stays there. Best-effort: a failure must
+    // not fail the approval the admin just made, and the host's next event
+    // simply lands in review.
+    void trustHostAfterFirstEventReview(pool, event.slug);
 
     // Notify the owning merchant their event is live. Fire-and-forget - never
     // bubbles into the approve response (see helper for the merchant lookup).
@@ -5895,6 +5941,11 @@ export async function updateMerchantVerificationForAdmin(
             when $2 in ('rejected', 'suspended') then false
             else merchant.auto_approve_events
           end,
+          -- Any explicit verdict on the host replaces an instant-access host's
+          -- "trust them once their first event is approved" (database/073):
+          -- approving already trusted them, and a reject or suspend must not
+          -- leave a way back to trust through an event.
+          trust_after_first_event = false,
           updated_at = now()
       from profiles owner
       where merchant.id = $1::uuid
@@ -6043,11 +6094,50 @@ export async function updateMerchantVerificationForAdmin(
   };
 }
 
+/**
+ * The one trust grant an event approval can make (see approveEventForAdmin).
+ *
+ * A host inside the launch pilot gets instant access at signup
+ * (registerMerchantWizardSubmit): approved, but untrusted, with
+ * trust_after_first_event set (database/073). Nobody reviewed their business,
+ * so the admin approving their first event is that review - this turns
+ * auto-approval on and spends the flag, and their later events publish
+ * straight away.
+ *
+ * Only the flag can trigger it. Every explicit admin decision about the host
+ * clears it (the trust toggle below, and approve / reject / suspend in
+ * updateMerchantVerificationForAdmin), so an admin's "Review every event"
+ * survives any number of event approvals - the bug board #259 rule.
+ * Best-effort, like the other post-approval work: it warns and moves on.
+ */
+async function trustHostAfterFirstEventReview(pool: Pool, eventSlug: string) {
+  try {
+    await pool.query(
+      `
+        update merchant_profiles
+        set auto_approve_events = true,
+            trust_after_first_event = false,
+            updated_at = now()
+        from events
+        where events.slug = $1
+          and events.merchant_profile_id = merchant_profiles.id
+          and merchant_profiles.trust_after_first_event
+          and merchant_profiles.verification_status = 'approved'
+      `,
+      [eventSlug],
+    );
+  } catch (error) {
+    console.warn("Failed to trust a host after their first event review.", error);
+  }
+}
+
 // Grant or revoke a merchant's "trusted" status. When on, their new events skip
 // the pending review queue and publish straight to 'live'. Approving the
 // merchant flips this on automatically; admins use this to send a merchant back
 // to reviewing every event, or to trust them again. Approving one of their
-// events never changes it (bug board #259), so "Review every event" sticks.
+// events never changes it (bug board #259), so "Review every event" sticks -
+// and because this is an explicit decision either way, it also spends an
+// instant-access host's one-shot trust_after_first_event.
 export async function setMerchantAutoApproveForAdmin(
   merchantId: string,
   autoApprove: boolean,
@@ -6065,7 +6155,9 @@ export async function setMerchantAutoApproveForAdmin(
   const result = await pool.query<{ id: string; auto_approve_events: boolean }>(
     `
       update merchant_profiles
-      set auto_approve_events = $2, updated_at = now()
+      set auto_approve_events = $2,
+          trust_after_first_event = false,
+          updated_at = now()
       where id = $1::uuid
       returning id::text, auto_approve_events
     `,
@@ -8255,6 +8347,52 @@ const seatRowsSql = `(
             and purchaser.status = 'confirmed'
         )`;
 
+// Bug board #323: a confirmed seat at an overlapping event refuses a new one.
+// It used to be a heads-up and "you can still book both" (#51). Only CONFIRMED
+// seats count - a waitlist place or an unpaid hold may never become a seat -
+// and a claimed +1 is a seat like any other (seatRowsSql). Same window as the
+// heads-up in getEventBySlug: an event with no end time holds 2 hours.
+// Called by the booking paths a member starts themselves (free RSVP, paid
+// hold, accepting a waitlist offer, claiming a +1), after their own checks.
+// Not serialised per person: two clashing events booked in the same instant
+// from two tabs could both land. A per-profile advisory lock would close that
+// if it ever matters.
+async function confirmedClashTitle(
+  db: Pick<Pool | PoolClient, "query">,
+  profileId: string,
+  eventId: string,
+): Promise<string | null> {
+  const result = await db.query<{ title: string }>(
+    `
+      select other_event.title
+      from events this_event
+      join ${seatRowsSql} attendee
+        on attendee.profile_id = $1::uuid
+       and attendee.event_id <> this_event.id
+      join events other_event on other_event.id = attendee.event_id
+      where this_event.id = $2::uuid
+        and attendee.status = 'confirmed'
+        and other_event.status <> 'cancelled'
+        and other_event.starts_at
+            < coalesce(this_event.ends_at, this_event.starts_at + interval '2 hours')
+        and coalesce(other_event.ends_at, other_event.starts_at + interval '2 hours')
+            > this_event.starts_at
+      order by other_event.starts_at asc
+      limit 1
+    `,
+    [profileId, eventId],
+  );
+  return result.rows[0]?.title ?? null;
+}
+
+function bookingClashError(otherTitle: string) {
+  const error = new Error(
+    `You're already going to ${otherTitle} at the same time. Cancel that booking first if you'd rather go to this one.`,
+  );
+  error.name = "ConflictError";
+  return error;
+}
+
 const eventSelectColumns = `
         event.slug,
         event.title,
@@ -8830,6 +8968,31 @@ export async function setMerchantConnectAccountId(
 }
 
 /**
+ * Records how the host's business is set up, asked at the payout step the
+ * first time they connect (see src/lib/business-type.ts for why not at
+ * signup). Only ever fills a blank, and returns what is actually stored, so
+ * the connect route builds the Stripe account from the saved answer even if
+ * one landed between its read and this write.
+ */
+export async function setMerchantBusinessType(
+  merchantProfileId: string,
+  businessType: BusinessType,
+): Promise<string> {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+  const result = await pool.query<{ business_type: string }>(
+    `
+      update merchant_profiles
+      set business_type = coalesce(business_type, $2), updated_at = now()
+      where id = $1::uuid
+      returning business_type
+    `,
+    [merchantProfileId, businessType],
+  );
+  return result.rows[0]?.business_type ?? businessType;
+}
+
+/**
  * Tells a host their paid events have stopped selling - or started again.
  *
  * Stripe turns `charges_enabled` off on a connected account by itself, for
@@ -9215,8 +9378,7 @@ export async function saveOnboarding(input: OnboardingInput, session: Session | 
         bio = $5,
         connection_intents = $6::connection_intent[],
         birth_date = $7::date,
-        dating_visible = coalesce($8::boolean, dating_visible),
-        flexible_discovery = coalesce($9::boolean, flexible_discovery),
+        flexible_discovery = coalesce($8::boolean, flexible_discovery),
         updated_at = now()
       where id = $1::uuid
       returning photo_url
@@ -9229,7 +9391,6 @@ export async function saveOnboarding(input: OnboardingInput, session: Session | 
       bio,
       intents.length ? intents : ["friendship"],
       birthDateValue,
-      input.datingVisible ?? null,
       input.flexibleDiscovery ?? null,
     ],
   );
@@ -9860,10 +10021,18 @@ export async function registerMerchantWizardSubmit(
     if (handle) socials[platform] = handle;
   }
 
+  // Optional since signup became one page: the categories only inform the
+  // admin's merchant view, and every required answer is a reason to give up.
   const categoryIds = Array.from(new Set(input.eventCategoryIds.filter(Boolean)));
-  if (categoryIds.length === 0) {
-    throw validationError("Pick at least one event category.", "eventCategoryIds");
-  }
+
+  // Inside the launch pilot (Greater Sydney) a host gets instant access: the
+  // row is created already approved, so they can build an event and connect
+  // payouts straight away. They start UNTRUSTED (auto_approve_events stays
+  // false), so their first event lands 'pending' and nothing goes public until
+  // an admin approves it - that approval is their review, and
+  // trust_after_first_event (database/073) makes it trust them. Outside the
+  // pilot the row stays 'pending' and the host is waitlisted below.
+  const withinPilot = isWithinPilotArea(input.addressState, postcode);
 
   const profile = await ensureProfileForSession(session);
 
@@ -9889,13 +10058,18 @@ export async function registerMerchantWizardSubmit(
           phone, contact_email, website_url, socials,
           address_street, address_suburb, address_state, address_postcode,
           submitted_at, host_agreement_accepted_at,
-          host_terms_version, refund_policy_version
+          host_terms_version, refund_policy_version,
+          verification_status, trust_after_first_event
         )
         values (
           $1::uuid, $2, nullif($3, ''), $4, nullif($5, ''), $6,
           $7, $8, nullif($9, ''), $10::jsonb,
           $11, $12, $13, $14,
-          now(), now(), $15, $16
+          now(), now(), $15, $16,
+          -- Instant access for a NEW host inside the pilot (see withinPilot
+          -- above). Insert-only: the conflict branch below never reads these
+          -- two, so a resubmission or an edit cannot approve anyone.
+          case when $17::boolean then 'approved' else 'pending' end, $17::boolean
         )
         on conflict (profile_id) do update set
           business_name = excluded.business_name,
@@ -9905,8 +10079,9 @@ export async function registerMerchantWizardSubmit(
           -- coalesce, not a bare overwrite: this upsert also runs for edits that
           -- don't carry every field, and assigning excluded.business_type
           -- directly wiped a good value back to null whenever the caller omitted
-          -- it. Null here means "unchanged", which is what a partial edit means;
-          -- the wizard now always sends a real value, so it can still change it.
+          -- it. Null here means "unchanged", which is what a partial edit means.
+          -- The signup form no longer asks at all - the payout step does, the
+          -- first time a host connects Stripe (api/merchant/stripe/connect).
           business_type = coalesce(excluded.business_type, merchant_profiles.business_type),
           phone = excluded.phone,
           contact_email = excluded.contact_email,
@@ -9957,6 +10132,7 @@ export async function registerMerchantWizardSubmit(
         postcode,
         HOST_TERMS_VERSION,
         REFUND_POLICY_VERSION,
+        withinPilot,
       ],
     );
 
@@ -9999,8 +10175,8 @@ export async function registerMerchantWizardSubmit(
     await client.query("commit");
 
     // First submission (xmax = 0), OR a rejected host resubmitting after fixing
-    // what the admin flagged. Both put an application into the review queue, so
-    // both owe the host a confirmation and the admins a notification.
+    // what the admin flagged. Both owe the host a confirmation and the admins a
+    // notification.
     //
     // This used to be `is_new` alone, which meant a resubmission wrote no
     // email_events row and pinged no admin - while /merchant-pending promised
@@ -10020,11 +10196,14 @@ export async function registerMerchantWizardSubmit(
         year: "numeric",
         timeZone: "Australia/Sydney",
       }).format(new Date());
+      // A NEW host inside the pilot was made an approved host by the insert
+      // above. A rejected host resubmitting goes back to review instead,
+      // wherever their venue is.
+      const instantAccess = upsert.rows[0].is_new && withinPilot;
       // Outside the launch pilot (Greater Sydney): the venue can't go live yet,
       // so we park the host on the waitlist and email them rather than running
       // them through verification for a region we don't serve. The email_events
       // row IS the waitlist record (the dev/staging inbox + audit trail).
-      const withinPilot = isWithinPilotArea(input.addressState, postcode);
       if (!withinPilot) {
         await logEmailEvent({
           template: "merchant-waitlisted-merchant",
@@ -10035,6 +10214,23 @@ export async function registerMerchantWizardSubmit(
             businessName,
             suburb: suburb || input.addressState,
             pilotArea: PILOT_AREA_LABEL,
+            supportEmail: SUPPORT_EMAIL,
+            unsubscribeUrl: `${origin}/account-settings`,
+          },
+        });
+      } else if (instantAccess) {
+        // "You're in", not "we've got your application": there is no
+        // application review left to wait for, only a quick look at their
+        // first event before it goes live.
+        await logEmailEvent({
+          template: "merchant-welcome-merchant",
+          toEmail: contactEmail,
+          toProfileId: profile.id,
+          vars: {
+            merchantFirstName,
+            businessName,
+            createEventUrl: `${origin}/merchant/events/create`,
+            merchantDashboardUrl: `${origin}/merchant`,
             supportEmail: SUPPORT_EMAIL,
             unsubscribeUrl: `${origin}/account-settings`,
           },
@@ -10055,8 +10251,10 @@ export async function registerMerchantWizardSubmit(
         });
       }
 
-      // Notify every admin that a new merchant is awaiting verification, so the
-      // verification queue surfaces in their bell without polling /admin/merchants.
+      // Tell every admin, so a new host (or a resubmission, or a waitlist
+      // signup) surfaces in their bell without polling /admin/merchants. A new
+      // host needs nothing from them yet - their first event reaches the review
+      // queue on its own, with the usual "Event awaiting review" notification.
       // Fire-and-forget, post-commit - a notification hiccup must not fail signup.
       void pool
         .query(
@@ -10071,12 +10269,12 @@ export async function registerMerchantWizardSubmit(
               ? "New merchant on the waitlist (outside pilot)"
               : resubmitted
                 ? "Merchant resubmitted after rejection"
-                : "New merchant awaiting verification",
+                : "New host joined",
             !withinPilot
               ? `${businessName} signed up from ${suburb || input.addressState}, outside the ${PILOT_AREA_LABEL} pilot - parked on the host waitlist.`
               : resubmitted
                 ? `${businessName} fixed their application and it's back in the queue.`
-                : `${businessName} just signed up and is waiting for verification.`,
+                : `${businessName} just joined and can start building events. Their first event comes to you for review before it goes live.`,
             "/admin/merchants",
           ],
         )
@@ -10338,7 +10536,20 @@ async function sendClickInner(
       [profile.id],
     );
     const sender = senderResult.rows[0];
-    const senderIntent = sender?.connection_intents?.[0] ?? "friendship";
+    // A click carries the dating intent only for a romantically compatible pair
+    // (HOTFIX 2026-10-12 H1, the one dating rule). Otherwise it goes under the
+    // sender's first other intent - a dating-minded sender clicking someone
+    // who doesn't fit is clicking as a friend.
+    const datingCompatible =
+      (
+        await client.query<{ ok: boolean }>(
+          `select is_romantically_compatible($1::uuid, $2::uuid) as ok`,
+          [profile.id, clickedProfile.id],
+        )
+      ).rows[0]?.ok === true;
+    const senderIntent =
+      (sender?.connection_intents ?? []).find((intent) => intent !== "dating" || datingCompatible) ??
+      "friendship";
     audit.intent = senderIntent;
 
     // SAFE-06 hardening: a banned (or suspended) user must not be able to INITIATE new
@@ -10842,11 +11053,15 @@ async function sendClickInner(
       }
 
       // Intent snapshot, ordered to match user_a = least(pair), user_b = greatest(pair)
-      // (§8 - immutable for the life of the mutual).
-      const intentA =
-        profile.id < clickedProfile.id ? senderIntent : reciprocalClick.intent_mode;
-      const intentB =
-        profile.id < clickedProfile.id ? reciprocalClick.intent_mode : senderIntent;
+      // (§8 - immutable for the life of the mutual). The other click was sent
+      // earlier: if the pair no longer fits, its dating intent doesn't carry
+      // into the mutual (H1).
+      const reciprocalIntent =
+        reciprocalClick.intent_mode === "dating" && !datingCompatible
+          ? "friendship"
+          : reciprocalClick.intent_mode;
+      const intentA = profile.id < clickedProfile.id ? senderIntent : reciprocalIntent;
+      const intentB = profile.id < clickedProfile.id ? reciprocalIntent : senderIntent;
       const mutualResult = await client.query<{ id: string }>(
         `
           insert into mutual_clicks
@@ -13979,6 +14194,11 @@ export async function createPaymentHold(
       throw error;
     }
 
+    // Before a new hold, never before the self-heal above: a buyer whose money
+    // is already in keeps their seat whatever else they've booked since (#323).
+    const clash = await confirmedClashTitle(client, profile.id, event.id);
+    if (clash) throw bookingClashError(clash);
+
     // Booking fee is charged on top of the ticket and kept by the platform.
     // Snapshot it at hold time so a later admin change to the rate can't alter an
     // in-flight checkout. Per-seat figures; amount_cents stores the FULL buyer
@@ -14505,6 +14725,7 @@ export async function claimGuestSpotForProfile(
   // Who is claiming, and who was this seat saved for? Compared before the
   // update so a mismatch can be explained rather than silently bound.
   const who = await pool.query<{
+    event_id: string;
     guest_email: string | null;
     claimer_email: string | null;
     claimer_name: string | null;
@@ -14512,7 +14733,8 @@ export async function claimGuestSpotForProfile(
     suspended_at: Date | null;
   }>(
     `
-      select gs.guest_email::text,
+      select gs.event_id::text,
+             gs.guest_email::text,
              p.email::text as claimer_email,
              p.display_name as claimer_name,
              p.is_banned,
@@ -14541,6 +14763,15 @@ export async function claimGuestSpotForProfile(
       reason: "email-mismatch",
       invitedEmailMasked: maskEmailForClaim(invitedEmail),
     };
+  }
+
+  // A claimed +1 is a seat (#323): someone already going to an overlapping
+  // event can't take it. The invite stays open, so it can be claimed once the
+  // other booking is cancelled. After the mismatch branch, so the clash never
+  // names the claimer's plans to someone who isn't the invited guest yet.
+  if (who.rows[0]?.event_id) {
+    const clash = await confirmedClashTitle(pool, profileId, who.rows[0].event_id);
+    if (clash) throw bookingClashError(clash);
   }
 
   const res = await pool.query<{
@@ -15270,10 +15501,13 @@ export type PublicProfile = {
   photoUrl: string | null;
   age: number | null;
   intents: string[];
-  // The owner's dating-mode visibility (migration 005). Gates the "dating"
-  // intent chip: it renders only on mutual dating opt-in (owner on AND the
-  // viewer open to dating) - a friends-only viewer never sees a dating label.
-  datingVisible: boolean;
+  // is_romantically_compatible(viewer, owner) - the ONE dating rule (HOTFIX
+  // 2026-10-12 H1). Gates the "dating" intent chip and the hidden-age
+  // exception. Per viewer: false when signed out, and on your own profile.
+  datingCompatible: boolean;
+  // The owner's "Show my age" (migration 074, bug board #339). The age itself
+  // stays on this object; visibleAgeFor decides per viewer, like the intents.
+  showAge: boolean;
   interests: { slug: string; label: string }[];
   /** null when the member has hidden it - render nothing, not zero. */
   attendedCount: number | null;
@@ -15292,9 +15526,8 @@ export type OwnProfile = PublicProfile & {
   // chips. `interests` (on PublicProfile) stays the full label list for display.
   interestSlugs: string[];
   musicSlugs: string[];
-  // Discovery/privacy switches (migration 005). Owner-only, so they live here
-  // rather than on PublicProfile.
-  datingVisible: boolean;
+  // Discovery switch (migration 005). Owner-only, so it lives here rather
+  // than on PublicProfile.
   flexibleDiscovery: boolean;
   // True once the user has saved Life Quiz answers (any user_tags row with
   // source='quiz'). Drives the "Take" vs "Retake" copy on /profile/edit.
@@ -15316,6 +15549,10 @@ export type AccountSettings = {
   notifications: NotificationPrefs;
   showSuburb: boolean;
   showAttendanceCount: boolean;
+  /** profiles.show_age (migration 074, bug board #339). Off hides the age on
+   *  the profile, except from a viewer who is open to dating when the owner is
+   *  too (visibleAgeFor). */
+  showAge: boolean;
   /**
    * profiles.default_attend_visibility - the attendee-list opt-out. Off takes the
    * owner's face off the "who's going" preview on every event card and off the
@@ -15358,11 +15595,11 @@ export async function getOwnProfile(session: Session | null): Promise<OwnProfile
         photo_url: string | null;
         age: number | null;
         connection_intents: string[];
-        dating_visible: boolean;
         flexible_discovery: boolean;
         notification_prefs: unknown;
         show_suburb: boolean;
         show_attendance_count: boolean;
+        show_age: boolean;
         default_attend_visibility: boolean;
         allow_merchant_messages: boolean;
         gallery_photos: string[];
@@ -15373,8 +15610,11 @@ export async function getOwnProfile(session: Session | null): Promise<OwnProfile
         `
           select id::text, display_name, email::text, role::text, city, suburb, bio, photo_url, age,
                  connection_intents::text[] as connection_intents,
-                 dating_visible, flexible_discovery,
+                 flexible_discovery,
                  notification_prefs, show_suburb, show_attendance_count, allow_merchant_messages,
+                 -- Read through to_jsonb so this page still works before
+                 -- migration 074 adds the column (true = today's behaviour).
+                 coalesce((to_jsonb(profiles) ->> 'show_age')::boolean, true) as show_age,
                  default_attend_visibility,
                  gallery_photos, prompts, photo_verified_at,
                  exists(
@@ -15431,7 +15671,9 @@ export async function getOwnProfile(session: Session | null): Promise<OwnProfile
       galleryPhotos: row.gallery_photos ?? [],
       prompts: resolveProfilePrompts(row.prompts),
       verified: !!row.photo_verified_at,
-      datingVisible: row.dating_visible,
+      // Your own profile is never "compatible" with you.
+      datingCompatible: false,
+      showAge: row.show_age,
       flexibleDiscovery: row.flexible_discovery,
       // Same rule as getProfileCompletion's quiz item: the Click quiz finished,
       // or the Life quiz's tags from before it.
@@ -15440,6 +15682,7 @@ export async function getOwnProfile(session: Session | null): Promise<OwnProfile
         notifications: coerceNotificationPrefs(row.notification_prefs),
         showSuburb: row.show_suburb,
         showAttendanceCount: row.show_attendance_count,
+        showAge: row.show_age,
         showOnAttendeeLists: row.default_attend_visibility,
         allowMerchantMessages: row.allow_merchant_messages,
       },
@@ -15453,7 +15696,10 @@ export async function getOwnProfile(session: Session | null): Promise<OwnProfile
   }
 }
 
-export async function getPublicProfileById(profileId: string): Promise<PublicProfile | null> {
+export async function getPublicProfileById(
+  profileId: string,
+  viewer: Session | null = null,
+): Promise<PublicProfile | null> {
   const pool = getPostgresPool();
   if (!pool) return null;
 
@@ -15468,9 +15714,10 @@ export async function getPublicProfileById(profileId: string): Promise<PublicPro
         photo_url: string | null;
         age: number | null;
         connection_intents: string[];
-        dating_visible: boolean;
+        dating_compatible: boolean;
         show_suburb: boolean;
         show_attendance_count: boolean;
+        show_age: boolean;
         gallery_photos: string[];
         prompts: unknown;
         photo_verified_at: Date | null;
@@ -15478,8 +15725,17 @@ export async function getPublicProfileById(profileId: string): Promise<PublicPro
         `
           select id::text, display_name, city, suburb, bio, photo_url, age,
                  connection_intents::text[] as connection_intents,
-                 dating_visible,
+                 -- The one dating rule (HOTFIX 2026-10-12 H1), for this viewer.
+                 -- A read: the viewer is found by email, never upserted. No
+                 -- viewer, or the owner themselves, is false.
+                 is_romantically_compatible(
+                   (select viewer.id from profiles viewer where viewer.email = $2),
+                   profiles.id
+                 ) as dating_compatible,
                  show_suburb, show_attendance_count,
+                 -- Fail-soft until migration 074 has run: no column reads as
+                 -- shown, which is what every profile did before it.
+                 coalesce((to_jsonb(profiles) ->> 'show_age')::boolean, true) as show_age,
                  gallery_photos, prompts, photo_verified_at
           from profiles
           where id = $1::uuid
@@ -15500,7 +15756,7 @@ export async function getPublicProfileById(profileId: string): Promise<PublicPro
             -- that leaves a page behind has not deleted the page.
             and deleted_at is null
         `,
-        [profileId],
+        [profileId, getSessionEmail(viewer) || null],
       ),
       // Interest tags ONLY. Life-quiz answers ride in user_tags too, as
       // tag_type 'life' ("Recently single", "New parent", "Career pivot"), and
@@ -15545,7 +15801,8 @@ export async function getPublicProfileById(profileId: string): Promise<PublicPro
       photoUrl: row.photo_url,
       age: row.age,
       intents: row.connection_intents ?? [],
-      datingVisible: Boolean(row.dating_visible),
+      datingCompatible: row.dating_compatible === true,
+      showAge: row.show_age !== false,
       interests: tagsResult.rows.map((t) => ({ slug: t.slug, label: t.label })),
       // null = hidden. Returning 0 published "been to 0 events" on the profile
       // of everyone who turned the toggle off - untrue, and the deficit framing
@@ -15575,8 +15832,9 @@ export type ProfileUpdateInput = {
   // alone. Slugs must already exist in `tags`; unknown ones are dropped.
   interestTags?: string[];
   musicTags?: string[];
-  // Discovery/privacy switches (migration 005). Undefined = leave unchanged.
-  datingVisible?: boolean;
+  // Discovery switch (migration 005). Undefined = leave unchanged. Dating
+  // visibility is not here: set_romantic_visible() is its only writer (HOTFIX
+  // 2026-10-12 H1).
   flexibleDiscovery?: boolean;
   // Answered profile prompts (migration 042). When provided, the stored set is
   // fully replaced - pass `[]` to clear. Re-sanitised here so the invariants
@@ -15669,10 +15927,6 @@ export async function updateOwnProfile(
     updates.push(`connection_intents = $${i++}::connection_intent[]`);
     params.push(input.intents);
   }
-  if (input.datingVisible !== undefined) {
-    updates.push(`dating_visible = $${i++}`);
-    params.push(input.datingVisible);
-  }
   if (input.flexibleDiscovery !== undefined) {
     updates.push(`flexible_discovery = $${i++}`);
     params.push(input.flexibleDiscovery);
@@ -15725,6 +15979,7 @@ export type AccountSettingKey =
   | "notify.productUpdates"
   | "showSuburb"
   | "showAttendanceCount"
+  | "showAge"
   | "showOnAttendeeLists"
   | "allowMerchantMessages";
 
@@ -15743,16 +15998,28 @@ export async function updateAccountSetting(
   const columnByKey: Partial<Record<AccountSettingKey, string>> = {
     showSuburb: "show_suburb",
     showAttendanceCount: "show_attendance_count",
+    showAge: "show_age",
     showOnAttendeeLists: "default_attend_visibility",
     allowMerchantMessages: "allow_merchant_messages",
   };
 
   if (key in columnByKey) {
     const column = columnByKey[key]!;
-    await pool.query(
-      `update profiles set ${column} = $2, updated_at = now() where id = $1::uuid`,
-      [profile.id, value],
-    );
+    try {
+      await pool.query(
+        `update profiles set ${column} = $2, updated_at = now() where id = $1::uuid`,
+        [profile.id, value],
+      );
+    } catch (error) {
+      // 42703 undefined_column: show_age before migration 074 has run. Say so
+      // instead of a database error; the toggle puts itself back.
+      if ((error as { code?: string })?.code === "42703") {
+        const notYet = new Error("This setting isn't switched on yet - try again soon.");
+        notYet.name = "ValidationError";
+        throw notYet;
+      }
+      throw error;
+    }
     return value;
   }
 
@@ -16051,8 +16318,9 @@ export type DailyPick = {
   id: string;
   displayName: string;
   photoUrl: string | null;
-  // ONE label, gated on the viewer here (soloIntentLabel), so a dating intent never
-  // reaches a viewer who isn't open to dating - not even inside the payload.
+  // ONE label, gated here on is_romantically_compatible (soloIntentLabel), so a
+  // dating intent never reaches a viewer it doesn't fit - not even inside the
+  // payload.
   intentLabel: string | null;
   // INTEREST tags both share - never life tags, which stay private until mutual.
   sharedInterests: string[];
@@ -16067,6 +16335,11 @@ export type DailyPick = {
   /** The viewer has a live click out to this person, from either source. The card
    *  shows the muted "clicked" on every surface the pick appears on. */
   alreadyClicked: boolean;
+  /** HOTFIX 2026-10-12 H3.1 (09 §3 "Pending-click featured down-rank"): the
+   *  viewer's live click at this person went out on the PREVIOUS pool day, so
+   *  today they are listed but not featured on the dashboard - nobody is shown
+   *  "here's B!" the morning after clicking B. Gone by the next day. */
+  featureHold: boolean;
   /** The pair's live mutual - the Sage "clicked ✨" that opens it. Both sides
    *  already know about a mutual, so it discloses nothing. */
   mutualId: string | null;
@@ -16136,6 +16409,7 @@ export async function getSuggestedPeople(
       shared_count: number;
       actionable_mutuals: number;
       inactive: boolean;
+      we_clicked: boolean;
     }>(
       `
         select p.id::text, p.photo_url,
@@ -16162,7 +16436,18 @@ export async function getSuggestedPeople(
                    and (am.user_a_id = p.id or am.user_b_id = p.id)
                ) as actionable_mutuals,
                (coalesce(p.last_active_at, p.created_at) < now() - interval '${INACTIVE_DOWNRANK_DAYS} days')
-                 as inactive
+                 as inactive,
+               -- 09 §3 "We clicked offline" down-rank (HOTFIX 2026-10-12 H3.2): a
+               -- pair who closed their mutual as "we're sorted" is present and
+               -- re-clickable, never pushed back at each other. co_attended
+               -- connected pairs are NOT down-ranked - that is the success.
+               exists (
+                 select 1 from mutual_clicks wc
+                 where wc.status = 'connected'
+                   and wc.connected_reason = 'we_clicked'
+                   and wc.user_a_id = least($1::uuid, p.id)
+                   and wc.user_b_id = greatest($1::uuid, p.id)
+               ) as we_clicked
         from profiles p
         left join user_tags shared_user_tag on shared_user_tag.profile_id = p.id
         left join tags shared_tag on shared_tag.id = shared_user_tag.tag_id
@@ -16194,10 +16479,11 @@ export async function getSuggestedPeople(
           and p.social_visible = true
           and (p.paused_until is null or p.paused_until <= now())
           -- Only surface people who've actually set up an attendee profile - a
-          -- half-finished signup shouldn't appear in "click with someone". This
-          -- pair, not the role above, is the real "has a profile" test.
+          -- half-finished signup shouldn't appear in "click with someone". No bio
+          -- requirement (HOTFIX 2026-10-12 H3.5): 09 §3 has none, onboarding makes
+          -- bio optional, and the gate only ever hid older accounts whose skipped
+          -- bio was stored as NULL. A card with no bio shows it blank.
           and p.suburb is not null
-          and p.bio is not null
           -- Only include people who have a profile photo: clicking is a
           -- face-first decision, so a photoless profile shouldn't enter the
           -- "click with someone" pool (bug board #190). Guard the empty string
@@ -16239,8 +16525,14 @@ export async function getSuggestedPeople(
           -- still gone 14 days later - fully hidden from discovery until they return.
           -- "Return" is last_active_at overtaking the nudge, so this un-hides itself
           -- the moment they open the app; nothing has to remember to clear it.
+          -- 09 §3 / 21 §B7.4b in the spec's own terms (HOTFIX 2026-10-12 H3.6):
+          -- inactive 30 days AND the re-engagement mail ignored. The mail is only
+          -- ever stamped after 30 quiet days, so the first line restates what the
+          -- rest already implies - kept so the rule can't drift from the spec if
+          -- that trigger ever changes.
           and not (
-            p.reengagement_clicked_at is not null
+            coalesce(p.last_active_at, p.created_at) < now() - interval '${INACTIVE_DOWNRANK_DAYS} days'
+            and p.reengagement_clicked_at is not null
             and p.reengagement_clicked_at <= now() - interval '${REENGAGEMENT_GRACE_DAYS} days'
             and coalesce(p.last_active_at, p.created_at) < p.reengagement_clicked_at
           )
@@ -16251,16 +16543,12 @@ export async function getSuggestedPeople(
               and ((rc.user_a_id = $1::uuid and rc.user_b_id = p.id)
                 or (rc.user_a_id = p.id and rc.user_b_id = $1::uuid))
           )
-          -- Already clicked, from either source (brief §3.3): a pick is someone to
-          -- click, and the one live click at them is already out. Live only - once
-          -- it has lapsed they may come round again, like a released pair.
-          and not exists (
-            select 1 from clicks uc
-            where uc.sender_id = $1::uuid
-              and uc.receiver_id = p.id
-              and uc.status = 'pending'
-              and uc.expires_at > now()
-          )
+          -- A pending click does NOT remove someone (HOTFIX 2026-10-12 H3.1, 09 §3
+          -- "Pending-click featured down-rank" - supersedes the 2026-09-30 brief's
+          -- §3.3 exclusion). In a pool this small, hiding everyone you had clicked
+          -- emptied it. They stay pickable and show as "clicked"; the one thing a
+          -- fresh click costs them is the dashboard's featured turn the next day
+          -- (getDailyPicks' feature_hold).
         group by p.id
         order by
           -- B7.4b row 23: quiet for 30 days is a DOWN-RANK, never a removal - events
@@ -16268,6 +16556,14 @@ export async function getSuggestedPeople(
           -- be back next weekend. First key, because a dormant account is a worse
           -- thing to spend one of three daily slots on than a busy one.
           (coalesce(p.last_active_at, p.created_at) < now() - interval '${INACTIVE_DOWNRANK_DAYS} days') asc,
+          -- "We clicked offline": down-rank, never exclude (see we_clicked above).
+          exists (
+            select 1 from mutual_clicks wc
+            where wc.status = 'connected'
+              and wc.connected_reason = 'we_clicked'
+              and wc.user_a_id = least($1::uuid, p.id)
+              and wc.user_b_id = greatest($1::uuid, p.id)
+          ) asc,
           -- B7.2: at or over the soft cap, DOWN-RANK - never hard-block. Someone
           -- already over their actionable ceiling does not need more discovery, they
           -- need to act on what they have; surfacing them to new people just
@@ -16333,8 +16629,10 @@ export async function getSuggestedPeople(
     // ordering away entirely, so the cap would have held only while the flag was off.
     // A stable partition: filter preserves order, so within each half whatever ranked
     // them (v2 score or shared tags) still decides. Down-rank, never remove.
-    const downRanked = (row: { actionable_mutuals: number; inactive: boolean }) =>
-      Number(row.actionable_mutuals ?? 0) >= ACTIVE_MUTUAL_SOFT_CAP || Boolean(row.inactive);
+    const downRanked = (row: { actionable_mutuals: number; inactive: boolean; we_clicked: boolean }) =>
+      Number(row.actionable_mutuals ?? 0) >= ACTIVE_MUTUAL_SOFT_CAP ||
+      Boolean(row.inactive) ||
+      Boolean(row.we_clicked);
     rows = [...rows.filter((r) => !downRanked(r)), ...rows.filter(downRanked)];
 
     return rows.map((row) => ({
@@ -16494,12 +16792,13 @@ export async function getDailyPicks(session: Session | null): Promise<DailyPick[
       display_name: string;
       photo_url: string | null;
       intents: string[] | null;
-      viewer_dating_visible: boolean | null;
+      dating_compatible: boolean | null;
       shared_interests: string[] | null;
       shared_event: string | null;
       shared_music: string | null;
       nearby: boolean | null;
       already_clicked: boolean;
+      feature_hold: boolean;
       mutual_id: string | null;
     }>(
       `
@@ -16508,9 +16807,9 @@ export async function getDailyPicks(session: Session | null): Promise<DailyPick[
           p.display_name,
           p.photo_url,
           -- Raw intents stay on the server: the mapper turns them into ONE label,
-          -- gated on the viewer's dating_visible (soloIntentLabel).
+          -- with dating gated on the one dating rule (HOTFIX 2026-10-12 H1).
           p.connection_intents::text[] as intents,
-          (select me.dating_visible from profiles me where me.id = $1::uuid) as viewer_dating_visible,
+          is_romantically_compatible($1::uuid, p.id) as dating_compatible,
           -- INTEREST tags only. That is a SENSITIVITY gate, not a taste one: the
           -- life quiz writes its answers into user_tags as tag_type 'life', and
           -- life tags stay private until a mutual forms.
@@ -16566,6 +16865,17 @@ export async function getDailyPicks(session: Session | null): Promise<DailyPick[
               and c.status = 'pending'
               and c.expires_at > now()
           ) as already_clicked,
+          -- 09 §3 featured down-rank (HOTFIX 2026-10-12 H3.1): that live click went
+          -- out on the previous pool day, so today they are listed, not featured.
+          -- A click made today keeps today's turn (it shows as "clicked").
+          exists (
+            select 1 from clicks c
+            where c.sender_id = $1::uuid
+              and c.receiver_id = p.id
+              and c.status = 'pending'
+              and c.expires_at > now()
+              and (c.created_at at time zone '${APP_TIME_ZONE}')::date = ${DAILY_PICK_DAY_SQL} - 1
+          ) as feature_hold,
           (
             select m.id::text from mutual_clicks m
             where m.user_a_id = least($1::uuid, p.id)
@@ -16607,12 +16917,13 @@ export async function getDailyPicks(session: Session | null): Promise<DailyPick[
         id: row.id,
         displayName: row.display_name,
         photoUrl: row.photo_url,
-        intentLabel: soloIntentLabel(row.intents ?? [], Boolean(row.viewer_dating_visible)),
+        intentLabel: soloIntentLabel(row.intents ?? [], row.dating_compatible === true),
         sharedInterests: row.shared_interests ?? [],
         sharedEvent: row.shared_event,
         sharedMusic: row.shared_music,
         nearby: Boolean(row.nearby),
         alreadyClicked: row.already_clicked,
+        featureHold: row.feature_hold === true,
         mutualId: row.mutual_id,
       }));
   } catch (error) {
@@ -16765,12 +17076,11 @@ export async function getMutualClicksForSession(session: Session | null): Promis
           both_going.title as both_going_title,
           m.created_at,
           -- The Your-clicks card (bug board #293) reads what the reveal reads: the
-          -- sided intent snapshot, and "both have dating on" as the live opt-in
-          -- toggle both users control (see getProposalsForSession).
+          -- sided intent snapshot, and "both open to dating" as the one dating
+          -- rule, checked live (see getProposalsForSession).
           case when m.user_a_id = $1::uuid then m.intent_a else m.intent_b end as viewer_intent,
           case when m.user_a_id = $1::uuid then m.intent_b else m.intent_a end as other_intent,
-          ((select me.dating_visible from profiles me where me.id = $1::uuid) and other.dating_visible)
-            as both_dating,
+          is_romantically_compatible($1::uuid, other.id) as both_dating,
           (select source_event.title from events source_event where source_event.id = m.source_event_id)
             as source_event_title,
           -- INTEREST tags only - a sensitivity gate: life-quiz answers share user_tags
@@ -17401,9 +17711,9 @@ const POST_EVENT_ROSTER_OVERLAP = `
           coalesce(other.suburb = (select me.suburb from profiles me where me.id = $1::uuid), false)
             as other_nearby,
           -- Raw intents stay on the server: the mapper turns them into ONE label,
-          -- gated on the viewer's dating_visible (soloIntentLabel).
+          -- with dating gated on the one dating rule (HOTFIX 2026-10-12 H1).
           other.connection_intents::text[] as other_intents,
-          (select me.dating_visible from profiles me where me.id = $1::uuid) as viewer_dating_visible`;
+          is_romantically_compatible($1::uuid, other.id) as dating_compatible`;
 
 // Events the viewer attended that ended between 12 hours and 14 days ago, with
 // the co-attendees they can still Click. Powers the dashboard "who did you
@@ -17441,7 +17751,7 @@ export async function getPostEventClickPrompts(
       other_shared_music: string | null;
       other_nearby: boolean | null;
       other_intents: string[] | null;
-      viewer_dating_visible: boolean | null;
+      dating_compatible: boolean | null;
       budget_spent: boolean;
       swap_used: boolean;
     }>(
@@ -17577,7 +17887,7 @@ export async function getPostEventClickPrompts(
         alreadyClicked: row.already_clicked,
         swappable: row.swappable,
         mutualId: row.mutual_id,
-        intentLabel: soloIntentLabel(row.other_intents ?? [], Boolean(row.viewer_dating_visible)),
+        intentLabel: soloIntentLabel(row.other_intents ?? [], row.dating_compatible === true),
         sharedInterests: row.other_shared_interests ?? [],
         sharedEvent: row.other_shared_event,
         sharedMusic: row.other_shared_music,
@@ -17636,7 +17946,7 @@ export async function getPostEventClickPromptForEvent(
       other_shared_music: string | null;
       other_nearby: boolean | null;
       other_intents: string[] | null;
-      viewer_dating_visible: boolean | null;
+      dating_compatible: boolean | null;
       budget_spent: boolean;
       swap_used: boolean;
     }>(
@@ -17785,7 +18095,7 @@ export async function getPostEventClickPromptForEvent(
           alreadyClicked: row.already_clicked,
           swappable: row.swappable,
           mutualId: row.mutual_id,
-          intentLabel: soloIntentLabel(row.other_intents ?? [], Boolean(row.viewer_dating_visible)),
+          intentLabel: soloIntentLabel(row.other_intents ?? [], row.dating_compatible === true),
           sharedInterests: row.other_shared_interests ?? [],
           sharedEvent: row.other_shared_event,
           sharedMusic: row.other_shared_music,
@@ -18214,11 +18524,11 @@ export async function getProposalsForSession(session: Session | null): Promise<P
           -- rounded into one frame, so the reveal has to know which side is whose.
           case when m.user_a_id = $1::uuid then m.intent_a else m.intent_b end as viewer_intent,
           case when m.user_a_id = $1::uuid then m.intent_b else m.intent_a end as other_intent,
-          -- "Both have dating on" is the live opt-in toggle both users control, not
-          -- the frozen intent snapshot: intent_a/intent_b hold ONE value each, so a
-          -- user whose intents are {friendship,dating} never qualified and the pill
-          -- silently never rendered for them.
-          (me.dating_visible and other.dating_visible) as both_dating,
+          -- "Both open to dating" is is_romantically_compatible() checked at read
+          -- time (HOTFIX 2026-10-12 H1), never "both toggles on": that rule put
+          -- the label on pairs whose genders and preferences don't fit. Not the
+          -- frozen intent snapshot either: intent_a/intent_b hold ONE value each.
+          is_romantically_compatible(me.id, other.id) as both_dating,
           (p.proposed_by = $1::uuid) as proposed_by_me,
           -- ROW-level truth only: the plan retired because SOMEBODY walked. It is
           -- deliberately NOT the drawer's flag - who was left is a per-viewer
@@ -22041,11 +22351,17 @@ export async function getEventAttendeePreview(
                  profile.display_name,
                  profile.photo_url,
                  profile.suburb,
-                 (profile.dating_visible
-                    and 'dating' = any(profile.connection_intents::text[])) as dating_minded,
+                 -- "A few singles are going" counts only people who fit THIS
+                 -- viewer: the one dating rule (HOTFIX 2026-10-12 H1). No viewer
+                 -- ($3 null) is false.
+                 is_romantically_compatible($3::uuid, profile.id) as dating_minded,
                  -- Age today from the birth date (profiles.age is a snapshot taken
-                 -- at onboarding). Feeds only the room's decade, never a card.
-                 coalesce(extract(year from age(profile.birth_date))::int, profile.age) as age,
+                 -- at onboarding). Feeds only the room's decade, never a card -
+                 -- and not even that for someone who hid their age (#339; the
+                 -- to_jsonb read is fail-soft until migration 074 has run).
+                 case when coalesce((to_jsonb(profile) ->> 'show_age')::boolean, true)
+                   then coalesce(extract(year from age(profile.birth_date))::int, profile.age)
+                 end as age,
                  -- The viewer's own, for the same line. Uncorrelated, so it is
                  -- computed once, not per row.
                  (

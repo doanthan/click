@@ -234,9 +234,16 @@ test("Auth.js ignores client update claims, rejects expired viewing and creates 
   const token = { email: "member@example.com" };
   assert.deepEqual(config.callbacks.jwt({ token, trigger: "update", session: { impersonation: { actor, expiresAt: Date.now() + 99999 }, email: actor.email } }), token);
   assert.equal(config.callbacks.jwt({ token: { impersonation: { actor, expiresAt: Date.now() - 1 } } }), null);
-  const signed = config.callbacks.jwt({ token: {}, user: { ...target, impersonation: { actor, expiresAt: Date.now() + 30000 } } });
+  const signed = config.callbacks.jwt({ token: {}, user: { ...target, impersonation: { actor, expiresAt: Date.now() + 30000, readOnly: true } } });
   assert.ok(signed.sessionVersion);
   assert.deepEqual(signed.impersonation.actor, actor);
+  assert.equal(signed.impersonation.readOnly, true);
+  // HOTFIX 2026-10-12 H4.1: a viewing claim minted before readOnly existed was
+  // act-as. On a real member it ends; on a test account it survives (and
+  // isViewOnlySession treats it as view only).
+  const legacy = { actor, expiresAt: Date.now() + 30000 };
+  assert.equal(config.callbacks.jwt({ token: { email: "member@example.com", impersonation: legacy } }), null);
+  assert.ok(config.callbacks.jwt({ token: { email: "maya@click.local", impersonation: legacy } }));
   const normal = config.callbacks.jwt({ token: signed, user: actor });
   assert.equal(normal.impersonation, undefined);
   const provider = config.providers.find(p => p.id === "admin-account-switch");

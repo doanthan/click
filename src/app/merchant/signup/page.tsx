@@ -1,13 +1,13 @@
-import { redirect } from "next/navigation";
 import { auth } from "@/auth";
-import { StepAuthCard } from "@/components/merchant-signup-wizard";
+import { MerchantSignupForm, StepAuthCard } from "@/components/merchant-signup-wizard";
 import { authErrorMessage } from "@/lib/auth-error-copy";
 import { getPlatformFeeBps } from "@/lib/stripe-connect";
 
-// Entry point for /merchant/signup. Logged-in users are forwarded to the
-// first wizard step; logged-out visitors get the OAuth/email auth gate.
-// The "already a merchant" redirect (to /merchant) lives in the layout, so it
-// fires uniformly for every step page too.
+// /merchant/signup - the whole host signup on one page. Signed-in visitors get
+// the form; logged-out visitors get the OAuth/email auth gate, whose callback
+// lands back here. The "already a merchant" redirect (to /merchant) lives in
+// the layout. The old step URLs (/merchant/signup/business, /contact,
+// /documents) redirect here from next.config.ts.
 export default async function MerchantSignupPage({
   searchParams,
 }: {
@@ -15,7 +15,7 @@ export default async function MerchantSignupPage({
 }) {
   const session = await auth();
   if (session?.user) {
-    redirect("/merchant/signup/business");
+    return <MerchantSignupForm />;
   }
 
   const googleConfigured = !!(process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET);

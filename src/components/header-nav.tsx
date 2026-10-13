@@ -15,10 +15,11 @@ export type HeaderNavItem = { label: string; href: string; icon: IconName | "spa
  * the sparkle hard - this and the three mechanic peaks, nowhere else).
  */
 // An event detail page belongs to the Discover lane: nothing else prefixes
-// /events/…, so the whole nav used to read as "you are nowhere".
+// /events/…, so the whole nav used to read as "you are nowhere". So does the
+// map, which Discover opens.
 function isTabActive(pathname: string, href: string) {
   if (href === "/") return pathname === "/";
-  if (href === "/discover" && pathname.startsWith("/events/")) return true;
+  if (href === "/discover" && (pathname.startsWith("/events/") || pathname === "/around-me")) return true;
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 

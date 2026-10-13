@@ -13,6 +13,7 @@ import { EventRegistrationButton } from "./event-registration-button";
 import type { EventSuccessDetails } from "./event-rsvp-success-overlay";
 import { EventImage } from "./event-image";
 import { ModalShell } from "./modal-shell";
+import { seatScarcity } from "@/lib/seat-scarcity";
 
 type EventDetailData = EventItem & {
   priceCents: number;
@@ -28,6 +29,8 @@ type EventDetailData = EventItem & {
   waitlistOfferExpiresAt?: string | null;
   // Another booking of the viewer's that overlaps this one (getEventBySlug).
   viewerClashEventTitle?: string | null;
+  // That booking is a confirmed seat, so this one can't be booked (#323).
+  viewerClashBlocks?: boolean;
   // Per-seat booking fee from api/events/<id>. Absent until the live record has
   // loaded, which is what keeps the paid path on its link until then.
   bookingFeeCents?: number;
@@ -149,15 +152,16 @@ export function EventDetailModal({
   // Speak the card's vocabulary, not the database's. "Live" and "Locked" are
   // publishing states for the host; the card the reader just tapped says
   // "3 spots left" / "Waitlist" / "You're going".
+  const scarcity = seatScarcity(seatsLeft, data.capacity);
   const modalBadge = isRegistered
     ? "You're going"
     : isWaitlisted
       ? "Waitlisted"
       : isFull
         ? "Waitlist"
-        : seatsLeft <= 3
+        : scarcity === "spots"
           ? `${seatsLeft} ${seatsLeft === 1 ? "spot" : "spots"} left`
-          : seatsLeft <= 8
+          : scarcity === "almostfull"
             ? "Almost full"
             : data.status === "Featured"
               ? "Trending"
@@ -372,12 +376,15 @@ export function EventDetailModal({
             <div className="mt-6 grid gap-2">
               {/* The event page's clash heads-up, on the one booking surface that
                   never showed it: a free event books from right here in one tap
-                  (bug board #51). Non-blocking, same as the page. */}
+                  (bug board #51). A confirmed seat there refuses the booking
+                  (#323); a waitlist place or unpaid hold only warns. */}
               {data.viewerClashEventTitle && !isRegistered ? (
                 <p className="rounded-[var(--radius-md)] bg-[color-mix(in_srgb,var(--amber)_14%,var(--paper))] p-3 text-[13px] text-[color:var(--amber-ink)]">
-                  Heads up - this clashes with{" "}
-                  <span className="font-semibold">{data.viewerClashEventTitle}</span>, which you&apos;re
-                  already going to. You can still book both.
+                  {data.viewerClashBlocks ? "You're already going to " : "Heads up - this clashes with "}
+                  <span className="font-semibold">{data.viewerClashEventTitle}</span>
+                  {data.viewerClashBlocks
+                    ? " at the same time. Cancel that booking first if you'd rather go to this one."
+                    : ", which you're already going to. You can still book both."}
                 </p>
               ) : null}
 

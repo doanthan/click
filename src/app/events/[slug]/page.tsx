@@ -37,6 +37,7 @@ import { reconcileCheckoutSession } from "@/lib/stripe-sync";
 import { quoteCancellationRefund, refundQuoteLabel } from "@/lib/refund-policy";
 import { formatPriceLabel } from "@/lib/amounts";
 import { safeNext } from "@/lib/safe-next";
+import { seatScarcity } from "@/lib/seat-scarcity";
 
 type PageProps = {
   params: Promise<{ slug: string }>;
@@ -421,6 +422,7 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
   // telling them the event isn't out yet. The seat rungs are the card's own
   // (event-card.tsx): a card that said "Almost full" used to open onto a page
   // that said nothing about it.
+  const scarcity = seatScarcity(seatsLeft, event.capacity);
   const heroBadge = !PUBLIC_EVENT_STATUSES.has(event.status)
     ? event.status
     : hasEnded
@@ -431,9 +433,9 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
           ? "Waitlisted"
           : isFull
             ? "Waitlist"
-            : seatsLeft <= 3
+            : scarcity === "spots"
               ? `${seatsLeft} ${seatsLeft === 1 ? "spot" : "spots"} left`
-              : seatsLeft <= 8
+              : scarcity === "almostfull"
                 ? "Almost full"
                 : event.status === "Featured"
                   ? "Trending"
@@ -784,11 +786,16 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                   </div>
                 ) : (
                   <>
+                    {/* A confirmed seat at the clashing event refuses this
+                        booking (bug board #323); a waitlist place or an unpaid
+                        hold there only warns. */}
                     {event.viewerClashEventTitle ? (
                       <p className="rounded-[var(--radius-md)] bg-[color-mix(in_srgb,var(--amber)_14%,var(--paper))] p-3 text-[13px] text-[color:var(--amber-ink)]">
-                        Heads up - this clashes with{" "}
-                        <span className="font-semibold">{event.viewerClashEventTitle}</span>, which you&apos;re already
-                        going to. You can still book both.
+                        {event.viewerClashBlocks ? "You're already going to " : "Heads up - this clashes with "}
+                        <span className="font-semibold">{event.viewerClashEventTitle}</span>
+                        {event.viewerClashBlocks
+                          ? " at the same time. Cancel that booking first if you'd rather go to this one."
+                          : ", which you're already going to. You can still book both."}
                       </p>
                     ) : null}
 
@@ -925,8 +932,9 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                             <>
                               {event.viewerClashEventTitle ? (
                                 <span className="mb-3 block rounded-[var(--radius-md)] bg-[color-mix(in_srgb,var(--amber)_14%,var(--paper))] p-3 text-xs font-medium text-[color:var(--amber-ink)]">
-                                  This clashes with {event.viewerClashEventTitle}, which you&apos;re already going to.
-                                  Book both anyway?
+                                  {event.viewerClashBlocks
+                                    ? `You're already going to ${event.viewerClashEventTitle} at the same time - cancel that booking first to book this one.`
+                                    : `This clashes with ${event.viewerClashEventTitle}, which you're already going to. Book both anyway?`}
                                 </span>
                               ) : null}
                               {/* One line (bug board #280). The price, fee and refund
@@ -968,8 +976,9 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                           <>
                             {event.viewerClashEventTitle ? (
                               <span className="mb-3 block rounded-[var(--radius-md)] bg-[color-mix(in_srgb,var(--amber)_14%,var(--paper))] p-3 text-xs font-medium text-[color:var(--amber-ink)]">
-                                This clashes with {event.viewerClashEventTitle}, which you&apos;re already going to. RSVP
-                                to both anyway?
+                                {event.viewerClashBlocks
+                                  ? `You're already going to ${event.viewerClashEventTitle} at the same time - cancel that booking first to RSVP to this one.`
+                                  : `This clashes with ${event.viewerClashEventTitle}, which you're already going to. RSVP to both anyway?`}
                               </span>
                             ) : null}
                             Reserve your seat. You can cancel any time before the event - the host gets a waitlist

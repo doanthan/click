@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
+import { isBusinessType } from "@/lib/business-type";
 import {
   getApprovedMerchantForSession,
+  setMerchantBusinessType,
   setMerchantConnectAccountId,
 } from "@/lib/event-repository";
 import {
@@ -73,6 +75,7 @@ export async function POST(request: Request) {
   try {
     const body = (await request.json().catch(() => null)) as {
       returnTo?: unknown;
+      businessType?: unknown;
     } | null;
     const session = await auth();
     const merchant = await getApprovedMerchantForSession(session);
@@ -83,10 +86,26 @@ export async function POST(request: Request) {
       ? merchant.stripe_connect_account_id
       : null;
     if (!accountId) {
+      // The account's entity type comes from how the business is set up, and
+      // the signup form no longer asks - so the payout step does, here, the
+      // first time. Refuse rather than guess: a missing answer used to become
+      // "company", which sends a sole trader into a Stripe flow asking for a
+      // company name and ACN they don't have, with no way to finish it.
+      let businessType = merchant.business_type;
+      if (!businessType) {
+        const picked = body?.businessType;
+        if (!isBusinessType(picked)) {
+          return NextResponse.json(
+            { error: "Pick how the business is set up first.", field: "businessType" },
+            { status: 400 },
+          );
+        }
+        businessType = await setMerchantBusinessType(merchant.id, picked);
+      }
       accountId = await createConnectedAccount({
         contactEmail: merchant.contact_email,
         businessName: merchant.business_name,
-        businessType: merchant.business_type,
+        businessType,
         country: "AU",
       });
       await setMerchantConnectAccountId(merchant.id, accountId);

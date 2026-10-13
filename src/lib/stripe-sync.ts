@@ -12,6 +12,8 @@
 //   3. `issueRefund(...)` is the admin-initiated refund action - it calls
 //      Stripe and then mirrors the response into the local tables in one txn,
 //      writing an `audit_logs` row attributable to the admin.
+//   4. `releaseHeldPayouts()` (the release-payouts cron) creates hosts' payouts
+//      itself - their payouts are manual - and mirrors each one as it goes.
 //
 // All upserts are idempotent. We never insert a refund/payout twice on the
 // same Stripe id; `last_synced_at` is bumped on every touch.
@@ -27,8 +29,15 @@ import { getStripeClient } from "./stripe";
 import { getPostgresPool } from "./postgres";
 import {
   getConnectedAccountStatus,
+  holdPayouts,
+  isRealConnectAccountId,
   type ConnectAccountStatus,
 } from "./stripe-connect";
+import {
+  PAYOUT_MAX_HOLD_DAYS,
+  PAYOUT_RELEASE_DELAY_HOURS,
+  releasableCents,
+} from "./payout-release";
 import {
   attachPaymentIntent,
   ensureProfileForSession,
@@ -784,6 +793,110 @@ export async function syncPayoutsForAllMerchants(
   }
 
   return { accountsScanned: merchants.rows.length, payoutsUpserted };
+}
+
+// Pays each host what's no longer held for an event (src/lib/payout-release.ts),
+// daily via api/cron/release-payouts. Re-asserts manual payouts on every account
+// first, so a host connected before holding existed - or whose setting failed
+// at creation - is held from the next run.
+export async function releaseHeldPayouts(): Promise<{
+  accountsScanned: number;
+  released: Array<{ accountId: string; amountCents: number; payoutId: string }>;
+  failed: Array<{ accountId: string; error: string }>;
+}> {
+  const stripe = getStripeClient();
+  if (!stripe) stripeNotConfigured();
+  const pool = getPostgresPool();
+  if (!pool) databaseUnavailable();
+
+  // held_cents: the host's share of each booking whose event hasn't finished
+  // (plus the release delay) or was cancelled - a cancelled event's refunds may
+  // still need it. Their share is the amount less our fee, less the part of any
+  // refund reversed out of their balance (issueRefund reverses proportionally).
+  // Rounded toward holding more.
+  const merchants = await pool.query<{
+    stripe_connect_account_id: string;
+    payouts_enabled: boolean;
+    held_cents: string;
+  }>(
+    `
+      select m.stripe_connect_account_id,
+             m.payouts_enabled,
+             coalesce((
+               select sum(
+                 (pt.amount_cents - coalesce(pt.application_fee_cents, 0))
+                 - floor(
+                     pt.refunded_amount_cents::numeric
+                     * (pt.amount_cents - coalesce(pt.application_fee_cents, 0))
+                     / nullif(pt.amount_cents, 0)
+                   )
+               )
+               from payment_transactions pt
+               join events e on e.id = pt.event_id
+               where pt.merchant_profile_id = m.id
+                 and pt.status in ('paid', 'partially_refunded')
+                 and pt.created_at > now() - make_interval(days => $2)
+                 and (
+                   e.status = 'cancelled'
+                   or coalesce(e.ends_at, e.starts_at) > now() - make_interval(hours => $1)
+                 )
+             ), 0)::bigint::text as held_cents
+      from merchant_profiles m
+      where m.stripe_connect_account_id is not null
+    `,
+    [PAYOUT_RELEASE_DELAY_HOURS, PAYOUT_MAX_HOLD_DAYS],
+  );
+
+  const audCents = (entries: Array<{ amount: number; currency: string }>) =>
+    entries
+      .filter((entry) => entry.currency === "aud")
+      .reduce((sum, entry) => sum + entry.amount, 0);
+  const today = new Date().toISOString().slice(0, 10);
+  const released: Array<{ accountId: string; amountCents: number; payoutId: string }> = [];
+  const failed: Array<{ accountId: string; error: string }> = [];
+
+  for (const row of merchants.rows) {
+    const accountId = row.stripe_connect_account_id;
+    // Seed placeholders (acct_seed_*) don't exist in Stripe.
+    if (!isRealConnectAccountId(accountId)) continue;
+    try {
+      await holdPayouts(accountId);
+      if (!row.payouts_enabled) continue;
+
+      const balance = await stripe.balance.retrieve({}, { stripeAccount: accountId });
+      const amountCents = releasableCents({
+        availableCents: audCents(balance.available),
+        pendingCents: audCents(balance.pending),
+        heldCents: Number(row.held_cents),
+      });
+      if (amountCents <= 0) continue;
+
+      const payout = await stripe.payouts.create(
+        {
+          amount: amountCents,
+          currency: "aud",
+          description: "Click event earnings",
+          metadata: { app: "click", source: "release_held_payouts" },
+        },
+        // Same account, day and amount returns the first payout, so an
+        // overlapping manual run can't pay a host twice.
+        {
+          stripeAccount: accountId,
+          idempotencyKey: `click-release-${accountId}-${today}-${amountCents}`,
+        },
+      );
+      await upsertPayout(payout, accountId);
+      released.push({ accountId, amountCents, payoutId: payout.id });
+    } catch (error) {
+      console.error(`[release-payouts] ${accountId} failed:`, error);
+      failed.push({
+        accountId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return { accountsScanned: merchants.rows.length, released, failed };
 }
 
 // ---------------------------------------------------------------------------

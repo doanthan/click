@@ -39,6 +39,10 @@ const CHROMELESS_ROUTES = [
   // the global bar up the wordmark showed twice and the sticky app nav sat over
   // the quiz. (/quiz and /quiz/personality redirect to it in next.config.ts.)
   "/quiz/life",
+  // The pre-launch landing. Its headword IS the wordmark, and the Landing canon
+  // gives State A no header at all - a "Sign up" in the bar would contradict
+  // "Request an invite". The page draws the footer itself.
+  "/waitlist",
 ];
 
 export function ChromeGate({ children }: { children: React.ReactNode }) {

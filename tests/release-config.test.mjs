@@ -1071,14 +1071,40 @@ test("the host landing page states no metric it cannot compute", () => {
   assert.doesNotMatch(tiles, /2\.9% \+ 30/);
 });
 
-test("the signup wizard collects the business type Stripe onboarding needs", () => {
+test("the business type Stripe onboarding needs is asked before any Connect account exists", () => {
   // Every merchant was created with identity.entity_type "company", so an AU
   // sole trader was asked for a registered company name and ACN they don't have
-  // and could never finish onboarding - or run a paid event.
-  const wizard = readFileSync(path.join(root, "src/components/merchant-signup-wizard.tsx"), "utf8");
-  assert.match(wizard, /BusinessTypePicker/);
-  assert.match(wizard, /sole_trader/);
-  assert.match(wizard, /businessType: state\.businessType \|\| null/);
+  // and could never finish onboarding - or run a paid event. The question moved
+  // from the signup form to the payout step, so a free-event host never sees
+  // it - which only holds if the connect route REFUSES to create an account
+  // without an answer rather than falling back to "company".
+  const route = readFileSync(path.join(root, "src/app/api/merchant/stripe/connect/route.ts"), "utf8");
+  const create = route.slice(route.indexOf("if (!accountId) {"), route.indexOf("await setMerchantConnectAccountId("));
+  assert.match(create, /let businessType = merchant\.business_type;/);
+  assert.match(create, /if \(!isBusinessType\(picked\)\) \{[\s\S]*?status: 400/);
+  assert.match(create, /businessType = await setMerchantBusinessType\(merchant\.id, picked\);/);
+  assert.ok(
+    create.indexOf("setMerchantBusinessType(") < create.indexOf("createConnectedAccount("),
+    "the answer must be saved before the account is created from it",
+  );
+  assert.match(create, /createConnectedAccount\(\{[\s\S]*?businessType,/);
+
+  // The payout step asks exactly when the route will need it.
+  const payouts = readFileSync(path.join(root, "src/app/merchant/onboarding/payouts/page.tsx"), "utf8");
+  assert.match(
+    payouts,
+    /const askBusinessType = !merchant\.business_type && !isRealConnectAccountId\(accountId\);/,
+  );
+  assert.equal((payouts.match(/askBusinessType=\{askBusinessType\}/g) ?? []).length, 2);
+  const button = readFileSync(path.join(root, "src/components/merchant-onboarding-wizard.tsx"), "utf8");
+  assert.match(button, /\.\.\.\(askBusinessType \? \{ businessType \} : \{\}\)/);
+  assert.match(button, /BUSINESS_TYPES\.map/);
+
+  // One list for both sides, matching the database check constraint.
+  const types = readFileSync(path.join(root, "src/lib/business-type.ts"), "utf8");
+  for (const value of ["sole_trader", "company", "partnership", "trust"]) {
+    assert.match(types, new RegExp(`value: "${value}"`));
+  }
 
   const connect = readFileSync(path.join(root, "src/lib/stripe-connect.ts"), "utf8");
   assert.match(connect, /businessType === "sole_trader" \? "individual" : "company"/);

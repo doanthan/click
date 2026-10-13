@@ -103,7 +103,8 @@ test("the age line: the room's decade, only to a viewer in it, only from the flo
   assert.match(radarBody, /crowdDecade: preview\.crowdDecade,\s*viewerDecade: preview\.viewerDecade,/);
   // Counted over the visible roster, from the birth date.
   const body = fnBody(repo, "export async function getEventAttendeePreview");
-  assert.match(body, /coalesce\(extract\(year from age\(profile\.birth_date\)\)::int, profile\.age\) as age/);
+  // (A hidden age, bug board #339, sits out of the decade: case when ... end.)
+  assert.match(body, /then coalesce\(extract\(year from age\(profile\.birth_date\)\)::int, profile\.age\)\s*end as age/);
   assert.match(body, /crowdDecade: majorityDecade\(rows\.map\(\(row\) => row\.age\)\)/);
 });
 
@@ -114,9 +115,13 @@ test("the locked Who's going signs off with the DS line once people are going", 
 });
 
 test("almost full reads the same on the card, the quick-view and the page, with a coral bar", () => {
-  // The card's rung (event-card.tsx: <= 8 left) now exists on both other surfaces.
-  assert.match(page, /: seatsLeft <= 8\s*\? "Almost full"/);
-  assert.match(quickView, /: seatsLeft <= 8\s*\? "Almost full"/);
+  // One rule for every surface (src/lib/seat-scarcity.ts, bug board #340).
+  assert.match(page, /const scarcity = seatScarcity\(seatsLeft, event\.capacity\);/);
+  assert.match(page, /: scarcity === "almostfull"\s*\? "Almost full"/);
+  assert.match(quickView, /const scarcity = seatScarcity\(seatsLeft, data\.capacity\);/);
+  assert.match(quickView, /: scarcity === "almostfull"\s*\? "Almost full"/);
+  assert.match(read("src/components/event-card.tsx"), /seatScarcity\(seatsLeft, event\.capacity\)/);
+  assert.match(read("src/components/event-tile-card.tsx"), /const scarcity = seatScarcity\(seatsLeft, event\.capacity\);/);
   // DS CapacityMeter: Coral above 85% full, otherwise Purple. It had gone Ink.
   assert.match(page, /capacityPct >= 85 \? "bg-\[color:var\(--coral\)\]" : "bg-\[color:var\(--purple\)\]"/);
   assert.doesNotMatch(page, /capacityPct >= 85 \? "bg-\[color:var\(--ink\)\]"/);
@@ -223,4 +228,16 @@ test("the booking-cancel confirm names the +1s it cancels", () => {
   assert.equal(line(2, ["Sam", "Priya"]), `This also cancels the seats for Sam and Priya. ${tail}`);
   assert.equal(line(3, ["Sam", "Priya"]), `This also cancels the seats for Sam, Priya and 1 unnamed +1. ${tail}`);
   assert.equal(line(3, ["Sam"]), `This also cancels the seats for Sam and 2 unnamed +1s. ${tail}`);
+});
+
+test("an empty or roomy event is never 'Almost full' (#340)", async () => {
+  const { seatScarcity } = await import("../src/lib/seat-scarcity.ts");
+  assert.equal(seatScarcity(5, 5), null, "0 of 5 going - the reported case");
+  assert.equal(seatScarcity(3, 3), null, "nobody booked is not scarcity, even at 3 seats");
+  assert.equal(seatScarcity(8, 20), null, "40% left");
+  assert.equal(seatScarcity(15, 100), null, "exactly 15% left is not under it");
+  assert.equal(seatScarcity(14, 100), "almostfull", "under 15% left, the DS rule");
+  assert.equal(seatScarcity(3, 4), "spots");
+  assert.equal(seatScarcity(1, 10), "spots");
+  assert.equal(seatScarcity(0, 10), null, "full is Waitlist, not a rung");
 });

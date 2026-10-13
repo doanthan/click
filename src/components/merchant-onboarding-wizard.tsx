@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { BUSINESS_TYPES, type BusinessType } from "@/lib/business-type";
 import { WizardStepper } from "./merchant-ds";
 
 // Post-approval merchant onboarding - a short walkthrough shown once after an
@@ -90,6 +91,7 @@ export function OnboardingNav({
 export function ConnectPayoutsButton({
   label = "Connect with Stripe →",
   returnTo,
+  askBusinessType = false,
 }: {
   label?: string;
   /**
@@ -100,13 +102,28 @@ export function ConnectPayoutsButton({
    * path in the connect route, never trusted as given.
    */
   returnTo?: string;
+  /**
+   * True while the host has not said how the business is set up. Stripe needs
+   * it to pick the account's entity type, and the signup form no longer asks -
+   * so the question sits here, in front of the one action that uses it. The
+   * connect route refuses to create an account without it.
+   */
+  askBusinessType?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [businessType, setBusinessType] = useState<BusinessType | "">("");
+  const [typeError, setTypeError] = useState("");
+  const typeFieldId = useId();
 
   async function start() {
     // Guard in the handler, not with `disabled` - see the button below.
     if (busy) return;
+    if (askBusinessType && !businessType) {
+      setTypeError("Pick how the business is set up first.");
+      document.getElementById(typeFieldId)?.querySelector("input")?.focus();
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -119,6 +136,7 @@ export function ConnectPayoutsButton({
         // a first-run walkthrough ending on "Create your first event".
         body: JSON.stringify({
           returnTo: returnTo || window.location.pathname + window.location.search,
+          ...(askBusinessType ? { businessType } : {}),
         }),
       });
       if (response.status === 401) {
@@ -143,6 +161,55 @@ export function ConnectPayoutsButton({
 
   return (
     <div className="grid gap-2">
+      {askBusinessType ? (
+        // A group of radios needs a fieldset/legend to be named, so this is not
+        // a FormField. Drawn as the same chips the signup form used for it.
+        <fieldset id={typeFieldId} className="mb-3 grid gap-3">
+          <legend className="mb-1 text-[13.5px] font-semibold text-[color:var(--ink)]">
+            How is the business set up?
+          </legend>
+          {typeError ? (
+            <span role="alert" className="text-[12.5px] font-medium text-[color:var(--danger)]">
+              {typeError}
+            </span>
+          ) : (
+            <span className="text-[12.5px] leading-[1.5] text-[color:var(--slate)]">
+              Stripe asks for different details depending on this. Just you, no
+              company? That&apos;s a sole trader.
+            </span>
+          )}
+          <div className="flex flex-wrap gap-2">
+            {BUSINESS_TYPES.map((option) => {
+              const selected = businessType === option.value;
+              return (
+                <label
+                  key={option.value}
+                  className={`cursor-pointer rounded-xl border px-4 py-2.5 text-sm font-semibold transition-colors has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-[color:var(--purple)] ${
+                    selected
+                      ? "border-[color:var(--purple)] bg-[color:var(--purple)] text-[color:var(--paper)]"
+                      : typeError
+                        ? "border-[color:var(--danger)] text-[color:var(--ink)] hover:border-[color:var(--slate)]"
+                        : "border-[color:var(--mist)] text-[color:var(--ink)] hover:border-[color:var(--slate)]"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name={`${typeFieldId}-business-type`}
+                    value={option.value}
+                    checked={selected}
+                    onChange={() => {
+                      setBusinessType(option.value);
+                      setTypeError("");
+                    }}
+                    className="sr-only"
+                  />
+                  {option.label}
+                </label>
+              );
+            })}
+          </div>
+        </fieldset>
+      ) : null}
       {/* aria-disabled, not `disabled`: a real `disabled` attribute drops the
           button out of the tab order mid-press, which browsers answer by
           blurring it and sending keyboard users back to the top of the

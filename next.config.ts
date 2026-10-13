@@ -65,11 +65,17 @@ const nextConfig: NextConfig = {
       { source: "/events", destination: "/discover", permanent: false },
       { source: "/signup", destination: "/register", permanent: false },
       { source: "/saved-events", destination: "/bookmarks", permanent: false },
+      // Host signup is one page; its old step URLs (business, contact,
+      // documents) land on it.
+      { source: "/merchant/signup/:step", destination: "/merchant/signup", permanent: false },
       // The Click quiz is one page. The two-quiz hub, the Life quiz's old step
       // URLs and the Personality quiz all land on it.
       { source: "/quiz", destination: "/quiz/life", permanent: false },
       { source: "/quiz/life/:step", destination: "/quiz/life", permanent: false },
       { source: "/quiz/personality", destination: "/quiz/life", permanent: false },
+      // A waitlist share link, kept short enough to read on a phone. The code
+      // is checked where it is used (joinLaunchWaitlist), not here.
+      { source: "/i/:code", destination: "/waitlist?ref=:code", permanent: false },
     ];
   },
   // Server Actions validate the request Origin against Host/X-Forwarded-Host to

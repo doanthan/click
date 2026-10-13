@@ -8,8 +8,9 @@ import { VerifiedTick } from "./verified-tick";
  * What a viewer may see of someone else's profile. The owner's dating toggle is not
  * in it: `intents` arrives already gated on mutual dating opt-in (CLICK_LANGUAGE
  * v14), so the modal's payload can't carry a dating signal its viewer may not see.
+ * Nor is "Show my age": `age` arrives already gated (visibleAgeFor).
  */
-export type ProfileDetailsData = Omit<PublicProfile, "datingVisible">;
+export type ProfileDetailsData = Omit<PublicProfile, "datingCompatible" | "showAge">;
 
 /**
  * A member's profile, read-only - the one body behind /profile/[userId] and the
@@ -143,17 +144,22 @@ export function ProfileDetails({
 }
 
 /**
- * The intents a viewer may see: "Open to dating" is mutual opt-in, so it shows only
- * when the owner has dating mode on AND the viewer is open to dating too. A
- * friends-only or signed-out viewer never sees a dating label.
+ * The intents a viewer may see: "Open to dating" shows only when the viewer and
+ * the owner are romantically compatible (is_romantically_compatible, the one
+ * dating rule - HOTFIX 2026-10-12 H1, computed per viewer by
+ * getPublicProfileById). A signed-out viewer is never compatible.
  */
-export function visibleIntentsFor(
-  profile: Pick<PublicProfile, "intents" | "datingVisible">,
-  viewerOpenToDating: boolean,
-): string[] {
-  return profile.intents.filter(
-    (intent) => intent !== "dating" || (profile.datingVisible && viewerOpenToDating),
-  );
+export function visibleIntentsFor(profile: Pick<PublicProfile, "intents" | "datingCompatible">): string[] {
+  return profile.intents.filter((intent) => intent !== "dating" || profile.datingCompatible);
+}
+
+/**
+ * The age a viewer may see (bug board #339). "Show my age" off hides it, except
+ * from a viewer the owner is romantically compatible with - the same one dating
+ * rule as the label above.
+ */
+export function visibleAgeFor(profile: Pick<PublicProfile, "age" | "showAge" | "datingCompatible">): number | null {
+  return profile.showAge || profile.datingCompatible ? profile.age : null;
 }
 
 function Section({ label, children }: { label: string; children: ReactNode }) {

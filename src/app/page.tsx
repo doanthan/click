@@ -208,7 +208,7 @@ async function ComingUp() {
   const events = await getEventsForExplore();
   const upcoming = [...events]
     .sort((left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime())
-    .slice(0, 3);
+    .slice(0, COMING_UP_COUNT);
 
   return upcoming.length > 0 ? (
     <section className="ck-page pb-16 pt-12 lg:pb-24 lg:pt-16">
@@ -226,17 +226,16 @@ async function ComingUp() {
         </div>
       </Reveal>
 
-      {/* Two columns from sm to lg would strand the third card on a row of
-          its own, so it sits out that range; the rail and lg show all three. */}
       <div className={COMING_UP_RAIL}>
         {upcoming.map((event, index) => (
           <Reveal
             key={event.id}
-            delay={index * 70}
+            // Per row, not per card, so the second row doesn't wait behind the first.
+            delay={(index % 3) * 70}
             // reveal--rail: the peek is the affordance that says the row scrolls,
             // and at 26px into the viewport the observer never fires, so the
             // next card sat at opacity 0 until you had already swiped.
-            className={`reveal--rail ${COMING_UP_SLOT}`}
+            className={`reveal--rail ${COMING_UP_SLOT} ${wholeRowsOnly(index, upcoming.length)}`}
           >
             <EventCard event={event} />
           </Reveal>
@@ -258,9 +257,24 @@ async function ComingUp() {
   );
 }
 
+/* Six fills whole rows at both grid widths: three rows of two from sm, two
+   rows of three from lg. */
+const COMING_UP_COUNT = 6;
+
 const COMING_UP_RAIL =
-  "ckRail -mx-5 flex snap-x snap-mandatory gap-4 overflow-x-auto px-5 pb-4 sm:mx-0 sm:grid sm:grid-cols-2 sm:gap-5 sm:overflow-visible sm:px-0 sm:pb-0 lg:grid-cols-3 sm:[&>*:nth-child(3)]:hidden lg:[&>*:nth-child(3)]:block";
+  "ckRail -mx-5 flex snap-x snap-mandatory gap-4 overflow-x-auto px-5 pb-4 sm:mx-0 sm:grid sm:grid-cols-2 sm:gap-5 sm:overflow-visible sm:px-0 sm:pb-0 lg:grid-cols-3";
 const COMING_UP_SLOT = "w-[84vw] max-w-[340px] shrink-0 snap-center sm:w-auto sm:max-w-none sm:min-w-0";
+
+/* A card alone on a grid row reads as a mistake, so when fewer than six plans
+   are on, each grid width drops its remainder: odd cards out from sm (two
+   columns), past a multiple of three from lg. Under a full row (one plan, or
+   two at lg) everything shows. The phone rail scrolls, so it keeps every card. */
+function wholeRowsOnly(index: number, count: number) {
+  const atSm = count - (count % 2) || count;
+  const atLg = count - (count % 3) || count;
+  if (index < atSm) return index < atLg ? "" : "lg:hidden";
+  return index < atLg ? "sm:hidden lg:block" : "sm:hidden";
+}
 
 /* Holds the strip's place while the query runs, in the same rail and card
    shape, so the sections under it don't jump when it lands. */
@@ -269,7 +283,7 @@ function ComingUpPlaceholder() {
     <section aria-hidden className="ck-page pb-16 pt-12 lg:pb-24 lg:pt-16">
       <Skeleton className="mb-7 h-9 w-48 rounded-lg" />
       <div className={COMING_UP_RAIL}>
-        {Array.from({ length: 3 }).map((_, index) => (
+        {Array.from({ length: COMING_UP_COUNT }).map((_, index) => (
           <div key={index} className={COMING_UP_SLOT}>
             <SkeletonEventCard />
           </div>

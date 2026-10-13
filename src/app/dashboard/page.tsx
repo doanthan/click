@@ -129,9 +129,15 @@ export default async function DashboardPage() {
 
   // pick[floor(hoursSinceMidnight / 3) % n] on Sydney's clock. A pick the viewer
   // has already clicked keeps its turn and shows as "clicked" - it is the same
-  // person, in the same state, as on the Click page, not a slot to refill.
-  const pickIndex = dashboardPickIndex(hourOfDay, picks.length);
-  const pick = pickIndex === null ? null : picks[pickIndex];
+  // person, in the same state, as on the Click page, not a slot to refill. The
+  // one exception (HOTFIX 2026-10-12 H3.1, 09 §3): someone clicked YESTERDAY is
+  // listed on the Click page but not featured today, so the morning after
+  // clicking B nobody is shown "here's B!" again. A down-rank, never an empty
+  // card: if everyone today is held, they all keep their turns.
+  const unheld = picks.filter((candidate) => !candidate.featureHold);
+  const featurable = unheld.length > 0 ? unheld : picks;
+  const pickIndex = dashboardPickIndex(hourOfDay, featurable.length);
+  const pick = pickIndex === null ? null : featurable[pickIndex];
   // Clicking needs your own photo (sendClickInner's R_PHOTO gate), so a member
   // without one gets the reason up front instead of a pick whose button only
   // refuses after the tap (bug board #329). Same test as /people and the send.

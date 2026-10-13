@@ -118,6 +118,43 @@ test("an event with no end time still clashes for its 2-hour block (#51)", () =>
   assert.match(modal, /data\.viewerClashEventTitle && !isRegistered/);
 });
 
+test("a confirmed seat at an overlapping event refuses every self-started booking (#323)", () => {
+  // The helper: confirmed seats only (a claimed +1 included via seatRowsSql),
+  // the same 2-hour rule for a missing end time, cancelled events never count.
+  const helper = body("async function confirmedClashTitle(");
+  assert.match(helper, /join \$\{seatRowsSql\} attendee/);
+  assert.match(helper, /and attendee\.status = 'confirmed'/);
+  assert.match(helper, /other_event\.status <> 'cancelled'/);
+  assert.match(helper, /this_event\.starts_at \+ interval '2 hours'/);
+  assert.match(repo, /error\.name = "ConflictError";\s*return error;/);
+
+  const refuses = /const clash = await confirmedClashTitle\((client|pool), profile(\.id|Id), (event\.id|who\.rows\[0\]\.event_id)\);\s*if \(clash\) throw bookingClashError\(clash\);/;
+  for (const path of [
+    "export async function registerForEvent(",
+    "export async function acceptWaitlistOffer(",
+    "export async function createPaymentHold(",
+    "export async function claimGuestSpotForProfile(",
+  ]) {
+    assert.match(body(path), refuses, `${path} must refuse a clashing confirmed seat`);
+  }
+  // A free RSVP checks only a NEW confirmed seat: a replay or a waitlist join passes.
+  assert.match(body("export async function registerForEvent("), /if \(rsvpChanged && status === "confirmed"\) \{\s*const clash/);
+  // A paid hold checks after the already-paid self-heal, never before it.
+  const hold = body("export async function createPaymentHold(");
+  assert.ok(hold.indexOf("You've already paid for this event") < hold.indexOf("confirmedClashTitle("));
+
+  // The claim route answers the clash with a 409, like RSVP and checkout.
+  assert.match(read("src/app/api/claim/[token]/route.ts"), /name === "ConflictError"\s*\?\s*409/);
+
+  // The page and the quick view stop offering "book both" when it's refused.
+  const detail = body("export async function getEventBySlug(");
+  assert.match(detail, /viewerClashBlocks = clashResult\.rows\[0\]\?\.blocks === true;/);
+  assert.match(detail, /order by \(attendee\.status = 'confirmed'\) desc/);
+  for (const file of ["src/app/events/[slug]/page.tsx", "src/components/event-detail-modal.tsx"]) {
+    assert.match(read(file), /ClashBlocks\s*\?\s*["`]You're already going to /, `${file} must say it's refused`);
+  }
+});
+
 test("the Discover quick-view books a paid seat with +1s (#216/#232)", () => {
   const modal = read("src/components/event-detail-modal.tsx");
   assert.match(modal, /<EventPaymentButton[\s\S]{0,300}allowGuests/);

@@ -12,21 +12,13 @@ import {
 export const metadata = {
   title: "Become a host",
   description:
-    "Set up your Click merchant profile: business details, contact & address, and compliance documents.",
+    "Start hosting on Click in a minute: your name, a phone number and your venue.",
 };
 
-// Shared chrome + state provider for the whole /merchant/signup flow. The
-// provider is mounted here (not in each step page) so that wizard state
-// survives client-side navigation between sibling step pages - App Router
-// keeps layouts mounted across child page transitions, so the useReducer
-// inside the provider doesn't unmount/reset when you go Business → Contact
-// → Documents.
-//
-// The layout also handles the "already a merchant" redirect once, instead of
-// repeating it in every step page. Unauthed visitors fall through to the
-// `page.tsx` auth gate; per-step pages do their own session redirect to
-// /merchant/signup if someone deep-links to /merchant/signup/business without
-// being signed in.
+// Shared chrome + state provider for /merchant/signup. The signup is one page
+// now (it was a three-step wizard, which is why the provider lives up here),
+// and the layout still owns the data it needs and the "already a merchant"
+// redirect. Unauthed visitors fall through to the `page.tsx` auth gate.
 export default async function MerchantSignupLayout({
   children,
 }: {
@@ -67,7 +59,12 @@ export default async function MerchantSignupLayout({
           Tell us about <span className="text-[color:var(--purple)]">you</span>.
         </h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-[color:var(--slate)]">
-          Your application goes to admin review and unlocks the portal once approved.
+          {/* A rejected host resubmitting goes back to review; everyone else in
+              the pilot is a host the moment they send this
+              (registerMerchantWizardSubmit). */}
+          {isRejectedResubmit
+            ? "Your application goes back to admin review and unlocks the portal once approved."
+            : "A few quick answers and you're in - build your first event straight away. Our team gives it a quick look before it goes live."}
         </p>
 
         <div className="mt-4 flex max-w-2xl items-start gap-3 rounded-xl border border-[color:var(--line)] bg-[color:var(--lavender-100)] px-4 py-3 text-sm leading-6 text-[color:var(--ink)]">

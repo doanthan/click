@@ -290,9 +290,9 @@ export async function POST(request: Request, context: RouteContext) {
         // receipt + statement descriptor) while the platform remains merchant
         // of record for dispute/refund routing. application_fee_amount is the
         // platform's cut (0 by default; flip PLATFORM_FEE_BPS env to enable).
-        // Funds then flow through to the merchant's connected balance and
-        // Stripe pays them out on the schedule set when the account was
-        // created in src/lib/stripe-connect.ts.
+        // Funds then flow through to the merchant's connected balance and wait
+        // there - host payouts are manual (holdPayouts) - until the
+        // release-payouts cron pays them out after the event.
         // The platform's cut = its % take on the ticket PLUS the whole booking
         // fee (the fee is the platform's, not the merchant's). The merchant
         // receives ticket − platform%; the booking fee never reaches their

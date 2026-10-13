@@ -31,10 +31,10 @@ const SURFACES = {
   "your clicks": "src/app/people/page.tsx",
 };
 
-test("the intent line gates dating on the viewer and prefers a non-dating intent", () => {
+test("the intent line gates dating on compatibility and prefers a non-dating intent", () => {
   assert.equal(soloIntentLabel(["friendship"], false), "Here for friends");
   assert.equal(soloIntentLabel(["exploring"], false), "Here for the activities");
-  assert.equal(soloIntentLabel(["dating"], false), null, "a friends-only viewer never sees a dating label");
+  assert.equal(soloIntentLabel(["dating"], false), null, "a pair that doesn't fit never sees a dating label");
   assert.equal(soloIntentLabel(["dating"], true), "Open to dating");
   assert.equal(soloIntentLabel(["dating", "networking"], true), "Here for networking");
   assert.equal(soloIntentLabel([], true), null);
@@ -71,12 +71,14 @@ test("#297: both post-event rosters carry the overlap, interest tags only, and n
   assert.match(fragment, /where theirs_tag\.profile_id = other\.id and tag\.tag_type = 'interest'/);
   assert.match(fragment, /and past_event\.id <> e\.id/, "the night is already the card's heading");
   assert.equal((repo.match(/\$\{POST_EVENT_ROSTER_OVERLAP\}/g) ?? []).length, 2, "dashboard + event page queries");
-  // Raw intents never leave the server: the mapper sends one gated label.
+  // Raw intents never leave the server: the mapper sends one label, gated on
+  // the one dating rule (HOTFIX 2026-10-12 H1).
   assert.equal(
-    (repo.match(/intentLabel: soloIntentLabel\(row\.other_intents \?\? \[\], Boolean\(row\.viewer_dating_visible\)\)/g) ?? [])
+    (repo.match(/intentLabel: soloIntentLabel\(row\.other_intents \?\? \[\], row\.dating_compatible === true\)/g) ?? [])
       .length,
     2,
   );
+  assert.match(fragment, /is_romantically_compatible\(\$1::uuid, other\.id\) as dating_compatible/);
   const type = slice("export type PostEventCoAttendee = {", "\n};");
   assert.doesNotMatch(code(type), /\bintents\b/);
 });

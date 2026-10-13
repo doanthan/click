@@ -43,8 +43,13 @@ export async function authorizeAccountSwitch(targetId: string, returning: boolea
        and suspended_at is null and not coalesce(is_banned, false) for share`, [actor.email],
     );
     if (!owner.rows[0]) { await client.query("rollback"); return refuse("the admin's own profile is missing, suspended or banned"); }
-    const target = await client.query<SwitchAccount & { image: string | null }>(
-      `select id::text, email::text, display_name as name, role::text, photo_url as image
+    // is_test decides whether this viewing session may act (HOTFIX 2026-10-12
+    // H4.1): a real member opens view only. Read through to_jsonb so this works
+    // before H2's migration adds the column, falling back to the @click.local
+    // rule until then.
+    const target = await client.query<SwitchAccount & { image: string | null; is_test: boolean }>(
+      `select id::text, email::text, display_name as name, role::text, photo_url as image,
+              coalesce((to_jsonb(profiles) ->> 'is_test')::boolean, email::text ilike '%@click.local') as is_test
        from profiles where ${returning ? "email = $1::citext" : "id = $1::uuid"} for share`,
       [returning ? actor.email : targetId],
     );
@@ -58,12 +63,13 @@ export async function authorizeAccountSwitch(targetId: string, returning: boolea
       `insert into audit_logs (actor_profile_id, action, entity_table, entity_id, metadata)
        values ($1::uuid, $2, 'profiles', $3::uuid, $4::jsonb)`,
       [owner.rows[0].id, backToSelf ? "account_switch_return" : "account_switch_start", user.id,
-        JSON.stringify({ actorEmail: actor.email, fromEmail: session?.user?.email, targetEmail: user.email, expiresAt })],
+        JSON.stringify({ actorEmail: actor.email, fromEmail: session?.user?.email, targetEmail: user.email, expiresAt,
+          viewOnly: backToSelf ? undefined : !user.is_test })],
     );
     await client.query("commit");
     return {
       id: user.id, email: user.email, name: user.name, image: user.image,
-      ...(backToSelf ? {} : { impersonation: { actor, expiresAt } }),
+      ...(backToSelf ? {} : { impersonation: { actor, expiresAt, readOnly: !user.is_test } }),
     };
   } catch (error) {
     await client.query("rollback");

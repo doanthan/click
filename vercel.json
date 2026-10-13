@@ -26,6 +26,10 @@
       "schedule": "*/15 * * * *"
     },
     {
+      "path": "/api/cron/release-payouts",
+      "schedule": "0 23 * * *"
+    },
+    {
       "path": "/api/cron/merchant-monthly-reports",
       "schedule": "0 8 1 * *"
     },

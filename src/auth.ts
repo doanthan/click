@@ -127,6 +127,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (token.impersonation && !accountSwitchActor({ impersonation: token.impersonation }, isAdminEmail)) {
         return null;
       }
+      // HOTFIX 2026-10-12 H4.1: a viewing session minted before view-only
+      // existed carries no readOnly flag, and on a real member it was act-as.
+      // It ends here, at the first request after deploy.
+      if (
+        token.impersonation &&
+        token.impersonation.readOnly === undefined &&
+        !token.email?.trim().toLowerCase().endsWith("@click.local")
+      ) {
+        return null;
+      }
       return token;
     },
     session({ session, token }) {

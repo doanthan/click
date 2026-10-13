@@ -378,16 +378,16 @@ test("the host-facing fee rate is read from config, never typed into copy", () =
   );
 });
 
-test("no host surface names a payout schedule the code does not set", () => {
-  // Nothing in the repo sets payout_schedule on the connected account, so the
-  // cadence is whatever Stripe defaults to for the host's country.
-  const setters = ["src/lib/stripe-connect.ts", "src/lib/stripe-sync.ts"];
-  for (const file of setters) {
-    assert.ok(
-      !/payout_schedule|schedule:\s*\{\s*interval/.test(read(file)),
-      `${file} appears to set a payout schedule - if it now does, the copy may claim one`,
-    );
-  }
+test("host payout copy names the cadence the code sets", () => {
+  // Host payouts are manual (holdPayouts) and api/cron/release-payouts sends
+  // each event's earnings a couple of days after it ends. The copy must say
+  // that - not Stripe's default schedule, which no longer applies, and never
+  // that the host can change it (the cron sets it back every run).
+  assert.match(
+    read("src/lib/stripe-connect.ts"),
+    /schedule:\s*\{\s*interval:\s*"manual"/,
+    "host payouts must be manual - the copy below promises after-the-event payouts",
+  );
   for (const file of [
     "src/components/merchant-dashboard-tab.tsx",
     "src/app/merchant/onboarding/payouts/page.tsx",
@@ -395,8 +395,8 @@ test("no host surface names a payout schedule the code does not set", () => {
   ]) {
     const source = read(file);
     assert.ok(
-      !/pay out monthly|payouts after each event|after each event wraps/i.test(source),
-      `${file} promises a payout cadence nothing sets`,
+      !/own schedule|pay out automatically|paid out automatically|pay out monthly|change it in your Stripe/i.test(source),
+      `${file} still promises a payout cadence the code no longer has`,
     );
   }
 });
@@ -537,4 +537,87 @@ test("the wordmark goes to the dashboard of the view you are in", () => {
   const logo = read("src/components/header-nav.tsx");
   assert.match(logo, /pathname\.startsWith\("\/merchant"\) && portals\.includes\("merchant"\)/);
   assert.match(logo, /: "\/dashboard";/);
+});
+
+/* ---------------- instant access: a host can build straight away ---------------- */
+
+test("a new host inside the pilot is approved on the spot, untrusted, with one-shot trust", () => {
+  // The friction cut: no application queue before the portal opens. Moderation
+  // moves to the host's first event, which is why they start untrusted.
+  const signup = fnBody(read("src/lib/event-repository.ts"), "export async function registerMerchantWizardSubmit");
+  assert.ok(
+    signup.indexOf("const withinPilot = isWithinPilotArea(") < signup.indexOf("insert into merchant_profiles ("),
+    "the pilot decision has to be made before the row is written",
+  );
+  const insert = signup.slice(signup.indexOf("insert into merchant_profiles ("), signup.indexOf("on conflict (profile_id)"));
+  assert.match(insert, /case when \$17::boolean then 'approved' else 'pending' end, \$17::boolean/);
+  // Insert-only. The conflict branch must never approve or trust anyone: a
+  // rejected host resubmitting goes back to review, wherever the venue is.
+  const conflict = signup.slice(signup.indexOf("on conflict (profile_id)"), signup.indexOf("returning id::text"));
+  assert.doesNotMatch(conflict, /trust_after_first_event|auto_approve_events/);
+  assert.match(conflict, /when merchant_profiles\.verification_status = 'rejected' then 'pending'/);
+  // "You're in" for instant access; the application email only for a resubmission.
+  assert.match(signup, /const instantAccess = upsert\.rows\[0\]\.is_new && withinPilot;/);
+  assert.match(signup, /\} else if \(instantAccess\) \{[\s\S]*?template: "merchant-welcome-merchant"/);
+  // Categories are optional now, on the server as well as the form.
+  assert.doesNotMatch(signup, /Pick at least one event category/);
+});
+
+test("approving a first event trusts only a host who joined with instant access (#259 holds)", () => {
+  const repo = read("src/lib/event-repository.ts");
+  const approve = fnBody(repo, "export async function approveEventForAdmin");
+  assert.match(approve, /void trustHostAfterFirstEventReview\(pool, event\.slug\);/);
+  const helper = repo.slice(
+    repo.indexOf("async function trustHostAfterFirstEventReview"),
+    repo.indexOf("export async function setMerchantAutoApproveForAdmin"),
+  );
+  // Only the one-shot flag can trigger it, and it is spent in the same write.
+  assert.match(helper, /and merchant_profiles\.trust_after_first_event\s/);
+  assert.match(helper, /set auto_approve_events = true,\s*trust_after_first_event = false,/);
+  // Every explicit admin decision spends the flag without granting anything,
+  // so "Review every event" survives any number of event approvals.
+  const toggle = fnBody(repo, "export async function setMerchantAutoApproveForAdmin");
+  assert.match(toggle, /set auto_approve_events = \$2,\s*trust_after_first_event = false,/);
+  const verdict = fnBody(repo, "export async function updateMerchantVerificationForAdmin");
+  assert.match(verdict, /trust_after_first_event = false,/);
+  assert.match(
+    read("database/073_merchant_instant_access.sql"),
+    /add column if not exists trust_after_first_event boolean not null default false/,
+  );
+});
+
+test("the host signup is one page and sends a new host straight into the portal", () => {
+  const wizard = read("src/components/merchant-signup-wizard.tsx");
+  assert.doesNotMatch(wizard, /STEP_PATHS/);
+  assert.match(
+    wizard,
+    /body\.merchant\?\.verification_status === "approved" \? "\/merchant\/onboarding" : "\/merchant-pending"/,
+  );
+  // Required: a name, contact email, phone and the venue address. Nothing in
+  // the folded section is, and business type is the payout step's question.
+  const validate = wizard.slice(wizard.indexOf("function validateApplication"), wizard.indexOf("function isOutsidePilot"));
+  assert.doesNotMatch(validate, /eventCategoryIds|businessType/);
+  assert.doesNotMatch(wizard, /BusinessTypePicker/);
+  // The page renders the form itself; the step pages are gone, and their URLs
+  // redirect in next.config.ts (pinned in perceived-speed.test.mjs).
+  assert.match(read("src/app/merchant/signup/page.tsx"), /return <MerchantSignupForm \/>;/);
+  for (const step of ["business", "contact", "documents"]) {
+    assert.equal(existsSync(path.join(root, "src/app/merchant/signup", step, "page.tsx")), false);
+  }
+  // The welcome step stops promising "straight away" to a host whose events
+  // still go to review.
+  const welcome = read("src/app/merchant/onboarding/welcome/page.tsx");
+  assert.match(welcome, /const eventsAreReviewed = status\.merchantProfile\?\.auto_approve_events !== true;/);
+});
+
+test("the welcome email is wired everywhere a template has to be", () => {
+  const email = read("src/lib/email.ts");
+  assert.match(email, /\| "merchant-welcome-merchant"/);
+  assert.match(email, /"merchant-welcome-merchant": \(v\) =>/);
+  assert.match(read("scripts/send-test-emails.mjs"), /"merchant-welcome-merchant":/);
+  const html = read("emails/merchant-welcome-merchant.html");
+  assert.match(html, /href="\{\{createEventUrl\}\}"/);
+  assert.match(html, /gives your first event a quick look/);
+  assert.doesNotMatch(html, /\bverified\b/i, "nobody verified anything - this host joined without a review");
+  assert.ok(!html.includes("—"), "the template contains an em-dash");
 });

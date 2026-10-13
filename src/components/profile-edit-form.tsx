@@ -33,7 +33,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AuthNote } from "@/components/auth-ui";
 import { AvatarUploader } from "@/components/avatar-uploader";
 import { ProfileGalleryUploader } from "@/components/profile-gallery-uploader";
-import { SettingRow, Switch } from "@/components/account-setting-toggle";
+import { SettingRow } from "@/components/account-setting-toggle";
 import { VerifiedTick } from "@/components/verified-tick";
 import { Badge, FormField, Icon } from "@/components/ds";
 import { SubmitButton } from "@/components/ds-client";
@@ -79,7 +79,6 @@ type DraftValues = {
   interests: string[];
   music: string[];
   prompts: PromptDraft[];
-  datingVisible: boolean;
   flexibleDiscovery: boolean;
 };
 
@@ -104,7 +103,6 @@ function fingerprint(v: DraftValues): string {
     [...v.interests].sort(),
     [...v.music].sort(),
     v.prompts,
-    v.datingVisible,
     v.flexibleDiscovery,
   ]);
 }
@@ -151,7 +149,6 @@ export function ProfileEditForm({
       interests: [...profile.interestSlugs],
       music: [...profile.musicSlugs],
       prompts: profile.prompts.map((p) => ({ id: p.id, answer: p.answer })),
-      datingVisible: profile.datingVisible,
       flexibleDiscovery: profile.flexibleDiscovery,
     };
   }, [profile]);
@@ -162,11 +159,8 @@ export function ProfileEditForm({
   const [intents, setIntents] = useState<Set<string>>(new Set(base.intents));
   const [interests, setInterests] = useState<Set<string>>(new Set(base.interests));
   const [music, setMusic] = useState<Set<string>>(new Set(base.music));
-  const [datingVisible, setDatingVisible] = useState(base.datingVisible);
   const [flexibleDiscovery, setFlexibleDiscovery] = useState(base.flexibleDiscovery);
   const [prompts, setPrompts] = useState<PromptDraft[]>(base.prompts);
-
-  const datingSelected = intents.has("dating");
 
   const [postcode, setPostcode] = useState(base.postcode);
   const [suburb, setSuburb] = useState(base.suburb);
@@ -294,10 +288,9 @@ export function ProfileEditForm({
       interests: [...interests],
       music: [...music],
       prompts,
-      datingVisible,
       flexibleDiscovery,
     }),
-    [displayName, age, postcode, suburb, bio, intents, interests, music, prompts, datingVisible, flexibleDiscovery],
+    [displayName, age, postcode, suburb, bio, intents, interests, music, prompts, flexibleDiscovery],
   );
 
   const dirty = fingerprint(values) !== fingerprint({ ...base, suburb: baselineSuburb });
@@ -324,7 +317,6 @@ export function ProfileEditForm({
       setInterests(new Set(saved.interests));
       setMusic(new Set(saved.music));
       setPrompts(saved.prompts);
-      setDatingVisible(saved.datingVisible);
       setFlexibleDiscovery(saved.flexibleDiscovery);
     },
   });
@@ -639,31 +631,9 @@ export function ProfileEditForm({
             <input key={value} type="hidden" name="intent" value={value} />
           ))}
 
-          {/* Dating mode sits inline with the intent that reveals it. */}
-          {datingSelected ? (
-            <div className="mt-3.5 rounded-[16px] border border-[color:var(--lavender-200)] bg-[color:var(--lavender-100)] px-4 py-3.5">
-              <button
-                type="button"
-                role="switch"
-                aria-checked={datingVisible}
-                onClick={() => setDatingVisible((v) => !v)}
-                className="flex w-full items-center justify-between gap-4 text-left"
-              >
-                <span className="min-w-0">
-                  <span className="block text-[14.5px] font-semibold text-[color:var(--ink)]">
-                    Dating mode {datingVisible ? "· On" : "· Paused"}
-                  </span>
-                  <span className="mt-0.5 block text-[12.5px] leading-[1.5] text-[color:var(--slate)]">
-                    Only people also open to dating ever see this.
-                  </span>
-                </span>
-                <Switch on={datingVisible} />
-              </button>
-            </div>
-          ) : null}
-          {/* Always submit current state so it round-trips even while the dating
-              toggle is hidden (no dating intent selected). */}
-          <input type="hidden" name="dating_visible" value={datingVisible ? "true" : "false"} />
+          {/* No dating-mode switch until the dating build (HOTFIX 2026-10-12
+              H1): nobody can be dating-visible yet, and the form never posts
+              dating_visible. */}
         </Group>
       </Reveal>
 

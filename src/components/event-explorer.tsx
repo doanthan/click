@@ -726,13 +726,27 @@ export function EventExplorer({
               Now the controls wrap under the count, and the select may give up
               the few pixels its longest label needs but the chosen one doesn't. */}
           <div className={`mb-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 ${nothingToShow ? "hidden" : ""}`}>
-            <span
-              role="status"
-              aria-live="polite"
-              className="text-sm font-semibold whitespace-nowrap text-[color:var(--ink)]"
-            >
-              {totalCount} {totalCount === 1 ? "event" : "events"}
-            </span>
+            {/* The map link rides with the count, not the controls: beside
+                Filters it cost Sort its own label at 320px. */}
+            <div className="flex items-center gap-3">
+              <span
+                role="status"
+                aria-live="polite"
+                className="text-sm font-semibold whitespace-nowrap text-[color:var(--ink)]"
+              >
+                {totalCount} {totalCount === 1 ? "event" : "events"}
+              </span>
+              {/* Members only - /around-me sends anyone else to log in. */}
+              {signedIn ? (
+                <Link
+                  href="/around-me"
+                  className="font-display inline-flex min-h-11 items-center gap-1.5 text-[13.5px] font-semibold whitespace-nowrap text-[color:var(--purple)] hover:underline lg:min-h-9"
+                >
+                  <Icon name="pin" size={16} stroke={2} />
+                  Map view
+                </Link>
+              ) : null}
+            </div>
             <div className="ml-auto flex min-w-0 items-center gap-2">
               <button
                 type="button"

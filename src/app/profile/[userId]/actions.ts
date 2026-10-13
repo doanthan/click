@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
-import { visibleIntentsFor, type ProfileDetailsData } from "@/components/profile-details";
+import { visibleAgeFor, visibleIntentsFor, type ProfileDetailsData } from "@/components/profile-details";
 import {
   REPORT_REASONS,
   blockUser,
@@ -53,7 +53,7 @@ function requireTarget(formData: FormData) {
 export async function loadProfilePreviewAction(profileId: string): Promise<ProfileDetailsData | null> {
   const session = await auth();
   if (!session?.user || typeof profileId !== "string" || !UUID_RE.test(profileId)) return null;
-  const [profile, own] = await Promise.all([getPublicProfileById(profileId), getOwnProfile(session)]);
+  const [profile, own] = await Promise.all([getPublicProfileById(profileId, session), getOwnProfile(session)]);
   if (!profile) return null;
   // Field by field, not a spread: whatever PublicProfile grows next stays on the
   // server until someone decides it belongs in the browser.
@@ -64,8 +64,9 @@ export async function loadProfilePreviewAction(profileId: string): Promise<Profi
     suburb: profile.suburb,
     bio: profile.bio,
     photoUrl: profile.photoUrl,
-    age: profile.age,
-    intents: visibleIntentsFor(profile, own?.datingVisible === true),
+    // Gated here, on the server, so a hidden age never reaches the browser (#339).
+    age: own?.id === profile.id ? profile.age : visibleAgeFor(profile),
+    intents: visibleIntentsFor(profile),
     interests: profile.interests,
     attendedCount: profile.attendedCount,
     galleryPhotos: profile.galleryPhotos,

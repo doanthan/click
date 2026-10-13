@@ -623,7 +623,7 @@ function WelcomeToClick({ businessName }: { businessName: string }) {
     {
       n: "03",
       title: "Run the door.",
-      body: "Open Bookings on the day to check people in or export a CSV. Paid bookings show in Finances as they clear, and Stripe pays out on its own schedule.",
+      body: "Open Bookings on the day to check people in or export a CSV. Paid bookings show in Finances as they clear, and each event's earnings go to your bank a couple of days after it ends.",
     },
   ];
 
@@ -662,17 +662,19 @@ function WelcomeToClick({ businessName }: { businessName: string }) {
             to say hosting was "free during the Sydney pilot" and paid out
             "monthly". Neither was true: PLATFORM_FEE_BPS is 290 in production
             and calculateApplicationFee deducts it from every paid ticket, and
-            nothing in this codebase sets payout_schedule, so the cadence is
-            whatever Stripe defaults to. A host who repeated either of those to
-            their own customers was made to lie on Click's behalf.
+            payouts follow each event, not a month: they are manual on every
+            host account and api/cron/release-payouts sends each event's
+            earnings PAYOUT_RELEASE_DELAY_HOURS after it ends. A host who
+            repeated either of those to their own customers was made to lie on
+            Click's behalf.
             The rate is read, never typed - same source as the Schedule step. */}
         <InfoNote icon="info">
           Listing on Click is{" "}
           <b className="font-semibold text-[color:var(--purple-700)]">free</b>, and free
           events skip Stripe entirely. On a paid ticket Click keeps{" "}
           <b className="font-semibold text-[color:var(--purple-700)]">{feePercentLabel}</b>{" "}
-          and the rest routes to your Stripe account, which pays out to your bank on
-          Stripe&apos;s own schedule.
+          and the rest is held in your Stripe account until the event has run, then
+          goes to your bank a couple of days after it ends.
         </InfoNote>
       </div>
 

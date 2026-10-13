@@ -22,7 +22,16 @@ export default async function AccountSwitchPage({ searchParams }: {
       <Link href={session?.impersonation ? "/dashboard" : "/admin"} className="text-sm text-[color:var(--purple)]">← Back</Link>
       <p className="eyebrow mt-6">Admin tools</p>
       <h1 className="font-display mt-2 text-3xl font-semibold">Switch account</h1>
-      <p className="mt-3 text-sm leading-6 text-[color:var(--slate)]">Open an existing account as that person. Changes you make affect their account. You can return to your admin account from the viewing banner.</p>
+      <p className="mt-3 text-sm leading-6 text-[color:var(--slate)]">Open an existing account as that person. A real member&apos;s account opens view only - nothing you do can change it. Only test accounts can be acted on.</p>
+      {/* The way back. A view-only session can't post from any other page
+          (HOTFIX 2026-10-12 H4.1), so Return lives here as well as the banner. */}
+      {session?.impersonation ? (
+        <div className="mt-5">
+          <AccountSwitchForm action={switchAdminAccount}>
+            <AccountSwitchButton name="intent" value="return" className="ck-btn ck-btn--primary ck-btn--md whitespace-nowrap">Return to my admin account</AccountSwitchButton>
+          </AccountSwitchForm>
+        </div>
+      ) : null}
       <form className="my-6 flex gap-2" action="/account-switch">
         <label className="min-w-0 flex-1">
           <span className="sr-only">Search by name or email</span>

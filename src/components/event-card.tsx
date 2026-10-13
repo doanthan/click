@@ -5,6 +5,7 @@ import { AvatarStack, Icon, StatusBadge, TagRow, type EventStatus } from "./ds";
 import { EventBookmarkButton } from "./event-bookmark-button";
 import { EventDetailModal } from "./event-detail-modal";
 import { EventImage } from "./event-image";
+import { seatScarcity } from "@/lib/seat-scarcity";
 
 /**
  * The Event Card - the heart of the product, and the ONE card used identically
@@ -71,15 +72,8 @@ export function EventCard({
     ? "going"
     : isFull
       ? "waitlist"
-      : seatsLeft <= 3
-        ? "spots"
-        : seatsLeft <= 8
-          ? "almostfull"
-          : event.status === "Featured"
-            ? "trending"
-            : isFreeEvent(event)
-              ? "free"
-              : null;
+      : (seatScarcity(seatsLeft, event.capacity) ??
+        (event.status === "Featured" ? "trending" : isFreeEvent(event) ? "free" : null));
 
   const goingCount = event.attendees;
   // Bug board #310/#332: one circle per person going - their photo where they

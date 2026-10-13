@@ -61,7 +61,10 @@ test("1. the Click page lists today's picks, each with a click and View profile"
 
 test("2. the dashboard shows one of the same picks and moves on every 3 hours", () => {
   assert.match(dashboard, /getDailyPicks\(session\)/);
-  assert.match(dashboard, /const pickIndex = dashboardPickIndex\(hourOfDay, picks\.length\);/);
+  assert.match(dashboard, /const pickIndex = dashboardPickIndex\(hourOfDay, featurable\.length\);/);
+  // HOTFIX 2026-10-12 H3.1: yesterday's click costs the featured turn, never the card.
+  assert.match(dashboard, /const unheld = picks\.filter\(\(candidate\) => !candidate\.featureHold\);/);
+  assert.match(dashboard, /const featurable = unheld\.length > 0 \? unheld : picks;/);
   assert.match(code(dashboard), /<ClickWithSomeoneUserCard key=\{pick\.id\} person=\{pick\} \/>/);
   assert.doesNotMatch(dashboard, /sixHourIndex|getSuggestedPeople\(/);
   // The Sydney hour, the greeting's clock (bug board #286), not the server's.
@@ -131,8 +134,8 @@ test("4. View profile opens the profile with the click only from the click surfa
     "export async function loadProfilePreviewAction(",
     "\n}\n",
   );
-  assert.doesNotMatch(loader, /datingVisible:/);
-  assert.match(loader, /intents: visibleIntentsFor\(profile, own\?\.datingVisible === true\),/);
+  assert.doesNotMatch(loader, /datingVisible:|datingCompatible:/);
+  assert.match(loader, /intents: visibleIntentsFor\(profile\),/);
 });
 
 test("5. an explore click and a who-was-there click form one mutual, and the reveal is true for both", () => {
@@ -161,10 +164,11 @@ test("5. an explore click and a who-was-there click form one mutual, and the rev
 });
 
 test("6. the daily pick pool excludes everyone the brief lists", () => {
-  // Already clicked (either source), a live mutual, a block either way, visibility
-  // off or paused or banned, "not feeling it" (declined), a recently released pair.
+  // A live mutual, a block either way, visibility off or paused or banned, "not
+  // feeling it" (declined), a recently released pair. NOT "already clicked" any
+  // more (HOTFIX 2026-10-12 H3.1, 09 §3): a pending click stays in the pool.
+  assert.doesNotMatch(pool, /from clicks uc/);
   for (const [rule, re] of [
-    ["already clicked", /and not exists \(\s*select 1 from clicks uc\s*where uc\.sender_id = \$1::uuid\s*and uc\.receiver_id = p\.id\s*and uc\.status = 'pending'/],
     ["live mutual", /select 1 from mutual_clicks mc\s*where mc\.status = 'active'/],
     ["blocked", /select 1 from user_blocks b/],
     ["visibility off", /and p\.social_visible = true/],

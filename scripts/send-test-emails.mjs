@@ -175,6 +175,12 @@ const VARS = {
 
   // misc copy
   suggestionLine: "You both said yes to Thursday Clay Club - we suggested it as your first plan.",
+
+  // launch waitlist (/waitlist)
+  areaLine: "We'll be in touch when your suburb opens.",
+  shareUrl: `${APP}/i/k7m2qpxz`,
+  shareLabel: "letsclick.app/i/k7m2qpxz",
+  howItWorksUrl: `${APP}/how-it-works`,
 };
 
 // Mirrors the SUBJECTS map in src/lib/email.ts. Written as {{var}} templates so
@@ -193,6 +199,7 @@ const SUBJECTS = {
   "event-cancelled-merchant": "{{eventTitle}} was cancelled by Click",
   "event-cancelled-attendee": "{{eventTitle}} has been cancelled",
   "merchant-application-received": "We've got your application - {{businessName}}",
+  "merchant-welcome-merchant": "{{businessName}} is set up - post your first event",
   "merchant-waitlisted-merchant": "You're on the Click waitlist - {{suburb}} is coming soon",
   "merchant-verified-merchant": "{{businessName}} verified - post your first event",
   "merchant-rejected-merchant": "{{businessName}} application - one small change",
@@ -212,6 +219,7 @@ const SUBJECTS = {
   "guest-invite": "{{purchaserFirstName}} saved you a spot",
   "guest-spot-existing-user": "{{purchaserFirstName}} saved you a spot at {{eventTitle}}",
   "guest-spot-cancelled": "Your spot at {{eventTitle}} is no longer held",
+  "launch-waitlist-joined": "You're on the list for Click",
 };
 
 // Same regex as renderHtml() in src/lib/email.ts: unknown keys are LEFT IN so a

@@ -489,11 +489,10 @@ test("one person is one click, from either source, on every read of 'clicked'", 
   assert.match(clickedExpr, /c\.status = 'pending' and c\.expires_at > now\(\)/);
   assert.doesNotMatch(clickedExpr, /event_id is null/, "the viewer's click state must not be surface-scoped");
 
-  // The picks pool drops anyone the viewer has a live click at - from either source.
-  assert.match(
-    suggestedPeople,
-    /and not exists \(\s*select 1 from clicks uc\s*where uc\.sender_id = \$1::uuid\s*and uc\.receiver_id = p\.id\s*and uc\.status = 'pending'\s*and uc\.expires_at > now\(\)\s*\)/,
-  );
+  // HOTFIX 2026-10-12 H3.1 (09 §3): a live click at someone - from either source -
+  // no longer removes them from the picks pool. It only costs them the dashboard's
+  // featured turn the next day (getDailyPicks' feature_hold).
+  assert.doesNotMatch(suggestedPeople, /from clicks uc/);
   assert.doesNotMatch(suggestedPeople, /uc\.event_id is null/);
 
   // Who was there: a live click from anywhere, or any click at THIS event.

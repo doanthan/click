@@ -103,7 +103,6 @@ export async function saveProfileEditAction(formData: FormData) {
     intents,
     interestTags: strList("interest_tag"),
     musicTags: strList("music_tag"),
-    datingVisible: boolField("dating_visible"),
     flexibleDiscovery: boolField("flexible_discovery"),
     prompts,
   });

@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
   type Dispatch,
+  type RefObject,
 } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -40,24 +41,27 @@ import { useFormDraft } from "@/lib/use-form-draft";
 import { MapboxAutocomplete, type MapboxPlace } from "./mapbox-autocomplete";
 import { Badge, Button, EndowedProgress, FormField } from "./ds";
 import { SubmitButton } from "./ds-client";
-import { InfoNote, WizardStepper } from "./merchant-ds";
+import { InfoNote } from "./merchant-ds";
 import { useDisclosure } from "./use-disclosure";
 
-// Merchant signup - multi-step wizard covering spec §1. Each step has its own
-// URL so users can bookmark, link to, and browser-back through them:
-//   /merchant/signup           · auth gate (rendered for logged-out visitors)
-//   /merchant/signup/business  · step 1 · business details
-//   /merchant/signup/contact   · step 2 · contact & address
-//   /merchant/signup/documents · step 3 · documents → Submit
+// Merchant signup - ONE page (spec §1, cut down for friction):
+//   /merchant/signup · logged out: the OAuth/email auth gate (StepAuthCard)
+//                      signed in: this form (MerchantSignupForm)
 //
-// Form state lives in a React context provided by <MerchantSignupProvider>
-// mounted inside the route's layout, so it persists across client-side
-// navigation between sibling step pages (App Router keeps shared layouts
-// mounted). Each step page renders <WizardShell step={n}> which surfaces the
-// step indicator, validation messages, and Back / Next / Submit nav. Per-step
-// validators run on Next; Submit re-runs all three and router.push()'es back
-// to the offending step's URL. Documents upload immediately on file-pick to
-// /api/merchant/documents; everything else commits on Submit.
+// It used to be a three-step wizard - business, contact, then a review page of
+// optional uploads - with nine required answers. Now four things are asked for
+// up front: a name, a contact email (pre-filled), a phone number and the venue
+// address (one autocomplete fills suburb, state and postcode). Everything the
+// platform can run without - trading name, ABN/ACN, website, socials, event
+// categories, documents - sits folded in "More about the business". How the
+// business is legally set up is asked at the payout step instead, the first
+// time it matters (src/lib/business-type.ts). Inside the Sydney pilot the
+// submit makes them a host on the spot (registerMerchantWizardSubmit).
+//
+// Form state lives in a React context provided by <MerchantSignupProvider>,
+// mounted in the route's layout, and is mirrored to sessionStorage so a refresh
+// keeps the answers. Documents upload immediately on file-pick to
+// /api/merchant/documents; everything else commits on submit.
 
 // ---------- constants & types ----------
 
@@ -139,14 +143,14 @@ async function lookupStateForPostcode(postcode: string): Promise<string> {
 type CategoryOption = { id: string; name: string; slug: string };
 type ExistingDoc = { documentType: DocumentType; fileName: string };
 
-// Saved merchant-signup answers used to pre-fill the wizard when a rejected
+// Saved merchant-signup answers used to pre-fill the form when a rejected
 // merchant re-opens it to edit + resubmit (bug board #203). Structural match for
 // the repository's MerchantSignupPrefill - kept loose so the component doesn't
-// import server code.
+// import server code. (The repository also returns businessType, which this
+// form no longer asks - the payout step does.)
 export type MerchantSignupPrefill = {
   businessName: string;
   tradingName: string;
-  businessType: string;
   abn: string;
   acn: string;
   eventCategoryIds: string[];
@@ -170,89 +174,61 @@ export type MerchantSignupProviderProps = {
   children: React.ReactNode;
 };
 
-// Wizard state lives in a context mounted in the route LAYOUT, so it survives
-// client-side navigation between the step pages - but not a full page load. A
-// refresh on step 3, or opening a step URL cold, used to reset every field to
-// blank while the uploaded documents (which POST immediately) still showed as
-// "Uploaded", so the wizard looked half-filled and Submit threw you back to
-// step 1. Mirror the answers into sessionStorage the way the event-create
-// wizard already does.
+// Form state lives in a context mounted in the route LAYOUT. A refresh, or
+// opening the page cold, used to reset every field to blank while the uploaded
+// documents (which POST immediately) still showed as "Uploaded", so the form
+// looked half-filled. Mirror the answers into sessionStorage the way the
+// event-create wizard already does.
 // Persistence now runs through the shared useFormDraft hook, which wraps the
 // answers in a { v, values } envelope rather than the flat { v, ...fields } this
 // file used to write. DRAFT_VERSION stays at 1 deliberately: the FIELD shape did
-// not change, and the hook already drops any stored draft whose `values` is
-// missing, so a flat leftover is discarded rather than half-applied.
+// not change in any way that matters - apply() below copies only the keys in
+// DRAFT_FIELD_KEYS, so a draft saved before businessType moved to the payout
+// step restores cleanly and the stale key is ignored. The hook already drops any
+// stored draft whose `values` is missing, so a flat leftover is discarded rather
+// than half-applied.
 const STORAGE_KEY = "click:merchant-signup-draft";
 const DRAFT_VERSION = 1;
-
-// 0 = Business, 1 = Contact, 2 = Documents.
-export type StepIndex = 0 | 1 | 2;
-const STEP_COUNT = 3;
-const STEP_TITLES = ["Business", "Contact", "Review"] as const;
-export const STEP_PATHS = [
-  "/merchant/signup/business",
-  "/merchant/signup/contact",
-  "/merchant/signup/documents",
-] as const;
 
 /* One message per offending field, rather than one message per attempt. The old
    validator returned a single string and bailed on the FIRST failure, so a host
    with three missing fields learned one requirement per Next - from a strip down
    by the nav buttons that never said which field it meant. Same shape and same
    "focus the first offender" rule as the event-create wizard's FieldErrors, so
-   the two wizards behave identically.
+   the two forms behave identically.
 
-   Spelled out as its own union rather than derived from State: State carries the
-   error map itself, and deriving the keys from it would make the type circular. */
-type ErrorField =
-  | "businessName"
-  | "businessType"
-  | "abn"
-  | "acn"
-  | "eventCategoryIds"
-  | "contactEmail"
-  | "phone"
-  | "websiteUrl"
-  | "addressStreet"
-  | "addressSuburb"
-  | "addressState"
-  | "addressPostcode";
+   A const list rather than a union derived from State: State carries the error
+   map itself, so deriving the keys from it would make the type circular, and the
+   list doubles as the runtime guard on a server-supplied field name. DOM order,
+   so "focus the first offender" lands on the topmost field. */
+const ERROR_FIELDS = [
+  "businessName",
+  "contactEmail",
+  "phone",
+  "addressStreet",
+  "addressSuburb",
+  "addressState",
+  "addressPostcode",
+  "abn",
+  "acn",
+  "websiteUrl",
+] as const;
+type ErrorField = (typeof ERROR_FIELDS)[number];
 
 type FieldErrors = Partial<Record<ErrorField, string>>;
 
-/* Which step owns each field. Submit re-validates every step and routes to the
-   first that fails, and a server rejection can only name the FIELD - both need
-   to know which page to send the host to. Doubles as the runtime guard on a
-   server-supplied field name (a union has no members at runtime). */
-const FIELD_STEP: Record<ErrorField, StepIndex> = {
-  businessName: 0,
-  businessType: 0,
-  abn: 0,
-  acn: 0,
-  eventCategoryIds: 0,
-  contactEmail: 1,
-  phone: 1,
-  websiteUrl: 1,
-  addressStreet: 1,
-  addressSuburb: 1,
-  addressState: 1,
-  addressPostcode: 1,
-};
+/* The fields that live inside the folded "More about the business" section. A
+   mark on one of them is invisible while the section is closed, so the form
+   opens it before marking or focusing. */
+const MORE_SECTION_FIELDS: ReadonlyArray<ErrorField> = ["abn", "acn", "websiteUrl"];
 
-// The four the merchant_profiles check constraint allows
-// (database/009_merchant_full_signup.sql). Order is the order they're offered.
-const BUSINESS_TYPES = [
-  { value: "sole_trader", label: "Sole trader" },
-  { value: "company", label: "Company" },
-  { value: "partnership", label: "Partnership" },
-  { value: "trust", label: "Trust" },
-] as const;
-
-type BusinessType = (typeof BUSINESS_TYPES)[number]["value"];
+function isErrorField(value: unknown): value is ErrorField {
+  return typeof value === "string" && (ERROR_FIELDS as readonly string[]).includes(value);
+}
 
 /** DOM id for a field's control, so validation can focus the one at fault.
-    Composite controls (address, state, categories) anchor their WRAPPER instead
-    of an input - `focusFieldAnchor` reaches inside for the real control. */
+    Composite controls (address, state) anchor their WRAPPER instead of an
+    input - `focusFieldAnchor` reaches inside for the real control. */
 function fieldAnchorId(field: ErrorField) {
   return `ms-field-${field}`;
 }
@@ -272,10 +248,6 @@ type State = {
   // Business
   businessName: string;
   tradingName: string;
-  // Drives Stripe Connect's identity.entity_type (sole_trader → "individual",
-  // everything else → "company"). Collected here because nothing else can know
-  // it, and getting it wrong makes the hosted onboarding unfinishable.
-  businessType: BusinessType | "";
   abn: string;
   acn: string;
   eventCategoryIds: string[];
@@ -292,7 +264,7 @@ type State = {
   // Documents
   uploads: Record<DocumentType, { fileName: string } | null>;
   // Validation - one entry per offending field, keyed so each control can render
-  // its own message. The strip above the nav only carries the summary.
+  // its own message. The strip above the button only carries the summary.
   fieldErrors: FieldErrors;
   // Submission
   submitState: "idle" | "submitting" | "success" | "error";
@@ -302,7 +274,7 @@ type State = {
 // The answer fields only - `uploads` is rebuilt server-side from
 // listMerchantDocuments, submit status is per-attempt, and `fieldErrors` is a
 // verdict on the answers rather than an answer (a restored draft re-validates
-// on the next Next, so persisting stale marks would be noise).
+// on the next submit, so persisting stale marks would be noise).
 type DraftFields = Omit<
   State,
   "uploads" | "fieldErrors" | "submitState" | "submitMessage"
@@ -311,7 +283,6 @@ type DraftFields = Omit<
 const DRAFT_FIELD_KEYS: ReadonlyArray<keyof DraftFields> = [
   "businessName",
   "tradingName",
-  "businessType",
   "abn",
   "acn",
   "eventCategoryIds",
@@ -344,14 +315,12 @@ type Action =
   | { type: "upload"; docType: DocumentType; info: { fileName: string } | null }
   | { type: "hydrate"; values: Partial<DraftFields> }
   /** Both halves of a validation verdict in one dispatch: the per-field marks and
-      the summary strip. Passing an empty map + empty message is how a passing
-      step clears the last one. */
+      the summary strip. */
   | { type: "validation"; errors: FieldErrors; message: string }
   | { type: "submitStart" }
   | { type: "submitError"; message: string }
   /** A server rejection that named the field it is about, so the offending input
-      gets marked the same way a client-side failure would - the caller routes to
-      the step that owns it. */
+      gets marked the same way a client-side failure would. */
   | { type: "submitFieldError"; field: ErrorField; message: string }
   | { type: "submitSuccess" };
 
@@ -380,7 +349,6 @@ function reducer(state: State, action: Action): State {
         eventCategoryIds: has
           ? state.eventCategoryIds.filter((id) => id !== action.id)
           : [...state.eventCategoryIds, action.id],
-        fieldErrors: withoutError(state.fieldErrors, "eventCategoryIds"),
         submitMessage: "",
       };
     }
@@ -441,7 +409,6 @@ function initialState(props: {
     businessName:
       prefill?.businessName || (props.sessionName ? `${props.sessionName}'s Events` : ""),
     tradingName: prefill?.tradingName ?? "",
-    businessType: (prefill?.businessType as BusinessType) || "",
     abn: prefill?.abn ?? "",
     acn: prefill?.acn ?? "",
     eventCategoryIds: prefill?.eventCategoryIds ?? [],
@@ -477,11 +444,6 @@ type WizardContextValue = {
       note says "pre-filled", so it must follow whether answers ACTUALLY came
       back, not whether we went looking for them. */
   resubmitting: boolean;
-  /** Set by Next / Back so the shell that mounts on the new step knows it got
-      there by navigating. Lives on the PROVIDER, which is mounted in the signup
-      layout and survives the step routes - a ref inside the shell would be
-      remounted along with it and always read false. */
-  navigatedRef: { current: boolean };
 };
 
 const WizardContext = createContext<WizardContextValue | null>(null);
@@ -527,7 +489,7 @@ export function MerchantSignupProvider({
   // nothing while the values stay byte-identical to the ones clear() saw, so the
   // re-renders that FOLLOW a submit can't resurrect the draft it just removed -
   // but the moment the host genuinely edits something again, drafting resumes.
-  // That matters here because submit() can fail and leave the wizard open: from
+  // That matters here because submit() can fail and leave the form open: from
   // the next keystroke on, the form is protected again.
   //
   // sessionStorage, deliberately, NOT localStorage: the draft carries an ABN, a
@@ -550,7 +512,6 @@ export function MerchantSignupProvider({
 
   const resubmitting = Boolean(existingProfile);
 
-  const navigatedRef = useRef(false);
   const value = useMemo<WizardContextValue>(
     () => ({
       state,
@@ -559,7 +520,6 @@ export function MerchantSignupProvider({
       draftRestored: restored,
       clearDraft: clear,
       resubmitting,
-      navigatedRef,
     }),
     [state, categories, restored, clear, resubmitting],
   );
@@ -567,77 +527,63 @@ export function MerchantSignupProvider({
   return <WizardContext.Provider value={value}>{children}</WizardContext.Provider>;
 }
 
-// ---------- step validation ----------
+// ---------- validation ----------
 
 // normalizeAuPhone / formatAuPhone / auPhoneHint / isValidAuPhone now live in
 // src/lib/au-phone.ts - the server validates the submitted number with the same
-// module, so what the wizard calls valid can no longer be rejected two steps
-// later.
+// module, so what the form calls valid can no longer be rejected on submit.
 
-/* Every failure on the step, not just the first. Insertion order below is DOM
-   order within the step, and Object.keys preserves it for string keys - that is
-   what makes "focus the first offender" land on the topmost field rather than an
-   arbitrary one. */
-function validateStep(step: StepIndex, state: State): FieldErrors {
+/* Every failure, not just the first. Insertion order below is DOM order, and
+   Object.keys preserves it for string keys - that is what makes "focus the first
+   offender" land on the topmost field rather than an arbitrary one. */
+function validateApplication(state: State): FieldErrors {
   const errors: FieldErrors = {};
 
-  if (step === 0) {
-    const name = state.businessName.trim();
-    if (name.length < 2 || name.length > 100) {
-      errors.businessName = "Business name must be 2-100 characters.";
-    }
-    // Required, unlike ABN/ACN: this one is not paperwork we can chase later.
-    // It picks the Stripe Connect entity type, and a sole trader sent through
-    // the company flow is asked for a registered company name and ACN they do
-    // not have - a dead end with no route to a paid event.
-    if (!state.businessType) {
-      errors.businessType = "Pick how the business is set up.";
-    }
-    // ABN and ACN are optional for now - only the format is checked, and only
-    // when something was actually typed (both validators pass an empty value).
-    const abnError = validateOptionalAbn(state.abn);
-    if (abnError) errors.abn = abnError;
-    const acnError = validateOptionalAcn(state.acn);
-    if (acnError) errors.acn = acnError;
-    if (state.eventCategoryIds.length === 0) {
-      errors.eventCategoryIds = "Pick at least one event category.";
-    }
+  const name = state.businessName.trim();
+  if (name.length < 2 || name.length > 100) {
+    errors.businessName = "Name must be 2-100 characters.";
+  }
+  if (!state.contactEmail.includes("@")) {
+    errors.contactEmail = "Enter a valid contact email.";
+  }
+  const phoneError = validateAuPhone(state.phone);
+  if (phoneError) errors.phone = phoneError;
+  if (!state.addressStreet.trim()) errors.addressStreet = "Add the street address.";
+  if (!state.addressSuburb.trim()) errors.addressSuburb = "Add the suburb.";
+  if (!state.addressState) errors.addressState = "Pick a state.";
+  if (!/^[0-9]{4}$/.test(state.addressPostcode.trim())) {
+    errors.addressPostcode = "Postcode must be 4 digits.";
   }
 
-  if (step === 1) {
-    if (!state.contactEmail.includes("@")) {
-      errors.contactEmail = "Enter a valid contact email.";
-    }
-    const phoneError = validateAuPhone(state.phone);
-    if (phoneError) errors.phone = phoneError;
-    // Optional, but when it IS typed the server normalises it to an https URL
-    // and refuses anything that isn't a domain. Checking it here is what keeps
-    // that refusal on the field instead of on the Documents step.
-    const websiteError = validateWebsiteUrl(state.websiteUrl);
-    if (websiteError) errors.websiteUrl = websiteError;
-    if (!state.addressStreet.trim()) errors.addressStreet = "Add the street address.";
-    if (!state.addressSuburb.trim()) errors.addressSuburb = "Add the suburb.";
-    if (!state.addressState) errors.addressState = "Pick a state.";
-    if (!/^[0-9]{4}$/.test(state.addressPostcode.trim())) {
-      errors.addressPostcode = "Postcode must be 4 digits.";
-    }
-  }
+  // The optional section: only the format is checked, and only when something
+  // was actually typed (each validator passes an empty value). The server
+  // normalises a website to https and refuses anything that isn't a domain, so
+  // checking it here keeps that refusal on the field.
+  const abnError = validateOptionalAbn(state.abn);
+  if (abnError) errors.abn = abnError;
+  const acnError = validateOptionalAcn(state.acn);
+  if (acnError) errors.acn = acnError;
+  const websiteError = validateWebsiteUrl(state.websiteUrl);
+  if (websiteError) errors.websiteUrl = websiteError;
 
-  // Step 2: all documents are optional at signup; admins can request follow-ups
-  // during verification.
+  // Categories and documents are optional - admins can ask for follow-ups.
   return errors;
+}
+
+/** Same predicate the server branches on (isWithinPilotArea is this function),
+    so the notice, the button label and the outcome they're emailed agree. */
+function isOutsidePilot(state: State): boolean {
+  const postcode = state.addressPostcode.trim();
+  return /^\d{4}$/.test(postcode) && !isWithinSydneyPilot(state.addressState || null, postcode);
 }
 
 /**
  * Move focus onto the control that failed, and bring it into view.
  *
- * Half the fields anchor a real input, which is the easy case. The other half -
- * the address autocomplete, the state popover, the category picker - are
- * composites whose control is owned by a child component we don't pass ids
- * through, so those anchor their WRAPPER and we reach inside for the first
- * focusable thing. When there is nothing focusable at all (a category picker
- * with no categories loaded) we still scroll, so the message is at least on
- * screen rather than silently below the fold.
+ * Most fields anchor a real input, which is the easy case. The address
+ * autocomplete and the state popover are composites whose control is owned by
+ * a child component we don't pass ids through, so those anchor their WRAPPER
+ * and we reach inside for the first focusable thing.
  */
 function focusFieldAnchor(field: ErrorField) {
   const anchor = document.getElementById(fieldAnchorId(field));
@@ -649,99 +595,44 @@ function focusFieldAnchor(field: ErrorField) {
   (target ?? anchor).scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
-// ---------- wizard shell ----------
+// ---------- the form ----------
 
-export function WizardShell({
-  step,
-  children,
-}: {
-  step: StepIndex;
-  children: React.ReactNode;
-}) {
-  const { state, dispatch, draftRestored, clearDraft, resubmitting, navigatedRef } =
-    useWizard();
-  // tabIndex={-1} target for the post-navigation focus move below.
-  const stepBodyRef = useRef<HTMLDivElement>(null);
+export function MerchantSignupForm() {
+  const { state, dispatch, draftRestored, clearDraft, resubmitting } = useWizard();
   const router = useRouter();
-  const isLast = step === STEP_COUNT - 1;
   const submitting = state.submitState === "submitting";
+  const moreRef = useRef<HTMLDetailsElement>(null);
 
-  // Which steps genuinely hold valid input, so the stepper's green ticks mean
-  // something. Every step page has its own URL, and a rejected host resubmitting
-  // lands wherever they left off - so "done" inferred from POSITION painted
-  // ticks over steps nobody had filled in. Same validateStep the Next button and
-  // the final submit run, so a tick and a pass are the same fact; same shape and
-  // the same reason as event-create-wizard.tsx's completedSteps.
-  const completedSteps = useMemo(
-    () =>
-      STEP_TITLES.map(
-        (_, i) => Object.keys(validateStep(i as StepIndex, state)).length === 0,
-      ),
-    [state],
-  );
+  const submitLabel = resubmitting
+    ? "Resubmit application →"
+    : isOutsidePilot(state)
+      ? "Join the host waitlist →"
+      : "Start hosting →";
 
-  /**
-   * Shared by goNext and submit: mark every offending field and say how many in
-   * the one strip above the nav.
-   *
-   * `focusFirst` is false on the submit path, where we are about to route to
-   * another step - focus would land on a control that is being unmounted a tick
-   * later, which is worse than not moving it at all.
-   */
-  function showFieldErrors(
-    errors: FieldErrors,
-    { stepLabel, focusFirst }: { stepLabel?: string; focusFirst: boolean },
-  ) {
-    const keys = Object.keys(errors) as ErrorField[];
-    // One failure reads better as itself than as a count of one.
-    const summary =
-      keys.length === 1
-        ? (errors[keys[0]] as string)
-        : `${keys.length} things still need a moment${stepLabel ? ` on ${stepLabel}` : ""} - they're marked below.`;
-    dispatch({ type: "validation", errors, message: summary });
-    if (!focusFirst) return;
-    // Land the host ON the offending control. The strip by the nav buttons says
-    // something is wrong; only this says where.
-    requestAnimationFrame(() => focusFieldAnchor(keys[0]));
-  }
-
-  function goNext() {
-    const errors = validateStep(step, state);
-    if (Object.keys(errors).length > 0) {
-      showFieldErrors(errors, { focusFirst: true });
-      return;
+  /** Open the folded section when a mark lands inside it, then land the host
+      ON the first offender. The strip by the button says something is wrong;
+      only this says where. */
+  function revealAndFocus(fields: ErrorField[]) {
+    if (moreRef.current && fields.some((field) => MORE_SECTION_FIELDS.includes(field))) {
+      moreRef.current.open = true;
     }
-    dispatch({ type: "validation", errors: {}, message: "" });
-    navigatedRef.current = true;
-    router.push(STEP_PATHS[step + 1]);
-  }
-
-  function goBack() {
-    // Back stays focusable while the application is in flight (aria-disabled,
-    // not disabled - a browser blurs a control you disable under the user's
-    // finger and dumps keyboard users to the top of the document), so the guard
-    // has to live here.
-    if (submitting) return;
-    if (step > 0) {
-      navigatedRef.current = true;
-      router.push(STEP_PATHS[step - 1]);
-    }
+    requestAnimationFrame(() => focusFieldAnchor(fields[0]));
   }
 
   async function submit() {
     if (submitting) return;
-    // Re-run every step's validation on final submit - guards against a user
-    // editing an earlier step after passing it, or deep-linking past one.
-    for (let s = 0; s < STEP_COUNT; s++) {
-      const errors = validateStep(s as StepIndex, state);
-      if (Object.keys(errors).length > 0) {
-        // Name the step in the summary: from step 3 the marked fields are two
-        // routes away, so "3 things still need a moment" alone would send the
-        // host looking on the page they're standing on.
-        showFieldErrors(errors, { stepLabel: STEP_TITLES[s], focusFirst: false });
-        router.push(STEP_PATHS[s]);
-        return;
-      }
+
+    const errors = validateApplication(state);
+    const offenders = Object.keys(errors) as ErrorField[];
+    if (offenders.length > 0) {
+      // One failure reads better as itself than as a count of one.
+      const summary =
+        offenders.length === 1
+          ? (errors[offenders[0]] as string)
+          : `${offenders.length} things still need a moment - they're marked below.`;
+      dispatch({ type: "validation", errors, message: summary });
+      revealAndFocus(offenders);
+      return;
     }
 
     dispatch({ type: "submitStart" });
@@ -750,7 +641,6 @@ export function WizardShell({
       mode: "wizard" as const,
       businessName: state.businessName.trim(),
       tradingName: state.tradingName.trim(),
-      businessType: state.businessType || null,
       abn: normalizeAbn(state.abn),
       acn: normalizeAcn(state.acn),
       eventCategoryIds: state.eventCategoryIds,
@@ -784,17 +674,15 @@ export function WizardShell({
       const body = (await response.json().catch(() => ({}))) as {
         error?: string;
         field?: string;
+        merchant?: { verification_status?: string };
       };
       if (!response.ok) {
         const message = body.error ?? "Submission failed.";
-        // A rejection has to land ON the field it is about. Without this the
-        // host stood on a page of file pickers reading "Enter a valid Australian
-        // phone number." with nothing marked and no way back to the input.
-        const field =
-          body.field && body.field in FIELD_STEP ? (body.field as ErrorField) : null;
-        if (field) {
-          dispatch({ type: "submitFieldError", field, message });
-          router.push(STEP_PATHS[FIELD_STEP[field]]);
+        // A rejection has to land ON the field it is about, not as a bare
+        // sentence by the button with nothing marked.
+        if (isErrorField(body.field)) {
+          dispatch({ type: "submitFieldError", field: body.field, message });
+          revealAndFocus([body.field]);
           return;
         }
         dispatch({ type: "submitError", message });
@@ -805,7 +693,13 @@ export function WizardShell({
       // Only now, on the success branch - clearing before the POST lands would
       // take the answers with it if the request failed.
       clearDraft();
-      router.push("/merchant-pending");
+      // Inside the pilot a new host is approved on the spot, so they go
+      // straight into the host portal's first-run walkthrough, whose first
+      // button builds an event. A waitlisted host, or a rejected one sending it
+      // back, is 'pending' and belongs on the holding page that explains which.
+      router.push(
+        body.merchant?.verification_status === "approved" ? "/merchant/onboarding" : "/merchant-pending",
+      );
       router.refresh();
     } catch {
       // A dropped connection used to leave the button spinning forever with
@@ -818,45 +712,16 @@ export function WizardShell({
     }
   }
 
-  // Each step is its own route, so this shell REMOUNTS on Next / Back and focus
-  // falls back to <body> - a keyboard or screen-reader user landed at the top of
-  // the document with no idea the step had changed, and had to tab back in. The
-  // event-create wizard already does this; the signup wizard did not.
-  // Only on an actual navigation: stealing focus on the first load of a page
-  // someone just opened is worse than not moving it.
-  useEffect(() => {
-    if (!navigatedRef.current) return;
-    navigatedRef.current = false;
-    // preventScroll then scroll ourselves - focus()'s own scrolling ignores
-    // scroll-margin-top, which parks the heading behind the sticky header.
-    stepBodyRef.current?.focus({ preventScroll: true });
-    stepBodyRef.current?.scrollIntoView({ block: "start" });
-  }, [navigatedRef]);
-
   return (
     <div className="grid gap-6">
-      {/* ONE progress cluster, at the top. The dots say WHERE you are and let you
-          jump back; the endowed bar says HOW FAR, and its counter line carries the
-          step name on phones, where the dot labels are hidden. The counter that
-          used to sit down beside the Next button said the same thing 700px away
-          from this one, so it's gone. */}
-      <div className="rise-soft grid gap-3">
-        <StepIndicator current={step} completed={completedSteps} />
-        <EndowedProgress
-          step={step}
-          total={STEP_COUNT}
-          label={`Step ${step + 1} of ${STEP_COUNT} · ${STEP_TITLES[step]}`}
-        />
-      </div>
-
       {/* At most ONE note here. A resubmitting host needs to know why the form is
           already full far more than they need to know a draft was restored, and
           two stacked lavender notes above the card is a wall, not reassurance.
-          The rejection reason itself is not stored anywhere this wizard can read
+          The rejection reason itself is not stored anywhere this form can read
           it - it travels by email - so the note points there rather than
           inventing a quote. */}
       {resubmitting ? (
-        <div className="rise-soft rise-d1">
+        <div className="rise-soft">
           <InfoNote icon="info">
             This is your existing application, filled in as you left it. Update whatever the
             review team asked about in their email, then send it again - it goes back into the
@@ -864,21 +729,29 @@ export function WizardShell({
           </InfoNote>
         </div>
       ) : draftRestored ? (
-        <div className="rise-soft rise-d1">
+        <div className="rise-soft">
           <InfoNote icon="info">
             Picked up where you left off - the answers you had already typed are still here.
           </InfoNote>
         </div>
       ) : null}
 
-      {/* The focus target: sits immediately before the step's own <h1>, so a
-          screen reader continues from the new step's heading rather than the
-          top of the document. tabIndex={-1} makes it programmatically
-          focusable without adding a tab stop. outline-none because the move is
-          a context change, not a control the user reached by tabbing. */}
-      <div ref={stepBodyRef} tabIndex={-1} className="outline-none">
-        <SectionCard>{children}</SectionCard>
-      </div>
+      <SectionCard>
+        <div className="grid gap-5">
+          <FormField
+            label="Business or host name"
+            required
+            hint="Shown on your events. Just you? Your own name works."
+            error={state.fieldErrors.businessName}
+            id={fieldAnchorId("businessName")}
+            value={state.businessName}
+            onChange={(e) => dispatch({ type: "field", key: "businessName", value: e.target.value })}
+            placeholder="Sydney Table Friends"
+          />
+          <ContactSection />
+          <MoreAboutBusiness detailsRef={moreRef} defaultOpen={resubmitting} />
+        </div>
+      </SectionCard>
 
       {state.submitMessage ? (
         <p
@@ -889,42 +762,23 @@ export function WizardShell({
         </p>
       ) : null}
 
-      <div className="rise-soft rise-d3 flex flex-wrap items-center justify-between gap-3">
+      <div className="rise-soft rise-d3 grid gap-3 justify-items-start">
         <Button
           type="button"
-          variant="secondary"
-          size="md"
-          onClick={goBack}
-          disabled={step === 0}
-          aria-disabled={submitting || undefined}
+          onClick={submit}
+          loading={submitting}
+          // The spinner hides the label, and a visibility:hidden label is gone
+          // from the accessibility tree too - this keeps the button named while
+          // it spins.
+          aria-label={submitLabel.replace(" →", "")}
         >
-          ← Back
+          {submitLabel}
         </Button>
-
-        {isLast ? (
-          <Button
-            type="button"
-            onClick={submit}
-            loading={submitting}
-            // The spinner hides the label, and a visibility:hidden label is gone
-            // from the accessibility tree too - this keeps the button named while
-            // it spins.
-            aria-label="Submit application"
-          >
-            Submit application →
-          </Button>
-        ) : (
-          <Button type="button" onClick={goNext}>
-            Next →
-          </Button>
-        )}
-      </div>
-      {/* The submit action is the acceptance action. The repository stores its
-          timestamp plus both legal versions, so the disclosure here and the
-          audit record describe the same moment. */}
-      {isLast ? (
-        <p className="mt-3 text-xs leading-5 text-[color:var(--slate)]">
-          By submitting you agree to the{" "}
+        {/* The submit action is the acceptance action. The repository stores its
+            timestamp plus both legal versions, so the disclosure here and the
+            audit record describe the same moment. */}
+        <p className="text-xs leading-5 text-[color:var(--slate)]">
+          By continuing you agree to the{" "}
           <Link
             href="/terms"
             className="font-semibold text-[color:var(--purple)] underline underline-offset-2"
@@ -940,42 +794,15 @@ export function WizardShell({
           </Link>
           .
         </p>
-      ) : null}
+      </div>
     </div>
   );
 }
 
-function StepIndicator({
-  current,
-  completed,
-}: {
-  current: StepIndex;
-  completed: readonly boolean[];
-}) {
-  // Completed steps render as <Link>s so users can jump back to an earlier stage
-  // without using the Back button - matches the goBack() behaviour above.
-  // `completed` is what makes a tick honest: WizardStepper falls back to
-  // POSITION when it isn't passed, which ticked every step behind the current
-  // one whether or not it held valid input. It also unlocks a forward jump, but
-  // only over steps that already validate, so nobody skips past unvalidated
-  // input - the Next button's gate is the same validateStep.
-  // Rendering is delegated to the shared merchant-ds WizardStepper.
-  return (
-    <WizardStepper
-      steps={STEP_TITLES}
-      current={current}
-      paths={STEP_PATHS}
-      completed={completed}
-    />
-  );
-}
-
 function SectionCard({ children }: { children: React.ReactNode }) {
-  // The wizard's whole entrance choreography is three beats - progress, card,
-  // nav - because each step page is a fresh mount, so it replays on every Next
-  // and Back. rise-soft is 240ms/8px with fill `both`, so it ENDS at opacity 1
-  // and a re-render can't restart it: the resting state is always visible and
-  // the motion is purely additive. The global reduced-motion block collapses it;
+  // rise-soft is 240ms/8px with fill `both`, so it ENDS at opacity 1 and a
+  // re-render can't restart it: the resting state is always visible and the
+  // motion is purely additive. The global reduced-motion block collapses it;
   // never add a per-component media query for that.
   return (
     <div className="rise-soft rise-d2 rounded-[18px] bg-[color:var(--paper)] p-6 shadow-[var(--shadow-sm)] sm:p-8">
@@ -984,7 +811,7 @@ function SectionCard({ children }: { children: React.ReactNode }) {
   );
 }
 
-// ---------- step 0 (auth gate) ----------
+// ---------- auth gate ----------
 
 // Meta's brand blue. A provider button that isn't the provider's colour reads as
 // a fake, so the FILL is a legitimate exception to the palette rule - the
@@ -1009,7 +836,7 @@ export function StepAuthCard({
   errorMessage?: string;
 }) {
   // Use the same actions as /login / /merchant/login but route the callback
-  // back to /merchant/signup so the user lands inside the wizard at Step 1.
+  // back to /merchant/signup, which renders the form once signed in.
   const callbackUrl = "/merchant/signup";
   return (
     <div className="grid gap-6 lg:grid-cols-[0.45fr_0.55fr] lg:items-start">
@@ -1101,295 +928,12 @@ export function StepAuthCard({
   );
 }
 
-// ---------- section · business ----------
-
 /* Every labelled control below is the shared FormField from ds.tsx - the label,
    the "Required" marker, the .ck-input treatment, the hint line and the error
-   slot all come from one place, so this wizard cannot drift from the event
-   wizard or the profile forms. The local FieldLabel + TextInput pair that used
-   to live here (a 12.5px Slate label over a hand-assembled .ck-input) is gone;
-   the two composites that genuinely cannot be a FormField - the category
-   fieldset and the document upload rows - copy its label treatment inline and
-   say so at the site. */
-
-export function BusinessSection() {
-  const { state, dispatch, categories } = useWizard();
-  const { fieldErrors } = state;
-  return (
-    <div className="grid gap-5">
-      <h2 className="font-display text-3xl font-semibold leading-tight">Business details</h2>
-
-      <FormField
-        label="Business name"
-        required
-        error={fieldErrors.businessName}
-        id={fieldAnchorId("businessName")}
-        value={state.businessName}
-        onChange={(e) => dispatch({ type: "field", key: "businessName", value: e.target.value })}
-        placeholder="Sydney Table Friends"
-      />
-
-      <FormField
-        label="Trading name"
-        hint="Only if you trade under a different name."
-        value={state.tradingName}
-        onChange={(e) => dispatch({ type: "field", key: "tradingName", value: e.target.value })}
-        placeholder="STF Events"
-      />
-
-      <BusinessTypePicker
-        value={state.businessType}
-        error={fieldErrors.businessType}
-        onChange={(value) => dispatch({ type: "field", key: "businessType", value })}
-      />
-
-      <div className="grid gap-5 sm:grid-cols-2">
-        <FormField
-          label="ABN"
-          hint="Optional - the 11-digit ABN on your ATO registration. Spaces are fine."
-          error={fieldErrors.abn}
-          id={fieldAnchorId("abn")}
-          value={state.abn}
-          inputMode="numeric"
-          maxLength={14}
-          onChange={(e) =>
-            dispatch({
-              type: "field",
-              key: "abn",
-              value: normalizeAbn(e.target.value).slice(0, 11),
-            })
-          }
-          onBlur={() => dispatch({ type: "field", key: "abn", value: formatAbn(state.abn) })}
-          placeholder="11 222 333 444"
-        />
-
-        <FormField
-          label="ACN"
-          hint="Optional - 9 digits."
-          error={fieldErrors.acn}
-          id={fieldAnchorId("acn")}
-          value={state.acn}
-          inputMode="numeric"
-          onChange={(e) => dispatch({ type: "field", key: "acn", value: e.target.value })}
-          onBlur={() => dispatch({ type: "field", key: "acn", value: formatAcn(state.acn) })}
-          placeholder="000 000 000"
-        />
-      </div>
-
-      <CategoryPicker
-        categories={categories}
-        selectedIds={state.eventCategoryIds}
-        error={fieldErrors.eventCategoryIds}
-        onToggle={(id) => dispatch({ type: "toggleCategory", id })}
-      />
-    </div>
-  );
-}
-
-// How the business is legally set up. Single-choice, so radios - but drawn as
-// the same chip vocabulary the category picker uses, since four short options
-// don't warrant a popover. Same fieldset/legend + own error wiring as
-// CategoryPicker, for the same reason: FormField renders a <label>, which can't
-// name a group of controls.
-function BusinessTypePicker({
-  value,
-  error,
-  onChange,
-}: {
-  value: BusinessType | "";
-  error?: string;
-  onChange: (value: BusinessType) => void;
-}) {
-  const errorId = `${fieldAnchorId("businessType")}-error`;
-  return (
-    <fieldset id={fieldAnchorId("businessType")} className="grid gap-3">
-      <legend className="mb-1 flex items-baseline gap-2">
-        <span className="text-[13.5px] font-semibold text-[color:var(--ink)]">
-          How is the business set up?
-        </span>
-        <span aria-hidden className="text-[11.5px] font-medium text-[color:var(--slate)]">
-          Required
-        </span>
-      </legend>
-
-      {error ? (
-        <span id={errorId} role="alert" className="text-[12.5px] font-medium text-[color:var(--danger)]">
-          {error}
-        </span>
-      ) : (
-        <span className="text-[12.5px] leading-[1.5] text-[color:var(--slate)]">
-          Stripe asks for different details depending on this, so it saves you a
-          round trip when you set up payouts.
-        </span>
-      )}
-
-      <div className="flex flex-wrap gap-2">
-        {BUSINESS_TYPES.map((option) => {
-          const selected = value === option.value;
-          return (
-            <label
-              key={option.value}
-              className={`cursor-pointer rounded-xl border px-4 py-2.5 text-sm font-semibold transition-colors ${
-                selected
-                  ? "border-[color:var(--purple)] bg-[color:var(--purple)] text-[color:var(--paper)]"
-                  : error
-                    ? "border-[color:var(--danger)] text-[color:var(--ink)] hover:border-[color:var(--slate)]"
-                    : "border-[color:var(--mist)] text-[color:var(--ink)] hover:border-[color:var(--slate)]"
-              }`}
-            >
-              <input
-                type="radio"
-                name="businessType"
-                value={option.value}
-                checked={selected}
-                onChange={() => onChange(option.value)}
-                className="sr-only"
-              />
-              {option.label}
-            </label>
-          );
-        })}
-      </div>
-    </fieldset>
-  );
-}
-
-// Searchable multi-select for event categories. Selected pills stay pinned
-// above the search results so they're always visible while the user filters.
-function CategoryPicker({
-  categories,
-  selectedIds,
-  error,
-  onToggle,
-}: {
-  categories: CategoryOption[];
-  selectedIds: string[];
-  /** The message validateStep raised for `eventCategoryIds`, if any. */
-  error?: string;
-  onToggle: (id: string) => void;
-}) {
-  const [query, setQuery] = useState("");
-  const selectedSet = new Set(selectedIds);
-  const selected = categories.filter((c) => selectedSet.has(c.id));
-  const q = query.trim().toLowerCase();
-  const available = categories.filter((c) => {
-    if (selectedSet.has(c.id)) return false;
-    if (!q) return true;
-    return c.name.toLowerCase().includes(q) || c.slug.toLowerCase().includes(q);
-  });
-
-  // Own the id/message wiring the way FormField would, since this control cannot
-  // be one: a group of toggles needs a <fieldset>/<legend>, and FormField renders
-  // a <label> (which would then claim the search box as its control).
-  const errorId = `${fieldAnchorId("eventCategoryIds")}-error`;
-
-  return (
-    <fieldset id={fieldAnchorId("eventCategoryIds")} className="grid gap-3">
-      <legend className="mb-1 flex w-full flex-wrap items-baseline justify-between gap-2">
-        {/* Label treatment copied verbatim from FormField (13.5px Ink semibold +
-            the quiet Required marker) so the picker reads as the same species of
-            field as the four above it. */}
-        <span className="flex items-baseline gap-2">
-          <span className="text-[13.5px] font-semibold text-[color:var(--ink)]">
-            Event categories you host
-          </span>
-          <span aria-hidden className="text-[11.5px] font-medium text-[color:var(--slate)]">
-            Required
-          </span>
-        </span>
-        <span className="text-[12.5px] font-medium text-[color:var(--slate)]">
-          {selectedIds.length} selected
-        </span>
-      </legend>
-
-      {/* Directly under the legend rather than under the control, which is where
-          FormField puts it: the picker is tall, and a message below the tag grid
-          would sit a screenful away from the thing it is talking about. */}
-      {error ? (
-        <span id={errorId} role="alert" className="text-[12.5px] font-medium text-[color:var(--danger)]">
-          {error}
-        </span>
-      ) : (
-        <span className="text-[12.5px] leading-[1.5] text-[color:var(--slate)]">
-          Pick at least one - it&apos;s how we put your events in front of the right locals.
-        </span>
-      )}
-
-      {categories.length === 0 ? (
-        <p className="text-sm font-medium text-[color:var(--slate)]">
-          We can&apos;t load event categories right now, and you need one to carry on. Refresh
-          the page, or email{" "}
-          <a
-            href="mailto:hello@letsclick.app?subject=Event%20categories%20won%27t%20load"
-            className="font-semibold text-[color:var(--purple)] underline underline-offset-4 hover:text-[color:var(--purple-hover)]"
-          >
-            hello@letsclick.app
-          </a>{" "}
-          and we&apos;ll finish this with you.
-        </p>
-      ) : (
-        <>
-          {/* ck-tag--tap, not the bare 24px ck-tag, on BOTH grids. This picker is
-              the one required control on step 1 and it is a thumb target: a host
-              filling the form on a phone was aiming at a 24px-tall chip, and a
-              near-miss on the selected row REMOVES a category rather than doing
-              nothing. The DS already ships the 44px variant and the create
-              wizard's category and tag pickers already use it - same control,
-              same class, no second way to do it. */}
-          {selected.length > 0 ? (
-            <div className="flex flex-wrap gap-2">
-              {selected.map((cat) => (
-                <button
-                  key={cat.id}
-                  type="button"
-                  onClick={() => onToggle(cat.id)}
-                  className="ck-tag ck-tag--select ck-tag--selected ck-tag--tap touch-manipulation"
-                  aria-label={`Remove ${cat.name}`}
-                >
-                  {cat.name} ×
-                </button>
-              ))}
-            </div>
-          ) : null}
-
-          <div className="relative">
-            <input
-              type="search"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search categories…"
-              aria-label="Search event categories"
-              aria-invalid={error ? true : undefined}
-              aria-describedby={error ? errorId : undefined}
-              className={`ck-input w-full ${error ? "ck-input--invalid" : ""}`}
-            />
-          </div>
-
-          {available.length === 0 ? (
-            <p className="text-sm font-medium text-[color:var(--slate)]">
-              {q
-                ? `No categories match “${query}”.`
-                : "All categories selected - nice."}
-            </p>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              {available.map((cat) => (
-                <button
-                  key={cat.id}
-                  type="button"
-                  onClick={() => onToggle(cat.id)}
-                  className="ck-tag ck-tag--select ck-tag--tap touch-manipulation"
-                >
-                  {cat.name}
-                </button>
-              ))}
-            </div>
-          )}
-        </>
-      )}
-    </fieldset>
-  );
-}
+   slot all come from one place, so this form cannot drift from the event
+   wizard or the profile forms. The composites that genuinely cannot be a
+   FormField - the category fieldset and the document upload rows - copy its
+   label treatment inline and say so at the site. */
 
 // ---------- section · contact & address ----------
 
@@ -1398,16 +942,6 @@ export function ContactSection() {
   const { fieldErrors } = state;
   // Set once the phone field has been left - see phoneError below.
   const [phoneTouched, setPhoneTouched] = useState(false);
-
-  // The five optional handles start folded away - see the panel below.
-  // Destructured, like every other useDisclosure call site: the react-hooks/refs
-  // rule flags any `x.something` read during render on an object that also
-  // carries a ref, even when the property read is plain state.
-  const {
-    open: socialsOpen,
-    setOpen: setSocialsOpen,
-    ref: socialsRef,
-  } = useDisclosure<HTMLDivElement>();
 
   // Picking a Mapbox suggestion fills street + suburb/state/postcode in one go.
   // Mapbox occasionally omits the region/state on an address feature, which left
@@ -1449,20 +983,16 @@ export function ContactSection() {
   }
 
   // Show the waitlist notice once the host has entered an out-of-Sydney area.
-  // Same predicate the server branches on (isWithinPilotArea is this function),
-  // so the notice on this form and the outcome they're emailed always agree.
-  const postcode = state.addressPostcode.trim();
-  const outsidePilot =
-    /^\d{4}$/.test(postcode) && !isWithinSydneyPilot(state.addressState || null, postcode);
+  const outsidePilot = isOutsidePilot(state);
   const areaLabel = state.addressSuburb.trim() || "That area";
 
   /* Two sources feed one error slot. The live check waits until the host has
      left the field once - a half-typed number is not a mistake, and flagging
      "Mobiles need 10 digits" at the second keystroke is what made a tester say
      it errored on a real number (bug board #144). Until then the hint counts
-     them through it instead. validateStep's mark arrives on Next - the only one
-     that can speak for an EMPTY field - and clears on the next keystroke, so
-     the live check takes back over while they fix it. */
+     them through it instead. validateApplication's mark arrives on submit - the
+     only one that can speak for an EMPTY field - and clears on the next
+     keystroke, so the live check takes back over while they fix it. */
   const phoneTyped = state.phone.trim() !== "";
   const phoneValid = isValidAuPhone(state.phone);
   const phoneError =
@@ -1470,13 +1000,8 @@ export function ContactSection() {
     (phoneTouched && phoneTyped && !phoneValid ? auPhoneHint(state.phone) : undefined);
   const phoneId = fieldAnchorId("phone");
 
-  const socialCount = SOCIAL_PLATFORMS.filter((p) => state.socials[p.value].trim()).length;
-  const socialsPanelId = "ms-socials-panel";
-
   return (
     <div className="grid gap-5">
-      <h2 className="font-display text-3xl font-semibold leading-tight">Contact & address</h2>
-
       <div className="grid gap-5 sm:grid-cols-2">
         <FormField
           label="Contact email"
@@ -1543,82 +1068,7 @@ export function ContactSection() {
       </div>
 
       <FormField
-        label="Website"
-        hint="Optional - we'll save it as https://."
-        type="url"
-        error={fieldErrors.websiteUrl}
-        id={fieldAnchorId("websiteUrl")}
-        value={state.websiteUrl}
-        onChange={(e) => dispatch({ type: "field", key: "websiteUrl", value: e.target.value })}
-        placeholder="https://www.yourbusiness.com.au"
-      />
-
-      {/* Five optional inputs sitting open is most of what made this step look
-          long, and "how much longer is this" is the exact question the form is
-          trying not to raise. Folded away behind the shared useDisclosure hook -
-          the same open/close behaviour as every header menu, so Escape closes it
-          and returns focus to the trigger (which has to stay the FIRST button
-          inside the ref for that to land).
-
-          The trade-off that hook carries: it also closes on an outside pointer
-          press or when focus leaves the panel, so tapping the next field folds
-          it away mid-fill. The count on the trigger is what makes that safe -
-          nothing typed here can vanish quietly, and every handle stays in state
-          and still submits. */}
-      <div ref={socialsRef} className="grid gap-2.5">
-        <button
-          type="button"
-          onClick={() => setSocialsOpen((o) => !o)}
-          aria-expanded={socialsOpen}
-          aria-controls={socialsPanelId}
-          className="flex w-full items-center justify-between gap-3 rounded-xl border-[1.5px] border-[color:var(--mist)] bg-[color:var(--paper)] px-4 py-3 text-left hover:border-[color:var(--slate)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--purple)]"
-        >
-          <span className="grid min-w-0 gap-0.5">
-            <span className="text-[13.5px] font-semibold text-[color:var(--ink)]">
-              Social profiles
-            </span>
-            <span className="text-[12.5px] leading-[1.5] text-[color:var(--slate)]">
-              {socialCount > 0
-                ? `${socialCount} added - handy for verifying hosts without formal documents yet.`
-                : "Optional - handy for verifying hosts without formal documents yet."}
-            </span>
-          </span>
-          <svg
-            viewBox="0 0 12 8"
-            width="12"
-            height="8"
-            aria-hidden="true"
-            className={`flex-none text-[color:var(--slate)] transition-transform ${socialsOpen ? "rotate-180" : ""}`}
-          >
-            <path
-              d="M1 1.5l5 5 5-5"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
-        {socialsOpen ? (
-          <div id={socialsPanelId} className="rise-soft grid gap-4 sm:grid-cols-2">
-            {SOCIAL_PLATFORMS.map((opt) => (
-              <FormField
-                key={opt.value}
-                label={opt.label}
-                value={state.socials[opt.value]}
-                onChange={(e) =>
-                  dispatch({ type: "social", platform: opt.value, value: e.target.value })
-                }
-                placeholder={opt.placeholder}
-              />
-            ))}
-          </div>
-        ) : null}
-      </div>
-
-      <FormField
-        label="Street address"
+        label="Venue or business address"
         required
         hint="Pick a suggestion and we'll fill in suburb, state and postcode."
         error={fieldErrors.addressStreet}
@@ -1677,7 +1127,7 @@ export function ContactSection() {
           className="rounded-xl bg-[color:var(--lavender-100)] px-4 py-3 text-sm leading-6 text-[color:var(--ink)]"
         >
           <span className="font-semibold">{areaLabel} is outside our Sydney pilot.</span>{" "}
-          You can still apply - we&apos;ll add you to the waitlist and email you the moment we launch in your area.
+          You can still sign up - we&apos;ll add you to the waitlist and email you the moment we launch in your area.
         </p>
       ) : null}
     </div>
@@ -1686,8 +1136,8 @@ export function ContactSection() {
 
 // Custom State picker - replaces the native <select> so the dropdown surface
 // can actually be styled on-brand (the OS-rendered popup ignores CSS). Mirrors
-// the chip-button vocabulary used by Business type above, but as a popover so
-// it stays compact inside the narrow Suburb / State / Postcode row.
+// the chip-button vocabulary used elsewhere in the form, but as a popover so it
+// stays compact inside the narrow Suburb / State / Postcode row.
 function StateSelect({
   value,
   invalid,
@@ -1703,7 +1153,7 @@ function StateSelect({
   const wrapperRef = useRef<HTMLDivElement>(null);
 
   // Close on outside-click or Escape. Both listeners are only attached while
-  // the popover is open so we don't leak globals across the whole wizard.
+  // the popover is open so we don't leak globals across the whole form.
   useEffect(() => {
     if (!open) return;
     function onPointer(event: MouseEvent) {
@@ -1806,202 +1256,339 @@ function StateSelect({
   );
 }
 
-// ---------- section · documents ----------
+// ---------- section · more about the business (optional) ----------
 
-export function DocumentsSection() {
-  const { state, dispatch } = useWizard();
+/**
+ * Everything the platform can run without, folded away so the form reads as the
+ * four answers it actually needs.
+ *
+ * A native <details>: keyboard, screen-reader and open/closed state all come
+ * with the element, and unlike the shared useDisclosure it never folds itself
+ * up because a tap landed outside it - this panel is full of inputs. React only
+ * sets `open` on the first render (the prop never changes after), so the host's
+ * own open/close is left alone; the form opens it through the ref when a mark
+ * lands inside, because a mark in a closed section is a mark nobody can see.
+ */
+function MoreAboutBusiness({
+  detailsRef,
+  defaultOpen,
+}: {
+  detailsRef: RefObject<HTMLDetailsElement | null>;
+  // Open from the start for a resubmitting host: whatever the review team
+  // flagged may well be in here.
+  defaultOpen: boolean;
+}) {
+  const { state, dispatch, categories } = useWizard();
+  const { fieldErrors } = state;
+
+  // The five handles start folded inside this panel too - five optional inputs
+  // sitting open is most of what made the old contact step look long. Shared
+  // useDisclosure, so Escape closes it and returns focus to the trigger (which
+  // has to stay the FIRST button inside the ref for that to land). It also
+  // closes on an outside press, so the count on the trigger is what makes that
+  // safe: nothing typed here can vanish quietly, and every handle still submits.
+  // Destructured, like every other useDisclosure call site: the react-hooks/refs
+  // rule flags any `x.something` read during render on an object that also
+  // carries a ref.
+  const {
+    open: socialsOpen,
+    setOpen: setSocialsOpen,
+    ref: socialsRef,
+  } = useDisclosure<HTMLDivElement>();
+  const socialCount = SOCIAL_PLATFORMS.filter((p) => state.socials[p.value].trim()).length;
+  const socialsPanelId = "ms-socials-panel";
+
+  // Said on the summary, so answers inside never look lost while it's closed.
+  const addedCount =
+    [state.tradingName, state.abn, state.acn, state.websiteUrl].filter((v) => v.trim()).length +
+    socialCount +
+    (state.eventCategoryIds.length > 0 ? 1 : 0) +
+    Object.values(state.uploads).filter(Boolean).length;
+
   return (
-    <div className="grid gap-5">
-      <div>
-        <h2 className="font-display text-3xl font-semibold leading-tight">Review &amp; documents</h2>
-        <p className="mt-2 text-sm leading-6 text-[color:var(--slate)]">
-          Check your details, add any helpful evidence, then send your application. We aim to
-          review applications in the Sydney pilot within 1 business day and will email you if
-          anything else is needed.
-        </p>
-      </div>
-
-      <ApplicationRecap />
-
-      {/* Written for a restaurant owner, not an engineer: the sentence this
-          replaced said "private Supabase Storage bucket" and "signed URLs", which
-          is leaked plumbing on the one step where trust is being asked for. It
-          also never said the thing that actually settles nerves - none of this is
-          required to send the application.
-
-          The old last clause promised "add documents later", and there is no
-          later: the moment the application is submitted a merchant_profile
-          exists, and /merchant/signup/layout.tsx redirects any host holding one
-          to /merchant unless they were rejected - so this uploader is the ONLY
-          screen that takes a document, and only until Submit. The repository
-          says the same thing from the other side when a host tries anyway
-          ("already approved - email hello@letsclick.app to change a document on
-          file", event-repository.ts deleteMerchantDocument). So: name the
-          window, and name the address for anything after it. */}
-      <InfoNote icon="lock">
-        Documents can help if your business details cannot be verified from public records. Every
-        upload is optional, and skipping them does not stop you submitting. They stay private to
-        you and the Click review team. This screen is the only upload step, so anything you want
-        to add afterwards goes to{" "}
-        <a
-          href="mailto:hello@letsclick.app?subject=Document%20for%20my%20host%20application"
-          className="font-semibold text-[color:var(--purple-700)] underline underline-offset-2"
+    <details
+      ref={detailsRef}
+      open={defaultOpen || undefined}
+      className="group rounded-xl border-[1.5px] border-[color:var(--mist)] bg-[color:var(--paper)]"
+    >
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-xl px-4 py-3 hover:bg-[color:var(--lavender-100)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--purple)] [&::-webkit-details-marker]:hidden">
+        <span className="grid min-w-0 gap-0.5">
+          <span className="text-[13.5px] font-semibold text-[color:var(--ink)]">
+            More about the business
+          </span>
+          <span className="text-[12.5px] leading-[1.5] text-[color:var(--slate)]">
+            {addedCount > 0 ? `${addedCount} added · ` : ""}Optional - ABN, website, socials,
+            documents. Handy when we look over your first event.
+          </span>
+        </span>
+        <svg
+          viewBox="0 0 12 8"
+          width="12"
+          height="8"
+          aria-hidden="true"
+          className="flex-none text-[color:var(--slate)] transition-transform group-open:rotate-180"
         >
-          hello@letsclick.app
-        </a>
-        .
-      </InfoNote>
+          <path
+            d="M1 1.5l5 5 5-5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </summary>
 
-      <DocumentUploadRow
-        label="ABN certificate (optional)"
-        documentType="abn_certificate"
-        state={state}
-        dispatch={dispatch}
-      />
-      <DocumentUploadRow
-        label="Public liability insurance (optional)"
-        documentType="public_liability_insurance"
-        state={state}
-        dispatch={dispatch}
-      />
-      <DocumentUploadRow
-        label="Liquor licence (only if you host alcohol events)"
-        documentType="liquor_licence"
-        state={state}
-        dispatch={dispatch}
-      />
-    </div>
+      <div className="grid gap-5 border-t border-[color:var(--mist)] px-4 pb-5 pt-4">
+        <FormField
+          label="Trading name"
+          hint="Only if you trade under a different name."
+          value={state.tradingName}
+          onChange={(e) => dispatch({ type: "field", key: "tradingName", value: e.target.value })}
+          placeholder="STF Events"
+        />
+
+        <div className="grid gap-5 sm:grid-cols-2">
+          <FormField
+            label="ABN"
+            hint="The 11-digit ABN on your ATO registration. Spaces are fine."
+            error={fieldErrors.abn}
+            id={fieldAnchorId("abn")}
+            value={state.abn}
+            inputMode="numeric"
+            maxLength={14}
+            onChange={(e) =>
+              dispatch({
+                type: "field",
+                key: "abn",
+                value: normalizeAbn(e.target.value).slice(0, 11),
+              })
+            }
+            onBlur={() => dispatch({ type: "field", key: "abn", value: formatAbn(state.abn) })}
+            placeholder="11 222 333 444"
+          />
+
+          <FormField
+            label="ACN"
+            hint="9 digits."
+            error={fieldErrors.acn}
+            id={fieldAnchorId("acn")}
+            value={state.acn}
+            inputMode="numeric"
+            onChange={(e) => dispatch({ type: "field", key: "acn", value: e.target.value })}
+            onBlur={() => dispatch({ type: "field", key: "acn", value: formatAcn(state.acn) })}
+            placeholder="000 000 000"
+          />
+        </div>
+
+        <FormField
+          label="Website"
+          hint="We'll save it as https://."
+          type="url"
+          error={fieldErrors.websiteUrl}
+          id={fieldAnchorId("websiteUrl")}
+          value={state.websiteUrl}
+          onChange={(e) => dispatch({ type: "field", key: "websiteUrl", value: e.target.value })}
+          placeholder="https://www.yourbusiness.com.au"
+        />
+
+        <div ref={socialsRef} className="grid gap-2.5">
+          <button
+            type="button"
+            onClick={() => setSocialsOpen((o) => !o)}
+            aria-expanded={socialsOpen}
+            aria-controls={socialsPanelId}
+            className="flex w-full items-center justify-between gap-3 rounded-xl border-[1.5px] border-[color:var(--mist)] bg-[color:var(--paper)] px-4 py-3 text-left hover:border-[color:var(--slate)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--purple)]"
+          >
+            <span className="grid min-w-0 gap-0.5">
+              <span className="text-[13.5px] font-semibold text-[color:var(--ink)]">
+                Social profiles
+              </span>
+              <span className="text-[12.5px] leading-[1.5] text-[color:var(--slate)]">
+                {socialCount > 0
+                  ? `${socialCount} added - handy for verifying hosts without formal documents yet.`
+                  : "Handy for verifying hosts without formal documents yet."}
+              </span>
+            </span>
+            <svg
+              viewBox="0 0 12 8"
+              width="12"
+              height="8"
+              aria-hidden="true"
+              className={`flex-none text-[color:var(--slate)] transition-transform ${socialsOpen ? "rotate-180" : ""}`}
+            >
+              <path
+                d="M1 1.5l5 5 5-5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+          {socialsOpen ? (
+            <div id={socialsPanelId} className="rise-soft grid gap-4 sm:grid-cols-2">
+              {SOCIAL_PLATFORMS.map((opt) => (
+                <FormField
+                  key={opt.value}
+                  label={opt.label}
+                  value={state.socials[opt.value]}
+                  onChange={(e) =>
+                    dispatch({ type: "social", platform: opt.value, value: e.target.value })
+                  }
+                  placeholder={opt.placeholder}
+                />
+              ))}
+            </div>
+          ) : null}
+        </div>
+
+        <CategoryPicker
+          categories={categories}
+          selectedIds={state.eventCategoryIds}
+          onToggle={(id) => dispatch({ type: "toggleCategory", id })}
+        />
+
+        {/* Written for a restaurant owner, not an engineer. There is no later for
+            uploads: once the form is sent a merchant_profile exists, and
+            /merchant/signup/layout.tsx redirects any host holding one to
+            /merchant unless they were rejected - so this panel is the ONLY
+            screen that takes a document. The repository says the same thing
+            from the other side ("already approved - email hello@letsclick.app to
+            change a document on file", deleteMerchantDocument). So: name the
+            window, and name the address for anything after it. */}
+        <div className="grid gap-3">
+          <InfoNote icon="lock">
+            Documents stay private to you and the Click team. This is the only place to upload
+            them, so anything you want to add later goes to{" "}
+            <a
+              href="mailto:hello@letsclick.app?subject=Document%20for%20my%20host%20account"
+              className="font-semibold text-[color:var(--purple-700)] underline underline-offset-2"
+            >
+              hello@letsclick.app
+            </a>
+            .
+          </InfoNote>
+          <DocumentUploadRow
+            label="ABN certificate"
+            documentType="abn_certificate"
+            state={state}
+            dispatch={dispatch}
+          />
+          <DocumentUploadRow
+            label="Public liability insurance"
+            documentType="public_liability_insurance"
+            state={state}
+            dispatch={dispatch}
+          />
+          <DocumentUploadRow
+            label="Liquor licence (only if you host alcohol events)"
+            documentType="liquor_licence"
+            state={state}
+            dispatch={dispatch}
+          />
+        </div>
+      </div>
+    </details>
   );
 }
 
-/**
- * The read-only recap of everything typed on steps 1 and 2, above the uploads.
- *
- * Step 3 is where a host is asked to hand over identity documents, and that is
- * the one moment in this form worth being able to re-read the earlier answers.
- * Until now the only way was to walk two steps back: the ANSWERS survive that
- * trip (they live in the provider, and in the session draft), but the place in
- * the form does not, and the uploads are on this page. So the answers come here
- * instead. Each group keeps an Edit link, which is the same jump the stepper
- * dots offer - just next to the thing you would be editing.
- *
- * Read-only on purpose: two editable copies of the same field is how one of
- * them ends up stale.
- */
-function ApplicationRecap() {
-  const { state, categories } = useWizard();
+// Searchable multi-select for event categories. Selected pills stay pinned
+// above the search results so they're always visible while the user filters.
+function CategoryPicker({
+  categories,
+  selectedIds,
+  onToggle,
+}: {
+  categories: CategoryOption[];
+  selectedIds: string[];
+  onToggle: (id: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const selectedSet = new Set(selectedIds);
+  const selected = categories.filter((c) => selectedSet.has(c.id));
+  const q = query.trim().toLowerCase();
+  const available = categories.filter((c) => {
+    if (selectedSet.has(c.id)) return false;
+    if (!q) return true;
+    return c.name.toLowerCase().includes(q) || c.slug.toLowerCase().includes(q);
+  });
 
-  const chosen = categories.filter((c) => state.eventCategoryIds.includes(c.id));
-  const handles = SOCIAL_PLATFORMS.filter((p) => state.socials[p.value].trim()).map(
-    (p) => `${p.label}: ${state.socials[p.value].trim()}`,
-  );
-  const address = [
-    state.addressStreet.trim(),
-    state.addressSuburb.trim(),
-    [state.addressState, state.addressPostcode.trim()].filter(Boolean).join(" "),
-  ]
-    .filter(Boolean)
-    .join(", ");
+  // Nothing to choose from: optional now, so say nothing rather than raise a
+  // problem the host cannot fix and does not need to.
+  if (categories.length === 0) return null;
 
-  /* `always` rows are the ones the wizard requires, so they render even when
-     empty (a host who deep-linked straight to this step can see WHAT is missing
-     here rather than only finding out when Submit bounces them). Optional rows
-     with nothing in them are simply left out - a list of blanks is noise. */
-  type Row = { label: string; value: string; always?: boolean };
-  const groups: Array<{ title: string; href: string; rows: Row[] }> = [
-    {
-      title: "Business",
-      href: STEP_PATHS[0],
-      rows: [
-        { label: "Business name", value: state.businessName.trim(), always: true },
-        { label: "Trading name", value: state.tradingName.trim() },
-        { label: "ABN", value: state.abn.trim() },
-        { label: "ACN", value: state.acn.trim() },
-        {
-          label: chosen.length === 1 ? "Category" : "Categories",
-          value: chosen.map((c) => c.name).join(", "),
-          always: true,
-        },
-      ],
-    },
-    {
-      title: "Contact & address",
-      href: STEP_PATHS[1],
-      rows: [
-        { label: "Contact email", value: state.contactEmail.trim(), always: true },
-        { label: "Phone", value: state.phone.trim(), always: true },
-        { label: "Website", value: state.websiteUrl.trim() },
-        { label: "Socials", value: handles.join(" · ") },
-        { label: "Address", value: address, always: true },
-      ],
-    },
-  ];
-
-  /* The uploads come back from the server on every load; the typed answers only
-     survive in the session draft, which a closed tab discards. So this step can
-     legitimately show "Uploaded" beside a recap full of blanks, and the host is
-     owed the reason rather than left to read it as the form half-forgetting
-     them. */
-  const missingRequired = groups.reduce(
-    (count, group) => count + group.rows.filter((row) => row.always && !row.value).length,
-    0,
-  );
-  const hasUploads = Object.values(state.uploads).some(Boolean);
-
+  // A group of toggles needs a <fieldset>/<legend>, so this cannot be a
+  // FormField (which renders a <label> that would claim the search box).
   return (
-    <section
-      aria-label="What you're sending"
-      className="grid gap-4 rounded-2xl border border-[color:var(--line)] bg-[color:var(--champagne)] p-4"
-    >
-      {missingRequired > 0 ? (
-        <p className="text-[12.5px] font-medium leading-[1.5] text-[color:var(--slate)]">
-          {missingRequired === 1 ? "1 required answer is" : `${missingRequired} required answers are`}{" "}
-          still to fill in.{" "}
-          {hasUploads
-            ? "Your uploaded documents are kept on our side, the typed answers only live in this browser - so closing the tab keeps the files and not the typing. "
-            : ""}
-          Use Edit below and they&apos;ll be waiting when you come back to this step.
-        </p>
-      ) : null}
-      {groups.map((group) => (
-        <div key={group.title} className="grid gap-2">
-          <div className="flex items-baseline justify-between gap-3">
-            <h3 className="font-display text-[13.5px] font-semibold text-[color:var(--ink)]">
-              {group.title}
-            </h3>
-            <Link
-              href={group.href}
-              className="text-[12.5px] font-semibold text-[color:var(--purple)] underline underline-offset-4 hover:text-[color:var(--purple-hover)]"
+    <fieldset className="grid gap-3">
+      <legend className="mb-1 flex w-full flex-wrap items-baseline justify-between gap-2">
+        {/* Label treatment copied verbatim from FormField (13.5px Ink semibold)
+            so the picker reads as the same species of field as the ones above. */}
+        <span className="text-[13.5px] font-semibold text-[color:var(--ink)]">
+          Event categories you host
+        </span>
+        <span className="text-[12.5px] font-medium text-[color:var(--slate)]">
+          {selectedIds.length} selected
+        </span>
+      </legend>
+
+      <span className="text-[12.5px] leading-[1.5] text-[color:var(--slate)]">
+        Pick any that fit - it tells us what kind of host you are.
+      </span>
+
+      {/* ck-tag--tap, not the bare 24px ck-tag, on BOTH grids: a near-miss on the
+          selected row REMOVES a category, so these are 44px thumb targets - the
+          same class the create wizard's pickers use. */}
+      {selected.length > 0 ? (
+        <div className="flex flex-wrap gap-2">
+          {selected.map((cat) => (
+            <button
+              key={cat.id}
+              type="button"
+              onClick={() => onToggle(cat.id)}
+              className="ck-tag ck-tag--select ck-tag--selected ck-tag--tap touch-manipulation"
+              aria-label={`Remove ${cat.name}`}
             >
-              Edit {group.title.toLowerCase()}
-            </Link>
-          </div>
-          <dl className="grid gap-1.5">
-            {group.rows
-              .filter((row) => row.always || row.value)
-              .map((row) => (
-                <div
-                  key={row.label}
-                  className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 border-t border-[color:var(--mist)] pt-1.5 first:border-0 first:pt-0"
-                >
-                  <dt className="text-[12.5px] font-medium text-[color:var(--slate)]">
-                    {row.label}
-                  </dt>
-                  <dd
-                    className={`min-w-0 text-right text-[13px] ${
-                      row.value
-                        ? "font-semibold text-[color:var(--ink)]"
-                        : "text-[color:var(--slate)]"
-                    }`}
-                  >
-                    {row.value || "Not added yet"}
-                  </dd>
-                </div>
-              ))}
-          </dl>
+              {cat.name} ×
+            </button>
+          ))}
         </div>
-      ))}
-    </section>
+      ) : null}
+
+      <div className="relative">
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search categories…"
+          aria-label="Search event categories"
+          className="ck-input w-full"
+        />
+      </div>
+
+      {available.length === 0 ? (
+        <p className="text-sm font-medium text-[color:var(--slate)]">
+          {q
+            ? `No categories match “${query}”.`
+            : "All categories selected - nice."}
+        </p>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {available.map((cat) => (
+            <button
+              key={cat.id}
+              type="button"
+              onClick={() => onToggle(cat.id)}
+              className="ck-tag ck-tag--select ck-tag--tap touch-manipulation"
+            >
+              {cat.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </fieldset>
   );
 }
 
@@ -2223,7 +1810,11 @@ function DocumentUploadRow({
         // blurs it, and a keyboard user lands back at the top of the document.
         // The guard in onChange is what actually blocks the second pick.
         aria-disabled={busy || undefined}
-        className="text-sm font-medium text-[color:var(--ink)] file:mr-3 file:rounded-xl file:border file:border-[color:var(--mist)] file:bg-[color:var(--paper)] file:px-4 file:py-2 file:text-xs file:font-semibold file:text-[color:var(--ink)] hover:file:bg-[color:var(--lavender-100)]"
+        // w-full min-w-0: a file input is ~304px wide on its own, and that
+        // intrinsic width pushed the whole form card past a 375px phone (html
+        // clips overflow-x, so the right edge of every field was simply cut
+        // off). Sized to its row, it truncates "No file chosen" instead.
+        className="w-full min-w-0 text-sm font-medium text-[color:var(--ink)] file:mr-3 file:rounded-xl file:border file:border-[color:var(--mist)] file:bg-[color:var(--paper)] file:px-4 file:py-2 file:text-xs file:font-semibold file:text-[color:var(--ink)] hover:file:bg-[color:var(--lavender-100)]"
       />
       {/* The constraints live beside the input that enforces them, from the same
           constants the guard and the picker filter use. */}

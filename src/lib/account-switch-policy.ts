@@ -1,5 +1,22 @@
 export type AdminActor = { email: string; name: string | null; image: string | null };
-export type AccountImpersonation = { actor: AdminActor; expiresAt: number };
+export type AccountImpersonation = {
+  actor: AdminActor;
+  expiresAt: number;
+  /**
+   * HOTFIX 2026-10-12 H4.1: a real member's account opens view only - acting
+   * is allowed only on a test account. Set at switch time. Absent on a session
+   * minted before the hotfix: auth.ts ends those on a real member, and
+   * isViewOnlySession treats any other as view only.
+   */
+  readOnly?: boolean;
+};
+
+/** A viewing session that must not change anything. Fail closed: only an
+ *  explicit readOnly: false (a test account) may act. */
+export function isViewOnlySession(session: { impersonation?: AccountImpersonation } | null | undefined): boolean {
+  const viewing = session?.impersonation;
+  return !!viewing && viewing.readOnly !== false;
+}
 
 type SwitchSession = {
   user?: { email?: string | null; name?: string | null; image?: string | null };

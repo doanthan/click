@@ -7,6 +7,8 @@ import SupportWidget from "@/components/support/support-widget-lazy";
 import { TestAccountSwitcher } from "@/components/test-account-switcher";
 import { SessionFreshness } from "@/components/session-freshness";
 import { AccountViewingBanner } from "@/components/account-viewing-banner";
+import { ViewOnlyFieldset } from "@/components/view-only-fieldset";
+import { isViewOnlySession } from "@/lib/account-switch-policy";
 import { LoginModalHost } from "@/components/login-modal-host";
 import { MutualRevealHost } from "@/components/mutual-reveal-host";
 import { ChromeGate } from "@/components/chrome-gate";
@@ -108,6 +110,8 @@ export default async function RootLayout({
   const qaSwitcherUnlocked = await isTestSwitcherUnlocked();
   const qaSessionEmail = session?.user?.email?.trim().toLowerCase() ?? "";
   const isQaSession = qaSessionEmail.endsWith("@click.local");
+  // An admin viewing a real member (HOTFIX 2026-10-12 H4.1): look, never act.
+  const viewOnly = isViewOnlySession(session);
   // Anyone may report a bug; only an operator may read the queue back.
   const canTriageBugs = await canTriageSupportTickets();
   // Only to pick the header PLACEHOLDER's variant, so the streamed bar reserves
@@ -167,7 +171,7 @@ export default async function RootLayout({
             viewingAccount={!!session?.impersonation}
           />
         ) : session?.impersonation ? (
-          <AccountViewingBanner email={session.user?.email ?? ""} adminEmail={session.impersonation.actor.email} />
+          <AccountViewingBanner email={session.user?.email ?? ""} adminEmail={session.impersonation.actor.email} viewOnly={viewOnly} />
         ) : null}
         {/* The live header awaits the session profile + notification queries;
             stream it so those round-trips never block first paint of the page
@@ -186,7 +190,7 @@ export default async function RootLayout({
             skip-link target above them all. flex-1 keeps short pages pushing
             the footer down, exactly as the bare children did. */}
         <div id="main-content" tabIndex={-1} className="flex min-w-0 flex-1 flex-col outline-none">
-          {children}
+          <ViewOnlyFieldset viewOnly={viewOnly}>{children}</ViewOnlyFieldset>
         </div>
         <ChromeGate>
           <SiteFooter />

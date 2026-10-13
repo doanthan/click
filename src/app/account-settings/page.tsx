@@ -19,6 +19,7 @@ const DEFAULT_SETTINGS: AccountSettings = {
   },
   showSuburb: true,
   showAttendanceCount: true,
+  showAge: true,
   showOnAttendeeLists: true,
   allowMerchantMessages: false,
 };
@@ -221,6 +222,14 @@ function PrivacyTab({ settings }: { settings: AccountSettings }) {
           label="Show how many events I've been to"
           description="The count on your profile - never which events."
           initialOn={settings.showAttendanceCount}
+        />
+        {/* Bug board #339: off hides it, except where you're both open to
+            dating (visibleAgeFor). */}
+        <AccountSettingToggle
+          settingKey="showAge"
+          label="Show my age"
+          description="Your age shows on your profile. Off hides it - unless you're both open to dating."
+          initialOn={settings.showAge}
         />
         <AccountSettingToggle
           settingKey="showOnAttendeeLists"

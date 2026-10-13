@@ -131,6 +131,7 @@ export type EmailTemplate =
   | "event-cancelled-attendee"
   | "event-address-changed-attendee"
   | "merchant-application-received"
+  | "merchant-welcome-merchant"
   | "merchant-waitlisted-merchant"
   | "merchant-verified-merchant"
   | "merchant-rejected-merchant"
@@ -152,7 +153,8 @@ export type EmailTemplate =
   | "guest-spot-existing-user"
   | "guest-spot-confirmed"
   | "guest-spot-cancelled"
-  | "booking-refunded-attendee";
+  | "booking-refunded-attendee"
+  | "launch-waitlist-joined";
 
 // Where the .html files live. Override with CLICK_EMAILS_DIR if Next moves
 // cwd somewhere unexpected in your deploy; otherwise resolves from repo root.
@@ -190,6 +192,8 @@ const SUBJECTS: Record<EmailTemplate, (vars: Record<string, string>) => string> 
     `New address - ${v.eventTitle ?? "your event"}`,
   "merchant-application-received": (v) =>
     `We've got your application - ${v.businessName ?? "your business"}`,
+  "merchant-welcome-merchant": (v) =>
+    `${v.businessName ?? "Your host account"} is set up - post your first event`,
   "merchant-waitlisted-merchant": (v) =>
     `You're on the Click waitlist - ${v.suburb ?? "your area"} is coming soon`,
   "merchant-verified-merchant": (v) =>
@@ -232,6 +236,7 @@ const SUBJECTS: Record<EmailTemplate, (vars: Record<string, string>) => string> 
     `You're in - ${v.eventTitle ?? "your event"}${v.eventShortDate ? `, ${v.eventShortDate}` : ""}`,
   "guest-spot-cancelled": (v) =>
     `Your spot at ${v.eventTitle ?? "an event"} is no longer held`,
+  "launch-waitlist-joined": () => "You're on the list for Click",
 };
 
 // In-process cache. .html files don't change between requests during a single

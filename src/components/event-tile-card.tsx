@@ -2,6 +2,7 @@ import Link from "next/link";
 import { type EventItem, formatEventTimeRange } from "@/lib/click-data";
 import { EventBookmarkButton } from "./event-bookmark-button";
 import { EventImage } from "./event-image";
+import { seatScarcity } from "@/lib/seat-scarcity";
 
 // Compact "SAT, 14 JUN" date label, formatted in Sydney time so it lines up
 // with the server-rendered time string already on the item.
@@ -90,11 +91,12 @@ export function EventTileCard({
 
   // Honest availability signal - no invented ratings. Drives the corner badge
   // on the image, mirroring how Meetup/ClassBento surface urgency + capacity.
+  const scarcity = seatScarcity(seatsLeft, event.capacity);
   const availability = isFull
     ? { label: isWaitlist ? "Waitlist open" : "Sold out", tone: "full" as const }
-    : seatsLeft <= 3
+    : scarcity === "spots"
       ? { label: `${seatsLeft} spot${seatsLeft === 1 ? "" : "s"} left`, tone: "low" as const }
-      : seatsLeft <= 8
+      : scarcity === "almostfull"
         ? { label: "Almost full", tone: "low" as const }
         : null;
 

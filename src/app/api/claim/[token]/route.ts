@@ -84,8 +84,13 @@ export async function POST(request: Request, context: RouteContext) {
     const name = (error as Error)?.name;
     // A banned account claiming a +1 gets the same 403 the RSVP and checkout
     // routes give, so the person reads why instead of "something went wrong".
+    // A clash with a seat the claimer already holds (bug board #323) is a 409
+    // with its own message, like the RSVP and checkout routes give.
     const status =
-      name === "ForbiddenError" ? 403 : name === "DatabaseUnavailableError" ? 503 : 500;
+      name === "ForbiddenError" ? 403
+      : name === "ConflictError" ? 409
+      : name === "DatabaseUnavailableError" ? 503
+      : 500;
     return NextResponse.json({ error: message }, { status });
   }
 }

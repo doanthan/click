@@ -278,10 +278,15 @@ test("a mixed-intent pair is never rounded into one frame", () => {
   assert.match(fn, /You're here for \$\{mine\} - they're open to \$\{theirs\}/);
 });
 
-test("the dating pill reads the live opt-in, not one slot of a snapshot", () => {
-  // intent_a/intent_b hold ONE value each, so '{friendship,dating}' never qualified
-  // and the pill silently never rendered for those users.
-  assert.match(repo, /\(me\.dating_visible and other\.dating_visible\) as both_dating/);
+test("the dating pill is the one dating rule, checked live - never 'both toggles on'", () => {
+  // HOTFIX 2026-10-12 H1. "Both have dating on" put "both open to dating" on
+  // pairs whose genders and preferences don't fit. The pill now reads
+  // is_romantically_compatible() at read time, on both mutual projections - and
+  // not one slot of the intent snapshot either: intent_a/intent_b hold ONE value
+  // each, so '{friendship,dating}' never qualified.
+  assert.doesNotMatch(repo, /dating_visible and other\.dating_visible/);
+  assert.match(repo, /is_romantically_compatible\(me\.id, other\.id\) as both_dating/);
+  assert.match(repo, /is_romantically_compatible\(\$1::uuid, other\.id\) as both_dating/);
 });
 
 // ── Calm recovery + banned language ──────────────────────────────────────────────

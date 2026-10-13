@@ -57,7 +57,7 @@ Both buckets are written via the service-role admin client in `src/utils/supabas
 
 - Helper: `src/utils/supabase/admin.ts` (the same service-role client).
 - Bucket: `merchant-documents`, **private**. Access requires a signed URL.
-- Upload route: `POST /api/merchant/documents` (Step 3 of `/merchant/signup`). Key scheme `<profileId>/<documentType>/<uuid>.<ext>`; metadata persisted via `recordMerchantDocument()`.
+- Upload route: `POST /api/merchant/documents` (the optional "More about the business" section of the one-page `/merchant/signup`). Key scheme `<profileId>/<documentType>/<uuid>.<ext>`; metadata persisted via `recordMerchantDocument()`.
 - The admin read path is `getMerchantDocumentsForAdmin` in `src/lib/event-repository.ts`, rendered on `/admin/merchants/[merchantId]`. It issues `createSignedUrl(file_path, 300)` - a 5-minute TTL, generated per request. Keep any new read path to that shape; never expose object paths to the browser directly.
 
 ### Why two buckets
@@ -81,7 +81,8 @@ Public bucket = anyone with the URL can read (avatars rendered on event cards, h
 | `rsvp-attendee` + `rsvp-merchant` | `registerForEvent` in `src/lib/event-repository.ts`, after commit on the confirmed-RSVP branch (the waitlisted branch logs `waitlist-joined-attendee`) |
 | `event-created-merchant` + `event-awaiting-payouts-merchant` | `createEventForMerchant` in `src/lib/event-repository.ts`, after the events insert + tag upsert, branched on the status the event landed in: an untrusted host's `pending` event gets `event-created-merchant` ("in review"), a trusted host's paid event held `pending` for payouts gets `event-awaiting-payouts-merchant`, and an event created straight to `live` gets `event-approved-merchant` instead (see below) |
 | `merchant-verified-merchant` + `merchant-rejected-merchant` | `updateMerchantVerificationForAdmin` in `src/lib/event-repository.ts`, branched on approved/rejected |
-| `merchant-application-received` | `registerMerchantWizardSubmit` in `src/lib/event-repository.ts`, after commit, first submission only (`xmax = 0`) |
+| `merchant-welcome-merchant` | `registerMerchantWizardSubmit` in `src/lib/event-repository.ts`, after commit, on a NEW host's first submission inside the launch pilot (`xmax = 0`). Instant access: the row is inserted already `approved` but untrusted, with `trust_after_first_event` set (`database/073`), so their first event goes to admin review and approving it trusts them (`trustHostAfterFirstEventReview`) |
+| `merchant-application-received` | `registerMerchantWizardSubmit` in `src/lib/event-repository.ts`, after commit, when a REJECTED host resubmits inside the pilot - that goes back to admin review. A first submission inside the pilot gets `merchant-welcome-merchant` instead |
 | `event-approved-merchant` | `approveEventForAdmin` in `src/lib/event-repository.ts`, via `logEventApprovedEmail` helper (looks up the owning merchant; skipped for platform-owned events). Also `createEventForMerchant` when a trusted host's event is created straight to `live`. Also `publishEventsHeldForPayouts`, called from `updateMerchantConnectStatus` once charges AND payouts are on: it publishes a trusted host's paid events that were held in `pending` for payout setup and sends this email per event, post-response via `afterResponse` |
 | `event-rejected-merchant` | `rejectEventForAdmin` in `src/lib/event-repository.ts`, via `logEventRejectedEmail` helper (carries the admin's free-text reason; skipped for platform-owned events) |
 | `rsvp-cancelled-attendee` + `rsvp-cancelled-merchant` | `cancelRegistration` in `src/lib/event-repository.ts`, after commit, via `logRsvpCancelledEmails` helper |
@@ -104,6 +105,7 @@ Public bucket = anyone with the URL can read (avatars rendered on event cards, h
 | `report-received-admin` | `reportUser` in `src/lib/event-repository.ts` |
 | `booking-refunded-attendee` | `settleRefundedBooking` in `src/lib/event-repository.ts`, from two callers: `issueRefund` in `src/lib/stripe-sync.ts` when `settleBooking: true` and the refund is FULL (the admin console passes it; `cancelRegistration` and the bulk event-cancel path must not, they already cancel the seat and send their own copy), and `markPaymentSucceeded`'s settled-after-cancellation branch, which needed the email but not the seat release |
 | `merchant-monthly-report` | `sendMerchantMonthlyReports` in `src/lib/event-repository.ts`, driven by the `api/cron/merchant-monthly-reports` cron - one row per approved merchant who hosted ≥1 event in the target month (events/attendees/paid-revenue/top event) |
+| `launch-waitlist-joined` | `requestInvite` in `src/app/waitlist/actions.ts` (the pre-launch `/waitlist` page), post-response via `after()`, on an address's FIRST request only (`joinLaunchWaitlist` in `src/lib/launch-waitlist.ts` reports it via `xmax = 0`). A repeat request gets the identical success screen and no email, so the page never says who is already on the list. No profile behind it, so `to_profile_id` is null |
 
 `event-reminder-attendee` is wired too, via `sendEventReminders` in `src/lib/event-repository.ts` (cron route `api/cron/event-reminders`), which dedupes against existing `email_events` rows so a re-run can't double-send.
 

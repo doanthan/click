@@ -120,7 +120,25 @@ export async function createConnectedAccount(
     ],
     metadata: { app: "click" },
   });
+  // Best-effort: the account must still be saved if this fails, and the
+  // release-payouts cron sets it on its next run anyway.
+  await holdPayouts(account.id).catch((error) => {
+    console.warn("[stripe-connect] could not set manual payouts:", error);
+  });
   return account.id;
+}
+
+// Hosts are paid after their event, so their payouts are manual: Stripe keeps
+// the money in their balance until releaseHeldPayouts (stripe-sync.ts) pays out
+// what's no longer held (src/lib/payout-release.ts). v2 accounts take payout
+// settings through the Balance Settings API, not the account object.
+// Idempotent - the cron re-asserts it every run.
+export async function holdPayouts(accountId: string): Promise<void> {
+  const stripe = requireClient();
+  await stripe.balanceSettings.update(
+    { payments: { payouts: { schedule: { interval: "manual" } } } },
+    { stripeAccount: accountId },
+  );
 }
 
 // Single-use, ~5-min hosted onboarding URL. The merchant submits bank details

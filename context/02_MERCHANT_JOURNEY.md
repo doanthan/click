@@ -5,7 +5,7 @@
 
 ## 0. Design Constraints
 
-- **Merchants cannot self-approve.** All new applications require admin sign-off.
+- **Merchants cannot self-approve.** All new applications require admin sign-off. *Changed 2026-10-09 (product decision, for signup friction):* a new host inside the launch pilot gets **instant access** - approved at signup but untrusted, so nothing they create is public until an admin approves their **first event**, and that approval trusts them (`database/073_merchant_instant_access.sql`). Outside the pilot → host waitlist. A rejected host's resubmission still needs admin sign-off. Signup is one page; business type is asked at the Stripe payout step.
 - **Event scheduling conflicts enforced at DB layer**, not UI only.
 - **Click-managed events own capacity.** External-booking events use informational capacity only.
 - **No event published without at least one Interest Tag.**

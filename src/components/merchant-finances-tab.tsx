@@ -31,7 +31,7 @@ function PayoutStatusCard({
     ? {
         tone: "neutral" as const,
         label: "Not set up",
-        body: "Connect a Stripe account to accept paid bookings and get paid out automatically.",
+        body: "Connect a Stripe account to accept paid bookings and get paid after each event.",
       }
     : !connect.detailsSubmitted
       ? {
@@ -54,11 +54,11 @@ function PayoutStatusCard({
           : {
               tone: "sage" as const,
               label: "Connected",
-              // Nothing in this codebase sets payout_schedule on the connected
-              // account, so the cadence is whatever Stripe defaults to for the
-              // host's country - naming a schedule we do not set was a promise
-              // we could not keep. Stripe owns it, so point at Stripe.
-              body: "Payments route to your connected account. Stripe pays out to your bank on its own schedule - you can see and change it in your Stripe dashboard.",
+              // We own the cadence now: payouts are manual on every host account
+              // (holdPayouts) and api/cron/release-payouts sends each event's
+              // earnings PAYOUT_RELEASE_DELAY_HOURS after it ends. The host
+              // must not be told they can change it - the cron sets it back.
+              body: "Payments route to your connected account and are held until your event has run. Each event's earnings go to your bank a couple of days after it ends - you can see every payout in your Stripe dashboard.",
             };
 
   const ready = connect.hasAccount && connect.chargesEnabled;
@@ -97,9 +97,10 @@ function PayoutStatusCard({
   );
 }
 
-// Recent Stripe payouts from the connected account. Populated by the `payout.*`
-// webhook in stripe-sync.ts; older history lives in the Express dashboard, one
-// click away via <StripeDashboardButton />.
+// Recent Stripe payouts from the connected account. Populated by
+// releaseHeldPayouts and the `payout.*` webhook in stripe-sync.ts; older
+// history lives in the Express dashboard, one click away via
+// <StripeDashboardButton />.
 function RecentPayoutsCard({
   payouts,
 }: {
@@ -112,7 +113,7 @@ function RecentPayoutsCard({
       </span>
       {payouts.length === 0 ? (
         <p className="text-[13.5px] leading-relaxed text-[color:var(--slate)]">
-          No payouts yet - Stripe pays out once you have a connected balance.
+          No payouts yet - each event&apos;s earnings go to your bank a couple of days after it ends.
         </p>
       ) : (
         <ul className="flex flex-col gap-2.5">
