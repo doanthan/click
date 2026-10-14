@@ -121,7 +121,8 @@ import {
   isUuid,
 } from "./guest-spots";
 import { isDerivedFromEmail } from "./display-name";
-import { lookupPostcode, placeForSuburb } from "./postcode";
+import { distanceOriginForSuburb, lookupPostcode, placeForSuburb } from "./postcode";
+import { quizEventPrefs, quizMisfit, rankByQuizFit } from "./quiz-fit";
 import { getPostgresPool, mapWithConcurrency } from "./postgres";
 import { attendeeFomoSignals, decadeOf, majorityDecade } from "./attendee-fomo";
 import { soloIntentLabel } from "./intent-label";
@@ -3661,6 +3662,14 @@ export type PersonalizedDiscovery = {
   fallback: boolean;
   heading: string;
   blurb: string;
+  /**
+   * Every candidate (not just `events`) that sits outside the member's Click
+   * quiz answers, by event id: 2 for alcohol-led when they said alcohol-free,
+   * plus 1 past their travel range (quizMisfit, bug board #336). Events that
+   * fit are absent. `events` is already ranked by it; Discover and the radars
+   * use it to do the same.
+   */
+  quizMisfit: Record<string, number>;
 };
 
 // The rail's heading and line. Below the readiness bar the line used to tell
@@ -3699,13 +3708,13 @@ export async function getPersonalizedDiscovery(
     const [allEvents, settings] = await Promise.all([getEventsForExplore(), getSystemSettings()]);
     if (allEvents.length === 0) return null;
 
-    const [tagsResult, profileResult, personaResult, attendedResult, registeredResult] = await Promise.all([
+    const [tagsResult, profileResult, personaResult, attendedResult, registeredResult, quizResult] = await Promise.all([
       pool.query<{ slug: string }>(
         `select t.slug from user_tags ut join tags t on t.id = ut.tag_id where ut.profile_id = $1::uuid`,
         [profile.id],
       ),
-      pool.query<{ intents: string[] }>(
-        `select connection_intents::text[] as intents from profiles where id = $1::uuid`,
+      pool.query<{ intents: string[]; suburb: string | null }>(
+        `select connection_intents::text[] as intents, suburb from profiles where id = $1::uuid`,
         [profile.id],
       ),
       pool.query<{ openness: string | null; social_energy: string | null }>(
@@ -3726,10 +3735,28 @@ export async function getPersonalizedDiscovery(
             and attendee.status in ('confirmed', 'waitlisted', 'pending_payment')`,
         [profile.id],
       ),
+      // Saved answers count from the first autosave, finished or not - the
+      // member said it either way.
+      pool.query<{ answers: ClickQuizAnswers }>(
+        `select answers from click_quiz_answers where profile_id = $1::uuid`,
+        [profile.id],
+      ),
     ]);
 
     const registeredSlugs = new Set(registeredResult.rows.map((r) => r.slug));
     const candidateEvents = allEvents.filter((event) => !registeredSlugs.has(event.id));
+
+    // Bug board #336: the quiz's alcohol-free and travel answers rank, never
+    // hide. Distance counts only from the member's own postcode, the same
+    // origin Discover measures from.
+    const quizPrefs = quizEventPrefs(quizResult.rows[0]?.answers);
+    const origin = distanceOriginForSuburb(profileResult.rows[0]?.suburb);
+    const quizMisfitById: Record<string, number> = {};
+    for (const event of measureExploreFrom(candidateEvents, origin)) {
+      const misfit = quizMisfit(event, quizPrefs, origin !== null);
+      if (misfit > 0) quizMisfitById[event.id] = misfit;
+    }
+    const rankByQuiz = (events: EventItem[]) => rankByQuizFit(events, (event) => quizMisfitById[event.id] ?? 0);
 
     const personaRow = personaResult.rows[0];
     const ctx: UserMatchContext = {
@@ -3768,10 +3795,11 @@ export async function getPersonalizedDiscovery(
         // a tag-less member was told the feed was picked for them, forever,
         // with nothing on screen offering to make that true.
         return {
-          events: v2ranked.slice(0, limit),
+          events: rankByQuiz(v2ranked).slice(0, limit),
           readiness,
           fallback,
           ...personalizedDiscoveryCopy(fallback, ctx.tagSlugs.length),
+          quizMisfit: quizMisfitById,
         };
       }
     }
@@ -3784,10 +3812,11 @@ export async function getPersonalizedDiscovery(
           .map((scored) => scored.event);
 
     return {
-      events: ranked.slice(0, limit),
+      events: rankByQuiz(ranked).slice(0, limit),
       readiness,
       fallback,
       ...personalizedDiscoveryCopy(fallback, ctx.tagSlugs.length),
+      quizMisfit: quizMisfitById,
     };
   } catch {
     return null;

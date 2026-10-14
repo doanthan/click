@@ -80,8 +80,11 @@ export default async function PeoplePage() {
   // personalised order within each group), with the same lines the dashboard's
   // row gets. This bar used to render with no lines at all - every row read
   // "Trending in Sydney" however many people were going (bug board #172).
+  // Bug board #336: rooms further outside the member's quiz answers come after
+  // the closer ones, with or without people in them.
+  const misfitOf = (id: string) => personalized?.quizMisfit[id] ?? 0;
   const radarEvents = [...(personalized?.events ?? [])]
-    .sort((a, b) => Number(b.attendees > 0) - Number(a.attendees > 0))
+    .sort((a, b) => misfitOf(a.id) - misfitOf(b.id) || Number(b.attendees > 0) - Number(a.attendees > 0))
     .slice(0, 3);
   const radarSignals = await getRadarSignals(radarEvents, session);
 

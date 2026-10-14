@@ -166,6 +166,7 @@ export function EventExplorer({
   bookmarkedEventIds = [],
   registeredEventIds = [],
   waitlistedEventIds = [],
+  quizMisfit,
   distanceFrom = null,
   signedIn = false,
 }: {
@@ -179,6 +180,10 @@ export function EventExplorer({
   bookmarkedEventIds?: string[];
   registeredEventIds?: string[];
   waitlistedEventIds?: string[];
+  /** How far each event sits outside the member's Click quiz answers
+   *  (PersonalizedDiscovery.quizMisfit): higher goes lower, nothing is hidden
+   *  (bug board #336). */
+  quizMisfit?: Record<string, number>;
 }) {
   const bookmarkedSet = useMemo(() => new Set(bookmarkedEventIds), [bookmarkedEventIds]);
   const registeredSet = useMemo(() => new Set(registeredEventIds), [registeredEventIds]);
@@ -292,6 +297,10 @@ export function EventExplorer({
         );
       })
       .sort((left, right) => {
+        // Bug board #336: whatever the sort, events outside the member's quiz
+        // answers follow the ones inside, in the same order among themselves.
+        const misfitDelta = (quizMisfit?.[left.id] ?? 0) - (quizMisfit?.[right.id] ?? 0);
+        if (misfitDelta !== 0) return misfitDelta;
         if (sortMode === "popular") {
           if (right.attendees !== left.attendees) return right.attendees - left.attendees;
           return new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime();
@@ -322,6 +331,7 @@ export function EventExplorer({
     freeOnly,
     distanceKm,
     events,
+    quizMisfit,
     searchQuery,
     sortMode,
     tagFilter,

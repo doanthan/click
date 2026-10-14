@@ -147,7 +147,13 @@ export default async function DashboardPage() {
   // only ever get the fallback line - so the radar sat on "Trending in Sydney"
   // with nobody going while the FOMO line it exists for never showed (bug
   // board #172). "People like you are showing up to these" should be true.
-  const radarPool = personalized?.events ?? [];
+  // Bug board #336: the radar only rotates through the rooms that sit closest to
+  // the member's quiz answers (alcohol-free, travel range) - a wine tasting
+  // never comes round while anything else could.
+  const misfitOf = (id: string) => personalized?.quizMisfit[id] ?? 0;
+  const personalizedPool = personalized?.events ?? [];
+  const bestFit = Math.min(...personalizedPool.map((event) => misfitOf(event.id)));
+  const radarPool = personalizedPool.filter((event) => misfitOf(event.id) === bestFit);
   const radarWithPeople = radarPool.filter((event) => event.attendees > 0);
   const radarRotation = radarWithPeople.length > 0 ? radarWithPeople : radarPool;
   const rotatedRadar = radarRotation.length > 0 ? [radarRotation[hourIndex % radarRotation.length]] : [];

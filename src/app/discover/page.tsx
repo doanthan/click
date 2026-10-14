@@ -89,6 +89,8 @@ export default async function DiscoverPage() {
           bookmarkedEventIds={profileStatus?.bookmarkedEventIds ?? []}
           registeredEventIds={profileStatus?.registeredEventIds ?? []}
           waitlistedEventIds={profileStatus?.waitlistedEventIds ?? []}
+          // Bug board #336: what the member's quiz answers rule out goes last.
+          quizMisfit={personalized?.quizMisfit}
         />
       </section>
     </main>
