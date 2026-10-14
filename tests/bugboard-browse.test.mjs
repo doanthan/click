@@ -108,9 +108,13 @@ test("event cards show a circle per person going, ending in +N", () => {
 
 test("a photo that fails to load shows the no-photo disc, not a broken image", () => {
   // Bug board #319: photos broken on the event page (Storage was refusing them).
+  // The photo layer is AvatarPhoto, which also hides itself when the load fails
+  // (#338/#343 - tests/bugboard-avatar-fallback.test.mjs).
   const avatar = read("src/components/ds.tsx").split("export function Avatar(")[1].split("export function AvatarStack(")[0];
-  assert.match(avatar, /\{silhouette\}[\s\S]*?<img src=\{avatarSrc\} alt=""/);
-  assert.match(avatar, /position: "absolute", inset: 0/);
+  assert.match(avatar, /\{silhouette\}[\s\S]*?<AvatarPhoto src=\{avatarSrc\} size=\{size\} \/>/);
+  const photo = read("src/components/avatar-photo.tsx");
+  assert.match(photo, /alt=""/);
+  assert.match(photo, /position: "absolute", inset: 0/);
 });
 
 test("Discover's category discs wrap instead of scrolling sideways", () => {

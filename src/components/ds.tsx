@@ -14,6 +14,7 @@
  */
 import Link from "next/link";
 import type { ComponentProps, CSSProperties, MouseEvent, ReactNode } from "react";
+import { AvatarPhoto } from "@/components/avatar-photo";
 import { resolveAvatarImage } from "@/lib/avatar-images";
 
 /* ============================ brand marks ============================ */
@@ -816,8 +817,9 @@ export function Avatar({
   if (avatarSrc) {
     // Bug board #319: the photo sits over the silhouette, so one that fails to
     // load - a dead link, or Storage refusing it - leaves the "no photo yet"
-    // disc rather than a broken-image glyph. alt="" is what stops the browser
-    // drawing that glyph; the name rides on the wrapper instead.
+    // disc. AvatarPhoto hides itself on failure, because alt="" alone still
+    // left Firefox drawing a broken-image frame (#338, #343); the name rides
+    // on the wrapper instead.
     return (
       <span
         className={className}
@@ -826,14 +828,9 @@ export function Avatar({
         aria-label={name || "Profile photo"}
       >
         {silhouette}
-        {/* Avatars are remote (Supabase / OAuth) and tiny; next/image buys
-            nothing here and its loader chokes on the arbitrary provider hosts.
-            Lazy on purpose: an eager plain img tag inside the route
-            transition holds the page change until it loads (React's
-            suspensey images - see RouteTransition), and a people list is
-            dozens of them. */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={avatarSrc} alt="" width={size} height={size} loading="lazy" decoding="async" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
+        {/* Avatars are remote (R2 / Supabase / OAuth) and tiny; next/image buys
+            nothing here and its loader chokes on the arbitrary provider hosts. */}
+        <AvatarPhoto src={avatarSrc} size={size} />
       </span>
     );
   }

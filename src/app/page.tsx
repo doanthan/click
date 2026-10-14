@@ -140,25 +140,16 @@ function InlinePic({ src, rot }: { src: StaticImageData; rot: string }) {
   );
 }
 
+// No free-text box (bug board #337, #341): the hero asks only when, and
+// Discover's categories and filters do the rest.
 function ExploreForm() {
   return (
     <form
       action="/discover"
       method="get"
-      className="home-explore-form mt-7 grid gap-2 rounded-[var(--radius-xl)] bg-[color:var(--paper)] p-2.5 shadow-[0_22px_60px_-24px_rgba(16,11,34,0.65)] sm:grid-cols-[minmax(0,1fr)_170px_auto] sm:items-stretch"
+      className="home-explore-form mt-7 grid max-w-[440px] gap-2 rounded-[var(--radius-xl)] bg-[color:var(--paper)] p-2.5 shadow-[0_22px_60px_-24px_rgba(16,11,34,0.65)] sm:grid-cols-[minmax(0,1fr)_auto] sm:items-stretch"
     >
-      <label className="flex min-h-14 min-w-0 items-center gap-3 rounded-[var(--radius-md)] px-3 focus-within:bg-[color:var(--lavender-100)]">
-        <Icon name="search" size={20} className="text-[color:var(--purple)]" />
-        <span className="sr-only">What do you want to do?</span>
-        <input
-          type="search"
-          name="q"
-          placeholder="What do you feel like doing?"
-          className="min-w-0 flex-1 bg-transparent text-base font-medium text-[color:var(--ink)] outline-none placeholder:text-[color:var(--slate)]"
-        />
-      </label>
-
-      <label className="flex min-h-14 items-center gap-2.5 border-t border-[color:var(--mist)] px-3 sm:border-t-0 sm:border-l">
+      <label className="flex min-h-14 min-w-0 items-center gap-2.5 rounded-[var(--radius-md)] px-3 focus-within:bg-[color:var(--lavender-100)]">
         <Icon name="calendar" size={18} className="text-[color:var(--purple)]" />
         <span className="sr-only">When</span>
         <select

@@ -80,6 +80,9 @@ test("route transitions stay calm and honour reduced motion", () => {
 test("avatars never hold up a route change", () => {
   // Inside a <ViewTransition>, React holds a commit (up to ~800ms) for any eager
   // plain img without an onLoad. Avatars appear by the dozen on the people list.
+  // The Avatar's photo is AvatarPhoto's img, so that is where the lazy lives.
   const avatar = read("src/components/ds.tsx").split("export function Avatar(")[1].split("export function AvatarStack(")[0];
-  assert.match(avatar, /<img src=\{avatarSrc\}[^>]*loading="lazy"/);
+  assert.match(avatar, /<AvatarPhoto src=\{avatarSrc\}/);
+  assert.doesNotMatch(avatar, /<img\b/);
+  assert.match(read("src/components/avatar-photo.tsx"), /<img[\s\S]*?loading="lazy"[\s\S]*?\/>/);
 });

@@ -18,6 +18,7 @@
 
 import { useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { AvatarPhoto } from "@/components/avatar-photo";
 import { Button, Icon } from "@/components/ds";
 import {
   PHOTO_TOO_BIG_MESSAGE,
@@ -148,14 +149,13 @@ export function AvatarUploader({
           }`}
           aria-label="Choose a profile photo"
         >
-          {url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={url} alt="" width={80} height={80} className="size-full object-cover" />
-          ) : (
-            <span className="font-display text-3xl font-semibold text-[color:var(--purple)]">
-              {initial}
-            </span>
-          )}
+          {/* The initial sits under the photo, so a photo that fails to load
+              leaves the initial, not an empty disc with Firefox's broken-image
+              frame across it (bug board #338). */}
+          <span className="font-display text-3xl font-semibold text-[color:var(--purple)]">
+            {initial}
+          </span>
+          {url ? <AvatarPhoto src={url} size={80} /> : null}
           {pending ? (
             <span className="absolute inset-0 grid place-items-center bg-[color:var(--paper)]/75 text-[11px] font-semibold text-[color:var(--ink)]">
               Uploading…
