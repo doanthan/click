@@ -19,15 +19,19 @@ export const PHOTO_TOO_BIG_MESSAGE = "That photo is too big to upload - try a sm
 
 const SHRINK_LONG_EDGE = 2048;
 const SHRINK_QUALITY = 0.85;
+// Not only what would 413: a 1-4 MB phone photo used to go up whole, which is
+// slow on mobile data, and the server keeps at most 1600px of it anyway.
+const SHRINK_ABOVE_BYTES = 1024 * 1024;
 
 /**
- * The file untouched when it already fits, otherwise a JPEG re-encode with the
- * long edge capped. Hands back the original whenever the browser can't decode
- * or shrink it, so the caller's size check refuses it with a clear message
- * instead of the upload dying on a 413.
+ * The file untouched when it is already small, otherwise a JPEG re-encode with
+ * the long edge capped. Hands back the original whenever the browser can't
+ * decode or shrink it, or the re-encode comes out no smaller, so the caller's
+ * size check refuses what still doesn't fit with a clear message instead of
+ * the upload dying on a 413.
  */
 export async function shrinkPhotoForUpload(file: File): Promise<File> {
-  if (file.size <= UPLOAD_BODY_LIMIT_BYTES || typeof createImageBitmap !== "function") {
+  if (file.size <= SHRINK_ABOVE_BYTES || typeof createImageBitmap !== "function") {
     return file;
   }
   try {

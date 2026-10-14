@@ -393,6 +393,24 @@ test("public media uploads prefer R2 over the Supabase fallback", () => {
   }
 });
 
+test("a deleted photo of a person stops being public", () => {
+  // Deleting an R2 object leaves Cloudflare's cached copy serving; s-maxage is
+  // what bounds how long.
+  const storage = readFileSync(path.join(root, "src/lib/public-media-storage.ts"), "utf8");
+  assert.match(storage, /PERSONAL_PHOTO_CACHE_CONTROL = "public, max-age=\d+, s-maxage=\d+"/);
+  for (const file of ["src/lib/avatar-storage.ts", "src/lib/gallery-storage.ts"]) {
+    const source = readFileSync(path.join(root, file), "utf8");
+    assert.match(source, /cacheControl: PERSONAL_PHOTO_CACHE_CONTROL/, `${file} must cap the edge cache`);
+  }
+
+  // Avatars uploaded before R2 still sit in Supabase, so the delete asks both.
+  const avatar = readFileSync(path.join(root, "src/lib/avatar-storage.ts"), "utf8");
+  const body = avatar.slice(avatar.indexOf("export async function deleteAvatarObject"));
+  assert.match(body, /deletePublicMediaObject\(key\)/);
+  assert.match(body, /\.remove\(\[key\]\)/);
+  assert.doesNotMatch(body, /deletePublicMediaObject\(key\);\s*return true;/, "an R2 delete must not end it");
+});
+
 test("every email template has an .html file, a subject, and vice versa", () => {
   // Adding half of a template pair is silent at runtime: logEmailEvent catches
   // the missing-file error and warn-logs it, so the email just never arrives.

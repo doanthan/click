@@ -148,6 +148,11 @@ test("a deleted account is opted out explicitly, never by an empty prefs object"
   // The photo lives in a PUBLIC bucket keyed by profile id: clearing photo_url
   // alone leaves it fetchable by anyone holding the URL.
   assert.match(body, /deleteAvatarObject\(/, "the avatar object itself must be removed");
+  // So do the gallery photos, and gallery_photos = '{}' only clears the column.
+  const galleryRead = body.indexOf("select gallery_photos from profiles");
+  assert.ok(galleryRead > -1, "the gallery must be read before the scrub empties it");
+  assert.ok(galleryRead < body.indexOf("gallery_photos = '{}'"), "read the gallery before clearing it");
+  assert.match(body, /deleteGalleryObject\(key\)/, "each gallery object itself must be removed");
 });
 
 test("a deleted account stops being a person on every public surface", () => {

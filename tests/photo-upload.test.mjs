@@ -33,6 +33,26 @@ test("with no way to decode, the original comes back for the caller's size check
   assert.equal(await shrinkPhotoForUpload(big), big);
 });
 
+test("a 1-4 MB photo is shrunk too, not only one that would 413", async () => {
+  // A stand-in decoder that records what it was asked to decode, then fails, so
+  // the helper takes its hand-back-the-original path.
+  const decoded = [];
+  globalThis.createImageBitmap = async (file) => {
+    decoded.push(file.name);
+    throw new Error("no decoder in Node");
+  };
+  try {
+    const twoMb = new File([new Uint8Array(2 * 1024 * 1024)], "two-mb.jpg", { type: "image/jpeg" });
+    const halfMb = new File([new Uint8Array(512 * 1024)], "half-mb.jpg", { type: "image/jpeg" });
+    assert.equal(await shrinkPhotoForUpload(twoMb), twoMb);
+    assert.equal(await shrinkPhotoForUpload(halfMb), halfMb);
+    assert.ok(decoded.includes("two-mb.jpg"), "a 2 MB photo must be re-encoded before it posts");
+    assert.ok(!decoded.includes("half-mb.jpg"), "a small photo goes up as it is");
+  } finally {
+    delete globalThis.createImageBitmap;
+  }
+});
+
 test("every photo uploader shrinks before it posts, and names a 413", () => {
   for (const file of [
     "src/components/avatar-uploader.tsx",

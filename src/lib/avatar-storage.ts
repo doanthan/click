@@ -23,6 +23,7 @@ import { getSupabaseAdmin, StorageNotConfiguredError } from "@/utils/supabase/ad
 import {
   deletePublicMediaObject,
   isR2PublicMediaConfigured,
+  PERSONAL_PHOTO_CACHE_CONTROL,
   uploadPublicMediaObject,
 } from "@/lib/public-media-storage";
 
@@ -81,7 +82,7 @@ async function putAvatar(profileId: string, body: Buffer): Promise<string> {
       key,
       body,
       contentType: "image/jpeg",
-      cacheControl: "public, max-age=31536000",
+      cacheControl: PERSONAL_PHOTO_CACHE_CONTROL,
     });
     return `${url}?v=${Date.now()}`;
   }
@@ -175,16 +176,21 @@ export async function uploadAvatarFromBuffer(
 export async function deleteAvatarObject(profileId: string): Promise<boolean> {
   const key = `${profileId}.jpg`;
 
-  try {
-    if (isR2PublicMediaConfigured()) {
-      await deletePublicMediaObject(key);
-      return true;
-    }
-    if (!readPublicBase()) return false;
-    const supabase = getSupabaseAdmin();
-    const { error } = await supabase.storage.from(AVATAR_BUCKET).remove([key]);
-    return !error;
-  } catch {
-    return false;
+  // Every backend that can hold it, not only the one uploads use now: an avatar
+  // uploaded before R2 was switched on is still in Supabase's public bucket, and
+  // returning after the R2 delete left that copy up.
+  const removals: Promise<boolean>[] = [];
+  if (isR2PublicMediaConfigured()) {
+    removals.push(deletePublicMediaObject(key).then(() => true, () => false));
   }
+  if (readPublicBase()) {
+    removals.push(
+      (async () => {
+        const { error } = await getSupabaseAdmin().storage.from(AVATAR_BUCKET).remove([key]);
+        return !error;
+      })().catch(() => false),
+    );
+  }
+  const results = await Promise.all(removals);
+  return results.length > 0 && results.every(Boolean);
 }

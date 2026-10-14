@@ -54,6 +54,15 @@ export function isR2PublicMediaConfigured() {
   return readR2Config() !== null;
 }
 
+/**
+ * For photos of people (avatars, profile galleries). Deleting an R2 object does
+ * not evict Cloudflare's copy, which kept serving it for as long as max-age said.
+ * Cloudflare's edge obeys s-maxage over max-age (checked against
+ * media.letsclick.app), so browsers still keep the photo a year while the edge
+ * drops a deleted one within the hour.
+ */
+export const PERSONAL_PHOTO_CACHE_CONTROL = "public, max-age=31536000, s-maxage=3600";
+
 export async function uploadPublicMediaObject(input: {
   key: string;
   body: Buffer | Uint8Array;

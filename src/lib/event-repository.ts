@@ -21544,9 +21544,18 @@ export async function anonymiseMemberAsAdmin(
     );
   }
 
+  let galleryUrls: string[] = [];
   const client = await pool.connect();
   try {
     await client.query("begin");
+
+    // The scrub below empties gallery_photos, so read what it held first: each
+    // entry is an object in the public bucket, deleted after the commit.
+    const before = await client.query<{ gallery_photos: string[] | null }>(
+      `select gallery_photos from profiles where id = $1::uuid for update`,
+      [targetProfileId],
+    );
+    galleryUrls = before.rows[0]?.gallery_photos ?? [];
 
     await client.query(
       `
@@ -21638,6 +21647,16 @@ export async function anonymiseMemberAsAdmin(
   // an honoured deletion, so it is recorded rather than thrown.
   const { deleteAvatarObject } = await import("./avatar-storage");
   const avatarRemoved = await deleteAvatarObject(targetProfileId).catch(() => false);
+
+  // The gallery is the same story - up to five more photos in that public
+  // bucket - and only the column was being cleared.
+  const { deleteGalleryObject, ownGalleryKeyFromUrl } = await import("./gallery-storage");
+  await Promise.all(
+    galleryUrls.map((url) => {
+      const key = ownGalleryKeyFromUrl(targetProfileId, url);
+      return key ? deleteGalleryObject(key) : undefined;
+    }),
+  );
 
   await writeAuditLog({
     actorProfileId: actor.id,

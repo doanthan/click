@@ -22,6 +22,7 @@ import { getSupabaseAdmin } from "@/utils/supabase/admin";
 import {
   deletePublicMediaObject,
   isR2PublicMediaConfigured,
+  PERSONAL_PHOTO_CACHE_CONTROL,
   r2PublicMediaKeyFromUrl,
   uploadPublicMediaObject,
 } from "@/lib/public-media-storage";
@@ -64,6 +65,7 @@ export async function uploadGalleryPhotoFromBuffer(
       key,
       body: jpeg,
       contentType: "image/jpeg",
+      cacheControl: PERSONAL_PHOTO_CACHE_CONTROL,
     });
   }
 
