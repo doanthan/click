@@ -150,8 +150,11 @@ try {
   for (const [name, gender] of PROFILES) {
     const idx = profileIds.length;
     const r = await client.query(
-      `insert into profiles (email, display_name, gender, suburb, age, photo_url)
-       values ($1, $2, $3, $4, $5, $6) returning id`,
+      // is_test (22A §4.5): demo profiles are test accounts - they never sit in
+      // a real member's picks or counts. Their photos are the site's generated
+      // faces, which the photo check fails as stock (01 §2).
+      `insert into profiles (email, display_name, gender, suburb, age, photo_url, is_test)
+       values ($1, $2, $3, $4, $5, $6, true) returning id`,
       [
         `demo.${name.toLowerCase()}@seed.letsclick.app`,
         name,

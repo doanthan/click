@@ -59,10 +59,10 @@ test("1. the Click page lists today's picks, each with a click and View profile"
   }
 });
 
-test("2. the dashboard shows one of the same picks and moves on every 3 hours", () => {
+test("2. the dashboard shows one of the same picks, rank 1 first, moving on every 6 hours", () => {
   assert.match(dashboard, /getDailyPicks\(session\)/);
   assert.match(dashboard, /const pickIndex = dashboardPickIndex\(hourOfDay, featurable\.length\);/);
-  // HOTFIX 2026-10-12 H3.1: yesterday's click costs the featured turn, never the card.
+  // 09 §3: a click from the last ~6 hours costs the featured turn, never the card.
   assert.match(dashboard, /const unheld = picks\.filter\(\(candidate\) => !candidate\.featureHold\);/);
   assert.match(dashboard, /const featurable = unheld\.length > 0 \? unheld : picks;/);
   assert.match(code(dashboard), /<ClickWithSomeoneUserCard key=\{pick\.id\} person=\{pick\} \/>/);
@@ -70,16 +70,18 @@ test("2. the dashboard shows one of the same picks and moves on every 3 hours", 
   // The Sydney hour, the greeting's clock (bug board #286), not the server's.
   assert.match(dashboard, /const hourOfDay = Number\(sydneyHour\.format\(new Date\(\)\)\);/);
 
-  // pick[floor(hoursSinceMidnight / 3) % 3]: advance the clock 3 hours, next pick.
+  // 09 §3 "Card rotation": four featured turns a day (every 6h), counted from the
+  // 06:00 build, so the morning turn - and the small hours before the build -
+  // feature rank 1, then round-robin.
   assert.deepEqual(
-    [0, 1, 2, 3, 5, 6, 8, 9, 12, 15, 18, 21, 23].map((hour) => dashboardPickIndex(hour, 3)),
-    [0, 0, 0, 1, 1, 2, 2, 0, 1, 2, 0, 1, 1],
+    [0, 3, 5, 6, 11, 12, 17, 18, 23].map((hour) => dashboardPickIndex(hour, 3)),
+    [0, 0, 0, 0, 0, 1, 1, 2, 2],
   );
-  for (let hour = 0; hour + 3 < 24; hour += 1) {
-    assert.equal(dashboardPickIndex(hour + 3, 3), (dashboardPickIndex(hour, 3) + 1) % 3, `hour ${hour}`);
+  for (let hour = 6; hour + 6 < 24; hour += 1) {
+    assert.equal(dashboardPickIndex(hour + 6, 3), (dashboardPickIndex(hour, 3) + 1) % 3, `hour ${hour}`);
   }
   // A thin day still rotates through what it has, and an empty one shows nothing.
-  assert.deepEqual([0, 3, 6, 9].map((hour) => dashboardPickIndex(hour, 2)), [0, 1, 0, 1]);
+  assert.deepEqual([6, 12, 18, 0].map((hour) => dashboardPickIndex(hour, 2)), [0, 1, 0, 1]);
   assert.equal(dashboardPickIndex(14, 1), 0);
   assert.equal(dashboardPickIndex(14, 0), null);
 });
@@ -193,7 +195,9 @@ test("6. the daily pick pool excludes everyone the brief lists", () => {
   // And it runs, on the cron guard every other cron has, in the Sydney morning.
   const route = read("src/app/api/cron/daily-picks/route.ts");
   assert.match(route, /Bearer \$\{secret\}/);
-  assert.match(route, /generateDailyPicksForAll\(\)/);
+  // Through the shared runner the admin Run-now button also uses (03 §10).
+  assert.match(route, /runScheduledJob\("build_daily_picks"\)/);
+  assert.match(read("src/lib/scheduled-jobs.ts"), /build_daily_picks: \{[\s\S]*?run: async \(\) => generateDailyPicksForAll\(\),/);
   const crons = JSON.parse(read("vercel.json")).crons;
   assert.ok(crons.some((c) => c.path === "/api/cron/daily-picks" && c.schedule === "0 19 * * *"));
 });
@@ -219,8 +223,12 @@ test("6b. a live click at you earns its sender ONE unmarked daily pick, once", (
   assert.match(ensure, /const clickBack = await clickBackPick\(pool, viewerId\);/);
   assert.match(ensure, /\.filter\(\(pick\) => pick\.id !== clickBack\?\.id\)/);
   assert.match(ensure, /\(clickBack \? \[clickBack, \.\.\.ranked\] : ranked\)\.slice\(0, DAILY_PICK_COUNT\)/);
-  // No position tells: the read orders the day's set by its random ids.
-  assert.match(dailyRead, /order by dp\.created_at, dp\.id/);
+  // No position tells: the day's set is shown in rank order (09), and the
+  // click-back pick carries the SAME rank key as every pick - from the same
+  // scoring path - so it lands wherever its score puts it, never a slot of its own.
+  assert.match(clickBack, /return pick \? \{ \.\.\.pick, reason: "click_back" \} : null;/);
+  assert.match(ensure, /const byRank = \[\.\.\.chosen\]\.sort\(\(a, b\) => comparePickRank\(a\.rankKey, b\.rankKey\)\);/);
+  assert.match(dailyRead, /order by dp\.rank nulls last, dp\.created_at, dp\.id/);
   assert.doesNotMatch(clickBack, /insert into notifications|logEmailEvent\(|sendTransactionalEmail\(/);
 });
 

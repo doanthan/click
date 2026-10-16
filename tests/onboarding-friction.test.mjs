@@ -90,10 +90,13 @@ test("the profile is saved when step 1 is done, not only on Finish", () => {
   // Stopping on an optional screen used to leave no profile at all, so the
   // visitor could not book and was sent back to step 1 on every login.
   assert.match(form, /if \(step === 0 && !\(await saveProfile\(\)\)\) return;/);
-  assert.match(form, /async function handleSubmit\(\) \{[\s\S]*?if \(!\(await saveProfile\(\)\)\) return;/);
+  // Finish is the one save that completes the flow - and the only writer of
+  // member status (01 §1.4). The step-1 save never sends complete.
+  assert.match(form, /async function handleSubmit\(\) \{[\s\S]*?if \(!\(await saveProfile\(\{ complete: true \}\)\)\) return;/);
+  assert.match(form, /async function saveProfile\(\{ complete = false \}: \{ complete\?: boolean \} = \{\}\)/);
 
-  // The first save finishes the profile, so the page has to be told the
-  // visitor is still mid-flow or the next refresh redirects them out of it.
+  // Finish refreshes the page under the done screen, so the page has to be
+  // told the visitor is still mid-flow or that refresh redirects them out of it.
   assert.match(form, /url\.searchParams\.set\("resume", "1"\)/);
   const page = read("src/app/onboarding/page.tsx");
   assert.match(page, /if \(status\.onboardingComplete && params\?\.resume !== "1"\) \{\s*redirect\(next \?\? "\/dashboard"\);/);

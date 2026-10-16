@@ -124,6 +124,10 @@ const CHECKS = [
         why: "R_PHOTO, the same kind of sender-own refusal as the date-of-birth one above (bug board #190). Names no receiver and renders no button.",
       },
       {
+        re: /Your profile photo didn't work - upload a clear photo of you before you click with anyone\./,
+        why: "R_PHOTO for a photo that failed the photo check (01 §2, build prompt 1). The same sender-own refusal; names no receiver and renders no button.",
+      },
+      {
         re: /profile card \/ in the "click with someone" pool/,
         why: "Upload-route comment naming the pool an avatar feeds.",
       },

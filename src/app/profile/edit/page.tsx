@@ -71,6 +71,7 @@ export default async function EditProfilePage({
             completion={completion}
             // ?focus=bio is the dashboard's "Write a short bio" (#241).
             focusBio={params?.focus === "bio"}
+            photoFailed={profileStatus.photoStatus === "failed"}
           />
         </div>
       </div>

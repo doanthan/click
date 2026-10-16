@@ -25,10 +25,15 @@ test("the Click quiz is the spec's five steps, intent-neutral, hyphens only", ()
   assert.doesNotMatch(copy, /dating|intent|"Men"|"Women"/i);
   assert.doesNotMatch(copy, /\u2014/, "hyphens, never em-dashes");
   assert.doesNotMatch(copy, /\bmatch/i, "'match' is banned copy");
-  // Sensitive goes last, and the LGBTQ+ line never promises a community signal.
+  // Sensitive goes last. Build prompt 1 built 08 §4.4a's belonging signal, so the
+  // LGBTQ+ line now says exactly what the answer is used for - never on a
+  // profile, never who, only "you're not the only one" - in 08's own words.
   const lgbtq = question("lgbtq");
   assert.equal(CLICK_QUIZ_STEPS.at(-1).questions.includes(lgbtq), true);
-  assert.equal(lgbtq.note, "Optional and private to you - it helps us keep events welcoming.");
+  assert.equal(
+    lgbtq.note,
+    "This stays private - we'll never put it on your profile or tell anyone you selected it. We may quietly let others in the same community know they're not the only one here - never who.",
+  );
 });
 
 test("an untrusted payload is cut down to known questions and values", () => {

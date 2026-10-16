@@ -2,7 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import type { Session } from "next-auth";
 import { auth } from "@/auth";
+import { isViewOnlySession } from "@/lib/account-switch-policy";
 import {
   confirmProposal,
   declineProposalForSession,
@@ -22,6 +24,24 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // only goes on to the RSVP when it did, never for a plan that lapsed as it waited.
 export type ProposalActionState = { ok: boolean; error: string | null; confirmed?: boolean };
 
+// View only (03 §1, HOTFIX H4.1): an admin viewing a real member can look, never
+// act. proxy.ts refuses that session's writes on every path but /account-switch,
+// the way back out - and these actions ride the shared layout's drawer onto
+// every page, that one included, so a POST there could still run them. They
+// refuse here too. tests/view-as-read-only.test.mjs pins every action to it.
+const VIEW_ONLY: ProposalActionState = {
+  ok: false,
+  error: "You're viewing this account, so nothing can be changed from here.",
+};
+/** Refused AND logged (03 §1), like the proxy's own refusals - these never reach it. */
+function refuseViewOnly(session: Session): ProposalActionState {
+  console.warn("[view-as] refused a plan action while viewing a real member", {
+    actor: session.impersonation?.actor?.email,
+    viewing: session.user?.email,
+  });
+  return VIEW_ONLY;
+}
+
 function errorMessage(error: unknown): string {
   if (error && typeof error === "object" && "message" in error) {
     const message = (error as { message?: unknown }).message;
@@ -36,6 +56,7 @@ export async function confirmProposalAction(
 ): Promise<ProposalActionState> {
   const session = await auth();
   if (!session?.user) redirect("/login?callbackUrl=/proposals");
+  if (isViewOnlySession(session)) return refuseViewOnly(session);
 
   const id = formData.get("proposal_id");
   if (typeof id !== "string" || !UUID_RE.test(id)) {
@@ -68,6 +89,10 @@ export async function confirmProposalAction(
 export async function markMutualSeenAction(mutualId: string): Promise<void> {
   const session = await auth();
   if (!session?.user) return;
+  if (isViewOnlySession(session)) {
+    refuseViewOnly(session);
+    return;
+  }
   if (typeof mutualId !== "string" || !UUID_RE.test(mutualId)) return;
   try {
     await markMutualSeen(session, mutualId);
@@ -82,6 +107,7 @@ export async function proposeAlternativeAction(
 ): Promise<ProposalActionState> {
   const session = await auth();
   if (!session?.user) redirect("/login?callbackUrl=/proposals");
+  if (isViewOnlySession(session)) return refuseViewOnly(session);
 
   const id = formData.get("proposal_id");
   const slug = formData.get("event_slug");
@@ -108,6 +134,7 @@ export async function declineProposalAction(
 ): Promise<ProposalActionState> {
   const session = await auth();
   if (!session?.user) redirect("/login?callbackUrl=/proposals");
+  if (isViewOnlySession(session)) return refuseViewOnly(session);
 
   const id = formData.get("proposal_id");
   if (typeof id !== "string" || !UUID_RE.test(id)) {
@@ -134,6 +161,7 @@ export async function softReleaseMutualAction(
 ): Promise<ProposalActionState> {
   const session = await auth();
   if (!session?.user) redirect("/login?callbackUrl=/proposals");
+  if (isViewOnlySession(session)) return refuseViewOnly(session);
   const mutualId = formData.get("mutual_id");
   if (typeof mutualId !== "string" || !UUID_RE.test(mutualId)) {
     return { ok: false, error: "Couldn't find that click." };
@@ -155,6 +183,7 @@ export async function releaseMutualAction(
 ): Promise<ProposalActionState> {
   const session = await auth();
   if (!session?.user) redirect("/login?callbackUrl=/proposals");
+  if (isViewOnlySession(session)) return refuseViewOnly(session);
   const mutualId = formData.get("mutual_id");
   if (typeof mutualId !== "string" || !UUID_RE.test(mutualId)) {
     return { ok: false, error: "Couldn't find that click." };
@@ -175,6 +204,7 @@ export async function suggestPlanAction(
 ): Promise<ProposalActionState> {
   const session = await auth();
   if (!session?.user) redirect("/login?callbackUrl=/proposals");
+  if (isViewOnlySession(session)) return refuseViewOnly(session);
 
   const mutualId = formData.get("mutual_id");
   const slug = formData.get("event_slug");
@@ -203,6 +233,7 @@ export async function joinWaitlistTogetherAction(
 ): Promise<ProposalActionState> {
   const session = await auth();
   if (!session?.user) redirect("/login?callbackUrl=/proposals");
+  if (isViewOnlySession(session)) return refuseViewOnly(session);
   const mutualId = formData.get("mutual_id");
   if (typeof mutualId !== "string" || !UUID_RE.test(mutualId)) {
     return { ok: false, error: "Couldn't find that click." };
@@ -224,6 +255,7 @@ export async function markMutualConnectedAction(
 ): Promise<ProposalActionState> {
   const session = await auth();
   if (!session?.user) redirect("/login?callbackUrl=/proposals");
+  if (isViewOnlySession(session)) return refuseViewOnly(session);
   const mutualId = formData.get("mutual_id");
   if (typeof mutualId !== "string" || !UUID_RE.test(mutualId)) {
     return { ok: false, error: "Couldn't find that click." };

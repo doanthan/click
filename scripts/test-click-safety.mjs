@@ -60,8 +60,8 @@ function check(label, cond) {
 
 async function mkProfile(label) {
   const r = await pool.query(
-    `insert into profiles (email, display_name, age, social_visible)
-     values ($1, $2, 27, true) returning id::text`,
+    `insert into profiles (email, display_name, age, social_visible, is_test)
+     values ($1, $2, 27, true, true) returning id::text`,
     [`safety-${randomUUID()}@test.local`, label],
   );
   created.push(r.rows[0].id);

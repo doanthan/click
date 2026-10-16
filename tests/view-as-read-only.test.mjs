@@ -32,7 +32,7 @@ test("the proxy refuses every write from a view-only session, with exactly two e
   assert.match(proxy, /return pathname === "\/account-switch" \|\| pathname\.startsWith\("\/api\/auth\/"\);/);
   assert.match(
     proxy,
-    /isViewOnlySession\(session\) &&\s*!VIEW_ONLY_SAFE_METHODS\.has\(nextRequest\.method\) &&\s*!isViewOnlyExit\(pathname\)\s*\)\s*\{\s*return Response\.json\([\s\S]*?\{ status: 403/,
+    /isViewOnlySession\(session\) &&\s*!VIEW_ONLY_SAFE_METHODS\.has\(nextRequest\.method\) &&\s*!isViewOnlyExit\(pathname\)\s*\)\s*\{[\s\S]*?console\.warn\("\[view-as\] refused a write while viewing a real member"[\s\S]*?return Response\.json\([\s\S]*?\{ status: 403/,
   );
   // Server Actions reach the proxy as POSTs to the page that uses them, so the
   // matcher may skip static files and nothing else.
@@ -44,7 +44,10 @@ test("the proxy refuses every write from a view-only session, with exactly two e
 
 test("the switch decides view only from the target, and records it", () => {
   const sw = code(read("src/lib/admin-account-switch.ts"));
-  assert.match(sw, /coalesce\(\(to_jsonb\(profiles\) ->> 'is_test'\)::boolean, email::text ilike '%@click\.local'\) as is_test/);
+  // The column (22A §4.5, migration 076), never the email domain: an unflagged
+  // QA-namespace address is a real member to this switch, so it opens view only.
+  assert.match(sw, /photo_url as image, is_test\s/);
+  assert.doesNotMatch(sw, /ilike '%@click\.local'/);
   assert.match(sw, /impersonation: \{ actor, expiresAt, readOnly: !user\.is_test \}/);
   assert.match(sw, /viewOnly: backToSelf \? undefined : !user\.is_test/, "the audit row says which");
 });
@@ -80,4 +83,72 @@ test("the page shows it: controls disabled, banner says view only, Return reacha
   const page = code(read("src/app/account-switch/page.tsx"));
   assert.match(page, /\{session\?\.impersonation \? \(/);
   assert.match(page, /<AccountSwitchButton name="intent" value="return"/);
+});
+
+test("every Server Action reachable on /account-switch is an exit or refuses a view-only session", () => {
+  // The proxy leaves /account-switch open so a viewing admin can Return, and a
+  // Server Action can be posted to any page whose module graph includes it -
+  // this page's includes the shared layout's (the coordination drawer's
+  // proposal actions, for one). So walk that graph: every "use server" module
+  // in it is either a way out, or refuses a view-only session itself.
+  const EXITS = new Set([
+    "src/app/account-switch/actions.ts", // Return, or switch to another account
+    // Sign in / sign out, and the QA tools - those act on QA personas behind
+    // the QA unlock, never as the account being viewed.
+    "src/app/login/actions.ts",
+  ]);
+  const seen = new Set();
+  const serverModules = new Set();
+  const resolveImport = (from, spec) => {
+    const base = spec.startsWith("@/")
+      ? path.join("src", spec.slice(2))
+      : spec.startsWith(".") ? path.join(path.dirname(from), spec) : null;
+    if (!base) return null;
+    for (const ext of ["", ".ts", ".tsx", "/index.ts", "/index.tsx"]) {
+      try {
+        readFileSync(path.join(process.cwd(), base + ext));
+        return path.normalize(base + ext);
+      } catch {}
+    }
+    return null;
+  };
+  const visit = (file) => {
+    if (seen.has(file)) return;
+    seen.add(file);
+    const src = read(file);
+    if (/^\s*["']use server["']/.test(src)) {
+      serverModules.add(file);
+      return;
+    }
+    const specs = [
+      ...src.matchAll(/^\s*(?:import|export)\s+(?!type\s)[^;]*?from\s+["']([^"']+)["']/gm),
+      ...src.matchAll(/import\(\s*["']([^"']+)["']\s*\)/g),
+    ].map((m) => m[1]);
+    for (const spec of specs) {
+      const target = resolveImport(file, spec);
+      if (target && /\.(ts|tsx)$/.test(target)) visit(target);
+    }
+  };
+  const roots = ["layout", "template", "loading", "error", "not-found", "global-error"]
+    .map((name) => `src/app/${name}.tsx`)
+    .concat("src/app/account-switch/page.tsx");
+  for (const root of roots) {
+    visit(root);
+  }
+
+  assert.ok(serverModules.has("src/app/proposals/actions.ts"), "the walk reaches the drawer's actions");
+  // Refused AND logged (03 §1): these refusals never pass the proxy's logger.
+  assert.match(
+    code(read("src/app/proposals/actions.ts")),
+    /function refuseViewOnly\(session: Session\): ProposalActionState \{\s*console\.warn\("\[view-as\] refused a plan action while viewing a real member"/,
+  );
+  for (const file of serverModules) {
+    if (EXITS.has(file)) continue;
+    const chunks = code(read(file)).split(/^export async function /m).slice(1);
+    assert.ok(chunks.length > 0, `${file} exports no actions`);
+    for (const chunk of chunks) {
+      const name = chunk.slice(0, chunk.indexOf("("));
+      assert.match(chunk, /isViewOnlySession\(session\)/, `${file}: ${name} must refuse a view-only session`);
+    }
+  }
 });

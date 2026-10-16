@@ -136,8 +136,13 @@ const FEATURES_QUERY = `
     group by ut.profile_id
   ),
   lifet as (
+    -- Never a sensitive or FOMO-only tag (08 §4.1, Cindy 2026-10-15): lgbtq-plus
+    -- and the rest never enter pair scoring, event scoring, cohort choice or a
+    -- pick reason - and everything downstream of this store reads lifeTags.
     select ut.profile_id, array_agg(t.slug) as slugs
-    from user_tags ut join tags t on t.id = ut.tag_id and t.tag_type = 'life'
+    from user_tags ut
+    join tags t on t.id = ut.tag_id and t.tag_type = 'life'
+      and not t.is_sensitive and not t.fomo_only
     group by ut.profile_id
   ),
   persona as (

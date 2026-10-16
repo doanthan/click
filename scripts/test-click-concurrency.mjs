@@ -101,8 +101,8 @@ async function sendClick(client, senderId, receiverId) {
 async function seedPair() {
   const mk = async (label) => {
     const r = await pool.query(
-      `insert into profiles (email, display_name, age, social_visible)
-       values ($1, $2, 25, true) returning id::text`,
+      `insert into profiles (email, display_name, age, social_visible, is_test)
+       values ($1, $2, 25, true, true) returning id::text`,
       [`cc-${randomUUID()}@test.local`, label],
     );
     return r.rows[0].id;

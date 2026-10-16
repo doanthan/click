@@ -304,12 +304,18 @@ test("the 18+ gate is enforced on the server, not just in the form", () => {
     "saveOnboarding must reject an under-18 birth date",
   );
 
-  // A profile that never supplied one has never passed the gate, so it is not
-  // onboarded - keep this in step with assertBookingEligible below.
+  // A profile that never supplied one has never passed the gate, so it is never
+  // a member: member_onboarded_at (onboardingComplete, 01 §1.4) is stamped only
+  // by saveOnboarding, and only AFTER the birth-date checks above have passed.
   assert.match(
     repo,
-    /const onboardingComplete = !!row\?\.suburb && !!row\?\.birth_date/,
-    "onboardingComplete must require a birth date",
+    /const onboardingComplete = Boolean\(row\?\.member_onboarded\);/,
+    "onboardingComplete must be member status",
+  );
+  const save = repo.slice(repo.indexOf("export async function saveOnboarding("));
+  assert.ok(
+    save.indexOf("derivedAge < 18") < save.indexOf("member_onboarded_at = case when"),
+    "member status must only be stamped after the 18+ check",
   );
 
   const route = readFileSync(path.join(root, "src/app/api/onboarding/route.ts"), "utf8");

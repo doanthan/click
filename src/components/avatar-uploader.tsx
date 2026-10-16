@@ -6,14 +6,11 @@
  * - Renders a round preview that doubles as the file input trigger.
  * - On selection, POSTs the file to /api/upload/avatar; the route normalises
  *   to 512×512 JPG in R2 and persists `profiles.photo_url`.
- * - The hidden `photo_url` field keeps the existing server action contract
- *   (`saveProfileEditAction` reads `photo_url`) - uploading just rewrites
- *   that field with the new R2 URL.
  *
- * The route already persists the URL, so the surrounding form save is the
- * "commit other profile edits" step rather than the source of truth for the
- * avatar. If the user uploads and then walks away without saving the form,
- * their new photo still sticks.
+ * The route persists the photo itself; the surrounding form never sends one
+ * (a URL from the browser was how a profile could point at any address). If
+ * the user uploads and then walks away without saving the form, their new
+ * photo still sticks.
  */
 
 import { useId, useRef, useState } from "react";
@@ -36,20 +33,37 @@ type AvatarUploaderProps = {
    *  nudge for a photo on the completion screen. */
   onUploaded?: (url: string) => void;
   optional?: boolean;
+  /** profiles.photo_status is 'failed' (01 §2): the stored photo did not pass the
+   *  photo check, so it is not shown to anyone or used to click. Said up front,
+   *  with the upload button as the retry - never a silent silhouette. */
+  photoFailed?: boolean;
 };
+
+const PHOTO_FAILED_MESSAGE =
+  "Your photo didn't work - we couldn't load it, or it looked like a placeholder or stock image. Upload a clear photo of you so people can click with you.";
 
 export function AvatarUploader({
   initialUrl,
   displayName,
   onUploaded,
   optional = false,
+  photoFailed = false,
 }: AvatarUploaderProps) {
   const inputId = useId();
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   const [url, setUrl] = useState<string | null>(initialUrl);
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(photoFailed ? PHOTO_FAILED_MESSAGE : null);
+  // The page can move the main photo under this uploader - a gallery change
+  // that makes a new one, then router.refresh(). Take the server's photo and
+  // its verdict when they change, keeping a more specific message already shown.
+  const [shown, setShown] = useState({ initialUrl, photoFailed });
+  if (shown.initialUrl !== initialUrl || shown.photoFailed !== photoFailed) {
+    setShown({ initialUrl, photoFailed });
+    setUrl(initialUrl);
+    setError((current) => (photoFailed ? current ?? PHOTO_FAILED_MESSAGE : null));
+  }
   // The avatar persists on upload, but the only "Save profile" button sits at
   // the bottom of a long form - so users thought they had to scroll down to
   // save the photo (bug board #219). Flash a "Saved ✓" to make it clear.
@@ -99,8 +113,18 @@ export function AvatarUploader({
         signal: controller.signal,
       });
       const payload = (await response.json().catch(() => null)) as
-        | { url?: string; error?: string }
+        | { url?: string; error?: string; photoStatus?: string }
         | null;
+      if (response.status === 422 && payload?.url) {
+        // Stored, but it failed the photo check (01 §2): unreachable, a
+        // placeholder or a stock image. Say why and leave the button to try
+        // again - never a silent silhouette. The preview shows the photo the
+        // server now holds, failed as it is.
+        setUrl(payload.url);
+        setError(payload.error ?? "That photo didn't work. Try another one.");
+        router.refresh();
+        return;
+      }
       if (!response.ok || !payload?.url) {
         // 503 = storage env not configured on this deploy. It's not the user's
         // fault and retrying won't help until ops sets the Supabase keys, so say
@@ -192,10 +216,6 @@ export function AvatarUploader({
           event.target.value = "";
         }}
       />
-
-      {/* The existing server action reads this hidden field; we keep parity
-          with the previous URL-text input so no action changes are needed. */}
-      <input type="hidden" name="photo_url" value={url ?? ""} />
 
       {error ? <ErrorNote>{error}</ErrorNote> : null}
     </div>

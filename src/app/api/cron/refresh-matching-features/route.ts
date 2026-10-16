@@ -1,9 +1,6 @@
 import { NextResponse } from "next/server";
 import { getPostgresPool } from "@/lib/postgres";
-import {
-  backfillEventSubTags,
-  refreshAllUserFeatures,
-} from "@/lib/matching/feature-store";
+import { runScheduledJob } from "@/lib/scheduled-jobs";
 
 export const runtime = "nodejs";
 // Never cache - this rewrites the matching feature store every run.
@@ -43,9 +40,10 @@ async function handle(request: Request) {
   }
 
   try {
-    const events = await backfillEventSubTags(pool);
-    const profiles = await refreshAllUserFeatures(pool);
-    return NextResponse.json({ ok: true, eventsTagged: events, profilesRefreshed: profiles });
+    // The same entry the admin "Rebuild suggestion scores now" button runs, under
+    // the same lock (03 §10), so the two can never run at once.
+    const run = await runScheduledJob("rebuild_suggestion_scores");
+    return NextResponse.json(run.ran ? { ok: true, ...run.result } : { ok: true, skipped: run.reason });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Feature refresh failed.";
     return NextResponse.json({ error: message }, { status: 500 });

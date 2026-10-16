@@ -31,6 +31,7 @@ export async function POST(request: Request) {
     tags?: string[];
     birthDate?: string;
     flexibleDiscovery?: boolean;
+    complete?: boolean;
   };
 
   try {
@@ -53,6 +54,8 @@ export async function POST(request: Request) {
         // No datingVisible: a client can't turn dating on (HOTFIX 2026-10-12 H1).
         flexibleDiscovery:
           typeof payload.flexibleDiscovery === "boolean" ? payload.flexibleDiscovery : undefined,
+        // Finish on the form. Member status (01 §1.4) comes only from here.
+        complete: payload.complete === true,
       },
       session,
     );
@@ -61,6 +64,7 @@ export async function POST(request: Request) {
       ok: true,
       profileId: result.profileId,
       photoUrl: result.photoUrl,
+      photoStatus: result.photoStatus,
     });
   } catch (error) {
     return errorResponse(error);

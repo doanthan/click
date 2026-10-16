@@ -55,15 +55,15 @@ export default async function PostLoginPage({ searchParams }: PostLoginPageProps
   // at age NULL forever, which sendClickInner reads directly ((age ?? 0) < 18):
   // every click they sent was refused with "add your date of birth", pointing at
   // a field no page they could reach collects. assertBookingEligible wanted the
-  // same two columns, so they could not RSVP either. Being staff is not a reason
-  // to hold no birth date - it is the one profile field the 18+ rule is built on.
+  // same two columns, so they could not RSVP either.
+  //
+  // 01 §1.4 (build prompt 1): the admin portal is never gated on user
+  // onboarding, so an admin is no longer marched through the form at every
+  // sign-in. They become a member the way anyone does - by switching to user
+  // mode, which lands on /dashboard, whose gate sends a non-member to
+  // /onboarding (redirectIfNotOnboarded). A deep link into a member page gets
+  // the same gate on arrival.
   if (isAdminEmail(session.user.email)) {
-    if (needsOnboarding) {
-      // No ?next=/admin: safeNext rejects the portal roots by design, so it would
-      // be stripped anyway and the form falls through to /dashboard - which is
-      // the right landing for someone who just filled in an attendee profile.
-      redirect(explicitNext ? `/onboarding?next=${encodeURIComponent(explicitNext)}` : "/onboarding");
-    }
     redirect(explicitNext ?? "/admin");
   }
 

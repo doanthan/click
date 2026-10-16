@@ -22,61 +22,66 @@ const sendClickInner = slice("async function sendClickInner(", "export async fun
 // comment explaining why the copy went.
 const code = (src) => src.replace(/\{?\/\*[\s\S]*?\*\/\}?/g, "").replace(/^[ \t]*\/\/.*$/gm, "");
 
-test("#190: a photoless sender is refused, after every receiver check", () => {
-  const gate = sendClickInner.indexOf("if (!resolveAvatarImage(sender?.photo_url))");
-  assert.ok(gate > -1, "R_PHOTO must test the sender's photo the way the rosters do");
-  assert.match(
-    sendClickInner,
-    /throw validationError\("Add a profile photo before you can click with anyone\."\)/,
-  );
+// #190, tightened by build prompt 1 (01 §2): "has a photo" is profiles.photo_status
+// = 'ok' - the stored photo was checked to load publicly and is not a placeholder,
+// stock or default image. A URL alone never passes, anywhere.
+test("#190: a sender without a passing photo is refused, after every receiver check", () => {
+  const gate = sendClickInner.indexOf('if (sender?.photo_status !== "ok")');
+  assert.ok(gate > -1, "R_PHOTO must test the sender's photo_status");
+  assert.match(sendClickInner, /"Add a profile photo before you can click with anyone\."/);
+  // A failed photo is named as failed, never as missing.
+  assert.match(sendClickInner, /sender\?\.photo_status === "failed"/);
   // 21_CLICK_MECHANIC §6.1 check-ordering: sender-own state only after receiver
   // eligibility (the post-event attendance check is the last of it), and before the cap.
   assert.ok(gate > sendClickInner.indexOf("const pairResult"), "R_PHOTO ran before receiver eligibility");
   assert.ok(gate < sendClickInner.indexOf("// Cap check inside the transaction"), "R_PHOTO must precede R_CAP");
+  assert.doesNotMatch(sendClickInner, /resolveAvatarImage/);
 });
 
-test("#190: a photoless receiver is a neutral refusal, from the row the send already reads", () => {
-  assert.match(sendClickInner, /paused_until::text, default_attend_visibility, photo_url/);
+test("#190: a receiver without a passing photo is a neutral refusal, from the row the send already reads", () => {
+  assert.match(sendClickInner, /paused_until::text, default_attend_visibility, photo_status, is_test,/);
   assert.match(
     sendClickInner,
-    /if \(!resolveAvatarImage\(clickedProfile\.photo_url\)\) \{\s*\n\s*throw notEligibleError\("Receiver has no profile photo\."\);/,
+    /if \(clickedProfile\.photo_status !== "ok"\) \{\s*\n\s*throw notEligibleError\("Receiver has no passing profile photo\."\);/,
   );
 });
 
-test("#190: every roster that offers someone to click with requires a photo", () => {
-  const photo = /and nullif\(btrim\(other\.photo_url\), ''\) is not null/;
+test("#190: every roster that offers someone to click with requires a passing photo", () => {
+  const photo = /and other\.photo_status = 'ok'/;
   const prompts = slice("export async function getPostEventClickPrompts(", "export async function getPostEventClickPromptForEvent(");
   const forEvent = slice("export async function getPostEventClickPromptForEvent(", "export async function answerPostEventWindowForSession(");
   const push = slice("export async function notifyPostEventClickPrompts(", "\n}\n");
   assert.match(prompts, photo);
   assert.match(forEvent, photo);
   assert.match(push, photo, "the push must not fire for a night whose roster is empty");
-  // ...and the render-time test the send path refuses on, not just "non-blank".
-  assert.match(prompts, /if \(!resolveAvatarImage\(row\.other_photo_url\)\) continue;/);
-  assert.match(forEvent, /resolveAvatarImage\(row\.other_photo_url\) !== null/);
-  // The discovery pool already had both halves; keep them.
   const pool = slice("export async function getSuggestedPeople(", "export type MutualClickEntry");
-  assert.match(pool, /and p\.photo_url <> ''/);
-  assert.match(pool, /result\.rows\.filter\(\(row\) => resolveAvatarImage\(row\.photo_url\)\)/);
+  assert.match(pool, /and p\.photo_status = 'ok'/);
+  // The URL tests are gone - a URL is not a face (the 2026-10-12 402 outage).
+  for (const [name, src] of [["prompts", prompts], ["forEvent", forEvent], ["push", push], ["pool", pool]]) {
+    assert.doesNotMatch(src, /photo_url is not null|photo_url <> ''|nullif\(btrim\(other\.photo_url\)|resolveAvatarImage/, name);
+  }
 });
 
-test("#190/#255: /people warns a photoless viewer up front and describes its pool honestly", () => {
+test("#190/#255: /people warns a viewer without a passing photo up front and describes its pool honestly", () => {
   const people = read("src/app/people/page.tsx");
-  assert.match(people, /const viewerHasPhoto = resolveAvatarImage\(profileStatus\.photoUrl\) !== null;/);
+  assert.match(people, /const viewerHasPhoto = profileStatus\.photoStatus === "ok";/);
   assert.match(people, /\{viewerHasPhoto \? null : \(/);
+  // A failed photo says it failed (01 §2: never a silent silhouette).
+  assert.match(code(people), /Your photo didn't work/);
   // getSuggestedPeople never filtered on overlap, so the empty state may not claim it.
   assert.doesNotMatch(code(people), /real overlap/);
   assert.match(code(people), /Suggestions come from members with a photo and a finished profile/);
 });
 
-test("#329: the dashboard asks a photoless viewer for a photo instead of offering a pick", () => {
+test("#329: the dashboard asks a viewer without a passing photo for one instead of offering a pick", () => {
   const dashboard = read("src/app/dashboard/page.tsx");
-  assert.match(dashboard, /const viewerHasPhoto = resolveAvatarImage\(profileStatus\.photoUrl\) !== null;/);
+  assert.match(dashboard, /const viewerHasPhoto = profileStatus\.photoStatus === "ok";/);
   // The photo state comes BEFORE the pick, so a pick never renders without one.
   const photoBranch = dashboard.indexOf("{!viewerHasPhoto ? (");
   const pickBranch = dashboard.indexOf(") : pick ? (");
   assert.ok(photoBranch > -1 && pickBranch > photoBranch, "photo check must gate the pick");
   assert.match(dashboard.slice(photoBranch, pickBranch), /actionHref="\/profile\/edit"/);
+  assert.match(dashboard.slice(photoBranch, pickBranch), /Your photo didn't work - upload it again\./);
 });
 
 test("#266/#230/#231: the People Card flips on the tap - no spinner, no confetti", () => {

@@ -79,7 +79,7 @@ try {
 
   const mkProfile = async (label) => {
     const r = await db.query(
-      `insert into profiles (email, display_name, age) values ($1,$2,30) returning id::text, email`,
+      `insert into profiles (email, display_name, age, is_test) values ($1,$2,30,true) returning id::text, email`,
       [`gsv-${randomUUID()}@test.local`, label],
     );
     return r.rows[0];

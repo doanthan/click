@@ -96,9 +96,16 @@ async function writePersona(
   const role =
     persona.role === "admin" && !isAdminEmail(persona.email) ? "attendee" : persona.role;
 
+  // is_test on every write (22A §4.5): a persona is a test account from the
+  // moment it exists, so it can never sit in a real member's pool. Never
+  // member_onboarded_at - a persona becomes a member by finishing the onboarding
+  // flow like anyone (01 §1.4) - and its photo is checked like anyone's
+  // (photo_status, 01 §2): the generated face it is given here is stock, so it
+  // never passes until a real-looking photo is uploaded.
   const profileConflict = reset
     ? `on conflict (email) do update set
         role = excluded.role,
+        is_test = true,
         display_name = excluded.display_name,
         suburb = excluded.suburb,
         birth_date = excluded.birth_date,
@@ -110,18 +117,19 @@ async function writePersona(
         end,
         updated_at = now()`
     : `on conflict (email) do update set
-        role = excluded.role`;
+        role = excluded.role,
+        is_test = true`;
 
   await client.query(
     `
     insert into profiles (
       auth_subject, role, email, display_name, suburb, city, bio,
       birth_date, age, photo_url,
-      connection_intents, email_verified_at
+      connection_intents, email_verified_at, is_test
     )
     values ($1, $2::user_role, $3::citext, $4, $5, 'Sydney', $6,
             $7::date, extract(year from age($7::date))::int, $8,
-            '{friendship,exploring}'::connection_intent[], now())
+            '{friendship,exploring}'::connection_intent[], now(), true)
     ${profileConflict}
     `,
     [

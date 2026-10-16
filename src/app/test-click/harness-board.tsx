@@ -134,7 +134,7 @@ export async function ClickHarnessBoard({
           <FixturesPanel fixtures={fixtures} pair={pair} />
           <PeoplePanel people={people} aEmail={aEmail} bEmail={bEmail} />
           {pair ? <PairBoard pair={pair} fixtures={fixtures} /> : (
-            <Panel title="Pick two different QA people" caption="Both must be @click.local accounts that exist.">
+            <Panel title="Pick two different QA people" caption="Both must be existing @click.local test accounts (is_test).">
               <p className="text-[0.82rem] text-[color:var(--slate)]">
                 No pair loaded for <code>{aEmail}</code> + <code>{bEmail}</code>.
               </p>
@@ -259,7 +259,7 @@ function PeoplePanel({
   return (
     <Panel
       title="The pair"
-      caption="Only @click.local accounts. Switching the pair reloads the board; nothing is written."
+      caption="Only @click.local test accounts (is_test). Switching the pair reloads the board; nothing is written."
     >
       <form method="get" className="flex flex-wrap items-end gap-3">
         {(["a", "b"] as const).map((slot) => (
@@ -362,16 +362,69 @@ function PairBoard({
             <HarnessButton
               label="Reset this pair"
               tone="danger"
-              fields={{ step: "reset_pair", a: pair.a.email, b: pair.b.email }}
-              hint="Clears every click, mutual, plan, suppression and block between these two so the scenarios are re-runnable. QA accounts only."
+              fields={{ step: "reset_pair", a: pair.a.email, b: pair.b.email, a_id: pair.a.id, b_id: pair.b.id }}
+              hint="Clears every click, mutual, plan, suppression and block between these two so the scenarios are re-runnable. /dev/coord/reset: admin, both test accounts, test-created events only. Audited."
             />
           </div>
           {(["clicks", "mutual", "proposal"] as const).map((clock) => (
             <div key={clock} className="w-full sm:w-56">
               <HarnessButton
                 label={`Wind the ${clock} clock back`}
-                fields={{ step: "wind_clock", clock, a: pair.a.email, b: pair.b.email }}
+                fields={{ step: "wind_clock", clock, a: pair.a.email, b: pair.b.email, a_id: pair.a.id, b_id: pair.b.id }}
                 hint="Backdates the deadline only. The sweep is what expires it, exactly as it would in a week."
+              />
+            </div>
+          ))}
+        </div>
+        {/* 03 §10 Test pairs: jump to a stage and advance time, through the same
+            guarded hooks as /dev/coord/set and /dev/clock/advance. */}
+        <p className="mt-5 text-[0.72rem] font-semibold tracking-[0.08em] text-[color:var(--slate)] uppercase">
+          Jump to a stage (resets first, then walks the real flow)
+        </p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {(
+            [
+              ["reveal", "Reveal"],
+              ["suggest", "Suggest"],
+              ["their_plan", "Their plan"],
+              ["both_going", "Both going"],
+              ["connected", "Connected"],
+              ["released", "Released"],
+            ] as const
+          ).map(([stage, label]) => (
+            <div key={stage} className="w-full sm:w-40">
+              <HarnessButton
+                label={label}
+                fields={{
+                  step: "jump_stage",
+                  stage,
+                  a: pair.a.email,
+                  b: pair.b.email,
+                  a_id: pair.a.id,
+                  b_id: pair.b.id,
+                  event_slug: planA?.slug ?? "",
+                }}
+                disabled={stage !== "reveal" && stage !== "released" && !planA}
+                disabledReason="Rebuild the fixtures first - the stage needs the plan event."
+              />
+            </div>
+          ))}
+        </div>
+        <p className="mt-5 text-[0.72rem] font-semibold tracking-[0.08em] text-[color:var(--slate)] uppercase">
+          Advance this pair&apos;s clock (their rows only)
+        </p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {(
+            [
+              ["6", "6 hours"],
+              ["24", "1 day"],
+              ["168", "7 days"],
+            ] as const
+          ).map(([hours, label]) => (
+            <div key={hours} className="w-full sm:w-40">
+              <HarnessButton
+                label={`+${label}`}
+                fields={{ step: "advance_clock", hours, a: pair.a.email, b: pair.b.email, a_id: pair.a.id, b_id: pair.b.id }}
               />
             </div>
           ))}

@@ -24,6 +24,8 @@ import {
 const ACCEPT = "image/jpeg,image/png,image/webp";
 const MAX_BYTES = 5 * 1024 * 1024;
 const MAX_PHOTOS = 5;
+// The photo check's result for a main photo a gallery change moved (api/upload/gallery).
+type MainPhoto = { status: "none" | "pending" | "ok" | "failed"; error?: string };
 
 export function ProfileGalleryUploader({ initialUrls }: { initialUrls: string[] }) {
   const router = useRouter();
@@ -84,7 +86,7 @@ export function ProfileGalleryUploader({ initialUrls }: { initialUrls: string[] 
         signal: controller.signal,
       });
       const payload = (await response.json().catch(() => null)) as
-        | { urls?: string[]; error?: string }
+        | { urls?: string[]; error?: string; mainPhoto?: MainPhoto }
         | null;
       if (!response.ok || !Array.isArray(payload?.urls)) {
         setError(
@@ -97,7 +99,7 @@ export function ProfileGalleryUploader({ initialUrls }: { initialUrls: string[] 
         return;
       }
       setUrls(payload.urls);
-      flashSaved();
+      if (!sayMainPhoto(payload.mainPhoto)) flashSaved();
       router.refresh();
     } catch {
       setError("Upload failed. Check your connection and try again.");
@@ -105,6 +107,22 @@ export function ProfileGalleryUploader({ initialUrls }: { initialUrls: string[] 
       clearTimeout(timeout);
       setPending(false);
     }
+  }
+
+  // The change also moved the main photo (this was the first photo, or the main
+  // one was removed): say what its photo check found (01 §2) - never a silent
+  // silhouette. router.refresh() then brings the avatar above the new photo
+  // and its verdict; never a reload, which the form's unsaved-changes guard can
+  // cancel. Returns whether there was something to say.
+  function sayMainPhoto(mainPhoto: MainPhoto | undefined): boolean {
+    if (mainPhoto?.status === "failed") {
+      setError(mainPhoto.error ?? "Your new main photo didn't work. Try another one.");
+    } else if (mainPhoto?.status === "pending") {
+      setError("Saved - but we couldn't check your main photo just now. Tap Set as main on it in a moment to try again.");
+    } else {
+      return false;
+    }
+    return true;
   }
 
   // Promote a gallery photo to the main avatar (bug board #220 - there was no
@@ -124,12 +142,14 @@ export function ProfileGalleryUploader({ initialUrls }: { initialUrls: string[] 
         | null;
       if (!response.ok || !payload?.url) {
         setError(payload?.error ?? "Couldn't set that as your main photo. Try again.");
+        // 422: it IS the main photo now, failed (01 §2) - the avatar shows that too.
+        if (response.status === 422) router.refresh();
         return;
       }
-      // The avatar is a sibling component whose preview is seeded from a server
-      // prop into useState, so router.refresh() alone wouldn't swap it visibly.
-      // A full reload guarantees the new main photo shows everywhere at once.
-      window.location.reload();
+      // The avatar above takes the new photo from the refreshed server props
+      // (AvatarUploader), and so does the header. Not a reload: the form's
+      // unsaved-changes guard can cancel one.
+      router.refresh();
     } catch {
       setError("Couldn't set that as your main photo. Check your connection.");
     } finally {
@@ -147,13 +167,14 @@ export function ProfileGalleryUploader({ initialUrls }: { initialUrls: string[] 
         body: JSON.stringify({ url }),
       });
       const payload = (await response.json().catch(() => null)) as
-        | { urls?: string[]; error?: string }
+        | { urls?: string[]; error?: string; mainPhoto?: MainPhoto }
         | null;
       if (!response.ok || !Array.isArray(payload?.urls)) {
         setError(payload?.error ?? "Could not remove that photo. Try again.");
         return;
       }
       setUrls(payload.urls);
+      sayMainPhoto(payload.mainPhoto);
       router.refresh();
     } catch {
       setError("Could not remove that photo. Check your connection and try again.");

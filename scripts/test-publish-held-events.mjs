@@ -68,8 +68,8 @@ try {
 
   const mkMerchant = async (name, m) => {
     const owner = await db.query(
-      `insert into profiles (email, display_name, age, role)
-       values ($1, $2, 30, 'attendee') returning id::text`,
+      `insert into profiles (email, display_name, age, role, is_test)
+       values ($1, $2, 30, 'attendee', true) returning id::text`,
       [`${TAG}-${name}@test.local`, `${TAG} ${name}`],
     );
     const r = await db.query(

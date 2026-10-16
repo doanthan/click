@@ -19,8 +19,21 @@ import { MODEL_VERSION } from "./weights";
 
 // ---- feature loaders ------------------------------------------------------
 
+// life_tags is filtered on the way OUT as well as on the way in (feature-store's
+// lifet): a user_features row written before a tag was marked sensitive or
+// FOMO-only still holds it until the next nightly refresh, and 08 §4.1 says such
+// a tag never reaches a score, a cohort or a pick reason - not "after tonight".
 const USER_FEATURE_COLUMNS = `
-  profile_id::text, interest_tag_ids::text[], life_tags, social_energy,
+  profile_id::text, interest_tag_ids::text[],
+  array(
+    select held.slug from unnest(life_tags) as held(slug)
+    where not exists (
+      select 1 from tags sensitive_tag
+      where sensitive_tag.slug = held.slug and sensitive_tag.tag_type = 'life'
+        and (sensitive_tag.is_sensitive or sensitive_tag.fomo_only)
+    )
+  ) as life_tags,
+  social_energy,
   intents, age, suburb, city, behavioural_sub_tags, attendance_count, rsvp_count,
   cancellation_rate, attended_with_profile_ids::text[], clicks_made_count,
   clicks_received_count, mutual_click_count, event_categories_attended, cohort_id
@@ -190,7 +203,14 @@ export async function generateEventCandidates(
         e.sub_tags,
         extract(hour from (e.starts_at at time zone coalesce(e.timezone, 'Australia/Sydney')))::int as start_hour,
         coalesce(array_agg(t.id) filter (where t.tag_type = 'interest'), '{}')::text[] as interest_tag_ids,
-        coalesce(array_agg(t.slug) filter (where t.tag_type = 'life'), '{}') as life_targets,
+        -- An event's life-tag targets, minus sensitive and FOMO-only tags: they
+        -- never enter event scoring either (08 §4.1).
+        coalesce(
+          array_agg(t.slug) filter (
+            where t.tag_type = 'life' and not t.is_sensitive and not t.fomo_only
+          ),
+          '{}'
+        ) as life_targets,
         count(distinct a.id) filter (where a.status = 'confirmed')::int as attendees,
         e.capacity
       from events e

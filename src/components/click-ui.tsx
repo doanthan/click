@@ -80,6 +80,7 @@ export function MetricCard({
   tone = "peach",
   href,
   hint,
+  definition,
 }: {
   label: string;
   value: string;
@@ -88,6 +89,9 @@ export function MetricCard({
   href?: string;
   /** One line under the number saying what it counts, when the label alone can't. */
   hint?: string;
+  /** The tile's one-line definition, shown on hover (03 §9) and read out to
+   *  screen readers. */
+  definition?: string;
 }) {
   // legacy aliases → new palette (purple fills take cream text - never dark-on-purple)
   const t = tone === "aqua" ? "peach" : tone === "pink" ? "rose" : tone === "white" ? "cream" : tone;
@@ -103,8 +107,14 @@ export function MetricCard({
   // h-full: a hint makes one tile taller than its row, and a linked tile's card
   // sits inside the Link, so it has to fill it to keep the row even.
   const card = (
-    <article className={`h-full rounded-2xl ${palette} p-5 shadow-[var(--shadow-sm)] ${href ? "transition-shadow hover:shadow-[var(--shadow-md)]" : ""}`}>
-      <p className="text-[12.5px] font-semibold opacity-70">{label}</p>
+    <article
+      title={definition}
+      className={`h-full rounded-2xl ${palette} p-5 shadow-[var(--shadow-sm)] ${href ? "transition-shadow hover:shadow-[var(--shadow-md)]" : ""}`}
+    >
+      <p className="text-[12.5px] font-semibold opacity-70">
+        {label}
+        {definition ? <span className="sr-only">. {definition}</span> : null}
+      </p>
       <p className="font-display mt-2 text-5xl font-semibold leading-none tracking-[-0.03em] tabular-nums">{value}</p>
       {hint ? <p className="mt-3 text-[12.5px] leading-5 opacity-70">{hint}</p> : null}
     </article>

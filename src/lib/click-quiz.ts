@@ -247,9 +247,12 @@ export const CLICK_QUIZ_STEPS: QuizStep[] = [
         id: "lgbtq",
         prompt: "Do you identify as LGBTQ+?",
         sensitive: true,
-        // The spec's exact line. No community-signal copy, ever: nothing about
-        // this answer is shown to anyone, singly or in aggregate.
-        note: "Optional and private to you - it helps us keep events welcoming.",
+        // 08 §4.4a's consent line (hyphens for its em-dashes, per the language
+        // rule). The answer is never on a profile and never shown against a name;
+        // its one use is the belonging line other LGBTQ+ members see on an event
+        // - "others from the LGBTQ+ community are going too" - only from four
+        // others, never a number, never who.
+        note: "This stays private - we'll never put it on your profile or tell anyone you selected it. We may quietly let others in the same community know they're not the only one here - never who.",
         options: [
           { value: "yes", label: "Yes" },
           { value: "no", label: "No" },
@@ -311,7 +314,13 @@ export function toggleAnswer(
   return [...picked.filter((option) => option !== question.exclusive), value];
 }
 
-export type QuizLifeTag = { slug: string; label: string };
+/**
+ * `sensitive` / `fomoOnly` are 08 §3's classes, written onto the tag row when the
+ * quiz creates it (tags.is_sensitive / tags.fomo_only, migration 076): neither
+ * kind ever enters pair scoring, event scoring, a cohort or a pick reason (08
+ * §4.1), and a sensitive tag is never listed against a named member (08 §7).
+ */
+export type QuizLifeTag = { slug: string; label: string; sensitive?: boolean; fomoOnly?: boolean };
 
 /**
  * Answer -> life tag, per TECH 08 section 2. Slugs are the spec's; a label only
@@ -325,16 +334,16 @@ const LIFE_TAG_FOR: Record<string, Record<string, QuizLifeTag>> = {
   stage: {
     "new-in-town": { slug: "new-to-town", label: "New in town" },
     "new-parent": { slug: "new-parent", label: "New parent" },
-    "single-parent": { slug: "single-parent", label: "Single parent" },
+    "single-parent": { slug: "single-parent", label: "Single parent", fomoOnly: true },
     student: { slug: "student", label: "Student" },
     "recently-retired": { slug: "retired", label: "Retired" },
-    "getting-back-out-there": { slug: "returning-to-social", label: "Getting back out there" },
-    "changing-careers": { slug: "career-pivot", label: "Career pivot" },
-    "kids-left-home": { slug: "empty-nester", label: "Empty nester" },
+    "getting-back-out-there": { slug: "returning-to-social", label: "Getting back out there", fomoOnly: true },
+    "changing-careers": { slug: "career-pivot", label: "Career pivot", fomoOnly: true },
+    "kids-left-home": { slug: "empty-nester", label: "Empty nester", fomoOnly: true },
   },
   pet: { yes: { slug: "pet-owner", label: "Pet owner" } },
-  lgbtq: { yes: { slug: "lgbtq-plus", label: "LGBTQ+" } },
-  comfort: { "alcohol-free": { slug: "sober-curious", label: "Alcohol-free" } },
+  lgbtq: { yes: { slug: "lgbtq-plus", label: "LGBTQ+", sensitive: true } },
+  comfort: { "alcohol-free": { slug: "sober-curious", label: "Alcohol-free", fomoOnly: true } },
 };
 
 /** Every life tag the quiz can write. */

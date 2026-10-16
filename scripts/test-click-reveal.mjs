@@ -47,7 +47,7 @@ function check(label, cond) {
 
 async function mkProfile() {
   const r = await pool.query(
-    `insert into profiles (email, display_name, age) values ($1,'Reveal tester',30) returning id::text`,
+    `insert into profiles (email, display_name, age, is_test) values ($1,'Reveal tester',30,true) returning id::text`,
     [`rv-${randomUUID()}@test.local`],
   );
   profiles.push(r.rows[0].id);

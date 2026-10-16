@@ -43,13 +43,12 @@ export async function authorizeAccountSwitch(targetId: string, returning: boolea
        and suspended_at is null and not coalesce(is_banned, false) for share`, [actor.email],
     );
     if (!owner.rows[0]) { await client.query("rollback"); return refuse("the admin's own profile is missing, suspended or banned"); }
-    // is_test decides whether this viewing session may act (HOTFIX 2026-10-12
-    // H4.1): a real member opens view only. Read through to_jsonb so this works
-    // before H2's migration adds the column, falling back to the @click.local
-    // rule until then.
+    // profiles.is_test decides whether this viewing session may act (03 §1,
+    // 22A §4.5): a real member opens view only, a test account may act. The
+    // column, not the email domain - migration 076 adds it, and a missing
+    // backfill fails closed (every account reads as real, so view only).
     const target = await client.query<SwitchAccount & { image: string | null; is_test: boolean }>(
-      `select id::text, email::text, display_name as name, role::text, photo_url as image,
-              coalesce((to_jsonb(profiles) ->> 'is_test')::boolean, email::text ilike '%@click.local') as is_test
+      `select id::text, email::text, display_name as name, role::text, photo_url as image, is_test
        from profiles where ${returning ? "email = $1::citext" : "id = $1::uuid"} for share`,
       [returning ? actor.email : targetId],
     );
@@ -57,14 +56,15 @@ export async function authorizeAccountSwitch(targetId: string, returning: boolea
     if (!user?.email) { await client.query("rollback"); return refuse("target profile not found"); }
     const backToSelf = user.email.toLowerCase() === actor.email;
     const runningUntil = session?.impersonation?.expiresAt ?? Date.parse(session!.expires);
-    const expiresAt = backToSelf ? runningUntil : viewingExpiresAt(user.email, runningUntil);
+    const expiresAt = backToSelf ? runningUntil : viewingExpiresAt(user.is_test === true, runningUntil);
     // Require the audit write to succeed before issuing the switched session.
     await client.query(
       `insert into audit_logs (actor_profile_id, action, entity_table, entity_id, metadata)
        values ($1::uuid, $2, 'profiles', $3::uuid, $4::jsonb)`,
       [owner.rows[0].id, backToSelf ? "account_switch_return" : "account_switch_start", user.id,
         JSON.stringify({ actorEmail: actor.email, fromEmail: session?.user?.email, targetEmail: user.email, expiresAt,
-          viewOnly: backToSelf ? undefined : !user.is_test })],
+          viewOnly: backToSelf ? undefined : !user.is_test,
+          isTest: backToSelf ? undefined : user.is_test === true })],
     );
     await client.query("commit");
     return {

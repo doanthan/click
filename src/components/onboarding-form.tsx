@@ -173,6 +173,9 @@ type OnboardingFormProps = {
   // store a suburb NAME, and that can't seed a postcode field.
   initialPostcode?: string;
   initialPhotoUrl?: string | null;
+  // The photo on file failed the photo check (photo_status 'failed', 01 §2) -
+  // typically a provider's default letter avatar. Shown on the photo step.
+  initialPhotoFailed?: boolean;
   // Deep link the visitor was headed to before signup interrupted them (already
   // validated by safeNext on the server). Finishing the form resumes that trip
   // instead of dumping them on /dashboard.
@@ -211,6 +214,7 @@ export function OnboardingForm({
   initialName,
   initialPostcode = "",
   initialPhotoUrl = null,
+  initialPhotoFailed = false,
   next,
 }: OnboardingFormProps) {
   const router = useRouter();
@@ -242,6 +246,7 @@ export function OnboardingForm({
   const [tags, setTags] = useState<Set<string>>(new Set());
   const [bio, setBio] = useState("");
   const [photoUrl, setPhotoUrl] = useState<string | null>(initialPhotoUrl);
+  const [photoFailed, setPhotoFailed] = useState(initialPhotoFailed);
 
   const [state, setState] = useState<SubmitState>("idle");
   // Which of step 1's two buttons is saving, when there are two (returnLabel),
@@ -494,7 +499,8 @@ export function OnboardingForm({
       return;
     }
 
-    if (!(await saveProfile())) return;
+    // complete: this is the Finish save - the one that makes a member (01 §1.4).
+    if (!(await saveProfile({ complete: true }))) return;
 
     // Wipe the draft on success so a refresh doesn't resurrect it.
     try {
@@ -520,7 +526,7 @@ export function OnboardingForm({
   // only step 1's postcode and birth date (assertBookingEligible).
   // saveOnboarding overwrites the same columns each time and only ever adds
   // tags, so the Finish save builds on the first one.
-  async function saveProfile(): Promise<boolean> {
+  async function saveProfile({ complete = false }: { complete?: boolean } = {}): Promise<boolean> {
     setState("submitting");
     setMessage("");
 
@@ -538,6 +544,7 @@ export function OnboardingForm({
           tags: Array.from(tags),
           birthDate: birthDate || undefined,
           flexibleDiscovery,
+          complete,
         }),
       });
     } catch {
@@ -553,6 +560,7 @@ export function OnboardingForm({
     const payload = (await response.json().catch(() => ({}))) as {
       error?: string;
       photoUrl?: string | null;
+      photoStatus?: string;
     };
     if (!response.ok) {
       showError(payload.error ?? "Could not save your profile.");
@@ -563,6 +571,9 @@ export function OnboardingForm({
     // save reads it back, and the photo step then opens on it instead of
     // asking for a photo the profile already has (bug board #240).
     if (payload.photoUrl) setPhotoUrl((current) => current ?? payload.photoUrl ?? null);
+    // The rehosted provider photo failed the photo check (a default letter
+    // avatar, say): the photo step says so instead of showing it as done.
+    if (payload.photoStatus === "failed") setPhotoFailed(true);
 
     // The profile now counts as finished, and onboarding/page.tsx answers a
     // finished profile with a redirect - unless the address says the visitor
@@ -869,8 +880,12 @@ export function OnboardingForm({
                   <AvatarUploader
                     initialUrl={photoUrl}
                     displayName={displayName}
-                    onUploaded={setPhotoUrl}
+                    onUploaded={(url) => {
+                      setPhotoUrl(url);
+                      setPhotoFailed(false);
+                    }}
                     optional
+                    photoFailed={photoFailed}
                   />
                   <label className="grid gap-1.5">
                     <span className="text-[13.5px] font-semibold text-[color:var(--ink)]">

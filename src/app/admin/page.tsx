@@ -15,8 +15,15 @@ export const metadata = {
   title: "Dashboard | Admin",
 };
 
-export default async function AdminOverviewPage() {
+export default async function AdminOverviewPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ test?: string }>;
+}) {
   await requireAdminPage();
+  // 03 §9 / 22A §4.5: test accounts are left out of every number unless the
+  // "Include test accounts" toggle is on (?test=1).
+  const includeTest = (await searchParams)?.test === "1";
 
   // getAdminMetrics computes every live metric from its own COUNT queries; the
   // `events` argument only feeds the DB-down fallback's event/pending counts,
@@ -25,10 +32,10 @@ export default async function AdminOverviewPage() {
   // behaviourally identical and lets all three fan out concurrently instead of
   // awaiting metrics serially after the events query.
   const [trend, metrics, money, clicks] = await Promise.all([
-    getAdminWeeklyTrend(),
-    getAdminMetrics([]),
+    getAdminWeeklyTrend({ includeTest }),
+    getAdminMetrics([], { includeTest }),
     countAdminMoneyAlerts(),
-    getAdminClickOutcomes(),
+    getAdminClickOutcomes({ includeTest }),
   ]);
 
   // Bug board #277: where live mutual clicks stall before a first night out.
@@ -46,6 +53,19 @@ export default async function AdminOverviewPage() {
         title="Dashboard"
         description="Platform health at a glance - members, events, merchants, and revenue."
       />
+
+      {/* 03 §9: one toggle for every tile and chart on this page. Off by default:
+          test and demo accounts never inflate a platform number unless asked. */}
+      <div className="flex flex-wrap items-center gap-3 text-sm text-[color:var(--slate)]">
+        <span>{includeTest ? "Including test accounts." : "Test accounts are left out."}</span>
+        <Link
+          href={includeTest ? "/admin" : "/admin?test=1"}
+          className="ck-btn ck-btn--secondary ck-btn--sm"
+          aria-pressed={includeTest}
+        >
+          {includeTest ? "Leave out test accounts" : "Include test accounts"}
+        </Link>
+      </div>
 
       {/* When Postgres is unreachable these reads fall back to zeroes, and the
           money banner below vanishes with them - an outage that looks like a
@@ -111,14 +131,50 @@ export default async function AdminOverviewPage() {
       ) : null}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {/* "Onboarded" because this counts profiles that finished onboarding
-            (suburb set) - the Attendees page lists every profile, so its All
-            count can be higher. */}
-        <MetricCard label="Onboarded members" value={metrics.totalMembers.toLocaleString()} tone="cream" href="/admin/members" />
-        <MetricCard label="New this week" value={metrics.newMembersThisWeek.toLocaleString()} tone="peach" href="/admin/members" />
-        <MetricCard label="Pending events" value={metrics.pendingEvents.toLocaleString()} tone="rose" href="/admin/events" />
-        <MetricCard label="Pending merchants" value={metrics.pendingMerchants.toLocaleString()} tone="ink" href="/admin/merchants?status=pending" />
-        <MetricCard label="Total events" value={metrics.totalEvents.toLocaleString()} tone="peach" href="/admin/events?status=all&when=all" />
+        {/* "Onboarded" because this counts people who finished the user
+            onboarding flow - the Attendees page lists every profile, so its All
+            count can be higher. Definitions per 03 §9, on hover. */}
+        <MetricCard
+          label="Onboarded members"
+          value={metrics.totalMembers.toLocaleString()}
+          tone="cream"
+          href="/admin/members"
+          definition={`People who finished the user onboarding flow, any role${includeTest ? "" : ", not test accounts"}.`}
+        />
+        <MetricCard
+          label="Attendees"
+          value={metrics.attendees.toLocaleString()}
+          tone="peach"
+          definition={`Onboarded members with at least one confirmed booking${includeTest ? "" : ", not test accounts"}.`}
+        />
+        <MetricCard
+          label="New this week"
+          value={metrics.newMembersThisWeek.toLocaleString()}
+          tone="peach"
+          href="/admin/members"
+          definition={`Onboarded members whose account was created in the last 7 days${includeTest ? "" : ", not test accounts"}.`}
+        />
+        <MetricCard
+          label="Pending events"
+          value={metrics.pendingEvents.toLocaleString()}
+          tone="rose"
+          href="/admin/events"
+          definition={`Events waiting on review or payouts${includeTest ? "" : ", not created by test accounts"}.`}
+        />
+        <MetricCard
+          label="Pending merchants"
+          value={metrics.pendingMerchants.toLocaleString()}
+          tone="ink"
+          href="/admin/merchants?status=pending"
+          definition={`Host applications waiting on review${includeTest ? "" : ", not test accounts"}.`}
+        />
+        <MetricCard
+          label="Total events"
+          value={metrics.totalEvents.toLocaleString()}
+          tone="peach"
+          href="/admin/events?status=all&when=all"
+          definition={`Every event in any status${includeTest ? "" : ", not created by test accounts"}.`}
+        />
         {/* Bug board #309: "confirmed, but what if they cancelled?" Every path
             that ends a booking (the member cancelling, the host or Click
             cancelling the event, an admin's full refund) moves its row to
@@ -128,9 +184,21 @@ export default async function AdminOverviewPage() {
           value={metrics.confirmedRsvps.toLocaleString()}
           tone="cream"
           hint="All-time bookings, minus any that were cancelled. Doesn't include +1s."
+          definition={`Confirmed bookings${includeTest ? "" : " by people who are not test accounts"}; cancelled ones and +1s are not counted.`}
         />
-        <MetricCard label="Merchants" value={metrics.totalMerchants.toLocaleString()} tone="rose" href="/admin/merchants" />
-        <MetricCard label="Mutual Clicks" value={metrics.mutualClicks.toLocaleString()} tone="ink" />
+        <MetricCard
+          label="Merchants"
+          value={metrics.totalMerchants.toLocaleString()}
+          tone="rose"
+          href="/admin/merchants"
+          definition={`Every host account, any status${includeTest ? "" : ", not test accounts"}.`}
+        />
+        <MetricCard
+          label="Mutual Clicks"
+          value={metrics.mutualClicks.toLocaleString()}
+          tone="ink"
+          definition={`Every mutual click ever formed${includeTest ? "" : " between two real members"}.`}
+        />
       </div>
 
       {/* Bug board #276/#277 - did the click turn into a night out, and where do

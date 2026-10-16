@@ -75,6 +75,15 @@ const authenticatedProxy = auth((request, _event: NextFetchEvent) => {
     !VIEW_ONLY_SAFE_METHODS.has(nextRequest.method) &&
     !isViewOnlyExit(pathname)
   ) {
+    // 03 §1: an action attempted through a view-as session is refused AND
+    // logged. The function log, not the audit table - the proxy holds no
+    // database connection, and the session start is already in the audit log.
+    console.warn("[view-as] refused a write while viewing a real member", {
+      actor: session?.impersonation?.actor?.email,
+      viewing: session?.user?.email,
+      method: nextRequest.method,
+      path: pathname,
+    });
     return Response.json(
       { error: "You're viewing this account, so nothing can be changed from here." },
       { status: 403, headers: { "Cache-Control": "private, no-store" } },

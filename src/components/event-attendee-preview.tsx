@@ -78,6 +78,8 @@ export function EventAttendeePreview({
     viewerOpenToDating,
     crowdDecade: preview.crowdDecade,
     viewerDecade: preview.viewerDecade,
+    // 08 §4.4a: computed for this viewer only, and never a number.
+    belonging: preview.belonging,
   });
   const signalList =
     signals.length > 0 ? (

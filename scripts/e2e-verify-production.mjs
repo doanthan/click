@@ -50,8 +50,8 @@ const created = { profiles: [], events: [] };
 
 async function mkProfile(name) {
   const r = await pool.query(
-    `insert into profiles (email, display_name, age, suburb, role)
-     values ($1,$2,30,'Sydney','attendee') returning id::text`,
+    `insert into profiles (email, display_name, age, suburb, role, is_test)
+     values ($1,$2,30,'Sydney','attendee',true) returning id::text`,
     [`e2e-${randomUUID()}@click.local`, name],
   );
   created.profiles.push(r.rows[0].id);

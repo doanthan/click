@@ -39,7 +39,7 @@ import {
   readinessScore,
   scorePersonalizedEvent,
 } from "./personalized-matching";
-import { resolveAvatarImage } from "./avatar-images";
+import type { PhotoCheck, PhotoStatus } from "./photo-verify";
 import { PILOT_AREA_LABEL, isWithinSydneyPilot } from "./geo";
 import { buildEventMediaGallery, type MediaItem } from "./event-media";
 import {
@@ -90,7 +90,7 @@ import {
   type ClickSource,
   type SendClickOutcome,
 } from "./clicks/constants";
-import { DAILY_PICK_COUNT } from "./clicks/daily-picks";
+import { DAILY_PICK_COUNT, FEATURED_PENDING_HOLD_HOURS } from "./clicks/daily-picks";
 import {
   severConfirmedTogetherForCancel,
   severPairCoordination,
@@ -124,7 +124,13 @@ import { isDerivedFromEmail } from "./display-name";
 import { distanceOriginForSuburb, lookupPostcode, placeForSuburb } from "./postcode";
 import { quizEventPrefs, quizMisfit, rankByQuizFit } from "./quiz-fit";
 import { getPostgresPool, mapWithConcurrency } from "./postgres";
-import { attendeeFomoSignals, decadeOf, majorityDecade } from "./attendee-fomo";
+import {
+  BELONGING_MIN_OTHERS,
+  attendeeFomoSignals,
+  decadeOf,
+  majorityDecade,
+  trendingScore,
+} from "./attendee-fomo";
 import { soloIntentLabel } from "./intent-label";
 import { getSupabaseAdmin } from "@/utils/supabase/admin";
 import { EVENT_TITLE_MAX_LENGTH, toTitleCase } from "./text-format";
@@ -182,6 +188,11 @@ export type OnboardingInput = {
   // No datingVisible: dating visibility is never written here (HOTFIX
   // 2026-10-12 H1). set_romantic_visible() is the only way to turn it on.
   flexibleDiscovery?: boolean;
+  // The form's Finish (or step 1's "finish now"): the member has completed the
+  // user onboarding flow, so member_onboarded_at is stamped (01 §1.4). The
+  // step-1 save sends false - it makes a profile you can book with, not a
+  // member. This is the ONLY writer of member_onboarded_at.
+  complete?: boolean;
 };
 
 // Full payload from the one-page host signup form - the only shape /api/merchant
@@ -234,7 +245,17 @@ export type MerchantProfileRow = {
 export type ProfileStatus = {
   exists: boolean;
   role: "attendee" | "merchant" | "admin";
+  // profiles.member_onboarded_at is set (01 §1.4, build prompt 1): the person
+  // finished the user onboarding flow, whatever their role. Only that makes an
+  // account a member - shown to others, given picks, able to click. Not the same
+  // as "may book": booking needs step 1's postcode and birth date only
+  // (assertBookingEligible).
   onboardingComplete: boolean;
+  // profiles.photo_status: 'ok' is the only value that lets them click or be
+  // shown (01 §2). 'failed' is told to them, never hidden.
+  photoStatus: PhotoStatus;
+  // profiles.is_test (22A §4.5).
+  isTest: boolean;
   // Whatever is stored in profiles.suburb. Now a 4-digit AU postcode, but older
   // rows hold a suburb NAME - callers that re-display it must handle both.
   suburb: string | null;
@@ -594,6 +615,8 @@ export type AdminAuditRow = {
 export type AdminMetrics = {
   totalMembers: number;
   newMembersThisWeek: number;
+  /** 03 §9: members with at least one confirmed booking. */
+  attendees: number;
   totalMerchants: number;
   pendingMerchants: number;
   totalEvents: number;
@@ -2151,8 +2174,12 @@ async function ensureProfileForSessionUncached(session: Session | null) {
     ProfileRow & { photo_url: string | null; is_new: boolean }
   >(
     `
-      insert into profiles (auth_subject, role, email, display_name, email_verified_at)
-      values ($1, $2::user_role, $3, $4, now())
+      -- is_test on the INSERT only (22A §4.5): a brand-new account in the QA
+      -- namespace - which only the test-login provider can sign into - starts as
+      -- a test account, so it can never land in the real pool. Never changed on
+      -- an existing row here; the reviewed backfill and the seed scripts own it.
+      insert into profiles (auth_subject, role, email, display_name, email_verified_at, is_test)
+      values ($1, $2::user_role, $3, $4, now(), $5::boolean)
       on conflict (email) do update
       set
         display_name = case
@@ -2175,7 +2202,9 @@ async function ensureProfileForSessionUncached(session: Session | null) {
       returning id::text, role::text as role, email::text, display_name, photo_url,
         (xmax = 0) as is_new
     `,
-    [`auth:${email}`, initialRole, email, displayName],
+    // $5 is its own parameter: reusing $3 (the citext email) as text makes
+    // Postgres refuse the whole statement (42P08, inconsistent parameter types).
+    [`auth:${email}`, initialRole, email, displayName, email.endsWith("@click.local")],
   );
 
   const row = result.rows[0];
@@ -2254,6 +2283,30 @@ export async function backfillAvatarForSession(session: Session | null): Promise
   }
 }
 
+/**
+ * Record the photo check's verdict on profiles.photo_status (01 §2) - only while
+ * the profile still holds the URL that was checked, so a newer upload is never
+ * stamped with an older photo's result. Returns whether it was recorded.
+ */
+export async function recordProfilePhotoCheck(
+  profileId: string,
+  checkedUrl: string,
+  check: PhotoCheck,
+): Promise<boolean> {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+  const status: PhotoStatus = check.status === "ok" ? "ok" : check.status === "none" ? "none" : "failed";
+  const result = await pool.query(
+    `update profiles set photo_status = $3, updated_at = now()
+      where id = $1::uuid and photo_url = $2`,
+    [profileId, checkedUrl, status],
+  );
+  if (status === "failed") {
+    console.warn("[photo-check] photo failed", { profileId, reason: check.reason });
+  }
+  return (result.rowCount ?? 0) > 0;
+}
+
 // Coalesce concurrent backfills for the same profile so two parallel page
 // loads on a fresh session don't both try to PUT the same key.
 const inFlightAvatarBackfills = new Set<string>();
@@ -2269,12 +2322,20 @@ async function backfillAvatarFromRemote(profileId: string, sourceUrl: string) {
     const pool = getPostgresPool();
     if (!pool) return;
     // Race-safe: only write if still null, so a user upload that landed
-    // between the read and now isn't clobbered.
-    await pool.query(
-      `update profiles set photo_url = $2, updated_at = now()
+    // between the read and now isn't clobbered. Stored as 'pending' - a URL is
+    // not a passing photo until the check below says so (01 §2).
+    const stored = await pool.query(
+      `update profiles set photo_url = $2, photo_status = 'pending', updated_at = now()
          where id = $1::uuid and photo_url is null`,
       [profileId, publicUrl],
     );
+    if (!stored.rowCount) return;
+    // Same check as an upload: the stored copy must load publicly, and a
+    // provider's default avatar (a letter on a flat colour, a silhouette) is a
+    // placeholder, never a photo. Loaded here, on the one route that ships
+    // sharp's runtime (/post-login, next.config.ts), never at module scope.
+    const { verifyPhotoUrl } = await import("./photo-verify");
+    await recordProfilePhotoCheck(profileId, publicUrl, await verifyPhotoUrl(publicUrl, profileId, { retries: 2 }));
   } catch (error) {
     console.warn("backfillAvatarFromRemote failed", { profileId, error });
   } finally {
@@ -2424,7 +2485,7 @@ export async function getMerchantSignupPrefill(
  * Checking the configured list here means offboarding an admin is a
  * single-variable change with no data migration - the stale role row is inert.
  */
-async function requireAdminProfile(session: Session | null) {
+export async function requireAdminProfile(session: Session | null) {
   const profile = await ensureProfileForSession(session);
 
   if (profile.role !== "admin" || !isAdminEmail(profile.email)) {
@@ -3710,7 +3771,9 @@ export async function getPersonalizedDiscovery(
 
     const [tagsResult, profileResult, personaResult, attendedResult, registeredResult, quizResult] = await Promise.all([
       pool.query<{ slug: string }>(
-        `select t.slug from user_tags ut join tags t on t.id = ut.tag_id where ut.profile_id = $1::uuid`,
+        // Sensitive and FOMO-only life tags never feed event ranking (08 §4.1).
+        `select t.slug from user_tags ut join tags t on t.id = ut.tag_id
+          where ut.profile_id = $1::uuid and not t.is_sensitive and not t.fomo_only`,
         [profile.id],
       ),
       pool.query<{ intents: string[]; suburb: string | null }>(
@@ -6401,6 +6464,7 @@ function fallbackAdminMetrics(eventCount: number, pendingCount: number): AdminMe
   return {
     totalMembers: fallbackAdminMembers.length,
     newMembersThisWeek: 0,
+    attendees: 0,
     totalMerchants: fallbackAdminMerchants.length,
     pendingMerchants: fallbackAdminMerchants.filter((m) => m.verificationStatus === "pending").length,
     totalEvents: eventCount,
@@ -6507,7 +6571,7 @@ export async function getAdminMembers(
       email: string;
       role: string;
       suburb: string | null;
-      birth_date: Date | null;
+      member_onboarded: boolean;
       registrations: number;
       photo_verified_at: Date | null;
       created_at: Date;
@@ -6533,7 +6597,7 @@ export async function getAdminMembers(
           profile.email::text,
           profile.role::text,
           profile.suburb,
-          profile.birth_date,
+          profile.member_onboarded_at is not null as member_onboarded,
           profile.photo_verified_at,
           profile.created_at,
           profile.suspended_at,
@@ -6555,10 +6619,10 @@ export async function getAdminMembers(
       email: row.email,
       role: (row.role as AdminMemberRow["role"]) ?? "attendee",
       suburb: row.suburb,
-      // Mirrors getProfileStatus's onboardingComplete: suburb + birth_date are
-      // the fields saveOnboarding enforces. An email-only signup (bug board
-      // #164) is not a countable attendee until they finish onboarding.
-      onboardingComplete: !!row.suburb && !!row.birth_date,
+      // Member status, the same flag getProfileStatus reads (01 §1.4): an
+      // email-only signup (bug board #164), or someone who stopped after step 1,
+      // is not a countable member until they finish the onboarding flow.
+      onboardingComplete: Boolean(row.member_onboarded),
       registrations: Number(row.registrations),
       photoVerified: !!row.photo_verified_at,
       joinedAt: row.created_at.toISOString(),
@@ -6649,7 +6713,9 @@ export async function getOutOfAreaMembersForExport(
  * (or is about to) without one. A pair closed by a block, or by a "we clicked"
  * tap with no shared event, is in none of these.
  */
-export async function getAdminClickOutcomes(): Promise<AdminClickOutcomes> {
+export async function getAdminClickOutcomes(
+  { includeTest = false }: { includeTest?: boolean } = {},
+): Promise<AdminClickOutcomes> {
   const empty: AdminClickOutcomes = {
     wentTogether: 0,
     checkedInTogether: 0,
@@ -6717,6 +6783,10 @@ export async function getAdminClickOutcomes(): Promise<AdminClickOutcomes> {
           ) as live_plan,
           exists (select 1 from click_proposals p where p.mutual_click_id = m.id) as ever_planned
         from mutual_clicks m
+        join profiles pair_a on pair_a.id = m.user_a_id
+        join profiles pair_b on pair_b.id = m.user_b_id
+        -- A pair with a test account in it is a test pair (22A §4.5).
+        where ${realOnlySql(includeTest, "pair_a", "pair_b")}
       )
       select
         count(distinct (user_a_id, user_b_id)) filter (where went)::int as "wentTogether",
@@ -6798,6 +6868,10 @@ export async function getAdminMemberDetail(
             from user_tags ut
             join tags tag on tag.id = ut.tag_id
             where ut.profile_id = $1::uuid
+              -- A sensitive tag (lgbtq-plus) is never listed against a named
+              -- member, admins included (08 §7, Cindy 2026-10-15) - admins see
+              -- aggregate counts only, on /admin/tags.
+              and not tag.is_sensitive
             order by tag.tag_type asc, tag.label asc
           `,
           [memberId],
@@ -8297,7 +8371,39 @@ export async function getAdminSidebarCounts(): Promise<AdminSidebarCounts> {
   }
 }
 
-export async function getAdminMetrics(events: AdminEventRow[]): Promise<AdminMetrics> {
+/**
+ * 22 §3.3 / 22A §4.5: every admin number leaves test accounts out unless asked.
+ * Pass the profile's alias; a row is test if ANY profile it hangs off is - a
+ * pair with one test and one real account is a test pair.
+ */
+const realOnlySql = (includeTest: boolean, ...aliases: string[]) =>
+  includeTest ? "true" : aliases.map((alias) => `not ${alias}.is_test`).join(" and ");
+
+/** An event "created by a test account" (03 §10): its host, or the owner of
+ *  its merchant profile, is a test account. */
+export const testCreatedEventSql = (eventAlias: string) =>
+  `(coalesce((select host.is_test from profiles host where host.id = ${eventAlias}.host_profile_id), false)
+    or coalesce((
+      select owner.is_test from merchant_profiles mp join profiles owner on owner.id = mp.profile_id
+      where mp.id = ${eventAlias}.merchant_profile_id
+    ), false))`;
+
+/** An event counts as test when the account that created it is a test account. */
+const eventIsRealSql = (includeTest: boolean, eventAlias: string) =>
+  includeTest ? "true" : `not ${testCreatedEventSql(eventAlias)}`;
+
+/**
+ * The /admin tiles (03 §9). Test accounts are left out unless `includeTest` -
+ * the dashboard's "Include test accounts" toggle.
+ *   - Onboarded members: finished user onboarding (member_onboarded_at, 01 §1.4),
+ *     any role - admins and hosts who onboarded count.
+ *   - Attendees: members with at least one confirmed booking.
+ *   - Confirmed RSVPs: confirmed bookings.
+ */
+export async function getAdminMetrics(
+  events: AdminEventRow[],
+  { includeTest = false }: { includeTest?: boolean } = {},
+): Promise<AdminMetrics> {
   const pool = getPostgresPool();
   const pendingCount = events.filter((event) => event.status === "Pending").length;
 
@@ -8305,42 +8411,55 @@ export async function getAdminMetrics(events: AdminEventRow[]): Promise<AdminMet
 
   try {
     const [profilesResult, merchantsResult, eventsResult, rsvpResult, mutualResult] = await Promise.all([
-      pool.query<{ total: string; recent: string }>(`
+      pool.query<{ total: string; recent: string; attendees: string }>(`
         select
           count(*) as total,
-          count(*) filter (where created_at > now() - interval '7 days') as recent
-        from profiles
-        -- Only onboarded members count as attendees (bug board #164): an
-        -- email-only signup - including a merchant who never completed the
-        -- attendee side - hasn't joined yet. suburb is the field onboarding
-        -- enforces (same rule as getProfileStatus.onboardingComplete).
-        where suburb is not null
+          count(*) filter (where member.created_at > now() - interval '7 days') as recent,
+          count(*) filter (where exists (
+            select 1 from event_attendees booking
+            where booking.profile_id = member.id and booking.status = 'confirmed'
+          )) as attendees
+        from profiles member
+        -- Members only (bug board #164, 01 §1.4): an email-only signup, or
+        -- someone who stopped after step 1, hasn't joined yet.
+        where member.member_onboarded_at is not null
+          and ${realOnlySql(includeTest, "member")}
       `),
       pool.query<{ total: string; pending: string }>(`
         select
           count(*) as total,
-          count(*) filter (where verification_status = 'pending') as pending
-        from merchant_profiles
+          count(*) filter (where merchant.verification_status = 'pending') as pending
+        from merchant_profiles merchant
+        join profiles owner on owner.id = merchant.profile_id
+        where ${realOnlySql(includeTest, "owner")}
       `),
       pool.query<{ total: string; pending: string }>(`
         select
           count(*) as total,
-          count(*) filter (where status = 'pending') as pending
-        from events
+          count(*) filter (where e.status = 'pending') as pending
+        from events e
+        where ${eventIsRealSql(includeTest, "e")}
       `),
       pool.query<{ confirmed: string }>(`
         select count(*) as confirmed
-        from event_attendees
-        where status = 'confirmed'
+        from event_attendees booking
+        join profiles booker on booker.id = booking.profile_id
+        where booking.status = 'confirmed'
+          and ${realOnlySql(includeTest, "booker")}
       `),
       pool.query<{ mutual: string }>(`
-        select count(*) as mutual from mutual_clicks
+        select count(*) as mutual
+        from mutual_clicks m
+        join profiles a on a.id = m.user_a_id
+        join profiles b on b.id = m.user_b_id
+        where ${realOnlySql(includeTest, "a", "b")}
       `),
     ]);
 
     return {
       totalMembers: Number(profilesResult.rows[0]?.total ?? 0),
       newMembersThisWeek: Number(profilesResult.rows[0]?.recent ?? 0),
+      attendees: Number(profilesResult.rows[0]?.attendees ?? 0),
       totalMerchants: Number(merchantsResult.rows[0]?.total ?? 0),
       pendingMerchants: Number(merchantsResult.rows[0]?.pending ?? 0),
       totalEvents: Number(eventsResult.rows[0]?.total ?? 0),
@@ -8705,6 +8824,8 @@ async function getProfileStatusUncached(session: Session | null): Promise<Profil
       role: "attendee",
       degraded: false,
       onboardingComplete: false,
+      photoStatus: "none",
+      isTest: false,
       suburb: null,
       merchantProfile: null,
       bookmarkedEventIds: [],
@@ -8720,8 +8841,11 @@ async function getProfileStatusUncached(session: Session | null): Promise<Profil
   try {
     const profile = await ensureProfileForSession(session);
     const [statusResult, bookmarksResult, registrationsResult, merchant] = await Promise.all([
-      pool.query<{ suburb: string | null; bio: string | null; birth_date: Date | null; photo_url: string | null; dating_visible: boolean; has_gallery: boolean }>(
-        `select suburb, bio, birth_date, photo_url, dating_visible, cardinality(gallery_photos) > 0 as has_gallery from profiles where id = $1::uuid`,
+      pool.query<{ suburb: string | null; bio: string | null; birth_date: Date | null; photo_url: string | null; photo_status: PhotoStatus; is_test: boolean; member_onboarded: boolean; dating_visible: boolean; has_gallery: boolean }>(
+        `select suburb, bio, birth_date, photo_url, photo_status, is_test,
+                member_onboarded_at is not null as member_onboarded,
+                dating_visible, cardinality(gallery_photos) > 0 as has_gallery
+           from profiles where id = $1::uuid`,
         [profile.id],
       ),
       pool.query<{ slug: string }>(
@@ -8756,18 +8880,20 @@ async function getProfileStatusUncached(session: Session | null): Promise<Profil
     ]);
 
     const row = statusResult.rows[0];
-    // Onboarding requires exactly the fields saveOnboarding enforces: suburb
-    // (the postcode) and birth_date. Bio stays an OPTIONAL final step - gating
-    // completion on it bounced anyone who skipped their bio back to /onboarding
-    // on every login. birth_date IS required: it's the 18+ gate, and a profile
-    // that never supplied one has never passed it, so it isn't onboarded.
-    const onboardingComplete = !!row?.suburb && !!row?.birth_date;
+    // Finished the user onboarding flow (01 §1.4): member_onboarded_at, written
+    // only by saveOnboarding when the form is completed. It used to be "step 1
+    // saved" (suburb + birth date), which is still what booking needs
+    // (assertBookingEligible) - but a member is someone who finished the flow,
+    // and scripts and roles never make one.
+    const onboardingComplete = Boolean(row?.member_onboarded);
 
     return {
       exists: true,
       role: profile.role,
       degraded: false,
       onboardingComplete,
+      photoStatus: row?.photo_status ?? "none",
+      isTest: Boolean(row?.is_test),
       suburb: row?.suburb ?? null,
       merchantProfile: merchant,
       bookmarkedEventIds: bookmarksResult.rows.map((entry) => entry.slug),
@@ -8797,6 +8923,8 @@ async function getProfileStatusUncached(session: Session | null): Promise<Profil
       exists: !!email,
       role: "attendee",
       onboardingComplete: false,
+      photoStatus: "none",
+      isTest: false,
       suburb: null,
       merchantProfile: null,
       degraded: true,
@@ -9292,7 +9420,9 @@ function assertNotBannedFromSeats(row: { is_banned: boolean; suspended_at: Date 
  * route through here, so the age check can't be walked around by picking the
  * other one.
  *
- * Same rule as ProfileStatus.onboardingComplete - keep the two in step.
+ * Step 1 of onboarding (postcode + birth date), NOT ProfileStatus.onboardingComplete:
+ * that is member status (finished the whole flow, 01 §1.4), which gates the
+ * social layer. Booking never waited on the optional screens and still doesn't.
  */
 async function assertBookingEligible(pool: Pool, profileId: string) {
   const result = await pool.query<{
@@ -9397,7 +9527,7 @@ export async function saveOnboarding(input: OnboardingInput, session: Session | 
   // photo_url comes back so the form can show a Google/Facebook photo on its
   // photo step. /post-login rehosts that photo AFTER its response, so it is
   // rarely there when /onboarding first renders - but it is by the first save.
-  const saved = await pool.query<{ photo_url: string | null }>(
+  const saved = await pool.query<{ photo_url: string | null; photo_status: PhotoStatus }>(
     `
       update profiles
       set
@@ -9408,9 +9538,13 @@ export async function saveOnboarding(input: OnboardingInput, session: Session | 
         connection_intents = $6::connection_intent[],
         birth_date = $7::date,
         flexible_discovery = coalesce($8::boolean, flexible_discovery),
+        -- Member status (01 §1.4): stamped once, the first time the flow is
+        -- completed, and never moved by a later save. Nothing else writes it.
+        member_onboarded_at = case when $9::boolean
+          then coalesce(member_onboarded_at, now()) else member_onboarded_at end,
         updated_at = now()
       where id = $1::uuid
-      returning photo_url
+      returning photo_url, photo_status
     `,
     [
       profile.id,
@@ -9421,6 +9555,7 @@ export async function saveOnboarding(input: OnboardingInput, session: Session | 
       intents.length ? intents : ["friendship"],
       birthDateValue,
       input.flexibleDiscovery ?? null,
+      input.complete === true,
     ],
   );
 
@@ -9451,7 +9586,12 @@ export async function saveOnboarding(input: OnboardingInput, session: Session | 
     );
   }
 
-  return { ok: true, profileId: profile.id, photoUrl: saved.rows[0]?.photo_url ?? null };
+  return {
+    ok: true,
+    profileId: profile.id,
+    photoUrl: saved.rows[0]?.photo_url ?? null,
+    photoStatus: saved.rows[0]?.photo_status ?? "none",
+  };
 }
 
 const AU_STATES = ["NSW", "VIC", "QLD", "WA", "SA", "TAS", "ACT", "NT"] as const;
@@ -10519,11 +10659,14 @@ async function sendClickInner(
       social_visible: boolean;
       paused_until: string | null;
       default_attend_visibility: boolean;
-      photo_url: string | null;
+      photo_status: string;
+      is_test: boolean;
+      is_member: boolean;
     }>(
       `
         select id::text, display_name, email::text, age, is_banned, social_visible,
-               paused_until::text, default_attend_visibility, photo_url
+               paused_until::text, default_attend_visibility, photo_status, is_test,
+               member_onboarded_at is not null as is_member
         from profiles
         where id = $1::uuid
         limit 1
@@ -10552,13 +10695,16 @@ async function sendClickInner(
     // and the active intent the click is sent under (rule 6 - snapshotted onto the row).
     const senderResult = await client.query<{
       age: number | null;
-      photo_url: string | null;
+      photo_status: string;
+      is_test: boolean;
+      is_member: boolean;
       is_banned: boolean;
       suspended_at: string | null;
       connection_intents: string[] | null;
       post_event_click_suppressed_until: string | null;
     }>(
-      `select age, photo_url, is_banned, suspended_at::text,
+      `select age, photo_status, is_test, member_onboarded_at is not null as is_member,
+              is_banned, suspended_at::text,
               connection_intents::text[] as connection_intents,
               post_event_click_suppressed_until::text
          from profiles where id = $1::uuid limit 1`,
@@ -10590,6 +10736,15 @@ async function sendClickInner(
       const error = new Error("Your account can't send clicks right now.");
       error.name = "ValidationError";
       throw error;
+    }
+
+    // Member status (01 §1.4, 21 §B7.4, QA 14.7): any role clicks only once the
+    // user onboarding flow is finished. A non-member is shown no picks and no
+    // who-was-there, so this is reached only by a stale page or a hand-rolled
+    // POST - and it answers not-eligible, as the checklist pins. The sender's
+    // own state, the same for every receiver, so it discloses nothing.
+    if (!sender?.is_member) {
+      throw notEligibleError("Sender has not finished user onboarding.");
     }
 
     // Age gate (§6.7b - non-negotiable, defence-in-depth on the highest-risk surface).
@@ -10637,11 +10792,21 @@ async function sendClickInner(
       );
     }
     // Clicking is face-first (bug board #190): every roster that offers a person
-    // drops anyone photoless, so the send refuses them too - a stale page or a
-    // hand-rolled POST must not reach someone no surface would show. Same test the
-    // rosters use, and receiver state, so it stays neutral.
-    if (!resolveAvatarImage(clickedProfile.photo_url)) {
-      throw notEligibleError("Receiver has no profile photo.");
+    // drops anyone without a passing photo, so the send refuses them too - a
+    // stale page or a hand-rolled POST must not reach someone no surface would
+    // show. photo_status, not the URL (01 §2, 09 §4 step 2): a URL can point at
+    // a placeholder or a photo storage cannot serve. Receiver state, so neutral.
+    if (clickedProfile.photo_status !== "ok") {
+      throw notEligibleError("Receiver has no passing profile photo.");
+    }
+    // 09 §4 step 2: the receiver is a member (finished user onboarding, any
+    // role) and on the sender's side of the test line (22A §4.5). Both collapse
+    // into the one neutral refusal.
+    if (!clickedProfile.is_member) {
+      throw notEligibleError("Receiver has not finished user onboarding.");
+    }
+    if (clickedProfile.is_test !== Boolean(sender?.is_test)) {
+      throw notEligibleError("Receiver is on the other side of the test-account line.");
     }
 
     const blockResult = await client.query<{ blocked: boolean }>(
@@ -10772,6 +10937,17 @@ async function sendClickInner(
             : "Both people were not on this event's participant list.",
         );
       }
+      // 21 §B7.4: a host never appears on, or clicks from, the Who-was-there
+      // list of an event they host - a merchant is not an attendee of their own
+      // night, even holding a seat on it. Both sides, one neutral refusal.
+      const hostResult = await client.query<{ hosts: boolean }>(
+        `select ${eventHostedBySql("e", "$2::uuid")} or ${eventHostedBySql("e", "$3::uuid")} as hosts
+           from events e where e.id = $1::uuid`,
+        [eligible.id, profile.id, clickedProfile.id],
+      );
+      if (hostResult.rows[0]?.hosts) {
+        throw notEligibleError("One of the pair hosts this event.");
+      }
       eventId = eligible.id;
       expiresAt = new Date(
         new Date(eligible.event_end).getTime() + POST_EVENT_CLICK_WINDOW_HOURS * 3600_000,
@@ -10808,8 +10984,12 @@ async function sendClickInner(
     // board #190). The sender's own state, so it may name itself - but only here,
     // AFTER every receiver-eligibility branch above, so a photoless account cannot
     // use the difference to tell a hidden receiver from an absent one.
-    if (!resolveAvatarImage(sender?.photo_url)) {
-      throw validationError("Add a profile photo before you can click with anyone.");
+    if (sender?.photo_status !== "ok") {
+      throw validationError(
+        sender?.photo_status === "failed"
+          ? "Your profile photo didn't work - upload a clear photo of you before you click with anyone."
+          : "Add a profile photo before you can click with anyone.",
+      );
     }
 
     // A pending click of the sender's that has run past expires_at but not been swept
@@ -15940,7 +16120,20 @@ export async function updateOwnProfile(
     params.push(input.bio.trim() || null);
   }
   if (input.photoUrl !== undefined) {
-    updates.push(`photo_url = $${i++}`);
+    // A NEW photo is 'pending' until the photo check passes it (the upload
+    // routes run that check straight after this); no photo is 'none' (01 §2).
+    // Only the upload routes pass a photo - never the edit form - and the
+    // status only moves when the URL does (the right-hand photo_url is the
+    // row's value before this update).
+    const photoParam = i++;
+    updates.push(`photo_url = $${photoParam}`);
+    updates.push(
+      `photo_status = case
+         when $${photoParam}::text is null then 'none'
+         when $${photoParam}::text is distinct from photo_url then 'pending'
+         else photo_status
+       end`,
+    );
     params.push(input.photoUrl.trim() || null);
   }
   if (input.age !== undefined) {
@@ -16364,48 +16557,72 @@ export type DailyPick = {
   /** The viewer has a live click out to this person, from either source. The card
    *  shows the muted "clicked" on every surface the pick appears on. */
   alreadyClicked: boolean;
-  /** HOTFIX 2026-10-12 H3.1 (09 §3 "Pending-click featured down-rank"): the
-   *  viewer's live click at this person went out on the PREVIOUS pool day, so
-   *  today they are listed but not featured on the dashboard - nobody is shown
-   *  "here's B!" the morning after clicking B. Gone by the next day. */
+  /** 09 §3 "Pending-click featured down-rank": the viewer's live click at this
+   *  person went out within the last FEATURED_PENDING_HOLD_HOURS (~6h, one
+   *  rotation interval), so they are listed but not featured on the dashboard -
+   *  nobody is shown "here's B!" straight after clicking B. Lapses on its own. */
   featureHold: boolean;
   /** The pair's live mutual - the Sage "clicked ✨" that opens it. Both sides
    *  already know about a mutual, so it discloses nothing. */
   mutualId: string | null;
 };
 
-/** Someone Click could pick for a viewer, best first. `reason` never leaves the server. */
-type PickCandidate = { id: string; reason: string };
+/**
+ * Someone Click could pick for a viewer, best first. `reason` never leaves the
+ * server. `rankKey` is the whole ranking in one comparable value - down-ranked
+ * last, then the score (best first), then the per-viewer-per-day hash - so a pick
+ * reached any way (the pool, or the click-back slot) is ordered by exactly the
+ * same rule as every other (09 "Display order and ties").
+ */
+type PickRankKey = readonly [downRanked: number, negatedScore: number, tieKey: string];
+type PickCandidate = { id: string; reason: string; rankKey: PickRankKey };
 
-/* ---- QA namespace isolation -------------------------------------------------
-   @click.local personas live in the PRODUCTION database on purpose: the persona
-   switcher exists so staff can walk the real click flow on the real deployment.
-   Nothing kept them out of a real member's rosters, though. Measured against
-   production: of the seven profiles that cleared every gate below, FIVE were QA
-   accounts - including admin@click.local, whose card renders the CTA "click
-   with Click". A launch member would have spent all three daily slots on people
-   who can never click back.
-
-   Symmetric on purpose. Hiding QA people from real members but not the reverse
-   still lets a tester form a mutual with a real person, which is the worse
-   direction to get wrong. Equality gives a closed world each way - a real
-   viewer sees only real people, a QA viewer sees only QA people - which is the
-   same namespace rule auth already enforces on the switcher itself
-   (login/actions.ts). It is a FILTER, never a refusal: nobody is told the other
-   namespace exists.
-
-   profiles.email is NOT NULL (verified: zero nulls in production), so no
-   coalesce is needed. The LIKE is unindexed, which costs nothing at this table
-   size and sits on no hot path. */
-const QA_NAMESPACE_SUFFIX = "%@click.local";
-
-/** `candidate` and `viewerEmailSql` must be on the SAME side of the namespace. */
-function qaNamespaceScope(candidateAlias: string, viewerEmailSql: string) {
-  return `(${candidateAlias}.email like '${QA_NAMESPACE_SUFFIX}') = ((${viewerEmailSql}) like '${QA_NAMESPACE_SUFFIX}')`;
+function comparePickRank(a: PickRankKey, b: PickRankKey): number {
+  return a[0] - b[0] || a[1] - b[1] || a[2].localeCompare(b[2]);
 }
 
-/** Every pull-based roster passes the viewer's profile id as $1. */
-const QA_VIEWER_EMAIL_BY_ID = "select qa_viewer.email from profiles qa_viewer where qa_viewer.id = $1::uuid";
+/**
+ * The stable per-viewer-per-day tie-break (09 "Display order and ties"): equal
+ * candidates are ordered by a hash of viewer, Sydney day and candidate - never
+ * by row order - so the same inputs always give the same picks in the same
+ * order, and a tie does not favour the same person every day. $1 is the viewer.
+ */
+const PICK_TIE_KEY_SQL = (candidateAlias: string) =>
+  `md5($1::text || ':' || (${DAILY_PICK_DAY_SQL})::text || ':' || ${candidateAlias}.id::text)`;
+
+/* ---- Test-account isolation (22A §4.5) ---------------------------------------
+   QA personas and demo seeds live in the PRODUCTION database on purpose: the
+   persona switcher exists so staff can walk the real click flow on the real
+   deployment. Nothing kept them out of a real member's rosters, though - the
+   seed profiles sat in real members' picks. Test accounts only ever see, click
+   or are counted with other test accounts.
+
+   Symmetric on purpose. Hiding test people from real members but not the
+   reverse still lets a tester form a mutual with a real person, which is the
+   worse direction to get wrong. Equality gives a closed world each way. It is a
+   FILTER, never a refusal: nobody is told the other side exists.
+
+   profiles.is_test (migration 076), set by the reviewed backfill and by every
+   seed script. It replaced an @click.local email match, which missed the 24
+   demo profiles under @seed.letsclick.app. */
+
+/** `candidateAlias` is on the viewer's side of the test line. Rosters bind the viewer to $1. */
+function sameTestSideSql(candidateAlias: string) {
+  return `${candidateAlias}.is_test = (select test_viewer.is_test from profiles test_viewer where test_viewer.id = $1::uuid)`;
+}
+
+/**
+ * SQL that is true when `profileSql` hosts the event aliased `eventAlias`: its
+ * host profile, or the profile behind its merchant account. 21 §B7.4: a host is
+ * never on, and never clicks from, their own event's who-was-there.
+ */
+function eventHostedBySql(eventAlias: string, profileSql: string) {
+  return `(coalesce(${eventAlias}.host_profile_id = ${profileSql}, false) or exists (
+            select 1 from merchant_profiles host_mp
+            where host_mp.id = ${eventAlias}.merchant_profile_id
+              and host_mp.profile_id = ${profileSql}
+          ))`;
+}
 
 /**
  * Everyone Click could pick for this viewer today, best first - the pool the daily
@@ -16434,14 +16651,14 @@ export async function getSuggestedPeople(
   try {
     const result = await pool.query<{
       id: string;
-      photo_url: string | null;
+      tie_key: string;
       shared_count: number;
       actionable_mutuals: number;
       inactive: boolean;
       we_clicked: boolean;
     }>(
       `
-        select p.id::text, p.photo_url,
+        select p.id::text, ${PICK_TIE_KEY_SQL("p")} as tie_key,
                -- Interest + music overlap, the order below and the pick's reason when
                -- matching v2 has nothing to say. Never the 'life' tags the quiz
                -- writes: those stay private until a mutual forms.
@@ -16485,19 +16702,15 @@ export async function getSuggestedPeople(
           )
         where p.id <> $1::uuid
           and ($2::uuid[] is null or p.id = any($2::uuid[]))
-          -- Merchant accounts are the portal side of the product and never enter
-          -- a click surface. Everyone else does, and the deny-list is deliberate:
-          -- role = attendee silently excluded every ADMIN_EMAILS account from
-          -- all four rosters while sendClickInner - which has NO role check at
-          -- all - happily accepted clicks aimed at them. An admin could send and
-          -- never be sent to, so no mutual could ever form on a staff account and
-          -- the click flow was untestable by the people who own it. The columns
-          -- below (18+, suburb, bio, photo, social_visible) are what actually
-          -- means "has set up a real profile"; role was never doing that job.
-          and p.role <> 'merchant'
+          -- Member status for every role (01 §1.4, 09 §3, 21 §B7.4): shown only
+          -- once the user onboarding flow is finished - attendee, host or admin
+          -- alike. Role was never what made someone a member (an admin who never
+          -- onboarded is not one; a host who did is), and neither was a
+          -- script-filled profile: member_onboarded_at is written only by Finish.
+          and p.member_onboarded_at is not null
           and p.suspended_at is null
-          -- QA namespace isolation - see qaNamespaceScope above.
-          and ${qaNamespaceScope("p", QA_VIEWER_EMAIL_BY_ID)}
+          -- Test-account isolation - see sameTestSideSql above.
+          and ${sameTestSideSql("p")}
           -- SAFE-07: independent ≥18 age gate (§6.7b) - never surface someone we can't
           -- confirm is an adult into the click pool. NULL age is excluded (can't verify),
           -- matching the send-path gate that would refuse them anyway.
@@ -16513,13 +16726,13 @@ export async function getSuggestedPeople(
           -- bio optional, and the gate only ever hid older accounts whose skipped
           -- bio was stored as NULL. A card with no bio shows it blank.
           and p.suburb is not null
-          -- Only include people who have a profile photo: clicking is a
-          -- face-first decision, so a photoless profile shouldn't enter the
-          -- "click with someone" pool (bug board #190). Guard the empty string
-          -- too: a blank photo_url is photoless and "is not null" alone lets it
-          -- slip through.
-          and p.photo_url is not null
-          and p.photo_url <> ''
+          -- Only people with a PASSING photo (01 §2, 09 §3, 13 §6): clicking is
+          -- a face-first decision (bug board #190), and a URL is not a face - the
+          -- 2026-10-12 storage outage put blank silhouettes in real members' picks
+          -- while every one of them had a photo_url. photo_status = 'ok' means the
+          -- stored photo loads publicly and is not a placeholder, stock or default
+          -- image. Test accounts follow the same rule.
+          and p.photo_status = 'ok'
           and not exists (
             select 1 from user_blocks b
             where (b.blocker_profile_id = $1::uuid and b.blocked_profile_id = p.id)
@@ -16528,9 +16741,12 @@ export async function getSuggestedPeople(
           -- Already matched? They live in the "You both tapped" banner, so drop
           -- them from Suggested entirely instead of showing a stale pending card
           -- (bug board #214/#215). mutual_clicks stores the pair as least/greatest.
+          -- status = 'active' ALONE (09 §3): a mutual past its 7 days that the
+          -- hourly lifecycle job has not swept yet is still a live mutual, and the
+          -- partner stays out of the build until the job releases it.
           and not exists (
             select 1 from mutual_clicks mc
-            where mc.status = 'active' and mc.expires_at > now()
+            where mc.status = 'active'
               and ((mc.user_a_id = $1::uuid and mc.user_b_id = p.id)
                 or (mc.user_a_id = p.id and mc.user_b_id = $1::uuid))
           )
@@ -16616,59 +16832,64 @@ export async function getSuggestedPeople(
           -- orders within the over-cap block without reranking everyone by popularity.
           (select count(*) from mutual_clicks am
             where am.status = 'active' and am.coord_state in ('open', 'proposed')
-              and (am.user_a_id = p.id or am.user_b_id = p.id)) asc
+              and (am.user_a_id = p.id or am.user_b_id = p.id)) asc,
+          -- Last key: the stable per-viewer-per-day hash (09), so people level on
+          -- every key above come back in the same order every time, and the 24
+          -- cut below can never depend on how Postgres happened to read the rows.
+          ${PICK_TIE_KEY_SQL("p")} asc
         limit 24
       `,
       [viewerId, onlyIds],
     );
 
-    // "Has a photo" must mean the SAME thing here as it does at render time
-    // (bug board #190, reopened twice). The SQL guard above only proves the
-    // column is non-blank; resolveAvatarImage additionally rejects URLs on a
-    // dead storage host and unparseable bare keys, which is what the Avatar
-    // component actually falls back on. Without this the pool kept offering
-    // people who render as a faceless placeholder.
-    let rows = result.rows.filter((row) => resolveAvatarImage(row.photo_url));
+    // The photo rule is photo_status = 'ok' in the SQL above - the stored photo
+    // was checked to load (01 §2), which no URL test made at read time can do.
+    const rows = result.rows;
 
     // Matching v2 (flagged): keep this surface's candidate selection + profile-
-    // completeness rules, but re-rank by the cohort-aware pair model instead of
-    // raw shared-tag count - intent, interests, the life quiz, the viewer's cohort
-    // and proximity all feed it (score.ts). Falls back to the original order when
-    // the viewer or candidates aren't in the feature store yet.
+    // completeness rules, but rank by the cohort-aware pair model instead of raw
+    // shared-tag count - intent, interests, the life quiz, the viewer's cohort and
+    // proximity all feed it (score.ts). Without the model (flag off, or the viewer
+    // not in the feature store yet) the score is the shared-tag count the SQL
+    // ordered by.
     const reasons = new Map<string, string>();
+    const scores = new Map<string, number>();
     const { matchingV2Enabled } = await getSystemSettings();
     if (matchingV2Enabled) {
       const viewer = await loadUserFeatures(pool, viewerId);
       if (viewer) {
         const features = await loadManyUserFeatures(pool, rows.map((r) => r.id));
-        rows = [...rows]
-          .map((row) => {
-            const cand = features.get(row.id);
-            const scored = cand ? scorePair(viewer, cand) : null;
-            if (scored) reasons.set(row.id, strongestPickSignal(scored.contributions));
-            return { row, score: scored ? scored.score : -1 };
-          })
-          .sort((a, b) => b.score - a.score)
-          .map((s) => s.row);
+        for (const row of rows) {
+          const cand = features.get(row.id);
+          const scored = cand ? scorePair(viewer, cand) : null;
+          if (scored) reasons.set(row.id, strongestPickSignal(scored.contributions));
+          scores.set(row.id, scored ? scored.score : -1);
+        }
       }
     }
 
-    // B7.2 down-rank, re-applied AFTER the v2 re-rank rather than only in the SQL
-    // ORDER BY - v2 re-sorts the whole list by pair score, which threw the SQL
-    // ordering away entirely, so the cap would have held only while the flag was off.
-    // A stable partition: filter preserves order, so within each half whatever ranked
-    // them (v2 score or shared tags) still decides. Down-rank, never remove.
+    // B7.2 / B7.4b / we-clicked down-rank, applied with the score rather than only
+    // in the SQL ORDER BY - the model ranks the whole list, which would otherwise
+    // throw the SQL ordering away. Down-rank, never remove: they come after
+    // everyone else, in score order among themselves.
     const downRanked = (row: { actionable_mutuals: number; inactive: boolean; we_clicked: boolean }) =>
       Number(row.actionable_mutuals ?? 0) >= ACTIVE_MUTUAL_SOFT_CAP ||
       Boolean(row.inactive) ||
       Boolean(row.we_clicked);
-    rows = [...rows.filter((r) => !downRanked(r)), ...rows.filter(downRanked)];
-
-    return rows.map((row) => ({
-      id: row.id,
-      reason:
-        reasons.get(row.id) ?? (Number(row.shared_count) > 0 ? "shared_tags" : "open_pool"),
-    }));
+    // Equal scores fall back to the per-viewer-per-day hash, never to the order
+    // the rows arrived in (09 "Display order and ties").
+    return rows
+      .map((row) => ({
+        id: row.id,
+        reason:
+          reasons.get(row.id) ?? (Number(row.shared_count) > 0 ? "shared_tags" : "open_pool"),
+        rankKey: [
+          downRanked(row) ? 1 : 0,
+          -(scores.get(row.id) ?? Number(row.shared_count)),
+          row.tie_key,
+        ] as const,
+      }))
+      .sort((a, b) => comparePickRank(a.rankKey, b.rankKey));
   } catch {
     return [];
   }
@@ -16695,9 +16916,9 @@ function strongestPickSignal(contributions: Partial<Record<string, number>>): st
  * the click's 7 days.
  *
  * Bounded so it never reads as "this person likes you": at most one of the day's
- * three, unmarked, in the set's random order (daily_picks.id), and once per click -
- * someone the viewer has already been picked since their click went out gets no
- * second push. The person still has to clear every gate the pool has (a block, a
+ * three, unmarked, ranked by the same score as every pick (rank order, 09) rather
+ * than any place of its own, and once per click - someone the viewer has already
+ * been picked since their click went out gets no second push. The person still has to clear every gate the pool has (a block, a
  * pause, no photo...), and daily_picks.reason = 'click_back' stays on the server
  * like every reason does.
  */
@@ -16722,9 +16943,13 @@ async function clickBackPick(pool: Pool, viewerId: string): Promise<PickCandidat
   );
   if (incoming.rows.length === 0) return null;
   const senders = incoming.rows.map((row) => row.sender_id);
-  const pickable = new Set((await getSuggestedPeople(viewerId, senders)).map((pick) => pick.id));
+  const candidates = await getSuggestedPeople(viewerId, senders);
+  const pickable = new Set(candidates.map((pick) => pick.id));
   const sender = senders.find((id) => pickable.has(id));
-  return sender ? { id: sender, reason: "click_back" } : null;
+  const pick = sender ? candidates.find((candidate) => candidate.id === sender) : undefined;
+  // Ranked by the same key as every other pick, never parked in a fixed slot -
+  // a set place in the order would read as "this one clicked you".
+  return pick ? { ...pick, reason: "click_back" } : null;
 }
 
 /**
@@ -16741,11 +16966,18 @@ async function clickBackPick(pool: Pool, viewerId: string): Promise<PickCandidat
  * pick - the next view simply asks again.
  */
 async function ensureDailyPicks(pool: Pool, viewerId: string): Promise<void> {
-  const today = await pool.query(
-    `select 1 from daily_picks where profile_id = $1::uuid and pool_date = ${DAILY_PICK_DAY_SQL} limit 1`,
+  const today = await pool.query<{ has_picks: boolean; is_member: boolean }>(
+    `select exists (
+              select 1 from daily_picks
+              where profile_id = $1::uuid and pool_date = ${DAILY_PICK_DAY_SQL}
+            ) as has_picks,
+            coalesce((select member_onboarded_at is not null from profiles where id = $1::uuid), false)
+              as is_member`,
     [viewerId],
   );
-  if (today.rows.length > 0) return;
+  // Only a member gets picks (01 §1.4, 09 §3): an account of any role that has
+  // not finished user onboarding is given none, the cron included.
+  if (today.rows[0]?.has_picks || !today.rows[0]?.is_member) return;
 
   // All of the reading happens BEFORE the transaction, on the pool: the lock below
   // must never be held while waiting on another connection from the same pool.
@@ -16762,11 +16994,17 @@ async function ensureDailyPicks(pool: Pool, viewerId: string): Promise<void> {
   );
   const lastPicked = new Map(history.rows.map((row) => [row.picked, row.last_day]));
   // ISO dates compare as strings and never-picked ("") sorts first. Array.prototype
-  // .sort is stable, so people picked on the same day keep Click's order.
+  // .sort is stable, so people picked on the same day keep Click's order - which
+  // getSuggestedPeople makes deterministic, so the same inputs choose the same three.
   const ranked = candidates
     .filter((pick) => pick.id !== clickBack?.id)
     .sort((a, b) => (lastPicked.get(a.id) ?? "").localeCompare(lastPicked.get(b.id) ?? ""));
   const chosen = (clickBack ? [clickBack, ...ranked] : ranked).slice(0, DAILY_PICK_COUNT);
+  // Freshness decides WHO; the score decides the ORDER (09 "Display order and
+  // ties"): the best-scoring of the three is rank 1, the dashboard's first
+  // featured card. The click-back pick carries the same key, so it lands wherever
+  // its score puts it - never a slot of its own.
+  const byRank = [...chosen].sort((a, b) => comparePickRank(a.rankKey, b.rankKey));
 
   const client = await pool.connect();
   try {
@@ -16778,16 +17016,16 @@ async function ensureDailyPicks(pool: Pool, viewerId: string): Promise<void> {
     ]);
     await client.query(
       `
-        insert into daily_picks (profile_id, picked_profile_id, pool_date, reason)
-        select $1::uuid, pick.picked, ${DAILY_PICK_DAY_SQL}, pick.reason
-        from unnest($2::uuid[], $3::text[]) as pick(picked, reason)
+        insert into daily_picks (profile_id, picked_profile_id, pool_date, reason, rank)
+        select $1::uuid, pick.picked, ${DAILY_PICK_DAY_SQL}, pick.reason, pick.rank::smallint
+        from unnest($2::uuid[], $3::text[]) with ordinality as pick(picked, reason, rank)
         where not exists (
           select 1 from daily_picks
           where profile_id = $1::uuid and pool_date = ${DAILY_PICK_DAY_SQL}
         )
         on conflict do nothing
       `,
-      [viewerId, chosen.map((pick) => pick.id), chosen.map((pick) => pick.reason)],
+      [viewerId, byRank.map((pick) => pick.id), byRank.map((pick) => pick.reason)],
     );
     await client.query("commit");
   } catch (error) {
@@ -16894,16 +17132,17 @@ export async function getDailyPicks(session: Session | null): Promise<DailyPick[
               and c.status = 'pending'
               and c.expires_at > now()
           ) as already_clicked,
-          -- 09 §3 featured down-rank (HOTFIX 2026-10-12 H3.1): that live click went
-          -- out on the previous pool day, so today they are listed, not featured.
-          -- A click made today keeps today's turn (it shows as "clicked").
+          -- 09 §3 "Pending-click featured down-rank": a live click the viewer sent
+          -- them within the last rotation interval (~6 hours) takes them out of
+          -- the dashboard's featured slot - listed and reachable, just not shown
+          -- as "here's B!" straight after clicking B. Lapses on its own.
           exists (
             select 1 from clicks c
             where c.sender_id = $1::uuid
               and c.receiver_id = p.id
               and c.status = 'pending'
               and c.expires_at > now()
-              and (c.created_at at time zone '${APP_TIME_ZONE}')::date = ${DAILY_PICK_DAY_SQL} - 1
+              and c.created_at > now() - interval '${FEATURED_PENDING_HOLD_HOURS} hours'
           ) as feature_hold,
           (
             select m.id::text from mutual_clicks m
@@ -16917,10 +17156,21 @@ export async function getDailyPicks(session: Session | null): Promise<DailyPick[
         join profiles p on p.id = dp.picked_profile_id
         where dp.profile_id = $1::uuid
           and dp.pool_date = ${DAILY_PICK_DAY_SQL}
+          -- Picks are for members only (01 §1.4), whatever a row from before says.
+          and exists (
+            select 1 from profiles me
+            where me.id = $1::uuid and me.member_onboarded_at is not null
+          )
           and p.suspended_at is null
           and p.is_banned = false
           and p.social_visible = true
           and (p.paused_until is null or p.paused_until <= now())
+          -- The pool's own gates, re-checked on read (09 §3): a pick whose photo
+          -- has since failed the check, or who is not a member or is on the other
+          -- side of the test line, drops out for the rest of the day.
+          and p.photo_status = 'ok'
+          and p.member_onboarded_at is not null
+          and ${sameTestSideSql("p")}
           and not exists (
             select 1 from user_blocks b
             where (b.blocker_profile_id = $1::uuid and b.blocked_profile_id = p.id)
@@ -16932,16 +17182,16 @@ export async function getDailyPicks(session: Session | null): Promise<DailyPick[
               and ps.user_a_id = least($1::uuid, p.id)
               and ps.user_b_id = greatest($1::uuid, p.id)
           )
-        -- One stable order for the day, so the dashboard's rotation walks the same
-        -- three people the Click page lists.
-        order by dp.created_at, dp.id
+        -- Rank order (09 "Display order and ties"): the best-scoring pick first,
+        -- the dashboard's first featured card, and one stable order for the day
+        -- so its rotation walks the same three people the Click page lists. Rows
+        -- written before ranks existed fall back to their old order.
+        order by dp.rank nulls last, dp.created_at, dp.id
       `,
       [profile.id],
     );
 
-    // The render-time face test the send path refuses on (#190).
     return result.rows
-      .filter((row) => resolveAvatarImage(row.photo_url))
       .map((row) => ({
         id: row.id,
         displayName: row.display_name,
@@ -16983,6 +17233,9 @@ export async function generateDailyPicksForAll(): Promise<{ members: number; fai
       where p.deleted_at is null
         and p.suspended_at is null
         and p.is_banned = false
+        -- Members only (01 §1.4): no picks for an account that has not finished
+        -- user onboarding, whatever its role.
+        and p.member_onboarded_at is not null
         and coalesce(p.last_active_at, p.created_at) > now() - interval '${INACTIVE_DOWNRANK_DAYS} days'
         and not exists (
           select 1 from daily_picks dp
@@ -17854,17 +18107,29 @@ export async function getPostEventClickPrompts(
           -- default_attend_visibility is the attendee-list opt-out from migration
           -- 049: opting out takes you off this roster, so nobody can click you from
           -- an event you chose not to be listed at.
-          and other.role <> 'merchant' and other.suspended_at is null and other.is_banned = false
-          -- QA namespace isolation - see qaNamespaceScope above.
-          and ${qaNamespaceScope("other", QA_VIEWER_EMAIL_BY_ID)}
+          -- Member status for every role (01 §1.4) - and never the night's own
+          -- host (21 §B7.4), even holding a seat on it.
+          and other.member_onboarded_at is not null
+          and not ${eventHostedBySql("e", "other.id")}
+          and other.suspended_at is null and other.is_banned = false
+          -- Test-account isolation - see sameTestSideSql above.
+          and ${sameTestSideSql("other")}
           and other.social_visible = true
           and (other.paused_until is null or other.paused_until <= now())
           and other.default_attend_visibility
           -- Face-first, like the discovery pool and the send path (bug board #190):
-          -- a photoless co-attendee is not offered as someone to click with.
-          and nullif(btrim(other.photo_url), '') is not null
+          -- only a co-attendee with a PASSING photo (photo_status, 01 §2) is
+          -- offered as someone to click with.
+          and other.photo_status = 'ok'
         where coalesce(e.ends_at, e.starts_at) + interval '${POST_EVENT_PROMPT_DELAY_HOURS} hours' <= now()
           and coalesce(e.ends_at, e.starts_at) + interval '${POST_EVENT_CLICK_WINDOW_HOURS} hours' > now()
+          -- The viewer too: only a member clicks (01 §1.4), and a host never clicks
+          -- from their own night's who-was-there (21 §B7.4).
+          and exists (
+            select 1 from profiles me
+            where me.id = $1::uuid and me.member_onboarded_at is not null
+          )
+          and not ${eventHostedBySql("e", "$1::uuid")}
           and not exists (
             select 1 from user_blocks b
             where (b.blocker_profile_id = $1::uuid and b.blocked_profile_id = other.id)
@@ -17893,9 +18158,6 @@ export async function getPostEventClickPrompts(
 
     const byEvent = new Map<string, PostEventClickPrompt>();
     for (const row of result.rows) {
-      // The SQL guard only proves the column is non-blank; this is the render-time
-      // test the send path refuses on, as in getSuggestedPeople (#190).
-      if (!resolveAvatarImage(row.other_photo_url)) continue;
       let entry = byEvent.get(row.event_slug);
       if (!entry) {
         entry = {
@@ -18059,16 +18321,21 @@ export async function getPostEventClickPromptForEvent(
           -- default_attend_visibility is the attendee-list opt-out from migration
           -- 049: opting out takes you off this roster, so nobody can click you from
           -- an event you chose not to be listed at.
-          and other.role <> 'merchant' and other.suspended_at is null and other.is_banned = false
-          -- QA namespace isolation - see qaNamespaceScope above.
-          and ${qaNamespaceScope("other", QA_VIEWER_EMAIL_BY_ID)}
+          -- Member status for every role (01 §1.4) - and never the night's own
+          -- host (21 §B7.4), even holding a seat on it.
+          and other.member_onboarded_at is not null
+          and not ${eventHostedBySql("e", "other.id")}
+          and other.suspended_at is null and other.is_banned = false
+          -- Test-account isolation - see sameTestSideSql above.
+          and ${sameTestSideSql("other")}
           and other.social_visible = true
           and (other.paused_until is null or other.paused_until <= now())
           and other.default_attend_visibility
           -- Face-first (bug board #190) - see getPostEventClickPrompts. In this ON
-          -- clause like every other co-attendee predicate, so a night of photoless
-          -- co-attendees is the empty pool's "Quiet one", not a missing window.
-          and nullif(btrim(other.photo_url), '') is not null
+          -- clause like every other co-attendee predicate, so a night of
+          -- co-attendees with no passing photo is the empty pool's "Quiet one",
+          -- not a missing window.
+          and other.photo_status = 'ok'
           and not exists (
             select 1 from user_blocks b
             where (b.blocker_profile_id = $1::uuid and b.blocked_profile_id = other.id)
@@ -18077,6 +18344,13 @@ export async function getPostEventClickPromptForEvent(
         where e.slug = $2
           and coalesce(e.ends_at, e.starts_at) + interval '${POST_EVENT_PROMPT_DELAY_HOURS} hours' <= now()
           and coalesce(e.ends_at, e.starts_at) + interval '${POST_EVENT_CLICK_WINDOW_HOURS} hours' > now()
+          -- Members only (01 §1.4), and never the night's own host (21 §B7.4):
+          -- for them there is no who-was-there to show.
+          and exists (
+            select 1 from profiles me
+            where me.id = $1::uuid and me.member_onboarded_at is not null
+          )
+          and not ${eventHostedBySql("e", "$1::uuid")}
           -- §B7.3: a suppressed viewer loses the post-event surface itself, not just
           -- the send. Leaving the roster up and refusing at the button would be a
           -- picker that cannot pick.
@@ -18109,13 +18383,7 @@ export async function getPostEventClickPromptForEvent(
       budgetSpent: first.budget_spent,
       swapUsed: first.swap_used,
       coAttendees: result.rows
-        .filter(
-          (row) =>
-            row.other_id !== null &&
-            row.other_name !== null &&
-            // Render-time photo test, the one the send path refuses on (#190).
-            resolveAvatarImage(row.other_photo_url) !== null,
-        )
+        .filter((row) => row.other_id !== null && row.other_name !== null)
         .map((row) => ({
           id: row.other_id as string,
           displayName: row.other_name as string,
@@ -18204,6 +18472,10 @@ export async function notifyPostEventClickPrompts(): Promise<number> {
       join profiles me on me.id = mine.profile_id
         and (me.post_event_click_suppressed_until is null
           or me.post_event_click_suppressed_until <= now())
+        -- Only a member is asked who they clicked with (01 §1.4), and never the
+        -- night's own host (21 §B7.4).
+        and me.member_onboarded_at is not null
+        and not ${eventHostedBySql("e", "me.id")}
       where coalesce(e.ends_at, e.starts_at) + interval '${POST_EVENT_PROMPT_DELAY_HOURS} hours' <= now()
         and coalesce(e.ends_at, e.starts_at) + interval '${POST_EVENT_CLICK_WINDOW_HOURS} hours' > now()
         and extract(hour from now() at time zone e.timezone) >= 9
@@ -18212,19 +18484,22 @@ export async function notifyPostEventClickPrompts(): Promise<number> {
           select 1
           from event_participants_v theirs
           join profiles other on other.id = theirs.profile_id
-            and other.role <> 'merchant' and other.suspended_at is null and other.is_banned = false
-            -- QA namespace isolation. The viewer here is the 'me' join, not
+            and other.member_onboarded_at is not null
+            and not ${eventHostedBySql("e", "other.id")}
+            and other.suspended_at is null and other.is_banned = false
+            -- Test-account isolation. The viewer here is the 'me' join, not
             -- $1: this query fans out over every attendee at once.
-            and ${qaNamespaceScope("other", "me.email")}
+            and other.is_test = me.is_test
             -- Same social-graph definition as the two pull-based rosters and the
             -- send path: never push "did you click with anyone?" on the strength of
             -- a co-attendee who has opted out, paused, or hidden their attendance.
             and other.social_visible = true
             and (other.paused_until is null or other.paused_until <= now())
             and other.default_attend_visibility
-            -- ...and the rosters' photo rule (bug board #190), so a night of only
-            -- photoless co-attendees does not push onto an empty picker.
-            and nullif(btrim(other.photo_url), '') is not null
+            -- ...and the rosters' photo rule (bug board #190, photo_status), so a
+            -- night of co-attendees with no passing photo does not push onto an
+            -- empty picker.
+            and other.photo_status = 'ok'
           where theirs.event_id = e.id
             and theirs.profile_id <> mine.profile_id
             -- Same event scoping as the two roster queries above: without it a
@@ -20294,6 +20569,17 @@ function pairPicksSql(select: string, limit: number, excludeBooked = false): str
         select 1 from event_capacity_v cap
         where cap.event_id = event.id and cap.available >= 2
       )
+      -- 22A §4.5: a pair with a test account in it is a test pair, and Click
+      -- only offers it events a test account created - QA never lands on a
+      -- real host's night, and a test pair's plans stay inside the 03 §10
+      -- hooks' guard. Real pairs are unchanged.
+      and (
+        not exists (
+          select 1 from profiles pair_person
+          where pair_person.id in ($1::uuid, $2::uuid) and pair_person.is_test
+        )
+        or ${testCreatedEventSql("event")}
+      )
       ${
         excludeBooked
           ? `-- §B3.4: "Show another" never offers a night either of them already
@@ -20499,14 +20785,22 @@ async function applyClickQuizToMatching(
     // ON CONFLICT leaves an existing row - and its type - alone, and the link
     // below only joins tag_type 'life', so an answer can never attach someone to
     // an interest tag that shares a slug (the bug migration 057 cleaned up).
+    // Born with its 08 §3 class (is_sensitive / fomo_only), so a sensitive tag
+    // created here can never feed a score before anyone marks it.
     await client.query(
       `
-        insert into tags (label, slug, tag_type, admin_managed)
-        select tag.label, tag.slug, 'life', false
-        from unnest($1::text[], $2::text[]) as tag(slug, label)
+        insert into tags (label, slug, tag_type, admin_managed, is_sensitive, fomo_only)
+        select tag.label, tag.slug, 'life', false, tag.sensitive, tag.fomo_only
+        from unnest($1::text[], $2::text[], $3::boolean[], $4::boolean[])
+          as tag(slug, label, sensitive, fomo_only)
         on conflict (slug) do nothing
       `,
-      [slugs, tags.map((tag) => tag.label)],
+      [
+        slugs,
+        tags.map((tag) => tag.label),
+        tags.map((tag) => tag.sensitive === true),
+        tags.map((tag) => tag.fomoOnly === true),
+      ],
     );
   }
 
@@ -21342,7 +21636,9 @@ export type AdminTrendBucket = {
   revenueCents: number;
 };
 
-export async function getAdminWeeklyTrend(): Promise<AdminTrendBucket[]> {
+export async function getAdminWeeklyTrend(
+  { includeTest = false }: { includeTest?: boolean } = {},
+): Promise<AdminTrendBucket[]> {
   const pool = getPostgresPool();
   if (!pool) return [];
 
@@ -21365,17 +21661,21 @@ export async function getAdminWeeklyTrend(): Promise<AdminTrendBucket[]> {
         select
           weeks.week,
           (
-            select count(*)::text from profiles
-            where created_at >= weeks.week and created_at < weeks.week + interval '1 week'
+            select count(*)::text from profiles member
+            where member.created_at >= weeks.week and member.created_at < weeks.week + interval '1 week'
+              and ${realOnlySql(includeTest, "member")}
           ) as members,
           (
-            select count(*)::text from events
-            where created_at >= weeks.week and created_at < weeks.week + interval '1 week'
+            select count(*)::text from events e
+            where e.created_at >= weeks.week and e.created_at < weeks.week + interval '1 week'
+              and ${eventIsRealSql(includeTest, "e")}
           ) as events,
           (
-            select count(*)::text from event_attendees
-            where created_at >= weeks.week and created_at < weeks.week + interval '1 week'
-              and status = 'confirmed'
+            select count(*)::text from event_attendees booking
+            join profiles booker on booker.id = booking.profile_id
+            where booking.created_at >= weeks.week and booking.created_at < weeks.week + interval '1 week'
+              and booking.status = 'confirmed'
+              and ${realOnlySql(includeTest, "booker")}
           ) as rsvps,
           (
             -- Net revenue for the week. status = 'paid' alone dropped the
@@ -21383,10 +21683,12 @@ export async function getAdminWeeklyTrend(): Promise<AdminTrendBucket[]> {
             -- refund deleted $100 from the chart and the week appeared to have
             -- lost a sale that really happened. Netting the refunded amount
             -- instead keeps the sale and subtracts only what went back.
-            select coalesce(sum(amount_cents - refunded_amount_cents), 0)::text
-            from payment_transactions
-            where created_at >= weeks.week and created_at < weeks.week + interval '1 week'
-              and status in ('paid', 'partially_refunded')
+            select coalesce(sum(payment.amount_cents - payment.refunded_amount_cents), 0)::text
+            from payment_transactions payment
+            join profiles payer on payer.id = payment.profile_id
+            where payment.created_at >= weeks.week and payment.created_at < weeks.week + interval '1 week'
+              and payment.status in ('paid', 'partially_refunded')
+              and ${realOnlySql(includeTest, "payer")}
           ) as revenue_cents
         from weeks
         order by weeks.week asc
@@ -21599,6 +21901,7 @@ export async function anonymiseMemberAsAdmin(
           suburb = null,
           bio = null,
           photo_url = null,
+          photo_status = 'none',
           photo_verified_at = null,
           gallery_photos = '{}',
           prompts = '[]'::jsonb,
@@ -22208,7 +22511,20 @@ export type EventAttendeePreviewData = {
   // attendeeFomoSignals prints the age line only when the two match.
   crowdDecade: number | null;
   viewerDecade: number | null;
+  // 08 §4.4a belonging signal, for THIS viewer only: they hold an identity tag
+  // and at least BELONGING_MIN_OTHERS other confirmed attendees do too. A
+  // boolean on purpose - the number never leaves the server.
+  belonging: boolean;
 };
+
+// Identity-class life tags (08 §4.4a): at launch, lgbtq-plus only. The one use a
+// sensitive tag has - the shared-viewer belonging signal - and nothing else.
+const IDENTITY_TAG_SLUGS = ["lgbtq-plus"];
+
+// The viewer's side of the test line (22A §4.5), for the who's-going roster and
+// counts. A signed-out viewer (null id) is on the real side.
+const viewerTestSideSql = (viewerParam: string) =>
+  `coalesce((select test_side.is_test from profiles test_side where test_side.id = ${viewerParam}), false)`;
 
 export async function sendEventReminders() {
   const pool = getPostgresPool();
@@ -22366,6 +22682,7 @@ export async function getEventAttendeePreview(
     datingCount: 0,
     crowdDecade: null,
     viewerDecade: null,
+    belonging: false,
   };
   const pool = getPostgresPool();
   if (!pool) return empty;
@@ -22382,7 +22699,7 @@ export async function getEventAttendeePreview(
   }
 
   try {
-    const [previewResult, countResult, guestResult, viewerResult] = await Promise.all([
+    const [previewResult, countResult, guestResult, viewerResult, belongingResult] = await Promise.all([
       pool.query<{
         profile_id: string;
         display_name: string;
@@ -22458,6 +22775,9 @@ export async function getEventAttendeePreview(
             and profile.default_attend_visibility
             -- The viewer gets their own card separately (viewerResult below).
             and ($3::uuid is null or profile.id <> $3::uuid)
+            -- Test-account isolation (22A §4.5): only people on the viewer's side
+            -- of the test line are listed, or counted in the lines built from this.
+            and profile.is_test = ${viewerTestSideSql("$3::uuid")}
             and ($3::uuid is null or not exists (
               select 1 from user_blocks b
               where (b.blocker_profile_id = $3::uuid and b.blocked_profile_id = profile.id)
@@ -22471,7 +22791,10 @@ export async function getEventAttendeePreview(
       ),
       // Every seat held by someone going: the confirmed attendee rows, plus the +1
       // seats riding on a confirmed booking (named, claimed or not). A claimed +1
-      // has no attendee row, so nothing is counted twice.
+      // has no attendee row, so nothing is counted twice. Only seats on the
+      // viewer's side of the test line (22A §4.5) - a real member's count, and
+      // the radar's floor of 3 (09 §9), never includes a test booking. A +1 seat
+      // goes with its purchaser.
       pool.query<{ count: string }>(
         `
           select count(*)::text as count
@@ -22479,8 +22802,10 @@ export async function getEventAttendeePreview(
             select attendee.id
             from event_attendees attendee
             join events event on event.id = attendee.event_id
+            join profiles holder on holder.id = attendee.profile_id
             where event.slug = $1
               and attendee.status = 'confirmed'
+              and holder.is_test = ${viewerTestSideSql("$2::uuid")}
             union all
             select gs.id
             from guest_spots gs
@@ -22488,12 +22813,14 @@ export async function getEventAttendeePreview(
             join event_attendees purchaser_seat
               on purchaser_seat.payment_transaction_id = gs.payment_transaction_id
              and purchaser_seat.profile_id = gs.purchaser_profile_id
+            join profiles holder on holder.id = gs.purchaser_profile_id
             where event.slug = $1
               and gs.status <> 'cancelled'
               and purchaser_seat.status = 'confirmed'
+              and holder.is_test = ${viewerTestSideSql("$2::uuid")}
           ) seat
         `,
-        [eventSlug],
+        [eventSlug, viewerProfileId],
       ),
       // Named +1s who have not claimed yet (bug board #284): a first name the
       // purchaser typed, shown as a placeholder until the guest signs up through
@@ -22525,6 +22852,7 @@ export async function getEventAttendeePreview(
             and purchaser.is_banned = false
             and purchaser.suspended_at is null
             and purchaser.deleted_at is null
+            and purchaser.is_test = ${viewerTestSideSql("$2::uuid")}
             and (
               purchaser.id = $2::uuid
               or (purchaser.default_attend_visibility and purchaser_seat.visible_to_attendees)
@@ -22583,6 +22911,37 @@ export async function getEventAttendeePreview(
             [eventSlug, viewerProfileId],
           )
         : Promise.resolve(null),
+      // 08 §4.4a belonging signal: the viewer holds an identity tag, and at least
+      // BELONGING_MIN_OTHERS OTHER confirmed attendees on their side of the test
+      // line hold it too. Answered as a yes/no - the count stays in here.
+      viewerProfileId
+        ? pool.query<{ belonging: boolean }>(
+            `
+              select exists (
+                select 1
+                from user_tags mine
+                join tags identity_tag on identity_tag.id = mine.tag_id
+                 and identity_tag.tag_type = 'life'
+                 and identity_tag.slug = any($3::text[])
+                where mine.profile_id = $2::uuid
+                  and (
+                    select count(distinct theirs.profile_id)
+                    from user_tags theirs
+                    join event_participants_v seat on seat.profile_id = theirs.profile_id
+                    join events event on event.id = seat.event_id and event.slug = $1
+                    join profiles other on other.id = theirs.profile_id
+                    where theirs.tag_id = mine.tag_id
+                      and theirs.profile_id <> $2::uuid
+                      and other.is_test = ${viewerTestSideSql("$2::uuid")}
+                      and other.is_banned = false
+                      and other.suspended_at is null
+                      and other.deleted_at is null
+                  ) >= $4
+              ) as belonging
+            `,
+            [eventSlug, viewerProfileId, IDENTITY_TAG_SLUGS, BELONGING_MIN_OTHERS],
+          )
+        : Promise.resolve(null),
     ]);
 
     const rows = previewResult.rows;
@@ -22629,9 +22988,40 @@ export async function getEventAttendeePreview(
       datingCount: rows.filter((row) => row.dating_minded).length,
       crowdDecade: majorityDecade(rows.map((row) => row.age)),
       viewerDecade: decadeOf(rows[0]?.viewer_age),
+      belonging: belongingResult?.rows[0]?.belonging === true,
     };
   } catch {
     return empty;
+  }
+}
+
+/**
+ * 09 §10 Dimension 3's input: confirmed bookings made in the last 24 hours, per
+ * event slug. Test accounts' bookings never count (22A §4.5), whoever is
+ * looking. One query for the handful of radar rows. Fail-soft: no number means
+ * no trending line, never a made-up one.
+ */
+async function recentNonTestBookingsBySlug(slugs: string[]): Promise<Map<string, number>> {
+  const pool = getPostgresPool();
+  if (!pool || slugs.length === 0) return new Map();
+  try {
+    const result = await pool.query<{ slug: string; bookings: number }>(
+      `
+        select event.slug, count(*)::int as bookings
+        from event_attendees attendee
+        join events event on event.id = attendee.event_id
+        join profiles booker on booker.id = attendee.profile_id
+        where event.slug = any($1::text[])
+          and attendee.status = 'confirmed'
+          and attendee.created_at > now() - interval '24 hours'
+          and not booker.is_test
+        group by event.slug
+      `,
+      [slugs],
+    );
+    return new Map(result.rows.map((row) => [row.slug, Number(row.bookings)]));
+  } catch {
+    return new Map();
   }
 }
 
@@ -22649,6 +23039,7 @@ export async function getRadarSignals(
   if (events.length === 0) return {};
   // Memoised per request, so pages that already asked pay nothing for it.
   const { datingVisible } = await getProfileStatus(session);
+  const recentBookings = await recentNonTestBookingsBySlug(events.map((event) => event.id));
   const lines = await mapWithConcurrency(
     events,
     async (event) => {
@@ -22661,6 +23052,9 @@ export async function getRadarSignals(
         crowdDecade: preview.crowdDecade,
         viewerDecade: preview.viewerDecade,
         countFallback: true,
+        trending: trendingScore(recentBookings.get(event.id) ?? 0),
+        // No belonging line here: 08 §10.5 keeps every sensitive tag off the
+        // radar. It lives on the event page only (08 §4.4a, §10.3).
       });
       return signals.length > 0 ? signals.join(" · ") : null;
     },

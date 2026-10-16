@@ -37,6 +37,8 @@ test("who's going carries FOMO lines, and dating only for a dating viewer", () =
   assert.deepEqual(attendeeFomoSignals({ ...room, datingCount: 2, viewerOpenToDating: true }), [
     "2 going also like Hiking",
   ]);
+  // One person sharing the interest is never a line (09 §9 rule 2): it points
+  // at someone.
   assert.deepEqual(
     attendeeFomoSignals({
       confirmed: 3,
@@ -44,7 +46,7 @@ test("who's going carries FOMO lines, and dating only for a dating viewer", () =
       datingCount: 0,
       viewerOpenToDating: true,
     }),
-    ["1 person going also likes Pottery"],
+    [],
   );
   // A two-person room says nothing about the people in it.
   assert.deepEqual(

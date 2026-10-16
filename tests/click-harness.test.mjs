@@ -109,15 +109,21 @@ test("every harness action runs the gate, not just the ones that need a session"
   );
 });
 
-test("the destructive helpers are scoped to a resolved QA pair", () => {
-  for (const fn of ["resetPair", "windBackClock"]) {
-    const body = harness.slice(harness.indexOf(`export async function ${fn}`));
-    assert.match(
-      body.slice(0, 900),
-      /const people = await listHarnessPeople\(\)/,
-      `${fn} must resolve both ids from the @click.local roster first, so a pair ` +
-        `containing a real account can never be passed in.`,
-    );
+test("the destructive helpers are scoped to a resolved test pair", () => {
+  // windBackClock resolves both ids from the QA roster, which is test accounts
+  // only (is_test, 22A §4.5) - a real account can never be passed in.
+  const wind = harness.slice(harness.indexOf("export async function windBackClock"));
+  assert.match(wind.slice(0, 900), /const people = await listHarnessPeople\(\)/);
+  const roster = harness.slice(harness.indexOf("export async function listHarnessPeople"));
+  assert.match(roster.slice(0, 1600), /and is_test\s/);
+  // Reset moved behind the 03 §10 guard every test hook shares (dev-pair-hooks):
+  // the harness's reset and clock steps go through runGuardedDevHook - guard,
+  // audit, then the hook, on the pair the guard cleared - before any row moves.
+  assert.doesNotMatch(harness, /export async function resetPair/);
+  for (const step of ["reset_pair", "wind_clock", "jump_stage", "advance_clock"]) {
+    const body = actions.slice(actions.indexOf(`case "${step}": {`));
+    const own = body.slice(0, body.indexOf("\n    case ", 1));
+    assert.match(own, /return runGuardedDevHook\(/, `${step} must go through the guarded runner`);
   }
   assert.match(
     harness,

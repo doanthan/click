@@ -26,11 +26,10 @@ export default async function OnboardingPage({
   // /post-login and handed to the form so finishing onboarding resumes the trip.
   const next = safeNext(params?.next);
 
-  // ?resume=1 is the form's own marker, added the moment step 1 saves. From
-  // then on the profile counts as finished, and without the marker the first
-  // refresh inside the flow (the photo uploader refreshes on success, Finish
-  // refreshes the header) or a reload would hit this redirect and take the
-  // visitor out mid-step, past the optional screens and the done screen.
+  // ?resume=1 is the form's own marker, added the moment step 1 saves. A
+  // profile counts as finished (member_onboarded_at, 01 §1.4) only once Finish
+  // saves, and Finish refreshes the page under the done screen - without the
+  // marker that refresh would hit this redirect and skip the done screen.
   const status = await getProfileStatus(session);
   if (status.onboardingComplete && params?.resume !== "1") {
     redirect(next ?? "/dashboard");
@@ -64,6 +63,7 @@ export default async function OnboardingPage({
         }
         initialPostcode={savedPostcode}
         initialPhotoUrl={status.photoUrl}
+        initialPhotoFailed={status.photoStatus === "failed"}
         next={next}
       />
     </main>

@@ -22,7 +22,6 @@ import {
   getRadarSignals,
 } from "@/lib/event-repository";
 import { redirectIfNotOnboarded } from "@/lib/onboarding-gate";
-import { resolveAvatarImage } from "@/lib/avatar-images";
 import { dashboardPickIndex } from "@/lib/clicks/daily-picks";
 import { APP_TIME_ZONE } from "@/lib/datetime";
 
@@ -119,7 +118,7 @@ export default async function DashboardPage() {
   // Dashboard suggestions are deliberately rationed + rotated so the page stays
   // a focused "one thing to act on" rather than an endless list:
   //  • one person to click with - one of TODAY'S picks, the same three the Click
-  //    page lists, moving on every 3 hours (CHANGE BRIEF 2026-09-30 §2.2)
+  //    page lists, rank 1 first and moving on every 6 hours (09 §3)
   //  • one radar event, rotating hourly
   // Deterministic index off the clock so it's stable within each window.
   // eslint-disable-next-line react-hooks/purity -- server component, evaluated once per request
@@ -127,13 +126,15 @@ export default async function DashboardPage() {
   const hourIndex = Math.floor(nowForRotation / 3_600_000);
   const hourOfDay = Number(sydneyHour.format(new Date()));
 
-  // pick[floor(hoursSinceMidnight / 3) % n] on Sydney's clock. A pick the viewer
-  // has already clicked keeps its turn and shows as "clicked" - it is the same
-  // person, in the same state, as on the Click page, not a slot to refill. The
-  // one exception (HOTFIX 2026-10-12 H3.1, 09 §3): someone clicked YESTERDAY is
-  // listed on the Click page but not featured today, so the morning after
-  // clicking B nobody is shown "here's B!" again. A down-rank, never an empty
-  // card: if everyone today is held, they all keep their turns.
+  // Four 6-hour turns a day on Sydney's clock, counted from the morning build,
+  // through the picks in rank order - the first turn features rank 1
+  // (dashboardPickIndex). A pick the viewer clicked earlier keeps its turn and
+  // shows as "clicked" - it is the same person, in the same state, as on the
+  // Click page, not a slot to refill. The one exception (09 §3 "Pending-click
+  // featured down-rank"): someone clicked in the last 6 hours is listed on the
+  // Click page but not featured, so nobody is shown "here's B!" straight after
+  // clicking B. A down-rank, never an empty card: if everyone today is held,
+  // they all keep their turns.
   const unheld = picks.filter((candidate) => !candidate.featureHold);
   const featurable = unheld.length > 0 ? unheld : picks;
   const pickIndex = dashboardPickIndex(hourOfDay, featurable.length);
@@ -141,7 +142,10 @@ export default async function DashboardPage() {
   // Clicking needs your own photo (sendClickInner's R_PHOTO gate), so a member
   // without one gets the reason up front instead of a pick whose button only
   // refuses after the tap (bug board #329). Same test as /people and the send.
-  const viewerHasPhoto = resolveAvatarImage(profileStatus.photoUrl) !== null;
+  // photo_status, the flag the send path checks (01 §2): a stored URL is not a
+  // passing photo, and a failed one is said out loud, never left as a silhouette.
+  const viewerHasPhoto = profileStatus.photoStatus === "ok";
+  const viewerPhotoFailed = profileStatus.photoStatus === "failed";
   // Rotate through the events people are actually going to whenever there are
   // any. The rotation used to land on empty rooms too, and an empty room can
   // only ever get the fallback line - so the radar sat on "Trending in Sydney"
@@ -339,10 +343,18 @@ export default async function DashboardPage() {
               <EmptyState
                 eyebrow="One step first"
                 icon={<Icon name="camera" size={24} stroke={1.7} />}
-                title="Add a photo to click with people."
-                body="It's the first thing people see, and clicking needs one. Your picks show up here once it's in."
+                title={
+                  viewerPhotoFailed
+                    ? "Your photo didn't work - upload it again."
+                    : "Add a photo to click with people."
+                }
+                body={
+                  viewerPhotoFailed
+                    ? "We couldn't load it, or it looked like a placeholder or stock image, so nobody can see it. Clicking needs a clear photo of you."
+                    : "It's the first thing people see, and clicking needs one. Your picks show up here once it's in."
+                }
                 actionHref="/profile/edit"
-                actionLabel="Add a photo"
+                actionLabel={viewerPhotoFailed ? "Upload a new photo" : "Add a photo"}
               />
             </Reveal>
           ) : pick ? (

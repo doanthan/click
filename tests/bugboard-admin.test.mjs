@@ -136,8 +136,12 @@ test("a night out together is counted the way the mutual sweep counts it", () =>
   assert.match(outcomes, /live_plan = 'pending'/);
   assert.match(outcomes, /live_plan = 'accepted'/);
 
+  // 03 §9 / 22A §4.5: a pair with a test account in it is a test pair, left out
+  // unless the dashboard's Include test accounts toggle is on.
+  assert.match(outcomes, /where \$\{realOnlySql\(includeTest, "pair_a", "pair_b"\)\}/);
+
   const page = read("src/app/admin/page.tsx");
-  assert.match(page, /getAdminClickOutcomes\(\)/);
+  assert.match(page, /getAdminClickOutcomes\(\{ includeTest \}\)/);
 });
 
 /* ---------------- #309: what "Confirmed RSVPs" counts ---------------- */
@@ -148,7 +152,10 @@ test("the Confirmed RSVPs card says a cancelled booking is not in it", () => {
   // row to 'cancelled'. The card now says what it counts.
   const repo = read("src/lib/event-repository.ts");
   const metrics = slice(repo, "export async function getAdminMetrics", "\n}\n");
-  assert.match(metrics, /from event_attendees\s+where status = 'confirmed'/);
+  assert.match(
+    metrics,
+    /from event_attendees booking\s+join profiles booker on booker\.id = booking\.profile_id\s+where booking\.status = 'confirmed'/,
+  );
   for (const fn of [
     "export async function cancelRegistration(",
     "async function cancelEvent(",

@@ -10,8 +10,9 @@
  * best-effort deletes the storage object (only if the key sits under the
  * caller's own gallery prefix).
  *
- * Both return 200 `{ urls: string[] }` - the full gallery after the change -
- * so the uploader can re-render without refetching.
+ * Both return 200 `{ urls: string[], mainPhoto? }` - the full gallery after
+ * the change, so the uploader can re-render without refetching, and the photo
+ * check's result when the change also moved the main photo.
  */
 
 import { NextResponse } from "next/server";
@@ -24,12 +25,41 @@ import {
 } from "@/lib/gallery-storage";
 import { getPostgresPool } from "@/lib/postgres";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
+import { recordProfilePhotoCheck } from "@/lib/event-repository";
+import { photoFailureMessage, verifyPhotoUrl, type PhotoStatus } from "@/lib/photo-verify";
 
 const ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024; // 5 MB
 const MAX_GALLERY_PHOTOS = 5;
 
 export const runtime = "nodejs";
+
+type MainPhoto = { status: PhotoStatus; error?: string };
+
+/**
+ * When a gallery change moves the main photo, the new one is checked like any
+ * upload (01 §2) before it can show in the click pool, and the result goes
+ * back to the uploader: the gallery change already succeeded, but a main photo
+ * that failed must be said, never left as a silent silhouette. 'pending' means
+ * the check itself could not run; "Set as main" on the photo runs it again.
+ */
+async function checkMainPhoto(profileId: string): Promise<MainPhoto> {
+  try {
+    const current = await getPostgresPool()!.query<{ photo_url: string | null; photo_status: PhotoStatus }>(
+      `select photo_url, photo_status from profiles where id = $1::uuid`,
+      [profileId],
+    );
+    const row = current.rows[0];
+    if (!row?.photo_url || row.photo_status !== "pending") return { status: row?.photo_status ?? "none" };
+    const check = await verifyPhotoUrl(row.photo_url, profileId, { retries: 2, backoffMs: 400 });
+    await recordProfilePhotoCheck(profileId, row.photo_url, check);
+    if (check.status === "ok") return { status: "ok" };
+    return { status: check.status === "none" ? "none" : "failed", error: photoFailureMessage(check) };
+  } catch (error) {
+    console.warn("gallery main-photo check failed", { profileId, error });
+    return { status: "pending" };
+  }
+}
 
 async function resolveProfileId(email: string): Promise<string | null> {
   const pool = getPostgresPool();
@@ -137,15 +167,17 @@ export async function POST(request: Request) {
     // nagging "add a profile photo" even though they added photos (bug board
     // #182). A real square avatar uploaded later via /api/upload/avatar still
     // overwrites this. Best-effort - never fail the gallery upload over it.
-    await pool
+    const seeded = await pool
       .query(
-        `update profiles set photo_url = $2, updated_at = now()
+        `update profiles set photo_url = $2, photo_status = 'pending', updated_at = now()
          where id = $1::uuid and (photo_url is null or photo_url = '')`,
         [who.profileId, url],
       )
-      .catch(() => {});
+      .catch(() => null);
+    // `mainPhoto` only when this upload became the main photo.
+    const mainPhoto = seeded?.rowCount ? await checkMainPhoto(who.profileId) : undefined;
 
-    return NextResponse.json({ urls: row.gallery_photos });
+    return NextResponse.json({ urls: row.gallery_photos, mainPhoto });
   } catch (error) {
     console.error("gallery upload failed", error);
     return NextResponse.json({ error: "Upload failed." }, { status: 500 });
@@ -181,21 +213,25 @@ export async function DELETE(request: Request) {
     // gallery on first upload), repoint the avatar to the next remaining gallery
     // photo, or clear it if none are left - so we never leave a broken avatar
     // pointing at a deleted object (bug board #182).
-    await pool
-      .query(
-        `update profiles
-         set photo_url = gallery_photos[1], updated_at = now()
-         where id = $1::uuid and photo_url = $2`,
-        [who.profileId, url],
-      )
-      .catch(() => {});
+    // Not best-effort: if this fails, the photo stays the main one, so its
+    // object must not be deleted below (the catch answers 500 first) - or the
+    // profile would keep an 'ok' photo that no longer exists.
+    const moved = await pool.query(
+      `update profiles
+       set photo_url = gallery_photos[1],
+           photo_status = case when gallery_photos[1] is null then 'none' else 'pending' end,
+           updated_at = now()
+       where id = $1::uuid and photo_url = $2`,
+      [who.profileId, url],
+    );
+    const mainPhoto = moved.rowCount ? await checkMainPhoto(who.profileId) : undefined;
 
     // Only delete the object when the URL provably sits under the caller's own
     // gallery prefix - a crafted URL can't reach other users' objects.
     const key = ownGalleryKeyFromUrl(who.profileId, url);
     if (key) void deleteGalleryObject(key);
 
-    return NextResponse.json({ urls: updated.rows[0]?.gallery_photos ?? [] });
+    return NextResponse.json({ urls: updated.rows[0]?.gallery_photos ?? [], mainPhoto });
   } catch (error) {
     console.error("gallery delete failed", error);
     return NextResponse.json({ error: "Could not remove photo." }, { status: 500 });

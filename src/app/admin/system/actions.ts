@@ -3,6 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { auth } from "@/auth";
+import { requireAdminProfile } from "@/lib/event-repository";
+import {
+  SCHEDULED_JOBS,
+  runNowGate,
+  runScheduledJob,
+  type ScheduledJob,
+} from "@/lib/scheduled-jobs";
 import {
   TEST_SWITCHER_COOKIE,
   mintAdminUnlockCookie,
@@ -72,4 +79,44 @@ export async function setAdminQaAccessAction(
       ? "Test accounts are available from your avatar menu for 12 hours."
       : "Test accounts are hidden on this browser.",
   };
+}
+
+export type RunNowState = { ok: boolean; message: string } | null;
+
+/**
+ * 03 §10 Run-now: "Rebuild suggestion scores now" and "Build today's
+ * suggestions now". Admin only (a real admin's own session - never while
+ * viewing someone), audited, held to once per 2 minutes, refused with "already
+ * running" while the job (or its cron) runs, and the SAME entry the cron calls.
+ */
+export async function runScheduledJobNowAction(
+  _previous: RunNowState,
+  formData: FormData,
+): Promise<RunNowState> {
+  const job = formData.get("job");
+  if (typeof job !== "string" || !(job in SCHEDULED_JOBS)) {
+    return { ok: false, message: "Unknown job." };
+  }
+  const session = await auth();
+  if (session?.impersonation) {
+    return { ok: false, message: "Return to your own admin account to run jobs." };
+  }
+  let actorId: string;
+  try {
+    actorId = (await requireAdminProfile(session)).id;
+  } catch {
+    return { ok: false, message: "Admin access is required." };
+  }
+  const key = job as ScheduledJob;
+  try {
+    const run = await runScheduledJob(key, runNowGate(key, actorId));
+    if (!run.ran) return { ok: false, message: run.reason };
+    const summary = Object.entries(run.result)
+      .map(([name, value]) => `${name} ${value}`)
+      .join(", ");
+    return { ok: true, message: `${SCHEDULED_JOBS[key].label}: done (${summary}).` };
+  } catch (error) {
+    console.error("[run-now] job failed", { job: key, error });
+    return { ok: false, message: `${SCHEDULED_JOBS[key].label} failed - see the server log.` };
+  }
 }

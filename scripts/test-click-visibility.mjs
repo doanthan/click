@@ -61,8 +61,8 @@ try {
     const r = await db.query(
       `insert into profiles (email, display_name, age, role, photo_url,
                              default_attend_visibility, social_visible, paused_until,
-                             is_banned, suspended_at)
-       values ($1,$2,30,'attendee',$3,$4,$5,$6,$7,$8) returning id::text`,
+                             is_banned, suspended_at, is_test)
+       values ($1,$2,30,'attendee',$3,$4,$5,$6,$7,$8,true) returning id::text`,
       [
         `cv-${randomUUID()}@test.local`,
         opts.name ?? "Visibility tester",

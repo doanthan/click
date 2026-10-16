@@ -35,12 +35,11 @@ export type QaPersona = {
    */
   birthDate: string | null;
   /**
-   * The click pool hard-requires a resolvable photo on BOTH sides: the daily
-   * set filters on `photo_url is not null and photo_url <> ''` and then again
-   * through resolveAvatarImage, and clicking is a face-first decision. A
-   * photoless persona is invisible to discovery and cannot be clicked.
-   * A leading "/" path is what resolveAvatarImage accepts unconditionally, so
-   * these point at the generated faces already committed to public/home/avatars.
+   * A face for the persona's avatar, from the generated faces committed to
+   * public/home/avatars. It does NOT pass the click layer's photo gate: that
+   * reads profiles.photo_status = 'ok' (01 §2, build prompt 1), and the photo
+   * check counts these faces as stock. A persona joins discovery and can click
+   * once a real-looking photo is uploaded for it, like any test account.
    */
   photoUrl: string | null;
   /**

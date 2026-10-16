@@ -5,7 +5,6 @@ import { ClickRadar } from "@/components/click-radar";
 import { ClickWithSomeoneUserCard } from "@/components/click-with-someone-user-card";
 import { Icon, ckBtn } from "@/components/ds";
 import { PeopleCard } from "@/components/people-card";
-import { resolveAvatarImage } from "@/lib/avatar-images";
 import { DAILY_PICK_COUNT } from "@/lib/clicks/daily-picks";
 import {
   getDailyPicks,
@@ -53,7 +52,8 @@ export default async function PeoplePage() {
   // Clicking needs your own photo (sendClickInner's R_PHOTO gate, bug board #190),
   // so say so BEFORE a tap is refused rather than only after it. Same test the send
   // path uses; the gallery alone is not a face on the card.
-  const viewerHasPhoto = resolveAvatarImage(profileStatus.photoUrl) !== null;
+  const viewerHasPhoto = profileStatus.photoStatus === "ok";
+  const viewerPhotoFailed = profileStatus.photoStatus === "failed";
 
   // The brief's heading, with the set's real size in it: a thin pool must not
   // promise three people it doesn't have.
@@ -118,9 +118,11 @@ export default async function PeoplePage() {
             <p className="mt-4 flex items-start gap-[7px] rounded-[var(--radius-lg)] bg-[color:var(--lav-bg)] px-4 py-3 text-[13.5px] leading-relaxed text-[color:var(--ink-soft)]">
               <Icon name="camera" size={15} className="mt-0.5 shrink-0" />
               <span>
-                Add a photo to click with people - it&apos;s the first thing they see.{" "}
+                {viewerPhotoFailed
+                  ? "Your photo didn't work, so nobody can see it - upload a clear photo of you to click with people. "
+                  : "Add a photo to click with people - it's the first thing they see. "}
                 <Link href="/profile/edit" className="font-semibold whitespace-nowrap text-[color:var(--purple)]">
-                  Add a photo →
+                  {viewerPhotoFailed ? "Upload a new photo →" : "Add a photo →"}
                 </Link>
               </span>
             </p>

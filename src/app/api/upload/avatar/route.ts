@@ -8,7 +8,9 @@
  * and returns it. R2 is preferred; Supabase remains a compatibility fallback.
  *
  * Returns:
- *   200 { url: string } - success
+ *   200 { url, photoStatus: "ok" } - stored, loads publicly, passes the check
+ *   422 { error, url, photoStatus: "failed" } - stored but failed the photo
+ *       check (01 §2); the error is the member-facing reason, shown with a retry
  *   400 { error: string } - bad MIME, missing file, oversize
  *   401 { error: "Sign in required." } - no session
  *   503 { error: "Upload temporarily unavailable." } - Supabase env not configured
@@ -23,11 +25,32 @@ import {
   uploadAvatarFromUrl,
 } from "@/lib/avatar-storage";
 import { ownGalleryKeyFromUrl } from "@/lib/gallery-storage";
-import { updateOwnProfile } from "@/lib/event-repository";
+import { recordProfilePhotoCheck, updateOwnProfile } from "@/lib/event-repository";
+import { photoFailureMessage, verifyPhotoUrl } from "@/lib/photo-verify";
 import { getPostgresPool } from "@/lib/postgres";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 
 const ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+
+/**
+ * The stored photo is 'pending' from the moment its URL is saved; this is the
+ * check that moves it to 'ok' or 'failed' (01 §2): the object has to load back
+ * from its public URL, with no credentials, as a real photo - not a
+ * placeholder, stock or default image. A failure is ALWAYS answered as one, with
+ * the reason in words and the photo_status the client shows a retry from -
+ * never a 200 that leaves the member wearing a silhouette.
+ */
+async function checkStoredPhoto(profileId: string, publicUrl: string) {
+  const check = await verifyPhotoUrl(publicUrl, profileId, { retries: 2, backoffMs: 400 });
+  await recordProfilePhotoCheck(profileId, publicUrl, check);
+  if (check.status === "ok") {
+    return NextResponse.json({ url: publicUrl, photoStatus: "ok" });
+  }
+  return NextResponse.json(
+    { error: photoFailureMessage(check), url: publicUrl, photoStatus: "failed" },
+    { status: 422 },
+  );
+}
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024; // 5 MB
 
 export const runtime = "nodejs";
@@ -111,10 +134,11 @@ export async function POST(request: Request) {
     const publicUrl = await uploadAvatarFromBuffer(profileId, buffer);
 
     // Persist via the same writer the profile-edit form uses so we don't
-    // bypass any future validation that lands there.
+    // bypass any future validation that lands there. It saves the photo as
+    // 'pending'; the check decides the rest.
     await updateOwnProfile(session, { photoUrl: publicUrl });
 
-    return NextResponse.json({ url: publicUrl });
+    return await checkStoredPhoto(profileId, publicUrl);
   } catch (error) {
     console.error("avatar upload failed", error);
     return NextResponse.json({ error: "Upload failed." }, { status: 500 });
@@ -200,7 +224,7 @@ export async function PATCH(request: Request) {
     }
 
     await updateOwnProfile(session, { photoUrl: publicUrl });
-    return NextResponse.json({ url: publicUrl });
+    return await checkStoredPhoto(profileId, publicUrl);
   } catch (error) {
     console.error("avatar set-as-main failed", error);
     return NextResponse.json({ error: "Couldn't update your main photo." }, { status: 500 });

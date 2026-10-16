@@ -43,7 +43,10 @@ test("a Google signup's photo reaches the onboarding photo step", () => {
   // profile was about to have. The first save reads it back.
   const save = repo.slice(repo.indexOf("export async function saveOnboarding"));
   assert.match(save.slice(0, save.indexOf("\nconst AU_STATES")), /returning photo_url/);
-  assert.match(save, /return \{ ok: true, profileId: profile\.id, photoUrl: saved\.rows\[0\]\?\.photo_url \?\? null \};/);
+  assert.match(save, /photoUrl: saved\.rows\[0\]\?\.photo_url \?\? null,/);
+  // ...with its photo check verdict, so a provider's default letter avatar is
+  // shown as failed on the photo step, never as done (01 §2).
+  assert.match(save, /photoStatus: saved\.rows\[0\]\?\.photo_status \?\? "none",/);
   assert.match(read("src/app/api/onboarding/route.ts"), /photoUrl: result\.photoUrl/);
   assert.match(form, /if \(payload\.photoUrl\) setPhotoUrl\(\(current\) => current \?\? payload\.photoUrl \?\? null\);/);
   assert.match(form, /<AvatarUploader\s+initialUrl=\{photoUrl\}/);
@@ -191,11 +194,12 @@ test("a member who leaves onboarding unfinished is sent back to it from every me
   // member page checked again, so Back or a reload landed them in the app.
   const gate = read("src/lib/onboarding-gate.ts");
   // /post-login's exemptions: a failed read is not "not onboarded", and a host
-  // account is never pushed into the attendee profile.
-  assert.match(
-    gate,
-    /if \(!status\?\.exists \|\| status\.onboardingComplete \|\| status\.degraded \|\| status\.merchantProfile\) \{\s*return;\s*\}/,
-  );
+  // account is not pushed into the attendee profile on the browse pages - but
+  // switching to user mode (the user-mode homes) without member status routes
+  // to onboarding whatever the role (01 §1.4).
+  assert.match(gate, /if \(!status\?\.exists \|\| status\.onboardingComplete \|\| status\.degraded\) return;/);
+  assert.match(gate, /if \(status\.merchantProfile && !USER_MODE_HOMES\.has\(here\)\) return;/);
+  assert.match(gate, /const USER_MODE_HOMES = new Set\(\["\/dashboard", "\/people"\]\);/);
   assert.match(gate, /redirect\(`\/onboarding\?next=\$\{encodeURIComponent\(here\)\}`\);/);
 
   const gated = {

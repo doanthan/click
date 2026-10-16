@@ -19,11 +19,11 @@ import { randomUUID } from "node:crypto";
 
 
 import { getSupabaseAdmin } from "@/utils/supabase/admin";
+import { ownStoredPhotoKey } from "@/lib/photo-verify";
 import {
   deletePublicMediaObject,
   isR2PublicMediaConfigured,
   PERSONAL_PHOTO_CACHE_CONTROL,
-  r2PublicMediaKeyFromUrl,
   uploadPublicMediaObject,
 } from "@/lib/public-media-storage";
 
@@ -93,14 +93,11 @@ export async function uploadGalleryPhotoFromBuffer(
  * make sure a delete request can't reach into another user's objects.
  */
 export function ownGalleryKeyFromUrl(profileId: string, url: string): string | null {
-  const r2Key = r2PublicMediaKeyFromUrl(url);
-  if (r2Key?.startsWith(`${GALLERY_PREFIX}/${profileId}/`)) return r2Key;
-
-  const marker = `/storage/v1/object/public/${GALLERY_BUCKET}/`;
-  const at = url.indexOf(marker);
-  if (at === -1) return null;
-  const key = url.slice(at + marker.length).split("?")[0];
-  return key.startsWith(`${GALLERY_PREFIX}/${profileId}/`) ? key : null;
+  // The URL's origin and path are checked against this deployment's storage,
+  // never searched for the bucket path: that path could sit in a crafted URL's
+  // #fragment, and "Set as main" fetches the URL it is given.
+  const key = ownStoredPhotoKey(url, profileId);
+  return key?.startsWith(`${GALLERY_PREFIX}/${profileId}/`) ? key : null;
 }
 
 /** Best-effort object delete - the DB row is the source of truth. */

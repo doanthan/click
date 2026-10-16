@@ -27,12 +27,15 @@ test("H3.1: a pending click never removes someone from the pool", () => {
   assert.doesNotMatch(pool, /from clicks/);
 });
 
-test("H3.1: yesterday's click holds the dashboard's featured turn, today's does not", () => {
+test("09 §3 pending-click featured down-rank: a click from the last ~6h holds the featured turn", () => {
+  // Build prompt 1: the hold is "created within the last rotation interval
+  // (~6 hours)", per 09 - in the featured-slot selection only, never the pool.
   assert.match(
     daily,
-    /exists \(\s*select 1 from clicks c\s*where c\.sender_id = \$1::uuid\s*and c\.receiver_id = p\.id\s*and c\.status = 'pending'\s*and c\.expires_at > now\(\)\s*and \(c\.created_at at time zone '\$\{APP_TIME_ZONE\}'\)::date = \$\{DAILY_PICK_DAY_SQL\} - 1\s*\) as feature_hold/,
+    /exists \(\s*select 1 from clicks c\s*where c\.sender_id = \$1::uuid\s*and c\.receiver_id = p\.id\s*and c\.status = 'pending'\s*and c\.expires_at > now\(\)\s*and c\.created_at > now\(\) - interval '\$\{FEATURED_PENDING_HOLD_HOURS\} hours'\s*\) as feature_hold/,
   );
   assert.match(daily, /featureHold: row\.feature_hold === true,/);
+  assert.match(read("src/lib/clicks/daily-picks.ts"), /export const FEATURED_PENDING_HOLD_HOURS = 6;/);
 });
 
 test("H3.5: no bio requirement", () => {
@@ -51,7 +54,7 @@ test("H3.2: a 'we clicked offline' pair is down-ranked, never removed; co_attend
   assert.equal((pool.match(weClicked) ?? []).length, 2, "selected as a flag AND in the SQL order");
   assert.doesNotMatch(pool, /co_attended/);
   assert.match(pool, /Boolean\(row\.inactive\) \|\|\s*Boolean\(row\.we_clicked\);/, "in the post-v2 partition");
-  assert.match(pool, /rows = \[\.\.\.rows\.filter\(\(r\) => !downRanked\(r\)\), \.\.\.rows\.filter\(downRanked\)\];/);
+  assert.match(pool, /rankKey: \[\s*downRanked\(row\) \? 1 : 0,/, "the down-rank leads the rank key");
   // Released 30 days and "not feeling it" 90 days stay as they were (21 §B7.9).
   assert.match(pool, /where rc\.status = 'released'\s*and rc\.ended_at > now\(\) - interval '\$\{REDISCOVERY_COOLDOWN_DAYS\} days'/);
   assert.match(read("src/lib/clicks/constants.ts"), /export const PAIR_SUPPRESSION_DAYS = 90;/);

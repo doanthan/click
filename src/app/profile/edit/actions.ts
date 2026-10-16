@@ -95,10 +95,8 @@ export async function saveProfileEditAction(formData: FormData) {
     displayName: strField(formData, "display_name"),
     suburb: suburb || undefined,
     bio: strField(formData, "bio"),
-    // Absent, not empty: the same idiom this file already uses for suburb and
-    // age. There is no "remove photo" control, so a blank value here has only
-    // ever meant the hidden field was never re-seeded after a gallery upload.
-    photoUrl: strField(formData, "photo_url") || undefined,
+    // No photoUrl: the photo is written only by the upload routes, which store
+    // and check it (01 §2). A URL from this form would be one the browser chose.
     age,
     intents,
     interestTags: strList("interest_tag"),

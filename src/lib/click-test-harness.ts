@@ -96,13 +96,14 @@ export async function harnessSession(email: string): Promise<Session> {
   const pool = getPostgresPool();
   if (!pool) throw new HarnessRefusedError("No database connection.");
   // Must ALREADY exist. ensureProfileForSession is an upsert, so a typo'd address
-  // would otherwise mint a brand new profile as a side effect of "testing".
+  // would otherwise mint a brand new profile as a side effect of "testing". And
+  // must be a test account (22A §4.5) - the namespace alone is not the flag.
   const found = await pool.query<{ display_name: string; photo_url: string | null }>(
-    `select display_name, photo_url from profiles where email = $1 limit 1`,
+    `select display_name, photo_url from profiles where email = $1 and is_test limit 1`,
     [address],
   );
   const row = found.rows[0];
-  if (!row) throw new HarnessRefusedError(`No QA profile for ${address}.`);
+  if (!row) throw new HarnessRefusedError(`No QA test account for ${address}.`);
   return {
     user: { email: address, name: row.display_name, image: row.photo_url },
     expires: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
@@ -139,13 +140,18 @@ export async function listHarnessPeople(): Promise<HarnessPerson[]> {
     is_banned: boolean;
     social_visible: boolean;
     paused: boolean;
+    photo_status: string;
+    is_member: boolean;
   }>(
     `
       select id::text, email::text, display_name, photo_url, age, suburb,
              is_banned, social_visible,
-             (paused_until is not null and paused_until > now()) as paused
+             (paused_until is not null and paused_until > now()) as paused,
+             photo_status, member_onboarded_at is not null as is_member
         from profiles
        where email like '%' || $1
+         -- Test accounts only (22A §4.5): the QA namespace AND the flag.
+         and is_test
          and role <> 'merchant'
        order by display_name
     `,
@@ -154,6 +160,12 @@ export async function listHarnessPeople(): Promise<HarnessPerson[]> {
   return result.rows.map((row) => {
     const blockers: string[] = [];
     if (!row.photo_url) blockers.push("no photo - invisible to discovery");
+    else if (row.photo_status !== "ok") {
+      blockers.push(`photo not passing (${row.photo_status}) - invisible to discovery, every send refused`);
+    }
+    if (!row.is_member) {
+      blockers.push("has not finished onboarding - not a member, so never shown and every send refused");
+    }
     if ((row.age ?? 0) < 18) blockers.push("no date of birth - every send is refused");
     if (row.is_banned) blockers.push("banned");
     if (!row.social_visible) blockers.push("opted out of the social graph");
@@ -478,82 +490,9 @@ export async function readPairState(
   };
 }
 
-/**
- * Put the pair back to "never met".
- *
- * DESTRUCTIVE, and deliberately narrow. It resolves BOTH ids from the
- * `@click.local` roster before it deletes anything, so a pair containing a real
- * account cannot be passed in - the lookup simply will not find them. Nothing
- * here is scoped by "everything in this table"; every statement is keyed on the
- * two ids.
- *
- * Scenarios are only worth running if they are re-runnable: a suppression lasts
- * 90 days and a mutual is unique per pair while active, so without this the
- * second run of "not feeling it" is refused for a quarter of a year.
- */
-export async function resetPair(aEmail: string, bEmail: string): Promise<string[]> {
-  await assertHarnessAllowed();
-  const people = await listHarnessPeople();
-  const a = people.find((p) => p.email === aEmail.trim().toLowerCase());
-  const b = people.find((p) => p.email === bEmail.trim().toLowerCase());
-  if (!a || !b) throw new HarnessRefusedError("Both people must be QA personas.");
-
-  const pool = getPostgresPool();
-  if (!pool) throw new HarnessRefusedError("No database connection.");
-  const client = await pool.connect();
-  const cleared: string[] = [];
-  try {
-    await client.query("begin");
-    const pair = [a.id, b.id];
-    // click_proposals cascades off mutual_clicks, so deleting the mutual takes
-    // the coordination history with it - the ON DELETE CASCADE in 049.
-    const steps: Array<[string, string]> = [
-      [
-        "clicks",
-        `delete from clicks
-          where (sender_id = $1::uuid and receiver_id = $2::uuid)
-             or (sender_id = $2::uuid and receiver_id = $1::uuid)`,
-      ],
-      [
-        "mutual_clicks (+ proposals)",
-        `delete from mutual_clicks
-          where user_a_id = least($1::uuid, $2::uuid)
-            and user_b_id = greatest($1::uuid, $2::uuid)`,
-      ],
-      [
-        "pair_suppressions",
-        `delete from pair_suppressions
-          where user_a_id = least($1::uuid, $2::uuid)
-            and user_b_id = greatest($1::uuid, $2::uuid)`,
-      ],
-      [
-        "click_swaps",
-        `delete from click_swaps where sender_id = $1::uuid or sender_id = $2::uuid`,
-      ],
-      [
-        "post_event_click_answers",
-        `delete from post_event_click_answers where profile_id = $1::uuid or profile_id = $2::uuid`,
-      ],
-      [
-        "user_blocks",
-        `delete from user_blocks
-          where (blocker_profile_id = $1::uuid and blocked_profile_id = $2::uuid)
-             or (blocker_profile_id = $2::uuid and blocked_profile_id = $1::uuid)`,
-      ],
-    ];
-    for (const [label, sql] of steps) {
-      const result = await client.query(sql, pair);
-      if (result.rowCount) cleared.push(`${label}: ${result.rowCount}`);
-    }
-    await client.query("commit");
-  } catch (error) {
-    await client.query("rollback").catch(() => {});
-    throw error;
-  } finally {
-    client.release();
-  }
-  return cleared.length > 0 ? cleared : ["nothing to clear - the pair was already fresh"];
-}
+// Resetting a pair lives in src/lib/dev-pair-hooks.ts (resetDevPair), behind
+// the 03 §10 guard every test hook shares: an admin, two test accounts, and
+// test-created events only.
 
 /**
  * Put `receiverId` in `senderEmail`'s daily picks for today, so the harness's

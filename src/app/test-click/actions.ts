@@ -26,12 +26,20 @@ import {
   listHarnessPeople,
   otherPeopleFor,
   pickOutsider,
-  resetPair,
   seedDailyPick,
   windBackClock,
   type ClockTarget,
 } from "@/lib/click-test-harness";
 import { refreshClickFixtures } from "@/lib/click-test-fixtures";
+import {
+  DEV_STAGES,
+  DevHookRefusedError,
+  advanceDevPairClock,
+  resetDevPair,
+  runGuardedDevHook,
+  setDevPairStage,
+  type DevStage,
+} from "@/lib/dev-pair-hooks";
 import {
   appendHarnessLog,
   clearHarnessLog,
@@ -168,6 +176,7 @@ async function runStep(step: string, form: FormData): Promise<string> {
   const mutualId = text(form, "mutual_id");
   const proposalId = text(form, "proposal_id");
   const eventSlug = text(form, "event_slug");
+  const pair = { a: text(form, "a_id"), b: text(form, "b_id") };
 
   switch (step) {
     // --- fixtures + pair lifecycle ------------------------------------------
@@ -175,9 +184,31 @@ async function runStep(step: string, form: FormData): Promise<string> {
       const report = await refreshClickFixtures();
       return `Rebuilt ${report.length} fixture events relative to now.`;
     }
+    // The 03 §10 hooks, through the same guard and audit as /dev/coord/* and
+    // /dev/clock/advance: an admin, two test accounts, test-created events only.
+    // Each acts on the pair the guard cleared, never the a/b fields beside it.
     case "reset_pair": {
-      const cleared = await resetPair(aEmail, bEmail);
-      return `Reset. ${cleared.join(" · ")}`;
+      return runGuardedDevHook("coord.reset", { via: "test-click", ...pair }, () => ({
+        ...pair,
+        events: [],
+        run: async (context) => `Reset. ${(await resetDevPair(context)).join(" · ")}`,
+      }));
+    }
+    case "jump_stage": {
+      const stage = text(form, "stage") as DevStage;
+      const event = eventSlug || null;
+      return runGuardedDevHook("coord.set", { via: "test-click", ...pair, stage, event }, () => {
+        if (!DEV_STAGES.includes(stage)) throw new DevHookRefusedError(`Unknown stage "${stage}".`);
+        return { ...pair, events: event ? [event] : [], run: (context) => setDevPairStage(context, stage, event) };
+      });
+    }
+    case "advance_clock": {
+      const hours = Number(text(form, "hours"));
+      return runGuardedDevHook("clock.advance", { via: "test-click", ...pair, hours }, () => ({
+        ...pair,
+        events: [],
+        run: (context) => advanceDevPairClock(context, hours),
+      }));
     }
     case "run_sweep": {
       // The real cron body. Expiry, dormancy and the release notifications all
@@ -187,7 +218,11 @@ async function runStep(step: string, form: FormData): Promise<string> {
     }
     case "wind_clock": {
       const target = text(form, "clock") as ClockTarget;
-      return windBackClock(aEmail, bEmail, target);
+      return runGuardedDevHook("clock.wind", { via: "test-click", ...pair, clock: target }, () => ({
+        ...pair,
+        events: [],
+        run: (context) => windBackClock(context.a.email, context.b.email, target),
+      }));
     }
     case "fill_event": {
       return fillEventToCapacity(eventSlug, [text(form, "a_id"), text(form, "b_id")]);

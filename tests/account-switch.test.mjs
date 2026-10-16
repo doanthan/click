@@ -21,7 +21,9 @@ function load(file, mocks) {
 }
 const actor = { email: "owner@example.com", name: "Owner", image: null };
 const isAdmin = (email) => [actor.email, "other-admin@example.com", "admin@click.local"].includes(email);
-const target = { id: "11111111-1111-4111-8111-111111111111", email: "maya@click.local", name: "Maya", image: null };
+// is_test is the row's flag (22A §4.5) - the view-as window and view-only rule
+// read it, never the address.
+const target = { id: "11111111-1111-4111-8111-111111111111", email: "maya@click.local", name: "Maya", image: null, is_test: true };
 const adminSession = () => ({ user: actor, expires: new Date(Date.now() + 86400000).toISOString() });
 
 test("anonymous, ordinary accounts and QA admins cannot enter real accounts", () => {
@@ -72,7 +74,7 @@ test("a switch uses the existing account and records the real actor before commi
   const user = await h.service.authorizeAccountSwitch(target.id, false);
   assert.equal(user.email, target.email);
   assert.deepEqual(user.impersonation.actor, actor);
-  // maya@click.local is a test account, so she gets the long window.
+  // Maya is a test account (is_test), so she gets the long window.
   assert.ok(user.impersonation.expiresAt > Date.now() + MEMBER_VIEWING_MS);
   assert.ok(user.impersonation.expiresAt <= Date.now() + TEST_ACCOUNT_VIEWING_MS);
   const audit = h.queries.find(q => q.sql.includes("insert into audit_logs"));
@@ -90,6 +92,16 @@ test("return ignores any supplied target and clears impersonation", async () => 
   assert.equal(user.email, actor.email);
   assert.equal(user.impersonation, undefined);
   assert.equal(h.queries.find(q => q.sql.includes("insert into audit_logs")).values[1], "account_switch_return");
+});
+
+test("a QA-namespace address that is not flagged is_test is treated as a real member", async () => {
+  const unflagged = { ...target, is_test: false };
+  const h = harness(adminSession(), { target: unflagged });
+  const user = await h.service.authorizeAccountSwitch(target.id, false);
+  assert.ok(user.impersonation.expiresAt <= Date.now() + MEMBER_VIEWING_MS);
+  assert.equal(user.impersonation.readOnly, true);
+  const audit = h.queries.find(q => q.sql.includes("insert into audit_logs"));
+  assert.equal(JSON.parse(audit.values[3]).isTest, false);
 });
 
 test("subsequent switches never extend viewing access", async () => {
@@ -112,10 +124,10 @@ test("a real member is open for an hour at most, however long the test session b
 test("test accounts get twelve hours, real members one, and a running grant only shortens", () => {
   const now = 1_000_000;
   const far = now + 10 * TEST_ACCOUNT_VIEWING_MS;
-  assert.equal(viewingExpiresAt("maya@click.local", far, now), now + TEST_ACCOUNT_VIEWING_MS);
-  assert.equal(viewingExpiresAt(" Maya@Click.Local ", far, now), now + TEST_ACCOUNT_VIEWING_MS);
-  assert.equal(viewingExpiresAt("member@example.com", far, now), now + MEMBER_VIEWING_MS);
-  assert.equal(viewingExpiresAt("maya@click.local", now + 5000, now), now + 5000);
+  // The flag decides, never the address (22A §4.5).
+  assert.equal(viewingExpiresAt(true, far, now), now + TEST_ACCOUNT_VIEWING_MS);
+  assert.equal(viewingExpiresAt(false, far, now), now + MEMBER_VIEWING_MS);
+  assert.equal(viewingExpiresAt(true, now + 5000, now), now + 5000);
   // The same 12 hours as the QA unlock, so a testing session ends with its access.
   assert.equal(TEST_ACCOUNT_VIEWING_MS, 12 * 60 * 60 * 1000);
   assert.match(

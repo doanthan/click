@@ -127,6 +127,7 @@ export function ProfileEditForm({
   tagOptions,
   completion,
   focusBio = false,
+  photoFailed = false,
 }: {
   profile: OwnProfile;
   tagOptions: ProfileTagOptions;
@@ -136,6 +137,8 @@ export function ProfileEditForm({
   completion: ProfileCompletion;
   /** Opened from "Write a short bio" (?focus=bio): land on the bio, not the photos. */
   focusBio?: boolean;
+  /** The main photo failed the photo check (photo_status 'failed'). */
+  photoFailed?: boolean;
 }) {
   const base = useMemo<DraftValues>(() => {
     const { postcode, suburb } = splitSuburb(profile.suburb);
@@ -394,7 +397,11 @@ export function ProfileEditForm({
       {/* ----- Photos ----- */}
       {/* Unwrapped: it is above the fold, so it must never wait on an observer. */}
       <Group>
-        <AvatarUploader initialUrl={profile.photoUrl} displayName={profile.displayName} />
+        <AvatarUploader
+          initialUrl={profile.photoUrl}
+          displayName={profile.displayName}
+          photoFailed={photoFailed}
+        />
         <p className="mt-4 max-w-[520px] text-[13px] leading-[1.55] text-[color:var(--slate)]">
           A real, clear photo of your face works best - it helps the people you meet recognise you
           when you get there.

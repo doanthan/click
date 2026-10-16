@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { TRENDING_LINE } from "@/lib/attendee-fomo";
 import type { EventItem } from "@/lib/click-data";
 import { Icon } from "./ds";
 
@@ -19,7 +20,8 @@ export function ClickRadar({
 }: {
   events: EventItem[];
   // Per-event aggregate signal (e.g. "2 going also like hiking"), keyed by event
-  // id. When absent, the row falls back to an honest "trending" line.
+  // id. When absent the row is just the event - no line is better than a made-up
+  // one, and never a city name (09 §9, QA 14.6).
   fomoBySlug?: Record<string, string>;
 }) {
   const rows = events.slice(0, 3);
@@ -58,15 +60,29 @@ export function ClickRadar({
           }`}
         >
           <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[color:var(--lavender-100)] text-[color:var(--purple)]">
-            <Icon name={fomoBySlug[event.id] ? "users" : "trend"} size={16} />
+            <Icon
+              name={
+                fomoBySlug[event.id] === TRENDING_LINE
+                  ? "trend"
+                  : fomoBySlug[event.id]
+                    ? "users"
+                    : "calendar"
+              }
+              size={16}
+            />
           </span>
           {/* DS radar row: the line, " → ", then the event name. Without the
               arrow the two ran together into one phrase - "3 going so far Jazz
-              Night" (bug board #288). Screen readers get a comma instead. */}
+              Night" (bug board #288). Screen readers get a comma instead. With
+              no line that qualifies, the row is the event name alone. */}
           <span className="min-w-0 flex-1 text-sm leading-snug text-[color:var(--ink-soft)]">
-            {fomoBySlug[event.id] ?? "Trending in Sydney"}
-            <span aria-hidden="true"> → </span>
-            <span className="sr-only">, </span>
+            {fomoBySlug[event.id] ? (
+              <>
+                {fomoBySlug[event.id]}
+                <span aria-hidden="true"> → </span>
+                <span className="sr-only">, </span>
+              </>
+            ) : null}
             <span className="font-semibold text-[color:var(--ink)]">{event.title}</span>
           </span>
           <Icon name="chevR" size={16} stroke={2} className="text-[color:var(--slate)]" />

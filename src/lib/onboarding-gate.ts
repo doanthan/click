@@ -1,6 +1,11 @@
 import { redirect } from "next/navigation";
 import type { ProfileStatus } from "./event-repository";
 
+// The user-mode homes: where the header's Attendee switch lands (/dashboard) and
+// the Click page. 01 §1.4: switching into user mode without finishing user
+// onboarding routes to /onboarding, whatever other role the account holds.
+const USER_MODE_HOMES = new Set(["/dashboard", "/people"]);
+
 /**
  * Bug board #328. /post-login sends a member who has not finished onboarding
  * to /onboarding once, at sign-in, and nothing after that did. Leaving the form
@@ -9,16 +14,15 @@ import type { ProfileStatus } from "./event-repository";
  * page now runs this on the status it already reads - getProfileStatus is
  * memoised per request, so it costs no extra query.
  *
- * The exemptions are /post-login's. A failed read (`degraded`) lets them
- * through rather than sending an established member back to step one, and a
- * host account is let past, because the attendee profile is not what they
- * signed up to fill in. Booking stays gated by assertBookingEligible either way.
- * "Finished" is step 1 saved (postcode + birth date): the screens after it are
- * optional, so nobody is sent back for skipping them.
+ * "Finished" is member_onboarded_at (01 §1.4): the flow was completed, not just
+ * step 1 saved. A failed read (`degraded`) lets them through rather than sending
+ * an established member back to step one. A host account is let past on the
+ * browse pages - the attendee profile is not what they signed up to fill in -
+ * but not on the user-mode homes, which is where switching to user mode lands.
+ * Booking stays gated by assertBookingEligible either way.
  */
 export function redirectIfNotOnboarded(status: ProfileStatus | null, here: string) {
-  if (!status?.exists || status.onboardingComplete || status.degraded || status.merchantProfile) {
-    return;
-  }
+  if (!status?.exists || status.onboardingComplete || status.degraded) return;
+  if (status.merchantProfile && !USER_MODE_HOMES.has(here)) return;
   redirect(`/onboarding?next=${encodeURIComponent(here)}`);
 }

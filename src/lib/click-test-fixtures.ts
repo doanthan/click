@@ -166,7 +166,7 @@ export async function refreshClickFixtures(): Promise<FixtureReport[]> {
       `select mp.id::text as merchant_id, mp.profile_id::text, mp.business_name as name
          from merchant_profiles mp
          join profiles p on p.id = mp.profile_id
-        where p.email like '%@click.local' and mp.verification_status = 'approved'
+        where p.email like '%@click.local' and p.is_test and mp.verification_status = 'approved'
         order by (
           select count(*) from events e
            where e.merchant_profile_id = mp.id
@@ -186,10 +186,13 @@ export async function refreshClickFixtures(): Promise<FixtureReport[]> {
     // Everyone the harness can drive. They all go on the past event's list so the
     // post-event surface works for WHICHEVER pair the tester picks, not just the
     // pair somebody thought of when the fixtures were written.
+    // Test accounts only (22A §4.5) - the fixtures are test-created events, and
+    // the /dev hooks refuse any event that is not. Same photo rule as every
+    // click surface (photo_status, 01 §2).
     const people = await client.query<{ id: string }>(
       `select id::text from profiles
-        where email like '%@click.local' and role <> 'merchant'
-          and photo_url is not null and photo_url <> '' and age >= 18
+        where email like '%@click.local' and is_test and role <> 'merchant'
+          and photo_status = 'ok' and age >= 18
         order by display_name`,
     );
     const attendeeIds = people.rows.map((row) => row.id);

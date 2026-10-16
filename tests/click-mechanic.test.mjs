@@ -447,13 +447,12 @@ test("an overloaded person is down-ranked in discovery, never removed", () => {
   assert.doesNotMatch(suggestedPeople, /am\.coord_state in \([^)]*dormant/);
   // Down-rank, not remove: it orders, it never appears in a WHERE / NOT EXISTS.
   assert.match(suggestedPeople, /\) asc,\n\s*array_length\(/);
-  // And it has to survive the v2 re-rank, which re-sorts the whole list by pair
-  // score and would otherwise throw the SQL ordering away whenever the flag is on.
-  assert.match(suggestedPeople, /rows = \[\.\.\.rows\.filter\(\(r\) => !downRanked\(r\)\), \.\.\.rows\.filter\(downRanked\)\];/);
-  assert.ok(
-    suggestedPeople.indexOf("downRanked") > suggestedPeople.indexOf("matchingV2Enabled"),
-    "the down-rank partition must run after the v2 re-rank, not before it",
-  );
+  // And it has to survive the v2 ranking, which orders the whole list by pair
+  // score and would otherwise throw the SQL ordering away whenever the flag is on:
+  // it is the FIRST element of the rank key, ahead of the score (09).
+  assert.match(suggestedPeople, /rankKey: \[\s*downRanked\(row\) \? 1 : 0,\s*-\(scores\.get\(row\.id\) \?\? Number\(row\.shared_count\)\),\s*row\.tie_key,\s*\] as const/);
+  assert.match(suggestedPeople, /\.sort\(\(a, b\) => comparePickRank\(a\.rankKey, b\.rankKey\)\)/);
+  assert.match(repo, /function comparePickRank\(a: PickRankKey, b: PickRankKey\): number \{\s*return a\[0\] - b\[0\] \|\| a\[1\] - b\[1\] \|\| a\[2\]\.localeCompare\(b\[2\]\);/);
 });
 
 test("only the recipient can pass on a plan", () => {
@@ -621,46 +620,45 @@ test("the re-engagement email never names who clicked", () => {
   );
 });
 
-test("an admin account can reach every click surface, in both directions", () => {
-  // Every ADMIN_EMAILS address sat at age NULL, birth_date NULL forever, because
-  // /post-login redirected admins to the console ABOVE the onboarding branch and
-  // /onboarding is the only writer of those two columns. sendClickInner reads age
-  // directly ((age ?? 0) < 18), so the team's own accounts were refused on every
-  // click they sent - and the four rosters gated on role = 'attendee', so nobody
-  // could click them back either. Send worked one way and never the other, which
-  // is a mutual that can never form: the click flow was untestable by its owners.
+test("an admin account can reach every click surface, in both directions - once a member", () => {
+  // History: every ADMIN_EMAILS address sat at age NULL, birth_date NULL forever,
+  // and the rosters gated on role = 'attendee', so the team could send and never
+  // be sent to. Build prompt 1 (01 §1.4, 21 §B7.4) settles it the spec's way:
+  // ROLE NEVER DECIDES. Any account - attendee, host or admin - is shown, gets
+  // picks and can click once it has finished the user onboarding flow
+  // (member_onboarded_at), and not before.
   const postLogin = read("src/app/post-login/page.tsx");
-
-  // The admin branch must sit BELOW the profile read, and must divert an admin who
-  // has not onboarded. Ordering is the whole fix - an admin redirect above
-  // getProfileStatus can never consult onboarding state.
   const statusRead = postLogin.indexOf("const status = await getProfileStatus(session);");
   const adminBranch = postLogin.indexOf("if (isAdminEmail(session.user.email)) {");
   assert.ok(statusRead > -1 && adminBranch > -1, "failed to locate the post-login branches");
-  assert.ok(
-    adminBranch > statusRead,
-    "the admin redirect must run after the profile read, or admins never see /onboarding",
-  );
+  // The admin portal is never gated on user onboarding (01 §1.4): an admin signs
+  // in to the console, and becomes a member by switching to user mode.
   const adminArm = postLogin.slice(adminBranch, postLogin.indexOf("redirect(explicitNext ?? \"/admin\")"));
-  assert.match(
-    adminArm,
-    /if \(needsOnboarding\) \{[\s\S]*?redirect\([\s\S]*?"\/onboarding"\)/,
-    "an admin with no birth date on file must be sent to /onboarding before the console",
-  );
+  assert.doesNotMatch(adminArm, /"\/onboarding"/, "an admin is not marched through onboarding at sign-in");
+  // ...and user mode lands on /dashboard, whose gate sends a non-member there.
+  const gate = read("src/lib/onboarding-gate.ts");
+  assert.match(gate, /const USER_MODE_HOMES = new Set\(\["\/dashboard", "\/people"\]\);/);
 
-  // Merchant accounts are the portal side and stay out of every click surface, but
-  // the deny-list is the point: an allow-list of 'attendee' silently excluded staff.
   assert.ok(
     !/role = 'attendee'/.test(repo),
     "no click roster may gate on role = 'attendee' - it locks admins out of being clicked",
   );
-  // All four rosters - discovery, the two post-event pulls, the prompt push - and
-  // nothing else. sendClickInner has no role check at all, so none of these may be
-  // stricter than the send path they feed. (There was a fifth, Stage 0.5's
-  // empty-pool "answered on view" mark; it was removed, see the roster-guard test.)
-  assert.equal(
-    (repo.match(/role <> 'merchant'/g) ?? []).length,
-    4,
-    "every click roster must share one social-graph definition",
-  );
+  assert.ok(!/role <> 'merchant'/.test(repo), "role never decides who is a member - member_onboarded_at does");
+  // All four rosters - discovery, the two post-event pulls, the prompt push -
+  // gate the people they offer on member status, and the send refuses a
+  // non-member on either side.
+  const rosters = [
+    ["getSuggestedPeople", "export async function getSuggestedPeople(", "\nfunction strongestPickSignal("],
+    ["getPostEventClickPrompts", "export async function getPostEventClickPrompts(", "export async function getPostEventClickPromptForEvent("],
+    ["getPostEventClickPromptForEvent", "export async function getPostEventClickPromptForEvent(", "export async function answerPostEventWindowForSession("],
+    ["notifyPostEventClickPrompts", "export async function notifyPostEventClickPrompts(", "\n}\n"],
+  ];
+  for (const [name, start, end] of rosters) {
+    const at = repo.indexOf(start);
+    const body = repo.slice(at, repo.indexOf(end, at + start.length));
+    assert.match(body, /\b(p|other)\.member_onboarded_at is not null/, `${name} must offer members only`);
+  }
+  const send = repo.slice(repo.indexOf("async function sendClickInner("), repo.indexOf("export async function createUserClickForSession("));
+  assert.match(send, /if \(!sender\?\.is_member\) \{\s*throw notEligibleError/);
+  assert.match(send, /if \(!clickedProfile\.is_member\) \{\s*throw notEligibleError/);
 });

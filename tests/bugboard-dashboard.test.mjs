@@ -29,14 +29,15 @@ test("an empty room gets no line, so the radar can fall back honestly", () => {
   assert.deepEqual(radar({ confirmed: 0 }), []);
 });
 
-test("below the privacy floor the line is a headcount, never what people are like", () => {
+test("below the privacy floor there is no line at all - no headcount either (09 §9, QA 14.8)", () => {
   assert.equal(FOMO_FLOOR, 3);
-  assert.deepEqual(radar({ confirmed: 1, topSharedInterest: hiking(1) }), ["1 person going so far"]);
-  assert.deepEqual(radar({ confirmed: 2, topSharedInterest: hiking(2) }), ["2 going so far"]);
+  assert.deepEqual(radar({ confirmed: 1, topSharedInterest: hiking(1) }), []);
+  assert.deepEqual(radar({ confirmed: 2, topSharedInterest: hiking(2) }), []);
 });
 
-test("from three going, the shared interest leads, with the verb agreeing", () => {
-  assert.deepEqual(radar({ confirmed: 3, topSharedInterest: hiking(1) }), ["1 person going also likes Hiking"]);
+test("from three going, the shared interest leads once two share it (09 §9 rule 2)", () => {
+  // One sharer is never a line - "1 person going also likes Hiking" points at someone.
+  assert.deepEqual(radar({ confirmed: 3, topSharedInterest: hiking(1) }), ["3 going so far"]);
   assert.deepEqual(radar({ confirmed: 5, topSharedInterest: hiking(2) }), ["2 going also like Hiking"]);
 });
 

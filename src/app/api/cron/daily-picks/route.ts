@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { generateDailyPicksForAll } from "@/lib/event-repository";
+import { runScheduledJob } from "@/lib/scheduled-jobs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,7 +24,10 @@ async function handle(request: Request) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
   try {
-    return NextResponse.json({ ok: true, ...(await generateDailyPicksForAll()) });
+    // The same entry the admin "Build today's suggestions now" button runs, under
+    // the same lock (03 §10), so the two can never run at once.
+    const run = await runScheduledJob("build_daily_picks");
+    return NextResponse.json(run.ran ? { ok: true, ...run.result } : { ok: true, skipped: run.reason });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Daily picks run failed.";
     return NextResponse.json({ error: message }, { status: 500 });

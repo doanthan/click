@@ -61,7 +61,7 @@ try {
 
   const mkProfile = async () => {
     const r = await db.query(
-      `insert into profiles (email, display_name, age) values ($1,$2,30) returning id::text`,
+      `insert into profiles (email, display_name, age, is_test) values ($1,$2,30,true) returning id::text`,
       [`gc-${randomUUID()}@test.local`, "Guest cap tester"],
     );
     return r.rows[0].id;

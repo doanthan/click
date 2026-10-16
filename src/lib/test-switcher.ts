@@ -114,6 +114,22 @@ function adminGrantHolds(cookieValue: string) {
 }
 
 /**
+ * The admin behind THIS request's QA unlock, or null when the unlock is the
+ * shared TEST_SWITCHER_KEY (a tester, not an admin) or there is none. The /dev
+ * test hooks need an admin (03 §10), and a QA persona session only shows who
+ * the admin is through this signed grant.
+ */
+export async function adminQaGrantEmail(): Promise<string | null> {
+  try {
+    const jar = await cookies();
+    const cookie = jar.get(TEST_SWITCHER_COOKIE)?.value ?? "";
+    return adminGrantHolds(cookie) ? readQaAdminGrant(cookie, process.env.AUTH_SECRET) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Pure request-cookie check shared by the page/actions and the production
  * proxy. Keeping the proxy on this exact predicate matters: a Server Component
  * `notFound()` can be streamed after the root layout has already committed an
