@@ -9013,12 +9013,11 @@ export async function getProfileCompletion(
     const profile = await ensureProfileForSession(session);
     const [fieldsResult, tagCountResult, quizResult] = await Promise.all([
       pool.query<{
-        photo_url: string | null;
-        gallery_count: number;
+        photo_status: PhotoStatus;
         suburb: string | null;
         bio: string | null;
       }>(
-        `select photo_url, cardinality(coalesce(gallery_photos, '{}')) as gallery_count, suburb, bio
+        `select photo_status, suburb, bio
          from profiles where id = $1::uuid`,
         [profile.id],
       ),
@@ -9050,17 +9049,19 @@ export async function getProfileCompletion(
     const quizComplete = quizResult.rows[0]?.done === true;
 
     const items: ProfileCompletionItem[] = [
-      // Counts the avatar OR any "More photos" gallery image - a user who filled
-      // the gallery but never set a primary avatar was still nagged to "add a
-      // photo" (bug board #182). The gallery upload also seeds the avatar going
-      // forward (api/upload/gallery), so this mainly clears already-affected profiles.
+      // Done only when the photo passed the photo check - photo_status, the same
+      // test the click send, discovery and the dashboard use (01 §2). Counting
+      // any stored URL ticked this for a member whose photo had stopped loading,
+      // so they were never told to add one while every click refused them (bug
+      // board #342). A gallery photo counts through here too: the gallery upload
+      // seeds the avatar and its check (api/upload/gallery, #182).
       {
         key: "photo",
         // Spell out WHY a photo matters: it's required to enter the "Click with
         // someone" pool (getSuggestedPeople filters out photoless profiles), so
         // the nudge doubles as the reminder a photoless user needs (#190).
         label: "Add a photo to Click with others",
-        done: !!row?.photo_url || (row?.gallery_count ?? 0) > 0,
+        done: row?.photo_status === "ok",
         href: "/profile/edit",
       },
       // Same reason as the `empty()` list above - /profile/edit is the only

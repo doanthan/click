@@ -108,6 +108,22 @@ export function photoStorageBases(env: Record<string, string | undefined> = proc
 }
 
 /**
+ * Every URL one stored object can be saved under: `url` itself plus the same
+ * key and query string under each other storage base. The photos copied from
+ * Supabase to R2 kept their keys (scripts/move-supabase-media-to-r2.mjs), so a
+ * page opened before the copy still sends the Supabase form of a photo its row
+ * now holds as R2. A delete that matched only the exact form would leave the
+ * row alone and still remove the key from both backends - a row pointing at
+ * nothing. A URL under no storage base comes back alone.
+ */
+export function sameObjectUrls(url: string, bases = photoStorageBases()): string[] {
+  const base = bases.find((candidate) => url.startsWith(candidate));
+  if (!base) return [url];
+  const rest = url.slice(base.length);
+  return [url, ...bases.filter((other) => other !== base).map((other) => `${other}${rest}`)];
+}
+
+/**
  * The object key when `url` is one of this member's OWN stored photos - their
  * avatar (`<id>.jpg`) or a gallery photo (`gallery/<id>/...`) - else null. Only
  * such a URL is ever fetched: anything else a profile holds is not a photo they

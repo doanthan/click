@@ -26,7 +26,7 @@ import {
 import { getPostgresPool } from "@/lib/postgres";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 import { recordProfilePhotoCheck } from "@/lib/event-repository";
-import { photoFailureMessage, verifyPhotoUrl, type PhotoStatus } from "@/lib/photo-verify";
+import { photoFailureMessage, sameObjectUrls, verifyPhotoUrl, type PhotoStatus } from "@/lib/photo-verify";
 
 const ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024; // 5 MB
@@ -199,14 +199,22 @@ export async function DELETE(request: Request) {
 
   try {
     const pool = getPostgresPool()!;
+    // Every stored form of the photo (Supabase or R2 - the copy kept the key),
+    // because the object goes from both backends below whichever form came in.
+    const forms = sameObjectUrls(url);
     const updated = await pool.query<{ gallery_photos: string[] }>(
       `
         update profiles
-        set gallery_photos = array_remove(gallery_photos, $2), updated_at = now()
+        set gallery_photos = array(
+              select photo from unnest(gallery_photos) with ordinality as g(photo, n)
+               where photo is null or photo <> all($2::text[])
+               order by n
+            ),
+            updated_at = now()
         where id = $1::uuid
         returning gallery_photos
       `,
-      [who.profileId, url],
+      [who.profileId, forms],
     );
 
     // If the removed photo was also serving as the avatar (seeded from the
@@ -221,8 +229,8 @@ export async function DELETE(request: Request) {
        set photo_url = gallery_photos[1],
            photo_status = case when gallery_photos[1] is null then 'none' else 'pending' end,
            updated_at = now()
-       where id = $1::uuid and photo_url = $2`,
-      [who.profileId, url],
+       where id = $1::uuid and photo_url = any($2::text[])`,
+      [who.profileId, forms],
     );
     const mainPhoto = moved.rowCount ? await checkMainPhoto(who.profileId) : undefined;
 

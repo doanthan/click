@@ -44,6 +44,7 @@ import {
   uploadEventImageFromBuffer,
 } from "@/lib/event-image-storage";
 import { getProfileStatus, type MerchantProfileRow } from "@/lib/event-repository";
+import { sameObjectUrls } from "@/lib/photo-verify";
 import { getPostgresPool } from "@/lib/postgres";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 
@@ -192,9 +193,13 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: "Database unavailable." }, { status: 503 });
   }
   try {
+    // Any stored form of the same key counts (Supabase or R2 - the copy kept the
+    // key): an editor opened before the copy sends the Supabase form of a photo
+    // the event now holds as R2, and the delete below clears both backends.
+    const forms = sameObjectUrls(url);
     const inUse = await pool.query(
-      `select 1 from events where image_url = $1 or $1 = any(image_urls) limit 1`,
-      [url],
+      `select 1 from events where image_url = any($1::text[]) or image_urls && $1::text[] limit 1`,
+      [forms],
     );
     if (inUse.rowCount) {
       // Not an error: the merchant removed a photo the event still carries, and

@@ -283,3 +283,15 @@ test("every surface gates on photo_status = 'ok': pool, picks read, who-was-ther
   assert.match(enforce, /before insert on clicks/);
   assert.match(enforce, /before insert on mutual_clicks/);
 });
+
+test("the setup list's photo step is done only by a passing photo, not a stored URL (bug board #342)", () => {
+  const body = code(
+    repo.slice(
+      repo.indexOf("export async function getProfileCompletion"),
+      repo.indexOf("export async function getApprovedMerchantForSession"),
+    ),
+  );
+  assert.match(body, /select photo_status, suburb, bio\s+from profiles/);
+  assert.match(body, /done: row\?\.photo_status === "ok",/);
+  assert.doesNotMatch(body, /row\?\.photo_url|gallery_count/);
+});
