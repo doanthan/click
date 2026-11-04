@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { isBusinessType } from "@/lib/business-type";
 import {
+  ensureMerchantConnectAccount,
   getApprovedMerchantForSession,
   setMerchantBusinessType,
-  setMerchantConnectAccountId,
 } from "@/lib/event-repository";
 import {
   createAccountOnboardingLink,
@@ -102,13 +102,13 @@ export async function POST(request: Request) {
         }
         businessType = await setMerchantBusinessType(merchant.id, picked);
       }
-      accountId = await createConnectedAccount({
-        contactEmail: merchant.contact_email,
-        businessName: merchant.business_name,
-        businessType,
-        country: "AU",
-      });
-      await setMerchantConnectAccountId(merchant.id, accountId);
+      // Created at most once: the merchant row is locked across the Stripe call,
+      // so a double tap waits here and comes back with the first tap's account
+      // (fix 3). The prefill - this businessType included - is read under that
+      // lock, after the save above.
+      accountId = await ensureMerchantConnectAccount(merchant.id, (details, attemptId) =>
+        createConnectedAccount(details, { merchantProfileId: merchant.id, attemptId }),
+      );
     }
 
     const appUrl = getAppUrl();

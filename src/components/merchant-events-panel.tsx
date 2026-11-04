@@ -291,6 +291,9 @@ export function MerchantEventsPanel({
                   {event.title}
                 </p>
                 <p className="mt-0.5 truncate text-xs text-[color:var(--slate)]">
+                  {event.seriesPosition && event.seriesCount && event.seriesCount > 1
+                    ? `Repeats - ${event.seriesPosition} of ${event.seriesCount} · `
+                    : ""}
                   {event.locationName}, {event.suburb} · {formatPriceLabel(event.priceCents)} ·{" "}
                   {event.category}
                 </p>
@@ -300,8 +303,17 @@ export function MerchantEventsPanel({
                 {formatWhen(event.startsAt, event.endsAt)}
               </p>
 
-              {/* CapacityMeter is the ONE way capacity renders. */}
-              <CapacityMeter confirmed={event.confirmed} cap={event.capacity} />
+              {/* CapacityMeter is the ONE way capacity renders. Once an event
+                  has run, the door count says how many actually came (fix
+                  30), so attendance is visible without opening each event. */}
+              <div className="min-w-0">
+                <CapacityMeter confirmed={event.confirmed} cap={event.capacity} />
+                {merchantEventDisplayStatus(event) === "ended" && event.doorTotal > 0 ? (
+                  <p className="mt-1 text-xs font-medium text-[color:var(--slate)]">
+                    {event.checkedIn} of {event.doorTotal} checked in
+                  </p>
+                ) : null}
+              </div>
 
               {/* Below md the five cells stack and the header strip that names
                   them is hidden, so this rendered as a naked digit between a

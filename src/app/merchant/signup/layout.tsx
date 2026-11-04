@@ -54,31 +54,38 @@ export default async function MerchantSignupLayout({
   return (
     <main className="min-h-screen bg-[color:var(--champagne)] px-4 pb-12 pt-2 text-[color:var(--ink)] sm:px-6">
       <section className="mx-auto max-w-5xl">
-        <span className="eyebrow">Become a host</span>
-        <h1 className="font-display mt-3 text-4xl font-semibold leading-tight tracking-[-0.025em] sm:text-5xl">
-          Tell us about <span className="text-[color:var(--purple)]">you</span>.
-        </h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-[color:var(--slate)]">
-          {/* A rejected host resubmitting goes back to review; everyone else in
-              the pilot is a host the moment they send this
-              (registerMerchantWizardSubmit). */}
-          {isRejectedResubmit
-            ? "Your application goes back to admin review and unlocks the portal once approved."
-            : "A few quick answers and you're in - build your first event straight away. Our team gives it a quick look before it goes live."}
-        </p>
+        {/* Signed in only. A logged-out visitor gets page.tsx's pitch first and
+            the sign-in after it, so they hear the deal before being asked who
+            they are - this header used to open the logged-out page too. */}
+        {session?.user ? (
+          <>
+            <span className="eyebrow">Become a host</span>
+            <h1 className="font-display mt-3 text-4xl font-semibold leading-tight tracking-[-0.025em] sm:text-5xl">
+              Tell us about <span className="text-[color:var(--purple)]">you</span>.
+            </h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-[color:var(--slate)]">
+              {/* A rejected host resubmitting goes back to review; everyone else in
+                  the pilot is a host the moment they send this
+                  (registerMerchantWizardSubmit). */}
+              {isRejectedResubmit
+                ? "Your application goes back to admin review and unlocks the portal once approved."
+                : "A few quick answers and you're in - build your first event straight away. Our team gives it a quick look before it goes live."}
+            </p>
 
-        <div className="mt-4 flex max-w-2xl items-start gap-3 rounded-xl border border-[color:var(--line)] bg-[color:var(--lavender-100)] px-4 py-3 text-sm leading-6 text-[color:var(--ink)]">
-          <span aria-hidden="true" className="mt-0.5 text-base leading-none text-[color:var(--purple)]">ⓘ</span>
-          <span>
-            {/* {" "} is load-bearing: JSX drops the leading space of the text node
-                after </span>, so this rendered as "Sydneyfirst." in production. */}
-            We&apos;re piloting in <span className="font-semibold">Sydney</span>{" "}
-            first. Outside Sydney?
-            Sign up anyway - we&apos;ll add you to the waitlist and email you when we launch in your city.
-          </span>
-        </div>
+            <div className="mt-4 flex max-w-2xl items-start gap-3 rounded-xl border border-[color:var(--line)] bg-[color:var(--lavender-100)] px-4 py-3 text-sm leading-6 text-[color:var(--ink)]">
+              <span aria-hidden="true" className="mt-0.5 text-base leading-none text-[color:var(--purple)]">ⓘ</span>
+              <span>
+                {/* {" "} is load-bearing: JSX drops the leading space of the text node
+                    after </span>, so this rendered as "Sydneyfirst." in production. */}
+                We&apos;re piloting in <span className="font-semibold">Sydney</span>{" "}
+                first. Outside Sydney?
+                Sign up anyway - we&apos;ll add you to the waitlist and email you when we launch in your city.
+              </span>
+            </div>
+          </>
+        ) : null}
 
-        <div className="mt-5">
+        <div className={session?.user ? "mt-5" : "mt-4"}>
           <MerchantSignupProvider
             sessionEmail={session?.user?.email ?? ""}
             sessionName={session?.user?.name ?? ""}

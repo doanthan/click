@@ -58,13 +58,33 @@ export async function GET(request: Request) {
   const formatSydney = (iso: string) =>
     sydneyStamp.format(new Date(iso)).replace(", ", " ");
 
-  const header = ["Event", "Date (Australia/Sydney)", "Status", "Amount (AUD)"].join(",");
+  // Fix 24: the split after refunds, so the file reconciles with the Finances
+  // tiles - Ticket - Commission = Your net, per row. Settled charges only.
+  const dollars = (cents: number) => (cents / 100).toFixed(2);
+  const header = [
+    "Event",
+    "Event date (Australia/Sydney)",
+    "Booked (Australia/Sydney)",
+    "Status",
+    "Guest paid (AUD)",
+    "Ticket, after refunds (AUD)",
+    "Booking fee, after refunds (AUD)",
+    "Click commission, after refunds (AUD)",
+    "Your net, after refunds (AUD)",
+    "Refunded (AUD)",
+  ].join(",");
   const lines = rows.map((r) =>
     [
       csvEscape(r.eventTitle),
+      csvEscape(formatSydney(r.eventStartsAt)),
       csvEscape(formatSydney(r.createdAt)),
       csvEscape(r.status),
-      csvEscape((r.amountCents / 100).toFixed(2)),
+      dollars(r.amountCents),
+      dollars(r.ticketCents),
+      dollars(r.bookingFeeCents),
+      dollars(r.commissionCents),
+      dollars(r.netCents),
+      dollars(r.refundedCents),
     ].join(","),
   );
   const csv = [header, ...lines].join("\n");

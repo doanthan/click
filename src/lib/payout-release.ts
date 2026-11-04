@@ -32,3 +32,34 @@ export function releasableCents(balance: {
   const owed = balance.availableCents + balance.pendingCents - balance.heldCents;
   return Math.max(0, Math.min(balance.availableCents, owed));
 }
+
+/**
+ * Where one event's money is on the host's timeline (fix 25), by the same rule
+ * releaseHeldPayouts pays out by. A booking is held until its event has been
+ * over PAYOUT_RELEASE_DELAY_HOURS - or, for a cancelled event, kept for its
+ * refunds - but never past PAYOUT_MAX_HOLD_DAYS after it was made. So the
+ * event's money is all out once its NEWEST booking is (Codex review: the
+ * status used to ignore the 80-day cap and showed cancelled events held for
+ * ever).
+ *
+ * Per EVENT, not per bank payout: a payout is drawn from the whole balance and
+ * can cover several events or part of one, so "paid to your bank" is shown per
+ * payout instead.
+ *
+ *   held             - not over (plus the delay) yet
+ *   held_for_refunds - cancelled, so kept for its refunds
+ *   released         - the next payout run sends it
+ */
+export function eventMoneyState(input: {
+  endsAt: Date;
+  cancelled: boolean;
+  newestBookingAt: Date;
+  now?: Date;
+}): { state: "held" | "released" | "held_for_refunds"; releaseAt: Date } {
+  const capAt = new Date(input.newestBookingAt.getTime() + PAYOUT_MAX_HOLD_DAYS * 86_400_000);
+  const afterEvent = new Date(input.endsAt.getTime() + PAYOUT_RELEASE_DELAY_HOURS * 3_600_000);
+  const releaseAt = input.cancelled || capAt < afterEvent ? capAt : afterEvent;
+  const now = input.now ?? new Date();
+  if (now >= releaseAt) return { state: "released", releaseAt };
+  return { state: input.cancelled ? "held_for_refunds" : "held", releaseAt };
+}

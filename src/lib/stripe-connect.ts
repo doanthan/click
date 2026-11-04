@@ -1,30 +1,50 @@
 import type Stripe from "stripe";
 import { getStripeClient } from "./stripe";
+import type { StoredRequirement } from "./stripe-requirements";
 
 // Stripe Connect helpers for the post-approval merchant onboarding flow
 // (/merchant/onboarding). Sibling to src/lib/stripe.ts - reuses its singleton
 // client (callers build return/refresh URLs with getAppUrl()).
 //
 // We use the Accounts v2 API (POST /v2/core/accounts) with `controller`-style
-// responsibilities rather than the legacy `type: 'express'` accounts. The shape
-// matches Stripe's marketplace quickstart: the platform is merchant of record,
-// pays Stripe fees, is liable for losses (fees_collector/losses_collector =
-// 'application'), and connected accounts get a lightweight Express dashboard.
-// Funds move later via destination charges (out of scope for this task) - here
-// we only create the account and drive Stripe's hosted onboarding so the
-// merchant submits their bank details + KYC.
+// responsibilities rather than the legacy `type: 'express'` accounts. The
+// platform pays Stripe fees and is liable for losses (fees_collector /
+// losses_collector = 'application'), and connected accounts get a lightweight
+// Express dashboard. Funds move via destination charges with `on_behalf_of`
+// (the checkout route), which makes the HOST the merchant of record: their name
+// is on the buyer's card statement. Click still carries fees, refunds and
+// chargebacks through the platform balance. Here we only create the account and
+// drive Stripe's hosted onboarding so the merchant submits their bank details +
+// KYC.
 
 export type ConnectAccountStatus = {
   chargesEnabled: boolean;
   payoutsEnabled: boolean;
   detailsSubmitted: boolean;
+  // What Stripe still wants and by when (fix 4) - stored on merchant_profiles
+  // so the payouts page can say it in plain words.
+  requirements: StoredRequirement[];
+  requirementsDueAt: string | null;
 };
 
+// Everything signup already collected, so Stripe's form does not ask again
+// (fix 5). Only business-level fields: the street address is the venue's, never
+// a sole trader's home address, so it is only sent for a company.
 export type MerchantForConnect = {
   contactEmail: string;
   businessName: string;
+  tradingName?: string | null;
   businessType?: string | null;
   country?: string | null;
+  phone?: string | null;
+  websiteUrl?: string | null;
+  abn?: string | null;
+  acn?: string | null;
+  addressStreet?: string | null;
+  addressSuburb?: string | null;
+  addressState?: string | null;
+  addressPostcode?: string | null;
+  categories?: string[];
 };
 
 export function isStripeConnectConfigured(): boolean {
@@ -67,12 +87,100 @@ export function calculateApplicationFee(
   return Math.floor((priceCents * bps) / 10000);
 }
 
-// merchant_profiles.business_type → v2 identity.entity_type. AU sole traders
-// onboard as individuals; everything else as a company entity.
+// merchant_profiles.business_type → v2 identity.entity_type. Only the two we
+// can map without guessing: a sole trader onboards as an individual, a company
+// as a company. A partnership or a trust is left unset so Stripe's own form
+// asks - sending either as "company" put them through a company flow asking
+// for a registered company they may not have (fix 6).
 function toEntityType(
   businessType: string | null | undefined,
-): "company" | "individual" {
-  return businessType === "sole_trader" ? "individual" : "company";
+): "company" | "individual" | undefined {
+  if (businessType === "sole_trader") return "individual";
+  if (businessType === "company") return "company";
+  return undefined;
+}
+
+// AU national number (normalizeAuPhone's output) → E.164, which is what Stripe
+// takes. 13/1300/1800 lines and bare local numbers have no E.164 form we can
+// be sure of, so they are left for Stripe's form.
+function toE164(phone: string | null | undefined): string | undefined {
+  const digits = (phone ?? "").replace(/[^\d]/g, "");
+  if (/^0[23478]\d{8}$/.test(digits)) return `+61${digits.slice(1)}`;
+  if (/^61[23478]\d{8}$/.test(digits)) return `+${digits}`;
+  return undefined;
+}
+
+function digitsOfLength(value: string | null | undefined, length: number): string | undefined {
+  const digits = (value ?? "").replace(/[^\d]/g, "");
+  return digits.length === length ? digits : undefined;
+}
+
+function httpsUrl(value: string | null | undefined): string | undefined {
+  if (!value) return undefined;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && url.hostname.includes(".") ? url.toString() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+type AccountCreateParams = Stripe.V2.Core.AccountCreateParams;
+
+// The prefill half of the create call. Every field is optional and checked
+// here, so a value Stripe would refuse is dropped rather than sent.
+function prefillFor(merchant: MerchantForConnect): {
+  identity: NonNullable<AccountCreateParams["identity"]>;
+  profile: NonNullable<NonNullable<AccountCreateParams["defaults"]>["profile"]>;
+} {
+  const entityType = toEntityType(merchant.businessType);
+  const phone = toE164(merchant.phone);
+  const identity: NonNullable<AccountCreateParams["identity"]> = {
+    country: (merchant.country ?? "AU").toUpperCase(),
+    ...(entityType ? { entity_type: entityType } : {}),
+  };
+  if (entityType === "company") {
+    const abn = digitsOfLength(merchant.abn, 11);
+    const acn = digitsOfLength(merchant.acn, 9);
+    const idNumbers = [
+      ...(abn ? [{ type: "au_abn" as const, value: abn }] : []),
+      ...(acn ? [{ type: "au_acn" as const, value: acn }] : []),
+    ];
+    const hasAddress = merchant.addressStreet && merchant.addressPostcode;
+    identity.business_details = {
+      // No registered_name: signup asks for "Business or host name" and says
+      // your own name works, so it is not a legal name (fix 6). Stripe asks.
+      ...(phone ? { phone } : {}),
+      ...(idNumbers.length > 0 ? { id_numbers: idNumbers } : {}),
+      ...(hasAddress
+        ? {
+            address: {
+              country: identity.country!,
+              line1: merchant.addressStreet!,
+              city: merchant.addressSuburb ?? undefined,
+              state: merchant.addressState ?? undefined,
+              postal_code: merchant.addressPostcode!,
+            },
+          }
+        : {}),
+    };
+  } else if (entityType === "individual" && phone) {
+    identity.individual = { phone };
+  }
+
+  const categories = (merchant.categories ?? []).filter(Boolean);
+  const website = httpsUrl(merchant.websiteUrl);
+  return {
+    identity,
+    profile: {
+      doing_business_as: (merchant.tradingName || merchant.businessName).trim(),
+      ...(website ? { business_url: website } : {}),
+      product_description:
+        categories.length > 0
+          ? `Tickets to social events hosted on Click (${categories.join(", ")}).`
+          : "Tickets to social events hosted on Click.",
+    },
+  };
 }
 
 function requireClient(): Stripe {
@@ -83,13 +191,25 @@ function requireClient(): Stripe {
   return stripe;
 }
 
-// Creates a connected account and returns its id. Prefills what we already
-// collected during merchant signup so the hosted flow has less to ask for.
+// Creates a connected account. Prefills what signup already collected so the
+// hosted flow has less to ask for (fix 5).
+//
+// One account per host (fix 3): ensureMerchantConnectAccount holds the merchant
+// row lock across this call, so a second tap waits and then finds the saved id.
+// The idempotency key covers the other gap - Stripe created the account and our
+// save then failed. It is keyed on the saved attempt, whose details are reused
+// as-is on the retry, so the retry sends the same body under the same key and
+// Stripe returns the same account.
+//
+// `payoutsHeld` reports whether manual payouts took. It is no longer swallowed:
+// the caller records it, and a paid event cannot publish until it has (fix 3b).
 export async function createConnectedAccount(
   merchant: MerchantForConnect,
-): Promise<string> {
+  options: { merchantProfileId: string; attemptId: string },
+): Promise<{ accountId: string; payoutsHeld: boolean }> {
   const stripe = requireClient();
-  const account = await stripe.v2.core.accounts.create({
+  const { identity, profile } = prefillFor(merchant);
+  const params: AccountCreateParams = {
     dashboard: "express",
     contact_email: merchant.contactEmail,
     display_name: merchant.businessName,
@@ -98,15 +218,13 @@ export async function createConnectedAccount(
         fees_collector: "application",
         losses_collector: "application",
       },
+      profile,
     },
-    identity: {
-      country: (merchant.country ?? "AU").toUpperCase(),
-      entity_type: toEntityType(merchant.businessType),
-      business_details: { registered_name: merchant.businessName },
-    },
+    identity,
     configuration: {
       // card_payments: accept event payments. stripe_transfers: receive the
-      // platform's destination transfers / payouts to their bank.
+      // platform's destination transfers. Requesting either also requests
+      // stripe_balance.payouts, the capability that pays out to their bank.
       merchant: { capabilities: { card_payments: { requested: true } } },
       recipient: {
         capabilities: { stripe_balance: { stripe_transfers: { requested: true } } },
@@ -118,14 +236,41 @@ export async function createConnectedAccount(
       "identity",
       "requirements",
     ],
-    metadata: { app: "click" },
-  });
-  // Best-effort: the account must still be saved if this fails, and the
-  // release-payouts cron sets it on its next run anyway.
-  await holdPayouts(account.id).catch((error) => {
-    console.warn("[stripe-connect] could not set manual payouts:", error);
-  });
-  return account.id;
+    // The merchant id makes any orphan traceable from the Stripe dashboard.
+    metadata: { app: "click", merchant_profile_id: options.merchantProfileId },
+  };
+  const key = `click-connect-${options.merchantProfileId}-${options.attemptId}`;
+
+  let account: Stripe.V2.Core.Account;
+  try {
+    account = await stripe.v2.core.accounts.create(params, { idempotencyKey: key });
+  } catch (error) {
+    // A prefilled value Stripe refuses must not stop a host connecting at all.
+    // Retry once with the bare minimum - a 400 created nothing, and the bare
+    // body gets its own key. Not an idempotency refusal, though: that means
+    // this key already created something.
+    const refusal = error as { statusCode?: number; type?: string };
+    if (refusal?.statusCode !== 400 || refusal.type === "StripeIdempotencyError") throw error;
+    console.warn("[stripe-connect] prefilled account refused, retrying bare:", error);
+    const bare: AccountCreateParams = {
+      ...params,
+      identity: {
+        country: identity.country,
+        ...(identity.entity_type ? { entity_type: identity.entity_type } : {}),
+      },
+      defaults: { responsibilities: params.defaults!.responsibilities },
+    };
+    account = await stripe.v2.core.accounts.create(bare, { idempotencyKey: `${key}-bare` });
+  }
+
+  const payoutsHeld = await holdPayouts(account.id).then(
+    () => true,
+    (error) => {
+      console.warn("[stripe-connect] could not set manual payouts:", error);
+      return false;
+    },
+  );
+  return { accountId: account.id, payoutsHeld };
 }
 
 // Hosts are paid after their event, so their payouts are manual: Stripe keeps
@@ -162,19 +307,25 @@ export async function createAccountOnboardingLink(
   return link.url;
 }
 
-// Maps a retrieved v2 account to our three tracked booleans. Stripe remains the
-// source of truth; merchant_profiles just caches this for gating + UI.
+// Maps a retrieved v2 account to what we cache. Stripe remains the source of
+// truth; merchant_profiles just caches this for gating + UI.
 export function mapAccountStatus(
   account: Stripe.V2.Core.Account,
 ): ConnectAccountStatus {
   const merchant = account.configuration?.merchant;
   const recipient = account.configuration?.recipient;
+  // Taking payments on Click is a destination charge, which needs BOTH the
+  // card_payments capability and the transfers that move the host's share to
+  // them. card_payments alone let a checkout start that Stripe then refused.
   const chargesEnabled =
-    merchant?.capabilities?.card_payments?.status === "active";
-  const stripeBalance = recipient?.capabilities?.stripe_balance;
+    merchant?.capabilities?.card_payments?.status === "active" &&
+    recipient?.capabilities?.stripe_balance?.stripe_transfers?.status === "active";
+  // Paying out to their bank is stripe_balance.payouts - not stripe_transfers,
+  // which only means money can arrive in their Stripe balance (fix 8). Stripe
+  // requests it on both configurations and calls the two identical.
   const payoutsEnabled =
-    stripeBalance?.payouts?.status === "active" ||
-    stripeBalance?.stripe_transfers?.status === "active";
+    merchant?.capabilities?.stripe_balance?.payouts?.status === "active" ||
+    recipient?.capabilities?.stripe_balance?.payouts?.status === "active";
   // No outstanding requirement is waiting on the merchant → they've submitted
   // everything Stripe currently needs. Fall back to capability state when the
   // requirements list isn't expanded.
@@ -192,7 +343,18 @@ export function mapAccountStatus(
   );
   const detailsSubmitted =
     entries.length === 0 ? chargesEnabled || payoutsEnabled : !awaitingUser;
-  return { chargesEnabled, payoutsEnabled, detailsSubmitted };
+  const requirements: StoredRequirement[] = entries.map((entry) => ({
+    description: entry.description,
+    awaiting: entry.awaiting_action_from,
+    status: entry.minimum_deadline?.status ?? "currently_due",
+    errors: (entry.errors ?? []).map((error) => error.description).filter(Boolean),
+  }));
+  // Only a deadline the host can act on: a date on something only Stripe is
+  // checking, or on something not due yet, is not theirs to meet.
+  const requirementsDueAt = awaitingUser
+    ? account.requirements?.summary?.minimum_deadline?.time ?? null
+    : null;
+  return { chargesEnabled, payoutsEnabled, detailsSubmitted, requirements, requirementsDueAt };
 }
 
 // Single-use URL that drops the merchant into their Express dashboard so they

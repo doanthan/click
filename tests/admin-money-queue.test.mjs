@@ -104,7 +104,9 @@ test("the sidebar counts money waiting on a person, not the size of the ledger",
   const body = repo.slice(start, end === -1 ? undefined : end);
 
   assert.match(body, /refund_failures where resolution = 'pending'/);
-  assert.match(body, /payment_disputes where is_open/);
+  // Open disputes, and lost ones whose amount is still held from the host's
+  // payouts - both wait on an admin (database/078).
+  assert.match(body, /payment_disputes\s*where is_open or \(status = 'lost' and reserve_released_at is null\)/);
 });
 
 test("disputes are mirrored to a table, not only appended to the audit log", () => {

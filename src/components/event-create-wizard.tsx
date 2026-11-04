@@ -31,6 +31,7 @@ import {
   EVENT_CREATE_STORAGE_KEY,
 } from "@/lib/event-create-storage";
 import { CAPACITY_PATTERN, PRICE_PATTERN, sanitizeAmount } from "@/lib/amounts";
+import { ticketPriceError, ticketSplit } from "@/lib/ticket-price";
 import { useFormDraft } from "@/lib/use-form-draft";
 import { DURATION_OPTIONS } from "@/lib/event-duration";
 import { scopedKey, useAccountScope } from "@/lib/account-scope";
@@ -205,6 +206,10 @@ function validateStep(step: StepIndex, v: WizardValues): FieldErrors {
     // handler and the validator can be tested together - tests/amounts.test.mjs.
     if (v.price.trim() && !PRICE_PATTERN.test(v.price.trim())) {
       errors.price = "Price must be a dollar amount, e.g. 12.50.";
+    } else {
+      // Decision D3 - the server holds the same line (ticketPriceError).
+      const priceError = ticketPriceError(Math.round((Number.parseFloat(v.price) || 0) * 100));
+      if (priceError) errors.price = priceError;
     }
   }
 
@@ -371,7 +376,9 @@ function computeOccurrenceDates(
  * it: an arm is only valid for the exact start / frequency / count that
  * produced it, and any edit to those means a different set of occurrences.
  */
-type RetryArm = { scheduleKey: string; dates: string[] };
+// seriesId (fix 20): the id every date of one repeating event shares, kept on
+// the arm so the dates a retry creates join the same series as the first ones.
+type RetryArm = { scheduleKey: string; dates: string[]; seriesId?: string };
 
 const RETRY_ARM_KEY = "click:event-create-retry:v1";
 const RETRY_ARM_VERSION = 1;
@@ -400,6 +407,7 @@ function useRetryArm() {
           v?: number;
           scheduleKey?: string;
           dates?: string[];
+          seriesId?: unknown;
         };
         if (
           parsed.v !== RETRY_ARM_VERSION ||
@@ -411,7 +419,11 @@ function useRetryArm() {
           window.localStorage.removeItem(key);
           return;
         }
-        setRetryArm({ scheduleKey: parsed.scheduleKey, dates: parsed.dates });
+        setRetryArm({
+          scheduleKey: parsed.scheduleKey,
+          dates: parsed.dates,
+          ...(typeof parsed.seriesId === "string" ? { seriesId: parsed.seriesId } : {}),
+        });
       } catch {
         // Private mode, quota, a corrupt value. Losing the arm degrades to "the
         // retry re-creates everything", which is exactly where we started, so it
@@ -480,6 +492,12 @@ type WizardContextValue = {
   // "you'll receive $X" - a merchant should never learn the take rate from
   // their first payout.
   platformFeeBps: number;
+  // The buyer booking fee (system_settings.booking_fee_bps), so "Guests pay"
+  // is what checkout charges (fix 13). 0 while the fee is off (decision D1).
+  bookingFeeBps: number;
+  // The street address the host gave at signup, offered on the Location step
+  // so a first event isn't typed twice (fix 15). Null when signup has none.
+  venueAddress: { street: string; suburb: string; state: string; postcode: string } | null;
   stepError: string | null;
   setStepError: Dispatch<SetStateAction<string | null>>;
   // Per-field validation messages for the step currently on screen. Each step
@@ -549,6 +567,9 @@ export function EventCreateProvider({
   payoutsEnabled = false,
   autoApproveEvents = false,
   platformFeeBps = 0,
+  bookingFeeBps = 0,
+  venueAddress = null,
+  defaultHostName = "",
   children,
 }: {
   categoryOptions: string[];
@@ -559,13 +580,20 @@ export function EventCreateProvider({
   payoutsEnabled?: boolean;
   autoApproveEvents?: boolean;
   platformFeeBps?: number;
+  bookingFeeBps?: number;
+  venueAddress?: { street: string; suburb: string; state: string; postcode: string } | null;
+  // Fix 14: the business (or trading) name, so Group / host name starts filled.
+  defaultHostName?: string;
   children: React.ReactNode;
 }) {
   // NO category seed. This used to be `categoryOptions[0]`, and the options come
   // back `order by name asc`, so every event a merchant didn't think to change
   // published as "Career" - with no Category row on Review to catch it either.
   // Empty + required + a placeholder option is the whole fix.
-  const [values, setValues] = useState<WizardValues>(() => ({ ...initial }));
+  const [values, setValues] = useState<WizardValues>(() => ({
+    ...initial,
+    groupName: defaultHostName,
+  }));
   const [stepError, setStepError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [submitting, setSubmitting] = useState(false);
@@ -590,7 +618,7 @@ export function EventCreateProvider({
   // deployed duplicate button has no `v`, so the hook removes it and the wizard
   // opens empty: discarding it whole beats half-applying a shape we cannot
   // verify into a form the merchant is about to publish for money.
-  const { restored, clear: clearDraft } = useFormDraft<WizardValues>({
+  const { hydrated: draftHydrated, restored, clear: clearLocalDraft } = useFormDraft<WizardValues>({
     key: EVENT_CREATE_STORAGE_KEY,
     version: EVENT_CREATE_DRAFT_VERSION,
     // localStorage, not session: a half-built event is 15+ fields of work and
@@ -604,12 +632,83 @@ export function EventCreateProvider({
     apply: (saved) => setValues((v) => ({ ...v, ...saved })),
   });
 
+  // Fix 19: the draft also lives on the server, so a half-built event follows
+  // the host from a laptop to a phone. The local copy stays the fast, per-device
+  // one. On open, a LOCAL draft wins - it is this device's newest work, and a
+  // "Duplicate event" seed arrives that way - and the server's is applied only
+  // when there is none and the host has not started typing. After that every
+  // change is written through, debounced, and a submit or "Start over" deletes
+  // both copies.
+  const [serverRestored, setServerRestored] = useState(false);
+  const serverDraftPhase = useRef<"waiting" | "loading" | "ready">("waiting");
+  const pristineValues = useMemo(
+    () => JSON.stringify({ ...initial, groupName: defaultHostName }),
+    [defaultHostName],
+  );
+  const latestValues = useRef(values);
+  useEffect(() => {
+    latestValues.current = values;
+  });
+  const lastServerWrite = useRef<string | null>(null);
+  useEffect(() => {
+    if (!draftHydrated || serverDraftPhase.current !== "waiting") return;
+    serverDraftPhase.current = "loading";
+    if (restored) {
+      serverDraftPhase.current = "ready";
+      return;
+    }
+    fetch("/api/merchant/event-draft")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload: { draft?: { v?: unknown; values?: unknown } | null } | null) => {
+        const saved = payload?.draft;
+        if (
+          saved &&
+          saved.v === EVENT_CREATE_DRAFT_VERSION &&
+          saved.values &&
+          typeof saved.values === "object" &&
+          JSON.stringify(latestValues.current) === pristineValues
+        ) {
+          const next = { ...latestValues.current, ...(saved.values as Partial<WizardValues>) };
+          lastServerWrite.current = JSON.stringify(next);
+          setValues(next);
+          setServerRestored(true);
+        }
+      })
+      .catch(() => {
+        // Offline or signed out mid-load: the local draft still protects them.
+      })
+      .finally(() => {
+        serverDraftPhase.current = "ready";
+      });
+  }, [draftHydrated, restored, pristineValues]);
+  useEffect(() => {
+    if (serverDraftPhase.current !== "ready") return;
+    const serialised = JSON.stringify(values);
+    if (serialised === pristineValues || serialised === lastServerWrite.current) return;
+    const timer = window.setTimeout(() => {
+      lastServerWrite.current = serialised;
+      void fetch("/api/merchant/event-draft", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ v: EVENT_CREATE_DRAFT_VERSION, values }),
+        keepalive: true,
+      }).catch(() => {});
+    }, 1500);
+    return () => window.clearTimeout(timer);
+  }, [values, pristineValues]);
+  const clearDraft = useCallback(() => {
+    clearLocalDraft();
+    // Recorded as written, so the same values are not saved straight back.
+    lastServerWrite.current = JSON.stringify(latestValues.current);
+    void fetch("/api/merchant/event-draft", { method: "DELETE", keepalive: true }).catch(() => {});
+  }, [clearLocalDraft]);
+
   // Counts "Start over" presses. Two jobs: it retires the restored-draft note
   // (the hook's own `restored` latches for the life of the mount and knows
   // nothing about the merchant throwing the draft away), and it sequences the
   // clear - see the effect below.
   const [discardCount, setDiscardCount] = useState(0);
-  const restoredDraft = restored && discardCount === 0;
+  const restoredDraft = (restored || serverRestored) && discardCount === 0;
 
   const set = <K extends keyof WizardValues>(key: K, value: WizardValues[K]) => {
     setValues((v) => ({ ...v, [key]: value }));
@@ -627,7 +726,7 @@ export function EventCreateProvider({
   // a ConfirmDialog in front of it. Only the in-memory reset happens here; the
   // storage clear is deferred one commit, below.
   const discardDraft = () => {
-    setValues({ ...initial });
+    setValues({ ...initial, groupName: defaultHostName });
     setFieldErrors({});
     setStepError(null);
     errorStepRef.current = null;
@@ -664,6 +763,8 @@ export function EventCreateProvider({
         payoutsEnabled,
         autoApproveEvents,
         platformFeeBps,
+        bookingFeeBps,
+        venueAddress,
         stepError,
         setStepError,
         fieldErrors,
@@ -947,6 +1048,15 @@ export function WizardShell({
       // occurrence is in flight. The order, the awaits and the one-POST-at-a-time
       // shape are unchanged - a fortnightly x26 event is still 26 serial
       // round-trips, it just stops looking like a hung button.
+      // One id for every date of a repeating event (fix 20), so the portal can
+      // tell four rows called "Trivia" apart and tie them together. A retry
+      // reuses the first attempt's id. A one-off gets none.
+      const seriesId =
+        values.recurrenceFreq === "none"
+          ? null
+          : (retryArm?.scheduleKey === scheduleKey ? retryArm.seriesId : undefined) ??
+            crypto.randomUUID();
+
       setProgress({ done: 0, total: startsAtList.length });
       for (let i = 0; i < startsAtList.length; i++) {
         const startsAt = startsAtList[i];
@@ -978,6 +1088,7 @@ export function WizardShell({
         // read a single cover; the server prefers imageUrls when both are set.
         if (values.images[0]) form.set("imageUrl", values.images[0]);
         if (values.imageAlt) form.set("imageAlt", values.imageAlt);
+        if (seriesId) form.set("seriesId", seriesId);
 
         const response = await fetch("/api/events", { method: "POST", body: form });
 
@@ -1046,7 +1157,11 @@ export function WizardShell({
         const reasons = Array.from(new Set(failures.map((f) => f.reason)));
         // Arm the retry with EXACTLY the dates that failed, so pressing the
         // button again cannot duplicate the ones that already published.
-        armRetry({ scheduleKey, dates: failures.map((f) => f.startsAt) });
+        armRetry({
+          scheduleKey,
+          dates: failures.map((f) => f.startsAt),
+          ...(seriesId ? { seriesId } : {}),
+        });
         setStepError(
           `${okCount} of ${startsAtList.length} dates were created and are safe on your events tab. These were not: ${dates}. ${reasons.join(" ")} The button below now retries only the missing dates.`,
         );
@@ -1362,6 +1477,10 @@ function TagPicker({
   invalid?: boolean;
 }) {
   const [query, setQuery] = useState("");
+  // Fix 16: once a category is picked, only its tags show - "Show all" is the
+  // way out. The cloud used to show the first eight of EVERY tag, the chosen
+  // category's merely sorted first, so most chips on a Comedy event were not.
+  const [showAllTags, setShowAllTags] = useState(false);
 
   const selected = useMemo(() => parseTags(value), [value]);
   const selectedKeys = useMemo(
@@ -1380,12 +1499,20 @@ function TagPicker({
   // All available (unselected) tags matching the search box - rendered as a
   // browsable, clickable chip cloud so merchants can discover existing tags
   // without having to guess search terms.
+  const categoryKey = category?.trim().toLowerCase() || "";
+  const categoryHasTags = useMemo(
+    () => Boolean(categoryKey) && options.some((opt) => opt.category?.toLowerCase() === categoryKey),
+    [options, categoryKey],
+  );
+  // A search always looks through everything; so does a category with no tags
+  // of its own, rather than offering an empty cloud.
+  const onlyCategory = categoryHasTags && !showAllTags && !query.trim();
   const browsable = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const categoryKey = category?.trim().toLowerCase();
     return options
       .filter((opt) => !selectedKeys.has(opt.label.toLowerCase()))
       .filter((opt) => (q ? opt.label.toLowerCase().includes(q) : true))
+      .filter((opt) => !onlyCategory || opt.category?.toLowerCase() === categoryKey)
       .map((opt, index) => ({ opt, index }))
       .sort((a, b) => {
         if (q || !categoryKey) return a.index - b.index;
@@ -1394,7 +1521,7 @@ function TagPicker({
         return Number(bMatches) - Number(aMatches) || a.index - b.index;
       })
       .map(({ opt }) => opt);
-  }, [options, selectedKeys, query, category]);
+  }, [options, selectedKeys, query, categoryKey, onlyCategory]);
 
   const suggestions = browsable;
 
@@ -1489,9 +1616,11 @@ function TagPicker({
               <p className="mb-2 text-[12.5px] font-semibold text-[color:var(--slate)]">
                 {query.trim()
                   ? `Matching tags (${browsable.length})`
-                  : category
-                    ? `Suggested tags, ${category} first`
-                    : "Popular tags"}
+                  : onlyCategory
+                    ? `${category} tags`
+                    : category && categoryHasTags
+                      ? `All tags, ${category} first`
+                      : "Popular tags"}
               </p>
               <ul className="flex flex-wrap gap-2 rounded-xl border border-[color:var(--mist)] bg-[color:var(--paper)] p-2">
                 {visibleTags.map((opt) => (
@@ -1514,6 +1643,15 @@ function TagPicker({
                   </li>
                 ) : null}
               </ul>
+              {categoryHasTags && !query.trim() ? (
+                <button
+                  type="button"
+                  onClick={() => setShowAllTags((on) => !on)}
+                  className="mt-2 text-[12.5px] font-semibold text-[color:var(--purple)] underline underline-offset-2"
+                >
+                  {showAllTags ? `Only ${category} tags` : "Show all tags"}
+                </button>
+              ) : null}
             </div>
           );
         })()
@@ -1943,6 +2081,7 @@ export function ScheduleSection() {
     payoutsEnabled,
     autoApproveEvents,
     platformFeeBps,
+    bookingFeeBps,
   } = useWizard();
   // The SAME gate the publish decision uses - createEventForMerchant's
   // `stripeReady` is charges_enabled AND payouts_enabled (event-repository.ts),
@@ -1957,8 +2096,7 @@ export function ScheduleSection() {
   // the price is set rather than letting the first payout say it.
   const priceCents = Math.round((Number.parseFloat(values.price) || 0) * 100);
   const isPaid = priceCents > 0 && PRICE_PATTERN.test(values.price.trim());
-  const feeCents = isPaid ? Math.floor((priceCents * platformFeeBps) / 10000) : 0;
-  const netCents = priceCents - feeCents;
+  const split = ticketSplit(isPaid ? priceCents : 0, platformFeeBps, bookingFeeBps);
   const money = (cents: number) =>
     new Intl.NumberFormat("en-AU", {
       style: "currency",
@@ -2051,22 +2189,15 @@ export function ScheduleSection() {
             terms of set up" (bug board #261/#262), so they are a link now. */}
         {isPaid ? (
           <div className="space-y-2 rounded-xl border border-[color:var(--mist)] bg-[color:var(--lav-bg)] px-4 py-3 text-sm leading-6 text-[color:var(--slate)]">
+            {/* Fix 13: the whole split, from the arithmetic checkout uses.
+                "Guests pay" used to be the ticket price even while a booking
+                fee was added on top at checkout. */}
             <p className="text-[color:var(--ink)]">
-              Guests pay <strong className="font-semibold">{money(priceCents)}</strong> each
-              {platformFeeBps > 0 ? (
-                <>
-                  {" "}- you receive <strong className="font-semibold">{money(netCents)}</strong>{" "}
-                  after Click&rsquo;s{" "}
-                  {/* 290 bps reads "2.9%", not "2.90%" - up to two places, no
-                      trailing zero. */}
-                  {new Intl.NumberFormat("en-AU", {
-                    maximumFractionDigits: 2,
-                  }).format(platformFeeBps / 100)}
-                  % fee.
-                </>
-              ) : (
-                <> - you receive all of it.</>
-              )}
+              Guests pay <strong className="font-semibold">{money(split.guestPaysCents)}</strong>.
+              You keep <strong className="font-semibold">{money(split.hostKeepsCents)}</strong>.
+              {split.clickKeepsCents > 0 ? (
+                <> Click keeps {money(split.clickKeepsCents)}.</>
+              ) : null}
             </p>
             <p>
               Refunds and GST follow the{" "}
@@ -2083,11 +2214,11 @@ export function ScheduleSection() {
             {!stripeReady ? (
               <p className="text-[color:var(--ink)]">
                 {/* A trusted host's event publishes itself once payouts are
-                    live (publishEventsHeldForPayouts); anyone else's still
-                    waits for an admin after that. */}
+                    live (publishEventsHeldForPayouts). Anyone else's needs both
+                    an admin's approval and payouts, in either order (D4). */}
                 {autoApproveEvents
                   ? "Goes live once payouts are set up."
-                  : "Stays in review until payouts are set up."}{" "}
+                  : "Goes live once it's approved and your payouts are set up - do both in either order."}{" "}
                 <a
                   href={`/merchant/onboarding/payouts?returnTo=${encodeURIComponent(STEP_PATHS[1])}`}
                   className="font-medium text-[color:var(--purple)] underline underline-offset-2"
@@ -2522,7 +2653,19 @@ function RecurrencePicker({
 }
 
 export function LocationSection() {
-  const { values, set, fieldErrors, venueOptions } = useWizard();
+  const { values, set, fieldErrors, venueOptions, venueAddress } = useWizard();
+  // Fix 15: the address given at signup, one tap away. It fills the address
+  // and suburb and seeds the search, so picking the suggestion still captures
+  // the coordinates that put the event in a distance sort.
+  const venueLine = venueAddress
+    ? `${venueAddress.street}, ${venueAddress.suburb} ${venueAddress.state} ${venueAddress.postcode}`
+    : null;
+  function fillVenueAddress() {
+    if (!venueAddress || !venueLine) return;
+    set("address", venueLine);
+    set("suburb", venueAddress.suburb);
+    setQuery(venueLine);
+  }
   // The search box is its own field - a throwaway query used to locate the
   // address, pin the map, and (when Mapbox returns a named place) suggest the
   // venue name below. The venue field stays editable freetext either way.
@@ -2630,6 +2773,15 @@ export function LocationSection() {
             ariaLabel="Find address"
             placeholder="e.g. 48 Spencer Road, Potts Point"
           />
+          {venueLine && values.address.trim() !== venueLine ? (
+            <button
+              type="button"
+              onClick={fillVenueAddress}
+              className="mt-2 text-left text-[13px] font-semibold text-[color:var(--purple)] underline underline-offset-2"
+            >
+              Use my venue address - {venueLine}
+            </button>
+          ) : null}
         </FormField>
 
         <div className="grid gap-4 md:grid-cols-2">
@@ -3268,6 +3420,7 @@ export function ReviewSection() {
   const {
     values,
     platformFeeBps,
+    bookingFeeBps,
     chargesEnabled,
     payoutsEnabled,
     autoApproveEvents,
@@ -3346,19 +3499,21 @@ export function ReviewSection() {
         ? "1 photo"
         : `${photoCount} photos`;
   // The last screen before a LIVE Stripe listing is the last chance to see the
-  // take rate. Same arithmetic as calculateApplicationFee (floor).
-  const netCents = priceCents - Math.floor((priceCents * platformFeeBps) / 10000);
+  // split (fix 13) - the same ticketSplit the Schedule step shows.
+  const split = ticketSplit(priceCents, platformFeeBps, bookingFeeBps);
+  const reviewMoney = (cents: number) =>
+    new Intl.NumberFormat("en-AU", {
+      style: "currency",
+      currency: "AUD",
+      minimumFractionDigits: cents % 100 === 0 ? 0 : 2,
+      maximumFractionDigits: cents % 100 === 0 ? 0 : 2,
+    }).format(cents / 100);
   const payoutLabel =
     priceCents <= 0
       ? "Free"
-      : platformFeeBps > 0
-        ? `${priceLabel} per guest · you receive ${new Intl.NumberFormat("en-AU", {
-            style: "currency",
-            currency: "AUD",
-            minimumFractionDigits: netCents % 100 === 0 ? 0 : 2,
-            maximumFractionDigits: netCents % 100 === 0 ? 0 : 2,
-          }).format(netCents / 100)}`
-        : `${priceLabel} per guest`;
+      : `Guests pay ${reviewMoney(split.guestPaysCents)} · you keep ${reviewMoney(split.hostKeepsCents)}${
+          split.clickKeepsCents > 0 ? ` · Click keeps ${reviewMoney(split.clickKeepsCents)}` : ""
+        }`;
   const repeatLabel =
     values.recurrenceFreq === "none"
       ? "Just once"

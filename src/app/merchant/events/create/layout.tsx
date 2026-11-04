@@ -7,8 +7,8 @@ import {
   getMerchantEventCreateOptions,
   getMerchantTagOptions,
   getProfileStatus,
+  getSystemSettings,
 } from "@/lib/event-repository";
-import { getPlatformFeeBps } from "@/lib/stripe-connect";
 
 export const metadata = {
   title: "Create event",
@@ -66,21 +66,25 @@ export default async function CreateEventLayout({
   // charges_enabled dead-ended every merchant who took that offer. Stripe
   // Connect is enforced where it actually matters instead:
   //   - createEventForMerchant keeps the event 'pending' unless payouts are live
-  //   - approveEventForAdmin refuses to publish a PAID merchant event without it
+  //   - approveEventForAdmin records the approval but keeps a PAID merchant event
+  //     pending until payouts are ready (decision D4)
   //   - checkout throws PayoutsNotReadyError as the final backstop
   // The Schedule step warns as soon as a non-zero price is typed, so a merchant
   // learns this before submitting rather than from an admin rejection.
-  const [categoryRows, tagOptions, createOptions] = await Promise.all([
+  const [categoryRows, tagOptions, createOptions, settings] = await Promise.all([
     getMerchantCategoryOptions(),
     getMerchantTagOptions(),
     getMerchantEventCreateOptions(status.merchantProfile.id),
+    getSystemSettings(),
   ]);
   const categoryOptions = categoryRows.map((c) => c.name);
 
-  // Read server-side and handed down: PLATFORM_FEE_BPS is a server env var, and
-  // the Schedule step has to be able to tell a merchant what they will actually
-  // receive before they price a live-Stripe ticket.
-  const platformFeeBps = getPlatformFeeBps();
+  // Read server-side and handed down, from the same settings checkout charges
+  // with (createPaymentHold): the commission off the host's price, and any
+  // booking fee on top for the guest. The Schedule step shows the split before
+  // the price is set (fix 13).
+  const platformFeeBps = settings.commissionRateBps;
+  const bookingFeeBps = settings.bookingFeeBps;
 
   return (
     <main className="min-h-screen bg-[color:var(--champagne)] text-[color:var(--ink)]">
@@ -97,9 +101,17 @@ export default async function CreateEventLayout({
               hostNameOptions={createOptions.hostNames}
               venueOptions={createOptions.venues}
               chargesEnabled={status.merchantProfile.charges_enabled === true}
-              payoutsEnabled={status.merchantProfile.payouts_enabled === true}
+              // merchantReadyForPaidEvents also needs manual payouts confirmed
+              // (fix 3b), so the wizard's "goes live" promise needs it too.
+              payoutsEnabled={
+                status.merchantProfile.payouts_enabled === true &&
+                status.merchantProfile.payouts_held_at !== null
+              }
               autoApproveEvents={status.merchantProfile.auto_approve_events === true}
               platformFeeBps={platformFeeBps}
+              bookingFeeBps={bookingFeeBps}
+              venueAddress={createOptions.venueAddress}
+              defaultHostName={createOptions.defaultHostName}
             >
               {children}
             </EventCreateProvider>

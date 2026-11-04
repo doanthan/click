@@ -1,15 +1,17 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
+import { getApprovedMerchantForSession } from "@/lib/event-repository";
 import {
-  getApprovedMerchantForSession,
-  updateMerchantConnectStatus,
-} from "@/lib/event-repository";
-import {
-  getConnectedAccountStatus,
   isRealConnectAccountId,
   isStripeConnectConfigured,
 } from "@/lib/stripe-connect";
+import { syncConnectAccount } from "@/lib/stripe-sync";
+import {
+  hostRequirementPhrases,
+  joinPhrases,
+  onlyStripeIsReviewing,
+} from "@/lib/stripe-requirements";
 import {
   ConnectPayoutsButton,
   OnboardingNav,
@@ -52,18 +54,24 @@ export default async function OnboardingPayoutsPage({ searchParams }: PageProps)
   const stripeConfigured = isStripeConnectConfigured();
   const accountId = merchant.stripe_connect_account_id;
 
+  let chargesEnabled = merchant.charges_enabled;
   let payoutsEnabled = merchant.payouts_enabled;
   let detailsSubmitted = merchant.details_submitted;
+  let requirements = merchant.stripe_requirements ?? [];
+  let requirementsDueAt = merchant.stripe_requirements_due_at;
 
   // Returning from Stripe's hosted flow (or refresh): re-fetch the authoritative
   // status now rather than waiting on the account.updated webhook, so the UI is
-  // correct the instant the merchant lands back here.
+  // correct the instant the merchant lands back here. The same locked sync the
+  // webhook runs, so the two can't save in the wrong order.
   if (params.stripe && accountId && stripeConfigured) {
     try {
-      const status = await getConnectedAccountStatus(accountId);
-      await updateMerchantConnectStatus(accountId, status);
+      const { status } = await syncConnectAccount(accountId);
+      chargesEnabled = status.chargesEnabled;
       payoutsEnabled = status.payoutsEnabled;
       detailsSubmitted = status.detailsSubmitted;
+      requirements = status.requirements;
+      requirementsDueAt = status.requirementsDueAt;
     } catch {
       // Best-effort - fall back to the cached columns above.
     }
@@ -75,6 +83,25 @@ export default async function OnboardingPayoutsPage({ searchParams }: PageProps)
   // Same test the connect route uses to decide it must create one.
   const askBusinessType = !merchant.business_type && !isRealConnectAccountId(accountId);
 
+  // The two things Stripe switches on separately, shown separately (fix 4).
+  // This page used to branch on payouts alone, so a host whose CHARGES Stripe
+  // had paused was told "you're ready to take payments" with no way forward,
+  // while the paused-payments email sent them here to fix it.
+  const ready = chargesEnabled && payoutsEnabled;
+  const toDo = hostRequirementPhrases(requirements);
+  const dueLabel = requirementsDueAt
+    ? new Intl.DateTimeFormat("en-AU", {
+        day: "numeric",
+        month: "short",
+        timeZone: "Australia/Sydney",
+      }).format(new Date(requirementsDueAt))
+    : null;
+  // A trip to Stripe only when the host has something to do there. When only
+  // Stripe has to act - checking a document already sent - the button would
+  // send them to a form with nothing on it (bug board #206).
+  const hostHasToAct = !connected || toDo.length > 0 || (!detailsSubmitted && !ready);
+  const stripeReviewing = connected && !ready && !hostHasToAct;
+
   // Stripe hands EVERY host back here, whichever surface they started from - the
   // connect route pins its return_url to this step precisely because the refresh
   // above is the only place that re-reads the account rather than trusting
@@ -83,9 +110,10 @@ export default async function OnboardingPayoutsPage({ searchParams }: PageProps)
   // dashboard banner that finally agrees with Stripe.
   //
   // Only once their part is genuinely done, though. A host who backed out of
-  // Stripe half-way needs the "Continue on Stripe" button on this page, not a
-  // bounce straight back to the setup prompt they left thirty seconds ago.
-  if (params.stripe === "return" && returnTo && (payoutsEnabled || detailsSubmitted)) {
+  // Stripe half-way - or one Stripe still wants something from - needs the
+  // "Finish on Stripe" button on this page, not a bounce straight back to the
+  // setup prompt they left thirty seconds ago.
+  if (params.stripe === "return" && returnTo && connected && !hostHasToAct) {
     redirect(returnTo);
   }
 
@@ -112,45 +140,71 @@ export default async function OnboardingPayoutsPage({ searchParams }: PageProps)
               your dashboard.
             </p>
           </div>
-        ) : payoutsEnabled ? (
-          <div className="mt-6 rounded-2xl bg-[color:var(--lavender-100)] p-4">
-            <p className="text-sm font-semibold text-[color:var(--ink)]">
-              ✓ Payouts connected - you&apos;re ready to take payments.
-            </p>
-          </div>
         ) : connected ? (
           <div className="mt-6 grid gap-4">
-            <div
-              className={`rounded-2xl p-4 ${
-                detailsSubmitted
-                  ? "bg-[color:var(--lavender-100)]"
-                  : "border border-[color:var(--line)] bg-[color:var(--champagne)]"
-              }`}
-            >
-              <p className="text-sm font-semibold text-[color:var(--ink)]">
-                {detailsSubmitted
-                  ? "✓ Details submitted - Stripe is verifying."
-                  : "You started setup but a few details are still needed."}
-              </p>
-              <p
-                className={`mt-1 text-sm font-medium leading-6 ${
-                  detailsSubmitted ? "text-[color:var(--ink-soft)]" : "text-[color:var(--slate)]"
-                }`}
-              >
-                {detailsSubmitted
-                  ? "Nothing more to do on Stripe - this usually clears in a few minutes and we'll flip payouts on automatically. You're good to continue."
-                  : "Pick up where you left off to finish connecting your bank."}
-              </p>
-            </div>
+            <ul className="grid gap-2 rounded-2xl bg-[color:var(--lavender-100)] p-4 text-sm leading-6 text-[color:var(--ink)]">
+              <li className="flex items-start gap-2">
+                <span aria-hidden className="w-4 shrink-0 font-semibold">{chargesEnabled ? "✓" : "·"}</span>
+                <span>
+                  <span className="font-semibold">Taking payments</span>{" "}
+                  <span className="text-[color:var(--ink-soft)]">
+                    {chargesEnabled ? "- on. Guests can pay for your events." : "- not on yet."}
+                  </span>
+                </span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span aria-hidden className="w-4 shrink-0 font-semibold">{payoutsEnabled ? "✓" : "·"}</span>
+                <span>
+                  <span className="font-semibold">Paying out to your bank</span>{" "}
+                  <span className="text-[color:var(--ink-soft)]">
+                    {payoutsEnabled
+                      ? "- on. Each event's earnings go to your bank a couple of days after it ends."
+                      : "- not on yet."}
+                  </span>
+                </span>
+              </li>
+            </ul>
+            {toDo.length > 0 ? (
+              <div className="rounded-2xl border border-[color:var(--line)] bg-[color:var(--champagne)] p-4">
+                <p className="text-sm font-semibold text-[color:var(--ink)]">
+                  Stripe needs {joinPhrases(toDo)}
+                  {dueLabel ? ` by ${dueLabel}` : ""}.
+                </p>
+                <p className="mt-1 text-sm font-medium leading-6 text-[color:var(--slate)]">
+                  {ready
+                    ? "Everything is on for now - sort it before then so nothing pauses."
+                    : "It takes a few minutes, and whatever is off switches on by itself once Stripe has checked it."}
+                </p>
+              </div>
+            ) : stripeReviewing || (detailsSubmitted && !ready) ? (
+              <div className="rounded-2xl bg-[color:var(--lavender-100)] p-4">
+                <p className="text-sm font-semibold text-[color:var(--ink)]">
+                  ✓ Nothing to do - Stripe is checking what you sent.
+                </p>
+                <p className="mt-1 text-sm font-medium leading-6 text-[color:var(--ink-soft)]">
+                  {onlyStripeIsReviewing(requirements)
+                    ? "This usually clears within a day, and we'll switch everything on automatically."
+                    : "This usually clears in a few minutes, and we'll switch everything on automatically. You're good to continue."}
+                </p>
+              </div>
+            ) : !ready ? (
+              <div className="rounded-2xl border border-[color:var(--line)] bg-[color:var(--champagne)] p-4">
+                <p className="text-sm font-semibold text-[color:var(--ink)]">
+                  You started setup but a few details are still needed.
+                </p>
+                <p className="mt-1 text-sm font-medium leading-6 text-[color:var(--slate)]">
+                  Pick up where you left off to finish connecting your bank.
+                </p>
+              </div>
+            ) : null}
             {/*
-              Only prompt "Continue on Stripe" when setup is genuinely
-              incomplete. Once details are submitted the merchant has finished
-              their part - showing the button made it look like more action was
-              required while Stripe verified asynchronously (bug board #206).
+              Only offer the trip to Stripe when the host has something to do
+              there. Once their part is done, the button made it look like more
+              action was required while Stripe verified (bug board #206).
             */}
-            {!detailsSubmitted ? (
+            {hostHasToAct ? (
               <ConnectPayoutsButton
-                label="Continue on Stripe →"
+                label="Finish on Stripe →"
                 returnTo={returnTo}
                 askBusinessType={askBusinessType}
               />
@@ -178,7 +232,7 @@ export default async function OnboardingPayoutsPage({ searchParams }: PageProps)
           // welcome page nobody asked to re-read. One link back to whatever they
           // left is the entire nav this visit needs.
           <OnboardingNav backHref={returnTo} />
-        ) : payoutsEnabled || detailsSubmitted || !stripeConfigured ? (
+        ) : (connected && !hostHasToAct) || !stripeConfigured ? (
           // Two states earn the primary Continue. Details submitted counts as
           // "done" - the merchant has finished their part and payouts activate
           // asynchronously (#206). And when Stripe isn't configured on this

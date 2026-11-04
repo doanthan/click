@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { after } from "next/server";
 import { auth } from "@/auth";
 import { Icon, Tag } from "@/components/ds";
 import { EventAttendeePreview } from "@/components/event-attendee-preview";
@@ -30,6 +31,7 @@ import {
   getCancelledBookingNotice,
   getUnfulfilledPaymentNotice,
   isEventOperator,
+  recordEventPageView,
 } from "@/lib/event-repository";
 import { redirectIfNotOnboarded } from "@/lib/onboarding-gate";
 import { SUPPORT_EMAIL_DEFAULT } from "@/lib/email-templates/tokens";
@@ -267,6 +269,13 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
         </div>
       </main>
     );
+  }
+
+  // Fix 34: count the view for the host's views-to-bookings number, after the
+  // response so it never slows the page. The host's own views and admins'
+  // checks are not visitors.
+  if (!isOwner && !isAdmin) {
+    after(() => recordEventPageView(slug));
   }
 
   const startsAtMs = new Date(event.startsAt).getTime();
@@ -909,7 +918,16 @@ export default async function EventDetailPage({ params, searchParams }: PageProp
                         <EventRegistrationButton eventId={event.id} initiallyRegistered={false} isWaitlist />
                       </EventBookingDialog>
                     ) : isPaid ? (
-                      showStripeUnavailableHint ? (
+                      event.ticketsPaused ? (
+                        // Fix 32: the host's payments are paused on Stripe, so
+                        // checkout would refuse this buyer. Say it here, before
+                        // the tap, instead of after it.
+                        <p className="rounded-[var(--radius-md)] bg-[color:var(--lav-bg)] p-3 text-[13px] text-[color:var(--ink-soft)]">
+                          <span className="font-semibold text-[color:var(--ink)]">Tickets paused.</span> The host
+                          is sorting out their payments, so this event can&apos;t take bookings right now. Check
+                          back soon.
+                        </p>
+                      ) : showStripeUnavailableHint ? (
                         <p className="rounded-[var(--radius-md)] bg-[color:var(--lav-bg)] p-3 text-[13px] text-[color:var(--ink-soft)]">
                           Stripe isn&apos;t configured on this server - set STRIPE_SECRET_KEY in .env.local to enable paid
                           bookings.

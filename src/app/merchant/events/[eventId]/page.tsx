@@ -6,6 +6,7 @@ import { MerchantEventCancelButton } from "@/components/merchant-event-cancel-bu
 import { MerchantEventDuplicateButton } from "@/components/merchant-event-duplicate-button";
 import { MerchantEventEditForm } from "@/components/merchant-event-edit-form";
 import { MerchantEventResubmitButton } from "@/components/merchant-event-resubmit-button";
+import { MerchantRefundBookingButton } from "@/components/merchant-refund-booking-button";
 import {
   AttendeeCheckInToggle,
   GuestCheckInToggle,
@@ -255,11 +256,17 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
 
         {/* Held for payouts: nobody is reviewing it, so say what it IS waiting
             on and hand over the one action that releases it (bug board #268 -
-            "don't let it go live without Stripe, but let the merchant know"). */}
-        {event.heldForPayouts && !hasEnded ? (
+            "don't let it go live without Stripe, but let the merchant know").
+            Also shown, worded for it, while it is in review AND payouts are
+            not ready (fix 17) - approval alone will not put it live, and this
+            banner used to show only for trusted hosts, so a new host's first
+            paid event said "in review" and nothing about Stripe. */}
+        {(event.heldForPayouts || event.awaitingReviewAndPayouts) && !hasEnded ? (
           <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-[color:var(--paper)] p-5 shadow-[var(--shadow-sm)]">
             <p className="text-sm leading-6 text-[color:var(--ink)]">
-              It&apos;s a paid event, so it goes live as soon as your payout setup is finished - no review needed.
+              {event.heldForPayouts
+                ? "It's a paid event, so it goes live as soon as your payout setup is finished - no review needed."
+                : "It's in review. It's also a paid event, so connect Stripe now and it goes live the moment it's approved."}
             </p>
             <ButtonLink
               href={`/merchant/onboarding/payouts?returnTo=${encodeURIComponent(`/merchant/events/${event.slug}`)}`}
@@ -357,6 +364,15 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
               style={{ width: `${filledPercent}%` }}
             />
           </div>
+          {/* Fix 34: views to bookings - a reason to keep listing. Bookings,
+              not seats: one person booking four seats is one conversion. */}
+          {event.pageViews > 0 ? (
+            <p className="mt-3 text-[13px] text-[color:var(--slate)]">
+              {event.pageViews} page {event.pageViews === 1 ? "view" : "views"} ·{" "}
+              {confirmedAttendees.length} {confirmedAttendees.length === 1 ? "booking" : "bookings"} (
+              {Math.round((confirmedAttendees.length / event.pageViews) * 100)}% of views)
+            </p>
+          ) : null}
         </div>
 
         <section className="mt-10">
@@ -372,11 +388,24 @@ export default async function MerchantEventDetailPage({ params }: PageProps) {
             {/* Neutral, not sage: this is a running count, not a success state,
                 and sage on a half-empty door reads as "all good" when it is
                 not. It becomes sage only once the room is fully in. */}
-            <Badge tone={doorTotal > 0 && checkedInCount === doorTotal ? "sage" : "lavender"}>
-              {doorTotal > 0 && checkedInCount > 0
-                ? `${checkedInCount}/${doorTotal} in`
-                : confirmedAttendees.length}
-            </Badge>
+            <div className="flex flex-col items-end gap-2">
+              <Badge tone={doorTotal > 0 && checkedInCount === doorTotal ? "sage" : "lavender"}>
+                {doorTotal > 0 && checkedInCount > 0
+                  ? `${checkedInCount}/${doorTotal} in`
+                  : confirmedAttendees.length}
+              </Badge>
+              {/* Fix 30: the door list as a file - for a printed list, or
+                  attendance after the night. A plain link: the route sends it
+                  as a download. */}
+              {doorTotal > 0 ? (
+                <a
+                  href={`/api/merchant/events/${encodeURIComponent(event.slug)}/door-list`}
+                  className="text-[13px] font-semibold text-[color:var(--purple)] underline underline-offset-2"
+                >
+                  Download door list
+                </a>
+              ) : null}
+            </div>
           </div>
 
           {confirmedAttendees.length > 0 ? (
@@ -583,6 +612,15 @@ function AttendeeTable({
                   RSVP&apos;d {rsvpDateFormatter.format(new Date(attendee.rsvpAt))}
                 </span>
               </p>
+              {attendee.refundable && attendee.paymentTransactionId ? (
+                <p className="mt-1.5">
+                  <MerchantRefundBookingButton
+                    paymentTransactionId={attendee.paymentTransactionId}
+                    guestName={attendee.displayName}
+                    remainingCents={attendee.paidCents - attendee.refundedCents}
+                  />
+                </p>
+              ) : null}
             </div>
             {showCheckIn ? (
               <AttendeeCheckInToggle
@@ -615,7 +653,16 @@ function AttendeeTable({
               displayName={attendee.displayName}
               photoUrl={attendee.photoUrl}
             />
-            <p className="text-sm font-semibold text-[color:var(--ink)]">{attendee.displayName}</p>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-[color:var(--ink)]">{attendee.displayName}</p>
+              {attendee.refundable && attendee.paymentTransactionId ? (
+                <MerchantRefundBookingButton
+                  paymentTransactionId={attendee.paymentTransactionId}
+                  guestName={attendee.displayName}
+                  remainingCents={attendee.paidCents - attendee.refundedCents}
+                />
+              ) : null}
+            </div>
           </div>
           <p className="break-all text-[13px] text-[color:var(--slate)]">
             {attendee.email}

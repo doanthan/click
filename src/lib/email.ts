@@ -143,6 +143,8 @@ export type EmailTemplate =
   | "waitlist-promoted-attendee"
   | "merchant-suspended-merchant"
   | "payments-paused-merchant"
+  | "payout-sent-merchant"
+  | "payout-failed-merchant"
   | "payment-receipt-attendee"
   | "report-received-admin"
   | "merchant-monthly-report"
@@ -212,6 +214,9 @@ const SUBJECTS: Record<EmailTemplate, (vars: Record<string, string>) => string> 
     `${v.businessName ?? "Your account"} has been suspended on Click`,
   "payments-paused-merchant": (v) =>
     `Action needed - Stripe has paused ticket sales for ${v.businessName ?? "your events"}`,
+  "payout-sent-merchant": (v) => `${v.amountLabel ?? "Your earnings"} is on its way to your bank`,
+  "payout-failed-merchant": (v) =>
+    `Action needed - a ${v.amountLabel ?? ""} payout didn't reach your bank`.replace("a  payout", "a payout"),
   "booking-refunded-attendee": (v) =>
     `Refunded - ${v.eventTitle ?? "your booking"}`,
   "payment-receipt-attendee": (v) =>

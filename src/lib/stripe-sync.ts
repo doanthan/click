@@ -42,8 +42,11 @@ import {
   attachPaymentIntent,
   ensureProfileForSession,
   getMerchantProfile,
+  markMerchantPayoutsHeld,
   markPaymentFailed,
   markPaymentSucceeded,
+  notifyAdminsOfPayoutProblem,
+  notifyMerchantOfPayout,
   processGuestSpotsForSession,
   settleRefundedBooking,
   updateMerchantConnectStatus,
@@ -678,8 +681,9 @@ function payoutStatusToDb(
 async function upsertPayout(
   payout: Stripe.Payout,
   stripeAccountId: string,
+  db?: PoolClient,
 ): Promise<boolean> {
-  const pool = getPostgresPool();
+  const pool = db ?? getPostgresPool();
   if (!pool) databaseUnavailable();
 
   const merchantRow = await pool.query<{ id: string }>(
@@ -744,12 +748,55 @@ async function upsertPayout(
   return true;
 }
 
+/**
+ * Saves one payout as Stripe has it NOW (fix 27). Webhooks arrive late and out
+ * of order, and the payload is the payout as it was when the event fired, so
+ * saving it as-is let an old `pending` overwrite a newer `paid`. This takes a
+ * per-payout lock, re-reads the payout from Stripe, and saves that - so the
+ * last save is always the latest read. "Never move `paid` back" would be the
+ * wrong rule: Stripe says some payouts show `paid` and then change to `failed`.
+ *
+ * Then tells the host (fix 26): once when it is on its way, once if it fails.
+ */
+export async function savePayoutFromStripe(
+  stripePayoutId: string,
+  stripeAccountId: string,
+): Promise<void> {
+  const stripe = getStripeClient();
+  if (!stripe) stripeNotConfigured();
+  const pool = getPostgresPool();
+  if (!pool) databaseUnavailable();
+
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    await client.query(`select pg_advisory_xact_lock(hashtext($1)::bigint)`, [
+      `payout:${stripeAccountId}:${stripePayoutId}`,
+    ]);
+    const payout = await stripe.payouts.retrieve(
+      stripePayoutId,
+      { expand: ["destination"] },
+      { stripeAccount: stripeAccountId },
+    );
+    // On the lock-holding connection: a waiter holds a connection too, so the
+    // holder must not need a second one to finish (Codex review).
+    await upsertPayout(payout, stripeAccountId, client);
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+  await notifyMerchantOfPayout(stripeAccountId, stripePayoutId);
+}
+
 export async function upsertPayoutFromEvent(
   payout: Stripe.Payout,
   stripeAccountId: string | null,
 ): Promise<void> {
   if (!stripeAccountId) return;
-  await upsertPayout(payout, stripeAccountId);
+  await savePayoutFromStripe(payout.id, stripeAccountId);
 }
 
 // Walks every merchant with a Stripe Connect account and pulls their recent
@@ -782,8 +829,12 @@ export async function syncPayoutsForAllMerchants(
         { limit: 100, created: { gte } },
         { stripeAccount: accountId },
       )) {
-        const ok = await upsertPayout(payout, accountId);
-        if (ok) payoutsUpserted += 1;
+        // Through the locked re-read, like the webhook (Codex review): a list
+        // snapshot fetched before a newer payout.* landed must not overwrite
+        // it, and a failure first found here still emails the host and pings
+        // the admins.
+        await savePayoutFromStripe(payout.id, accountId);
+        payoutsUpserted += 1;
       }
     } catch (error) {
       if (process.env.CLICK_DB_DEBUG === "true") {
@@ -799,52 +850,150 @@ export async function syncPayoutsForAllMerchants(
 // daily via api/cron/release-payouts. Re-asserts manual payouts on every account
 // first, so a host connected before holding existed - or whose setting failed
 // at creation - is held from the next run.
+//
+// One run at a time, and never while a host refund is in flight (fix 7, and
+// the Codex review). The run takes PAYOUT_RUN_LOCK exclusively, waiting for it;
+// a host refund takes it SHARED (withPayoutRunShield), so a refund can't pass
+// its "money still held" check and then reverse money this run has just sent
+// to the bank. The payout idempotency key carries the amount, so two
+// overlapping runs could otherwise each read a different balance and both pay
+// out; serialised, the second reads the balance the first left.
+// pg_advisory_xact_lock, as in runScheduledJob: released by the transaction
+// ending, so it holds through the pooler and cannot be left behind.
+export const PAYOUT_RUN_LOCK = "release-held-payouts";
+
 export async function releaseHeldPayouts(): Promise<{
+  ran: boolean;
   accountsScanned: number;
   released: Array<{ accountId: string; amountCents: number; payoutId: string }>;
   failed: Array<{ accountId: string; error: string }>;
+  skipped: Array<{ accountId: string; reason: string }>;
 }> {
   const stripe = getStripeClient();
   if (!stripe) stripeNotConfigured();
   const pool = getPostgresPool();
   if (!pool) databaseUnavailable();
 
-  // held_cents: the host's share of each booking whose event hasn't finished
-  // (plus the release delay) or was cancelled - a cancelled event's refunds may
-  // still need it. Their share is the amount less our fee, less the part of any
-  // refund reversed out of their balance (issueRefund reverses proportionally).
-  // Rounded toward holding more.
-  const merchants = await pool.query<{
-    stripe_connect_account_id: string;
+  const lockClient = await pool.connect();
+  try {
+    await lockClient.query("begin");
+    await lockClient.query(`select pg_advisory_xact_lock(hashtext($1)::bigint)`, [PAYOUT_RUN_LOCK]);
+    const result = await releaseHeldPayoutsUnderLock(stripe, lockClient);
+    await lockClient.query("commit");
+    return { ran: true, ...result };
+  } catch (error) {
+    await lockClient.query("rollback").catch(() => {});
+    throw error;
+  } finally {
+    lockClient.release();
+  }
+}
+
+/**
+ * Runs `work` holding the payout run lock SHARED: any number of host refunds
+ * at once, but never alongside a payout run. Refuses rather than waits when a
+ * run is going - a run can take minutes, and a host can tap again.
+ */
+export async function withPayoutRunShield<T>(work: () => Promise<T>): Promise<T> {
+  const pool = getPostgresPool();
+  if (!pool) databaseUnavailable();
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    const lock = await client.query<{ locked: boolean }>(
+      `select pg_try_advisory_xact_lock_shared(hashtext($1)::bigint) as locked`,
+      [PAYOUT_RUN_LOCK],
+    );
+    if (!lock.rows[0]?.locked) {
+      const error = new Error("Payouts are going out right now - try the refund again in a few minutes.");
+      error.name = "ValidationError";
+      throw error;
+    }
+    const result = await work();
+    await client.query("commit");
+    return result;
+  } catch (error) {
+    await client.query("rollback").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+// What one host's balance must keep, read fresh for that host just AFTER their
+// Stripe balance (Codex review): a payment that reached Stripe before the
+// balance read is then counted here too, whether or not its webhook has landed
+// - a recent 'pending' row is held as well, which covers the webhook's lag -
+// and a dispute or suspension recorded while earlier hosts were being paid is
+// seen. Reading it all once up front let the run pay out of a stale picture.
+//
+// held_cents: the host's share of each booking whose event hasn't finished
+// (plus the release delay) or was cancelled - a cancelled event's refunds may
+// still need it. Their share is the amount less our fee, less the part of any
+// refund reversed out of their balance (issueRefund reverses proportionally).
+// Rounded toward holding more.
+//
+// Plus every dispute that is open, or LOST and not yet released by an admin
+// (fix 7, database/078): Stripe takes a disputed amount from Click's balance,
+// and the host's balance is where Click gets it back from, so that money must
+// not go to their bank first. The whole disputed amount, not just their share.
+async function heldForMerchant(db: PoolClient, accountId: string) {
+  const result = await db.query<{
     payouts_enabled: boolean;
+    verification_status: string;
     held_cents: string;
   }>(
     `
-      select m.stripe_connect_account_id,
-             m.payouts_enabled,
-             coalesce((
-               select sum(
-                 (pt.amount_cents - coalesce(pt.application_fee_cents, 0))
-                 - floor(
-                     pt.refunded_amount_cents::numeric
-                     * (pt.amount_cents - coalesce(pt.application_fee_cents, 0))
-                     / nullif(pt.amount_cents, 0)
-                   )
-               )
-               from payment_transactions pt
-               join events e on e.id = pt.event_id
-               where pt.merchant_profile_id = m.id
-                 and pt.status in ('paid', 'partially_refunded')
-                 and pt.created_at > now() - make_interval(days => $2)
-                 and (
-                   e.status = 'cancelled'
-                   or coalesce(e.ends_at, e.starts_at) > now() - make_interval(hours => $1)
+      select m.payouts_enabled,
+             m.verification_status,
+             (
+               coalesce((
+                 select sum(
+                   (pt.amount_cents - coalesce(pt.application_fee_cents, 0))
+                   - floor(
+                       pt.refunded_amount_cents::numeric
+                       * (pt.amount_cents - coalesce(pt.application_fee_cents, 0))
+                       / nullif(pt.amount_cents, 0)
+                     )
                  )
-             ), 0)::bigint::text as held_cents
+                 from payment_transactions pt
+                 join events e on e.id = pt.event_id
+                 where pt.merchant_profile_id = m.id
+                   and (
+                     (
+                       pt.status in ('paid', 'partially_refunded')
+                       and pt.created_at > now() - make_interval(days => $3)
+                       and (
+                         e.status = 'cancelled'
+                         or coalesce(e.ends_at, e.starts_at) > now() - make_interval(hours => $2)
+                       )
+                     )
+                     or (pt.status = 'pending' and pt.created_at > now() - interval '2 hours')
+                   )
+               ), 0)
+               + coalesce((
+                 select sum(d.amount_cents)
+                 from payment_disputes d
+                 join payment_transactions pt on pt.id = d.payment_transaction_id
+                 where pt.merchant_profile_id = m.id
+                   and (d.is_open or (d.status = 'lost' and d.reserve_released_at is null))
+               ), 0)
+             )::bigint::text as held_cents
       from merchant_profiles m
-      where m.stripe_connect_account_id is not null
+      where m.stripe_connect_account_id = $1
     `,
-    [PAYOUT_RELEASE_DELAY_HOURS, PAYOUT_MAX_HOLD_DAYS],
+    [accountId, PAYOUT_RELEASE_DELAY_HOURS, PAYOUT_MAX_HOLD_DAYS],
+  );
+  return result.rows[0] ?? null;
+}
+
+async function releaseHeldPayoutsUnderLock(stripe: Stripe, db: PoolClient) {
+  const merchants = await db.query<{ stripe_connect_account_id: string }>(
+    `
+      select stripe_connect_account_id
+      from merchant_profiles
+      where stripe_connect_account_id is not null
+    `,
   );
 
   const audCents = (entries: Array<{ amount: number; currency: string }>) =>
@@ -854,20 +1003,36 @@ export async function releaseHeldPayouts(): Promise<{
   const today = new Date().toISOString().slice(0, 10);
   const released: Array<{ accountId: string; amountCents: number; payoutId: string }> = [];
   const failed: Array<{ accountId: string; error: string }> = [];
+  const skipped: Array<{ accountId: string; reason: string }> = [];
 
   for (const row of merchants.rows) {
     const accountId = row.stripe_connect_account_id;
     // Seed placeholders (acct_seed_*) don't exist in Stripe.
     if (!isRealConnectAccountId(accountId)) continue;
+    // The lock transaction only reads. A failed read must not abort it for
+    // every host after this one, hence the savepoint. Writes go through the
+    // shared pool and commit at once, so a payout row exists - and its email
+    // can find it - even if a later host's turn fails.
+    await db.query("savepoint release_host");
     try {
       await holdPayouts(accountId);
-      if (!row.payouts_enabled) continue;
+      await markMerchantPayoutsHeld(accountId);
 
       const balance = await stripe.balance.retrieve({}, { stripeAccount: accountId });
+      const host = await heldForMerchant(db, accountId);
+      if (!host || !host.payouts_enabled) continue;
+      // A suspended host's money stays put (fix 7). Suspension is for cause,
+      // and Click carries the refunds and chargebacks that may follow - their
+      // balance is what covers them.
+      if (host.verification_status === "suspended") {
+        skipped.push({ accountId, reason: "host suspended" });
+        continue;
+      }
+
       const amountCents = releasableCents({
         availableCents: audCents(balance.available),
         pendingCents: audCents(balance.pending),
-        heldCents: Number(row.held_cents),
+        heldCents: Number(host.held_cents),
       });
       if (amountCents <= 0) continue;
 
@@ -878,16 +1043,21 @@ export async function releaseHeldPayouts(): Promise<{
           description: "Click event earnings",
           metadata: { app: "click", source: "release_held_payouts" },
         },
-        // Same account, day and amount returns the first payout, so an
-        // overlapping manual run can't pay a host twice.
+        // Same account, day and amount returns the first payout. The run lock
+        // above is what stops two runs reading two different balances.
         {
           stripeAccount: accountId,
           idempotencyKey: `click-release-${accountId}-${today}-${amountCents}`,
         },
       );
-      await upsertPayout(payout, accountId);
       released.push({ accountId, amountCents, payoutId: payout.id });
+      // Through the same locked re-read the webhook uses, so this save and a
+      // payout.* webhook racing it cannot leave the older status behind. It
+      // also sends the host their "earnings sent".
+      await savePayoutFromStripe(payout.id, accountId);
+      await db.query("release savepoint release_host");
     } catch (error) {
+      await db.query("rollback to savepoint release_host").catch(() => {});
       console.error(`[release-payouts] ${accountId} failed:`, error);
       failed.push({
         accountId,
@@ -896,12 +1066,74 @@ export async function releaseHeldPayouts(): Promise<{
     }
   }
 
-  return { accountsScanned: merchants.rows.length, released, failed };
+  // A failure used to be a log line and a field in this response (fix 7).
+  if (failed.length > 0) {
+    await notifyAdminsOfPayoutProblem(
+      `The payout run couldn't pay ${failed.length} host${failed.length === 1 ? "" : "s"}: ${failed
+        .map((entry) => `${entry.accountId} (${entry.error})`)
+        .join("; ")
+        .slice(0, 900)}`,
+    );
+  }
+
+  return { accountsScanned: merchants.rows.length, released, failed, skipped };
 }
 
 // ---------------------------------------------------------------------------
 // Connect account capability state
 // ---------------------------------------------------------------------------
+
+/**
+ * Re-reads one connected account from Stripe and caches it - the ONE sync the
+ * account webhook, the payouts page's return from Stripe and the admin sync all
+ * call (fix 4).
+ *
+ * Serialised per account: the return page and the account.updated webhook
+ * often land together, and two unlocked syncs could save in the wrong order -
+ * the older Stripe read written last - because the save is unconditional. The
+ * lock is blocking, so the second sync waits, then reads Stripe afresh.
+ *
+ * Also finishes manual payouts if they never took (fix 3b): an account with no
+ * payouts_held_at cannot publish paid events, and waiting for the nightly cron
+ * to fix that would park a host's event for most of a day.
+ */
+export async function syncConnectAccount(accountId: string): Promise<{
+  matched: boolean;
+  status: ConnectAccountStatus;
+}> {
+  const pool = getPostgresPool();
+  if (!pool) databaseUnavailable();
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    await client.query(`select pg_advisory_xact_lock(hashtext($1)::bigint)`, [
+      `connect-sync:${accountId}`,
+    ]);
+    const held = await client.query<{ payouts_held_at: Date | null }>(
+      `select payouts_held_at from merchant_profiles where stripe_connect_account_id = $1`,
+      [accountId],
+    );
+    if (held.rows[0] && !held.rows[0].payouts_held_at) {
+      try {
+        await holdPayouts(accountId);
+        await markMerchantPayoutsHeld(accountId, client);
+      } catch (error) {
+        console.warn(`[connect-sync] could not set manual payouts on ${accountId}:`, error);
+      }
+    }
+    const status = await getConnectedAccountStatus(accountId);
+    // Everything on the lock-holding connection (Codex review), so a waiter
+    // holding a connection can never starve the holder.
+    const matched = await updateMerchantConnectStatus(accountId, status, client);
+    await client.query("commit");
+    return { matched, status };
+  } catch (error) {
+    await client.query("rollback").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
 
 // Refreshes the cached capability booleans for every merchant we know about.
 // Reuses `getConnectedAccountStatus` from stripe-connect (v2 accounts API) and
@@ -933,7 +1165,6 @@ export async function syncAllConnectAccounts(
           from merchant_profiles m
           where m.stripe_connect_account_id is not null
             and m.verification_status = 'approved'
-            and m.auto_approve_events = true
             and exists (
               select 1
               from events e
@@ -941,6 +1172,7 @@ export async function syncAllConnectAccounts(
                 and e.status = 'pending'
                 and e.price_cents > 0
                 and coalesce(e.ends_at, e.starts_at) >= now()
+                and (m.auto_approve_events = true or e.review_approved_at is not null)
             )
         `
       : `
@@ -953,14 +1185,8 @@ export async function syncAllConnectAccounts(
   let accountsUpdated = 0;
   for (const row of merchants.rows) {
     try {
-      const status: ConnectAccountStatus = await getConnectedAccountStatus(
-        row.stripe_connect_account_id,
-      );
-      const wrote = await updateMerchantConnectStatus(
-        row.stripe_connect_account_id,
-        status,
-      );
-      if (wrote) accountsUpdated += 1;
+      const { matched } = await syncConnectAccount(row.stripe_connect_account_id);
+      if (matched) accountsUpdated += 1;
     } catch (error) {
       if (process.env.CLICK_DB_DEBUG === "true") {
         console.warn(
@@ -994,6 +1220,12 @@ export type IssueRefundInput = {
    * the one path with nothing else behind it.
    */
   settleBooking?: boolean;
+  /**
+   * Who asked: an admin from the console, or the host from their own event
+   * page (fix 31). Recorded on the Stripe refund and the audit row; the
+   * initiator's profile id rides in `adminProfileId` either way.
+   */
+  initiatedBy?: "admin" | "host";
 };
 
 export type IssueRefundResult = {
@@ -1108,7 +1340,7 @@ export async function issueRefund(
         : {}),
       metadata: {
         payment_transaction_id: txn.id,
-        source: "admin_dashboard",
+        source: input.initiatedBy === "host" ? "host_portal" : "admin_dashboard",
       },
     },
     {
@@ -1230,6 +1462,7 @@ export async function issueRefund(
       amount_cents: requestedAmount,
       reason: input.reason ?? null,
       new_status: newStatus,
+      initiated_by: input.initiatedBy ?? "admin",
     },
   });
 

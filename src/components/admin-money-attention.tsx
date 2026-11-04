@@ -133,6 +133,8 @@ export function AdminMoneyAttention({
   const [pending, startTransition] = useTransition();
   const [retrying, setRetrying] = useState<AdminRefundFailureRow | null>(null);
   const [clearing, setClearing] = useState<AdminRefundFailureRow | null>(null);
+  // A lost dispute whose amount is still held from the host's payouts.
+  const [releasing, setReleasing] = useState<AdminDisputeRow | null>(null);
   // Which row is mid-request, so only its buttons go quiet.
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -161,6 +163,35 @@ export function AdminMoneyAttention({
           ? `Refund sent to ${row.attendeeName ?? "the attendee"}.`
           : "Cleared from the queue.",
       );
+      startTransition(() => router.refresh());
+      return true;
+    } catch {
+      toast.error("Could not reach the server - nothing was changed.");
+      return false;
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  // Lets a lost dispute's held amount go back into the host's payouts. Resolves
+  // true only when it did, so a refusal keeps the operator's note.
+  async function releaseReserve(row: AdminDisputeRow, note: string): Promise<boolean> {
+    setBusyId(row.stripeDisputeId);
+    try {
+      const response = await fetch(
+        `/api/admin/disputes/${encodeURIComponent(row.stripeDisputeId)}/release-reserve`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ note }),
+        },
+      );
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) {
+        toast.error(payload.error ?? "That did not go through - nothing was changed.");
+        return false;
+      }
+      toast.success("Released - it goes out with the host's next payout.");
       startTransition(() => router.refresh());
       return true;
     } catch {
@@ -278,7 +309,7 @@ export function AdminMoneyAttention({
           <h3 className="font-display mt-2 text-2xl font-semibold leading-tight text-[color:var(--ink)]">
             {disputes.length === 0
               ? "No open disputes."
-              : `${disputes.length} open ${disputes.length === 1 ? "dispute" : "disputes"}.`}
+              : `${disputes.length} ${disputes.length === 1 ? "dispute needs" : "disputes need"} you - open, or lost with the host's payout held.`}
           </h3>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-[color:var(--slate)]">
             Evidence is submitted in the Stripe Dashboard, not here. Miss the deadline and
@@ -310,6 +341,7 @@ export function AdminMoneyAttention({
                         {row.status.replace(/_/g, " ")}
                       </Badge>
                       {due ? <Badge tone={due.tone}>{due.label}</Badge> : null}
+                      {row.reserveHeld ? <Badge tone="amber">Host&apos;s payout held</Badge> : null}
                     </div>
                     <p className="text-sm text-[color:var(--ink)]">
                       {row.attendeeName ?? "Unknown member"}
@@ -330,6 +362,18 @@ export function AdminMoneyAttention({
                   </div>
 
                   <div className="flex shrink-0 flex-wrap gap-2">
+                    {row.reserveHeld ? (
+                      // Lost: Stripe has taken the amount from Click, and the
+                      // same amount is held in the host's balance until this.
+                      <button
+                        type="button"
+                        onClick={() => setReleasing(row)}
+                        disabled={busyId === row.stripeDisputeId || pending}
+                        className="ck-btn ck-btn--secondary ck-btn--sm"
+                      >
+                        Release hold
+                      </button>
+                    ) : null}
                     <a
                       href={`https://dashboard.stripe.com/disputes/${row.stripeDisputeId}`}
                       target="_blank"
@@ -345,6 +389,28 @@ export function AdminMoneyAttention({
           </div>
         )}
       </section>
+
+      <ConfirmDialog
+        open={releasing !== null}
+        title="Release the held amount to the host?"
+        description={
+          releasing
+            ? `Click lost this ${formatMoney(releasing.amountCents, releasing.currency)} dispute, so the same amount has been held from ${
+                releasing.merchantName ?? "the host"
+              }'s payouts. Release it once you've reversed their transfer in Stripe, or if Click is absorbing the loss - it then goes out with their next payout.`
+            : ""
+        }
+        promptLabel="How was it settled? (kept in the audit log)"
+        promptRequired
+        confirmLabel="Release hold"
+        tone="ink"
+        busy={releasing !== null && busyId === releasing.stripeDisputeId}
+        onConfirm={async (note) => {
+          if (!releasing) return;
+          if (await releaseReserve(releasing, note)) setReleasing(null);
+        }}
+        onCancel={() => setReleasing(null)}
+      />
 
       <ConfirmDialog
         open={retrying !== null}

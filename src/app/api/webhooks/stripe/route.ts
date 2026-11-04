@@ -6,9 +6,7 @@ import {
   markPaymentSucceeded,
   processGuestSpotsForSession,
   settleRefundedBooking,
-  updateMerchantConnectStatus,
 } from "@/lib/event-repository";
-import { getConnectedAccountStatus } from "@/lib/stripe-connect";
 import {
   getStripeClient,
   getStripeWebhookSecret,
@@ -17,6 +15,7 @@ import {
 import {
   recordDisputeAudit,
   recordRefundReversal,
+  syncConnectAccount,
   syncTransactionFromStripe,
   upsertPayoutFromEvent,
 } from "@/lib/stripe-sync";
@@ -59,14 +58,6 @@ function isConnectAccountEventType(type: string) {
     type.startsWith("v2.core.account.") ||
     type.startsWith("v2.core.account[")
   );
-}
-
-// Re-fetch the authoritative status from Stripe rather than trusting whatever
-// the payload carried - thin notifications carry no object at all, and the
-// snapshot shape varies by event.
-async function syncConnectAccount(accountId: string) {
-  const status = await getConnectedAccountStatus(accountId);
-  await updateMerchantConnectStatus(accountId, status);
 }
 
 // Pulls the connected account id out of a Connect account event. v1 Connect
@@ -310,8 +301,9 @@ export async function POST(request: Request) {
       // them /admin/audit shows the argument but never the money.
       case "charge.dispute.funds_withdrawn":
       case "charge.dispute.funds_reinstated": {
-        // No first-class disputes table yet - log to audit_logs so
-        // /admin/audit surfaces it. Disputes table is a follow-up.
+        // Written to payment_disputes (the admin money queue, which also holds
+        // the disputed amount back from the host's next payout) and to
+        // audit_logs.
         await recordDisputeAudit(event.data.object, event.type);
         break;
       }
@@ -320,7 +312,9 @@ export async function POST(request: Request) {
       case "payout.paid":
       case "payout.failed":
       case "payout.canceled": {
-        // Payouts always come from a connected account context.
+        // Payouts always come from a connected account context. The payout is
+        // re-read from Stripe under a lock before it is saved, so a late or
+        // out-of-order delivery cannot leave an older status behind.
         const accountId =
           typeof event.account === "string" ? event.account : null;
         await upsertPayoutFromEvent(event.data.object, accountId);
@@ -328,8 +322,11 @@ export async function POST(request: Request) {
       }
       default: {
         // Connect: a merchant's connected account changed (capabilities,
-        // requirements, bank details). Re-fetch the authoritative status and
-        // cache it. Best-effort - /merchant/onboarding also syncs on return.
+        // requirements, bank details). Re-fetch the authoritative status from
+        // Stripe rather than trusting whatever the payload carried - thin
+        // notifications carry no object at all, and the snapshot shape varies
+        // by event. syncConnectAccount serialises this against the payouts
+        // page's own sync on return from Stripe.
         if (isConnectAccountEventType(event.type)) {
           const accountId = connectedAccountIdFromEvent(event);
           if (accountId) await syncConnectAccount(accountId);

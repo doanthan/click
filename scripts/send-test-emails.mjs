@@ -121,6 +121,15 @@ const VARS = {
   refundLabel: "A $28 refund is on its way to your Visa ending 4242",
   refundLine: "A $28 refund is on its way to your Visa ending 4242",
   revenueLabel: "$1,240",
+  // host payouts (payout-sent-merchant / payout-failed-merchant)
+  amountLabel: "$116.55",
+  arrivalLabel: "Monday 17 August",
+  bankLabel: "the account ending 6789",
+  failureReason: "The bank account was closed.",
+  financesUrl: `${APP}/merchant?tab=finances`,
+  // event-created-merchant: a rendered <p> when the event is paid and payouts
+  // are not ready, blank otherwise.
+  payoutsNoteHtml: "",
 
   // merchant reporting
   monthLabel: "July",
@@ -194,6 +203,8 @@ const SUBJECTS = {
   "event-reminder-attendee": "Tomorrow - {{eventTitle}}",
   "event-created-merchant": "Your event is in review - {{eventTitle}}",
   "event-awaiting-payouts-merchant": "{{eventTitle}} is saved - connect payouts to go live",
+  "payout-sent-merchant": "{{amountLabel}} is on its way to your bank",
+  "payout-failed-merchant": "Action needed - a {{amountLabel}} payout didn't reach your bank",
   "event-approved-merchant": "{{eventTitle}} is live",
   "event-rejected-merchant": "{{eventTitle}} needs another pass",
   "event-cancelled-merchant": "{{eventTitle}} was cancelled by Click",

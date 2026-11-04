@@ -285,11 +285,13 @@ export async function POST(request: Request, context: RouteContext) {
           event_uuid: hold.eventUuid,
           event_slug: hold.eventSlug,
         },
-        // Merchant-hosted events: destination charge with `on_behalf_of` so
-        // the charge settles in the merchant's AU/AUD scope (correct tax
-        // receipt + statement descriptor) while the platform remains merchant
-        // of record for dispute/refund routing. application_fee_amount is the
-        // platform's cut (0 by default; flip PLATFORM_FEE_BPS env to enable).
+        // Merchant-hosted events: destination charge with `on_behalf_of`. That
+        // makes the HOST the merchant of record - Stripe settles in their
+        // AU/AUD scope and puts their statement descriptor on the buyer's card -
+        // while the platform balance still carries Stripe's fees, refunds and
+        // chargebacks (decision D2, 13 Oct: keep on_behalf_of). The receipt and
+        // /terms wording about who sells the ticket is a legal call, not this
+        // comment's. application_fee_amount is the platform's cut.
         // Funds then flow through to the merchant's connected balance and wait
         // there - host payouts are manual (holdPayouts) - until the
         // release-payouts cron pays them out after the event.

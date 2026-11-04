@@ -454,10 +454,17 @@ test("a resubmitted paid event waits for payouts like a new one does", () => {
   // Stripe account put a paid event live and every buyer hit a checkout error.
   const resubmit = fnBody(read("src/lib/event-repository.ts"), "export async function resubmitRejectedEvent");
   assert.doesNotMatch(resubmit, /const newStatus = autoApprove \? "live" : "pending";/);
+  // The one publish rule (audit fix 9): charges, payouts AND manual payouts
+  // confirmed (fix 3b), shared with create, approval and the held release.
+  assert.match(resubmit, /const stripeReady = merchantReadyForPaidEvents\(merchant\);/);
+  const rule = fnBody(read("src/lib/event-repository.ts"), "function merchantReadyForPaidEvents");
   assert.match(
-    resubmit,
-    /merchant\.charges_enabled === true && merchant\.payouts_enabled === true/,
+    rule,
+    /merchant\.charges_enabled === true &&\s*merchant\.payouts_enabled === true &&\s*merchant\.payouts_held_at !== null/,
   );
+  // A resubmission is a fresh review, so an approval given before the
+  // rejection (decision D4) no longer stands.
+  assert.match(resubmit, /review_approved_at = null,/);
   // The price is the row's, read inside the UPDATE - the rejected-event editor
   // can change it right before resubmitting.
   assert.match(
@@ -510,12 +517,19 @@ test("a held event says what it is waiting on, on every host surface", () => {
   for (const clause of [
     /event\.status === "pending"/,
     /event\.price_cents > 0/,
-    /merchant\.auto_approve_events === true/,
+    // Trusted - or approved by an admin before payouts were ready (D4).
+    /\(merchant\.auto_approve_events === true \|\| event\.review_approved_at !== null\)/,
     /merchant\.verification_status === "approved"/,
-    /!\(merchant\.charges_enabled === true && merchant\.payouts_enabled === true\)/,
+    /!merchantReadyForPaidEvents\(merchant\)/,
   ]) {
     assert.match(held, clause);
   }
+  // And the in-review half (fix 17): an untrusted host's paid event, not yet
+  // approved, payouts not ready - told to connect Stripe now.
+  assert.equal(
+    (repo.match(/awaitingReviewAndPayouts: isAwaitingReviewAndPayouts\(merchant, row\)/g) ?? []).length,
+    2,
+  );
   // Both readers carry it: the list/dashboard/calendar and the event page.
   assert.equal((repo.match(/heldForPayouts: isHeldForPayouts\(merchant, row\)/g) ?? []).length, 2);
 

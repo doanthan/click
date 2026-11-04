@@ -3,6 +3,8 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { Pool } from "pg";
+import Stripe from "stripe";
+import { missingWebhookEvents } from "../src/lib/stripe-webhook-events.ts";
 
 const root = process.cwd();
 const requestedEnv = process.argv.find((arg) => arg.startsWith("--env="))?.slice(6);
@@ -249,6 +251,39 @@ if (value("PLATFORM_FEE_BPS") && (!Number.isInteger(fee) || fee <= 0 || fee > 5_
 }
 if (!value("AUTH_GOOGLE_ID") || !value("AUTH_GOOGLE_SECRET")) {
   warnings.push("Google OAuth is disabled until AUTH_GOOGLE_ID and AUTH_GOOGLE_SECRET are set.");
+}
+
+// The live webhook must be subscribed to every event the route acts on (fix 2).
+// Read from Stripe, so it needs the secret key and the network. A blocker at
+// launch, a warning before it (UAT runs on a sandbox with its own endpoint).
+if (value("STRIPE_SECRET_KEY") && value("NEXT_PUBLIC_APP_URL")) {
+  const webhookUrl = `${value("NEXT_PUBLIC_APP_URL").replace(/\/$/, "")}/api/webhooks/stripe`;
+  try {
+    const stripe = new Stripe(value("STRIPE_SECRET_KEY"));
+    const endpoints = [];
+    for await (const endpoint of stripe.webhookEndpoints.list({ limit: 100 })) {
+      if (endpoint.url.replace(/\/$/, "") === webhookUrl && endpoint.status === "enabled") {
+        endpoints.push(endpoint);
+      }
+    }
+    if (endpoints.length === 0) {
+      (launchMode ? errors : warnings).push(`No enabled Stripe webhook endpoint points at ${webhookUrl}.`);
+    } else {
+      const missing = missingWebhookEvents(endpoints.flatMap((endpoint) => endpoint.enabled_events));
+      if (missing.length > 0) {
+        (launchMode ? errors : warnings).push(
+          `The Stripe webhook at ${webhookUrl} is not subscribed to: ${missing.join(", ")}.`,
+        );
+      }
+      warnings.push(
+        `Check by hand that the Stripe webhook at ${webhookUrl} has "Events from connected accounts" on - payout.* and account.updated only arrive that way, and Stripe's API does not report it.`,
+      );
+    }
+  } catch (error) {
+    (launchMode ? errors : warnings).push(
+      `Could not read the Stripe webhook endpoints: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
 const vercel = JSON.parse(readFileSync(path.join(root, "vercel.json"), "utf8"));

@@ -53,7 +53,7 @@ test("the hold covers cancelled events and stays inside Stripe's 90-day limit", 
   // A cancelled event's refunds may still need the money.
   assert.match(fn, /e\.status = 'cancelled'/);
   // Stripe requires manual-payout funds to go out within 90 days in Australia.
-  assert.match(fn, /make_interval\(days => \$2\)/);
+  assert.match(fn, /make_interval\(days => \$3\)/);
   assert.match(fn, /PAYOUT_MAX_HOLD_DAYS/);
   // Seed placeholders (acct_seed_*) are not real Stripe accounts.
   assert.match(fn, /isRealConnectAccountId\(accountId\)/);

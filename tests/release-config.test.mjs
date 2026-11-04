@@ -259,7 +259,18 @@ test("merchants can create free events without finishing Stripe Connect", () => 
     /const eventStatus = autoApprove && \(!needsStripe \|\| stripeReady\) \? "live" : "pending"/,
     "a free event from an approved, auto-approved host must publish without Connect",
   );
-  assert.match(repository, /This is a paid event, but the host hasn't finished Stripe Connect/);
+  // Admin approval of a paid event whose host can't take the money yet records
+  // the approval and KEEPS it pending (decision D4) - it publishes itself once
+  // payouts are ready. It must never put it live early.
+  const approve = repository.slice(
+    repository.indexOf("export async function approveEventForAdmin"),
+    repository.indexOf("export async function rejectEventForAdmin"),
+  );
+  assert.match(approve, /eligibility\.rows\[0\]\.merchant_ready !== true;/);
+  assert.match(
+    approve,
+    /if \(awaitingPayouts\) \{[\s\S]*?set review_approved_at = coalesce\(review_approved_at, now\(\)\),[\s\S]*?where slug = \$1 and status = 'pending'[\s\S]*?return \{ \.\.\.heldEvent, awaitingPayouts: true \};/,
+  );
 });
 
 test("a deep link survives signup and onboarding", () => {
@@ -1103,15 +1114,24 @@ test("the business type Stripe onboarding needs is asked before any Connect acco
   // it - which only holds if the connect route REFUSES to create an account
   // without an answer rather than falling back to "company".
   const route = readFileSync(path.join(root, "src/app/api/merchant/stripe/connect/route.ts"), "utf8");
-  const create = route.slice(route.indexOf("if (!accountId) {"), route.indexOf("await setMerchantConnectAccountId("));
+  const create = route.slice(route.indexOf("if (!accountId) {"), route.indexOf("const appUrl = getAppUrl();"));
   assert.match(create, /let businessType = merchant\.business_type;/);
   assert.match(create, /if \(!isBusinessType\(picked\)\) \{[\s\S]*?status: 400/);
   assert.match(create, /businessType = await setMerchantBusinessType\(merchant\.id, picked\);/);
   assert.ok(
-    create.indexOf("setMerchantBusinessType(") < create.indexOf("createConnectedAccount("),
+    create.indexOf("setMerchantBusinessType(") < create.indexOf("ensureMerchantConnectAccount("),
     "the answer must be saved before the account is created from it",
   );
-  assert.match(create, /createConnectedAccount\(\{[\s\S]*?businessType,/);
+  // The account is built from the row read under ensureMerchantConnectAccount's
+  // lock (audit fix 3), which carries the saved business type to Stripe.
+  assert.match(
+    create,
+    /ensureMerchantConnectAccount\(merchant\.id, \(details, attemptId\) =>\s*createConnectedAccount\(details, \{ merchantProfileId: merchant\.id, attemptId \}\)/,
+  );
+  const ensure = readFileSync(path.join(root, "src/lib/event-repository.ts"), "utf8");
+  const ensureBody = ensure.slice(ensure.indexOf("export async function ensureMerchantConnectAccount"));
+  assert.match(ensureBody, /for update of m/);
+  assert.match(ensureBody, /businessType: row\.business_type,/);
 
   // The payout step asks exactly when the route will need it.
   const payouts = readFileSync(path.join(root, "src/app/merchant/onboarding/payouts/page.tsx"), "utf8");
@@ -1131,7 +1151,11 @@ test("the business type Stripe onboarding needs is asked before any Connect acco
   }
 
   const connect = readFileSync(path.join(root, "src/lib/stripe-connect.ts"), "utf8");
-  assert.match(connect, /businessType === "sole_trader" \? "individual" : "company"/);
+  // Only the two mappings that need no guess (audit fix 6): a partnership or a
+  // trust is left for Stripe's own form to ask, never sent as a company.
+  assert.match(connect, /if \(businessType === "sole_trader"\) return "individual";/);
+  assert.match(connect, /if \(businessType === "company"\) return "company";/);
+  assert.doesNotMatch(connect, /registered_name: merchant\.businessName/);
 
   // A partial edit that omits the field must not wipe a good value.
   const repo = readFileSync(path.join(root, "src/lib/event-repository.ts"), "utf8");
@@ -1466,7 +1490,7 @@ test("the Finances tiles report settled money, not gross charges", () => {
   const repo = readFileSync(path.join(root, "src/lib/event-repository.ts"), "utf8");
   const start = repo.indexOf("export async function getMerchantFinancesSummary");
   assert.ok(start > -1, "getMerchantFinancesSummary not found");
-  const summary = repo.slice(start, start + 8000);
+  const summary = repo.slice(start, repo.indexOf("\nexport ", start + 10));
 
   assert.match(
     summary,
@@ -1527,10 +1551,13 @@ test("the Finances tiles report settled money, not gross charges", () => {
     /note="to your bank"/,
     "a gross charge must never be labelled as reaching the host's bank",
   );
-  // The row has to reconcile: collected - Click's fee = what lands.
-  for (const label of ["Collected", "Click fee", "Your net"]) {
+  // The row has to reconcile, in the host's terms (audit fix 23): their ticket
+  // sales - Click's commission = their net. The booking fee is the guest's.
+  for (const label of ["Ticket sales", "Click commission", "Your net"]) {
     assert.match(tab, new RegExp(`label="${label}"`), `missing the ${label} tile`);
   }
+  assert.match(summary, /ticketSalesCents: collectedCents - bookingFeeCents,/);
+  assert.match(summary, /commissionCents: platformFeeCents - bookingFeeCents,/);
 });
 
 test("portal headcounts include paid +1 guest seats", () => {
@@ -1541,7 +1568,7 @@ test("portal headcounts include paid +1 guest seats", () => {
   const repo = readFileSync(path.join(root, "src/lib/event-repository.ts"), "utf8");
   const start = repo.indexOf("export async function getMerchantEvents");
   assert.ok(start > -1, "getMerchantEvents not found");
-  const events = repo.slice(start, start + 4000);
+  const events = repo.slice(start, repo.indexOf("\nexport ", start + 10));
 
   assert.match(events, /from guest_spots gs/, "the query must count guest seats");
   assert.match(

@@ -101,8 +101,16 @@ import {
 import {
   calculateApplicationFee,
   getPlatformFeeBps,
+  type MerchantForConnect,
   isRealConnectAccountId,
 } from "./stripe-connect";
+import type { StoredRequirement } from "./stripe-requirements";
+import { chargeSplitAfterRefunds, ticketPriceError } from "./ticket-price";
+import {
+  eventMoneyState,
+  PAYOUT_MAX_HOLD_DAYS,
+  PAYOUT_RELEASE_DELAY_HOURS,
+} from "./payout-release";
 import { isClickMechanicEnabled, isProductionDeployment } from "./runtime-mode";
 import { isAdminEmail } from "./admin-emails";
 import { logBookingEvent, refundBandFromTier } from "./booking-events";
@@ -240,6 +248,13 @@ export type MerchantProfileRow = {
   // predating the wizard were written without an address.
   address_state: string | null;
   address_postcode: string | null;
+  // When Stripe confirmed manual payouts (database/078, fix 3b). Null = the
+  // account may still be on Stripe's automatic schedule, so no paid event may
+  // publish (merchantReadyForPaidEvents).
+  payouts_held_at: string | null;
+  // What Stripe still wants and by when (database/078, fix 4).
+  stripe_requirements: StoredRequirement[];
+  stripe_requirements_due_at: string | null;
 };
 
 export type ProfileStatus = {
@@ -320,6 +335,9 @@ export type CreateEventInput = {
   // to events.image_urls (see 015_event_image_urls.sql). When set, the first
   // entry is mirrored to image_url so existing readers don't need to change.
   imageUrls?: string[];
+  // Fix 20 (database/080): the id the wizard gives every date of one repeating
+  // event. Ignored unless it is a UUID no OTHER host's event already carries.
+  seriesId?: string;
 };
 
 export type AdminEventRow = {
@@ -344,12 +362,13 @@ export type AdminEventRow = {
   lat: number | null;
   lng: number | null;
   priceCents: number;
-  // True when the event charges a price but the owning merchant hasn't
-  // finished Stripe Connect payout setup (charges_enabled = false). Surfaces a
-  // warning in the admin queue so reviewers know approving it publishes an
-  // event no one can pay for until the merchant connects payouts. Always false
-  // for free or platform-owned events.
+  // True when the event charges a price but the owning merchant's payouts are
+  // not ready (merchantReadyForPaidEvents). Approving such an event records the
+  // approval and it goes live by itself once they are (decision D4). Always
+  // false for free or platform-owned events.
   payoutsNotConnected: boolean;
+  // Pending, but already approved - waiting only on the host's payouts.
+  approvedAwaitingPayouts: boolean;
   // False once the event has already finished (end time, or start time when no
   // end is set, is in the past). Drives the admin queue's "can't approve a past
   // event" gate. (When recurring events land, a still-repeating series should
@@ -1499,6 +1518,25 @@ async function logEventApprovedEmail(
   pool: NonNullable<ReturnType<typeof getPostgresPool>>,
   eventSlug: string,
 ) {
+  await logOwningMerchantEventEmail(pool, eventSlug, "event-approved-merchant");
+}
+
+// An admin approved a paid event whose host's payouts aren't ready (decision
+// D4): it goes live by itself once they are, so the host is told to finish
+// Stripe, not that it's live. Same template as a trusted host's held event -
+// "no review to wait for" is true of both.
+async function logEventAwaitingPayoutsEmail(
+  pool: NonNullable<ReturnType<typeof getPostgresPool>>,
+  eventSlug: string,
+) {
+  await logOwningMerchantEventEmail(pool, eventSlug, "event-awaiting-payouts-merchant");
+}
+
+async function logOwningMerchantEventEmail(
+  pool: NonNullable<ReturnType<typeof getPostgresPool>>,
+  eventSlug: string,
+  template: "event-approved-merchant" | "event-awaiting-payouts-merchant",
+) {
   try {
     const result = await pool.query<{
       event_slug: string;
@@ -1548,7 +1586,7 @@ async function logEventApprovedEmail(
         .split(/\s+/)[0] || "there";
 
     await logEmailEvent({
-      template: "event-approved-merchant",
+      template,
       toEmail: row.merchant_contact_email,
       toProfileId: row.merchant_owner_profile_id,
       vars: {
@@ -1561,12 +1599,14 @@ async function logEventApprovedEmail(
         eventCapacityLabel: `Capacity ${row.capacity}`,
         publicEventUrl: `${origin}/events/${row.event_slug}`,
         eventDashboardUrl: `${origin}/merchant/events/${row.event_slug}`,
+        editEventUrl: `${origin}/merchant/events/${row.event_slug}`,
+        payoutsUrl: `${origin}/merchant/onboarding/payouts?returnTo=${encodeURIComponent(`/merchant/events/${row.event_slug}`)}`,
         supportEmail: SUPPORT_EMAIL,
         unsubscribeUrl: `${origin}/account-settings`,
       },
     });
   } catch (error) {
-    console.warn("logEventApprovedEmail failed", { eventSlug, error });
+    console.warn(`${template} email failed`, { eventSlug, error });
   }
 }
 
@@ -2378,7 +2418,10 @@ async function loadMerchantProfile(
         onboarding_completed_at::text,
         auto_approve_events,
         address_state,
-        address_postcode
+        address_postcode,
+        payouts_held_at::text,
+        stripe_requirements,
+        stripe_requirements_due_at::text
       from merchant_profiles
       where profile_id = $1::uuid
       limit 1
@@ -2514,24 +2557,88 @@ export type MerchantEventSummary = {
   // isHeldForPayouts. Hosts read "Pending" as "an admin is reviewing it" (bug
   // board #270), so the portal names the real reason instead.
   heldForPayouts: boolean;
+  // In review AND payouts not ready (isAwaitingReviewAndPayouts, fix 17).
+  awaitingReviewAndPayouts: boolean;
+  // Door count (fix 30): confirmed attendees and named +1s marked present, out
+  // of doorTotal - the people on the door list.
+  checkedIn: number;
+  doorTotal: number;
+  // Fix 20: this date's place in a repeating event, e.g. 2 of 4. Null for a
+  // one-off (and on the event page, which shows one date).
+  seriesPosition: number | null;
+  seriesCount: number | null;
 };
 
-// A trusted, approved host's PAID event that sits in 'pending' only because
-// Stripe charges AND payouts are not both on yet: the hold createEventForMerchant
-// and resubmitRejectedEvent apply, and publishEventsHeldForPayouts releases.
+/**
+ * The one rule for "may this host's paid event go live" (fix 9): Stripe can
+ * take the payment, can pay the host out, and the account is on manual payouts
+ * so the money waits for the event (fix 3b). Create, resubmit, admin approval
+ * and the held-event release all ask this - approval used to check charges
+ * alone, so the same event got a different answer depending on the path.
+ * MERCHANT_READY_SQL is the same rule for a query; keep the two in step.
+ *
+ * Checkout deliberately asks less (charges only): an event already live keeps
+ * selling while Stripe re-checks payouts, because the money is held anyway.
+ */
+function merchantReadyForPaidEvents(
+  merchant: Pick<MerchantProfileRow, "charges_enabled" | "payouts_enabled" | "payouts_held_at">,
+) {
+  return (
+    merchant.charges_enabled === true &&
+    merchant.payouts_enabled === true &&
+    merchant.payouts_held_at !== null
+  );
+}
+
+function merchantReadySql(alias: string) {
+  return `(${alias}.charges_enabled and ${alias}.payouts_enabled and ${alias}.payouts_held_at is not null)`;
+}
+
+// An approved host's PAID event that sits in 'pending' only because payouts are
+// not ready yet (merchantReadyForPaidEvents): either the host is trusted, so no
+// review applies, or an admin has already approved it (review_approved_at,
+// decision D4). publishEventsHeldForPayouts releases both.
 function isHeldForPayouts(
   merchant: Pick<
     MerchantProfileRow,
-    "auto_approve_events" | "verification_status" | "charges_enabled" | "payouts_enabled"
+    | "auto_approve_events"
+    | "verification_status"
+    | "charges_enabled"
+    | "payouts_enabled"
+    | "payouts_held_at"
   >,
-  event: { status: string; price_cents: number },
+  event: { status: string; price_cents: number; review_approved_at: Date | null },
 ) {
   return (
     event.status === "pending" &&
     event.price_cents > 0 &&
-    merchant.auto_approve_events === true &&
+    (merchant.auto_approve_events === true || event.review_approved_at !== null) &&
     merchant.verification_status === "approved" &&
-    !(merchant.charges_enabled === true && merchant.payouts_enabled === true)
+    !merchantReadyForPaidEvents(merchant)
+  );
+}
+
+// The other half (fix 17): an untrusted host's paid event still waiting for
+// its review, whose payouts are not ready either. Approval alone will not put
+// it live, so the host is told to connect Stripe now rather than after.
+function isAwaitingReviewAndPayouts(
+  merchant: Pick<
+    MerchantProfileRow,
+    | "auto_approve_events"
+    | "verification_status"
+    | "charges_enabled"
+    | "payouts_enabled"
+    | "payouts_held_at"
+  >,
+  event: { status: string; price_cents: number; review_approved_at: Date | null },
+) {
+  return (
+    event.status === "pending" &&
+    event.price_cents > 0 &&
+    merchant.auto_approve_events !== true &&
+    event.review_approved_at === null &&
+    merchant.verification_status === "approved" &&
+    !merchantReadyForPaidEvents(merchant)
   );
 }
 
@@ -2546,6 +2653,14 @@ export type MerchantAttendeeRow = {
   // the event page can BE the door list instead of sending a host who is
   // standing at the venue back out to the portal to tick people off.
   checkedInAt: string | null;
+  // Fix 31: the booking's charge, so the host can refund it from the event
+  // page. `refundable` mirrors getRefundableBookingForMerchant (paid, something
+  // left, money still held) - that function is still the gate; this only
+  // decides whether to show the button.
+  paymentTransactionId: string | null;
+  paidCents: number;
+  refundedCents: number;
+  refundable: boolean;
 };
 
 // A named +1 on the merchant door list (spec 19 §11). First name + status + who
@@ -2595,6 +2710,8 @@ export type MerchantEventDetail = MerchantEventSummary & {
   offeredSeats: number;
   // Interest tags currently attached, so the merchant edit form can pre-fill.
   tags: { slug: string; label: string }[];
+  // Fix 34: public page views, all time (event_page_views, database/080).
+  pageViews: number;
 };
 
 export async function getMerchantEvents(session: Session | null): Promise<MerchantEventSummary[]> {
@@ -2621,10 +2738,39 @@ export async function getMerchantEvents(session: Session | null): Promise<Mercha
     waitlisted: string;
     price_cents: number;
     category: string;
+    review_approved_at: Date | null;
+    checked_in: string;
+    door_total: string;
+    series_position: string | null;
+    series_count: string | null;
   }>(
     `
       select
         event.slug,
+        -- Fix 20: "2 of 4" for a date of a repeating event (database/080).
+        case when event.series_id is not null then
+          row_number() over (partition by event.series_id order by event.starts_at)
+        end as series_position,
+        case when event.series_id is not null then
+          count(*) over (partition by event.series_id)
+        end as series_count,
+        -- Who can be ticked off at the door: ticket-holders plus NAMED +1s, the
+        -- same total the event page's door list counts (unnamed +1s have no
+        -- name to tick).
+        (
+          count(attendee.id) filter (where attendee.status = 'confirmed')
+          + coalesce((
+            select count(*)
+            from guest_spots gs
+            where gs.event_id = event.id
+              and gs.status in ('invited', 'claimed')
+              and exists (
+                select 1 from event_attendees ea
+                where ea.payment_transaction_id = gs.payment_transaction_id
+                  and ea.status = 'confirmed'
+              )
+          ), 0)
+        ) as door_total,
         event.title,
         event.starts_at,
         event.ends_at,
@@ -2634,7 +2780,20 @@ export async function getMerchantEvents(session: Session | null): Promise<Mercha
         event.capacity,
         event.price_cents,
         event.category,
+        event.review_approved_at,
         count(attendee.id) filter (where attendee.status = 'confirmed') as confirmed,
+        (
+          count(attendee.id) filter (
+            where attendee.status = 'confirmed' and attendee.checked_in_at is not null
+          )
+          + coalesce((
+            select count(*)
+            from guest_spots gs
+            where gs.event_id = event.id
+              and gs.status <> 'cancelled'
+              and gs.attended
+          ), 0)
+        ) as checked_in,
         count(attendee.id) filter (where attendee.status = 'waitlisted') as waitlisted,
         -- Paid +1s hold a seat but have no event_attendees row, so counting
         -- attendees alone under-reported every headcount in the portal - the
@@ -2686,6 +2845,11 @@ export async function getMerchantEvents(session: Session | null): Promise<Mercha
     priceCents: row.price_cents,
     category: row.category,
     heldForPayouts: isHeldForPayouts(merchant, row),
+    awaitingReviewAndPayouts: isAwaitingReviewAndPayouts(merchant, row),
+    checkedIn: Number(row.checked_in),
+    doorTotal: Number(row.door_total),
+    seriesPosition: row.series_position ? Number(row.series_position) : null,
+    seriesCount: row.series_count ? Number(row.series_count) : null,
   }));
 }
 
@@ -2726,10 +2890,29 @@ export async function getMerchantEventDetail(
     guest_seats: string;
     seats_available: string;
     offered_seats: string;
+    review_approved_at: Date | null;
+    checked_in: string;
+    page_views: string;
   }>(
     `
       select
         event.id::text,
+        event.review_approved_at,
+        coalesce((
+          select sum(v.views) from event_page_views v where v.event_id = event.id
+        ), 0) as page_views,
+        (
+          count(attendee.id) filter (
+            where attendee.status = 'confirmed' and attendee.checked_in_at is not null
+          )
+          + coalesce((
+            select count(*)
+            from guest_spots gs
+            where gs.event_id = event.id
+              and gs.status <> 'cancelled'
+              and gs.attended
+          ), 0)
+        ) as checked_in,
         event.slug,
         event.title,
         event.description,
@@ -2797,6 +2980,10 @@ export async function getMerchantEventDetail(
     status: string;
     created_at: Date;
     checked_in_at: Date | null;
+    payment_transaction_id: string | null;
+    paid_cents: number | null;
+    refunded_cents: number | null;
+    refundable: boolean | null;
   }>(
     `
       select
@@ -2806,9 +2993,20 @@ export async function getMerchantEventDetail(
         attendee_profile.photo_url,
         attendee.status::text,
         attendee.created_at,
-        attendee.checked_in_at
+        attendee.checked_in_at,
+        pt.id::text as payment_transaction_id,
+        pt.amount_cents as paid_cents,
+        pt.refunded_amount_cents as refunded_cents,
+        (
+          pt.status in ('paid', 'partially_refunded')
+          and pt.amount_cents > pt.refunded_amount_cents
+          and coalesce(event_row.ends_at, event_row.starts_at) > now() - make_interval(hours => $2)
+          and pt.created_at > now() - make_interval(days => $3)
+        ) as refundable
       from event_attendees attendee
       join profiles attendee_profile on attendee_profile.id = attendee.profile_id
+      join events event_row on event_row.id = attendee.event_id
+      left join payment_transactions pt on pt.id = attendee.payment_transaction_id
       where attendee.event_id = $1::uuid
         and (
           attendee.status in ('confirmed', 'waitlisted')
@@ -2822,7 +3020,7 @@ export async function getMerchantEventDetail(
         end,
         attendee.created_at asc
     `,
-    [row.id],
+    [row.id, PAYOUT_RELEASE_DELAY_HOURS, PAYOUT_MAX_HOLD_DAYS],
   );
 
   const tagResult = await pool.query<{ slug: string; label: string }>(
@@ -2873,6 +3071,14 @@ export async function getMerchantEventDetail(
     priceCents: row.price_cents,
     category: row.category,
     heldForPayouts: isHeldForPayouts(merchant, row),
+    awaitingReviewAndPayouts: isAwaitingReviewAndPayouts(merchant, row),
+    checkedIn: Number(row.checked_in),
+    doorTotal:
+      attendeeResult.rows.filter((entry) => entry.status === "confirmed").length +
+      guestResult.rows.length,
+    seriesPosition: null,
+    seriesCount: null,
+    pageViews: Number(row.page_views),
     images: resolveEventImages(
       row.image_urls && row.image_urls.length > 0 ? row.image_urls : [row.image_url],
       row.category,
@@ -2887,6 +3093,10 @@ export async function getMerchantEventDetail(
       status: entry.status as MerchantAttendeeRow["status"],
       rsvpAt: entry.created_at.toISOString(),
       checkedInAt: entry.checked_in_at ? entry.checked_in_at.toISOString() : null,
+      paymentTransactionId: entry.payment_transaction_id,
+      paidCents: entry.paid_cents ?? 0,
+      refundedCents: entry.refunded_cents ?? 0,
+      refundable: entry.status === "confirmed" && entry.refundable === true,
     })),
     guests: guestResult.rows.map((g) => ({
       guestId: g.guest_id,
@@ -2984,6 +3194,7 @@ export async function updateMerchantEventDetails(
       address: string | null;
       status: string;
       attendee_count: string;
+      price_cents: number;
     }>(
       `
         select
@@ -2991,6 +3202,7 @@ export async function updateMerchantEventDetails(
           event.title,
           event.address,
           event.status::text as status,
+          event.price_cents,
           count(attendee.id) filter (
             where attendee.status = 'confirmed'
                or (attendee.status = 'pending_payment' and attendee.hold_expires_at > now())
@@ -3071,6 +3283,18 @@ export async function updateMerchantEventDetails(
       termsEditable && input.priceCents !== undefined && input.priceCents >= 0
         ? Math.floor(input.priceCents)
         : null;
+    // The paid-ticket minimum (decision D3) applies to a NEW price only: an
+    // event priced before it existed keeps its price through an edit.
+    const priceError =
+      nextPriceCents !== null && nextPriceCents !== event.price_cents
+        ? ticketPriceError(nextPriceCents)
+        : null;
+    if (priceError) {
+      await client.query("rollback");
+      const error = new Error(priceError);
+      error.name = "ValidationError";
+      throw error;
+    }
     const nextCategory =
       termsEditable && input.category !== undefined && input.category.trim()
         ? input.category.trim()
@@ -3108,6 +3332,17 @@ export async function updateMerchantEventDetails(
             ends_at = coalesce($12::timestamptz, ends_at),
             capacity = coalesce($13::int, capacity),
             price_cents = coalesce($14::int, price_cents),
+            -- An approval given while the event waited on payouts (D4) was an
+            -- approval of what the admin saw. A host on review who then edits
+            -- it - price, date, venue, words or photos - sends it back to the
+            -- queue, so Stripe coming on cannot publish terms nobody checked
+            -- (and a paid event edited to free does not sit approved forever,
+            -- since only paid events wait on payouts). Trusted hosts never
+            -- needed the review.
+            review_approved_at = case
+              when status = 'pending' and not $15::boolean then null
+              else review_approved_at
+            end,
             updated_at = now()
         where id = $1::uuid
       `,
@@ -3126,6 +3361,7 @@ export async function updateMerchantEventDetails(
         nextEndsAt,
         nextCapacity,
         nextPriceCents,
+        merchant.auto_approve_events === true,
       ],
     );
 
@@ -3211,7 +3447,7 @@ export async function resubmitRejectedEvent(
   // change it right before this call.
   const autoApprove =
     merchant.auto_approve_events === true && merchant.verification_status === "approved";
-  const stripeReady = merchant.charges_enabled === true && merchant.payouts_enabled === true;
+  const stripeReady = merchantReadyForPaidEvents(merchant);
 
   const result = await pool.query<{ slug: string; title: string; status: string }>(
     `
@@ -3222,6 +3458,9 @@ export async function resubmitRejectedEvent(
           end,
           rejection_reason = null,
           rejected_at = null,
+          -- A resubmission is a new review: an approval given before the
+          -- rejection no longer stands (decision D4).
+          review_approved_at = null,
           updated_at = now()
       from (
         select id from events
@@ -3673,6 +3912,15 @@ async function getEventsForExploreUncached(): Promise<ExploreEvents> {
       left join merchant_profiles merchant on merchant.id = event.merchant_profile_id
       where event.status in ('live', 'featured', 'locked', 'waitlist')
         and coalesce(merchant.verification_status, 'approved') <> 'suspended'
+        -- A host whose payments Stripe has paused can't sell a paid event, so
+        -- it leaves the catalogue until they can (fix 32). It used to stay
+        -- listed and every buyer found out by tapping pay. The direct link
+        -- still works and says "Tickets paused".
+        and not (
+          event.price_cents > 0
+          and merchant.id is not null
+          and merchant.charges_enabled is not true
+        )
         -- Hide events that have already finished: once an event's end time
         -- (or its start, when no end is set) is in the past it's no longer
         -- discoverable and can't be RSVP'd to. Keeps "starting soon" honest.
@@ -4010,6 +4258,11 @@ export async function getEventCategories(): Promise<EventCategory[]> {
         left join merchant_profiles merchant on merchant.id = event.merchant_profile_id
         where event.status in ('live', 'featured', 'locked', 'waitlist')
           and coalesce(merchant.verification_status, 'approved') <> 'suspended'
+          and not (
+            event.price_cents > 0
+            and merchant.id is not null
+            and merchant.charges_enabled is not true
+          )
           -- Same reason as getEventsForExplore: harness fixtures must not pad
           -- the public category counts.
           and event.slug not like 'qa-click-%'
@@ -4071,6 +4324,10 @@ export type EventDetail = EventItem & {
   // detail page to let an owner preview their own not-yet-approved event while
   // keeping pending/rejected events out of public reach.
   merchantProfileId: string | null;
+  // A paid event whose host Stripe has paused (fix 32): checkout refuses every
+  // buyer until it is back on, so the page says "Tickets paused" instead of
+  // offering a pay button that dead-ends.
+  ticketsPaused: boolean;
   // Title of another event the viewer is already attending whose time window
   // overlaps this one - drives a non-blocking "schedule clash" warning on the
   // RSVP CTA. Null when there's no clash (or the viewer isn't signed in / is
@@ -4139,6 +4396,7 @@ export async function getEventBySlug(
       heldSeatExpiresAt: null,
       seatsHeld: 0,
       merchantProfileId: null,
+      ticketsPaused: false,
       viewerClashEventTitle: null,
       viewerClashBlocks: false,
       media: buildEventMediaGallery({
@@ -4149,9 +4407,19 @@ export async function getEventBySlug(
   }
 
   try {
-    const result = await pool.query<EventRow & { price_cents: number; address: string | null; city: string | null; ends_at: Date | null; merchant_profile_id: string | null; image_urls: string[] | null; held_seats: string }>(
+    const result = await pool.query<EventRow & { price_cents: number; address: string | null; city: string | null; ends_at: Date | null; merchant_profile_id: string | null; image_urls: string[] | null; held_seats: string; tickets_paused: boolean }>(
       `
         select
+          -- The same test createPaymentHold refuses a buyer on.
+          (
+            event.price_cents > 0
+            and event.merchant_profile_id is not null
+            and coalesce((
+              select m.charges_enabled
+              from merchant_profiles m
+              where m.id = event.merchant_profile_id
+            ), false) is not true
+          ) as tickets_paused,
           event.slug,
           event.title,
           event.group_name,
@@ -4284,6 +4552,7 @@ export async function getEventBySlug(
       heldSeatExpiresAt: null,
       seatsHeld: 0,
         merchantProfileId: null,
+        ticketsPaused: false,
         viewerClashEventTitle: null,
         viewerClashBlocks: false,
         media: buildEventMediaGallery({
@@ -4460,6 +4729,7 @@ export async function getEventBySlug(
       heldSeatExpiresAt,
       seatsHeld: Number(row.held_seats) || 0,
       merchantProfileId: row.merchant_profile_id ?? null,
+      ticketsPaused: row.tickets_paused === true,
       media: buildEventMediaGallery({
         // Real uploads only: the image_urls[] array when set, else the single
         // image_url. No synthetic stock fillers.
@@ -4491,6 +4761,7 @@ export async function getEventBySlug(
       heldSeatExpiresAt: null,
       seatsHeld: 0,
         merchantProfileId: null,
+        ticketsPaused: false,
         viewerClashEventTitle: null,
         viewerClashBlocks: false,
         media: buildEventMediaGallery({
@@ -5327,6 +5598,14 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
     // throws PayoutsNotReadyError if the merchant never finished payout setup),
     // so no one can pay into an account that can't receive funds.
     const priceCents = parsePriceCents(input.price);
+    // Decision D3: paid tickets start at $10. The wizard says so as the price
+    // is typed; this holds the line for a bypassed client.
+    const priceError = ticketPriceError(priceCents);
+    if (priceError) {
+      const error = new Error(priceError);
+      error.name = "ValidationError";
+      throw error;
+    }
 
     // The Stripe requirement belongs to events that TAKE MONEY, not to every
     // event. We can't push a PAID event live for a merchant we can't pay out,
@@ -5337,9 +5616,7 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
     // skipped payout setup. Can publish free events") had every free event
     // silently parked in the admin queue, while /merchant/onboarding told them
     // they were ready to go.
-    const stripeReady =
-      merchantProfile.charges_enabled === true &&
-      merchantProfile.payouts_enabled === true;
+    const stripeReady = merchantReadyForPaidEvents(merchantProfile);
     const needsStripe = priceCents > 0;
     const eventStatus = autoApprove && (!needsStripe || stripeReady) ? "live" : "pending";
 
@@ -5348,6 +5625,19 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
       input.durationMinutes && input.durationMinutes > 0 ? input.durationMinutes : 120;
     const endsAt = new Date(startsAt.getTime() + durationMinutes * 60 * 1000);
     const category = input.category.trim() || "Social";
+    // The client mints the series id, so it is only kept when it is a UUID and
+    // no other host's event already uses it - one host cannot attach their
+    // dates to someone else's series.
+    let seriesId: string | null = input.seriesId && UUID_RE.test(input.seriesId) ? input.seriesId : null;
+    if (seriesId) {
+      const taken = await pool.query<{ taken: boolean }>(
+        `select exists (
+           select 1 from events where series_id = $1::uuid and merchant_profile_id <> $2::uuid
+         ) as taken`,
+        [seriesId, merchantProfile.id],
+      );
+      if (taken.rows[0]?.taken) seriesId = null;
+    }
     const relationshipGoal =
       input.relationshipGoal.trim() || "Help people meet through a shared plan.";
 
@@ -5408,7 +5698,8 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
           image_alt,
           relationship_goal,
           fomo,
-          address
+          address,
+          series_id
         )
         values (
           $1,
@@ -5434,7 +5725,8 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
           $19,
           $20,
           $21,
-          $23
+          $23,
+          $24::uuid
         )
         returning slug, title
       `,
@@ -5468,6 +5760,7 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
         null,
         eventStatus,
         input.address?.trim() || null,
+        seriesId,
       ],
     );
 
@@ -5523,6 +5816,7 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
       const merchantFirstName =
         (profile.display_name || merchantProfile.business_name || "").split(/\s+/)[0] ||
         "there";
+      const payoutsUrl = `${origin}/merchant/onboarding/payouts?returnTo=${encodeURIComponent(`/merchant/events/${slug}`)}`;
       await logEmailEvent({
         // A trusted host's event is only ever pending for payouts (see eventStatus).
         template: autoApprove ? "event-awaiting-payouts-merchant" : "event-created-merchant",
@@ -5538,7 +5832,15 @@ export async function createEventForMerchant(input: CreateEventInput, session: S
           eventCapacityLabel: `Capacity ${capacity}`,
           eventDashboardUrl: `${origin}/merchant/events/${slug}`,
           editEventUrl: `${origin}/merchant/events/${slug}`,
-          payoutsUrl: `${origin}/merchant/onboarding/payouts?returnTo=${encodeURIComponent("/merchant")}`,
+          payoutsUrl,
+          // event-created-merchant (fix 17): an approval alone won't put a paid
+          // event live while payouts aren't ready, so the in-review email says
+          // so, with the button. Built here, not in the template, because the
+          // renderer has no conditionals; every value in it is ours.
+          payoutsNoteHtml:
+            needsStripe && !stripeReady
+              ? `<p class="sans" style="margin:16px 0 0 0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.55;color:#1C1830;">It's a paid event, so it also needs your Stripe payouts connected before it can take bookings. <a href="${payoutsUrl}" style="color:#3B2F81;text-decoration:underline;">Connect payouts now</a> and it goes live the moment it's approved.</p>`
+              : "",
           supportEmail: SUPPORT_EMAIL,
           unsubscribeUrl: `${origin}/account-settings`,
         },
@@ -5791,13 +6093,17 @@ export async function approveEventForAdmin(eventId: string, session: Session | n
       approvable: boolean;
       price_cents: number;
       merchant_profile_id: string | null;
-      merchant_charges_enabled: boolean | null;
+      merchant_ready: boolean | null;
     }>(
       `
         select (coalesce(ends_at, starts_at) >= now()) as approvable,
                price_cents,
                merchant_profile_id::text,
-               (select charges_enabled from merchant_profiles where id = events.merchant_profile_id) as merchant_charges_enabled
+               (
+                 select ${merchantReadySql("m")}
+                 from merchant_profiles m
+                 where m.id = events.merchant_profile_id
+               ) as merchant_ready
         from events
         where slug = $1 and status = 'pending'
       `,
@@ -5812,31 +6118,57 @@ export async function approveEventForAdmin(eventId: string, session: Session | n
       throw error;
     }
 
-    // Payment-publication gate: a paid, merchant-hosted event must not go live
-    // unless the owning merchant has an active Stripe Connect account
-    // (charges_enabled). The creation + trusted-auto-approve paths already
-    // enforce this; the manual admin-approval path is the remaining hole - a
-    // paid event would otherwise reach `live` with no way to route the money,
-    // and checkout would dead-end on PayoutsNotReadyError. Platform-owned paid
-    // events (no merchant_profile_id) settle to the platform account directly,
-    // so they're exempt.
-    if (
+    // A paid, merchant-hosted event cannot go live until the host can take the
+    // money and be paid out (merchantReadyForPaidEvents). Approval used to be
+    // REFUSED until then, and nobody was told when Stripe came on, so a new
+    // host's first paid event sat unseen. Decision D4: approve in either order.
+    // The approval is recorded now, the event stays 'pending', and
+    // publishEventsHeldForPayouts puts it live the moment payouts are ready.
+    // Platform-owned paid events (no merchant_profile_id) settle to the
+    // platform account directly, so they're exempt.
+    const awaitingPayouts =
       (eligibility.rowCount ?? 0) > 0 &&
       eligibility.rows[0].price_cents > 0 &&
-      eligibility.rows[0].merchant_profile_id &&
-      eligibility.rows[0].merchant_charges_enabled !== true
-    ) {
-      const error = new Error(
-        "This is a paid event, but the host hasn't finished Stripe Connect payout setup, so it can't accept payments yet. Approve it once their payouts are active.",
+      Boolean(eligibility.rows[0].merchant_profile_id) &&
+      eligibility.rows[0].merchant_ready !== true;
+
+    if (awaitingPayouts) {
+      const held = await pool.query<{ slug: string; title: string }>(
+        `
+          update events
+          set review_approved_at = coalesce(review_approved_at, now()),
+              updated_at = now()
+          where slug = $1 and status = 'pending'
+          returning slug, title
+        `,
+        [eventId],
       );
-      error.name = "ValidationError";
-      throw error;
+      const heldEvent = held.rows[0];
+      if (!heldEvent) {
+        const error = new Error("Pending event not found.");
+        error.name = "NotFoundError";
+        throw error;
+      }
+      await pool.query(
+        `
+          insert into audit_logs (actor_profile_id, action, entity_table, metadata)
+          values ($1::uuid, 'approve_event_awaiting_payouts', 'events', $2::jsonb)
+        `,
+        [profile.id, JSON.stringify({ slug: heldEvent.slug, title: heldEvent.title })],
+      );
+      // The review is done, so an instant-access host's one-shot trust is spent
+      // here exactly as on a live approval (see below).
+      void trustHostAfterFirstEventReview(pool, heldEvent.slug);
+      // "Approved - connect Stripe to go live", not "your event is live".
+      void logEventAwaitingPayoutsEmail(pool, heldEvent.slug);
+      return { ...heldEvent, awaitingPayouts: true };
     }
 
     const result = await pool.query<{ slug: string; title: string }>(
       `
         update events
         set status = 'live',
+            review_approved_at = coalesce(review_approved_at, now()),
             -- Clear the legacy "pending review" sentinel that createEventForMerchant
             -- used to seed into fomo; otherwise the approved/live event keeps
             -- rendering it publicly. Genuine merchant fomo copy is preserved.
@@ -5883,7 +6215,7 @@ export async function approveEventForAdmin(eventId: string, session: Session | n
     // bubbles into the approve response (see helper for the merchant lookup).
     void logEventApprovedEmail(pool, event.slug);
 
-    return event;
+    return { ...event, awaitingPayouts: false };
   } catch (error) {
     if (isDatabaseConnectivityError(error)) {
       return approveLocalEventForAdmin(eventId, session);
@@ -5933,6 +6265,8 @@ export async function rejectEventForAdmin(
         set status = 'rejected',
             rejection_reason = $2,
             rejected_at = now(),
+            -- An approval given while it waited on payouts (D4) is withdrawn.
+            review_approved_at = null,
             updated_at = now()
         from (select id from events where slug = $1 and status = 'pending') target
         where events.id = target.id
@@ -6306,7 +6640,8 @@ export async function getAdminEvents() {
       longitude: string | null;
       price_cents: number;
       has_merchant: boolean;
-      merchant_charges_enabled: boolean | null;
+      merchant_ready: boolean | null;
+      review_approved_at: Date | null;
       approvable: boolean;
       overlaps_with: string | null;
     }>(`
@@ -6328,7 +6663,8 @@ export async function getAdminEvents() {
         event.longitude::text,
         event.price_cents,
         bool_or(merchant.id is not null) as has_merchant,
-        bool_or(merchant.charges_enabled) as merchant_charges_enabled,
+        bool_or(${merchantReadySql("merchant")}) as merchant_ready,
+        event.review_approved_at,
         (coalesce(event.ends_at, event.starts_at) >= now()) as approvable,
         -- A pending event that would go live on top of one of the same host's
         -- live events. Allowed (bug board #278), but the queue flags it and asks
@@ -6404,8 +6740,12 @@ export async function getAdminEvents() {
         lat,
         lng,
         priceCents,
-        payoutsNotConnected:
-          priceCents > 0 && event.has_merchant && !event.merchant_charges_enabled,
+        // Same rule every publish path uses (merchantReadyForPaidEvents).
+        payoutsNotConnected: priceCents > 0 && event.has_merchant && !event.merchant_ready,
+        // Approved already, waiting only on the host's payouts (D4) - it goes
+        // live by itself, so the queue must not ask for a second review.
+        approvedAwaitingPayouts:
+          event.status === "pending" && event.review_approved_at !== null,
         approvable: event.approvable,
         overlapsWith: event.overlaps_with,
         tags: tagsBySlug.get(event.slug) ?? [],
@@ -8330,7 +8670,8 @@ export async function getAdminSidebarCounts(): Promise<AdminSidebarCounts> {
       -- them.
       select
         (select count(*) from profiles) as members,
-        (select count(*) from events where status = 'pending') as events,
+        -- Waiting on an admin, not on a host's payouts (D4).
+        (select count(*) from events where status = 'pending' and review_approved_at is null) as events,
         (select count(*) from merchant_profiles where verification_status = 'pending') as merchants,
         (select count(*) from tags) as tags,
         -- Recent activity, NOT the size of the table. count(*) over all of
@@ -8343,7 +8684,8 @@ export async function getAdminSidebarCounts(): Promise<AdminSidebarCounts> {
         (select count(*) from user_reports where status = 'open') as reports,
         (
           (select count(*) from refund_failures where resolution = 'pending')
-          + (select count(*) from payment_disputes where is_open)
+          + (select count(*) from payment_disputes
+             where is_open or (status = 'lost' and reserve_released_at is null))
         ) as transactions
     `);
 
@@ -9108,20 +9450,196 @@ export async function getApprovedMerchantForSession(
   return merchant;
 }
 
-// Persists the connected account id created via the Accounts v2 API.
-export async function setMerchantConnectAccountId(
+/**
+ * Returns the host's Stripe Connect account, creating it at most once (fix 3).
+ *
+ * Two layers, one per way a duplicate happens:
+ *
+ *   - A double tap, or two tabs: the create decision and the save run on one
+ *     checked-out client holding the merchant row lock, so the second request
+ *     waits and then finds the first one's saved id. (It used to be a plain
+ *     pool.query save after an unlocked read, and the last write won.) The
+ *     unique index from database/078 makes a shared id impossible besides.
+ *   - Stripe created the account and our save then failed: the attempt - an id
+ *     and the exact details Stripe is sent - is committed BEFORE the call, in
+ *     stripe_connect_attempts. The retry reuses both, so Stripe's idempotency
+ *     key returns the same account rather than a second one, even if the host
+ *     edited their details in between (Codex review: a key built from the
+ *     details changed with them). A refusal from Stripe created nothing, so it
+ *     forgets the attempt and the next try is built from current details.
+ *
+ * `create` gets those details and the attempt id to key on. `payoutsHeld`
+ * comes back because manual payouts are part of setup, not a best effort
+ * (fix 3b): payouts_held_at gates publishing paid events.
+ */
+export async function ensureMerchantConnectAccount(
   merchantProfileId: string,
-  accountId: string,
-) {
+  create: (
+    merchant: MerchantForConnect,
+    attemptId: string,
+  ) => Promise<{ accountId: string; payoutsHeld: boolean }>,
+): Promise<string> {
   const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+  const client = await pool.connect();
+  let forgetAttempt = false;
+  try {
+    const current = await client.query<{
+      stripe_connect_account_id: string | null;
+      business_name: string;
+      trading_name: string | null;
+      contact_email: string;
+      business_type: string | null;
+      phone: string | null;
+      website_url: string | null;
+      abn: string | null;
+      acn: string | null;
+      address_street: string | null;
+      address_suburb: string | null;
+      address_state: string | null;
+      address_postcode: string | null;
+      categories: string[] | null;
+    }>(
+      `
+        select m.stripe_connect_account_id, m.business_name, m.trading_name,
+               m.contact_email::text, m.business_type, m.phone, m.website_url,
+               m.abn, m.acn, m.address_street, m.address_suburb, m.address_state,
+               m.address_postcode,
+               (
+                 select array_agg(tc.name order by tc.name)
+                 from merchant_event_categories mec
+                 join tag_categories tc on tc.id = mec.tag_category_id
+                 where mec.merchant_profile_id = m.id
+               ) as categories
+        from merchant_profiles m
+        where m.id = $1::uuid
+      `,
+      [merchantProfileId],
+    );
+    const row = current.rows[0];
+    if (!row) {
+      const error = new Error("No merchant profile found for this account.");
+      error.name = "NotFoundError";
+      throw error;
+    }
+    if (isRealConnectAccountId(row.stripe_connect_account_id)) {
+      return row.stripe_connect_account_id;
+    }
+    const details: MerchantForConnect = {
+      contactEmail: row.contact_email,
+      businessName: row.business_name,
+      tradingName: row.trading_name,
+      businessType: row.business_type,
+      country: "AU",
+      phone: row.phone,
+      websiteUrl: row.website_url,
+      abn: row.abn,
+      acn: row.acn,
+      addressStreet: row.address_street,
+      addressSuburb: row.address_suburb,
+      addressState: row.address_state,
+      addressPostcode: row.address_postcode,
+      categories: row.categories ?? [],
+    };
+    // Autocommitted, before the transaction: it has to survive a rollback.
+    // An attempt already on file - an earlier try that may have reached
+    // Stripe - wins over today's details.
+    await client.query(
+      `
+        insert into stripe_connect_attempts (merchant_profile_id, details)
+        values ($1::uuid, $2::jsonb)
+        on conflict (merchant_profile_id) do nothing
+      `,
+      [merchantProfileId, JSON.stringify(details)],
+    );
+
+    await client.query("begin");
+    const locked = await client.query<{ stripe_connect_account_id: string | null }>(
+      `
+        select m.stripe_connect_account_id
+        from merchant_profiles m
+        where m.id = $1::uuid
+        for update of m
+      `,
+      [merchantProfileId],
+    );
+    const lockedId = locked.rows[0]?.stripe_connect_account_id ?? null;
+    if (isRealConnectAccountId(lockedId)) {
+      await client.query(`delete from stripe_connect_attempts where merchant_profile_id = $1::uuid`, [
+        merchantProfileId,
+      ]);
+      await client.query("commit");
+      return lockedId;
+    }
+    const attempt = await client.query<{ attempt_id: string; details: MerchantForConnect }>(
+      `select attempt_id::text, details from stripe_connect_attempts where merchant_profile_id = $1::uuid`,
+      [merchantProfileId],
+    );
+    const saved = attempt.rows[0];
+    if (!saved) {
+      const error = new Error("Couldn't start Stripe setup - try again.");
+      error.name = "ValidationError";
+      throw error;
+    }
+
+    let created: { accountId: string; payoutsHeld: boolean };
+    try {
+      created = await create(saved.details, saved.attempt_id);
+    } catch (error) {
+      const stripeError = error as { statusCode?: number; type?: string };
+      forgetAttempt =
+        stripeError.statusCode === 400 && stripeError.type !== "StripeIdempotencyError";
+      throw error;
+    }
+    await client.query(
+      `
+        update merchant_profiles
+        set stripe_connect_account_id = $2,
+            payouts_held_at = case when $3::boolean then now() else null end,
+            updated_at = now()
+        where id = $1::uuid
+      `,
+      [merchantProfileId, created.accountId, created.payoutsHeld],
+    );
+    await client.query(`delete from stripe_connect_attempts where merchant_profile_id = $1::uuid`, [
+      merchantProfileId,
+    ]);
+    await client.query("commit");
+    return created.accountId;
+  } catch (error) {
+    await client.query("rollback").catch(() => {});
+    if (forgetAttempt) {
+      await client
+        .query(`delete from stripe_connect_attempts where merchant_profile_id = $1::uuid`, [
+          merchantProfileId,
+        ])
+        .catch(() => {});
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Records that Stripe confirmed manual payouts on this account (fix 3b). The
+ * release cron re-asserts the schedule every run and every account sync tries
+ * it while it is missing, so an account that missed it at creation is held -
+ * and its paid events publishable - from the next one.
+ */
+export async function markMerchantPayoutsHeld(
+  accountId: string,
+  db?: Pick<Pool | PoolClient, "query">,
+): Promise<void> {
+  const pool = db ?? getPostgresPool();
   if (!pool) throw databaseUnavailableError();
   await pool.query(
     `
       update merchant_profiles
-      set stripe_connect_account_id = $2, updated_at = now()
-      where id = $1::uuid
+      set payouts_held_at = coalesce(payouts_held_at, now()), updated_at = now()
+      where stripe_connect_account_id = $1
     `,
-    [merchantProfileId, accountId],
+    [accountId],
   );
 }
 
@@ -9170,7 +9688,7 @@ export async function setMerchantBusinessType(
  * courtesy email failed would be a bad trade.
  */
 async function announceChargeCapabilityChange(
-  pool: Pool,
+  pool: Pick<Pool | PoolClient, "query">,
   merchant: { merchantProfileId: string; ownerProfileId: string; businessName: string },
   chargesEnabled: boolean,
 ) {
@@ -9218,7 +9736,10 @@ async function announceChargeCapabilityChange(
   if (!ownerRow?.email) return;
 
   const origin = emailOrigin();
-  await logEmailEvent({
+  // After the response: the caller may be holding the account-sync lock
+  // inside a transaction (syncConnectAccount), and the email row belongs after
+  // that commits.
+  afterResponse(() => logEmailEvent({
     template: "payments-paused-merchant",
     toEmail: ownerRow.email,
     toProfileId: merchant.ownerProfileId,
@@ -9228,12 +9749,13 @@ async function announceChargeCapabilityChange(
         (ownerRow.display_name || merchant.businessName || "").split(/\s+/)[0] || "there",
       affectedEventCount: String(affectedCount),
       affectedEventLabel: `${affectedCount} paid ${eventWord}`,
-      stripeDashboardUrl: `${origin}/merchant`,
+      // The payouts page names what Stripe is waiting on (fix 4).
+      stripeDashboardUrl: `${origin}/merchant/onboarding/payouts?returnTo=${encodeURIComponent("/merchant")}`,
       merchantDashboardUrl: `${origin}/merchant`,
       supportEmail: SUPPORT_EMAIL,
       unsubscribeUrl: `${origin}/account-settings`,
     },
-  });
+  }));
 }
 
 // Caches the connected account's capability state on the merchant row. Keyed by
@@ -9241,10 +9763,22 @@ async function announceChargeCapabilityChange(
 // Returns true when a row matched (false if the account id is unknown to us).
 export async function updateMerchantConnectStatus(
   accountId: string,
-  status: { chargesEnabled: boolean; payoutsEnabled: boolean; detailsSubmitted: boolean },
+  status: {
+    chargesEnabled: boolean;
+    payoutsEnabled: boolean;
+    detailsSubmitted: boolean;
+    requirements?: StoredRequirement[];
+    requirementsDueAt?: string | null;
+  },
+  // The connection to run on. syncConnectAccount passes the one holding its
+  // per-account lock, so the lock holder never needs a second connection from
+  // the pool to finish (Codex review: five waiters could otherwise hold all
+  // five while the holder starved).
+  db?: Pick<Pool | PoolClient, "query">,
 ): Promise<boolean> {
-  const pool = getPostgresPool();
-  if (!pool) throw databaseUnavailableError();
+  const realPool = getPostgresPool();
+  if (!realPool) throw databaseUnavailableError();
+  const pool = db ?? realPool;
   // The pre-image comes back through a CTE because `returning` can only see the
   // row as it now is, and the whole point here is the edge: this sync runs on
   // every account.updated Stripe sends, so writing charges_enabled = false over
@@ -9265,6 +9799,8 @@ export async function updateMerchantConnectStatus(
       set charges_enabled = $2,
           payouts_enabled = $3,
           details_submitted = $4,
+          stripe_requirements = coalesce($5::jsonb, m.stripe_requirements),
+          stripe_requirements_due_at = case when $5::jsonb is null then m.stripe_requirements_due_at else $6::timestamptz end,
           updated_at = now()
       from before b
       where m.id = b.id
@@ -9273,7 +9809,14 @@ export async function updateMerchantConnectStatus(
                 m.profile_id::text as owner_profile_id,
                 m.business_name
     `,
-    [accountId, status.chargesEnabled, status.payoutsEnabled, status.detailsSubmitted],
+    [
+      accountId,
+      status.chargesEnabled,
+      status.payoutsEnabled,
+      status.detailsSubmitted,
+      status.requirements ? JSON.stringify(status.requirements) : null,
+      status.requirementsDueAt ?? null,
+    ],
   );
 
   const row = result.rows[0];
@@ -9303,6 +9846,7 @@ export async function updateMerchantConnectStatus(
   // than charges, and publishing only touches rows still pending, so a repeat
   // sync finds nothing and stays silent. Runs after the announcement above, so
   // events published here are not counted in its "sales are back on" notice.
+  // The query re-checks the whole rule, payouts_held_at included.
   if (status.chargesEnabled && status.payoutsEnabled) {
     try {
       await publishEventsHeldForPayouts(pool, row.merchant_profile_id);
@@ -9315,8 +9859,9 @@ export async function updateMerchantConnectStatus(
 }
 
 /**
- * Publishes a trusted host's PAID events that were parked in 'pending' only
- * because payouts were not live yet, now that they are.
+ * Publishes a host's PAID events that were parked in 'pending' only because
+ * payouts were not ready yet, now that they are: a trusted host's, and any an
+ * admin approved before Stripe was done (review_approved_at, decision D4).
  *
  * createEventForMerchant keeps a paid event pending until Connect is finished
  * (charges AND payouts), and nothing used to let it go afterwards:
@@ -9330,7 +9875,10 @@ export async function updateMerchantConnectStatus(
  * or a suspension wins. Same end state as an admin approval: status 'live', the
  * legacy fomo sentinel cleared, an audit row, and the event-approved email.
  */
-async function publishEventsHeldForPayouts(pool: Pool, merchantProfileId: string) {
+async function publishEventsHeldForPayouts(
+  pool: Pick<Pool | PoolClient, "query">,
+  merchantProfileId: string,
+) {
   const published = await pool.query<{ slug: string }>(
     `
       with published as (
@@ -9345,9 +9893,10 @@ async function publishEventsHeldForPayouts(pool: Pool, merchantProfileId: string
         where m.id = $1::uuid
           and e.merchant_profile_id = m.id
           and m.verification_status = 'approved'
-          and m.auto_approve_events = true
-          and m.charges_enabled = true
-          and m.payouts_enabled = true
+          -- Trusted, so no review applies - or an admin already approved this
+          -- one while payouts were not ready (decision D4).
+          and (m.auto_approve_events = true or e.review_approved_at is not null)
+          and ${merchantReadySql("m")}
           and e.status = 'pending'
           and e.price_cents > 0
           and coalesce(e.ends_at, e.starts_at) >= now()
@@ -9367,12 +9916,309 @@ async function publishEventsHeldForPayouts(pool: Pool, merchantProfileId: string
 
   // After the response: this sync runs inside the Stripe webhook and the
   // payouts page render, and neither should wait on template renders and a
-  // mail send per event. logEventApprovedEmail never throws.
+  // mail send per event. logEventApprovedEmail never throws. On the shared
+  // pool, not `pool`: that may be a locked client released by then.
   afterResponse(async () => {
+    const shared = getPostgresPool();
+    if (!shared) return;
     for (const event of published.rows) {
-      await logEventApprovedEmail(pool, event.slug);
+      await logEventApprovedEmail(shared, event.slug);
     }
   });
+}
+
+/**
+ * Tells a host about one of their bank payouts (fix 26): "earnings sent" the
+ * first time a payout is seen on its way, and "payout failed" if it fails - a
+ * failed payout used to tell nobody. Each fires once per payout, claimed with a
+ * conditional UPDATE on merchant_payouts (database/078), so the five payout.*
+ * webhooks Stripe sends for one payout, and the release cron's own save, send
+ * one email. A failure also pings every admin's bell. Never throws: the caller
+ * is a webhook or the release cron, and a courtesy email must not fail either.
+ */
+export async function notifyMerchantOfPayout(
+  stripeAccountId: string,
+  stripePayoutId: string,
+): Promise<void> {
+  const pool = getPostgresPool();
+  if (!pool) return;
+  try {
+    const claimed = await pool.query<{
+      kind: "sent" | "failed";
+      amount_cents: number;
+      currency: string;
+      arrival_date: Date | null;
+      bank_last4: string | null;
+      failure_message: string | null;
+      contact_email: string;
+      business_name: string;
+      owner_profile_id: string;
+      owner_display_name: string | null;
+    }>(
+      `
+        with claimed as (
+          update merchant_payouts p
+          set sent_notified_at = case
+                when p.status in ('pending', 'in_transit', 'paid') and p.sent_notified_at is null
+                  then now() else p.sent_notified_at end,
+              failed_notified_at = case
+                when p.status = 'failed' and p.failed_notified_at is null
+                  then now() else p.failed_notified_at end
+          where p.stripe_connect_account_id = $1
+            and p.stripe_payout_id = $2
+            and (
+              -- "On its way" is news only while it is: an admin backfill that
+              -- finds a payout which landed last month says nothing.
+              (
+                p.status in ('pending', 'in_transit', 'paid')
+                and p.sent_notified_at is null
+                and (p.arrival_date is null or p.arrival_date > now() - interval '3 days')
+              )
+              or (p.status = 'failed' and p.failed_notified_at is null)
+            )
+          returning p.merchant_profile_id, p.amount_cents, p.currency, p.arrival_date,
+                    p.bank_last4, p.failure_message,
+                    case when p.status = 'failed' then 'failed' else 'sent' end as kind
+        )
+        select c.kind, c.amount_cents, c.currency, c.arrival_date, c.bank_last4,
+               c.failure_message, m.contact_email::text, m.business_name,
+               m.profile_id::text as owner_profile_id,
+               owner.display_name as owner_display_name
+        from claimed c
+        join merchant_profiles m on m.id = c.merchant_profile_id
+        left join profiles owner on owner.id = m.profile_id
+      `,
+      [stripeAccountId, stripePayoutId],
+    );
+    const row = claimed.rows[0];
+    if (!row) return;
+
+    const origin = emailOrigin();
+    const amountLabel = formatAud(row.amount_cents, row.currency);
+    const arrivalLabel = row.arrival_date
+      ? new Intl.DateTimeFormat("en-AU", {
+          weekday: "long",
+          day: "numeric",
+          month: "long",
+          timeZone: "Australia/Sydney",
+        }).format(row.arrival_date)
+      : "in the next few business days";
+    await logEmailEvent({
+      template: row.kind === "failed" ? "payout-failed-merchant" : "payout-sent-merchant",
+      toEmail: row.contact_email,
+      toProfileId: row.owner_profile_id,
+      // failureReason is Stripe's text; escape everything on the way in.
+      escapeVars: true,
+      vars: {
+        merchantFirstName:
+          (row.owner_display_name || row.business_name || "").split(/\s+/)[0] || "there",
+        businessName: row.business_name,
+        amountLabel,
+        arrivalLabel,
+        bankLabel: row.bank_last4 ? `the account ending ${row.bank_last4}` : "your bank account",
+        failureReason:
+          row.failure_message || "Your bank didn't accept it. The money is safe in your Stripe balance.",
+        financesUrl: `${origin}/merchant?tab=finances`,
+        stripeDashboardUrl: `${origin}/merchant?tab=finances`,
+        supportEmail: SUPPORT_EMAIL,
+        unsubscribeUrl: `${origin}/account-settings`,
+      },
+    });
+
+    if (row.kind === "failed") {
+      await notifyAdminsOfPayoutProblem(
+        `A ${amountLabel} payout to ${row.business_name} failed: ${row.failure_message ?? "no reason given"}.`,
+      );
+    }
+  } catch (error) {
+    console.warn("notifyMerchantOfPayout failed", { stripeAccountId, stripePayoutId, error });
+  }
+}
+
+/**
+ * Pings every admin's bell about a payout problem (fix 7): a payout Stripe
+ * failed, or a host the release cron could not pay. Both used to be a log line
+ * and a field in a cron response nobody reads. Never throws.
+ */
+export async function notifyAdminsOfPayoutProblem(body: string): Promise<void> {
+  const pool = getPostgresPool();
+  if (!pool) return;
+  try {
+    await pool.query(
+      `
+        insert into notifications (profile_id, title, body, action_url)
+        select id, $1, $2, '/admin/transactions'
+        from profiles
+        where role = 'admin'
+      `,
+      ["Payout problem", body],
+    );
+  } catch (error) {
+    console.warn("notifyAdminsOfPayoutProblem failed", { body, error });
+  }
+}
+
+/**
+ * The ownership and safety check in front of a host refunding one booking
+ * (fix 31). Refunds used to be admin-only, so a goodwill refund meant emailing
+ * support. issueRefund itself only checks the charge, and the admin route only
+ * checks isAdminEmail - so this is what makes it the HOST's booking:
+ *
+ *   - the charge is on an event this host owns, and they are not suspended;
+ *   - it is still refundable (paid or part refunded);
+ *   - the money is still HELD in their Stripe balance: the event ended less
+ *     than PAYOUT_RELEASE_DELAY_HOURS ago (or hasn't), and the booking is
+ *     younger than PAYOUT_MAX_HOLD_DAYS. A refund reverses the host's transfer
+ *     out of that balance; after it has gone to their bank the reversal would
+ *     push the balance negative, and Click carries that (losses_collector).
+ *     Those go through support.
+ *
+ * Returns the host's profile id (the refund's initiator) and what is left.
+ */
+export async function getRefundableBookingForMerchant(
+  session: Session | null,
+  paymentTransactionId: string,
+): Promise<{ hostProfileId: string; remainingCents: number }> {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+  if (!UUID_RE.test(paymentTransactionId)) {
+    const error = new Error("Booking not found.");
+    error.name = "NotFoundError";
+    throw error;
+  }
+  const profile = await ensureProfileForSession(session);
+  const merchant = await getMerchantProfile(pool, profile.id);
+  if (!merchant || merchant.verification_status !== "approved") {
+    const error = new Error("Only the event's host can refund this booking.");
+    error.name = "ForbiddenError";
+    throw error;
+  }
+  const result = await pool.query<{
+    status: string;
+    remaining: number;
+    still_held: boolean;
+  }>(
+    `
+      select pt.status::text,
+             (pt.amount_cents - pt.refunded_amount_cents) as remaining,
+             (
+               coalesce(e.ends_at, e.starts_at) > now() - make_interval(hours => $3)
+               and pt.created_at > now() - make_interval(days => $4)
+             ) as still_held
+      from payment_transactions pt
+      join events e on e.id = pt.event_id
+      where pt.id = $1::uuid
+        and pt.merchant_profile_id = $2::uuid
+        and e.merchant_profile_id = $2::uuid
+    `,
+    [paymentTransactionId, merchant.id, PAYOUT_RELEASE_DELAY_HOURS, PAYOUT_MAX_HOLD_DAYS],
+  );
+  const row = result.rows[0];
+  if (!row) {
+    const error = new Error("Booking not found.");
+    error.name = "NotFoundError";
+    throw error;
+  }
+  if (!["paid", "partially_refunded"].includes(row.status) || row.remaining <= 0) {
+    const error = new Error("This booking has nothing left to refund.");
+    error.name = "ValidationError";
+    throw error;
+  }
+  if (!row.still_held) {
+    const error = new Error(
+      `The money for this booking has already been paid out to you, so it can't be refunded from here. Email ${SUPPORT_EMAIL} and we'll sort it out.`,
+    );
+    error.name = "ValidationError";
+    throw error;
+  }
+  return { hostProfileId: profile.id, remainingCents: row.remaining };
+}
+
+/**
+ * One view of a public event page (fix 34), counted per Sydney day in
+ * event_page_views (database/080) for the host's views-to-bookings number.
+ * Called after the response; never throws. Only public statuses count - a
+ * pending event's page is the host's own preview.
+ */
+export async function recordEventPageView(eventSlug: string): Promise<void> {
+  const pool = getPostgresPool();
+  if (!pool) return;
+  try {
+    await pool.query(
+      `
+        insert into event_page_views (event_id, day, views)
+        select id, (now() at time zone 'Australia/Sydney')::date, 1
+        from events
+        where slug = $1 and status in ('live', 'featured', 'locked', 'waitlist')
+        on conflict (event_id, day) do update
+        set views = event_page_views.views + 1
+      `,
+      [eventSlug],
+    );
+  } catch (error) {
+    console.warn("recordEventPageView failed", { eventSlug, error });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Create-wizard drafts on the server (fix 19, database/080)
+//
+// One per host. The wizard keeps its fast local copy (useFormDraft) and writes
+// through to this one, so a half-built event follows the host from a laptop to
+// a phone. Stored as the wizard sends it ({ v, values }); the wizard checks the
+// version, so a stale shape is simply ignored rather than half-applied.
+// ---------------------------------------------------------------------------
+
+const EVENT_DRAFT_MAX_BYTES = 64 * 1024;
+
+export async function getEventDraftForMerchant(
+  session: Session | null,
+): Promise<{ draft: unknown; updatedAt: string } | null> {
+  const merchant = await getApprovedMerchantForSession(session);
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+  const result = await pool.query<{ draft: unknown; updated_at: Date }>(
+    `select draft, updated_at from event_drafts where merchant_profile_id = $1::uuid`,
+    [merchant.id],
+  );
+  const row = result.rows[0];
+  return row ? { draft: row.draft, updatedAt: row.updated_at.toISOString() } : null;
+}
+
+export async function saveEventDraftForMerchant(
+  session: Session | null,
+  draft: unknown,
+): Promise<void> {
+  const merchant = await getApprovedMerchantForSession(session);
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+  const serialised = JSON.stringify(draft ?? null);
+  if (
+    !draft ||
+    typeof draft !== "object" ||
+    Array.isArray(draft) ||
+    Buffer.byteLength(serialised, "utf8") > EVENT_DRAFT_MAX_BYTES
+  ) {
+    const error = new Error("That draft can't be saved.");
+    error.name = "ValidationError";
+    throw error;
+  }
+  await pool.query(
+    `
+      insert into event_drafts (merchant_profile_id, draft, updated_at)
+      values ($1::uuid, $2::jsonb, now())
+      on conflict (merchant_profile_id) do update
+      set draft = excluded.draft, updated_at = now()
+    `,
+    [merchant.id, serialised],
+  );
+}
+
+export async function deleteEventDraftForMerchant(session: Session | null): Promise<void> {
+  const merchant = await getApprovedMerchantForSession(session);
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+  await pool.query(`delete from event_drafts where merchant_profile_id = $1::uuid`, [merchant.id]);
 }
 
 // Marks the one-time post-approval walkthrough as done (or skipped), so
@@ -9697,6 +10543,10 @@ export type MerchantEventCreateOptions = {
   hostNames: string[];
   // Venue names reused from their past events, for the location step's combobox.
   venues: string[];
+  // Fix 14: Group / host name starts as the trading name, else the business name.
+  defaultHostName: string;
+  // Fix 15: the street address from signup, offered on the Location step.
+  venueAddress: { street: string; suburb: string; state: string; postcode: string } | null;
 };
 
 /**
@@ -9710,14 +10560,22 @@ export async function getMerchantEventCreateOptions(
   merchantProfileId: string,
 ): Promise<MerchantEventCreateOptions> {
   const pool = getPostgresPool();
-  if (!pool) return { hostNames: [], venues: [] };
+  if (!pool) return { hostNames: [], venues: [], defaultHostName: "", venueAddress: null };
   const result = await pool.query<{
     host_names: string[] | null;
     venues: string[] | null;
+    default_host_name: string | null;
+    address_street: string | null;
+    address_suburb: string | null;
+    address_state: string | null;
+    address_postcode: string | null;
   }>(
     `
       with mp as (
-        select business_name, nullif(trading_name, '') as trading_name
+        select business_name, nullif(trading_name, '') as trading_name,
+               nullif(trim(address_street), '') as address_street,
+               nullif(trim(address_suburb), '') as address_suburb,
+               address_state, address_postcode
         from merchant_profiles
         where id = $1::uuid
       ),
@@ -9740,7 +10598,12 @@ export async function getMerchantEventCreateOptions(
       select
         (select array_agg(name order by name)
            from host_names where coalesce(name, '') <> '') as host_names,
-        (select array_agg(name order by name) from venue_names) as venues
+        (select array_agg(name order by name) from venue_names) as venues,
+        (select coalesce(trading_name, business_name) from mp) as default_host_name,
+        (select address_street from mp) as address_street,
+        (select address_suburb from mp) as address_suburb,
+        (select address_state from mp) as address_state,
+        (select address_postcode from mp) as address_postcode
     `,
     [merchantProfileId],
   );
@@ -9748,6 +10611,16 @@ export async function getMerchantEventCreateOptions(
   return {
     hostNames: row?.host_names ?? [],
     venues: row?.venues ?? [],
+    defaultHostName: row?.default_host_name ?? "",
+    venueAddress:
+      row?.address_street && row.address_suburb && row.address_state && row.address_postcode
+        ? {
+            street: row.address_street,
+            suburb: row.address_suburb,
+            state: row.address_state,
+            postcode: row.address_postcode,
+          }
+        : null,
   };
 }
 
@@ -14432,11 +15305,22 @@ export async function createPaymentHold(
 
     const paymentResult = await client.query<{ id: string }>(
       `
-        insert into payment_transactions (event_id, profile_id, merchant_profile_id, amount_cents, application_fee_cents, currency, status)
-        values ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, 'pending')
+        insert into payment_transactions (event_id, profile_id, merchant_profile_id, amount_cents, application_fee_cents, booking_fee_cents, currency, status)
+        values ($1::uuid, $2::uuid, $3::uuid, $4, $5, $7, $6, 'pending')
         returning id::text
       `,
-      [event.id, profile.id, event.merchant_profile_id, totalCents, applicationFeeCents, event.currency],
+      // booking_fee_cents (database/079): the fee inside amount_cents and
+      // application_fee_cents, so Finances can show the host's ticket sales
+      // apart from a fee they never receive. Whole booking, like both of those.
+      [
+        event.id,
+        profile.id,
+        event.merchant_profile_id,
+        totalCents,
+        applicationFeeCents,
+        event.currency,
+        bookingFeeCents * seatCount,
+      ],
     );
     const paymentTransactionId = paymentResult.rows[0].id;
 
@@ -21086,12 +21970,39 @@ export type MerchantFinancesSummary = {
   platformFeeCents: number;
   netCents: number;
   refundedCents: number;
+  // Fix 23: the host's own money, so the headline reconciles in their terms:
+  // ticketSales - commission = net. The booking fee is the guest's, kept by
+  // Click (collected = ticketSales + bookingFee, platformFee = commission +
+  // bookingFee), so it is a note, not part of the headline.
+  ticketSalesCents: number;
+  commissionCents: number;
+  bookingFeeCents: number;
+  // Settled charges only (fix 24): a pending checkout or an abandoned one is
+  // not money. Each row splits the charge the way the tiles do - after
+  // refunds, so a fully refunded row keeps nothing (chargeSplitAfterRefunds).
   recentTransactions: {
     id: string;
     eventTitle: string;
+    eventStartsAt: string;
     amountCents: number;
+    ticketCents: number;
+    bookingFeeCents: number;
+    commissionCents: number;
+    netCents: number;
+    refundedCents: number;
     status: string;
     createdAt: string;
+  }[];
+  // Fix 25, the per-event half of "where is my money": each recent event with
+  // paid bookings, the host's share still on it, and its place on the hold
+  // timeline (eventMoneyState). The per-account half is recentPayouts.
+  eventEarnings: {
+    eventTitle: string;
+    eventSlug: string;
+    startsAt: string;
+    netCents: number;
+    state: "held" | "released" | "held_for_refunds";
+    releaseAt: string | null;
   }[];
   // Cached Connect capability flags, kept in sync by the `account.updated`
   // webhook. Drives the payout-status badge + the gate on the
@@ -21102,9 +22013,9 @@ export type MerchantFinancesSummary = {
     payoutsEnabled: boolean;
     detailsSubmitted: boolean;
   };
-  // Recent Stripe payouts, populated by the `payout.*` webhook handler via
-  // upsertPayoutFromEvent. Empty until the merchant earns enough to trigger a
-  // Stripe payout on the monthly schedule.
+  // Recent bank payouts on the connected account, written by releaseHeldPayouts
+  // and the `payout.*` webhook (savePayoutFromStripe). Empty until a payout run
+  // has sent this host something.
   recentPayouts: {
     id: string;
     amountCents: number;
@@ -21140,7 +22051,11 @@ export async function getMerchantFinancesSummary(
     platformFeeCents: 0,
     netCents: 0,
     refundedCents: 0,
+    ticketSalesCents: 0,
+    commissionCents: 0,
+    bookingFeeCents: 0,
     recentTransactions: [],
+    eventEarnings: [],
     connect: {
       hasAccount: false,
       chargesEnabled: false,
@@ -21162,11 +22077,12 @@ export async function getMerchantFinancesSummary(
     const range = financesPeriodRange(period);
     const periodParams = [merchant.id, range?.from ?? null, range?.to ?? null];
 
-    const [aggResult, recentResult, payoutsResult, monthlyResult] = await Promise.all([
+    const [aggResult, recentResult, payoutsResult, monthlyResult, earningsResult] = await Promise.all([
       pool.query<{
         collected: string;
         platform_fee: string;
         refunded: string;
+        booking_fee: string;
       }>(
         // Only SETTLED money counts as revenue. 'pending' rows are checkout
         // attempts still in flight and 'failed' rows are abandoned ones - the
@@ -21193,6 +22109,7 @@ export async function getMerchantFinancesSummary(
               amount_cents,
               refunded_amount_cents,
               coalesce(application_fee_cents, 0) as application_fee_cents,
+              coalesce(booking_fee_cents, 0) as booking_fee_cents,
               case
                 when amount_cents > 0
                   then (amount_cents - refunded_amount_cents)::numeric / amount_cents
@@ -21208,6 +22125,10 @@ export async function getMerchantFinancesSummary(
               as collected,
             coalesce((select round(sum(application_fee_cents * kept_share)) from settled), 0)::text
               as platform_fee,
+            -- The guest's booking fee inside both of the above, refunded in the
+            -- same proportion (issueRefund refunds the application fee too).
+            coalesce((select round(sum(booking_fee_cents * kept_share)) from settled), 0)::text
+              as booking_fee,
             -- Refunds are counted across every row, including the fully
             -- refunded ones the settled CTE deliberately excludes.
             coalesce((
@@ -21222,15 +22143,24 @@ export async function getMerchantFinancesSummary(
       pool.query<{
         id: string;
         title: string;
+        starts_at: Date;
         amount_cents: number;
+        application_fee_cents: number | null;
+        booking_fee_cents: number | null;
+        refunded_amount_cents: number;
         status: string;
         created_at: Date;
       }>(
         `
-          select pt.id::text, event.title, pt.amount_cents, pt.status::text, pt.created_at
+          select pt.id::text, event.title, event.starts_at, pt.amount_cents,
+                 pt.application_fee_cents, pt.booking_fee_cents,
+                 pt.refunded_amount_cents, pt.status::text, pt.created_at
           from payment_transactions pt
           join events event on event.id = pt.event_id
           where pt.merchant_profile_id = $1::uuid
+            -- Money that moved only (fix 24): a pending row is a checkout in
+            -- flight, a failed one was abandoned.
+            and pt.status in ('paid', 'partially_refunded', 'refunded')
             and ${inFinancesPeriodSql("pt.created_at")}
           order by pt.created_at desc
           limit 20
@@ -21283,11 +22213,47 @@ export async function getMerchantFinancesSummary(
         `,
         [merchant.id],
       ),
+      // Fix 25: the host's share still on each recent event - same share and
+      // refund rule as releaseHeldPayouts' held_cents - for the per-event
+      // money timeline. Upcoming events and the last ~3 months.
+      pool.query<{
+        title: string;
+        slug: string;
+        starts_at: Date;
+        ends_at: Date | null;
+        status: string;
+        net: string;
+        newest_booking_at: Date;
+      }>(
+        `
+          select event.title, event.slug, event.starts_at, event.ends_at,
+                 event.status::text,
+                 max(pt.created_at) as newest_booking_at,
+                 sum(
+                   (pt.amount_cents - coalesce(pt.application_fee_cents, 0))
+                   - floor(
+                       pt.refunded_amount_cents::numeric
+                       * (pt.amount_cents - coalesce(pt.application_fee_cents, 0))
+                       / nullif(pt.amount_cents, 0)
+                     )
+                 )::bigint::text as net
+          from payment_transactions pt
+          join events event on event.id = pt.event_id
+          where pt.merchant_profile_id = $1::uuid
+            and pt.status in ('paid', 'partially_refunded')
+            and coalesce(event.ends_at, event.starts_at) > now() - interval '90 days'
+          group by event.id
+          order by event.starts_at desc
+          limit 12
+        `,
+        [merchant.id],
+      ),
     ]);
 
     const row = aggResult.rows[0];
     const collectedCents = Number(row?.collected ?? 0);
     const platformFeeCents = Number(row?.platform_fee ?? 0);
+    const bookingFeeCents = Number(row?.booking_fee ?? 0);
     return {
       collectedCents,
       platformFeeCents,
@@ -21296,13 +22262,41 @@ export async function getMerchantFinancesSummary(
       // Derived rather than queried, so the tiles reconcile to the cent.
       netCents: collectedCents - platformFeeCents,
       refundedCents: Number(row?.refunded ?? 0),
+      // ticketSales - commission = net, exactly: both drop the same booking fee.
+      ticketSalesCents: collectedCents - bookingFeeCents,
+      commissionCents: platformFeeCents - bookingFeeCents,
+      bookingFeeCents,
       recentTransactions: recentResult.rows.map((r) => ({
         id: r.id,
         eventTitle: r.title,
+        eventStartsAt: r.starts_at.toISOString(),
         amountCents: r.amount_cents,
+        // After refunds, like the tiles (chargeSplitAfterRefunds).
+        ...chargeSplitAfterRefunds({
+          amountCents: r.amount_cents,
+          applicationFeeCents: r.application_fee_cents,
+          bookingFeeCents: r.booking_fee_cents,
+          refundedCents: r.refunded_amount_cents,
+        }),
+        refundedCents: r.refunded_amount_cents,
         status: r.status,
         createdAt: r.created_at.toISOString(),
       })),
+      eventEarnings: earningsResult.rows.map((e) => {
+        const money = eventMoneyState({
+          endsAt: e.ends_at ?? e.starts_at,
+          cancelled: e.status === "cancelled",
+          newestBookingAt: e.newest_booking_at,
+        });
+        return {
+          eventTitle: e.title,
+          eventSlug: e.slug,
+          startsAt: e.starts_at.toISOString(),
+          netCents: Number(e.net),
+          state: money.state,
+          releaseAt: money.releaseAt.toISOString(),
+        };
+      }),
       connect: {
         hasAccount: Boolean(merchant.stripe_connect_account_id),
         chargesEnabled: merchant.charges_enabled,
@@ -21336,9 +22330,17 @@ export async function getMerchantFinancesSummary(
 
 export type MerchantTransactionExportRow = {
   eventTitle: string;
+  eventStartsAt: string;
   createdAt: string;
   status: string;
+  // The buyer's charge, and how it splits (fix 24) - the same split the
+  // Finances rows show, so the file reconciles with the tiles.
   amountCents: number;
+  ticketCents: number;
+  bookingFeeCents: number;
+  commissionCents: number;
+  netCents: number;
+  refundedCents: number;
 };
 
 // Full transaction list for CSV export, narrowed to the same Finances period
@@ -21362,15 +22364,23 @@ export async function getMerchantTransactionsForExport(
 
     const result = await pool.query<{
       title: string;
+      starts_at: Date;
       created_at: Date;
       status: string;
       amount_cents: number;
+      application_fee_cents: number | null;
+      booking_fee_cents: number | null;
+      refunded_amount_cents: number;
     }>(
       `
-        select event.title, pt.created_at, pt.status::text, pt.amount_cents
+        select event.title, event.starts_at, pt.created_at, pt.status::text,
+               pt.amount_cents, pt.application_fee_cents, pt.booking_fee_cents,
+               pt.refunded_amount_cents
         from payment_transactions pt
         join events event on event.id = pt.event_id
         where pt.merchant_profile_id = $1::uuid
+          -- Money that moved only, as on the Finances tab (fix 24).
+          and pt.status in ('paid', 'partially_refunded', 'refunded')
           and ${inFinancesPeriodSql("pt.created_at")}
         order by pt.created_at desc
       `,
@@ -21379,9 +22389,17 @@ export async function getMerchantTransactionsForExport(
 
     return result.rows.map((r) => ({
       eventTitle: r.title,
+      eventStartsAt: r.starts_at.toISOString(),
       createdAt: r.created_at.toISOString(),
       status: r.status,
       amountCents: r.amount_cents,
+      ...chargeSplitAfterRefunds({
+        amountCents: r.amount_cents,
+        applicationFeeCents: r.application_fee_cents,
+        bookingFeeCents: r.booking_fee_cents,
+        refundedCents: r.refunded_amount_cents,
+      }),
+      refundedCents: r.refunded_amount_cents,
     }));
   } catch {
     return [];
@@ -23808,6 +24826,9 @@ export type AdminDisputeRow = {
    */
   secondsUntilDue: number | null;
   isOpen: boolean;
+  // Lost, and the disputed amount is still held from the host's payouts until
+  // an admin releases it (database/078, releaseDisputeReserveAsAdmin).
+  reserveHeld: boolean;
   firstSeenAt: string;
   updatedAt: string;
   attendeeName: string | null;
@@ -23834,6 +24855,7 @@ export async function listAdminDisputes(
       evidence_due_by: Date | null;
       seconds_until_due: string | null;
       is_open: boolean;
+      reserve_held: boolean;
       first_seen_at: Date;
       updated_at: Date;
       attendee_name: string | null;
@@ -23853,6 +24875,7 @@ export async function listAdminDisputes(
           d.evidence_due_by,
           extract(epoch from (d.evidence_due_by - now())) as seconds_until_due,
           d.is_open,
+          (d.status = 'lost' and d.reserve_released_at is null) as reserve_held,
           d.first_seen_at,
           d.updated_at,
           attendee.display_name as attendee_name,
@@ -23864,7 +24887,7 @@ export async function listAdminDisputes(
         left join profiles attendee on attendee.id = pt.profile_id
         left join events event on event.id = pt.event_id
         left join merchant_profiles merchant on merchant.id = pt.merchant_profile_id
-        ${includeClosed ? "" : "where d.is_open"}
+        ${includeClosed ? "" : "where d.is_open or (d.status = 'lost' and d.reserve_released_at is null)"}
         order by d.is_open desc, d.evidence_due_by asc nulls last, d.first_seen_at desc
         limit 200
       `,
@@ -23881,6 +24904,7 @@ export async function listAdminDisputes(
       evidenceDueBy: row.evidence_due_by ? row.evidence_due_by.toISOString() : null,
       secondsUntilDue: row.seconds_until_due == null ? null : Number(row.seconds_until_due),
       isOpen: row.is_open,
+      reserveHeld: row.reserve_held,
       firstSeenAt: row.first_seen_at.toISOString(),
       updatedAt: row.updated_at.toISOString(),
       attendeeName: row.attendee_name,
@@ -23921,7 +24945,10 @@ export async function countAdminMoneyAlerts(): Promise<{
       `
         select
           (select count(*) from refund_failures where resolution = 'pending') as refund_failures,
-          (select count(*) from payment_disputes where is_open) as open_disputes
+          -- Lost disputes whose amount is still held count too: they need an
+          -- admin to decide before the host's money can go.
+          (select count(*) from payment_disputes
+            where is_open or (status = 'lost' and reserve_released_at is null)) as open_disputes
       `,
     );
     const refundFailures = Number(result.rows[0]?.refund_failures ?? 0);
@@ -24058,6 +25085,52 @@ export async function retryRefundFailureAsAdmin(session: Session | null, failure
  * in stripe-sync.ts (which key on 'pending') and anyone later reading the table
  * can still tell a completed refund from a judgement call.
  */
+/**
+ * Lets a LOST dispute's amount go back into the host's payouts. While a
+ * dispute is open, and after Click loses it, releaseHeldPayouts holds the
+ * disputed amount in the host's Stripe balance - Stripe has already taken it
+ * from Click, and that balance is where it is recovered from. An admin
+ * releases it once the transfer has been reversed in Stripe, or once Click
+ * decides to absorb it. A note is required; the audit row keeps it.
+ */
+export async function releaseDisputeReserveAsAdmin(
+  stripeDisputeId: string,
+  note: string,
+  session: Session | null,
+): Promise<void> {
+  const pool = getPostgresPool();
+  if (!pool) throw databaseUnavailableError();
+  const profile = await requireAdminProfile(session);
+  const trimmed = note.trim();
+  if (!trimmed) {
+    const error = new Error("Say how the money was settled - it goes in the audit log.");
+    error.name = "ValidationError";
+    throw error;
+  }
+  const result = await pool.query<{ stripe_dispute_id: string; amount_cents: number }>(
+    `
+      update payment_disputes
+      set reserve_released_at = now(), updated_at = now()
+      where stripe_dispute_id = $1 and status = 'lost' and reserve_released_at is null
+      returning stripe_dispute_id, amount_cents
+    `,
+    [stripeDisputeId],
+  );
+  const row = result.rows[0];
+  if (!row) {
+    const error = new Error("That dispute isn't holding any of the host's money.");
+    error.name = "NotFoundError";
+    throw error;
+  }
+  await writeAuditLog({
+    actorProfileId: profile.id,
+    action: "dispute.reserve_released",
+    entityTable: "payment_disputes",
+    entityId: null,
+    metadata: { stripe_dispute_id: row.stripe_dispute_id, amount_cents: row.amount_cents, note: trimmed },
+  });
+}
+
 export async function dismissRefundFailureAsAdmin(
   session: Session | null,
   failureId: string,

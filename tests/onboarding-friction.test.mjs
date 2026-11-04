@@ -136,9 +136,10 @@ test("a trusted host's paid event goes live when payouts do", () => {
   // host is still trusted, approved and fully connected.
   for (const guard of [
     /m\.verification_status = 'approved'/,
-    /m\.auto_approve_events = true/,
-    /m\.charges_enabled = true/,
-    /m\.payouts_enabled = true/,
+    // Trusted, or approved by an admin while payouts were not ready (D4).
+    /\(m\.auto_approve_events = true or e\.review_approved_at is not null\)/,
+    // The shared publish rule: charges, payouts and manual payouts held.
+    /and \$\{merchantReadySql\("m"\)\}/,
     /e\.status = 'pending'/,
     /e\.price_cents > 0/,
     /coalesce\(e\.ends_at, e\.starts_at\) >= now\(\)/,
@@ -148,7 +149,12 @@ test("a trusted host's paid event goes live when payouts do", () => {
   // Traceable, and the host is told - after the response, never inside the
   // webhook's reply or the payouts page render.
   assert.match(publish, /insert into audit_logs[\s\S]*?'publish_event_payouts_ready'/);
-  assert.match(publish, /afterResponse\(async \(\) => \{[\s\S]*?await logEventApprovedEmail\(pool, event\.slug\);/);
+  // On the shared pool: `pool` may be the account-sync's locked client,
+  // released by the time the response has gone.
+  assert.match(
+    publish,
+    /afterResponse\(async \(\) => \{\s*const shared = getPostgresPool\(\);[\s\S]*?await logEventApprovedEmail\(shared, event\.slug\);/,
+  );
 
   // The create wizard tells that host the truth instead of "admin review".
   const wizard = read("src/components/event-create-wizard.tsx");

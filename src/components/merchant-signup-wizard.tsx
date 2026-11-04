@@ -838,6 +838,21 @@ export function StepAuthCard({
   // Use the same actions as /login / /merchant/login but route the callback
   // back to /merchant/signup, which renders the form once signed in.
   const callbackUrl = "/merchant/signup";
+  // Name only what this card offers. The Facebook button renders only when
+  // AUTH_FACEBOOK_* is set (src/auth.ts registers the provider on the same
+  // condition), and Google is a disabled "setup required" button without its
+  // keys. This sentence used to say "Google, Facebook, or email" whatever was
+  // configured, while production has no Facebook keys. Email is always on.
+  const methods: string[] = [];
+  if (googleConfigured) methods.push("Google");
+  if (metaConfigured) methods.push("Facebook");
+  methods.push("email");
+  // Joined by hand, not Intl.ListFormat: this card is SSR'd and hydrated, and
+  // the server's and the browser's ICU can disagree on the comma.
+  const methodsLabel =
+    methods.length === 1
+      ? methods[0]
+      : `${methods.slice(0, -1).join(", ")} or ${methods[methods.length - 1]}`;
   return (
     <div className="grid gap-6 lg:grid-cols-[0.45fr_0.55fr] lg:items-start">
       <div>
@@ -847,7 +862,7 @@ export function StepAuthCard({
         </h2>
         <p className="mt-4 text-sm font-medium leading-6 text-[color:var(--slate)]">
           We use the same identity for your Click attendee profile and your merchant portal.
-          Sign in with Google, Facebook, or email - we’ll bring you straight back to the form.
+          Sign in with {methodsLabel} - we’ll bring you straight back to the form.
         </p>
         <p className="mt-4 text-sm font-medium leading-6 text-[color:var(--slate)]">
           Already a host?{" "}
@@ -874,7 +889,7 @@ export function StepAuthCard({
             className="mb-4 rounded-xl bg-[color:var(--lavender-100)] px-4 py-3 text-sm leading-6 text-[color:var(--ink)]"
           >
             Check your inbox - we&apos;ve sent a one-time link. Open it and we&apos;ll bring you
-            straight back to the host application.
+            straight back to host sign-up.
           </p>
         ) : null}
 

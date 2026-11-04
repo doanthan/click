@@ -412,7 +412,7 @@ export function AdminEventQueue({
         { method: "POST" },
       );
       const payload = (await response.json().catch(() => ({}))) as {
-        event?: { title?: string };
+        event?: { title?: string; awaitingPayouts?: boolean };
         error?: string;
       };
 
@@ -421,13 +421,24 @@ export function AdminEventQueue({
         return;
       }
 
+      // A paid event whose host hasn't finished payouts is approved but stays
+      // pending, and goes live by itself once they have (decision D4).
+      const awaitingPayouts = payload.event?.awaitingPayouts === true;
       setRows((current) =>
         current.map((event) =>
-          // overlapsWith only ever describes a pending event - see AdminEventRow.
-          event.id === eventId ? { ...event, status: "Live", overlapsWith: null } : event,
+          event.id !== eventId
+            ? event
+            : awaitingPayouts
+              ? { ...event, approvedAwaitingPayouts: true }
+              : // overlapsWith only ever describes a pending event - see AdminEventRow.
+                { ...event, status: "Live", overlapsWith: null },
         ),
       );
-      toast.success(`${payload.event?.title ?? "Event"} is now live.`);
+      toast.success(
+        awaitingPayouts
+          ? `${payload.event?.title ?? "Event"} is approved. It goes live once the host's payouts are set up.`
+          : `${payload.event?.title ?? "Event"} is now live.`,
+      );
     } catch {
       toast.error("Could not reach the server - the event is unchanged.");
     } finally {
@@ -797,12 +808,19 @@ export function AdminEventQueue({
                     >
                       {event.status}
                     </span>
-                    {event.payoutsNotConnected ? (
+                    {event.approvedAwaitingPayouts ? (
                       <span
-                        title="This event charges a price but the merchant hasn't connected Stripe payouts. Approving publishes an event no one can pay for until they finish payout setup."
+                        title="Approved. It goes live by itself once the host's Stripe payouts are set up - nothing more to review."
                         className="inline-flex items-center gap-1 rounded-lg bg-[color:var(--amber)]/15 px-2 py-0.5 text-[11px] font-semibold text-[color:var(--amber-ink)]"
                       >
-                        ⚠ No payouts
+                        Approved - waiting on payouts
+                      </span>
+                    ) : event.payoutsNotConnected ? (
+                      <span
+                        title="This event charges a price but the host's Stripe payouts aren't set up. You can approve it now - it goes live by itself once they are."
+                        className="inline-flex items-center gap-1 rounded-lg bg-[color:var(--amber)]/15 px-2 py-0.5 text-[11px] font-semibold text-[color:var(--amber-ink)]"
+                      >
+                        ⚠ No payouts yet
                       </span>
                     ) : null}
                     {event.overlapsWith ? (
@@ -1101,10 +1119,14 @@ function EventActions({
         >
           {event.status === "Pending" ? (
             <>
-              {event.payoutsNotConnected ? (
+              {event.approvedAwaitingPayouts ? (
                 <p className="mb-1 rounded-lg bg-[color:var(--amber)]/15 px-3 py-2 text-[0.65rem] font-medium leading-snug text-[color:var(--amber-ink)]">
-                  ⚠ Paid event, but the merchant hasn&rsquo;t connected payouts.
-                  Approving publishes it; no one can pay until they finish setup.
+                  Approved. It goes live by itself once the host&rsquo;s payouts are set up.
+                </p>
+              ) : event.payoutsNotConnected ? (
+                <p className="mb-1 rounded-lg bg-[color:var(--amber)]/15 px-3 py-2 text-[0.65rem] font-medium leading-snug text-[color:var(--amber-ink)]">
+                  ⚠ Paid event, and the host&rsquo;s payouts aren&rsquo;t set up yet.
+                  Approving it now means it goes live by itself once they are.
                 </p>
               ) : null}
               {event.overlapsWith ? (
@@ -1123,7 +1145,7 @@ function EventActions({
                 type="button"
                 role="menuitem"
                 onClick={() => run(onApprove)}
-                disabled={isBusy || !event.approvable}
+                disabled={isBusy || !event.approvable || event.approvedAwaitingPayouts}
                 title={
                   event.approvable
                     ? undefined

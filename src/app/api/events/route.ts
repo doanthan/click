@@ -97,6 +97,8 @@ export async function POST(request: Request) {
     tags: getString(formData.get("tags")),
     imageUrl: getString(formData.get("imageUrl")) || undefined,
     imageAlt: getString(formData.get("imageAlt")) || undefined,
+    // Fix 20: every date of one repeating event carries the same id.
+    seriesId: getString(formData.get("seriesId")) || undefined,
     // Multi-photo gallery from the wizard's Media step. The client appends one
     // `imageUrls` entry per uploaded photo, in display order.
     imageUrls: formData

@@ -42,8 +42,8 @@ function PayoutStatusCard({
       : !connect.chargesEnabled
         ? {
             tone: "amber" as const,
-            label: "Verification pending",
-            body: "Stripe is reviewing your details. Once approved, paid events will accept bookings.",
+            label: "Payments not on",
+            body: "Paid events can't take bookings until Stripe switches payments on. See what Stripe still needs - often nothing, while it checks what you sent.",
           }
         : !connect.payoutsEnabled
           ? {
@@ -61,7 +61,11 @@ function PayoutStatusCard({
               body: "Payments route to your connected account and are held until your event has run. Each event's earnings go to your bank a couple of days after it ends - you can see every payout in your Stripe dashboard.",
             };
 
-  const ready = connect.hasAccount && connect.chargesEnabled;
+  const ready = connect.hasAccount && connect.chargesEnabled && connect.payoutsEnabled;
+  // The Express dashboard opens for any account whose onboarding is done - so a
+  // host whose payments Stripe has PAUSED keeps it. It used to vanish exactly
+  // then, the one time they most needed their Stripe dashboard.
+  const canOpenDashboard = connect.hasAccount && connect.detailsSubmitted;
 
   return (
     <div className={`${mCard} flex flex-wrap items-center gap-3.5 px-5 py-4`}>
@@ -81,26 +85,36 @@ function PayoutStatusCard({
         </div>
         <p className="mt-0.5 text-[13px] leading-relaxed text-[color:var(--slate)]">{state.body}</p>
       </div>
-      <div className="shrink-0">
-        {ready ? (
-          <StripeDashboardButton />
-        ) : (
+      <div className="flex shrink-0 flex-wrap gap-2">
+        {!ready ? (
           <ButtonLink
             href={`/merchant/onboarding/payouts?returnTo=${encodeURIComponent("/merchant?tab=finances")}`}
             size="sm"
           >
-            {connect.hasAccount ? "Continue setup" : "Connect Stripe"}
+            {!connect.hasAccount
+              ? "Connect Stripe"
+              : connect.detailsSubmitted
+                ? "See what Stripe needs"
+                : "Continue setup"}
           </ButtonLink>
-        )}
+        ) : null}
+        {canOpenDashboard ? <StripeDashboardButton /> : null}
       </div>
     </div>
   );
 }
 
-// Recent Stripe payouts from the connected account. Populated by
-// releaseHeldPayouts and the `payout.*` webhook in stripe-sync.ts; older
-// history lives in the Express dashboard, one click away via
-// <StripeDashboardButton />.
+// The per-ACCOUNT half of "where is my money" (fix 25): each bank payout and
+// what the bank has done with it, from Stripe. Written by releaseHeldPayouts and
+// the `payout.*` webhook in stripe-sync.ts; older history lives in the Express
+// dashboard, one click away via <StripeDashboardButton />.
+const PAYOUT_STATUS_WORDS: Record<string, { label: string; tone: "sage" | "amber" | "coral" | "neutral" }> = {
+  pending: { label: "On the way", tone: "amber" },
+  in_transit: { label: "On the way", tone: "amber" },
+  paid: { label: "Paid", tone: "sage" },
+  failed: { label: "Failed", tone: "coral" },
+  canceled: { label: "Cancelled", tone: "neutral" },
+};
 function RecentPayoutsCard({
   payouts,
 }: {
@@ -109,7 +123,7 @@ function RecentPayoutsCard({
   return (
     <div className={`${mCard} flex flex-col gap-3 px-5 py-4`}>
       <span className="text-[11.5px] font-bold uppercase tracking-[0.09em] text-[color:var(--ink-faint)]">
-        Recent payouts
+        Bank payouts
       </span>
       {payouts.length === 0 ? (
         <p className="text-[13.5px] leading-relaxed text-[color:var(--slate)]">
@@ -130,17 +144,77 @@ function RecentPayoutsCard({
                 </p>
                 <p className="text-xs text-[color:var(--slate)]">
                   {p.arrivalDate
-                    ? dateTimeFormatter.format(new Date(p.arrivalDate))
-                    : "Pending arrival"}
+                    ? `${p.status === "paid" ? "Arrived" : "Arrives"} ${dayFormatter.format(new Date(p.arrivalDate))}`
+                    : "Arrival date to come"}
                   {p.bankLast4 ? ` · bank ····${p.bankLast4}` : ""}
                 </p>
               </div>
-              {/* Sage = money-good (paid). Anything else is still waiting. */}
-              <Badge tone={p.status === "paid" ? "sage" : "amber"}>{p.status}</Badge>
+              {/* Sage = money-good (paid), amber = on its way, coral = failed. */}
+              <Badge tone={(PAYOUT_STATUS_WORDS[p.status] ?? PAYOUT_STATUS_WORDS.pending).tone}>
+                {(PAYOUT_STATUS_WORDS[p.status] ?? PAYOUT_STATUS_WORDS.pending).label}
+              </Badge>
             </li>
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+const dayFormatter = new Intl.DateTimeFormat("en-AU", {
+  weekday: "short",
+  day: "numeric",
+  month: "short",
+  timeZone: "Australia/Sydney",
+});
+
+// The per-EVENT half of "where is my money" (fix 25): each event's share and
+// where it sits on the hold rule the payout run uses (eventMoneyState). Bank
+// status is the payouts card's job - one payout can cover several events, so
+// "paid" per event would be a guess.
+function EventEarningsCard({
+  events,
+}: {
+  events: MerchantFinancesSummary["eventEarnings"];
+}) {
+  if (events.length === 0) return null;
+  return (
+    <div className={`${mCard} flex flex-col gap-3 px-5 py-4`}>
+      <span className="text-[11.5px] font-bold uppercase tracking-[0.09em] text-[color:var(--ink-faint)]">
+        Earnings by event
+      </span>
+      <p className="text-[12.5px] leading-relaxed text-[color:var(--slate)]">
+        Held until a couple of days after each event (80 days at most), then sent in the next bank payout.
+      </p>
+      <ul className="flex flex-col gap-2.5">
+        {events.map((e, i) => (
+          <li
+            key={e.eventSlug}
+            className={`flex flex-wrap items-center justify-between gap-3 ${
+              i < events.length - 1 ? "border-b border-[color:var(--mist)] pb-2.5" : ""
+            }`}
+          >
+            <div className="min-w-0 flex-[1_1_160px]">
+              <p className="truncate text-[13.5px] font-semibold text-[color:var(--ink)]">{e.eventTitle}</p>
+              <p className="text-xs text-[color:var(--slate)]">{dayFormatter.format(new Date(e.startsAt))}</p>
+            </div>
+            <span className="text-[13.5px] font-semibold tabular-nums text-[color:var(--ink)]">
+              {formatMoney(e.netCents)}
+            </span>
+            {e.state === "held" ? (
+              <Badge tone="amber">
+                {e.releaseAt ? `Held until ${dayFormatter.format(new Date(e.releaseAt))}` : "Held"}
+              </Badge>
+            ) : e.state === "held_for_refunds" ? (
+              <Badge tone="neutral">
+                {e.releaseAt ? `Held for refunds until ${dayFormatter.format(new Date(e.releaseAt))}` : "Held for refunds"}
+              </Badge>
+            ) : (
+              <Badge tone="sage">Released</Badge>
+            )}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -170,7 +244,7 @@ export async function FinancesTabAsync({
     <div className="space-y-6 py-8">
       <TabHeader
         eyebrow="Finances"
-        title="Payouts + revenue."
+        title="Sales + payouts."
         body="Paid events route through Stripe; free events never appear here."
         action={<MerchantFinancesExport key={period} period={period} />}
       />
@@ -180,32 +254,33 @@ export async function FinancesTabAsync({
       </div>
 
       {/* Money is never "Free" - a $0 tile is "$0" with the scope in its note.
-          The first three tiles reconcile left to right: what buyers paid, minus
-          Click's cut, is what reaches the host's bank. That is the whole point
-          of the row - "Paid out - to your bank" used to sit on the GROSS buyer
-          charge, so a host budgeted on a number Stripe never deposited. */}
+          The first three tiles reconcile left to right in the HOST's terms
+          (fix 23): their ticket sales, minus Click's commission, is their net.
+          The headline used to be the buyers' gross, booking fee included - a
+          fee the host never receives - so it was not a number they recognised.
+          The booking fee, when there is one, is a note under the row. */}
       <div className="grid gap-3 rise-soft rise-d2 sm:grid-cols-2 md:grid-cols-4">
         <StatCard
           hero
-          label="Collected"
-          value={formatMoney(finances.collectedCents)}
+          label="Ticket sales"
+          value={formatMoney(finances.ticketSalesCents)}
           note={
             hasRevenue
-              ? "buyers paid, after refunds"
+              ? "your ticket prices, after refunds"
               : period === "all"
                 ? "free events so far"
                 : `no paid bookings ${scope}`
           }
         />
         <StatCard
-          label="Click fee"
-          value={formatMoney(finances.platformFeeCents)}
-          note="commission + booking fee"
+          label="Click commission"
+          value={formatMoney(finances.commissionCents)}
+          note="taken from each ticket"
         />
         <StatCard
           label="Your net"
           value={formatMoney(finances.netCents)}
-          note="reaches your Stripe balance"
+          note="ticket sales minus commission"
         />
         <StatCard
           label="Refunded"
@@ -213,10 +288,19 @@ export async function FinancesTabAsync({
           note={scope}
         />
       </div>
+      {finances.bookingFeeCents > 0 ? (
+        <p className="-mt-3 text-[12.5px] text-[color:var(--slate)] rise-soft rise-d2">
+          Guests also paid {formatMoney(finances.bookingFeeCents)} in booking fees {scope}, kept by Click - not part
+          of your sales.
+        </p>
+      ) : null}
 
       <div className="grid gap-3 rise-soft rise-d3 lg:grid-cols-[1.4fr_1fr] lg:items-start">
         <MerchantFinancesAnalytics monthlyRevenue={finances.monthlyRevenue} />
-        <RecentPayoutsCard payouts={finances.recentPayouts} />
+        <div className="flex flex-col gap-3">
+          <EventEarningsCard events={finances.eventEarnings} />
+          <RecentPayoutsCard payouts={finances.recentPayouts} />
+        </div>
       </div>
 
       {finances.recentTransactions.length === 0 && period !== "all" ? (
@@ -247,17 +331,24 @@ export async function FinancesTabAsync({
                 <Avatar name={t.eventTitle} size={30} />
                 <div className="min-w-0 flex-[1_1_140px]">
                   <p className="truncate text-[13.5px] font-semibold text-[color:var(--ink)]">
-                    {t.eventTitle}
+                    {t.eventTitle} · {dayFormatter.format(new Date(t.eventStartsAt))}
                   </p>
                   <p className="text-xs text-[color:var(--slate)]">
-                    {dateTimeFormatter.format(new Date(t.createdAt))}
+                    Booked {dateTimeFormatter.format(new Date(t.createdAt))} ·{" "}
+                    {t.refundedCents > 0 ? "after refunds, " : ""}ticket {formatMoney(t.ticketCents)}
+                    {t.bookingFeeCents > 0 ? ` + booking fee ${formatMoney(t.bookingFeeCents)}` : ""} · commission{" "}
+                    {formatMoney(t.commissionCents)}
+                    {t.refundedCents > 0 ? ` · refunded ${formatMoney(t.refundedCents)}` : ""}
                   </p>
                 </div>
-                <span className="text-[13.5px] font-semibold tabular-nums text-[color:var(--ink)]">
-                  {formatMoney(t.amountCents)}
+                <span className="text-right">
+                  <span className="block text-[13.5px] font-semibold tabular-nums text-[color:var(--ink)]">
+                    {formatMoney(t.netCents)}
+                  </span>
+                  <span className="block text-[11px] text-[color:var(--slate)]">your net</span>
                 </span>
                 <Badge tone={t.status === "paid" ? "sage" : t.status === "refunded" ? "neutral" : "amber"}>
-                  {t.status}
+                  {t.status === "partially_refunded" ? "part refunded" : t.status}
                 </Badge>
               </li>
             ))}

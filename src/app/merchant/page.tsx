@@ -6,7 +6,7 @@ import {
   BookingsTabSkeleton,
   FinancesTabSkeleton,
 } from "@/components/merchant-portal-shared";
-import { DashboardTab } from "@/components/merchant-dashboard-tab";
+import { DashboardTab, isUpcomingMerchantEvent } from "@/components/merchant-dashboard-tab";
 import { EventsTab } from "@/components/merchant-events-tab";
 import { BookingsTabAsync } from "@/components/merchant-bookings-tab";
 import { FinancesTabAsync } from "@/components/merchant-finances-tab";
@@ -25,7 +25,8 @@ export const metadata = {
 
 // Consolidated from ten tabs down to five. Venues now live under Events,
 // Attendees + Bookings merged into Bookings, Analytics folded into Dashboard,
-// and Discounts + Support merged into Settings. Keys are validated against this
+// and Support merged into Settings (Discounts went with it, then the card was
+// dropped: there is no promo or comp feature). Keys are validated against this
 // list when reading `?tab=`.
 const TAB_KEYS: MerchantTabKey[] = [
   "dashboard",
@@ -73,6 +74,15 @@ export default async function MerchantPage({ searchParams }: MerchantPageProps) 
   const businessName = status.merchantProfile.business_name;
   const payoutsEnabled = status.merchantProfile.payouts_enabled;
   const chargesEnabled = status.merchantProfile.charges_enabled;
+  // The Events badge used to be merchantEvents.length - every event ever made,
+  // cancelled, rejected and long-past ones included, so it only ever grew.
+  // Now it counts what still needs the host (same rule as the dashboard's
+  // upcoming list, `pending` included) and is left off at zero.
+  // eslint-disable-next-line react-hooks/purity -- async server component, evaluated once per request
+  const now = Date.now();
+  const upcomingEventCount = merchantEvents.filter((event) =>
+    isUpcomingMerchantEvent(event, now),
+  ).length;
 
   return (
     <main className="min-h-screen bg-[color:var(--champagne)] py-8 text-[color:var(--ink)] lg:py-10">
@@ -82,7 +92,7 @@ export default async function MerchantPage({ searchParams }: MerchantPageProps) 
         <MerchantSidebar
           activeTab={tab}
           businessName={businessName}
-          counts={{ events: merchantEvents.length }}
+          counts={upcomingEventCount > 0 ? { events: upcomingEventCount } : {}}
         />
         {/* key={tab} replays the soft rise on every tab switch - a quiet cue
             that the content pane changed while the chrome held still. */}

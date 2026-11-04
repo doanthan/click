@@ -7,7 +7,7 @@ import {
 } from "@/lib/event-repository";
 import { MerchantBusinessDetailsForm } from "@/components/merchant-business-details-form";
 import { TagRequestForm } from "@/components/tag-request-form";
-import { Button, ButtonLink, Icon } from "@/components/ds";
+import { ButtonLink, Icon } from "@/components/ds";
 import { InfoNote, SectionLabel, StatusPill, mCard } from "@/components/merchant-ds";
 import { TabHeader } from "./merchant-portal-shared";
 
@@ -36,10 +36,21 @@ export async function SettingsTab({
         .join(" ")
     : "";
 
+  // This used to answer "How long does merchant verification take?" with "1
+  // business day" - but anyone reading this tab is already approved, and inside
+  // the Sydney pilot there is no application to wait on: a new host is in on
+  // submit and their FIRST event is the review (trustHostAfterFirstEventReview
+  // turns on auto_approve_events when it is approved). So the question a host
+  // here actually has is whether their next event goes live on publish.
+  // auto_approve_events is false both for a new host and for one an admin put
+  // on "Review every event", which this row cannot tell apart - hence "usually".
+  const eventsAreReviewed = merchant?.auto_approve_events !== true;
   const faqs = [
     {
-      q: "How long does merchant verification take?",
-      a: "We aim to review new merchants within 1 business day - the same figure the holding page gives you while you wait. We may ask for a venue photo or insurance certificate for higher-risk categories.",
+      q: "Do my events need approval?",
+      a: eventsAreReviewed
+        ? "For now, yes - a new event gets a quick check from our team before it goes live. For a new host, approving the first event is usually all it takes, and the events after it go live as soon as you publish them."
+        : "No - your events go live as soon as you publish them. A paid event waits until your Stripe payout setup is finished.",
     },
     {
       q: "Can I run free + paid events under the same profile?",
@@ -48,6 +59,11 @@ export async function SettingsTab({
     {
       q: "What happens if I cancel an event?",
       a: "Every confirmed attendee is refunded in full on a paid event, and everyone booked is emailed. The takings for that event leave your account, so cancel late and you are out the whole night's revenue.",
+    },
+    {
+      // Fix 31: hosts refund from the door list now.
+      q: "Can I refund one booking?",
+      a: "Yes - open the event and use Part refund or Cancel + refund beside the guest. A part refund keeps their seat; cancelling gives it back. You can do it until a couple of days after the event, while the money is still held for you. After that, email support.",
     },
   ];
 
@@ -117,38 +133,9 @@ export async function SettingsTab({
         </InfoNote>
       </section>
 
-      <section className="space-y-3 rise-soft rise-d2">
-        <SectionLabel>Discounts</SectionLabel>
-        <div className={`${mCard} flex flex-wrap items-center gap-3.5 p-4`}>
-          <span className="flex size-[38px] flex-none items-center justify-center rounded-xl bg-[color:var(--lavender-100)] text-[color:var(--purple)]">
-            <Icon name="ticket" size={18} />
-          </span>
-          <div className="min-w-[180px] flex-1">
-            <p className="text-sm font-semibold text-[color:var(--ink)]">
-              Promo codes & comp tickets
-            </p>
-            {/* This used to end "refund from Finances", and Finances has no
-                refund control - it shows a Refunded total and nothing else.
-                There is no merchant refund route at all: the only manual refund
-                in the app is POST /api/admin/transactions/[id]/refund, which is
-                admin-only. So the one path a host actually has for a comp guest
-                is to ask us, and that is what this now says. */}
-            <p className="mt-0.5 text-[12.5px] leading-relaxed text-[color:var(--slate)]">
-              The code generator ships next. For now, share the paid-event link with your comp
-              guest, then email{" "}
-              <b className="font-semibold text-[color:var(--purple-700)]">{SUPPORT_EMAIL_DEFAULT}</b>{" "}
-              with the event and their name - we&apos;ll refund the booking for you.
-            </p>
-          </div>
-          <Button variant="secondary" size="sm" disabled>
-            Coming soon
-          </Button>
-        </div>
-      </section>
-
       {/* Bug board #315: a host can ask for a tag here as well as from the event
           wizard's tag picker - the same request, reviewed on /admin/tags. */}
-      <section className="space-y-3 rise-soft rise-d3">
+      <section className="space-y-3 rise-soft rise-d2">
         <SectionLabel>Tags</SectionLabel>
         <div className={`${mCard} grid gap-2.5 p-4`}>
           <p className="text-[13.5px] leading-relaxed text-[color:var(--slate)]">
@@ -159,7 +146,7 @@ export async function SettingsTab({
         </div>
       </section>
 
-      <section className="space-y-3 rise-soft rise-d4">
+      <section className="space-y-3 rise-soft rise-d3">
         <SectionLabel>Support</SectionLabel>
         <p className="text-[13.5px] leading-relaxed text-[color:var(--slate)]">
           Need a human? Email{" "}

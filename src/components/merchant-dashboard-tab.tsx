@@ -29,6 +29,34 @@ const whenFormatter = new Intl.DateTimeFormat("en-AU", {
   timeZone: "Australia/Sydney",
 });
 
+// "Fri, 6 Nov", Sydney time. A recurring event is a run of separate rows with
+// the same title, so any per-event row without its date reads as four rows
+// called "Trivia". Shared with the Bookings tab's per-event list.
+const eventDayFormatter = new Intl.DateTimeFormat("en-AU", {
+  weekday: "short",
+  day: "numeric",
+  month: "short",
+  timeZone: "Australia/Sydney",
+});
+
+export function formatEventDay(startsAt: string) {
+  return eventDayFormatter.format(new Date(startsAt));
+}
+
+// Still to start, and not cancelled or rejected. The dashboard's upcoming list
+// and the sidebar's Events badge both count this, so the badge stopped
+// counting every event the host ever made, dead ones included.
+export function isUpcomingMerchantEvent(
+  event: Pick<MerchantEvent, "status" | "startsAt">,
+  now: number,
+) {
+  return (
+    event.status !== "Cancelled" &&
+    event.status !== "Rejected" &&
+    new Date(event.startsAt).getTime() >= now
+  );
+}
+
 export function DashboardTab({
   merchantEvents,
   monthParam,
@@ -48,37 +76,44 @@ export function DashboardTab({
 }) {
   // eslint-disable-next-line react-hooks/purity -- async server component, evaluated once per request
   const now = Date.now();
-  const upcoming = merchantEvents.filter(
-    (event) =>
-      event.status !== "Cancelled" &&
-      event.status !== "Rejected" &&
-      new Date(event.startsAt).getTime() >= now,
-  );
-  const upcomingCount = upcoming.length;
+  // Every upcoming event, `pending` included - "Your events" below lists them
+  // with their status pill, so a host can see the one waiting on review.
+  const upcoming = merchantEvents.filter((event) => isUpcomingMerchantEvent(event, now));
+  // The Upcoming tile, the header count and Fill rate count only events that
+  // are on sale. A `pending` event (in review, or held for payouts) cannot take
+  // a booking yet, so it inflated Upcoming and its empty seats dragged Fill
+  // rate down.
+  const upcomingPublished = upcoming.filter((event) => event.status !== "Pending");
+  const upcomingCount = upcomingPublished.length;
+  const notLiveYetCount = upcoming.length - upcomingCount;
 
-  const totalConfirmed = merchantEvents.reduce((sum, e) => sum + e.confirmed, 0);
-  // List price x confirmed seats. This is BOOKED VALUE, not money received: it
+  // SEATS, +1s included: getMerchantEvents folds paid guest seats into
+  // `confirmed`. That is why the tile says "Seats booked" - it used to say
+  // "Confirmed RSVPs", which a host compares against their RSVP emails.
+  const totalSeatsBooked = merchantEvents.reduce((sum, e) => sum + e.confirmed, 0);
+  // List price x booked seats. This is BOOKED VALUE, not money received: it
   // knows nothing about refunds, Click's fee, or whether a checkout ever
-  // completed. It used to be labelled "Revenue", which put a second, larger
-  // number against the same word the Finances tab uses - so the tile says what
-  // it is now, and Finances stays the one place that reports actual money.
+  // completed. Finances owns the word "Revenue", so this tile and the monthly
+  // chart below both say booked value. The tile dropped "Revenue" first and
+  // the chart kept it, which still put a second, larger number under the word
+  // Finances uses for actual money.
   const bookedValueCents = merchantEvents.reduce(
     (sum, e) => sum + e.priceCents * e.confirmed,
     0,
   );
   const totalWaitlisted = merchantEvents.reduce((sum, e) => sum + e.waitlisted, 0);
 
-  // Fill rate is scoped to UPCOMING events ONLY - blending it with sold-out past
-  // events flatters the number into meaninglessness (a host can't act on a past
-  // event's fill). "-" when there's nothing upcoming to fill.
-  const upcomingCapacity = upcoming.reduce((sum, e) => sum + e.capacity, 0);
-  const upcomingConfirmed = upcoming.reduce((sum, e) => sum + e.confirmed, 0);
+  // Fill rate is scoped to UPCOMING PUBLISHED events ONLY - blending it with
+  // sold-out past events flatters the number into meaninglessness (a host
+  // can't act on a past event's fill). "-" when there's nothing on sale to fill.
+  const upcomingCapacity = upcomingPublished.reduce((sum, e) => sum + e.capacity, 0);
+  const upcomingSeatsBooked = upcomingPublished.reduce((sum, e) => sum + e.confirmed, 0);
   const fillRate =
-    upcomingCapacity > 0 ? `${Math.round((upcomingConfirmed / upcomingCapacity) * 100)}%` : "-";
+    upcomingCapacity > 0 ? `${Math.round((upcomingSeatsBooked / upcomingCapacity) * 100)}%` : "-";
 
-  // Whether any paid event has ever sold - drives the honest revenue scope note.
+  // Whether any paid event has ever sold - drives the honest booked-value note.
   const hasPaidEvent = merchantEvents.some((e) => e.priceCents > 0);
-  const nextEvent = upcoming
+  const nextEvent = upcomingPublished
     .slice()
     .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime())[0];
 
@@ -118,7 +153,7 @@ export function DashboardTab({
       {!showWelcome ? (
         <section className="space-y-2.5 rise-soft rise-d2">
           {/* Deliberately NOT the current month. None of the four tiles are
-              month-scoped - Upcoming runs to the end of time, Confirmed RSVPs
+              month-scoped - Upcoming runs to the end of time, Seats booked
               and Booked value are all-time, Fill rate is all upcoming events -
               so heading them "August" made a host read them as this month's
               numbers and compare against last month. Their own notes say the
@@ -133,18 +168,20 @@ export function DashboardTab({
               note={
                 nextEvent
                   ? `next: ${whenFormatter.format(new Date(nextEvent.startsAt))}`
-                  : "none scheduled yet"
+                  : notLiveYetCount > 0
+                    ? `${notLiveYetCount} not live yet`
+                    : "none scheduled yet"
               }
             />
             <StatCard
-              label="Confirmed RSVPs"
-              value={String(totalConfirmed)}
-              note="all events to date"
+              label="Seats booked"
+              value={String(totalSeatsBooked)}
+              note="all events to date, +1s included"
             />
             <StatCard
               label="Fill rate"
               value={fillRate}
-              note={upcomingCapacity > 0 ? "upcoming events only" : "no upcoming events"}
+              note={upcomingCapacity > 0 ? "upcoming live events only" : "no live upcoming events"}
             />
             {/* Money is never "Free": $0 with the scope spelled out. */}
             <StatCard
@@ -215,7 +252,7 @@ export function DashboardTab({
               View all events
             </ButtonLink>
           </div>
-          {upcomingCount > 0 ? (
+          {upcoming.length > 0 ? (
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
               {upcoming.slice(0, 6).map((event) => (
                 <Link
@@ -265,16 +302,18 @@ export function DashboardTab({
       ) : null}
 
       {merchantEvents.length > 0 ? (
-        <ConfirmedRsvpChart merchantEvents={merchantEvents} />
+        <SeatsBookedChart merchantEvents={merchantEvents} />
       ) : null}
     </div>
   );
 }
 
-// Trend + pattern visualisations folded into the dashboard: monthly revenue &
-// bookings over time (so a merchant can see whether they're growing) and a
+// Trend + pattern visualisations folded into the dashboard: booked value and
+// seats by EVENT month (so a merchant can see whether they're growing) and a
 // category mix breakdown. Computed from the already-loaded merchantEvents - no
-// extra query. Months are bucketed in Sydney time to line up with the calendar.
+// extra query. Months are bucketed in Sydney time to line up with the calendar,
+// by when the event runs, not when the booking was made or paid - which is why
+// it is not the Finances chart and must not share its "Revenue" label.
 function MerchantTrends({
   merchantEvents,
 }: {
@@ -299,7 +338,7 @@ function MerchantTrends({
   const currentMonthKey = monthKeyFormatter.format(new Date());
   const byMonth = new Map<
     string,
-    { label: string; revenueCents: number; confirmed: number; events: number; sort: number }
+    { label: string; bookedCents: number; confirmed: number; events: number; sort: number }
   >();
   for (const e of merchantEvents) {
     const d = new Date(e.startsAt);
@@ -309,12 +348,12 @@ function MerchantTrends({
       byMonth.get(key) ??
       {
         label: monthLabelFormatter.format(d),
-        revenueCents: 0,
+        bookedCents: 0,
         confirmed: 0,
         events: 0,
         sort: Number(key.replace("-", "")),
       };
-    entry.revenueCents += e.priceCents * e.confirmed;
+    entry.bookedCents += e.priceCents * e.confirmed;
     entry.confirmed += e.confirmed;
     entry.events += 1;
     byMonth.set(key, entry);
@@ -323,7 +362,7 @@ function MerchantTrends({
   const months = Array.from(byMonth.values())
     .sort((a, b) => a.sort - b.sort)
     .slice(-6);
-  const maxRevenue = Math.max(...months.map((m) => m.revenueCents), 1);
+  const maxBooked = Math.max(...months.map((m) => m.bookedCents), 1);
   const maxConfirmed = Math.max(...months.map((m) => m.confirmed), 1);
   // The Deep Purple bar means "this is now", so it has to be the CURRENT month
   // - not simply the last column. With future months charted, the highlight
@@ -348,20 +387,20 @@ function MerchantTrends({
 
   return (
     <section className="grid gap-3 lg:grid-cols-2">
-      {/* Monthly revenue + bookings trend */}
+      {/* Monthly booked value + seats trend */}
       <div className={`${mCard} p-5`}>
         <span className="text-[11.5px] font-bold uppercase tracking-[0.09em] text-[color:var(--ink-faint)]">
-          Revenue & bookings by month
+          Booked value & seats by event month
         </span>
         {/* `months` holds ELAPSED months only (see the bucketing above), so a
             host whose events are all still ahead of them has none at all - and
             this card painted an empty 150px box with a legend under it, which
             reads as a chart that failed to load rather than one with nothing to
-            plot yet. Same one-line treatment the Finances tab's revenue chart
-            uses for its own zero case (merchant-finances-analytics.tsx). */}
+            plot yet. Same one-line treatment the Finances tab's chart uses for
+            its own zero case (merchant-finances-analytics.tsx). */}
         {months.length === 0 ? (
           <p className="mt-4 text-sm leading-6 text-[color:var(--slate)]">
-            No months have run yet. Revenue and bookings appear here once your first event date
+            No months have run yet. Booked value and seats appear here once your first event date
             has passed.
           </p>
         ) : (
@@ -377,17 +416,17 @@ function MerchantTrends({
                   className="group relative flex min-w-0 flex-1 flex-col items-center justify-end gap-1 focus:outline-none"
                   tabIndex={0}
                   role="img"
-                  aria-label={`${m.label}: ${formatMoney(m.revenueCents)} revenue, ${m.confirmed} booking${m.confirmed === 1 ? "" : "s"}`}
+                  aria-label={`${m.label}: ${formatMoney(m.bookedCents)} booked value, ${m.confirmed} seat${m.confirmed === 1 ? "" : "s"} booked`}
                 >
                   <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1 -translate-x-1/2 whitespace-nowrap rounded-xl bg-[color:var(--paper)] px-2.5 py-1.5 text-center opacity-0 shadow-[var(--shadow-md)] transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
                     <span className="block text-[11px] font-semibold text-[color:var(--slate)]">
                       {m.label}
                     </span>
                     <span className="font-display block text-[13px] font-semibold tabular-nums text-[color:var(--purple)]">
-                      {formatMoney(m.revenueCents)}
+                      {formatMoney(m.bookedCents)} booked
                     </span>
                     <span className="block text-[12px] tabular-nums text-[color:var(--ink)]">
-                      {m.confirmed} booking{m.confirmed === 1 ? "" : "s"}
+                      {m.confirmed} seat{m.confirmed === 1 ? "" : "s"}
                     </span>
                   </div>
                   {/* Whole dollars on the axis label only. At 375px the card is
@@ -399,12 +438,12 @@ function MerchantTrends({
                       The exact cents are still on the hover/focus tooltip above
                       and in this column's aria-label. */}
                   <span className="text-[11px] font-semibold tabular-nums text-[color:var(--slate)]">
-                    {formatMoney(Math.round(m.revenueCents / 100) * 100)}
+                    {formatMoney(Math.round(m.bookedCents / 100) * 100)}
                   </span>
                   <div className="flex w-full flex-1 items-end justify-center gap-1">
                     <div
                       className={`w-1/2 rounded-t ${m.label === latestKey ? "bg-[color:var(--purple-600)]" : "bg-[color:var(--lavender-300)]"}`}
-                      style={{ height: `${Math.max((m.revenueCents / maxRevenue) * 100, 3)}%` }}
+                      style={{ height: `${Math.max((m.bookedCents / maxBooked) * 100, 3)}%` }}
                     />
                     <div
                       className="w-1/2 rounded-t bg-[color:var(--purple-200)]"
@@ -417,10 +456,10 @@ function MerchantTrends({
             </div>
             <div className="mt-4 flex items-center gap-4 text-[11.5px] text-[color:var(--slate)]">
               <span className="flex items-center gap-1.5">
-                <span className="inline-block size-2.5 rounded-sm bg-[color:var(--lavender-300)]" /> Revenue
+                <span className="inline-block size-2.5 rounded-sm bg-[color:var(--lavender-300)]" /> Booked value
               </span>
               <span className="flex items-center gap-1.5">
-                <span className="inline-block size-2.5 rounded-sm bg-[color:var(--purple-200)]" /> Bookings
+                <span className="inline-block size-2.5 rounded-sm bg-[color:var(--purple-200)]" /> Seats booked
               </span>
             </div>
           </>
@@ -457,8 +496,8 @@ function MerchantTrends({
   );
 }
 
-// Per-event RSVP bar list, folded in from the old Analytics tab.
-function ConfirmedRsvpChart({
+// Per-event seats bar list, folded in from the old Analytics tab.
+function SeatsBookedChart({
   merchantEvents,
 }: {
   merchantEvents: MerchantEvent[];
@@ -483,14 +522,20 @@ function ConfirmedRsvpChart({
   return (
     <section className={`${mCard} p-5`}>
       <span className="text-[11.5px] font-bold uppercase tracking-[0.09em] text-[color:var(--ink-faint)]">
-        Confirmed RSVPs per event
+        Seats booked per event
       </span>
       <ul className="mt-5 space-y-3.5">
         {nearest.map((e) => (
           <li key={e.slug} className="flex items-center justify-between gap-4">
-            <span className="min-w-0 flex-1 truncate text-sm font-semibold text-[color:var(--ink)]">
-              {e.title}
-              <span className="ml-1.5 font-normal text-[color:var(--slate)]">
+            {/* The date never truncates: a weekly event's rows share a title,
+                so when a long title is cut it is the date that tells them
+                apart. Title and place give way first. */}
+            <span className="flex min-w-0 flex-1 items-baseline gap-1.5 text-sm">
+              <span className="truncate font-semibold text-[color:var(--ink)]">{e.title}</span>
+              <span className="shrink-0 font-semibold text-[color:var(--ink)]">
+                - {formatEventDay(e.startsAt)}
+              </span>
+              <span className="truncate text-[color:var(--slate)]">
                 {e.suburb} · {e.category}
               </span>
             </span>
@@ -613,7 +658,7 @@ function WelcomeToClick({ businessName }: { businessName: string }) {
     {
       n: "01",
       title: "Create your first event.",
-      body: "Pick a date, capacity, and price in the 5-step wizard. Publishing puts a free event on Discover straight away; a paid one needs your Stripe payouts live first.",
+      body: "Pick a date, capacity, and price in the 5-step wizard. Your first event gets a quick check from our team; after that, free events go on Discover as soon as you publish, and paid ones once your Stripe payouts are set up.",
     },
     {
       n: "02",
@@ -623,7 +668,10 @@ function WelcomeToClick({ businessName }: { businessName: string }) {
     {
       n: "03",
       title: "Run the door.",
-      body: "Open Bookings on the day to check people in or export a CSV. Paid bookings show in Finances as they clear, and each event's earnings go to your bank a couple of days after it ends.",
+      // Check-in lives on each event's own page (the door list), not on
+      // Bookings, which is counts only since bug board #316 - and Bookings
+      // never had an attendee CSV. The door-list download is on the event page.
+      body: "Open the event's page on the day to check people in at the door, or download the door list from it. Paid bookings show in Finances as they clear, and each event's earnings go to your bank a couple of days after it ends.",
     },
   ];
 

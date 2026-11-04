@@ -6,6 +6,7 @@ import {
   MERCHANT_DOOR_LIST_CAP,
   getMerchantAllAttendees,
 } from "@/lib/event-repository";
+import { formatEventDay } from "./merchant-dashboard-tab";
 import { CreateEventButton, TabHeader } from "./merchant-portal-shared";
 
 export async function BookingsTabAsync({
@@ -83,11 +84,15 @@ export async function BookingsTabAsync({
                     <p className="text-[11.5px] font-bold uppercase tracking-[0.08em] text-[color:var(--ink-faint)]">
                       Event
                     </p>
+                    {/* Title plus date: a weekly event is separate rows with one
+                        title, so without the date they read as four "Trivia"s.
+                        The date never truncates; a long title gives way. */}
                     <Link
                       href={`/merchant/events/${slug}`}
-                      className="font-display block truncate text-[15.5px] font-semibold leading-tight text-[color:var(--ink)] hover:text-[color:var(--purple)]"
+                      className="font-display flex min-w-0 items-baseline gap-1.5 text-[15.5px] font-semibold leading-tight text-[color:var(--ink)] hover:text-[color:var(--purple)]"
                     >
-                      {list[0].eventTitle}
+                      <span className="truncate">{list[0].eventTitle}</span>
+                      <span className="shrink-0">- {formatEventDay(list[0].eventStartsAt)}</span>
                     </Link>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
