@@ -46,6 +46,7 @@ import {
   markPaymentFailed,
   markPaymentSucceeded,
   notifyAdminsOfPayoutProblem,
+  notifyMerchantOfLostDispute,
   notifyMerchantOfPayout,
   processGuestSpotsForSession,
   settleRefundedBooking,
@@ -1590,4 +1591,155 @@ export async function recordDisputeAudit(
       evidence_due_by: dueBy,
     },
   });
+
+  if (dispute.status === "lost") await recoverLostDispute(dispute.id);
+}
+
+/**
+ * Recovers a LOST dispute from the host (decision 5 Nov: the host pays a lost
+ * chargeback). Stripe takes a destination charge's dispute from Click, so Click
+ * reverses the host's transfer for it - out of the balance releaseHeldPayouts
+ * kept back while the dispute was open - then releases that hold and tells the
+ * host.
+ *
+ * Money (Codex review): with application_fee_amount Stripe transfers the GROSS
+ * charge and then collects Click's fee, so the reversal is capped at what is
+ * left on the transfer and refunds the fee in proportion
+ * (refund_application_fee). The host gives back what they kept for the
+ * booking; Click's commission and Stripe's dispute fee stay Click's loss.
+ *
+ * Safety: runs inside the payout-run shield, so a payout cannot be sized off a
+ * balance this reversal is about to shrink (a busy payout run throws, the
+ * webhook answers 500, and Stripe retries later). An earlier reversal for this
+ * dispute is found on the transfer and reused, never made twice - so a commit
+ * that failed after Stripe reversed heals on the next delivery. Any other
+ * failure keeps the hold and puts it in front of an admin, whose "Release hold"
+ * in the money queue is the manual path.
+ */
+export async function recoverLostDispute(stripeDisputeId: string): Promise<void> {
+  const stripe = getStripeClient();
+  const pool = getPostgresPool();
+  if (!stripe || !pool) return;
+
+  type Found = {
+    amount_cents: number;
+    currency: string;
+    reason: string | null;
+    transfer_id: string | null;
+    application_fee_cents: number | null;
+    transaction_id: string;
+    business_name: string;
+  };
+  let found: Found | null = null;
+  let hostCents = 0;
+  let reversalId: string | null = null;
+  let failure: string | null = null;
+
+  await withPayoutRunShield(async () => {
+    const db = await pool.connect();
+    try {
+      await db.query("begin");
+      // One recovery per dispute, however many deliveries of it race.
+      await db.query(`select pg_advisory_xact_lock(hashtext($1)::bigint)`, [
+        `dispute-recover:${stripeDisputeId}`,
+      ]);
+      const result = await db.query<Found>(
+        `
+          select d.amount_cents, d.currency, d.reason,
+                 pt.stripe_transfer_id as transfer_id, pt.application_fee_cents,
+                 pt.id::text as transaction_id, m.business_name
+          from payment_disputes d
+          join payment_transactions pt on pt.id = d.payment_transaction_id
+          join merchant_profiles m on m.id = pt.merchant_profile_id
+          where d.stripe_dispute_id = $1 and d.status = 'lost' and d.reserve_released_at is null
+          for update of d
+        `,
+        [stripeDisputeId],
+      );
+      found = result.rows[0] ?? null;
+      if (!found) {
+        await db.query("commit");
+        return;
+      }
+      if (!found.transfer_id) {
+        failure = "the sale has no Stripe transfer on file";
+        await db.query("commit");
+        return;
+      }
+      const transfer = await stripe.transfers.retrieve(found.transfer_id);
+      let reversal: Stripe.TransferReversal | null = null;
+      for await (const existing of stripe.transfers.listReversals(found.transfer_id, { limit: 100 })) {
+        if (existing.metadata?.stripe_dispute_id === stripeDisputeId) {
+          reversal = existing;
+          break;
+        }
+      }
+      if (!reversal) {
+        const amount = Math.min(found.amount_cents, transfer.amount - transfer.amount_reversed);
+        if (amount > 0) {
+          reversal = await stripe.transfers.createReversal(
+            found.transfer_id,
+            {
+              amount,
+              refund_application_fee: true,
+              metadata: { stripe_dispute_id: stripeDisputeId },
+            },
+            { idempotencyKey: `dispute-recover-${stripeDisputeId}-${amount}` },
+          );
+        }
+      }
+      if (reversal) {
+        reversalId = reversal.id;
+        // Stripe refunds the fee in proportion to the share of the transfer reversed.
+        const feeBack = transfer.amount > 0
+          ? Math.round(((found.application_fee_cents ?? 0) * reversal.amount) / transfer.amount)
+          : 0;
+        hostCents = Math.max(0, reversal.amount - feeBack);
+      }
+      await db.query(
+        `update payment_disputes set reserve_released_at = now(), updated_at = now()
+         where stripe_dispute_id = $1`,
+        [stripeDisputeId],
+      );
+      await db.query("commit");
+    } catch (error) {
+      await db.query("rollback").catch(() => {});
+      failure = error instanceof Error ? error.message : String(error);
+    } finally {
+      db.release();
+    }
+  });
+
+  const settled = found as Found | null;
+  if (!settled) return;
+  if (failure) {
+    await writeAuditLog({
+      actorProfileId: null,
+      action: "dispute.recovery_failed",
+      entityTable: "payment_disputes",
+      entityId: null,
+      metadata: { stripe_dispute_id: stripeDisputeId, transfer_reversal_id: reversalId, error: failure },
+    });
+    await notifyAdminsOfPayoutProblem(
+      reversalId
+        ? `A lost chargeback on a ${settled.business_name} sale was taken back in Stripe (${reversalId}), but saving it failed (${failure}). Don't reverse it again - release the hold in the money queue.`
+        : `A lost chargeback on a ${settled.business_name} sale couldn't be taken back from the host automatically (${failure}). Reverse the transfer in Stripe, then release the hold in the money queue.`,
+    );
+    return;
+  }
+  await writeAuditLog({
+    actorProfileId: null,
+    action: "dispute.recovered",
+    entityTable: "payment_disputes",
+    entityId: null,
+    metadata: { stripe_dispute_id: stripeDisputeId, transfer_reversal_id: reversalId, host_cents: hostCents },
+  });
+  if (hostCents > 0) {
+    await notifyMerchantOfLostDispute({
+      paymentTransactionId: settled.transaction_id,
+      amountCents: hostCents,
+      currency: settled.currency,
+      reason: settled.reason,
+    });
+  }
 }

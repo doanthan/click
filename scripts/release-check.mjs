@@ -5,6 +5,7 @@ import process from "node:process";
 import { Pool } from "pg";
 import Stripe from "stripe";
 import {
+  CONNECTED_ACCOUNT_WEBHOOK_EVENTS,
   missingConnectedAccountEvents,
   missingWebhookEvents,
 } from "../src/lib/stripe-webhook-events.ts";
@@ -276,7 +277,14 @@ if (value("STRIPE_SECRET_KEY") && value("NEXT_PUBLIC_APP_URL")) {
     if (destinations.length === 0) {
       (launchMode ? errors : warnings).push(`No enabled Stripe webhook destination points at ${webhookUrl}.`);
     } else {
-      const missing = missingWebhookEvents(destinations.flatMap((d) => d.enabled_events));
+      // Platform events (checkout, refunds, disputes on destination charges)
+      // happen on Click's own account, so only "@self" destinations count.
+      const selfEvents = destinations
+        .filter((d) => (d.events_from ?? ["@self"]).includes("@self"))
+        .flatMap((d) => d.enabled_events);
+      const missing = missingWebhookEvents(selfEvents).filter(
+        (event) => !CONNECTED_ACCOUNT_WEBHOOK_EVENTS.includes(event),
+      );
       if (missing.length > 0) {
         (launchMode ? errors : warnings).push(
           `The Stripe webhooks at ${webhookUrl} are not subscribed to: ${missing.join(", ")}. Run node scripts/stripe-webhooks.mjs.`,

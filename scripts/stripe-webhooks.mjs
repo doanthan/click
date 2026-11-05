@@ -4,14 +4,19 @@
 // alike. Safe to re-run: existing destinations only gain missing events.
 //
 //   node scripts/stripe-webhooks.mjs
+//   node scripts/stripe-webhooks.mjs --push-secrets   (retry the Vercel step only)
 //
 // Three event destinations, all posting to the same route:
 // - platform  (snapshot, @self):     checkout, refunds, disputes  -> STRIPE_WEBHOOK_SECRET
 // - hosts     (snapshot, @accounts): payout.*, account.updated    -> STRIPE_WEBHOOK_SECRET_CONNECT
 // - accounts  (thin, @self):         v2.core.account*             -> STRIPE_WEBHOOK_SECRET_V2
 // A signing secret is only returned when a destination is created, so a new
-// destination's secret is written to .env.production.local and to Vercel
-// production. Never printed. Redeploy afterwards so functions read it.
+// destination's secret is written to .env.production.local FIRST, then to
+// Vercel production. Never printed. If the Vercel step fails, the run exits 1
+// and --push-secrets copies the file's secrets to Vercel. An existing
+// destination whose secret is not in the file cannot be repaired from here
+// (Stripe never shows a secret again): the run exits 1 and says to delete it
+// in the dashboard and re-run. Redeploy afterwards so functions read secrets.
 
 import { spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -51,6 +56,17 @@ const env = Object.fromEntries(
 if (!env.STRIPE_SECRET_KEY || !env.NEXT_PUBLIC_APP_URL) {
   console.error(`STRIPE_SECRET_KEY and NEXT_PUBLIC_APP_URL must be set in ${ENV_FILE}.`);
   process.exit(1);
+}
+
+const SECRET_NAMES = ["STRIPE_WEBHOOK_SECRET", "STRIPE_WEBHOOK_SECRET_CONNECT", "STRIPE_WEBHOOK_SECRET_V2"];
+let problems = 0;
+
+if (process.argv.includes("--push-secrets")) {
+  for (const name of SECRET_NAMES) {
+    if (env[name]?.startsWith("whsec_")) pushToVercel(name, env[name]);
+    else console.log(`${name}: not in ${ENV_FILE}, skipped.`);
+  }
+  process.exit(problems ? 1 : 0);
 }
 
 const stripe = new Stripe(env.STRIPE_SECRET_KEY, { apiVersion: API_VERSION });
@@ -102,6 +118,12 @@ for (const want of wanted) {
     }
     if (d.status !== "enabled") await stripe.v2.core.eventDestinations.enable(d.id);
     console.log(`${want.label}: ${d.enabled_events.length} -> ${merged.length} events (kept its secret).`);
+    if (!env[want.secretName]?.startsWith("whsec_")) {
+      problems += 1;
+      console.error(
+        `${want.label}: ${want.secretName} is not in ${ENV_FILE}, and Stripe never shows a secret twice. Delete destination ${d.id} in the Stripe dashboard and re-run to get a new one.`,
+      );
+    }
     continue;
   }
   const created = await stripe.v2.core.eventDestinations.create({
@@ -116,15 +138,21 @@ for (const want of wanted) {
   });
   const secret = created.webhook_endpoint?.signing_secret;
   if (!secret) {
-    console.error(`${want.label}: created ${created.id}, but Stripe returned no signing secret - copy it from the dashboard into ${want.secretName}.`);
+    problems += 1;
+    console.error(`${want.label}: created ${created.id}, but Stripe returned no signing secret - delete it in the dashboard and re-run.`);
     continue;
   }
-  saveSecret(want.secretName, secret);
-  console.log(`${want.label}: created with ${want.events.length} events; ${want.secretName} saved to ${ENV_FILE} and Vercel production.`);
+  saveSecretLocally(want.secretName, secret);
+  console.log(`${want.label}: created with ${want.events.length} events; ${want.secretName} saved to ${ENV_FILE}.`);
+  pushToVercel(want.secretName, secret);
+}
+if (problems) {
+  console.error(`${problems} problem(s) above. Fix them, then re-run (or --push-secrets for a failed Vercel step).`);
+  process.exit(1);
 }
 console.log("Done. Redeploy so production reads any new secret.");
 
-function saveSecret(name, secret) {
+function saveSecretLocally(name, secret) {
   const line = `${name}=${secret}`;
   const current = readFileSync(ENV_FILE, "utf8");
   const pattern = new RegExp(`^${name}=.*$`, "m");
@@ -132,13 +160,18 @@ function saveSecret(name, secret) {
     ENV_FILE,
     pattern.test(current) ? current.replace(pattern, line) : `${current.replace(/\n?$/, "\n")}${line}\n`,
   );
+}
+
+function pushToVercel(name, secret) {
   // --force overwrites in place, so a failed write never leaves production without the variable.
   const added = spawnSync("npx", ["vercel", "env", "add", name, "production", "--force", "--sensitive", "--yes"], {
     input: secret,
     stdio: ["pipe", "ignore", "pipe"],
   });
-  if (added.status !== 0) {
-    console.error(`Could not set ${name} on Vercel: ${String(added.stderr).trim()}`);
-    console.error(`It is in ${ENV_FILE}; add it on Vercel by hand.`);
+  if (added.status === 0) {
+    console.log(`${name}: set on Vercel production.`);
+  } else {
+    problems += 1;
+    console.error(`${name}: could not set it on Vercel (${String(added.stderr).trim()}). It is in ${ENV_FILE}; re-run with --push-secrets.`);
   }
 }

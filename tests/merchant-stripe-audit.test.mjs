@@ -279,6 +279,35 @@ test("fix 26 + 27: payout emails once, payout status re-read under a lock", () =
   }
 });
 
+test("lost chargebacks: recovered from the host once, capped, and emailed", () => {
+  const sync = read("src/lib/stripe-sync.ts");
+  const audit = body(sync, "export async function recordDisputeAudit");
+  assert.match(audit, /if \(dispute\.status === "lost"\) await recoverLostDispute\(dispute\.id\);/);
+  const recover = body(sync, "export async function recoverLostDispute");
+  assert.match(recover, /pg_advisory_xact_lock/);
+  assert.match(recover, /d\.status = 'lost' and d\.reserve_released_at is null/);
+  // Codex review: the transfer is GROSS (application_fee_amount), so the fee goes back in proportion.
+  assert.match(recover, /Math\.min\(found\.amount_cents, transfer\.amount - transfer\.amount_reversed\)/);
+  assert.match(recover, /refund_application_fee: true/);
+  // Never two reversals for one dispute, and never beside a payout run.
+  assert.match(recover, /listReversals\(found\.transfer_id/);
+  assert.match(recover, /await withPayoutRunShield\(async \(\) => \{/);
+  // The host hears only after the reversal committed; a failure goes to admins instead.
+  assert.ok(recover.indexOf("notifyMerchantOfLostDispute") > recover.indexOf('await db.query("commit")'));
+  assert.match(recover, /if \(failure\) \{[\s\S]*?notifyAdminsOfPayoutProblem[\s\S]*?return;/);
+
+  const notify = body(repo, "export async function notifyMerchantOfLostDispute");
+  const vars = new Set([...notify.matchAll(/^\s{8}(\w+)[:,]/gm)].map((m) => m[1]));
+  const html = read("emails/dispute-lost-merchant.html");
+  assert.ok(!html.includes("—"));
+  for (const [, name] of html.matchAll(/\{\{(\w+)\}\}/g)) {
+    assert.ok(vars.has(name), `dispute-lost-merchant uses {{${name}}}, which the code never sets`);
+  }
+  const email = read("src/lib/email.ts");
+  assert.match(email, /\| "dispute-lost-merchant"/);
+  assert.match(email, /"dispute-lost-merchant": \(v\) =>/);
+});
+
 test("D4: an admin can approve a paid event before the host's payouts are ready", () => {
   const approve = body(repo, "export async function approveEventForAdmin");
   assert.doesNotMatch(approve, /Approve it once their payouts are active/);

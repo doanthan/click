@@ -10035,6 +10035,77 @@ export async function notifyMerchantOfPayout(
   }
 }
 
+// Stripe's dispute reasons, in words a host can act on. Anything else falls
+// back to the plain fact.
+const DISPUTE_REASON_WORDS: Record<string, string> = {
+  fraudulent: "The cardholder told their bank they didn't make the payment.",
+  duplicate: "The buyer told their bank they were charged twice.",
+  product_not_received: "The buyer told their bank they didn't get what they paid for.",
+  product_unacceptable: "The buyer told their bank the event wasn't as described.",
+  credit_not_processed: "The buyer told their bank a refund they were promised never arrived.",
+  unrecognized: "The cardholder didn't recognise the charge on their statement.",
+};
+
+/**
+ * Tells a host a lost chargeback was recovered from their earnings (decision
+ * 5 Nov: the host pays). Called by recoverLostDispute in stripe-sync.ts once
+ * the transfer reversal has committed, and only then - so it fires once per
+ * dispute. Never throws.
+ */
+export async function notifyMerchantOfLostDispute(input: {
+  paymentTransactionId: string;
+  amountCents: number;
+  currency: string;
+  reason: string | null;
+}): Promise<void> {
+  const pool = getPostgresPool();
+  if (!pool) return;
+  try {
+    const found = await pool.query<{
+      contact_email: string;
+      business_name: string;
+      owner_profile_id: string;
+      owner_display_name: string | null;
+      event_title: string;
+    }>(
+      `
+        select m.contact_email::text, m.business_name, m.profile_id::text as owner_profile_id,
+               owner.display_name as owner_display_name, e.title as event_title
+        from payment_transactions pt
+        join merchant_profiles m on m.id = pt.merchant_profile_id
+        join events e on e.id = pt.event_id
+        left join profiles owner on owner.id = m.profile_id
+        where pt.id = $1::uuid
+      `,
+      [input.paymentTransactionId],
+    );
+    const row = found.rows[0];
+    if (!row) return;
+    const origin = emailOrigin();
+    await logEmailEvent({
+      template: "dispute-lost-merchant",
+      toEmail: row.contact_email,
+      toProfileId: row.owner_profile_id,
+      // Host-typed names and titles; escape everything on the way in.
+      escapeVars: true,
+      vars: {
+        merchantFirstName:
+          (row.owner_display_name || row.business_name || "").split(/\s+/)[0] || "there",
+        businessName: row.business_name,
+        eventTitle: row.event_title,
+        amountLabel: formatAud(input.amountCents, input.currency),
+        reasonLabel:
+          DISPUTE_REASON_WORDS[input.reason ?? ""] ?? "The buyer's bank sided with the buyer.",
+        financesUrl: `${origin}/merchant?tab=finances`,
+        supportEmail: SUPPORT_EMAIL,
+        unsubscribeUrl: `${origin}/account-settings`,
+      },
+    });
+  } catch (error) {
+    console.warn("notifyMerchantOfLostDispute failed", { input, error });
+  }
+}
+
 /**
  * Pings every admin's bell about a payout problem (fix 7): a payout Stripe
  * failed, or a host the release cron could not pay. Both used to be a log line

@@ -126,6 +126,8 @@ const VARS = {
   arrivalLabel: "Monday 17 August",
   bankLabel: "the account ending 6789",
   failureReason: "The bank account was closed.",
+  // dispute-lost-merchant
+  reasonLabel: "The buyer told their bank they didn't get what they paid for.",
   financesUrl: `${APP}/merchant?tab=finances`,
   // event-created-merchant: a rendered <p> when the event is paid and payouts
   // are not ready, blank otherwise.
@@ -205,6 +207,7 @@ const SUBJECTS = {
   "event-awaiting-payouts-merchant": "{{eventTitle}} is saved - connect payouts to go live",
   "payout-sent-merchant": "{{amountLabel}} is on its way to your bank",
   "payout-failed-merchant": "Action needed - a {{amountLabel}} payout didn't reach your bank",
+  "dispute-lost-merchant": "A chargeback on {{eventTitle}} was settled",
   "event-approved-merchant": "{{eventTitle}} is live",
   "event-rejected-merchant": "{{eventTitle}} needs another pass",
   "event-cancelled-merchant": "{{eventTitle}} was cancelled by Click",

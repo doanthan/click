@@ -145,6 +145,7 @@ export type EmailTemplate =
   | "payments-paused-merchant"
   | "payout-sent-merchant"
   | "payout-failed-merchant"
+  | "dispute-lost-merchant"
   | "payment-receipt-attendee"
   | "report-received-admin"
   | "merchant-monthly-report"
@@ -217,6 +218,7 @@ const SUBJECTS: Record<EmailTemplate, (vars: Record<string, string>) => string> 
   "payout-sent-merchant": (v) => `${v.amountLabel ?? "Your earnings"} is on its way to your bank`,
   "payout-failed-merchant": (v) =>
     `Action needed - a ${v.amountLabel ?? ""} payout didn't reach your bank`.replace("a  payout", "a payout"),
+  "dispute-lost-merchant": (v) => `A chargeback on ${v.eventTitle ?? "one of your events"} was settled`,
   "booking-refunded-attendee": (v) =>
     `Refunded - ${v.eventTitle ?? "your booking"}`,
   "payment-receipt-attendee": (v) =>

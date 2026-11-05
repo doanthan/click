@@ -395,9 +395,9 @@ export function AdminMoneyAttention({
         title="Release the held amount to the host?"
         description={
           releasing
-            ? `Click lost this ${formatMoney(releasing.amountCents, releasing.currency)} dispute, so the same amount has been held from ${
+            ? `Click lost this ${formatMoney(releasing.amountCents, releasing.currency)} dispute and couldn't take it back from ${
                 releasing.merchantName ?? "the host"
-              }'s payouts. Release it once you've reversed their transfer in Stripe, or if Click is absorbing the loss - it then goes out with their next payout.`
+              } automatically (the reason is in your notifications), so the same amount is still held from their payouts. Release it once you've reversed their transfer in Stripe, or if Click is absorbing the loss - it then goes out with their next payout.`
             : ""
         }
         promptLabel="How was it settled? (kept in the audit log)"

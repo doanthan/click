@@ -63,6 +63,7 @@ No `unsubscribeUrl` on any of these - security mail is transactional and exempt 
 | `event-awaiting-payouts-merchant.html` | After a TRUSTED merchant creates a paid event before their payouts are ready, so it is held in `pending` with no review (`createEventForMerchant`), and after an admin approves a paid event whose host's payouts aren't ready (`approveEventForAdmin`, decision D4). `publishEventsHeldForPayouts` publishes it later and sends `event-approved-merchant`. | `{{eventTitle}} is saved - connect payouts to go live` |
 | `payout-sent-merchant.html` | The first time a bank payout is seen on its way (`notifyMerchantOfPayout`, via `savePayoutFromStripe`). | `{{amountLabel}} is on its way to your bank` |
 | `payout-failed-merchant.html` | When a bank payout fails (`notifyMerchantOfPayout`). Admins are pinged in-app too. | `Action needed - a {{amountLabel}} payout didn't reach your bank` |
+| `dispute-lost-merchant.html` | When Click loses a chargeback and takes the amount back from the host's transfer (`recoverLostDispute` in `stripe-sync.ts`, then `notifyMerchantOfLostDispute`). Once per dispute. | `A chargeback on {{eventTitle}} was settled` |
 | `event-approved-merchant.html` | After `POST /api/admin/events/[eventId]/approve` succeeds, when a trusted merchant's event is created straight to `live`, and when a held event publishes once payouts are on. | `{{eventTitle}} is live` |
 | `event-rejected-merchant.html` | After `POST /api/admin/events/[eventId]/reject` succeeds. | `{{eventTitle}} needs another pass` |
 | `event-cancelled-merchant.html` | After an admin cancels/unpublishes a live event. | `{{eventTitle}} was cancelled by Click` |
@@ -154,6 +155,20 @@ Rendered with `escapeVars: true` (`failureReason` is Stripe's text).
 | `arrivalLabel` | Sent only, e.g. `Monday 17 August`, or "in the next few business days". |
 | `bankLabel` | `the account ending 6789`, or `your bank account`. |
 | `failureReason` | Failed only. Stripe's failure message, or a default. |
+| `financesUrl` | `/merchant?tab=finances`. |
+| `supportEmail` |  |
+
+### `dispute-lost-merchant.html`
+
+Rendered with `escapeVars: true` (host-typed names and titles).
+
+| Variable | Notes |
+| --- | --- |
+| `merchantFirstName` |  |
+| `businessName` |  |
+| `eventTitle` | The disputed booking's event. |
+| `amountLabel` | What was taken back, e.g. `$28.84` - capped at what was left on the host's transfer. |
+| `reasonLabel` | Stripe's dispute reason in words, or "The buyer's bank sided with the buyer." |
 | `financesUrl` | `/merchant?tab=finances`. |
 | `supportEmail` |  |
 
