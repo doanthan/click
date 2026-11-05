@@ -10,7 +10,7 @@
 // at an endpoint listening to connected accounts (CONNECTED_ACCOUNT_WEBHOOK_EVENTS),
 // which signs with STRIPE_WEBHOOK_SECRET_CONNECT. The v1 endpoint list does not
 // say which accounts an endpoint listens to; the v2 event destinations list
-// does (`events_from: ["other_accounts"]`), and launch:check reads it.
+// does (`events_from: ["@accounts"]`), and launch:check reads it.
 export const REQUIRED_STRIPE_WEBHOOK_EVENTS = [
   "checkout.session.completed",
   "checkout.session.async_payment_succeeded",
@@ -50,7 +50,11 @@ export function missingConnectedAccountEvents(
 ): string[] {
   const enabled = new Set(
     destinations
-      .filter((d) => d.status === "enabled" && (d.events_from ?? []).includes("other_accounts"))
+      .filter(
+        (d) =>
+          d.status === "enabled" &&
+          (d.events_from ?? []).some((scope) => scope.endsWith("@accounts")),
+      )
       .flatMap((d) => d.enabled_events ?? []),
   );
   if (enabled.has("*")) return [];

@@ -263,31 +263,33 @@ if (value("STRIPE_SECRET_KEY") && value("NEXT_PUBLIC_APP_URL")) {
   const webhookUrl = `${value("NEXT_PUBLIC_APP_URL").replace(/\/$/, "")}/api/webhooks/stripe`;
   try {
     const stripe = new Stripe(value("STRIPE_SECRET_KEY"));
-    const endpoints = [];
-    for await (const endpoint of stripe.webhookEndpoints.list({ limit: 100 })) {
-      if (endpoint.url.replace(/\/$/, "") === webhookUrl && endpoint.status === "enabled") {
-        endpoints.push(endpoint);
-      }
-    }
-    if (endpoints.length === 0) {
-      (launchMode ? errors : warnings).push(`No enabled Stripe webhook endpoint points at ${webhookUrl}.`);
+    // The v2 destinations list reports each destination's payload and scope
+    // ("@self" or "@accounts"); the v1 endpoint list reports neither.
+    const page = await stripe.v2.core.eventDestinations.list({ limit: 100, include: ["webhook_endpoint.url"] });
+    const destinations = page.data.filter(
+      (d) =>
+        d.type === "webhook_endpoint" &&
+        d.status === "enabled" &&
+        d.event_payload === "snapshot" &&
+        d.webhook_endpoint?.url?.replace(/\/$/, "") === webhookUrl,
+    );
+    if (destinations.length === 0) {
+      (launchMode ? errors : warnings).push(`No enabled Stripe webhook destination points at ${webhookUrl}.`);
     } else {
-      const missing = missingWebhookEvents(endpoints.flatMap((endpoint) => endpoint.enabled_events));
+      const missing = missingWebhookEvents(destinations.flatMap((d) => d.enabled_events));
       if (missing.length > 0) {
         (launchMode ? errors : warnings).push(
-          `The Stripe webhook at ${webhookUrl} is not subscribed to: ${missing.join(", ")}.`,
+          `The Stripe webhooks at ${webhookUrl} are not subscribed to: ${missing.join(", ")}. Run node scripts/stripe-webhooks.mjs.`,
         );
       }
-    }
-    // payout.* and account.updated fire on hosts' connected accounts, so they
-    // need a destination listening to connected accounts. Only the v2 list
-    // reports that scope.
-    const destinations = await stripe.rawRequest("GET", "/v2/core/event_destinations", {});
-    const missingConnected = missingConnectedAccountEvents(destinations.data ?? []);
-    if (missingConnected.length > 0) {
-      (launchMode ? errors : warnings).push(
-        `No Stripe destination listening to connected accounts sends: ${missingConnected.join(", ")}. Add one for ${webhookUrl} and set STRIPE_WEBHOOK_SECRET_CONNECT to its signing secret.`,
-      );
+      // payout.* and account.updated fire on hosts' connected accounts, so
+      // they need a destination listening to "@accounts".
+      const missingConnected = missingConnectedAccountEvents(destinations);
+      if (missingConnected.length > 0) {
+        (launchMode ? errors : warnings).push(
+          `No Stripe destination listening to connected accounts sends: ${missingConnected.join(", ")}. Run node scripts/stripe-webhooks.mjs.`,
+        );
+      }
     }
     if (!value("STRIPE_WEBHOOK_SECRET_CONNECT")) {
       (launchMode ? errors : warnings).push(

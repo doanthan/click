@@ -242,7 +242,8 @@ test("fix 2: connected-account events verify with their own secret and launch:ch
   // A platform-only destination covers none of them; a connected-accounts one covers all.
   const platform = { status: "enabled", events_from: ["@self"], enabled_events: ["payout.paid"] };
   assert.equal(missingConnectedAccountEvents([platform]).length, CONNECTED_ACCOUNT_WEBHOOK_EVENTS.length);
-  const connect = { status: "enabled", events_from: ["other_accounts"], enabled_events: [...CONNECTED_ACCOUNT_WEBHOOK_EVENTS] };
+  // "@accounts" is Stripe's name for connected accounts (V2/Core/EventDestinations.d.ts).
+  const connect = { status: "enabled", events_from: ["@accounts"], enabled_events: [...CONNECTED_ACCOUNT_WEBHOOK_EVENTS] };
   assert.deepEqual(missingConnectedAccountEvents([platform, connect]), []);
   assert.deepEqual(missingConnectedAccountEvents([{ ...connect, status: "disabled" }]).length, CONNECTED_ACCOUNT_WEBHOOK_EVENTS.length);
   for (const event of CONNECTED_ACCOUNT_WEBHOOK_EVENTS) {
