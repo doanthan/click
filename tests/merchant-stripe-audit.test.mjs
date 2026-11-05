@@ -16,7 +16,9 @@ import {
 } from "../src/lib/stripe-requirements.ts";
 import { eventMoneyState, PAYOUT_RELEASE_DELAY_HOURS } from "../src/lib/payout-release.ts";
 import {
+  CONNECTED_ACCOUNT_WEBHOOK_EVENTS,
   REQUIRED_STRIPE_WEBHOOK_EVENTS,
+  missingConnectedAccountEvents,
   missingWebhookEvents,
 } from "../src/lib/stripe-webhook-events.ts";
 
@@ -231,6 +233,22 @@ test("fix 2: every event the webhook acts on is one launch:check requires", () =
   assert.deepEqual(missingWebhookEvents(["*"]), []);
   assert.ok(missingWebhookEvents(["checkout.session.completed"]).includes("payout.paid"));
   assert.match(read("scripts/release-check.mjs"), /missingWebhookEvents\(/);
+});
+
+test("fix 2: connected-account events verify with their own secret and launch:check finds their destination", () => {
+  const route = read("src/app/api/webhooks/stripe/route.ts");
+  assert.match(route, /\[secret, getStripeConnectWebhookSecret\(\)\]/);
+  assert.match(route, /constructEvent\(rawBody, signature, candidate\)/);
+  // A platform-only destination covers none of them; a connected-accounts one covers all.
+  const platform = { status: "enabled", events_from: ["@self"], enabled_events: ["payout.paid"] };
+  assert.equal(missingConnectedAccountEvents([platform]).length, CONNECTED_ACCOUNT_WEBHOOK_EVENTS.length);
+  const connect = { status: "enabled", events_from: ["other_accounts"], enabled_events: [...CONNECTED_ACCOUNT_WEBHOOK_EVENTS] };
+  assert.deepEqual(missingConnectedAccountEvents([platform, connect]), []);
+  assert.deepEqual(missingConnectedAccountEvents([{ ...connect, status: "disabled" }]).length, CONNECTED_ACCOUNT_WEBHOOK_EVENTS.length);
+  for (const event of CONNECTED_ACCOUNT_WEBHOOK_EVENTS) {
+    assert.ok(REQUIRED_STRIPE_WEBHOOK_EVENTS.includes(event), `${event} is not a required event`);
+  }
+  assert.match(read("scripts/release-check.mjs"), /missingConnectedAccountEvents\(/);
 });
 
 test("fix 26 + 27: payout emails once, payout status re-read under a lock", () => {

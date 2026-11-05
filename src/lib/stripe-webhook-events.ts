@@ -7,8 +7,10 @@
 // with the route's switch. Import-free so the release script can load it.
 //
 // Payout and account events happen ON connected accounts, so they only arrive
-// at an endpoint with "Events from connected accounts" on. Stripe's API does
-// not report that flag, so the launch check can only remind you to look.
+// at an endpoint listening to connected accounts (CONNECTED_ACCOUNT_WEBHOOK_EVENTS),
+// which signs with STRIPE_WEBHOOK_SECRET_CONNECT. The v1 endpoint list does not
+// say which accounts an endpoint listens to; the v2 event destinations list
+// does (`events_from: ["other_accounts"]`), and launch:check reads it.
 export const REQUIRED_STRIPE_WEBHOOK_EVENTS = [
   "checkout.session.completed",
   "checkout.session.async_payment_succeeded",
@@ -31,6 +33,29 @@ export const REQUIRED_STRIPE_WEBHOOK_EVENTS = [
   "payout.canceled",
   "account.updated",
 ] as const;
+
+/** The required events that only fire on hosts' connected accounts. */
+export const CONNECTED_ACCOUNT_WEBHOOK_EVENTS = [
+  "payout.created",
+  "payout.updated",
+  "payout.paid",
+  "payout.failed",
+  "payout.canceled",
+  "account.updated",
+] as const;
+
+/** The connected-account events no connected-accounts destination covers. */
+export function missingConnectedAccountEvents(
+  destinations: { events_from?: string[] | null; enabled_events?: string[] | null; status?: string }[],
+): string[] {
+  const enabled = new Set(
+    destinations
+      .filter((d) => d.status === "enabled" && (d.events_from ?? []).includes("other_accounts"))
+      .flatMap((d) => d.enabled_events ?? []),
+  );
+  if (enabled.has("*")) return [];
+  return CONNECTED_ACCOUNT_WEBHOOK_EVENTS.filter((event) => !enabled.has(event));
+}
 
 /** The required events an endpoint set is missing ('*' covers everything). */
 export function missingWebhookEvents(enabledEvents: string[]): string[] {

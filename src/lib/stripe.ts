@@ -55,6 +55,14 @@ export function getStripeWebhookSecretV2() {
   return process.env.STRIPE_WEBHOOK_SECRET_V2 ?? null;
 }
 
+// payout.* and account.updated happen ON hosts' connected accounts, so they
+// only reach an endpoint listening to connected accounts - a separate Stripe
+// endpoint from the platform one, signing with its own secret. Unset, those
+// events fail verification and host payout statuses never move.
+export function getStripeConnectWebhookSecret() {
+  return process.env.STRIPE_WEBHOOK_SECRET_CONNECT ?? null;
+}
+
 export function getAppUrl() {
   const raw =
     process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? "http://localhost:3000";

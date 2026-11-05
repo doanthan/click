@@ -9,6 +9,7 @@ import {
 } from "@/lib/event-repository";
 import {
   getStripeClient,
+  getStripeConnectWebhookSecret,
   getStripeWebhookSecret,
   getStripeWebhookSecretV2,
 } from "@/lib/stripe";
@@ -129,11 +130,23 @@ export async function POST(request: Request) {
     return NextResponse.json({ received: true });
   }
 
-  let event;
-  try {
-    event = stripe.webhooks.constructEvent(rawBody, signature, secret);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "invalid signature";
+  // The platform endpoint and the connected-accounts endpoint (payout.* and
+  // account.updated from hosts' accounts) sign with different secrets.
+  const secrets = [secret, getStripeConnectWebhookSecret()].filter(
+    (candidate): candidate is string => Boolean(candidate),
+  );
+  let event: Stripe.Event | undefined;
+  let verifyError: unknown;
+  for (const candidate of secrets) {
+    try {
+      event = stripe.webhooks.constructEvent(rawBody, signature, candidate);
+      break;
+    } catch (error) {
+      verifyError = error;
+    }
+  }
+  if (!event) {
+    const message = verifyError instanceof Error ? verifyError.message : "invalid signature";
     return NextResponse.json({ error: `Signature verification failed: ${message}` }, { status: 400 });
   }
 

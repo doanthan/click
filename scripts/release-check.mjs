@@ -4,7 +4,10 @@ import path from "node:path";
 import process from "node:process";
 import { Pool } from "pg";
 import Stripe from "stripe";
-import { missingWebhookEvents } from "../src/lib/stripe-webhook-events.ts";
+import {
+  missingConnectedAccountEvents,
+  missingWebhookEvents,
+} from "../src/lib/stripe-webhook-events.ts";
 
 const root = process.cwd();
 const requestedEnv = process.argv.find((arg) => arg.startsWith("--env="))?.slice(6);
@@ -275,8 +278,20 @@ if (value("STRIPE_SECRET_KEY") && value("NEXT_PUBLIC_APP_URL")) {
           `The Stripe webhook at ${webhookUrl} is not subscribed to: ${missing.join(", ")}.`,
         );
       }
-      warnings.push(
-        `Check by hand that the Stripe webhook at ${webhookUrl} has "Events from connected accounts" on - payout.* and account.updated only arrive that way, and Stripe's API does not report it.`,
+    }
+    // payout.* and account.updated fire on hosts' connected accounts, so they
+    // need a destination listening to connected accounts. Only the v2 list
+    // reports that scope.
+    const destinations = await stripe.rawRequest("GET", "/v2/core/event_destinations", {});
+    const missingConnected = missingConnectedAccountEvents(destinations.data ?? []);
+    if (missingConnected.length > 0) {
+      (launchMode ? errors : warnings).push(
+        `No Stripe destination listening to connected accounts sends: ${missingConnected.join(", ")}. Add one for ${webhookUrl} and set STRIPE_WEBHOOK_SECRET_CONNECT to its signing secret.`,
+      );
+    }
+    if (!value("STRIPE_WEBHOOK_SECRET_CONNECT")) {
+      (launchMode ? errors : warnings).push(
+        "STRIPE_WEBHOOK_SECRET_CONNECT is unset: payout and account events from hosts' accounts fail signature checks.",
       );
     }
   } catch (error) {
