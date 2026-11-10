@@ -36,6 +36,7 @@ Every template listed here is wired through `logEmailEvent` and fires today, wit
 | File | When to send | Subject suggestion |
 | --- | --- | --- |
 | `launch-waitlist-joined.html` | Someone requests an invite on `/waitlist` (`requestInvite` in `src/app/waitlist/actions.ts`). First request per address only, post-response via `after()`. The recipient has no profile, so `to_profile_id` is null. | `You're on the list for Click` |
+| `host-waitlist-joined.html` | Someone joins the host waitlist on the homepage (`joinHostWaitlistAction` in `src/app/host-waitlist/actions.ts`). First request per address only, post-response via `after()`. No profile behind it, so `to_profile_id` is null. | `You're on the Click host waitlist` |
 
 ### Auth and security
 
@@ -528,6 +529,16 @@ The `/waitlist` confirmation. Sent once per address - a repeat request gets the 
 | `shareUrl` | Their own invite link, `https://www.letsclick.app/i/<code>`. |
 | `shareLabel` | The same link without `https://www.`, as shown. |
 | `howItWorksUrl` |  |
+| `supportEmail` |  |
+
+### `host-waitlist-joined.html`
+
+The homepage host waitlist confirmation. Sent once per address - a repeat request gets the same screen and no second email, so the page never reveals who is already on the list. **No form text goes into it** (not the business name, not the contact name): anyone can type anyone's address into a public form, so the body is our copy only. No `unsubscribeUrl` - the recipient is not a member; the footer asks them to reply, and removal is deleting their `host_waitlist` row.
+
+| Variable | Notes |
+| --- | --- |
+| `areaLine` | "Click opens in Sydney first - we'll tell you the moment it reaches you." when the suburb or postcode they typed is outside the pilot, else "We'll be in touch before bookings open to hear more about what you run." (also when they left it blank). Our copy, never their text. |
+| `discoverUrl` | `https://www.letsclick.app/discover`. |
 | `supportEmail` |  |
 
 ## Dev log: viewing sends in Supabase

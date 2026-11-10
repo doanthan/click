@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Suspense, type CSSProperties } from "react";
 import { ButtonLink, Icon, Logo } from "@/components/ds";
 import { EventCard } from "@/components/event-card";
+import { HostWaitlistForm } from "@/components/host-waitlist-form";
 import { MutualToast } from "@/components/mutual-toast";
 import { Reveal } from "@/components/reveal";
 import { Skeleton, SkeletonEventCard } from "@/components/skeleton";
@@ -448,6 +449,37 @@ export default function Home() {
               </li>
             ))}
           </ul>
+        </div>
+      </section>
+
+      {/* ============ For hosts: the host waitlist ============
+          Details in, a row in host_waitlist out (HostWaitlistForm ->
+          joinHostWaitlistAction). It sits beside the instant-access signup,
+          which keeps its own "Host an event" link in the bookend below. On
+          cream between the lav-bg pinboard and the deep bookend; the form is
+          left out of Reveal so it never waits on an entrance to be usable. */}
+      <section id="hosts" aria-labelledby="hosts-heading" className="ck-page py-16 lg:py-24">
+        <div className="grid gap-8 lg:grid-cols-12 lg:gap-10">
+          <Reveal className="lg:col-span-5 lg:pt-2">
+            <p className="eyebrow">For hosts</p>
+            <h2
+              id="hosts-heading"
+              className="font-display mt-4 text-[length:var(--text-h1)] leading-[1.12] font-semibold tracking-[-0.025em] text-balance text-[color:var(--ink)]"
+            >
+              Run something people would happily show up for?
+            </h2>
+            <p className="mt-4 max-w-[460px] text-base leading-7 text-[color:var(--ink-soft)]">
+              Supper clubs, run clubs, classes, venue nights. Click is opening in Sydney&apos;s inner
+              west and inner east first - tell us what you run and we&apos;ll be in touch before
+              bookings open.
+            </p>
+            <p className="mt-3 max-w-[460px] text-[15px] leading-6 text-[color:var(--slate)]">
+              Somewhere else? Join anyway - we&apos;ll tell you the moment Click reaches you.
+            </p>
+          </Reveal>
+          <div className="min-w-0 rounded-[var(--radius-xl)] bg-[color:var(--paper)] p-5 shadow-[var(--shadow-sm)] sm:p-7 lg:col-span-7">
+            <HostWaitlistForm />
+          </div>
         </div>
       </section>
 

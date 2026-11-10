@@ -12,6 +12,7 @@ export type AdminTabKey =
   | "members"
   | "launch-waitlist"
   | "merchants"
+  | "host-waitlist"
   | "location-waitlist"
   | "transactions"
   | "reports"
@@ -52,6 +53,7 @@ const NAV_PRIMARY: NavItem[] = [
   { key: "members", label: "Attendees", icon: "attendees", href: "/admin/members" },
   { key: "launch-waitlist", label: "Launch Waitlist", icon: "attendees", href: "/admin/launch-waitlist" },
   { key: "merchants", label: "Merchants", icon: "merchants", href: "/admin/merchants" },
+  { key: "host-waitlist", label: "Host Waitlist", icon: "merchants", href: "/admin/host-waitlist" },
   { key: "location-waitlist", label: "Location Waitlist", icon: "reports", href: "/admin/location-waitlist" },
   { key: "transactions", label: "Transactions", icon: "transactions", href: "/admin/transactions" },
   { key: "reports", label: "Safety Reports", icon: "reports", href: "/admin/reports" },

@@ -157,7 +157,8 @@ export type EmailTemplate =
   | "guest-spot-confirmed"
   | "guest-spot-cancelled"
   | "booking-refunded-attendee"
-  | "launch-waitlist-joined";
+  | "launch-waitlist-joined"
+  | "host-waitlist-joined";
 
 // Where the .html files live. Override with CLICK_EMAILS_DIR if Next moves
 // cwd somewhere unexpected in your deploy; otherwise resolves from repo root.
@@ -244,6 +245,7 @@ const SUBJECTS: Record<EmailTemplate, (vars: Record<string, string>) => string> 
   "guest-spot-cancelled": (v) =>
     `Your spot at ${v.eventTitle ?? "an event"} is no longer held`,
   "launch-waitlist-joined": () => "You're on the list for Click",
+  "host-waitlist-joined": () => "You're on the Click host waitlist",
 };
 
 // In-process cache. .html files don't change between requests during a single

@@ -65,8 +65,9 @@ export function waitlistAreaFor(place: string): WaitlistArea {
 }
 
 // The www host on purpose: the bare apex only 307s to it, a hop every shared
-// link would otherwise pay (see getAppUrl in stripe.ts).
-function siteOrigin() {
+// link would otherwise pay (see getAppUrl in stripe.ts). The host waitlist's
+// email links use it too.
+export function siteOrigin() {
   return (process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") || "http://localhost:3000").replace(
     "://letsclick.app",
     "://www.letsclick.app",

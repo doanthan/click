@@ -234,6 +234,7 @@ const SUBJECTS = {
   "guest-spot-existing-user": "{{purchaserFirstName}} saved you a spot at {{eventTitle}}",
   "guest-spot-cancelled": "Your spot at {{eventTitle}} is no longer held",
   "launch-waitlist-joined": "You're on the list for Click",
+  "host-waitlist-joined": "You're on the Click host waitlist",
 };
 
 // Same regex as renderHtml() in src/lib/email.ts: unknown keys are LEFT IN so a
