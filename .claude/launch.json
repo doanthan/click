@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "port": 3000
+    },
+    {
+      "name": "dev-no-db",
+      "runtimeExecutable": "env",
+      "runtimeArgs": ["DATABASE_URL=", "npx", "next", "dev", "-H", "127.0.0.1", "-p", "3001"],
+      "port": 3001
     }
   ]
 }
