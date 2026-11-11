@@ -824,3 +824,20 @@ test("a shared link previews the photo the home hero opens on", () => {
   assert.ok(file, `import for ${hero} not found`);
   assert.ok(read("src/app/opengraph-image.tsx").includes(`"${file}"`), `opengraph-image.tsx should read ${file}`);
 });
+
+test("the home page shows its range before its listings, and each plan once", () => {
+  const page = read("src/app/page.tsx");
+
+  // The pinboard is the first thing under the hero: four of our own photos, so
+  // the second screen never rests on what hosts have listed that week.
+  const hero = page.indexOf('<section className="home-hero');
+  const pinboard = page.indexOf("{LANES.map(");
+  const strip = page.indexOf("<ComingUp />");
+  assert.ok(hero > -1 && pinboard > hero && strip > pinboard, "expected hero, then pinboard, then Coming up");
+
+  // A repeating event took several of the six slots with one photo and title.
+  // Each plan shows once, and the dedupe runs before the slice, or a run of
+  // repeats would still eat the six and leave fewer than six different plans.
+  assert.match(page, /nextDateOfEachPlan\(\s*\[\.\.\.events\]\.sort\([\s\S]*?\)\.slice\(0, COMING_UP_COUNT\)/);
+  assert.match(page, /const plan = `\$\{event\.host\}\\n\$\{event\.title\}`\.trim\(\)\.toLowerCase\(\);/);
+});

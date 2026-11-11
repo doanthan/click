@@ -7,34 +7,48 @@ import { HostWaitlistForm } from "@/components/host-waitlist-form";
 import { MutualToast } from "@/components/mutual-toast";
 import { Reveal } from "@/components/reveal";
 import { Skeleton, SkeletonEventCard } from "@/components/skeleton";
+import type { EventItem } from "@/lib/click-data";
 import { getEventsForExplore } from "@/lib/event-repository";
 import heroCourtyard from "../../public/home/hero-courtyard.jpg";
 import heroDinner from "../../public/home/hero-dinner.jpg";
 import heroPickleball from "../../public/home/hero-pickleball.jpg";
 import heroRings from "../../public/home/hero-rings.jpg";
 import heroRun from "../../public/home/hero-run.jpg";
-import heroSlideBowls from "../../public/home/hero-slide-bowls.jpg";
 import heroSlideGig from "../../public/home/hero-slide-gig.jpg";
-import heroSlideRooftop from "../../public/home/hero-slide-rooftop.jpg";
+import heroSlidePickleball from "../../public/home/hero-slide-pickleball.jpg";
+import heroSlideSurf from "../../public/home/hero-slide-surf.jpg";
 import wallKaraoke from "../../public/home/wall-karaoke.jpg";
 import wallPicnic from "../../public/home/wall-picnic.jpg";
 import wallTrivia from "../../public/home/wall-trivia.jpg";
 
 /* Below the full-bleed photo hero the page reads as a social page, not a
-   product tour: real plans, the mechanic told as one sentence, a pinboard to
-   browse by, and a `clicked` bookend. No stat ticker or feature grid - those
+   product tour: a pinboard to browse by, real plans, the mechanic told as one
+   sentence, and a `clicked` bookend. The pinboard comes first because the hero
+   is one dinner at night - the prints are where a visitor first sees the range
+   (a workshop, a table, a run, karaoke), and they are ours, so the second
+   screen never depends on what hosts happen to have listed that week. No stat ticker or feature grid - those
    were what made it read as software. Prints are photos only, no captions
    (dropped on purpose in caff3f8). */
 
 /* The photos that dissolve in over the courtyard, in play order, each with the
    word the headline lands on while it shows, so photo and word change on one
    beat. Decorative (the courtyard carries the alt). The timing lives in
-   `hero-slide` and `word-cycle-slot`, both cut for exactly three slides. Each
-   crop keeps its people in a phone's narrow window; from sm the scrim covers
-   the left and the frame shows whole. */
+   `hero-slide` and `word-cycle-slot`, both cut for exactly three slides.
+
+   Two daytime, one night, after the night courtyard: four evening photos in a
+   row read as a bar, not as things to do. Both daytime frames are plainly
+   Sydney without a landmark doing the work (a suburban park court with gum
+   trees, a jacaranda and a sandstone wall; Bondi's promenade and a
+   red-and-yellow flag), and the court has two players in their twenties, not
+   four - a full doubles game read as staged.
+
+   Each crop keeps its people in a phone's narrow window; from sm the scrim
+   covers the left and the frame shows whole. The daytime frames also zoom a
+   little from the bottom edge on a phone: there the headline covers everything
+   below about half way, and the zoom lifts the faces clear of it. */
 const HERO_SLIDES: Array<{ src: StaticImageData; word: string; crop: string }> = [
-  { src: heroSlideRooftop, word: "catch-up.", crop: "object-[77%_center] sm:object-center" },
-  { src: heroSlideBowls, word: "bowls night.", crop: "object-[84%_center] sm:object-center" },
+  { src: heroSlidePickleball, word: "game.", crop: "object-[77%_center] max-sm:origin-bottom max-sm:scale-[1.15] sm:object-center" },
+  { src: heroSlideSurf, word: "surf lesson.", crop: "object-[70%_center] max-sm:origin-bottom max-sm:scale-[1.15] sm:object-center" },
   { src: heroSlideGig, word: "big night.", crop: "object-[72%_center] sm:object-center" },
 ];
 
@@ -198,9 +212,9 @@ function HeroMotionToggle() {
    only once the query landed. */
 async function ComingUp() {
   const events = await getEventsForExplore();
-  const upcoming = [...events]
-    .sort((left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime())
-    .slice(0, COMING_UP_COUNT);
+  const upcoming = nextDateOfEachPlan(
+    [...events].sort((left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime()),
+  ).slice(0, COMING_UP_COUNT);
 
   return upcoming.length > 0 ? (
     <section className="ck-page pb-16 pt-12 lg:pb-24 lg:pt-16">
@@ -247,6 +261,21 @@ async function ComingUp() {
       </div>
     </section>
   );
+}
+
+/* A weekly run club is one plan with many dates, and soonest-first let it take
+   several of the six slots with the same photo and title. The strip is a
+   sampler, so each plan shows once, on its next date - Discover lists every
+   date. Keyed on host + title rather than the series id, so an event a host
+   duplicated by hand folds in too. Expects soonest-first input. */
+function nextDateOfEachPlan(events: EventItem[]) {
+  const seen = new Set<string>();
+  return events.filter((event) => {
+    const plan = `${event.host}\n${event.title}`.trim().toLowerCase();
+    if (seen.has(plan)) return false;
+    seen.add(plan);
+    return true;
+  });
 }
 
 /* Six fills whole rows at both grid widths: three rows of two from sm, two
@@ -354,48 +383,6 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ============ Real plans - the canonical Event Card, untouched ============ */}
-      <Suspense fallback={<ComingUpPlaceholder />}>
-        <ComingUp />
-      </Suspense>
-
-      {/* ============ The mechanic, told as one sentence ============ */}
-      <section className="ck-page pb-20 lg:pb-28">
-        <Reveal>
-          <p className="eyebrow">How it usually goes</p>
-          {/* Each photo rides in a nowrap span with the word before it, so a
-              wrap can never strand a photo (or the full stop) on its own line. */}
-          <h2 className="font-display mt-6 text-[length:var(--text-display)] leading-[1.18] font-semibold tracking-[-0.03em] text-[color:var(--ink)]">
-            Pick a{" "}
-            <span className="whitespace-nowrap">
-              plan <InlinePic src={heroPickleball} rot="-3deg" />,
-            </span>{" "}
-            <span className="whitespace-nowrap">
-              show up <InlinePic src={wallTrivia} rot="2deg" />
-            </span>{" "}
-            and see who you{" "}
-            <span className="whitespace-nowrap">
-              clicked with <InlinePic src={wallPicnic} rot="-2deg" />.
-            </span>
-          </h2>
-          <div className="mt-8 grid lg:grid-cols-12">
-            <div className="max-w-[560px] lg:col-span-6 lg:col-start-7">
-              <p className="text-base leading-7 text-[color:var(--ink-soft)]">
-                Book something you&apos;d happily do anyway. Come solo or bring someone - the activity
-                does the small talk. Afterwards, see who you clicked with, and make the next plan
-                together.
-              </p>
-              <Link
-                href="/how-it-works"
-                className="ck-taplink font-display mt-4 inline-block text-[15px] font-semibold text-[color:var(--purple)] hover:underline"
-              >
-                How Click works <span className="nudge-arrow" aria-hidden>→</span>
-              </Link>
-            </div>
-          </div>
-        </Reveal>
-      </section>
-
       {/* ============ The pinboard: four doors into Discover ============ */}
       <section className="bg-[color:var(--lav-bg)] py-16 lg:py-24">
         <div className="ck-page">
@@ -452,14 +439,58 @@ export default function Home() {
         </div>
       </section>
 
+      {/* ============ Real plans - the canonical Event Card, untouched ============ */}
+      <Suspense fallback={<ComingUpPlaceholder />}>
+        <ComingUp />
+      </Suspense>
+
+      {/* ============ The mechanic, told as one sentence ============ */}
+      <section className="ck-page pb-20 lg:pb-28">
+        <Reveal>
+          <p className="eyebrow">How it usually goes</p>
+          {/* Each photo rides in a nowrap span with the word before it, so a
+              wrap can never strand a photo (or the full stop) on its own line. */}
+          <h2 className="font-display mt-6 text-[length:var(--text-display)] leading-[1.18] font-semibold tracking-[-0.03em] text-[color:var(--ink)]">
+            Pick a{" "}
+            <span className="whitespace-nowrap">
+              plan <InlinePic src={heroPickleball} rot="-3deg" />,
+            </span>{" "}
+            <span className="whitespace-nowrap">
+              show up <InlinePic src={wallTrivia} rot="2deg" />
+            </span>{" "}
+            and see who you{" "}
+            <span className="whitespace-nowrap">
+              clicked with <InlinePic src={wallPicnic} rot="-2deg" />.
+            </span>
+          </h2>
+          <div className="mt-8 grid lg:grid-cols-12">
+            <div className="max-w-[560px] lg:col-span-6 lg:col-start-7">
+              <p className="text-base leading-7 text-[color:var(--ink-soft)]">
+                Book something you&apos;d happily do anyway. Come solo or bring someone - the activity
+                does the small talk. Afterwards, see who you clicked with, and make the next plan
+                together.
+              </p>
+              <Link
+                href="/how-it-works"
+                className="ck-taplink font-display mt-4 inline-block text-[15px] font-semibold text-[color:var(--purple)] hover:underline"
+              >
+                How Click works <span className="nudge-arrow" aria-hidden>→</span>
+              </Link>
+            </div>
+          </div>
+        </Reveal>
+      </section>
+
       {/* ============ For hosts: the host waitlist ============
           Details in, a row in host_waitlist out (HostWaitlistForm ->
           joinHostWaitlistAction). It sits beside the instant-access signup,
-          which keeps its own "Host an event" link in the bookend below. On
-          cream between the lav-bg pinboard and the deep bookend; the form is
-          left out of Reveal so it never waits on an entrance to be usable. */}
-      <section id="hosts" aria-labelledby="hosts-heading" className="ck-page py-16 lg:py-24">
-        <div className="grid gap-8 lg:grid-cols-12 lg:gap-10">
+          which keeps its own "Host an event" link in the bookend below. A
+          lav-bg band, the pinboard's pair: the page runs deep, lav, cream,
+          cream, lav, deep, so the two cream sections above read as its middle.
+          The form is left out of Reveal so it never waits on an entrance to be
+          usable. */}
+      <section id="hosts" aria-labelledby="hosts-heading" className="bg-[color:var(--lav-bg)] py-16 lg:py-24">
+        <div className="ck-page grid gap-8 lg:grid-cols-12 lg:gap-10">
           <Reveal className="lg:col-span-5 lg:pt-2">
             <p className="eyebrow">For hosts</p>
             <h2
